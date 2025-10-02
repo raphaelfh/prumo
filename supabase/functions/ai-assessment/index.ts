@@ -153,6 +153,14 @@ Deno.serve(async (req: Request) => {
       .single();
     if (artErr) throw new Error(`Failed to fetch article: ${artErr.message}`);
 
+    // Buscar dados do projeto para variáveis do template
+    const { data: project, error: projErr } = await userClient
+      .from("projects")
+      .select("description, review_title, condition_studied, eligibility_criteria, study_design")
+      .eq("id", projectId)
+      .single();
+    if (projErr) throw new Error(`Failed to fetch project: ${projErr.message}`);
+
     // Tentar descobrir storage key do PDF se não for informada
     let storageKey = pdf_storage_key as string | undefined;
     if (!storageKey) {
@@ -264,9 +272,26 @@ Deno.serve(async (req: Request) => {
       promptCfg?.user_prompt_template ??
       "Based on the article PDF, assess: {{question}}\nAvailable response levels: {{levels}}\nReturn STRICT JSON with your choice, confidence, justification and evidence passages (with page_number).";
 
-    const userPrompt = userPromptTemplate
+    // Processar variáveis do template
+    let userPrompt = userPromptTemplate
       .replace("{{question}}", item?.question ?? "")
       .replace("{{levels}}", (allowedLevels ?? []).join(", "));
+
+    // Processar variáveis do projeto
+    if (project) {
+      userPrompt = userPrompt
+        .replace("{{description}}", project.description ?? "")
+        .replace("{{review_title}}", project.review_title ?? "")
+        .replace("{{condition_studied}}", project.condition_studied ?? "")
+        .replace("{{eligibility_criteria}}", 
+          typeof project.eligibility_criteria === 'object' 
+            ? JSON.stringify(project.eligibility_criteria) 
+            : (project.eligibility_criteria ?? ""))
+        .replace("{{study_design}}", 
+          typeof project.study_design === 'object' 
+            ? JSON.stringify(project.study_design) 
+            : (project.study_design ?? ""));
+    }
 
     // Fallback de schema quando allowedLevels está vazio (evita enum: [])
     const levelProp =
@@ -313,7 +338,8 @@ Deno.serve(async (req: Request) => {
     const useFileSearch =
       force_file_search === true || (approxSizeBytes && approxSizeBytes > SIZE_LIMIT);
 
-    const model = useFileSearch ? "gpt-4o-mini" : "gpt-4o";
+    // Usar sempre gpt-5-mini para melhor custo-efetividade
+    const model = "gpt-5-mini";
     jlog("info", traceId, "AI path", { model, useFileSearch, approxSizeBytes });
 
     let aiJson: any;
@@ -384,7 +410,7 @@ Deno.serve(async (req: Request) => {
         ],
         tools: [{ type: "file_search", vector_store_ids: [vectorStoreId] }],
         text: { format: responseFormat }, // <- structured outputs no Responses
-        temperature: 0.3,
+        // Nota: temperature não é suportado na Responses API
       };
       stripResponseFormat(payload); // preservado por compat
       jlog("info", traceId, "OpenAI payload keys (file_search)", {
@@ -424,7 +450,7 @@ Deno.serve(async (req: Request) => {
           },
         ],
         text: { format: responseFormat }, // <- structured outputs no Responses
-        temperature: 0.3,
+        // Nota: temperature não é suportado na Responses API
       };
       stripResponseFormat(payload); // preservado por compat
       jlog("info", traceId, "OpenAI payload keys (input_file)", {

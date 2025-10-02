@@ -1,0 +1,245 @@
+---
+description: Storybook e documentação visual focada na experiência do pesquisador acadêmico.
+alwaysApply: false
+---
+
+## Filosofia: Minimalismo Acadêmico
+
+### Princípios de Design
+- **Clareza cognitiva**: reduzir carga mental do pesquisador
+- **Hierarquia visual**: informação mais importante sempre em destaque
+- **Consistência**: padrões previsíveis em todo o sistema
+- **Acessibilidade**: WCAG 2.1 AA como padrão mínimo
+
+### Paleta Acadêmica Focada
+```css
+/* Cores primárias - azul confiável e profissional */
+--primary: 217 91% 40%;        /* Azul acadêmico - ações principais */
+--primary-hover: 217 91% 35%;  /* Estado hover sutil */
+
+/* Estados semânticos - claros e diretos */
+--success: 142 71% 45%;        /* Verde - progresso/conclusão */
+--warning: 38 92% 50%;         /* Amarelo - atenção necessária */
+--destructive: 0 84% 60%;      /* Vermelho - ações críticas */
+
+/* Neutrals - máxima legibilidade */
+--foreground: 217 33% 17%;     /* Texto principal - contraste alto */
+--muted-foreground: 215 16% 47%; /* Texto secundário - hierarquia */
+```
+
+## Componentes Storybook
+
+### 1. Componentes Base (UI Primitivos)
+```tsx
+// Foco: demonstrar variações essenciais apenas
+export default {
+  title: 'Base/Button',
+  component: Button,
+  parameters: { 
+    docs: { description: { component: 'Botão principal - use com parcimônia para ações críticas.' } }
+  }
+};
+
+// Mostrar apenas variações que o pesquisador realmente usa
+export const Primary: Story = { args: { children: 'Avaliar Artigo' } };
+export const Secondary: Story = { args: { variant: 'secondary', children: 'Cancelar' } };
+export const Destructive: Story = { args: { variant: 'destructive', children: 'Excluir Projeto' } };
+```
+
+### 2. Componentes de Contexto (Features)
+```tsx
+// Foco: fluxos reais do pesquisador
+export default {
+  title: 'Pesquisa/AssessmentCard',
+  component: AssessmentCard,
+  parameters: { layout: 'padded' }
+};
+
+export const EmptyState: Story = {
+  render: () => (
+    <AssessmentCard>
+      <div className="text-center py-8 text-muted-foreground">
+        <FileText className="mx-auto h-12 w-12 mb-4" />
+        <p>Nenhum artigo selecionado</p>
+        <p className="text-sm">Faça upload de um PDF para começar</p>
+      </div>
+    </AssessmentCard>
+  )
+};
+
+export const InProgress: Story = {
+  render: () => (
+    <AssessmentCard>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-medium">Avaliação em Andamento</h3>
+          <Badge variant="secondary">3/5 domínios</Badge>
+        </div>
+        <Progress value={60} className="h-2" />
+        <p className="text-sm text-muted-foreground">
+          Continue avaliando os critérios restantes
+        </p>
+      </div>
+    </AssessmentCard>
+  )
+};
+```
+
+### 3. Patterns de Pesquisa
+```tsx
+// Layouts específicos para fluxos acadêmicos
+export default { title: 'Patterns/ResearchWorkflow' };
+
+export const ArticleReview: Story = {
+  render: () => (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-screen">
+      {/* PDF Viewer - área principal */}
+      <div className="lg:col-span-2 border rounded-lg">
+        <div className="bg-muted/30 p-4 border-b">
+          <h2 className="font-medium">Artigo: Machine Learning in Healthcare</h2>
+        </div>
+        <div className="p-4 h-96 bg-gray-50 flex items-center justify-center">
+          <p className="text-muted-foreground">Visualizador PDF</p>
+        </div>
+      </div>
+      
+      {/* Assessment Panel - sidebar focado */}
+      <div className="space-y-4">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Avaliação</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Metodologia</Label>
+              <Textarea placeholder="Avalie a metodologia utilizada..." className="min-h-[80px]" />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Qualidade dos Dados</Label>
+              <Select>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione uma nota" />
+                </SelectTrigger>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  )
+};
+```
+
+## Design Tokens Visuais
+
+### Hierarquia Tipográfica
+```tsx
+export const Typography: Story = {
+  render: () => (
+    <div className="space-y-6 max-w-2xl">
+      <div>
+        <h1 className="text-3xl font-bold mb-2">Título Principal</h1>
+        <p className="text-muted-foreground">Para títulos de página e seções principais</p>
+      </div>
+      
+      <div>
+        <h2 className="text-xl font-semibold mb-2">Título de Seção</h2>
+        <p className="text-muted-foreground">Para organizar conteúdo em blocos</p>
+      </div>
+      
+      <div>
+        <p className="text-base mb-2">Texto de corpo regular</p>
+        <p className="text-muted-foreground">Para conteúdo principal e descrições</p>
+      </div>
+      
+      <div>
+        <p className="text-sm text-muted-foreground mb-2">Texto auxiliar</p>
+        <p className="text-muted-foreground">Para metadados e informações secundárias</p>
+      </div>
+    </div>
+  )
+};
+```
+
+### Estados de Interface
+```tsx
+export const InterfaceStates: Story = {
+  render: () => (
+    <div className="grid grid-cols-2 gap-6">
+      {/* Loading State */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Carregando Artigo
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-4 w-1/2" />
+          </div>
+        </CardContent>
+      </Card>
+      
+      {/* Success State */}
+      <Card className="border-success/20 bg-success/5">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-success">
+            <CheckCircle className="h-4 w-4" />
+            Avaliação Concluída
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm">Artigo avaliado com sucesso. Relatório disponível para download.</p>
+        </CardContent>
+      </Card>
+    </div>
+  )
+};
+```
+
+## Regras de Implementação
+
+### Para o AI ao criar componentes:
+1. **Sempre priorize legibilidade** - contraste mínimo 4.5:1
+2. **Estados claros** - loading, empty, error sempre visíveis
+3. **Ações óbvias** - botões primários apenas para ações críticas
+4. **Hierarquia visual** - informação mais importante em destaque
+5. **Feedback imediato** - toda ação deve ter resposta visual
+
+### Estrutura de Stories:
+```tsx
+// Template padrão para novos componentes
+export default {
+  title: 'Categoria/ComponentName',
+  component: Component,
+  parameters: {
+    docs: { 
+      description: { 
+        component: 'Descrição focada no uso pelo pesquisador.' 
+      }
+    }
+  }
+};
+
+// Estados essenciais apenas
+export const Default: Story = { /* estado padrão */ };
+export const WithData: Story = { /* com dados reais */ };
+export const Loading: Story = { /* carregando */ };
+export const Empty: Story = { /* estado vazio */ };
+```
+
+### Categorias Storybook:
+- **Base/** - Componentes UI primitivos
+- **Pesquisa/** - Componentes específicos de research
+- **Patterns/** - Layouts e fluxos completos
+- **Tokens/** - Design system documentation
+
+### Foco na Experiência:
+- **Reduzir cliques** - ações comuns em 1-2 cliques máximo
+- **Contexto claro** - usuário sempre sabe onde está
+- **Progresso visível** - em tarefas longas como avaliação
+- **Recuperação de erro** - sempre oferecer próximo passo
+- **Consistência** - mesmo padrão em situações similares
