@@ -1,0 +1,24 @@
+---
+description: Convenções de esquema, RLS e migrações para Postgres/Supabase.
+alwaysApply: false
+---
+## Convenções de schema
+- `snake_case`; `id uuid default gen_random_uuid()`.
+- `created_at timestamptz default now()`, `updated_at timestamptz` com trigger.
+- FKs com `on delete restrict` (ou `cascade` se justificado), índices nos FKs e colunas de busca.
+- **Multi-tenant**: todas as tabelas de domínio têm `org_id uuid not null`.
+
+## RLS (sempre ON)
+- Política padrão: usuários só leem/escrevem linhas do seu `org_id` e, quando aplicável, do seu `auth.uid()`.
+- Evite exceções; preferir RPC/Edge para ações elevadas.
+
+## Migrações
+- Cada mudança via **migration SQL** revisada; nunca editar `.sql` já aplicado.
+- Inclua *down comments* (como reverter manualmente).
+- Seeds mínimos e idempotentes somente em `dev`.
+
+## Check do AI antes de propor schema
+- [ ] RLS ON e políticas cobrindo SELECT/INSERT/UPDATE/DELETE  
+- [ ] Índices necessários (incl. compostos)  
+- [ ] Constraints (unique, check) documentadas  
+- [ ] Plano de migração com passos e rollback

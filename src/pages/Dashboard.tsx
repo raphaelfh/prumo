@@ -57,43 +57,39 @@ export default function Dashboard() {
 
     setCreating(true);
     try {
-      const { data, error } = await supabase
+      // Create project and add creator as manager in a transaction
+      const { data: projectData, error: projectError } = await supabase
         .from("projects")
-        .insert([
-          {
-            name: name.trim(),
-            created_by_id: user.id,
-          },
-        ])
+        .insert({
+          name: name.trim(),
+          created_by_id: user.id
+        })
         .select()
         .single();
 
-      if (error) {
-        console.error("Error creating project:", error);
-        if (error.message.includes("row-level security")) {
-          toast.error("Erro de permissão ao criar projeto. Verifique sua autenticação.");
-        } else {
-          toast.error(`Erro ao criar projeto: ${error.message}`);
-        }
+      if (projectError) {
+        console.error("Error creating project:", projectError);
+        toast.error(`Erro ao criar projeto: ${projectError.message}`);
         return;
       }
 
       // Add creator as manager
-      const { error: memberError } = await supabase.from("project_members").insert([
-        {
-          project_id: data.id,
+      const { error: memberError } = await supabase
+        .from("project_members")
+        .insert({
+          project_id: projectData.id,
           user_id: user.id,
           role: "manager",
-        },
-      ]);
+          created_by_id: user.id
+        });
 
       if (memberError) {
         console.error("Error adding project member:", memberError);
-        toast.error("Projeto criado, mas houve erro ao adicionar você como gerente");
-      } else {
-        toast.success("Projeto criado com sucesso!");
+        toast.error(`Erro ao adicionar membro: ${memberError.message}`);
+        return;
       }
 
+      toast.success("Projeto criado com sucesso!");
       await loadProjects();
     } catch (error: any) {
       console.error("Unexpected error:", error);

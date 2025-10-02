@@ -1,0 +1,24 @@
+---
+description: Boas práticas para React (Vite ou Next) em SaaS.
+alwaysApply: false
+---
+## Arquitetura & Estado
+- `src/` por **feature** (ex.: `features/billing`, `features/auth`), com camadas `ui/`, `model/`, `lib/`.
+- Dados remotos com **TanStack Query** (chaves estáveis, `staleTime` racional).
+- Formulários com **react-hook-form** + **zod** para validação.
+
+## UI/UX
+- **Tailwind** + lib de componentes consistente (ex.: shadcn/ui); A11y (ARIA) obrigatória.
+- Sempre trate `loading`, `empty state`, `error` e `retry`.
+- **ErrorBoundary** por página/feature; *toasts* apenas para feedback transitório.
+
+## Performance
+- Code-splitting por rota/feature; evite re-render desnecessário (`memo`, `useCallback` com critério).
+- Imagens otimizadas; evite libs pesadas para pequenos utilitários.
+
+## Segurança no front
+- Nunca expor **service role**; use **anon key** no cliente.
+- Validação dupla: front (zod) e back (zod no Edge).
+
+## Entregáveis do AI
+- Componentes com exemplo de uso + teste (Testing Library/Vitest) e breve rationale de decisões.

@@ -1,0 +1,16 @@
+---
+description: Princípios nucleares para um SaaS com React + Supabase (qualidade, segurança e DX).
+alwaysApply: false
+---
+## Modo de trabalho do AI (PLANO → AÇÃO)
+- Antes de editar, descreva um **plano curto** (arquivos afetados, passos, riscos).
+- Ao aplicar mudanças, entregue **diffs por arquivo** (caminho completo).
+- Documente trade-offs (perf, custo, segurança) de forma objetiva.
+
+## Padrões gerais
+- **TypeScript estrito** em todo o repo.
+- Sem introdução de libs grandes sem justificar (tamanho, manutenção, licença).
+- **Observabilidade desde o início** (logs, traces, métricas).
+- **Segurança por padrão**: RLS obrigatória, segregação de segredos, *least privilege*.
+- **Multi-tenant**: todas as tabelas de domínio possuem `org_id` e políticas RLS coerentes.
+- **Infra como código**: esquema versionado em `supabase/migrations/`.

@@ -1,0 +1,27 @@
+---
+rule_type: auto
+globs:
+  - "supabase/functions/**/*.{ts,tsx,tsc,js}"
+description: Padrões para Edge Functions (Deno) seguras e observáveis.
+---
+
+## Padrões
+- **Valide input** no início com zod; rejeite payloads fora do contrato.
+- Use cliente Supabase com **service role** apenas na Edge; nunca no front.
+- **RLS permanece ON**; se precisar bypass (service role), justifique e minimize escopo.
+
+## Respostas e erros
+- Padrão JSON `{ ok: boolean, data?: T, error?: { code, message } }`; status HTTP preciso.
+- Não vaze mensagens internas; logue detalhes sensíveis apenas no servidor.
+
+## Observabilidade
+- `console.error` padronizado com `traceId`; registre latências.
+- Inclua **CORS** explícito; *timeouts* e *retries* razoáveis para I/O externo.
+
+## Segurança
+- **Rate limit** por IP/uid/rota (estratégia simples por KV/DB se necessário).
+- Assinaturas Webhook verificadas; sempre valide `signature`.
+
+## Entregáveis do AI
+** Sempre que criar uma edge function, colocar no código para manter organizado também. Isto é, não fazer apenas o depploy da function sem colcoar em supabase/functions
+- Funções com zod de entrada/saída, tratamento de erro uniforme e testes `deno test`.

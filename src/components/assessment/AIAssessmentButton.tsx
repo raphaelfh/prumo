@@ -89,7 +89,7 @@ export const AIAssessmentButton = ({
     try {
       const pdfStorageKey = await getPdfStorageKey();
 
-      // Invoca a Edge Function já no modo "PDF direto"
+      // Invoca a Edge Function completa com recursos avançados
       const { data, error } = await supabase.functions.invoke('ai-assessment', {
         body: {
           projectId,

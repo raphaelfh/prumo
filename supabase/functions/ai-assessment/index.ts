@@ -277,37 +277,34 @@ Deno.serve(async (req: Request) => {
     // Structured Outputs na Responses API com response_format: json_schema
     const responseFormat = {
       type: "json_schema",
-      json_schema: {
-        name: "assessment_response",
-        strict: true,
-        schema: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            selected_level: levelProp,
-            confidence_score: { type: "number" },
-            justification: { type: "string" },
-            evidence_passages: {
-              type: "array",
-              items: {
-                type: "object",
-                additionalProperties: false,
-                properties: {
-                  text: { type: "string" },
-                  page_number: { type: "number" },
-                  relevance_score: { type: "number" },
-                },
-                required: ["text", "page_number", "relevance_score"],
+      name: "assessment_response",
+      schema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          selected_level: levelProp,
+          confidence_score: { type: "number" },
+          justification: { type: "string" },
+          evidence_passages: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                text: { type: "string" },
+                page_number: { type: "number" },
+                relevance_score: { type: "number" },
               },
+              required: ["text", "page_number", "relevance_score"],
             },
           },
-          required: [
-            "selected_level",
-            "confidence_score",
-            "justification",
-            "evidence_passages",
-          ],
         },
+        required: [
+          "selected_level",
+          "confidence_score",
+          "justification",
+          "evidence_passages",
+        ],
       },
     } as const;
 
@@ -316,7 +313,7 @@ Deno.serve(async (req: Request) => {
     const useFileSearch =
       force_file_search === true || (approxSizeBytes && approxSizeBytes > SIZE_LIMIT);
 
-    const model = useFileSearch ? "gpt-4o-mini" : "gpt-4.1";
+    const model = useFileSearch ? "gpt-4o-mini" : "gpt-4o";
     jlog("info", traceId, "AI path", { model, useFileSearch, approxSizeBytes });
 
     let aiJson: any;
@@ -386,7 +383,7 @@ Deno.serve(async (req: Request) => {
           { role: "user", content: [{ type: "input_text", text: userPrompt }] },
         ],
         tools: [{ type: "file_search", vector_store_ids: [vectorStoreId] }],
-        response_format: responseFormat, // <- structured outputs no Responses
+        text: { format: responseFormat }, // <- structured outputs no Responses
         temperature: 0.3,
       };
       stripResponseFormat(payload); // preservado por compat
@@ -426,7 +423,7 @@ Deno.serve(async (req: Request) => {
             ],
           },
         ],
-        response_format: responseFormat, // <- structured outputs no Responses
+        text: { format: responseFormat }, // <- structured outputs no Responses
         temperature: 0.3,
       };
       stripResponseFormat(payload); // preservado por compat
@@ -475,31 +472,46 @@ Deno.serve(async (req: Request) => {
     const inputTokens = aiJson?.usage?.input_tokens ?? null;
     const outputTokens = aiJson?.usage?.output_tokens ?? null;
 
-    // 8) Persistência
+    // 8) Persistência (UPSERT para evitar duplicatas)
     const tSave = now();
     const adminDb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    
+    // Dados para inserir/atualizar
+    const assessmentData = {
+      project_id: projectId,
+      article_id: articleId,
+      assessment_item_id: assessmentItemId,
+      instrument_id: instrumentId,
+      user_id: user.id,
+      selected_level: assessmentResult.selected_level,
+      confidence_score: assessmentResult.confidence_score,
+      justification: assessmentResult.justification,
+      evidence_passages: assessmentResult.evidence_passages,
+      ai_model_used: model,
+      processing_time_ms: Date.now() - tAI,
+      prompt_tokens: inputTokens,
+      completion_tokens: outputTokens,
+      status: "pending_review",
+      updated_at: new Date().toISOString(), // Força atualização do timestamp
+    };
+
+    // UPSERT: insere se não existir, atualiza se existir (baseado na constraint unique)
     const { data: saved, error: saveError } = await adminDb
       .from("ai_assessments")
-      .insert({
-        project_id: projectId,
-        article_id: articleId,
-        assessment_item_id: assessmentItemId,
-        instrument_id: instrumentId,
-        user_id: user.id,
-        selected_level: assessmentResult.selected_level,
-        confidence_score: assessmentResult.confidence_score,
-        justification: assessmentResult.justification,
-        evidence_passages: assessmentResult.evidence_passages,
-        ai_model_used: model,
-        processing_time_ms: Date.now() - tAI,
-        prompt_tokens: inputTokens,
-        completion_tokens: outputTokens,
-        status: "pending_review",
+      .upsert(assessmentData, {
+        onConflict: "article_id,assessment_item_id,user_id", // Especifica as colunas da constraint
+        ignoreDuplicates: false, // Atualiza em caso de conflito
       })
       .select()
       .single();
+      
     if (saveError) throw new Error(`Failed to save: ${saveError.message}`);
-    jlog("info", traceId, "Saved assessment", { id: saved.id, took: dur(tSave) });
+    
+    jlog("info", traceId, "Saved assessment (upsert)", { 
+      id: saved.id, 
+      was_update: !!saved.updated_at, // Indica se foi update
+      took: dur(tSave) 
+    });
 
     jlog("info", traceId, "Invocation OK", { total: dur(t0) });
     return new Response(

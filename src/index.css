@@ -1,3 +1,7 @@
+/* react-pdf required layers - must be imported first */
+@import "react-pdf/dist/Page/AnnotationLayer.css";
+@import "react-pdf/dist/Page/TextLayer.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -126,6 +130,3 @@ All colors MUST be HSL.
   }
 }
 
-/* react-pdf required layers */
-@import "react-pdf/dist/esm/Page/AnnotationLayer.css";
-@import "react-pdf/dist/esm/Page/TextLayer.css";
