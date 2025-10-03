@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Document, Page } from 'react-pdf';
 import { usePDFStore } from '@/stores/usePDFStore';
+import { useAnnotations } from '@/hooks/useAnnotations';
+import { useAnnotationSync } from '@/hooks/useAnnotationSync';
+import { usePDFPerformance } from '@/hooks/usePDFPerformance';
 import { PDFToolbar } from './PDFToolbar';
 import { AnnotationOverlay } from './AnnotationOverlay';
+import { TextSelectionOverlay } from './TextSelectionOverlay';
 import { Sidebar } from './Sidebar';
 import { LoadingState } from './LoadingState';
 import { ErrorState } from './ErrorState';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { PDF_OPTIONS } from '@/lib/pdf-config';
-import type { Annotation } from '@/types/annotation';
 
 interface PDFViewerProps {
   articleId: string;
@@ -31,9 +34,22 @@ export function PDFViewer({ articleId, className }: PDFViewerProps) {
     rotation,
     showAnnotations,
     setUrl,
+    setArticleId,
     setNumPages,
-    setAnnotations,
   } = usePDFStore();
+
+  // Hook para gerenciar anotações
+  const { loadAnnotations } = useAnnotations({ articleId });
+  
+  // Hook de sincronização automática com o banco de dados
+  useAnnotationSync({ articleId });
+  
+  // Hook para otimizações de performance
+  const { 
+    isLargePDF, 
+    getOptimizedRenderingProps, 
+    getRenderingConfig 
+  } = usePDFPerformance({ numPages, currentPage, scale });
 
   // Load PDF and annotations
   useEffect(() => {
@@ -63,6 +79,9 @@ export function PDFViewer({ articleId, className }: PDFViewerProps) {
       setIsLoading(true);
       setError(null);
 
+      // Definir articleId no store
+      setArticleId(articleId);
+
       // Fetch PDF file
       const { data: files, error: filesError } = await supabase
         .from('article_files')
@@ -83,7 +102,7 @@ export function PDFViewer({ articleId, className }: PDFViewerProps) {
 
       setUrl(urlData.signedUrl);
 
-      // Load existing annotations
+      // Load existing annotations usando o hook
       await loadAnnotations();
       
       toast({
@@ -101,44 +120,6 @@ export function PDFViewer({ articleId, className }: PDFViewerProps) {
       });
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const loadAnnotations = async () => {
-    try {
-      const { data: dbAnnotations, error } = await supabase
-        .from('article_annotations')
-        .select('*')
-        .eq('article_id', articleId)
-        .eq('status', 'active');
-
-      if (error) throw error;
-
-      if (dbAnnotations && dbAnnotations.length > 0) {
-        // Convert from DB format to store format
-        const annotations: Annotation[] = dbAnnotations.map((db) => ({
-          id: db.id,
-          pageNumber: db.page_number,
-          type: db.type as 'highlight' | 'note' | 'area' | 'underline',
-          position: db.scaled_position as any,
-          comment: db.comment_text || undefined,
-          color: (db.color as any)?.color || 'hsl(var(--primary))',
-          opacity: (db.color as any)?.opacity || 0.3,
-          createdAt: db.created_at,
-          updatedAt: db.updated_at,
-          authorId: db.author_id || undefined,
-          status: db.status as 'active' | 'deleted',
-        }));
-
-        setAnnotations(annotations);
-      }
-    } catch (err) {
-      console.error('Erro ao carregar anotações:', err);
-      toast({
-        title: 'Aviso',
-        description: 'Não foi possível carregar as anotações',
-        variant: 'destructive',
-      });
     }
   };
 
@@ -176,19 +157,42 @@ export function PDFViewer({ articleId, className }: PDFViewerProps) {
             error={<ErrorState message="Erro ao carregar documento" />}
             className="flex justify-center p-4 md:p-8"
           >
-            <div className="relative inline-block shadow-2xl">
+            <div 
+              className="relative inline-block shadow-2xl"
+              style={getOptimizedRenderingProps().transform ? {
+                transform: getOptimizedRenderingProps().transform,
+                transformOrigin: getOptimizedRenderingProps().transformOrigin,
+              } : undefined}
+            >
               <Page
                 pageNumber={currentPage}
-                scale={scale}
+                scale={getOptimizedRenderingProps().scale}
                 rotate={rotation}
-                renderTextLayer={true}
-                renderAnnotationLayer={false}
+                renderTextLayer={getRenderingConfig().renderTextLayer}
+                renderAnnotationLayer={getRenderingConfig().renderAnnotationLayer}
                 className="bg-white"
                 loading={<div className="w-full h-[800px] bg-muted animate-pulse" />}
                 onLoadSuccess={handlePageLoadSuccess}
+                devicePixelRatio={getRenderingConfig().devicePixelRatio}
               />
               
-              {/* Overlay de Anotações */}
+              {/* Indicador de PDF grande */}
+              {isLargePDF && (
+                <div className="absolute top-2 right-2 bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs">
+                  PDF Grande - Otimizações ativas
+                </div>
+              )}
+              
+              {/* Overlay de Seleção de Texto - Deve ficar abaixo */}
+              {pageSize.width > 0 && (
+                <TextSelectionOverlay
+                  pageNumber={currentPage}
+                  pageWidth={((rotation % 180 !== 0) ? pageSize.height : pageSize.width) * scale}
+                  pageHeight={((rotation % 180 !== 0) ? pageSize.width : pageSize.height) * scale}
+                />
+              )}
+              
+              {/* Overlay de Anotações - Deve ficar acima */}
               {showAnnotations && pageSize.width > 0 && (
                 <AnnotationOverlay
                   pageNumber={currentPage}

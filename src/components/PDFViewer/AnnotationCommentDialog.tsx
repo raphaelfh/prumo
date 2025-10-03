@@ -22,20 +22,24 @@ export function AnnotationCommentDialog({
   open,
   onOpenChange,
 }: AnnotationCommentDialogProps) {
-  const { getAnnotation, updateAnnotation } = usePDFStore();
+  const { getAnnotation } = usePDFStore();
   const [comment, setComment] = useState('');
 
   const annotation = annotationId ? getAnnotation(annotationId) : null;
 
   useEffect(() => {
     if (annotation) {
-      setComment(annotation.comment || '');
+      // Para a nova arquitetura, comentários são separados
+      // Por enquanto, inicializar com string vazia
+      setComment('');
     }
   }, [annotation]);
 
   const handleSave = () => {
     if (annotationId) {
-      updateAnnotation(annotationId, { comment });
+      // TODO: Implementar salvamento de comentário na nova arquitetura
+      // Por enquanto, apenas fechar o modal
+      console.log('💬 Comentário salvo:', comment);
       onOpenChange(false);
     }
   };

@@ -6,11 +6,17 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAssessmentItems, AssessmentInstrument } from "@/hooks/assessment/useAssessmentInstruments";
 import { DomainAccordion } from "@/components/assessment/DomainAccordion";
 import { AssessmentToolbar } from "@/components/assessment/AssessmentToolbar";
+import { BatchAssessmentBar } from "@/components/assessment/BatchAssessmentBar";
 import { useAutoSave } from "@/hooks/assessment/useAutoSave";
 import { useUndoRedo } from "@/hooks/assessment/useUndoRedo";
+import { useBlindReview } from "@/hooks/assessment/useBlindReview";
+import { useOtherAssessments } from "@/hooks/assessment/useOtherAssessments";
+import { OtherAssessmentsCard } from "@/components/assessment/OtherAssessmentsCard";
+import { AssessmentComparisonCard } from "@/components/assessment/AssessmentComparisonCard";
+import { AssessmentComparisonView } from "@/components/assessment/AssessmentComparisonView";
 import { PDFViewer } from "@/components/PDFViewer";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
-import { ArrowLeft, CheckCircle, Loader2, Eye, EyeOff } from "lucide-react";
+import { ArrowLeft, CheckCircle, Loader2, Eye, EyeOff, Users, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -32,8 +38,21 @@ export default function AssessmentFullScreen() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [showPDF, setShowPDF] = useState(true);
+  const [showComparison, setShowComparison] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const { items, loading: itemsLoading } = useAssessmentItems(instrument?.id || "");
+
+  // Blind mode e outros assessments
+  const { isBlindMode, isLoading: blindLoading } = useBlindReview(projectId || "", currentUserId || "");
+  const { 
+    otherAssessments, 
+    getOtherAssessmentsForArticle 
+  } = useOtherAssessments(
+    projectId || "", 
+    currentUserId || "", 
+    !isBlindMode && !blindLoading
+  );
 
   const {
     state: responses,
@@ -94,6 +113,8 @@ export default function AssessmentFullScreen() {
         // Load existing assessment
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
+          setCurrentUserId(user.id);
+          
           const { data: assessmentData } = await supabase
             .from("assessments")
             .select("*")
@@ -199,6 +220,26 @@ export default function AssessmentFullScreen() {
   const completion = calculateCompletion();
   const canComplete = isComplete();
 
+  // Obter assessments de outros usuários para o artigo atual
+  const otherAssessmentsForArticle = getOtherAssessmentsForArticle(articleId || "", instrumentId || "");
+  const hasOtherAssessments = !isBlindMode && !blindLoading && otherAssessmentsForArticle.length > 0;
+  const showOtherAssessments = hasOtherAssessments && showComparison;
+
+  // Calcular tamanhos dos painéis para garantir que sempre some 100%
+  const getPanelSizes = () => {
+    if (showOtherAssessments && showPDF) {
+      return { comparison: 30, assessment: 40, pdf: 30 };
+    } else if (showOtherAssessments && !showPDF) {
+      return { comparison: 30, assessment: 70, pdf: 0 };
+    } else if (!showOtherAssessments && showPDF) {
+      return { comparison: 0, assessment: 60, pdf: 40 };
+    } else {
+      return { comparison: 0, assessment: 100, pdf: 0 };
+    }
+  };
+
+  const panelSizes = getPanelSizes();
+
   return (
     <div className="h-screen flex flex-col">
       <AssessmentToolbar
@@ -212,8 +253,31 @@ export default function AssessmentFullScreen() {
       />
 
       <ResizablePanelGroup direction="horizontal" className="flex-1">
+        {/* Comparison Panel - lado esquerdo */}
+        <ResizablePanel 
+          defaultSize={panelSizes.comparison} 
+          minSize={showOtherAssessments ? 25 : 0} 
+          maxSize={showOtherAssessments ? 40 : 0}
+          className={showOtherAssessments ? "" : "hidden"}
+        >
+          <div className="h-full p-4">
+            <AssessmentComparisonView
+              items={items}
+              currentResponses={responses}
+              otherAssessments={otherAssessmentsForArticle}
+              instrumentAllowedLevels={defaultAllowedLevels}
+              schema={schema}
+              className="h-full"
+            />
+          </div>
+        </ResizablePanel>
+        
+        {showOtherAssessments && (
+          <ResizableHandle withHandle className="w-1 bg-border hover:bg-primary/20 transition-colors" />
+        )}
+
         {/* Assessment Form Panel */}
-        <ResizablePanel defaultSize={showPDF ? 60 : 100} minSize={40}>
+        <ResizablePanel defaultSize={panelSizes.assessment} minSize={30}>
           <div className="h-full overflow-y-auto">
             <div className="container max-w-5xl py-6 space-y-6">
               <div className="flex items-center justify-between">
@@ -248,14 +312,29 @@ export default function AssessmentFullScreen() {
                   </Breadcrumb>
                 </div>
 
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setShowPDF(!showPDF)}
-                  title={showPDF ? "Esconder PDF" : "Mostrar PDF"}
-                >
-                  {showPDF ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </Button>
+                <div className="flex items-center gap-2">
+                  {/* Botão de Comparação - apenas quando há outros assessments */}
+                  {hasOtherAssessments && (
+                    <Button
+                      variant={showComparison ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setShowComparison(!showComparison)}
+                      className="flex items-center gap-2"
+                    >
+                      <Users className="h-4 w-4" />
+                      {showComparison ? "Ocultar Comparação" : "Comparar com Outros"}
+                    </Button>
+                  )}
+                  
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowPDF(!showPDF)}
+                    title={showPDF ? "Esconder PDF" : "Mostrar PDF"}
+                  >
+                    {showPDF ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </Button>
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -265,6 +344,17 @@ export default function AssessmentFullScreen() {
                 </p>
                 <Progress value={completion} className="h-2" />
               </div>
+
+              {/* Barra de Avaliação em Lote */}
+              <BatchAssessmentBar
+                projectId={projectId || ""}
+                articleId={articleId || ""}
+                instrumentId={instrumentId || ""}
+                items={items}
+                responses={responses}
+                onResponseChange={handleResponseChange}
+                onCommentChange={handleCommentChange}
+              />
 
               <div className="space-y-4">
                 {domains.map((domain: any) => (
@@ -302,17 +392,19 @@ export default function AssessmentFullScreen() {
           </div>
         </ResizablePanel>
 
-        {/* Resizable Handle */}
+        {/* Resizable Handle - só aparece quando há pelo menos dois painéis visíveis */}
         {showPDF && (
-          <>
-            <ResizableHandle withHandle className="w-1 bg-border hover:bg-primary/20 transition-colors" />
-
-            {/* PDF Viewer Panel */}
-            <ResizablePanel defaultSize={40} minSize={30}>
-              <PDFViewer articleId={articleId || ""} />
-            </ResizablePanel>
-          </>
+          <ResizableHandle withHandle className="w-1 bg-border hover:bg-primary/20 transition-colors" />
         )}
+
+        {/* PDF Viewer Panel */}
+        <ResizablePanel 
+          defaultSize={panelSizes.pdf} 
+          minSize={showPDF ? 30 : 0}
+          className={showPDF ? "" : "hidden"}
+        >
+          <PDFViewer articleId={articleId || ""} />
+        </ResizablePanel>
       </ResizablePanelGroup>
     </div>
   );

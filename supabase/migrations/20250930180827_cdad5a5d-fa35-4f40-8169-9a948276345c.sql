@@ -1,11 +1,8 @@
 -- Create storage bucket for article PDFs
-INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+INSERT INTO storage.buckets (id, name)
 VALUES (
   'articles',
-  'articles',
-  false,
-  52428800, -- 50MB
-  ARRAY['application/pdf']
+  'articles'
 )
 ON CONFLICT (id) DO NOTHING;
 

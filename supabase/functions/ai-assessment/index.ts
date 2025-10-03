@@ -498,11 +498,11 @@ Deno.serve(async (req: Request) => {
     const inputTokens = aiJson?.usage?.input_tokens ?? null;
     const outputTokens = aiJson?.usage?.output_tokens ?? null;
 
-    // 8) Persistência (UPSERT para evitar duplicatas)
+    // 8) Persistência (INSERT para permitir múltiplas avaliações)
     const tSave = now();
     const adminDb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     
-    // Dados para inserir/atualizar
+    // Dados para inserir
     const assessmentData = {
       project_id: projectId,
       article_id: articleId,
@@ -518,24 +518,19 @@ Deno.serve(async (req: Request) => {
       prompt_tokens: inputTokens,
       completion_tokens: outputTokens,
       status: "pending_review",
-      updated_at: new Date().toISOString(), // Força atualização do timestamp
     };
 
-    // UPSERT: insere se não existir, atualiza se existir (baseado na constraint unique)
+    // INSERT: sempre insere nova avaliação (múltiplas avaliações permitidas)
     const { data: saved, error: saveError } = await adminDb
       .from("ai_assessments")
-      .upsert(assessmentData, {
-        onConflict: "article_id,assessment_item_id,user_id", // Especifica as colunas da constraint
-        ignoreDuplicates: false, // Atualiza em caso de conflito
-      })
+      .insert(assessmentData)
       .select()
       .single();
       
     if (saveError) throw new Error(`Failed to save: ${saveError.message}`);
     
-    jlog("info", traceId, "Saved assessment (upsert)", { 
+    jlog("info", traceId, "Saved assessment (insert)", { 
       id: saved.id, 
-      was_update: !!saved.updated_at, // Indica se foi update
       took: dur(tSave) 
     });
 

@@ -4,10 +4,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Trash2, MessageSquare, Edit } from 'lucide-react';
+import { Trash2, MessageSquare, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
-import { AnnotationCommentDialog } from './AnnotationCommentDialog';
+// import { AnnotationThreadDialog } from './AnnotationThreadDialog';
 
 interface AnnotationSidebarProps {
   className?: string;
@@ -58,10 +58,11 @@ export function AnnotationSidebar({ className }: AnnotationSidebarProps) {
               <div
                 key={annotation.id}
                 className={cn(
-                  'p-3 rounded-md border cursor-pointer transition-colors',
+                  'p-3 rounded-md border cursor-pointer transition-colors relative',
                   isSelected
                     ? 'bg-primary/10 border-primary'
-                    : 'bg-background hover:bg-accent'
+                    : 'bg-background hover:bg-accent',
+                  // annotation.isResolved && 'opacity-60'
                 )}
                 onClick={() => {
                   selectAnnotation(annotation.id);
@@ -69,21 +70,40 @@ export function AnnotationSidebar({ className }: AnnotationSidebarProps) {
                 }}
               >
                 <div className="flex items-start justify-between gap-2 mb-2">
-                  <Badge variant="secondary" className="text-xs">
-                    {getTypeLabel(annotation.type)}
-                  </Badge>
+                  <div className="flex gap-2 items-center">
+                    <Badge variant="secondary" className="text-xs">
+                      {getTypeLabel(annotation.type)}
+                    </Badge>
+                    {/* TODO: Implement resolved status */}
+                    {/* {annotation.isResolved && (
+                      <Badge variant="outline" className="text-xs gap-1">
+                        <CheckCircle2 className="h-2 w-2" />
+                        Resolvido
+                      </Badge>
+                    )} */}
+                  </div>
                   <div className="flex gap-1">
                     <Button
                       size="icon"
                       variant="ghost"
-                      className="h-6 w-6"
+                      className="h-6 w-6 relative"
                       onClick={(e) => {
                         e.stopPropagation();
                         setEditingId(annotation.id);
                         setCommentDialogOpen(true);
                       }}
+                      title="Ver comentários"
                     >
-                      <Edit className="h-3 w-3" />
+                      <MessageSquare className="h-3 w-3" />
+                      {/* TODO: Implement comments functionality */}
+                      {/* {annotation.comments && annotation.comments.length > 0 && (
+                        <Badge 
+                          variant="destructive" 
+                          className="absolute -top-1 -right-1 h-3 w-3 p-0 flex items-center justify-center text-[8px]"
+                        >
+                          {annotation.comments.length}
+                        </Badge>
+                      )} */}
                     </Button>
                     <Button
                       size="icon"
@@ -99,14 +119,28 @@ export function AnnotationSidebar({ className }: AnnotationSidebarProps) {
                   </div>
                 </div>
 
-                {annotation.comment && (
+                {/* Color indicator */}
+                <div 
+                  className="absolute left-0 top-0 bottom-0 w-1 rounded-l-md"
+                  style={{ backgroundColor: annotation.color, opacity: annotation.opacity }}
+                />
+
+                {/* Selected text preview - TODO: Fix type checking */}
+                {/* {annotation.selectedText && (
+                  <div className="mb-2 p-2 bg-muted/50 rounded text-xs italic line-clamp-2">
+                    "{annotation.selectedText}"
+                  </div>
+                )} */}
+
+                {/* Initial comment - TODO: Implement comments functionality */}
+                {/* {annotation.comment && (
                   <div className="flex items-start gap-2 mb-2">
                     <MessageSquare className="h-3 w-3 mt-0.5 text-muted-foreground flex-shrink-0" />
-                    <p className="text-xs text-foreground line-clamp-3">
+                    <p className="text-xs text-foreground line-clamp-2">
                       {annotation.comment}
                     </p>
                   </div>
-                )}
+                )} */}
 
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>Página {annotation.pageNumber}</span>
@@ -123,11 +157,12 @@ export function AnnotationSidebar({ className }: AnnotationSidebarProps) {
         </div>
       </ScrollArea>
 
-      <AnnotationCommentDialog
+      {/* TODO: Implement comments functionality */}
+      {/* <AnnotationThreadDialog
         annotationId={editingId}
         open={commentDialogOpen}
         onOpenChange={setCommentDialogOpen}
-      />
+      /> */}
     </div>
   );
 }

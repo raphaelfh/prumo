@@ -192,13 +192,14 @@ export const AIConfigurationPanel = ({
 
   return (
     <TooltipProvider>
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-lg font-semibold flex items-center gap-2 mb-6">
-            <Settings className="h-5 w-5" />
-            Configurações Avançadas da IA
-          </h2>
-        </div>
+      <div className="h-full overflow-y-auto">
+        <div className="space-y-6 p-1">
+          <div>
+            <h2 className="text-lg font-semibold flex items-center gap-2 mb-6">
+              <Settings className="h-5 w-5" />
+              Configurações Avançadas da IA
+            </h2>
+          </div>
         
         <div className="space-y-6">
               {/* Modelo - Fixo para melhor custo-benefício */}
@@ -416,34 +417,35 @@ export const AIConfigurationPanel = ({
 
         </div>
         
-        {/* Ações */}
-        <div className="pt-6 border-t">
-          <div className="flex flex-col sm:flex-row gap-2">
-            <Button
-              onClick={handleSave}
-              disabled={saving}
-              className="flex-1"
-            >
-              {saving ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Salvando...
-                </>
-              ) : (
-                <>
-                  <Save className="mr-2 h-4 w-4" />
-                  Salvar Configuração
-                </>
-              )}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={handleReset}
-              disabled={saving}
-            >
-              <RotateCcw className="mr-2 h-4 w-4" />
-              Resetar
-            </Button>
+          {/* Ações */}
+          <div className="pt-6 border-t sticky bottom-0 bg-background">
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex-1"
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Salvando...
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 h-4 w-4" />
+                    Salvar Configuração
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleReset}
+                disabled={saving}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Resetar
+              </Button>
+            </div>
           </div>
         </div>
       </div>

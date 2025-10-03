@@ -2,11 +2,12 @@ import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import { v4 as uuidv4 } from 'uuid';
-import type { Annotation, AnnotationType, DrawingState } from '@/types/annotation';
+import type { Annotation, AnnotationType, DrawingState } from '@/types/annotations-new';
 
 interface PDFState {
   // PDF State
   url: string | null;
+  articleId: string | null;
   numPages: number;
   currentPage: number;
   scale: number;
@@ -19,12 +20,31 @@ interface PDFState {
   drawingState: DrawingState | null;
   isDragging: boolean;
   dragState: { id: string; offsetX: number; offsetY: number } | null;
+  isResizing: boolean;
+  resizeState: { 
+    id: string; 
+    handle: 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'e' | 'w';
+    originalPos: { x: number; y: number; width: number; height: number };
+    startPoint: { x: number; y: number };
+  } | null;
   
   // UI State
   showAnnotations: boolean;
-  annotationMode: 'select' | 'highlight' | 'area';
+  annotationMode: 'select' | 'area' | 'text';
   sidebarCollapsed: boolean;
   sidebarView: 'annotations' | 'thumbnails';
+  
+  // Annotation Style
+  currentColor: string;
+  currentOpacity: number;
+  
+  // Text Selection
+  selectedText: string | null;
+  textSelection: {
+    text: string;
+    pageNumber: number;
+    rects: DOMRect[];
+  } | null;
   
   // History
   history: Annotation[][];
@@ -32,6 +52,7 @@ interface PDFState {
   
   // Actions
   setUrl: (url: string) => void;
+  setArticleId: (articleId: string) => void;
   setNumPages: (pages: number) => void;
   setCurrentPage: (page: number) => void;
   setScale: (scale: number) => void;
@@ -57,6 +78,12 @@ interface PDFState {
   finishDragging: () => void;
   cancelDragging: () => void;
   
+  // Resizing
+  startResizing: (id: string, handle: 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'e' | 'w', originalPos: { x: number; y: number; width: number; height: number }, startPoint: { x: number; y: number }) => void;
+  updateResizing: (x: number, y: number) => void;
+  finishResizing: () => void;
+  cancelResizing: () => void;
+  
   // History
   undo: () => void;
   redo: () => void;
@@ -71,9 +98,17 @@ interface PDFState {
   prevPage: () => void;
   goToPage: (page: number) => void;
   toggleAnnotations: () => void;
-  setAnnotationMode: (mode: 'select' | 'highlight' | 'area') => void;
+  setAnnotationMode: (mode: 'select' | 'area' | 'text') => void;
   toggleSidebar: () => void;
   setSidebarView: (view: 'annotations' | 'thumbnails') => void;
+  
+  // Color Management
+  setCurrentColor: (color: string) => void;
+  setCurrentOpacity: (opacity: number) => void;
+  
+  // Text Selection
+  setTextSelection: (selection: { text: string; pageNumber: number; rects: DOMRect[] } | null) => void;
+  createHighlightFromSelection: (comment?: string) => string | null;
   
   // Getters
   getAnnotationsForPage: (page: number) => Annotation[];
@@ -86,6 +121,7 @@ export const usePDFStore = create<PDFState>()(
       immer((set, get) => ({
         // Initial State
         url: null,
+        articleId: null,
         numPages: 0,
         currentPage: 1,
         scale: 1.0,
@@ -96,15 +132,22 @@ export const usePDFStore = create<PDFState>()(
         drawingState: null,
         isDragging: false,
         dragState: null,
+        isResizing: false,
+        resizeState: null,
         showAnnotations: true,
         annotationMode: 'select',
         sidebarCollapsed: false,
         sidebarView: 'annotations',
+        currentColor: '#FFEB3B', // Amarelo padrão
+        currentOpacity: 0.4,
+        selectedText: null,
+        textSelection: null,
         history: [],
         historyIndex: -1,
 
         // Basic Setters
         setUrl: (url) => set({ url }),
+        setArticleId: (articleId) => set({ articleId }),
         setNumPages: (numPages) => set({ numPages }),
         setCurrentPage: (page) => set({ currentPage: Math.max(1, Math.min(page, get().numPages)) }),
         setScale: (scale) => set({ scale: Math.max(0.5, Math.min(scale, 3.0)) }),
@@ -119,10 +162,11 @@ export const usePDFStore = create<PDFState>()(
             const newAnnotation: Annotation = {
               ...annotation,
               id,
+              articleId: state.articleId || '',
               createdAt: now,
               updatedAt: now,
               status: 'active',
-            };
+            } as Annotation;
             
             // Add to history
             const newHistory = state.history.slice(0, state.historyIndex + 1);
@@ -174,54 +218,75 @@ export const usePDFStore = create<PDFState>()(
         setAnnotations: (annotations) => set({ annotations }),
 
         // Drawing Actions
-        startDrawing: (x, y, page) =>
+        startDrawing: (x, y, pageNumber) => {
+          console.log('📝 Store: startDrawing chamado', { x, y, pageNumber });
           set({
             isDrawing: true,
-            drawingState: { start: { x, y, page } },
-          }),
+            drawingState: { startX: x, startY: y, currentX: x, currentY: y, pageNumber },
+          });
+        },
 
         updateDrawing: (x, y) =>
           set((state) => {
             if (state.drawingState) {
-              state.drawingState.current = { x, y };
+              state.drawingState.currentX = x;
+              state.drawingState.currentY = y;
             }
           }),
 
         finishDrawing: (comment) => {
+          console.log('✅ Store: finishDrawing chamado');
           const state = get();
-          if (!state.drawingState) return;
+          
+          if (!state.drawingState) {
+            console.log('⚠️ Store: Sem drawingState');
+            return;
+          }
 
-          const { start, current } = state.drawingState;
-          if (!current) return;
+          const { startX, startY, currentX, currentY } = state.drawingState;
 
           // Calculate relative position
-          const x = Math.min(start.x, current.x);
-          const y = Math.min(start.y, current.y);
-          const width = Math.abs(current.x - start.x);
-          const height = Math.abs(current.y - start.y);
+          const x = Math.min(startX, currentX);
+          const y = Math.min(startY, currentY);
+          const width = Math.abs(currentX - startX);
+          const height = Math.abs(currentY - startY);
+
+          console.log('📏 Store: Dimensões da anotação', { x, y, width, height });
 
           // Only create if significant size
           if (width > 0.01 && height > 0.01) {
             const currentState = get();
-            const isHighlight = currentState.annotationMode === 'highlight';
 
-            const newId = get().addAnnotation({
-              pageNumber: start.page,
-              type: isHighlight ? 'highlight' : 'area',
-              position: { x, y, width, height },
-              comment: comment || '',
-              color: isHighlight ? 'hsl(var(--warning))' : 'hsl(var(--primary))',
-              opacity: isHighlight ? 0.4 : 0.3,
-              status: 'active',
+            console.log('🎨 Store: Criando anotação área', { 
+              color: currentState.currentColor,
+              opacity: currentState.currentOpacity
             });
 
-            set({ selectedAnnotationId: newId });
-          }
+            const newId = get().addAnnotation({
+              pageNumber: state.drawingState.pageNumber,
+              type: 'area',
+              position: { x, y, width, height },
+              color: currentState.currentColor,
+              opacity: currentState.currentOpacity,
+              status: 'active',
+            } as Omit<Annotation, 'id' | 'createdAt' | 'updatedAt'>);
 
-          set({
-            isDrawing: false,
-            drawingState: null,
-          });
+            console.log('✅ Store: Anotação criada com ID:', newId);
+            
+            // Manter modo 'area' para criar múltiplos boxes (UX melhor)
+            set({ 
+              selectedAnnotationId: newId, 
+              selectedText: null,
+              isDrawing: false,
+              drawingState: null,
+            });
+          } else {
+            console.log('⚠️ Store: Anotação muito pequena, ignorando');
+            set({
+              isDrawing: false,
+              drawingState: null,
+            });
+          }
         },
 
         cancelDrawing: () =>
@@ -245,7 +310,7 @@ export const usePDFStore = create<PDFState>()(
           const annotation = state.annotations.find(a => a.id === state.dragState!.id);
           if (!annotation) return;
 
-          // Update annotation position
+          // Update annotation position (SEM atualizar timestamp para performance)
           set((draft) => {
             const ann = draft.annotations.find(a => a.id === state.dragState!.id);
             if (ann) {
@@ -254,21 +319,130 @@ export const usePDFStore = create<PDFState>()(
                 x: x - state.dragState!.offsetX,
                 y: y - state.dragState!.offsetY,
               };
-              ann.updatedAt = new Date().toISOString();
+              // ✅ NÃO atualizar updatedAt aqui para evitar sync excessivo
             }
           });
         },
 
-        finishDragging: () =>
-          set({
-            isDragging: false,
-            dragState: null,
-          }),
+        finishDragging: () => {
+          const state = get();
+          if (state.dragState) {
+            console.log('✅ Finalizando drag - atualizando timestamp');
+            // Atualizar timestamp APENAS ao finalizar (trigger único de sync)
+            set((draft) => {
+              const ann = draft.annotations.find(a => a.id === state.dragState!.id);
+              if (ann) {
+                ann.updatedAt = new Date().toISOString();
+              }
+              draft.isDragging = false;
+              draft.dragState = null;
+            });
+          } else {
+            set({
+              isDragging: false,
+              dragState: null,
+            });
+          }
+        },
 
         cancelDragging: () =>
           set({
             isDragging: false,
             dragState: null,
+          }),
+
+        // Resizing Actions
+        startResizing: (id, handle, originalPos, startPoint) => {
+          console.log('🔲 Iniciando resize:', { id, handle, originalPos, startPoint });
+          set({
+            isResizing: true,
+            resizeState: { id, handle, originalPos, startPoint },
+            annotationMode: 'select',
+          });
+        },
+
+        updateResizing: (x, y) => {
+          const state = get();
+          if (!state.isResizing || !state.resizeState) return;
+
+          const { id, handle, originalPos, startPoint } = state.resizeState;
+          const deltaX = x - startPoint.x;
+          const deltaY = y - startPoint.y;
+
+          let newPos = { ...originalPos };
+
+          // Lógica de redimensionamento por handle
+          switch (handle) {
+            case 'se': // Sudeste (canto inferior direito)
+              newPos.width = Math.max(0.01, originalPos.width + deltaX);
+              newPos.height = Math.max(0.01, originalPos.height + deltaY);
+              break;
+            case 'nw': // Noroeste (canto superior esquerdo)
+              newPos.x = originalPos.x + deltaX;
+              newPos.y = originalPos.y + deltaY;
+              newPos.width = Math.max(0.01, originalPos.width - deltaX);
+              newPos.height = Math.max(0.01, originalPos.height - deltaY);
+              break;
+            case 'ne': // Nordeste (canto superior direito)
+              newPos.y = originalPos.y + deltaY;
+              newPos.width = Math.max(0.01, originalPos.width + deltaX);
+              newPos.height = Math.max(0.01, originalPos.height - deltaY);
+              break;
+            case 'sw': // Sudoeste (canto inferior esquerdo)
+              newPos.x = originalPos.x + deltaX;
+              newPos.width = Math.max(0.01, originalPos.width - deltaX);
+              newPos.height = Math.max(0.01, originalPos.height + deltaY);
+              break;
+            case 'n': // Norte (borda superior)
+              newPos.y = originalPos.y + deltaY;
+              newPos.height = Math.max(0.01, originalPos.height - deltaY);
+              break;
+            case 's': // Sul (borda inferior)
+              newPos.height = Math.max(0.01, originalPos.height + deltaY);
+              break;
+            case 'e': // Leste (borda direita)
+              newPos.width = Math.max(0.01, originalPos.width + deltaX);
+              break;
+            case 'w': // Oeste (borda esquerda)
+              newPos.x = originalPos.x + deltaX;
+              newPos.width = Math.max(0.01, originalPos.width - deltaX);
+              break;
+          }
+
+          // Atualizar posição da anotação
+          set((draft) => {
+            const ann = draft.annotations.find(a => a.id === id);
+            if (ann) {
+              ann.position = newPos;
+            }
+          });
+        },
+
+        finishResizing: () => {
+          const state = get();
+          if (state.resizeState) {
+            console.log('✅ Finalizando resize - atualizando timestamp');
+            // Atualizar timestamp APENAS ao finalizar (trigger único de sync)
+            set((draft) => {
+              const ann = draft.annotations.find(a => a.id === state.resizeState!.id);
+              if (ann) {
+                ann.updatedAt = new Date().toISOString();
+              }
+              draft.isResizing = false;
+              draft.resizeState = null;
+            });
+          } else {
+            set({
+              isResizing: false,
+              resizeState: null,
+            });
+          }
+        },
+
+        cancelResizing: () =>
+          set({
+            isResizing: false,
+            resizeState: null,
           }),
 
         // History
@@ -325,6 +499,54 @@ export const usePDFStore = create<PDFState>()(
   setAnnotationMode: (mode) => set({ annotationMode: mode }),
   toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
   setSidebarView: (view: 'annotations' | 'thumbnails') => set({ sidebarView: view }),
+
+        // Color Management
+        setCurrentColor: (color) => set({ currentColor: color }),
+        setCurrentOpacity: (opacity) => set({ currentOpacity: opacity }),
+
+        // Text Selection
+        setTextSelection: (selection) => set({ textSelection: selection }),
+        
+        createHighlightFromSelection: (comment) => {
+          const state = get();
+          if (!state.textSelection) return null;
+
+          const { text, pageNumber, rects } = state.textSelection;
+          
+          // Calculate bounding box from text selection rects
+          const minX = Math.min(...rects.map(r => r.left));
+          const minY = Math.min(...rects.map(r => r.top));
+          const maxX = Math.max(...rects.map(r => r.right));
+          const maxY = Math.max(...rects.map(r => r.bottom));
+          
+          // Convert to relative coordinates (assuming page dimensions are available)
+          // This would need to be adjusted based on actual page dimensions
+          const position = {
+            x: minX / window.innerWidth, // Placeholder - needs actual page width
+            y: minY / window.innerHeight, // Placeholder - needs actual page height
+            width: (maxX - minX) / window.innerWidth,
+            height: (maxY - minY) / window.innerHeight,
+          };
+
+          const newId = get().addAnnotation({
+            articleId: get().articleId || '',
+            pageNumber,
+            type: 'highlight',
+            position,
+            selectedText: text,
+            color: 'hsl(var(--warning))',
+            opacity: 0.4,
+            status: 'active',
+          } as Omit<Annotation, 'id' | 'createdAt' | 'updatedAt'>);
+
+          set({ 
+            selectedAnnotationId: newId, 
+            textSelection: null,
+            annotationMode: 'select'
+          });
+
+          return newId;
+        },
 
         // Getters
         getAnnotationsForPage: (page) => {

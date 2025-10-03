@@ -11,10 +11,12 @@ import {
   Highlighter,
   Square,
   MousePointer,
+  Type,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { usePDFStore } from '@/stores/usePDFStore';
+import { ColorPicker } from './ColorPicker';
 import { cn } from '@/lib/utils';
 
 export function PDFToolbar() {
@@ -24,6 +26,8 @@ export function PDFToolbar() {
     scale,
     showAnnotations,
     annotationMode,
+    currentColor,
+    currentOpacity,
     canUndo,
     canRedo,
     undo,
@@ -35,6 +39,8 @@ export function PDFToolbar() {
     prevPage,
     toggleAnnotations,
     setAnnotationMode,
+    setCurrentColor,
+    setCurrentOpacity,
     annotations,
   } = usePDFStore();
 
@@ -109,28 +115,52 @@ export function PDFToolbar() {
         <Button
           variant={annotationMode === 'select' ? 'secondary' : 'ghost'}
           size="icon"
-          onClick={() => setAnnotationMode('select')}
-          title="Selecionar"
+          onClick={() => {
+            console.log('🔘 Modo SELECT - Selecionar/Mover anotações');
+            setAnnotationMode('select');
+          }}
+          title="Selecionar - Clique para selecionar e mover anotações"
         >
           <MousePointer className="h-4 w-4" />
         </Button>
         <Button
-          variant={annotationMode === 'highlight' ? 'secondary' : 'ghost'}
+          variant={annotationMode === 'text' ? 'secondary' : 'ghost'}
           size="icon"
-          onClick={() => setAnnotationMode('highlight')}
-          title="Destacar Texto"
+          onClick={() => {
+            console.log('🔘 Modo TEXT - Selecionar texto para destacar');
+            setAnnotationMode('text');
+          }}
+          title="Destacar Texto - Selecione texto no PDF para criar highlight"
+          className="gap-1"
         >
           <Highlighter className="h-4 w-4" />
         </Button>
         <Button
           variant={annotationMode === 'area' ? 'secondary' : 'ghost'}
           size="icon"
-          onClick={() => setAnnotationMode('area')}
-          title="Área (Alt + Arrastar)"
+          onClick={() => {
+            console.log('🔘 Modo AREA - Desenhar caixa');
+            setAnnotationMode('area');
+          }}
+          title="Área - Desenhe uma caixa retangular"
         >
           <Square className="h-4 w-4" />
         </Button>
       </div>
+
+      <Separator orientation="vertical" className="h-6 hidden sm:block" />
+
+      {/* Color Picker */}
+      {(annotationMode === 'text' || annotationMode === 'area') && (
+        <ColorPicker
+          selectedColor={currentColor}
+          selectedOpacity={currentOpacity}
+          onColorChange={(color, opacity) => {
+            setCurrentColor(color);
+            setCurrentOpacity(opacity);
+          }}
+        />
+      )}
 
       <Separator orientation="vertical" className="h-6 hidden sm:block" />
 

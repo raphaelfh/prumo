@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAssessmentItems, AssessmentInstrument } from "@/hooks/assessment/useAssessmentInstruments";
 import { DomainAccordion } from "./DomainAccordion";
 import { AssessmentProgress } from "./AssessmentProgress";
+import { BatchAssessmentBar } from "./BatchAssessmentBar";
 import { Loader2, Save, CheckCircle } from "lucide-react";
 import { TablesInsert } from "@/integrations/supabase/types";
 
@@ -141,6 +142,17 @@ export const AssessmentForm = ({
           />
         </CardContent>
       </Card>
+
+      {/* Barra de Avaliação em Lote */}
+      <BatchAssessmentBar
+        projectId={projectId}
+        articleId={articleId}
+        instrumentId={instrument.id}
+        items={items}
+        responses={responses}
+        onResponseChange={handleResponseChange}
+        onCommentChange={handleCommentChange}
+      />
 
       <div className="space-y-4">
         {domains.map((domain: any) => (

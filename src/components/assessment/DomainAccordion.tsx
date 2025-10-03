@@ -5,6 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { AssessmentItem } from "@/hooks/assessment/useAssessmentInstruments";
 import { Badge } from "@/components/ui/badge";
 import { AIAssessmentButton } from "./AIAssessmentButton";
+import { AIQuickButton } from "./AIQuickButton";
 
 interface DomainAccordionProps {
   domain: string;
@@ -87,19 +88,33 @@ export const DomainAccordion = ({
                       {item.item_code}. {item.question}
                     </Label>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     {projectId && articleId && instrumentId && (
-                      <AIAssessmentButton
-                        projectId={projectId}
-                        articleId={articleId}
-                        assessmentItemId={item.id}
-                        instrumentId={instrumentId}
-                        itemQuestion={item.question}
-                        onAccept={(level, comment) => {
-                          onResponseChange(item.item_code, level);
-                          onCommentChange(item.item_code, comment);
-                        }}
-                      />
+                      <>
+                        <AIQuickButton
+                          projectId={projectId}
+                          articleId={articleId}
+                          assessmentItemId={item.id}
+                          instrumentId={instrumentId}
+                          itemQuestion={item.question}
+                          hasResponse={!!responses[item.item_code]?.level}
+                          onAccept={(level, comment) => {
+                            onResponseChange(item.item_code, level);
+                            onCommentChange(item.item_code, comment);
+                          }}
+                        />
+                        <AIAssessmentButton
+                          projectId={projectId}
+                          articleId={articleId}
+                          assessmentItemId={item.id}
+                          instrumentId={instrumentId}
+                          itemQuestion={item.question}
+                          onAccept={(level, comment) => {
+                            onResponseChange(item.item_code, level);
+                            onCommentChange(item.item_code, comment);
+                          }}
+                        />
+                      </>
                     )}
                     {responses[item.item_code]?.level && (
                       <Badge className={getLevelColor(responses[item.item_code].level)}>

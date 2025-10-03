@@ -8,7 +8,7 @@ import { ArrowLeft, FileText, ClipboardCheck, BarChart3, Settings, Plus } from "
 import { toast } from "sonner";
 import { AddArticleDialog } from "@/components/articles/AddArticleDialog";
 import { ArticlesList } from "@/components/articles/ArticlesList";
-import { ArticleDetailDialog } from "@/components/articles/ArticleDetailDialog";
+import { ArticleEditDialog } from "@/components/articles/ArticleEditDialog";
 import { ProjectSettings } from "@/components/project/ProjectSettings";
 import { AssessmentInterface } from "@/components/assessment/AssessmentInterface";
 
@@ -157,6 +157,8 @@ export default function ProjectView() {
             <ArticlesList 
               articles={articles} 
               onArticleClick={setSelectedArticleId}
+              projectId={projectId!}
+              onArticlesChange={loadArticles}
             />
           </TabsContent>
 
@@ -197,10 +199,11 @@ export default function ProjectView() {
         onArticleAdded={loadArticles}
       />
 
-      <ArticleDetailDialog
+      <ArticleEditDialog
         open={!!selectedArticleId}
         onOpenChange={(open) => !open && setSelectedArticleId(null)}
         articleId={selectedArticleId}
+        onArticleUpdated={loadArticles}
       />
     </div>
   );

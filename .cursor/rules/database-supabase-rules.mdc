@@ -1,5 +1,5 @@
 ---
-description: Convenções de esquema, RLS e migrações para Postgres/Supabase.
+description: BACKEND - EDGE FUNCTIONS AND DATABASE - Convenções de esquema, RLS e migrações para Postgres/Supabase.
 alwaysApply: false
 ---
 ## Convenções de schema
@@ -7,6 +7,10 @@ alwaysApply: false
 - `created_at timestamptz default now()`, `updated_at timestamptz` com trigger.
 - FKs com `on delete restrict` (ou `cascade` se justificado), índices nos FKs e colunas de busca.
 - **Multi-tenant**: todas as tabelas de domínio têm `org_id uuid not null`.
+
+* FLUXO DE COMO INTERAGIR COM SUPABASE BACKEND BANCO DE DADOS
+- Usar MCP do supabase para melhor integração e facilitar a comunicação com banco de dados.
+
 
 ## RLS (sempre ON)
 - Política padrão: usuários só leem/escrevem linhas do seu `org_id` e, quando aplicável, do seu `auth.uid()`.

@@ -71,6 +71,8 @@ export const AIAssessmentPanel = ({
   const [selectedHistoryAssessment, setSelectedHistoryAssessment] = useState<AiAssessment | null>(null);
   const [configuration, setConfiguration] = useState<AIConfiguration | null>(null);
   const [hasHistory, setHasHistory] = useState(false);
+  const [assessmentsCount, setAssessmentsCount] = useState(0);
+  const [assessments, setAssessments] = useState<AiAssessment[]>([]);
   const { toast } = useToast();
 
   // Verifica se há histórico de avaliações
@@ -90,7 +92,9 @@ export const AIAssessmentPanel = ({
         .limit(1);
 
       if (error) throw error;
-      setHasHistory((data?.length || 0) > 0);
+      const hasHistoryData = (data?.length || 0) > 0;
+      setHasHistory(hasHistoryData);
+      console.log('[AI Assessment Panel] Histórico verificado:', { hasHistoryData, count: data?.length || 0 });
     } catch (error) {
       console.error('Error checking history:', error);
     }
@@ -175,6 +179,11 @@ export const AIAssessmentPanel = ({
       
       // Atualiza o histórico
       checkHistory();
+      
+      // Força atualização do histórico após um pequeno delay para garantir que o banco foi atualizado
+      setTimeout(() => {
+        checkHistory();
+      }, 1000);
 
       const took =
         data?.processingTime != null
@@ -273,149 +282,207 @@ export const AIAssessmentPanel = ({
     handleAcceptAssessment(assessment);
   };
 
+  const handleAssessmentsCountChange = (count: number) => {
+    setAssessmentsCount(count);
+    setHasHistory(count > 0);
+  };
+
+  const handleAssessmentsDataChange = (assessmentsData: AiAssessment[]) => {
+    setAssessments(assessmentsData);
+    setAssessmentsCount(assessmentsData.length);
+    setHasHistory(assessmentsData.length > 0);
+  };
+
   // Determina qual avaliação mostrar no preview
   const previewAssessment = selectedHistoryAssessment || currentAssessment;
 
   return (
-    <div className="w-full">
+    <div className="w-full max-w-4xl mx-auto">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <div className="p-4 pb-0">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="new" className="flex items-center gap-1 text-xs sm:text-sm">
-              <Sparkles className="h-3 w-3 sm:h-4 sm:w-4" />
-              <span className="hidden sm:inline">Nova Avaliação</span>
-              <span className="sm:hidden">Nova</span>
-            </TabsTrigger>
-            <TabsTrigger value="preview" disabled={!previewAssessment} className="flex items-center gap-1 text-xs sm:text-sm">
-              <Eye className="h-3 w-3 sm:h-4 sm:w-4" />
-              <span className="hidden sm:inline">Preview</span>
-              <span className="sm:hidden">Ver</span>
-              {previewAssessment && (
-                <Badge variant="secondary" className="ml-1 text-xs">
-                  1
-                </Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="history" className="flex items-center gap-1 text-xs sm:text-sm">
-              <History className="h-3 w-3 sm:h-4 sm:w-4" />
-              <span className="hidden sm:inline">Histórico</span>
-              <span className="sm:hidden">Hist</span>
-              {hasHistory && (
-                <Badge variant="secondary" className="ml-1 text-xs">
-                  •
-                </Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="config" className="flex items-center gap-1 text-xs sm:text-sm">
-              <Settings className="h-3 w-3 sm:h-4 sm:w-4" />
-              <span className="hidden sm:inline">Configurações</span>
-              <span className="sm:hidden">Config</span>
-            </TabsTrigger>
-          </TabsList>
+        {/* Header com tabs - sempre visível */}
+        <div className="sticky top-0 z-10 bg-background border-b">
+          <div className="p-4 pb-0">
+            <TabsList className="grid w-full grid-cols-4 h-12">
+              <TabsTrigger 
+                value="new" 
+                className="flex items-center gap-1 text-xs sm:text-sm h-10 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-200"
+              >
+                <Sparkles className="h-3 w-3 sm:h-4 sm:w-4" />
+                <span className="hidden sm:inline">Nova Avaliação</span>
+                <span className="sm:hidden">Nova</span>
+              </TabsTrigger>
+              <TabsTrigger 
+                value="preview" 
+                disabled={!previewAssessment} 
+                className="flex items-center gap-1 text-xs sm:text-sm h-10 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-200 disabled:opacity-50"
+              >
+                <Eye className="h-3 w-3 sm:h-4 sm:w-4" />
+                <span className="hidden sm:inline">Preview</span>
+                <span className="sm:hidden">Ver</span>
+                {previewAssessment && (
+                  <Badge variant="secondary" className="ml-1 text-xs">
+                    {selectedHistoryAssessment ? 
+                      `#${assessments.findIndex(a => a.id === selectedHistoryAssessment.id) + 1}` : 
+                      'Nova'
+                    }
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger 
+                value="history" 
+                className="flex items-center gap-1 text-xs sm:text-sm h-10 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-200"
+              >
+                <History className="h-3 w-3 sm:h-4 sm:w-4" />
+                <span className="hidden sm:inline">Histórico</span>
+                <span className="sm:hidden">Hist</span>
+                {assessmentsCount > 0 && (
+                  <Badge variant="secondary" className="ml-1 text-xs">
+                    {assessmentsCount}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger 
+                value="config" 
+                className="flex items-center gap-1 text-xs sm:text-sm h-10 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground transition-all duration-200"
+              >
+                <Settings className="h-3 w-3 sm:h-4 sm:w-4" />
+                <span className="hidden sm:inline">Configurações</span>
+                <span className="sm:hidden">Config</span>
+              </TabsTrigger>
+            </TabsList>
+          </div>
         </div>
 
+        {/* Conteúdo com altura fixa e scroll interno */}
         <div className="p-4">
-          <TabsContent value="new" className="mt-0">
-            <div className="text-center space-y-4 py-8">
-              <div>
-                <h3 className="text-lg font-medium">Executar Nova Avaliação IA</h3>
-                <p className="text-sm text-muted-foreground">
-                  Gere uma nova avaliação usando inteligência artificial
-                </p>
-              </div>
-              
-              <div className="flex justify-center">
-                <Badge variant="outline" className="text-xs">
-                  GPT-5 Mini • Temp: 0.0 • {configuration?.forceFileSearch ? 'RAG' : 'Direto'}
-                </Badge>
-              </div>
-
-              <Button
-                onClick={handleRunAIAssessment}
-                disabled={isProcessing}
-                size="lg"
-                className="w-full max-w-md mx-auto"
-              >
-                {isProcessing ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Processando...
-                  </>
-                ) : (
-                  <>
-                    <Play className="mr-2 h-4 w-4" />
-                    Executar Avaliação IA
-                  </>
-                )}
-              </Button>
-
-              {hasHistory && (
-                <p className="text-xs text-muted-foreground">
-                  Já existem avaliações anteriores. Veja o histórico para comparar.
-                </p>
-              )}
-            </div>
-          </TabsContent>
-
-          <TabsContent value="preview" className="mt-0">
-            {previewAssessment ? (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-medium">
-                    {selectedHistoryAssessment ? 'Avaliação do Histórico' : 'Nova Avaliação'}
-                  </h3>
-                  {selectedHistoryAssessment && (
-                    <Badge variant="outline">
-                      {selectedHistoryAssessment.status === 'accepted' ? 'Aceita' : 
-                       selectedHistoryAssessment.status === 'rejected' ? 'Rejeitada' : 'Pendente'}
+          <div className="min-h-[600px] max-h-[800px] overflow-hidden">
+            <TabsContent value="new" className="mt-0 h-full">
+              <div className="h-full flex flex-col justify-center">
+                <div className="text-center space-y-6 py-8">
+                  <div className="space-y-2">
+                    <h3 className="text-xl font-semibold">Executar Nova Avaliação IA</h3>
+                    <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                      Gere uma nova avaliação usando inteligência artificial baseada no conteúdo do artigo
+                    </p>
+                  </div>
+                  
+                  <div className="flex justify-center">
+                    <Badge variant="outline" className="text-xs px-3 py-1">
+                      GPT-5 Mini • Temp: 0.0 • {configuration?.forceFileSearch ? 'RAG' : 'Direto'}
                     </Badge>
+                  </div>
+
+                  <div className="pt-4">
+                    <Button
+                      onClick={handleRunAIAssessment}
+                      disabled={isProcessing}
+                      size="lg"
+                      className="w-full max-w-sm mx-auto h-12 text-base"
+                    >
+                      {isProcessing ? (
+                        <>
+                          <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                          Processando...
+                        </>
+                      ) : (
+                        <>
+                          <Play className="mr-2 h-5 w-5" />
+                          Executar Avaliação IA
+                        </>
+                      )}
+                    </Button>
+                  </div>
+
+                  {hasHistory && (
+                    <div className="pt-4">
+                      <p className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-3 max-w-md mx-auto">
+                        💡 Já existem {assessmentsCount} avaliação(ões) anterior(es). 
+                        Veja o histórico para comparar resultados.
+                      </p>
+                    </div>
                   )}
                 </div>
-                
-                <AIAssessmentPreview
-                  assessment={{
-                    selected_level: previewAssessment.selected_level,
-                    confidence_score: previewAssessment.confidence_score,
-                    justification: previewAssessment.justification,
-                    evidence_passages: (previewAssessment.evidence_passages ?? []).map((e) => ({
-                      text: e.text,
-                      start_char: e.start_char ?? 0,
-                      end_char: e.end_char ?? 0,
-                      page_number: e.page_number ?? 0,
-                      relevance_score: e.relevance_score ?? 0,
-                    })),
-                  }}
-                  onAccept={() => handleAcceptAssessment(previewAssessment)}
-                  onReject={() => handleRejectAssessment(previewAssessment)}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="preview" className="mt-0 h-full">
+              <div className="h-full overflow-y-auto">
+                {previewAssessment ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between pb-4 border-b">
+                      <h3 className="text-xl font-semibold">
+                        {selectedHistoryAssessment ? 'Avaliação do Histórico' : 'Nova Avaliação'}
+                      </h3>
+                      {selectedHistoryAssessment && (
+                        <Badge 
+                          variant="outline" 
+                          className={
+                            selectedHistoryAssessment.status === 'accepted' ? 'border-green-500 text-green-700' :
+                            selectedHistoryAssessment.status === 'rejected' ? 'border-red-500 text-red-700' :
+                            'border-yellow-500 text-yellow-700'
+                          }
+                        >
+                          {selectedHistoryAssessment.status === 'accepted' ? 'Aceita' : 
+                           selectedHistoryAssessment.status === 'rejected' ? 'Rejeitada' : 'Pendente'}
+                        </Badge>
+                      )}
+                    </div>
+                    
+                    <AIAssessmentPreview
+                      assessment={{
+                        selected_level: previewAssessment.selected_level,
+                        confidence_score: previewAssessment.confidence_score,
+                        justification: previewAssessment.justification,
+                        evidence_passages: (previewAssessment.evidence_passages ?? []).map((e) => ({
+                          text: e.text,
+                          start_char: e.start_char ?? 0,
+                          end_char: e.end_char ?? 0,
+                          page_number: e.page_number ?? 0,
+                          relevance_score: e.relevance_score ?? 0,
+                        })),
+                      }}
+                      onAccept={() => handleAcceptAssessment(previewAssessment)}
+                      onReject={() => handleRejectAssessment(previewAssessment)}
+                    />
+                  </div>
+                ) : (
+                  <div className="h-full flex items-center justify-center">
+                    <div className="text-center py-12 text-muted-foreground">
+                      <Eye className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <h3 className="text-lg font-medium mb-2">Nenhuma avaliação selecionada</h3>
+                      <p className="text-sm">Execute uma nova avaliação ou selecione uma do histórico</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="history" className="mt-0 h-full">
+              <div className="h-full overflow-hidden">
+                <AIAssessmentHistory
+                  projectId={projectId}
+                  articleId={articleId}
+                  assessmentItemId={assessmentItemId}
+                  instrumentId={instrumentId}
+                  onSelectAssessment={handleSelectHistoryAssessment}
+                  onApplyAssessment={handleApplyHistoryAssessment}
+                  onAssessmentsCountChange={handleAssessmentsCountChange}
+                  onAssessmentsDataChange={handleAssessmentsDataChange}
                 />
               </div>
-            ) : (
-              <div className="text-center py-12 text-muted-foreground">
-                <Eye className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p>Nenhuma avaliação selecionada para preview</p>
+            </TabsContent>
+
+            <TabsContent value="config" className="mt-0 h-full">
+              <div className="h-full overflow-y-auto">
+                <AIConfigurationPanel
+                  assessmentItemId={assessmentItemId}
+                  itemQuestion={itemQuestion}
+                  projectId={projectId}
+                  onConfigurationChange={setConfiguration}
+                />
               </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="history" className="mt-0">
-            <AIAssessmentHistory
-              projectId={projectId}
-              articleId={articleId}
-              assessmentItemId={assessmentItemId}
-              instrumentId={instrumentId}
-              onSelectAssessment={handleSelectHistoryAssessment}
-              onApplyAssessment={handleApplyHistoryAssessment}
-            />
-          </TabsContent>
-
-          <TabsContent value="config" className="mt-0">
-            <AIConfigurationPanel
-              assessmentItemId={assessmentItemId}
-              itemQuestion={itemQuestion}
-              projectId={projectId}
-              onConfigurationChange={setConfiguration}
-            />
-          </TabsContent>
+            </TabsContent>
+          </div>
         </div>
       </Tabs>
     </div>
