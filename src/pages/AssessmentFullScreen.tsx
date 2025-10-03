@@ -16,7 +16,7 @@ import { AssessmentComparisonCard } from "@/components/assessment/AssessmentComp
 import { AssessmentComparisonView } from "@/components/assessment/AssessmentComparisonView";
 import { PDFViewer } from "@/components/PDFViewer";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
-import { ArrowLeft, CheckCircle, Loader2, Eye, EyeOff, Users, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, CheckCircle, Loader2, FileText, Users, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -225,20 +225,6 @@ export default function AssessmentFullScreen() {
   const hasOtherAssessments = !isBlindMode && !blindLoading && otherAssessmentsForArticle.length > 0;
   const showOtherAssessments = hasOtherAssessments && showComparison;
 
-  // Calcular tamanhos dos painéis para garantir que sempre some 100%
-  const getPanelSizes = () => {
-    if (showOtherAssessments && showPDF) {
-      return { comparison: 30, assessment: 40, pdf: 30 };
-    } else if (showOtherAssessments && !showPDF) {
-      return { comparison: 30, assessment: 70, pdf: 0 };
-    } else if (!showOtherAssessments && showPDF) {
-      return { comparison: 0, assessment: 60, pdf: 40 };
-    } else {
-      return { comparison: 0, assessment: 100, pdf: 0 };
-    }
-  };
-
-  const panelSizes = getPanelSizes();
 
   return (
     <div className="h-screen flex flex-col">
@@ -255,7 +241,7 @@ export default function AssessmentFullScreen() {
       <ResizablePanelGroup direction="horizontal" className="flex-1">
         {/* Comparison Panel - lado esquerdo */}
         <ResizablePanel 
-          defaultSize={panelSizes.comparison} 
+          defaultSize={showOtherAssessments ? 30 : 0} 
           minSize={showOtherAssessments ? 25 : 0} 
           maxSize={showOtherAssessments ? 40 : 0}
           className={showOtherAssessments ? "" : "hidden"}
@@ -272,12 +258,14 @@ export default function AssessmentFullScreen() {
           </div>
         </ResizablePanel>
         
-        {showOtherAssessments && (
-          <ResizableHandle withHandle className="w-1 bg-border hover:bg-primary/20 transition-colors" />
-        )}
+        {/* Resizable Handle entre Comparison e Assessment */}
+        <ResizableHandle withHandle className="w-1 bg-border hover:bg-primary/20 transition-colors" />
 
         {/* Assessment Form Panel */}
-        <ResizablePanel defaultSize={panelSizes.assessment} minSize={30}>
+        <ResizablePanel 
+          defaultSize={showOtherAssessments ? (showPDF ? 40 : 70) : (showPDF ? 60 : 100)} 
+          minSize={30}
+        >
           <div className="h-full overflow-y-auto">
             <div className="container max-w-5xl py-6 space-y-6">
               <div className="flex items-center justify-between">
@@ -327,12 +315,14 @@ export default function AssessmentFullScreen() {
                   )}
                   
                   <Button
-                    variant="ghost"
-                    size="icon"
+                    variant={showPDF ? "default" : "outline"}
+                    size="sm"
                     onClick={() => setShowPDF(!showPDF)}
-                    title={showPDF ? "Esconder PDF" : "Mostrar PDF"}
+                    className="flex items-center gap-2"
+                    title={showPDF ? "Ocultar PDF" : "Mostrar PDF"}
                   >
-                    {showPDF ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    <FileText className="h-4 w-4" />
+                    {showPDF ? "Ocultar PDF" : "Mostrar PDF"}
                   </Button>
                 </div>
               </div>
@@ -392,14 +382,12 @@ export default function AssessmentFullScreen() {
           </div>
         </ResizablePanel>
 
-        {/* Resizable Handle - só aparece quando há pelo menos dois painéis visíveis */}
-        {showPDF && (
-          <ResizableHandle withHandle className="w-1 bg-border hover:bg-primary/20 transition-colors" />
-        )}
+        {/* Resizable Handle entre Assessment e PDF */}
+        <ResizableHandle withHandle className="w-1 bg-border hover:bg-primary/20 transition-colors" />
 
         {/* PDF Viewer Panel */}
         <ResizablePanel 
-          defaultSize={panelSizes.pdf} 
+          defaultSize={showPDF ? (showOtherAssessments ? 30 : 40) : 0} 
           minSize={showPDF ? 30 : 0}
           className={showPDF ? "" : "hidden"}
         >
