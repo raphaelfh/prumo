@@ -20,16 +20,29 @@ export const PDF_OPTIONS = {
 
 // Performance settings for large PDFs
 export const LARGE_PDF_THRESHOLD = 50; // Pages
+
+// Função para obter device pixel ratio de forma lazy
+const getDevicePixelRatio = (): number => {
+  if (typeof window === 'undefined') return 1;
+  return Math.min(window.devicePixelRatio || 1, 2);
+};
+
 export const PERFORMANCE_CONFIG = {
   // Lazy loading settings
   preloadPages: 2, // Number of pages to preload ahead/behind
   unloadDistance: 5, // Unload pages this far from current page
   
-  // Rendering settings
-  maxCanvasPixels: 16777216, // 16MP max canvas size
-  devicePixelRatio: Math.min(window.devicePixelRatio || 1, 2), // Limit DPR for performance
+  // Rendering settings - mais conservador para evitar OOM
+  maxCanvasPixels: 8388608, // 8MP max canvas size (mais conservador)
+  devicePixelRatio: getDevicePixelRatio, // Função lazy para evitar execução no módulo
   
-  // Memory management
+  // Memory management - menos agressivo
   enableMemoryOptimization: true,
-  gcInterval: 30000, // Garbage collection interval (30s)
+  gcInterval: 60000, // Garbage collection interval (60s - menos agressivo)
+  
+  // Novas configurações de performance
+  maxConcurrentRenders: 3, // Máximo de renders simultâneos
+  renderTimeout: 10000, // Timeout para renderização (10s)
+  enableWebGL: true, // Usar WebGL quando disponível
+  useOnlyCssZoom: false, // Permitir canvas scaling para melhor qualidade
 };

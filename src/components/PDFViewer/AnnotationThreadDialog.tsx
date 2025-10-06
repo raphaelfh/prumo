@@ -56,12 +56,21 @@ export function AnnotationThreadDialog({
 
     setLoading(true);
     try {
-      // Determinar se é highlight ou box
-      const isHighlight = annotation.type === 'highlight';
-      const foreignKey = isHighlight ? 'highlight_id' : 'box_id';
+      // Determinar a foreign key baseada no tipo de anotação
+      const getForeignKey = (annotation: any) => {
+        if (annotation.type === 'highlight') return 'highlight_id';
+        if (annotation.type === 'area') return 'box_id';
+        return null; // Comentário standalone (sem highlight_id nem box_id)
+      };
+      
+      const foreignKey = getForeignKey(annotation);
+      if (!foreignKey) {
+        console.warn('⚠️ Tipo de anotação não suportado para comentários:', annotation.type);
+        return;
+      }
       
       const { data, error } = await supabase
-        .from('article_annotations_new')
+        .from('article_annotations')
         .select(`
           *,
           profiles:author_id (
@@ -123,13 +132,23 @@ export function AnnotationThreadDialog({
 
     setSaving(true);
     try {
-      const isHighlight = annotation.type === 'highlight';
-      const foreignKey = isHighlight ? 'highlight_id' : 'box_id';
+      // Usar a mesma lógica da função loadComments
+      const getForeignKey = (annotation: any) => {
+        if (annotation.type === 'highlight') return 'highlight_id';
+        if (annotation.type === 'area') return 'box_id';
+        return null;
+      };
+      
+      const foreignKey = getForeignKey(annotation);
+      if (!foreignKey) {
+        console.error('❌ Tipo de anotação não suportado para comentários:', annotation.type);
+        return;
+      }
       
       const { data: { user } } = await supabase.auth.getUser();
       
       const { data, error } = await supabase
-        .from('article_annotations_new')
+        .from('article_annotations')
         .insert({
           article_id: annotation.articleId || '',
           [foreignKey]: annotationId,
@@ -170,11 +189,21 @@ export function AnnotationThreadDialog({
 
     setSaving(true);
     try {
-      const isHighlight = annotation.type === 'highlight';
-      const foreignKey = isHighlight ? 'highlight_id' : 'box_id';
+      // Usar a mesma lógica das outras funções
+      const getForeignKey = (annotation: any) => {
+        if (annotation.type === 'highlight') return 'highlight_id';
+        if (annotation.type === 'area') return 'box_id';
+        return null;
+      };
+      
+      const foreignKey = getForeignKey(annotation);
+      if (!foreignKey) {
+        console.error('❌ Tipo de anotação não suportado para comentários:', annotation.type);
+        return;
+      }
       
       const { error } = await supabase
-        .from('article_annotations_new')
+        .from('article_annotations')
         .update({ is_resolved: true })
         .eq('article_id', annotation.articleId || '')
         .eq(foreignKey, annotationId);

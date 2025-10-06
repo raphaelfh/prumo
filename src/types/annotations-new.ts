@@ -61,8 +61,9 @@ export interface ArticleCommentRow {
 // TIPOS DO STORE (FRONTEND)
 // ========================================
 
-export type AnnotationType = 'highlight' | 'area' | 'note';
-export type AnnotationStatus = 'active' | 'deleted' | 'resolved';
+// ✅ Tipos corrigidos para corresponder ao schema do banco
+export type AnnotationType = 'text' | 'area' | 'highlight' | 'note' | 'underline';
+export type AnnotationStatus = 'active' | 'deleted';
 
 export interface DrawingState {
   startX: number;

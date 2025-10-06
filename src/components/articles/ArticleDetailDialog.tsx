@@ -5,7 +5,20 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { FileText, ExternalLink, Download, Eye } from "lucide-react";
+import { FileText, ExternalLink, Download, Eye, Upload, Trash2 } from "lucide-react";
+import { ArticleFileUploadDialog } from "./ArticleFileUploadDialog";
+import { formatFileSize } from "@/lib/file-validation";
+import { FILE_ROLE_LABELS } from "@/lib/file-constants";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface Article {
   id: string;
@@ -24,11 +37,13 @@ interface Article {
   pmcid: string | null;
   keywords: string[] | null;
   url_landing: string | null;
+  project_id: string;
 }
 
 interface ArticleFile {
   id: string;
-  file_type: string;
+  file_type: string;   // Formato: PDF, DOC, etc.
+  file_role?: string;  // Função: MAIN, SUPPLEMENT, etc.
   storage_key: string;
   original_filename: string | null;
   bytes: number | null;
@@ -44,7 +59,10 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
   const [article, setArticle] = useState<Article | null>(null);
   const [files, setFiles] = useState<ArticleFile[]>([]);
   const [loading, setLoading] = useState(false);
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [fileToDelete, setFileToDelete] = useState<ArticleFile | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (articleId && open) {
@@ -136,6 +154,45 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
       console.error("Error viewing PDF:", error);
       toast.error("Erro ao visualizar PDF. Tente fazer o download.");
     }
+  };
+
+  const handleDeleteFile = async () => {
+    if (!fileToDelete) return;
+
+    setDeleting(true);
+    try {
+      // Deletar arquivo do storage
+      const { error: storageError } = await supabase.storage
+        .from("articles")
+        .remove([fileToDelete.storage_key]);
+
+      if (storageError) {
+        console.warn("Erro ao deletar arquivo do storage:", storageError);
+      }
+
+      // Deletar registro do banco
+      const { error: dbError } = await supabase
+        .from("article_files")
+        .delete()
+        .eq("id", fileToDelete.id);
+
+      if (dbError) throw dbError;
+
+      toast.success("Arquivo removido com sucesso!");
+      loadFiles(); // Recarregar lista de arquivos
+    } catch (error: any) {
+      console.error("Error deleting file:", error);
+      toast.error("Erro ao remover arquivo");
+    } finally {
+      setDeleting(false);
+      setDeleteDialogOpen(false);
+      setFileToDelete(null);
+    }
+  };
+
+  const getFileRoleLabel = (fileRole: string | undefined): string => {
+    if (!fileRole) return 'Não especificado';
+    return FILE_ROLE_LABELS[fileRole as keyof typeof FILE_ROLE_LABELS] || fileRole;
   };
 
   if (!article) return null;
@@ -273,52 +330,99 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
             )}
 
             {/* Files */}
-            {files.length > 0 && (
-              <>
-                <Separator />
-                <div>
-                  <h3 className="text-sm font-semibold mb-3">Arquivos</h3>
-                  <div className="space-y-2">
-                    {files.map((file) => (
-                      <div
-                        key={file.id}
-                        className="flex items-center justify-between p-3 border rounded-lg"
-                      >
-                        <div className="flex items-center gap-3">
-                          <FileText className="h-5 w-5 text-muted-foreground" />
-                          <div>
-                            <p className="text-sm font-medium">
-                              {file.original_filename || "document.pdf"}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {file.bytes ? `${(file.bytes / 1024 / 1024).toFixed(2)} MB` : ""}
-                            </p>
+            <Separator />
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold">
+                  Arquivos {files.length > 0 && `(${files.length})`}
+                </h3>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setUploadDialogOpen(true)}
+                >
+                  <Upload className="mr-2 h-4 w-4" />
+                  Adicionar Arquivo
+                </Button>
+              </div>
+              
+              {files.length > 0 ? (
+                <div className="space-y-2">
+                  {files.map((file) => (
+                    <div
+                      key={file.id}
+                      className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <FileText className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">
+                            {file.original_filename || "document.pdf"}
+                          </p>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <Badge variant="outline" className="text-xs">
+                              {getFileRoleLabel(file.file_role)}
+                            </Badge>
+                            <span>•</span>
+                            <span>{file.file_type}</span>
+                            {file.bytes && (
+                              <>
+                                <span>•</span>
+                                <span>{formatFileSize(file.bytes)}</span>
+                              </>
+                            )}
                           </div>
                         </div>
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => viewPDF(file)}
-                          >
-                            <Eye className="mr-2 h-4 w-4" />
-                            Visualizar
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => downloadFile(file)}
-                          >
-                            <Download className="mr-2 h-4 w-4" />
-                            Baixar
-                          </Button>
-                        </div>
                       </div>
-                    ))}
-                  </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => viewPDF(file)}
+                          title="Visualizar arquivo"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => downloadFile(file)}
+                          title="Baixar arquivo"
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setFileToDelete(file);
+                            setDeleteDialogOpen(true);
+                          }}
+                          title="Remover arquivo"
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              </>
-            )}
+              ) : (
+                <div className="text-center py-8 border rounded-lg border-dashed">
+                  <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Nenhum arquivo vinculado a este artigo
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setUploadDialogOpen(true)}
+                  >
+                    <Upload className="mr-2 h-4 w-4" />
+                    Adicionar Primeiro Arquivo
+                  </Button>
+                </div>
+              )}
+            </div>
 
             {/* URL */}
             {article.url_landing && (
@@ -340,6 +444,40 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
           </div>
         </div>
       </DialogContent>
+
+      {/* Upload Dialog */}
+      {articleId && article && (
+        <ArticleFileUploadDialog
+          open={uploadDialogOpen}
+          onOpenChange={setUploadDialogOpen}
+          articleId={articleId}
+          projectId={article.project_id}
+          onFileUploaded={loadFiles}
+        />
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar Remoção</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja remover o arquivo "{fileToDelete?.original_filename}"?
+              Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteFile}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting ? "Removendo..." : "Remover"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }

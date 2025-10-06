@@ -6,7 +6,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Upload } from "lucide-react";
+import { Upload, Loader2 } from "lucide-react";
+import { FILE_ROLES } from "@/lib/file-constants";
+import { validateFile, detectFileFormat } from "@/lib/file-validation";
 
 interface AddArticleDialogProps {
   open: boolean;
@@ -76,6 +78,13 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
 
       // Upload PDF if provided
       if (pdfFile && article) {
+        // Validar arquivo antes do upload
+        const validation = validateFile(pdfFile);
+        if (!validation.valid) {
+          toast.error(validation.error || "Arquivo inválido");
+          return;
+        }
+
         const fileExt = pdfFile.name.split('.').pop();
         const fileName = `${projectId}/${article.id}/${Date.now()}.${fileExt}`;
         
@@ -83,17 +92,32 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
           .from("articles")
           .upload(fileName, pdfFile);
 
-        if (uploadError) throw uploadError;
+        if (uploadError) {
+          // Rollback: deletar artigo criado
+          await supabase.from("articles").delete().eq("id", article.id);
+          throw new Error("Erro ao fazer upload do arquivo: " + uploadError.message);
+        }
+
+        // Detectar formato do arquivo automaticamente
+        const detectedFormat = detectFileFormat(pdfFile);
 
         // Create article_files record
-        await supabase.from("article_files").insert([{
+        const { error: insertError } = await supabase.from("article_files").insert([{
           project_id: projectId,
           article_id: article.id,
-          file_type: "PDF",
+          file_type: detectedFormat,         // Formato detectado automaticamente
+          file_role: FILE_ROLES.MAIN,         // Arquivo principal
           storage_key: fileName,
           original_filename: pdfFile.name,
           bytes: pdfFile.size,
         }]);
+
+        if (insertError) {
+          // Rollback: deletar arquivo do storage e artigo
+          await supabase.storage.from("articles").remove([fileName]);
+          await supabase.from("articles").delete().eq("id", article.id);
+          throw new Error("Erro ao registrar arquivo: " + insertError.message);
+        }
       }
 
       toast.success("Artigo adicionado com sucesso!");

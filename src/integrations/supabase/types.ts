@@ -97,7 +97,7 @@ export type Database = {
           {
             foreignKeyName: "ai_assessment_prompts_assessment_item_id_fkey"
             columns: ["assessment_item_id"]
-            isOneToOne: false
+            isOneToOne: true
             referencedRelation: "assessment_items"
             referencedColumns: ["id"]
           },
@@ -106,6 +106,7 @@ export type Database = {
       ai_assessments: {
         Row: {
           ai_model_used: string
+          article_file_id: string | null
           article_id: string
           assessment_item_id: string
           completion_tokens: number | null
@@ -127,6 +128,7 @@ export type Database = {
         }
         Insert: {
           ai_model_used: string
+          article_file_id?: string | null
           article_id: string
           assessment_item_id: string
           completion_tokens?: number | null
@@ -148,6 +150,7 @@ export type Database = {
         }
         Update: {
           ai_model_used?: string
+          article_file_id?: string | null
           article_id?: string
           assessment_item_id?: string
           completion_tokens?: number | null
@@ -168,6 +171,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "ai_assessments_article_file_id_fkey"
+            columns: ["article_file_id"]
+            isOneToOne: false
+            referencedRelation: "article_files"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "ai_assessments_article_id_fkey"
             columns: ["article_id"]
@@ -196,46 +206,50 @@ export type Database = {
             referencedRelation: "projects"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "ai_assessments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
         ]
       }
       article_annotations: {
         Row: {
           article_id: string
           author_id: string | null
-          color: Json | null
-          comment_text: string | null
+          box_id: string | null
+          content: string
           created_at: string
+          highlight_id: string | null
           id: string
-          page_number: number
-          scaled_position: Json
-          status: Database["public"]["Enums"]["annotation_status"]
-          type: Database["public"]["Enums"]["annotation_type"]
+          is_resolved: boolean
+          parent_id: string | null
           updated_at: string
         }
         Insert: {
           article_id: string
           author_id?: string | null
-          color?: Json | null
-          comment_text?: string | null
+          box_id?: string | null
+          content: string
           created_at?: string
+          highlight_id?: string | null
           id?: string
-          page_number: number
-          scaled_position: Json
-          status?: Database["public"]["Enums"]["annotation_status"]
-          type: Database["public"]["Enums"]["annotation_type"]
+          is_resolved?: boolean
+          parent_id?: string | null
           updated_at?: string
         }
         Update: {
           article_id?: string
           author_id?: string | null
-          color?: Json | null
-          comment_text?: string | null
+          box_id?: string | null
+          content?: string
           created_at?: string
+          highlight_id?: string | null
           id?: string
-          page_number?: number
-          scaled_position?: Json
-          status?: Database["public"]["Enums"]["annotation_status"]
-          type?: Database["public"]["Enums"]["annotation_type"]
+          is_resolved?: boolean
+          parent_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -246,6 +260,92 @@ export type Database = {
             referencedRelation: "articles"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "article_annotations_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "article_annotations_box_id_fkey"
+            columns: ["box_id"]
+            isOneToOne: false
+            referencedRelation: "article_boxes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "article_annotations_highlight_id_fkey"
+            columns: ["highlight_id"]
+            isOneToOne: false
+            referencedRelation: "article_highlights"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "article_annotations_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "article_annotations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      article_boxes: {
+        Row: {
+          article_file_id: string | null
+          article_id: string
+          author_id: string | null
+          color: Json
+          created_at: string
+          id: string
+          page_number: number
+          scaled_position: Json
+          updated_at: string
+        }
+        Insert: {
+          article_file_id?: string | null
+          article_id: string
+          author_id?: string | null
+          color?: Json
+          created_at?: string
+          id?: string
+          page_number: number
+          scaled_position: Json
+          updated_at?: string
+        }
+        Update: {
+          article_file_id?: string | null
+          article_id?: string
+          author_id?: string | null
+          color?: Json
+          created_at?: string
+          id?: string
+          page_number?: number
+          scaled_position?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "article_boxes_article_file_id_fkey"
+            columns: ["article_file_id"]
+            isOneToOne: false
+            referencedRelation: "article_files"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "article_boxes_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
+            referencedRelation: "articles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "article_boxes_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
         ]
       }
       article_files: {
@@ -253,8 +353,6 @@ export type Database = {
           article_id: string
           bytes: number | null
           created_at: string
-          extracted_text_key: string | null
-          extracted_text_status: string | null
           file_type: string
           id: string
           md5: string | null
@@ -267,8 +365,6 @@ export type Database = {
           article_id: string
           bytes?: number | null
           created_at?: string
-          extracted_text_key?: string | null
-          extracted_text_status?: string | null
           file_type: string
           id?: string
           md5?: string | null
@@ -281,8 +377,6 @@ export type Database = {
           article_id?: string
           bytes?: number | null
           created_at?: string
-          extracted_text_key?: string | null
-          extracted_text_status?: string | null
           file_type?: string
           id?: string
           md5?: string | null
@@ -308,37 +402,66 @@ export type Database = {
           },
         ]
       }
-      article_pdf_versions: {
+      article_highlights: {
         Row: {
+          article_file_id: string | null
           article_id: string
+          author_id: string | null
+          color: Json
           created_at: string
-          created_by: string | null
+          dom_target: Json | null
           id: string
-          storage_key: string
-          version_name: string
+          page_number: number
+          scaled_position: Json
+          selected_text: string
+          updated_at: string
         }
         Insert: {
+          article_file_id?: string | null
           article_id: string
+          author_id?: string | null
+          color?: Json
           created_at?: string
-          created_by?: string | null
+          dom_target?: Json | null
           id?: string
-          storage_key: string
-          version_name: string
+          page_number: number
+          scaled_position: Json
+          selected_text: string
+          updated_at?: string
         }
         Update: {
+          article_file_id?: string | null
           article_id?: string
+          author_id?: string | null
+          color?: Json
           created_at?: string
-          created_by?: string | null
+          dom_target?: Json | null
           id?: string
-          storage_key?: string
-          version_name?: string
+          page_number?: number
+          scaled_position?: Json
+          selected_text?: string
+          updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "article_pdf_versions_article_id_fkey"
+            foreignKeyName: "article_highlights_article_file_id_fkey"
+            columns: ["article_file_id"]
+            isOneToOne: false
+            referencedRelation: "article_files"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "article_highlights_article_id_fkey"
             columns: ["article_id"]
             isOneToOne: false
             referencedRelation: "articles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "article_highlights_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -677,158 +800,6 @@ export type Database = {
           },
         ]
       }
-      audit_log: {
-        Row: {
-          action: string
-          actor: string | null
-          created_at: string
-          diff: Json | null
-          entity: string | null
-          entity_id: string | null
-          id: string
-          project_id: string | null
-        }
-        Insert: {
-          action: string
-          actor?: string | null
-          created_at?: string
-          diff?: Json | null
-          entity?: string | null
-          entity_id?: string | null
-          id?: string
-          project_id?: string | null
-        }
-        Update: {
-          action?: string
-          actor?: string | null
-          created_at?: string
-          diff?: Json | null
-          entity?: string | null
-          entity_id?: string | null
-          id?: string
-          project_id?: string | null
-        }
-        Relationships: []
-      }
-      extraction_forms: {
-        Row: {
-          created_at: string
-          created_by: string
-          id: string
-          is_active: boolean
-          project_id: string
-          schema: Json
-          version: number
-        }
-        Insert: {
-          created_at?: string
-          created_by: string
-          id?: string
-          is_active?: boolean
-          project_id: string
-          schema: Json
-          version: number
-        }
-        Update: {
-          created_at?: string
-          created_by?: string
-          id?: string
-          is_active?: boolean
-          project_id?: string
-          schema?: Json
-          version?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "extraction_forms_created_by_fkey"
-            columns: ["created_by"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "extraction_forms_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      extractions: {
-        Row: {
-          article_id: string
-          created_at: string
-          data: Json
-          evidence: Json
-          extractor_id: string
-          form_id: string
-          id: string
-          notes: string | null
-          project_id: string
-          row_version: number
-          status: Database["public"]["Enums"]["extraction_status"]
-          updated_at: string
-        }
-        Insert: {
-          article_id: string
-          created_at?: string
-          data?: Json
-          evidence?: Json
-          extractor_id: string
-          form_id: string
-          id?: string
-          notes?: string | null
-          project_id: string
-          row_version?: number
-          status?: Database["public"]["Enums"]["extraction_status"]
-          updated_at?: string
-        }
-        Update: {
-          article_id?: string
-          created_at?: string
-          data?: Json
-          evidence?: Json
-          extractor_id?: string
-          form_id?: string
-          id?: string
-          notes?: string | null
-          project_id?: string
-          row_version?: number
-          status?: Database["public"]["Enums"]["extraction_status"]
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "extractions_article_id_fkey"
-            columns: ["article_id"]
-            isOneToOne: false
-            referencedRelation: "articles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "extractions_extractor_id_fkey"
-            columns: ["extractor_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "extractions_form_id_fkey"
-            columns: ["form_id"]
-            isOneToOne: false
-            referencedRelation: "extraction_forms"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "extractions_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -933,6 +904,7 @@ export type Database = {
           id: string
           is_active: boolean
           name: string
+          picots_config_ai_review: Json | null
           review_context: string | null
           review_keywords: Json
           review_rationale: string | null
@@ -952,6 +924,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           name: string
+          picots_config_ai_review?: Json | null
           review_context?: string | null
           review_keywords?: Json
           review_rationale?: string | null
@@ -971,6 +944,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           name?: string
+          picots_config_ai_review?: Json | null
           review_context?: string | null
           review_keywords?: Json
           review_rationale?: string | null
@@ -996,6 +970,24 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      add_custom_vocabulary: {
+        Args: {
+          project_uuid: string
+          vocab_description?: string
+          vocab_name: string
+        }
+        Returns: string
+      }
+      calculate_assessment_discordances: {
+        Args: { project_id: string }
+        Returns: {
+          article_id: string
+          discordance_percentage: number
+          discordant_items: number
+          instrument_id: string
+          total_items: number
+        }[]
+      }
       can_access_article: {
         Args: { p_project_id: string; p_user_id: string }
         Returns: boolean
@@ -1007,6 +999,22 @@ export type Database = {
       check_project_access: {
         Args: { p_project_id: string; p_user_id: string }
         Returns: boolean
+      }
+      create_project_bypass_rls: {
+        Args: { creator_id: string; project_name: string }
+        Returns: string
+      }
+      create_project_with_creator: {
+        Args: { creator_id: string; project_name: string }
+        Returns: string
+      }
+      debug_edge_function_call: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
+      final_edge_function_test: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
       }
       gtrgm_compress: {
         Args: { "": unknown }
@@ -1028,6 +1036,10 @@ export type Database = {
         Args: { "": unknown }
         Returns: unknown
       }
+      initialize_project_vocabularies: {
+        Args: { project_uuid: string }
+        Returns: undefined
+      }
       is_project_manager: {
         Args: { p_project: string; p_user: string }
         Returns: boolean
@@ -1048,12 +1060,23 @@ export type Database = {
         Args: { "": string }
         Returns: string[]
       }
+      test_ai_assessment_comprehensive: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
+      test_ai_assessment_function: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
+      test_edge_function_call: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
     }
     Enums: {
       annotation_status: "active" | "deleted"
-      annotation_type: "text" | "area"
+      annotation_type: "text" | "area" | "highlight" | "note" | "underline"
       assessment_status: "in_progress" | "submitted" | "locked" | "archived"
-      extraction_status: "IN_PROGRESS" | "SUBMITTED" | "APPROVED" | "REJECTED"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1182,9 +1205,8 @@ export const Constants = {
   public: {
     Enums: {
       annotation_status: ["active", "deleted"],
-      annotation_type: ["text", "area"],
+      annotation_type: ["text", "area", "highlight", "note", "underline"],
       assessment_status: ["in_progress", "submitted", "locked", "archived"],
-      extraction_status: ["IN_PROGRESS", "SUBMITTED", "APPROVED", "REJECTED"],
     },
   },
 } as const
