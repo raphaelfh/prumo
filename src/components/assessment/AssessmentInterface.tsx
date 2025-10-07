@@ -1,18 +1,18 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { FileText, Bot, Settings, Play, BarChart3, Users, Clock, X, Loader2 } from "lucide-react";
+import { FileText, Bot, BarChart3, Clock, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAssessmentInstruments, useAssessmentItems } from "@/hooks/assessment/useAssessmentInstruments";
 import { useBlindReview } from "@/hooks/assessment/useBlindReview";
-import { useOtherAssessments } from "@/hooks/assessment/useOtherAssessments";
+import { useUndoRedo } from "@/hooks/assessment/useUndoRedo";
 import { InstrumentSelector } from "./InstrumentSelector";
 import { AIAssessmentConfigModal } from "./AIAssessmentConfigModal";
 import { BlindModeToggle } from "./BlindModeToggle";
 import { DiscordanceIndicator } from "./DiscordanceIndicator";
-import { OtherAssessmentsCard } from "./OtherAssessmentsCard";
+import { AssessmentHeader } from "./AssessmentHeader";
 import {
   Table,
   TableBody,
@@ -31,16 +31,33 @@ interface AssessmentInterfaceProps {
 
 export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => {
   const navigate = useNavigate();
-  const { instruments, loading: instrumentsLoading } = useAssessmentInstruments();
+  const { articleId } = useParams();
+  const { instruments } = useAssessmentInstruments();
   const [selectedInstrument, setSelectedInstrument] = useState<string | null>(null);
-  const { items: assessmentItems, loading: itemsLoading } = useAssessmentItems(selectedInstrument);
+  const { items: assessmentItems } = useAssessmentItems(selectedInstrument);
   const [articles, setArticles] = useState<any[]>([]);
   const [assessments, setAssessments] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [aiConfigModalOpen, setAiConfigModalOpen] = useState(false);
   const [batchProcessing, setBatchProcessing] = useState(false);
   const [batchProgress, setBatchProgress] = useState<BatchAssessmentProgress | null>(null);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const batchServiceRef = useRef<BatchAssessmentService | null>(null);
+
+  // Hook para undo/redo das configurações da interface
+  const {
+    setState: setInterfaceState,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+  } = useUndoRedo({
+    initialState: {
+      selectedInstrument: null as string | null,
+      selectedArticles: [] as string[],
+      selectedItems: [] as string[],
+    },
+    maxHistorySize: 50,
+  });
   
   // Hook para blind review
   const [userId, setUserId] = useState<string | null>(null);
@@ -51,12 +68,6 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
     getDiscordanceForArticle,
     refreshDiscordanceData
   } = useBlindReview(projectId, userId || '');
-
-  // Hook para outras avaliações (quando blind mode estiver inativo)
-  const {
-    otherAssessments,
-    getOtherAssessmentsForArticle
-  } = useOtherAssessments(projectId, userId || '', !isBlindMode && !!userId);
 
   useEffect(() => {
     loadArticles();
@@ -82,6 +93,22 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
     }
   }, [instruments, selectedInstrument]);
 
+  // Atualiza o estado de undo/redo quando o instrumento muda
+  useEffect(() => {
+    if (selectedInstrument) {
+      setInterfaceState((prev) => ({
+        ...prev,
+        selectedInstrument,
+      }));
+      setLastSaved(new Date());
+    }
+  }, [selectedInstrument, setInterfaceState]);
+
+  // Encontra o índice do artigo atual
+  const currentArticleIndex = articleId 
+    ? articles.findIndex(article => article.id === articleId)
+    : undefined;
+
   // Recarrega dados de discordância quando o blind mode mudar (mas não assessments)
   useEffect(() => {
     if (userId && !isBlindMode) {
@@ -102,8 +129,6 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
     } catch (error: any) {
       console.error("Error loading articles:", error);
       toast.error("Erro ao carregar artigos");
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -248,8 +273,6 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
     }
   };
 
-  const selectedInstrumentData = instruments.find((i) => i.id === selectedInstrument);
-  
   // Calcula progresso considerando assessments por artigo (não por item individual)
   const assessmentsForInstrument = assessments.filter(a => a.instrument_id === selectedInstrument);
   const completedAssessments = assessmentsForInstrument.filter(
@@ -266,7 +289,22 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
     : 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-0">
+      {/* Header da Avaliação */}
+      <AssessmentHeader
+        projectId={projectId}
+        articles={articles}
+        currentArticleIndex={currentArticleIndex}
+        onUndo={undo}
+        onRedo={redo}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        lastSaved={lastSaved}
+        progressPercentage={progressPercentage}
+      />
+
+      {/* Conteúdo principal */}
+      <div className="space-y-6 p-6">
       {/* Indicador de Processamento em Batch */}
       {batchProcessing && batchProgress && (
         <Card className="border-blue-500 bg-blue-50/50">
@@ -508,16 +546,17 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
         </Card>
       )}
 
-      {/* Modal de Configuração de IA */}
-      <AIAssessmentConfigModal
-        open={aiConfigModalOpen}
-        onOpenChange={setAiConfigModalOpen}
-        projectId={projectId}
-        instrumentId={selectedInstrument || ''}
-        articles={articles}
-        assessmentItems={assessmentItems}
-        onStartBatchProcessing={handleStartBatchProcessing}
-      />
+        {/* Modal de Configuração de IA */}
+        <AIAssessmentConfigModal
+          open={aiConfigModalOpen}
+          onOpenChange={setAiConfigModalOpen}
+          projectId={projectId}
+          instrumentId={selectedInstrument || ''}
+          articles={articles}
+          assessmentItems={assessmentItems}
+          onStartBatchProcessing={handleStartBatchProcessing}
+        />
+      </div>
     </div>
   );
 };

@@ -2,12 +2,12 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ClipboardCheck, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { ArticlesList } from "@/components/articles/ArticlesList";
 import { ProjectSettings } from "@/components/project/ProjectSettings";
 import { AssessmentInterface } from "@/components/assessment/AssessmentInterface";
+import { ExtractionInterface } from "@/components/extraction/ExtractionInterface";
 import { useProject } from "@/contexts/ProjectContext";
 
 interface Article {
@@ -125,25 +125,7 @@ export default function ProjectView() {
         );
 
       case 'extraction':
-        return (
-          <Card className="rounded-2xl">
-            <CardHeader>
-              <CardTitle>Extração de Dados</CardTitle>
-              <CardDescription>
-                Extraia dados estruturados dos artigos
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="py-12 text-center min-h-[360px] flex flex-col items-center justify-center">
-                <ClipboardCheck className="mb-4 h-12 w-12 text-muted-foreground" />
-                <h3 className="mb-2 text-lg font-medium">Em desenvolvimento</h3>
-                <p className="text-sm text-muted-foreground">
-                  Funcionalidade de extração em breve
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        );
+        return <ExtractionInterface projectId={projectId || ''} />;
 
       case 'assessment':
         return <AssessmentInterface projectId={projectId || ''} />;
