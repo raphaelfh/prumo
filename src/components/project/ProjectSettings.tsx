@@ -1,51 +1,102 @@
+/**
+ * Configurações do Projeto - Interface Moderna com Tabs
+ * 
+ * Componente principal de configurações usando layout de tabs
+ * para organizar diferentes seções de configuração do projeto.
+ */
+
 import { useState, useEffect } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
-import { Mail, Trash2, UserPlus } from "lucide-react";
+import { 
+  Info, 
+  FileText, 
+  Users, 
+  Settings as SettingsIcon,
+  Save,
+  AlertCircle
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+
+// Subcomponentes
+import { BasicInfoSection } from "./settings/BasicInfoSection";
+import { ReviewDetailsSection } from "./settings/ReviewDetailsSection";
+import { TeamMembersSection } from "./settings/TeamMembersSection";
+import { AdvancedSettingsSection } from "./settings/AdvancedSettingsSection";
+
+type ReviewType = 'interventional' | 'predictive_model' | 'diagnostic' | 'prognostic' | 'qualitative' | 'other';
 
 interface Project {
   id: string;
   name: string;
   description: string | null;
+  review_type?: ReviewType;
   review_title: string | null;
   condition_studied: string | null;
   review_rationale: string | null;
   search_strategy: string | null;
-}
-
-interface ProjectMember {
-  id: string;
-  user_id: string;
-  role: string;
-  profiles: {
-    full_name: string | null;
-    email: string | null;
-  } | null;
+  picots_config_ai_review: any;
+  settings: any;
+  eligibility_criteria: any;
+  study_design: any;
+  review_keywords: string[];
+  review_context: string | null;
 }
 
 interface ProjectSettingsProps {
   projectId: string;
 }
 
+type TabId = 'basic' | 'review' | 'team' | 'advanced';
+
+interface Tab {
+  id: TabId;
+  label: string;
+  icon: any;
+  description: string;
+}
+
+const TABS: Tab[] = [
+  {
+    id: 'basic',
+    label: 'Informações Básicas',
+    icon: Info,
+    description: 'Nome e descrição do projeto'
+  },
+  {
+    id: 'review',
+    label: 'Detalhes da Revisão',
+    icon: FileText,
+    description: 'PICOTS, estratégia de busca e justificativa'
+  },
+  {
+    id: 'team',
+    label: 'Equipe',
+    icon: Users,
+    description: 'Membros e permissões'
+  },
+  {
+    id: 'advanced',
+    label: 'Avançado',
+    icon: SettingsIcon,
+    description: 'Configurações adicionais'
+  }
+];
+
 export function ProjectSettings({ projectId }: ProjectSettingsProps) {
+  const [activeTab, setActiveTab] = useState<TabId>('basic');
   const [project, setProject] = useState<Project | null>(null);
-  const [members, setMembers] = useState<ProjectMember[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   useEffect(() => {
     loadProject();
-    loadMembers();
   }, [projectId]);
 
   const loadProject = async () => {
+    setLoading(true);
     try {
       const { data, error } = await supabase
         .from("projects")
@@ -55,29 +106,21 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
 
       if (error) throw error;
       setProject(data);
+      setHasUnsavedChanges(false);
     } catch (error: any) {
       console.error("Error loading project:", error);
       toast.error("Erro ao carregar projeto");
+    } finally {
+      setLoading(false);
     }
   };
 
-  const loadMembers = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("project_members")
-        .select("id, user_id, role, profiles!project_members_user_id_fkey(full_name, email)")
-        .eq("project_id", projectId)
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      setMembers(data as ProjectMember[] || []);
-    } catch (error: any) {
-      console.error("Error loading members:", error);
-    }
+  const handleProjectChange = (updates: Partial<Project>) => {
+    setProject(prev => prev ? { ...prev, ...updates } : null);
+    setHasUnsavedChanges(true);
   };
 
-  const handleUpdateProject = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSaveChanges = async () => {
     if (!project) return;
 
     setLoading(true);
@@ -87,243 +130,175 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
         .update({
           name: project.name,
           description: project.description,
+          review_type: project.review_type,
           review_title: project.review_title,
           condition_studied: project.condition_studied,
           review_rationale: project.review_rationale,
           search_strategy: project.search_strategy,
+          picots_config_ai_review: project.picots_config_ai_review,
+          settings: project.settings,
+          eligibility_criteria: project.eligibility_criteria,
+          study_design: project.study_design,
+          review_keywords: project.review_keywords,
+          review_context: project.review_context,
         })
         .eq("id", projectId);
 
       if (error) throw error;
-      toast.success("Projeto atualizado com sucesso!");
+      
+      toast.success("Alterações salvas com sucesso!");
+      setHasUnsavedChanges(false);
+      
+      // Recarregar para garantir sincronização
+      await loadProject();
     } catch (error: any) {
       console.error("Error updating project:", error);
-      toast.error("Erro ao atualizar projeto");
+      toast.error("Erro ao salvar alterações");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleInviteMember = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inviteEmail.trim()) return;
-
-    setLoading(true);
-    try {
-      // Check if user exists
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("email", inviteEmail.trim())
-        .single();
-
-      if (!profileData) {
-        toast.error("Usuário não encontrado");
-        return;
-      }
-
-      // Add member
-      const { error } = await supabase.from("project_members").insert([{
-        project_id: projectId,
-        user_id: profileData.id,
-        role: "reviewer",
-      }]);
-
-      if (error) {
-        if (error.code === "23505") {
-          toast.error("Usuário já é membro do projeto");
-        } else {
-          throw error;
-        }
-        return;
-      }
-
-      toast.success("Membro adicionado com sucesso!");
-      setInviteEmail("");
-      loadMembers();
-    } catch (error: any) {
-      console.error("Error inviting member:", error);
-      toast.error("Erro ao adicionar membro");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRemoveMember = async (memberId: string) => {
-    if (!confirm("Tem certeza que deseja remover este membro?")) return;
-
-    try {
-      const { error } = await supabase
-        .from("project_members")
-        .delete()
-        .eq("id", memberId);
-
-      if (error) throw error;
-      toast.success("Membro removido");
-      loadMembers();
-    } catch (error: any) {
-      console.error("Error removing member:", error);
-      toast.error("Erro ao remover membro");
-    }
-  };
+  if (loading && !project) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4"></div>
+          <p className="text-sm text-muted-foreground">Carregando configurações...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!project) return null;
 
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'basic':
+        return (
+          <BasicInfoSection
+            project={project}
+            onChange={handleProjectChange}
+          />
+        );
+      case 'review':
+        return (
+          <ReviewDetailsSection
+            project={project}
+            onChange={handleProjectChange}
+          />
+        );
+      case 'team':
+        return (
+          <TeamMembersSection
+            projectId={projectId}
+          />
+        );
+      case 'advanced':
+        return (
+          <AdvancedSettingsSection
+            project={project}
+            onChange={handleProjectChange}
+          />
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
-    <div className="space-y-6">
-      {/* Project Information */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Informações do Projeto</CardTitle>
-          <CardDescription>
-            Configure as informações básicas da sua revisão sistemática
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleUpdateProject} className="space-y-4">
+    <div className="h-full flex flex-col bg-background">
+      {/* Header com ações - Grudado no topo e wide */}
+      <div className="flex-shrink-0 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="px-8 py-4">
+          <div className="flex items-center justify-between max-w-[1920px] mx-auto">
             <div>
-              <Label htmlFor="name">Nome do Projeto *</Label>
-              <Input
-                id="name"
-                value={project.name}
-                onChange={(e) => setProject({ ...project, name: e.target.value })}
-                required
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="review_title">Título da Revisão</Label>
-              <Input
-                id="review_title"
-                value={project.review_title || ""}
-                onChange={(e) => setProject({ ...project, review_title: e.target.value })}
-                placeholder="Título completo da revisão sistemática"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="description">Descrição</Label>
-              <Textarea
-                id="description"
-                value={project.description || ""}
-                onChange={(e) => setProject({ ...project, description: e.target.value })}
-                rows={3}
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="condition_studied">Condição Estudada</Label>
-              <Input
-                id="condition_studied"
-                value={project.condition_studied || ""}
-                onChange={(e) => setProject({ ...project, condition_studied: e.target.value })}
-                placeholder="Ex: Diabetes tipo 2, Câncer de mama"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="review_rationale">Justificativa da Revisão</Label>
-              <Textarea
-                id="review_rationale"
-                value={project.review_rationale || ""}
-                onChange={(e) => setProject({ ...project, review_rationale: e.target.value })}
-                rows={4}
-                placeholder="Por que esta revisão é necessária?"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="search_strategy">Estratégia de Busca</Label>
-              <Textarea
-                id="search_strategy"
-                value={project.search_strategy || ""}
-                onChange={(e) => setProject({ ...project, search_strategy: e.target.value })}
-                rows={6}
-                placeholder="Descreva as bases de dados e termos de busca utilizados"
-              />
-            </div>
-
-            <Button type="submit" disabled={loading}>
-              {loading ? "Salvando..." : "Salvar Alterações"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-
-      {/* Team Members */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Membros da Equipe</CardTitle>
-          <CardDescription>
-            Gerencie os membros que têm acesso a este projeto
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Invite Form */}
-          <form onSubmit={handleInviteMember} className="flex gap-2">
-            <Input
-              type="email"
-              placeholder="Email do membro"
-              value={inviteEmail}
-              onChange={(e) => setInviteEmail(e.target.value)}
-              className="flex-1"
-            />
-            <Button type="submit" disabled={loading}>
-              <UserPlus className="mr-2 h-4 w-4" />
-              Adicionar
-            </Button>
-          </form>
-
-          <Separator />
-
-          {/* Members List */}
-          <div className="space-y-3">
-            {members.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                Nenhum membro ainda
+              <h1 className="text-2xl font-semibold tracking-tight">
+                Configurações do Projeto
+              </h1>
+              <p className="text-sm text-muted-foreground mt-1">
+                {TABS.find(t => t.id === activeTab)?.description}
               </p>
-            ) : (
-              members.map((member) => (
-                <div
-                  key={member.id}
-                  className="flex items-center justify-between p-3 border rounded-lg"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                      <span className="text-sm font-medium text-primary">
-                        {member.profiles?.full_name?.charAt(0) || member.profiles?.email?.charAt(0) || "?"}
-                      </span>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">
-                        {member.profiles?.full_name || "Usuário"}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {member.profiles?.email}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <Badge variant={member.role === "lead" ? "default" : "secondary"}>
-                      {member.role}
-                    </Badge>
-                    {member.role !== "lead" && (
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => handleRemoveMember(member.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ))
+            </div>
+            
+            {hasUnsavedChanges && (
+              <Button 
+                onClick={handleSaveChanges} 
+                disabled={loading}
+                size="lg"
+              >
+                <Save className="mr-2 h-4 w-4" />
+                {loading ? "Salvando..." : "Salvar Alterações"}
+              </Button>
             )}
           </div>
-        </CardContent>
-      </Card>
+
+          {hasUnsavedChanges && (
+            <Alert className="mt-4 max-w-[1920px] mx-auto" variant="default">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                Você tem alterações não salvas. Clique em "Salvar Alterações" para aplicá-las.
+              </AlertDescription>
+            </Alert>
+          )}
+        </div>
+      </div>
+
+      {/* Layout Principal: Sidebar + Conteúdo - Wide e grudado */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Sidebar de Navegação - Grudada na esquerda */}
+        <aside className="w-80 border-r bg-muted/20 flex-shrink-0 overflow-y-auto">
+          <nav className="py-6 pl-6 pr-4 space-y-2">
+            {TABS.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    "w-full flex items-start gap-4 px-4 py-3.5 rounded-lg text-left transition-all",
+                    "hover:bg-accent/50",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                    isActive 
+                      ? "bg-primary text-primary-foreground shadow-sm" 
+                      : "text-foreground"
+                  )}
+                >
+                  <Icon className={cn(
+                    "h-5 w-5 mt-0.5 flex-shrink-0",
+                    isActive ? "text-primary-foreground" : "text-muted-foreground"
+                  )} />
+                  <div className="flex-1 min-w-0">
+                    <div className={cn(
+                      "text-sm font-medium leading-tight mb-1.5",
+                      isActive && "text-primary-foreground"
+                    )}>
+                      {tab.label}
+                    </div>
+                    <div className={cn(
+                      "text-xs leading-relaxed line-clamp-2",
+                      isActive ? "text-primary-foreground/90" : "text-muted-foreground"
+                    )}>
+                      {tab.description}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </nav>
+        </aside>
+
+        {/* Área de Conteúdo - Wide com max-width responsivo */}
+        <main className="flex-1 overflow-y-auto bg-background">
+          <div className="w-full max-w-[1920px] mx-auto">
+            <div className="px-8 py-8 lg:px-12 lg:py-10">
+              {renderTabContent()}
+            </div>
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

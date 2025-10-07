@@ -3,22 +3,12 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, FileText, ClipboardCheck, BarChart3, Settings, Plus } from "lucide-react";
+import { ClipboardCheck, Plus } from "lucide-react";
 import { toast } from "sonner";
-import { AddArticleDialog } from "@/components/articles/AddArticleDialog";
 import { ArticlesList } from "@/components/articles/ArticlesList";
-import { ArticleEditDialog } from "@/components/articles/ArticleEditDialog";
 import { ProjectSettings } from "@/components/project/ProjectSettings";
 import { AssessmentInterface } from "@/components/assessment/AssessmentInterface";
-
-interface Project {
-  id: string;
-  name: string;
-  description: string | null;
-  review_title: string | null;
-  condition_studied: string | null;
-}
+import { useProject } from "@/contexts/ProjectContext";
 
 interface Article {
   id: string;
@@ -35,11 +25,12 @@ interface Article {
 export default function ProjectView() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
-  const [project, setProject] = useState<Project | null>(null);
+  
+  // Usar contexto para estado do projeto e navegação
+  const { project, setProject: setContextProject, activeTab } = useProject();
+  
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
-  const [addDialogOpen, setAddDialogOpen] = useState(false);
-  const [selectedArticleId, setSelectedArticleId] = useState<string | null>(null);
 
   useEffect(() => {
     if (projectId) {
@@ -49,6 +40,8 @@ export default function ProjectView() {
   }, [projectId]);
 
   const loadProject = async () => {
+    if (!projectId) return;
+    
     try {
       const { data, error } = await supabase
         .from("projects")
@@ -57,7 +50,7 @@ export default function ProjectView() {
         .single();
 
       if (error) throw error;
-      setProject(data);
+      setContextProject(data);
     } catch (error: any) {
       toast.error("Erro ao carregar projeto");
       console.error(error);
@@ -67,6 +60,8 @@ export default function ProjectView() {
   };
 
   const loadArticles = async () => {
+    if (!projectId) return;
+    
     try {
       const { data, error } = await supabase
         .from("articles")
@@ -101,54 +96,20 @@ export default function ProjectView() {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-secondary">
-      <header className="border-b bg-card">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => navigate("/")}>
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-            <div>
-              <h1 className="text-xl font-semibold">{project.name}</h1>
-              <p className="text-sm text-muted-foreground">
-                {project.review_title || project.description || "Projeto de revisão sistemática"}
-              </p>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <main className="container mx-auto px-4 py-8">
-        <Tabs defaultValue="articles" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="articles">
-              <FileText className="mr-2 h-4 w-4" />
-              Artigos
-            </TabsTrigger>
-            <TabsTrigger value="extraction">
-              <ClipboardCheck className="mr-2 h-4 w-4" />
-              Extração
-            </TabsTrigger>
-            <TabsTrigger value="assessment">
-              <BarChart3 className="mr-2 h-4 w-4" />
-              Avaliação
-            </TabsTrigger>
-            <TabsTrigger value="settings">
-              <Settings className="mr-2 h-4 w-4" />
-              Configurações
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="articles" className="mt-6">
-            <div className="flex justify-between items-center mb-6">
+  // Renderizar conteúdo baseado na aba ativa
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'articles':
+        return (
+          <div className="space-y-6">
+            <div className="flex justify-between items-center">
               <div>
                 <h2 className="text-2xl font-semibold">Artigos</h2>
                 <p className="text-sm text-muted-foreground mt-1">
                   Gerencie os artigos da sua revisão sistemática
                 </p>
               </div>
-              <Button onClick={() => setAddDialogOpen(true)}>
+              <Button onClick={() => navigate(`/projects/${projectId}/articles/add`)}>
                 <Plus className="mr-2 h-4 w-4" />
                 Adicionar Artigo
               </Button>
@@ -156,55 +117,60 @@ export default function ProjectView() {
 
             <ArticlesList 
               articles={articles} 
-              onArticleClick={setSelectedArticleId}
-              projectId={projectId!}
+              onArticleClick={(articleId) => navigate(`/projects/${projectId}/articles/${articleId}/edit`)}
+              projectId={projectId || ''}
               onArticlesChange={loadArticles}
             />
-          </TabsContent>
+          </div>
+        );
 
-          <TabsContent value="extraction" className="mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Extração de Dados</CardTitle>
-                <CardDescription>
-                  Extraia dados estruturados dos artigos
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="py-12 text-center">
-                  <ClipboardCheck className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
-                  <h3 className="mb-2 text-lg font-medium">Em desenvolvimento</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Funcionalidade de extração em breve
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+      case 'extraction':
+        return (
+          <Card className="rounded-2xl">
+            <CardHeader>
+              <CardTitle>Extração de Dados</CardTitle>
+              <CardDescription>
+                Extraia dados estruturados dos artigos
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="py-12 text-center min-h-[360px] flex flex-col items-center justify-center">
+                <ClipboardCheck className="mb-4 h-12 w-12 text-muted-foreground" />
+                <h3 className="mb-2 text-lg font-medium">Em desenvolvimento</h3>
+                <p className="text-sm text-muted-foreground">
+                  Funcionalidade de extração em breve
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        );
 
-          <TabsContent value="assessment" className="mt-6">
-            <AssessmentInterface projectId={projectId!} />
-          </TabsContent>
+      case 'assessment':
+        return <AssessmentInterface projectId={projectId || ''} />;
 
-          <TabsContent value="settings" className="mt-6">
-            <ProjectSettings projectId={projectId!} />
-          </TabsContent>
-        </Tabs>
-      </main>
+      case 'settings':
+        return <ProjectSettings projectId={projectId || ''} />;
 
-      <AddArticleDialog
-        open={addDialogOpen}
-        onOpenChange={setAddDialogOpen}
-        projectId={projectId!}
-        onArticleAdded={loadArticles}
-      />
+      default:
+        return null;
+    }
+  };
 
-      <ArticleEditDialog
-        open={!!selectedArticleId}
-        onOpenChange={(open) => !open && setSelectedArticleId(null)}
-        articleId={selectedArticleId}
-        onArticleUpdated={loadArticles}
-      />
+  return (
+    <div className="h-full bg-background">
+      {activeTab === 'settings' ? (
+        // Layout wide para configurações - sem containers limitantes
+        <div className="h-full">
+          {renderContent()}
+        </div>
+      ) : (
+        // Layout com container para outras abas
+        <div className="container mx-auto px-6 py-6 lg:px-10 lg:py-8 h-full">
+          <div className="mx-auto w-full max-w-[1200px] h-full">
+            {renderContent()}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

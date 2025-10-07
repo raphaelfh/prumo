@@ -2,10 +2,11 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { BookOpen, Plus, LogOut, FileText, ClipboardCheck, BarChart3 } from "lucide-react";
+import { BookOpen, Plus, FileText, ClipboardCheck, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 
 interface Project {
@@ -18,7 +19,7 @@ interface Project {
 }
 
 export default function Dashboard() {
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -101,36 +102,21 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Carregando projetos...</p>
+      <AppLayout>
+        <div className="flex min-h-screen items-center justify-center">
+          <div className="text-center">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Carregando projetos...</p>
+          </div>
         </div>
-      </div>
+      </AppLayout>
     );
   }
 
   return (
-    <div className="min-h-screen bg-secondary">
-      <header className="border-b bg-card">
-        <div className="container mx-auto flex items-center justify-between px-4 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
-              <BookOpen className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <div>
-              <h1 className="text-xl font-semibold">Revisões Sistemáticas</h1>
-              <p className="text-sm text-muted-foreground">Gestão de projetos científicos</p>
-            </div>
-          </div>
-          <Button variant="outline" onClick={signOut}>
-            <LogOut className="mr-2 h-4 w-4" />
-            Sair
-          </Button>
-        </div>
-      </header>
-
-      <main className="container mx-auto px-4 py-8">
+    <AppLayout>
+      <div className="min-h-screen bg-secondary">
+        <main className="container mx-auto px-4 py-8">
         <div className="mb-8 flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold">Meus Projetos</h2>
@@ -197,7 +183,8 @@ export default function Dashboard() {
             ))}
           </div>
         )}
-      </main>
-    </div>
+        </main>
+      </div>
+    </AppLayout>
   );
 }

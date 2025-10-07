@@ -58,7 +58,6 @@ interface ArticleDetailDialogProps {
 export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDetailDialogProps) {
   const [article, setArticle] = useState<Article | null>(null);
   const [files, setFiles] = useState<ArticleFile[]>([]);
-  const [loading, setLoading] = useState(false);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<ArticleFile | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -74,7 +73,6 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
   const loadArticle = async () => {
     if (!articleId) return;
     
-    setLoading(true);
     try {
       const { data, error } = await supabase
         .from("articles")
@@ -87,8 +85,6 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
     } catch (error: any) {
       console.error("Error loading article:", error);
       toast.error("Erro ao carregar artigo");
-    } finally {
-      setLoading(false);
     }
   };
 
