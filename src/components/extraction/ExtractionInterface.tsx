@@ -5,73 +5,44 @@
  * para um projeto específico, incluindo templates, instâncias e valores.
  */
 
-import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   ClipboardCheck, 
-  Database, 
   FileText, 
   Brain, 
   Download,
-  Settings,
-  Plus,
-  Users,
   CheckCircle,
   AlertCircle
 } from 'lucide-react';
-import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
-import { 
-  ProjectExtractionTemplate, 
-  ExtractionInstance, 
-  ExtractedValue,
-  ExtractionEntityDisplay 
-} from '@/types/extraction';
+import { ProjectExtractionTemplate } from '@/types/extraction';
 import { useExtractionTemplates } from '@/hooks/extraction/useExtractionTemplates';
-import { useExtractionInstances } from '@/hooks/extraction/useExtractionInstances';
-import { useExtractedValues } from '@/hooks/extraction/useExtractedValues';
-import { TemplateManager } from './TemplateManager';
-import { InstanceEditor } from './InstanceEditor';
-import { AISuggestionsPanel } from './AISuggestionsPanel';
-import { ExtractionExport } from './ExtractionExport';
+import { ArticleExtractionList } from './ArticleExtractionList';
+import { TemplateConfigEditor } from './TemplateConfigEditor';
+import { useAuth } from '@/contexts/AuthContext';
+import { checkAndRepairProject } from '@/utils/repairProjectTemplates';
+import { ImportTemplateDialog } from './dialogs';
 
 interface ExtractionInterfaceProps {
   projectId: string;
 }
 
 export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
+  const { user } = useAuth();
   const [activeTemplate, setActiveTemplate] = useState<ProjectExtractionTemplate | null>(null);
-  const [selectedArticleId, setSelectedArticleId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'extract' | 'ai' | 'export'>('overview');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'extraction' | 'ai' | 'configuration'>('dashboard');
+  const [repairAttempted, setRepairAttempted] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
 
-  // Hooks para gerenciar estado - apenas templates por enquanto
+  // Hook para gerenciar templates
   const { 
     templates, 
     loading: templatesLoading, 
-    error: templatesError,
-    cloneTemplate,
-    createCustomTemplate 
+    error: templatesError
   } = useExtractionTemplates({ projectId });
-
-  // Placeholder para outros hooks - serão carregados quando necessário
-  const instances: any[] = [];
-  const values: any[] = [];
-  const instancesLoading = false;
-  const valuesLoading = false;
-  const instancesError = null;
-  const valuesError = null;
-
-  // Placeholder functions
-  const createInstance = async () => null;
-  const updateInstance = async () => null;
-  const deleteInstance = async () => false;
-  const saveValue = async () => null;
-  const updateValue = async () => null;
-  const deleteValue = async () => false;
 
   // Carregar template ativo quando templates são carregados
   useEffect(() => {
@@ -79,211 +50,77 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
       const defaultTemplate = templates.find(t => t.is_active) || templates[0];
       setActiveTemplate(defaultTemplate);
     }
-  }, [templates]); // Removido activeTemplate da dependência para evitar loops
+  }, [templates]);
 
-  // Verificar se há template disponível
+  // Verificar e reparar projeto automaticamente quando necessário
   useEffect(() => {
-    if (templates.length === 0 && !templatesLoading) {
-      toast.info('Nenhum template de extração encontrado. Clone um template padrão para começar.');
+    if (activeTemplate && user && !repairAttempted && activeTab === 'configuration') {
+      setRepairAttempted(true);
+      console.log('🔧 Verificando se projeto precisa de reparo...');
+      checkAndRepairProject(projectId, user.id).then(() => {
+        // Opcional: recarregar templates após reparo
+        console.log('Reparo verificado/executado');
+      });
     }
-  }, [templates, templatesLoading]);
+  }, [activeTemplate, user, activeTab, projectId, repairAttempted]);
 
-  // Calcular estatísticas
-  const getStatistics = () => {
-    if (!activeTemplate || !selectedArticleId) {
-      return {
-        totalInstances: 0,
-        completedInstances: 0,
-        totalFields: 0,
-        completedFields: 0,
-        completionPercentage: 0
-      };
-    }
-
-    const totalInstances = instances.length;
-    const completedInstances = instances.filter(instance => {
-      // Lógica para determinar se uma instância está completa
-      return true; // Placeholder
-    }).length;
-
-    const totalFields = instances.length * 5; // Placeholder - deveria contar campos reais
-    const completedFields = values.length;
-    const completionPercentage = totalFields > 0 ? Math.round((completedFields / totalFields) * 100) : 0;
-
-    return {
-      totalInstances,
-      completedInstances,
-      totalFields,
-      completedFields,
-      completionPercentage
-    };
-  };
-
-  const stats = getStatistics();
-
-  // Renderizar conteúdo da aba overview
-  const renderOverview = () => (
+  // Renderizar aba Dashboard
+  const renderDashboard = () => (
     <div className="space-y-6">
-      {/* Estatísticas */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Estatísticas Principais - Layout Minimalista */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Template Ativo</CardTitle>
-            <Database className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {activeTemplate?.name || 'Nenhum'}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {activeTemplate?.framework || ''}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Instâncias</CardTitle>
+            <CardTitle className="text-sm font-medium">Artigos</CardTitle>
             <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {stats.completedInstances}/{stats.totalInstances}
-            </div>
+            <div className="text-2xl font-bold">-</div>
             <p className="text-xs text-muted-foreground">
-              instâncias criadas
+              no projeto
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Campos Preenchidos</CardTitle>
+            <CardTitle className="text-sm font-medium">Extrações Iniciadas</CardTitle>
             <CheckCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {stats.completedFields}/{stats.totalFields}
-            </div>
+            <div className="text-2xl font-bold">-</div>
             <p className="text-xs text-muted-foreground">
-              {stats.completionPercentage}% completo
+              artigos em extração
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Status</CardTitle>
+            <CardTitle className="text-sm font-medium">Progresso Geral</CardTitle>
             <AlertCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              <Badge variant={stats.completionPercentage >= 80 ? 'default' : 'secondary'}>
-                {stats.completionPercentage >= 80 ? 'Quase Pronto' : 'Em Progresso'}
-              </Badge>
-            </div>
+            <div className="text-2xl font-bold">-</div>
             <p className="text-xs text-muted-foreground">
-              último update hoje
+              completude média
             </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Ações rápidas */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Ações Rápidas</CardTitle>
-          <CardDescription>
-            Gerencie templates e inicie extrações
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Button 
-              onClick={() => setActiveTab('extract')}
-              disabled={!activeTemplate}
-              className="h-auto p-4 flex flex-col items-start space-y-2"
-            >
-              <Plus className="h-5 w-5" />
-              <div className="text-left">
-                <div className="font-medium">Iniciar Extração</div>
-                <div className="text-sm opacity-80">
-                  Comece a extrair dados dos artigos
-                </div>
-              </div>
-            </Button>
-
-            <Button 
-              onClick={() => setActiveTab('ai')}
-              variant="outline"
-              disabled={!activeTemplate}
-              className="h-auto p-4 flex flex-col items-start space-y-2"
-            >
-              <Brain className="h-5 w-5" />
-              <div className="text-left">
-                <div className="font-medium">Sugestões IA</div>
-                <div className="text-sm opacity-80">
-                  Use IA para acelerar a extração
-                </div>
-              </div>
-            </Button>
-
-            <Button 
-              onClick={() => setActiveTab('export')}
-              variant="outline"
-              disabled={!activeTemplate || stats.completedFields === 0}
-              className="h-auto p-4 flex flex-col items-start space-y-2"
-            >
-              <Download className="h-5 w-5" />
-              <div className="text-left">
-                <div className="font-medium">Exportar Dados</div>
-                <div className="text-sm opacity-80">
-                  Baixe os dados extraídos
-                </div>
-              </div>
-            </Button>
-
-            <Button 
-              onClick={() => setActiveTab('templates')}
-              variant="outline"
-              className="h-auto p-4 flex flex-col items-start space-y-2"
-            >
-              <Settings className="h-5 w-5" />
-              <div className="text-left">
-                <div className="font-medium">Gerenciar Templates</div>
-                <div className="text-sm opacity-80">
-                  Configure templates de extração
-                </div>
-              </div>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Template atual */}
-      {activeTemplate && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Template Ativo</CardTitle>
-            <CardDescription>
-              Configurações do template em uso
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="font-medium">{activeTemplate.name}</span>
-                <Badge variant="outline">{activeTemplate.framework}</Badge>
-              </div>
-              {activeTemplate.description && (
-                <p className="text-sm text-muted-foreground">
-                  {activeTemplate.description}
+      {/* Mensagem se não houver template */}
+      {!activeTemplate && !templatesLoading && (
+        <Card className="border-yellow-200 bg-yellow-50">
+          <CardContent className="pt-6">
+            <div className="flex items-center space-x-3">
+              <AlertCircle className="h-5 w-5 text-yellow-600" />
+              <div>
+                <p className="font-medium text-yellow-900">Nenhum template configurado</p>
+                <p className="text-sm text-yellow-700 mt-1">
+                  Um template CHARMS deveria ter sido criado automaticamente. 
+                  Se não foi, entre em contato com o suporte.
                 </p>
-              )}
-              <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-                <span>Versão: {activeTemplate.version}</span>
-                <span>•</span>
-                <span>Criado em: {new Date(activeTemplate.created_at).toLocaleDateString()}</span>
               </div>
             </div>
           </CardContent>
@@ -292,65 +129,85 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     </div>
   );
 
-  // Renderizar conteúdo das outras abas
+  // Renderizar conteúdo das abas
   const renderTabContent = () => {
     switch (activeTab) {
-      case 'overview':
-        return renderOverview();
+      case 'dashboard':
+        return renderDashboard();
       
-      case 'extract':
-        return (
-          <InstanceEditor
-            projectId={projectId}
-            template={activeTemplate}
-            instances={instances}
-            values={values}
-            onInstanceCreate={createInstance}
-            onInstanceUpdate={updateInstance}
-            onInstanceDelete={deleteInstance}
-            onValueSave={saveValue}
-            onValueUpdate={updateValue}
-            onValueDelete={deleteValue}
-            loading={instancesLoading || valuesLoading}
+      case 'extraction':
+        return activeTemplate ? (
+          <ArticleExtractionList 
+            projectId={projectId} 
+            templateId={activeTemplate.id}
           />
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>Nenhum Template Ativo</CardTitle>
+              <CardDescription>
+                Um template CHARMS deveria ter sido criado automaticamente ao criar este projeto.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                Entre em contato com o suporte se este problema persistir.
+              </p>
+            </CardContent>
+          </Card>
         );
       
       case 'ai':
         return (
-          <AISuggestionsPanel
-            projectId={projectId}
-            articleId={selectedArticleId}
-            template={activeTemplate}
-            instances={instances}
-            values={values}
-          />
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Brain className="h-5 w-5" />
+                Sugestões de IA
+              </CardTitle>
+              <CardDescription>
+                Use inteligência artificial para acelerar a extração de dados
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-center py-12">
+                <Brain className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h4 className="font-medium mb-2">Funcionalidade em desenvolvimento</h4>
+                <p className="text-sm text-muted-foreground">
+                  As sugestões de IA serão implementadas em breve
+                </p>
+              </div>
+            </CardContent>
+          </Card>
         );
       
-      case 'export':
-        return (
-          <ExtractionExport
+      case 'configuration':
+        return activeTemplate ? (
+          <TemplateConfigEditor
             projectId={projectId}
-            template={activeTemplate}
-            instances={instances}
-            values={values}
+            templateId={activeTemplate.id}
           />
-        );
-      
-      case 'templates':
-        return (
-          <TemplateManager
-            projectId={projectId}
-            templates={templates}
-            activeTemplate={activeTemplate}
-            onTemplateSelect={setActiveTemplate}
-            onTemplateClone={cloneTemplate}
-            onTemplateCreate={createCustomTemplate}
-            loading={templatesLoading}
-          />
+        ) : (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Nenhum Template Ativo</CardTitle>
+                  <CardDescription>
+                    Importe um template global para começar a configurar a extração de dados.
+                  </CardDescription>
+                </div>
+                <Button onClick={() => setShowImportDialog(true)}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Importar Template
+                </Button>
+              </div>
+            </CardHeader>
+          </Card>
         );
       
       default:
-        return renderOverview();
+        return renderDashboard();
     }
   };
 
@@ -374,18 +231,17 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)}>
-        <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="overview">Visão Geral</TabsTrigger>
-          <TabsTrigger value="extract" disabled={!activeTemplate}>
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+          <TabsTrigger value="extraction" disabled={!activeTemplate}>
             Extração
           </TabsTrigger>
           <TabsTrigger value="ai" disabled={!activeTemplate}>
             IA
           </TabsTrigger>
-          <TabsTrigger value="export" disabled={!activeTemplate}>
-            Exportar
+          <TabsTrigger value="configuration">
+            Configuração
           </TabsTrigger>
-          <TabsTrigger value="templates">Templates</TabsTrigger>
         </TabsList>
 
         <TabsContent value={activeTab} className="mt-6">
@@ -394,31 +250,40 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
       </Tabs>
 
       {/* Loading state */}
-      {(templatesLoading || instancesLoading || valuesLoading) && (
+      {templatesLoading && (
         <div className="flex items-center justify-center py-12">
           <div className="text-center">
             <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4"></div>
-            <p className="text-muted-foreground">Carregando dados de extração...</p>
+            <p className="text-muted-foreground">Carregando templates...</p>
           </div>
         </div>
       )}
 
       {/* Error state */}
-      {(templatesError || instancesError || valuesError) && (
+      {templatesError && (
         <Card className="border-destructive">
           <CardContent className="pt-6">
             <div className="flex items-center space-x-2 text-destructive">
               <AlertCircle className="h-5 w-5" />
               <div>
-                <p className="font-medium">Erro ao carregar dados</p>
-                <p className="text-sm">
-                  {templatesError || instancesError || valuesError}
-                </p>
+                <p className="font-medium">Erro ao carregar templates</p>
+                <p className="text-sm">{templatesError}</p>
               </div>
             </div>
           </CardContent>
         </Card>
       )}
+
+      {/* Dialog para importar template global */}
+      <ImportTemplateDialog
+        projectId={projectId}
+        open={showImportDialog}
+        onOpenChange={setShowImportDialog}
+        onTemplateImported={() => {
+          // Recarregar página para atualizar templates
+          window.location.reload();
+        }}
+      />
     </div>
   );
 }

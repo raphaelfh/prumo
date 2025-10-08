@@ -3,7 +3,7 @@ import { Document, Page } from 'react-pdf';
 import { usePDFStore } from '@/stores/usePDFStore';
 import { useAnnotations } from '@/hooks/useAnnotations';
 import { useAnnotationSync } from '@/hooks/useAnnotationSync';
-import { usePDFPerformance } from '@/hooks/usePDFPerformance';
+// Removido import do hook de performance
 import { PDFToolbar } from './PDFToolbar';
 import { AnnotationOverlay } from './AnnotationOverlay';
 import { TextSelectionOverlay } from './TextSelectionOverlay';
@@ -44,12 +44,7 @@ export function PDFViewer({ articleId, className }: PDFViewerProps) {
   // Hook de sincronização automática com o banco de dados
   useAnnotationSync({ articleId });
   
-  // Hook para otimizações de performance
-  const { 
-    isLargePDF, 
-    getOptimizedRenderingProps, 
-    getRenderingConfig 
-  } = usePDFPerformance({ numPages, currentPage, scale });
+  // Removido hook de otimizações - causava problema de renderização
 
   // Load PDF and annotations
   useEffect(() => {
@@ -82,16 +77,25 @@ export function PDFViewer({ articleId, className }: PDFViewerProps) {
       // Definir articleId no store
       setArticleId(articleId);
 
-      // Fetch PDF file
+      // Fetch PDF file - busca apenas o arquivo MAIN (principal)
       const { data: files, error: filesError } = await supabase
         .from('article_files')
-        .select('storage_key')
+        .select('storage_key, file_role, original_filename')
         .eq('article_id', articleId)
-        .ilike('file_type', '%pdf%')
+        .eq('file_role', 'MAIN')
         .maybeSingle();
 
       if (filesError) throw filesError;
-      if (!files) throw new Error('PDF não encontrado');
+      if (!files) {
+        console.error('Nenhum arquivo MAIN encontrado para article_id:', articleId);
+        throw new Error('PDF principal não encontrado para este artigo');
+      }
+
+      console.log('Arquivo MAIN encontrado:', { 
+        storage_key: files.storage_key, 
+        file_role: files.file_role,
+        filename: files.original_filename 
+      });
 
       // Generate signed URL
       const { data: urlData, error: urlError } = await supabase.storage
@@ -107,7 +111,7 @@ export function PDFViewer({ articleId, className }: PDFViewerProps) {
       
       toast({
         title: 'PDF carregado',
-        description: 'Documento carregado com sucesso',
+        description: files.original_filename || 'Documento carregado com sucesso',
       });
     } catch (err: any) {
       console.error('Erro ao carregar PDF:', err);
@@ -157,31 +161,17 @@ export function PDFViewer({ articleId, className }: PDFViewerProps) {
             error={<ErrorState message="Erro ao carregar documento" />}
             className="flex justify-center p-4 md:p-8"
           >
-            <div 
-              className="relative inline-block shadow-2xl"
-              style={getOptimizedRenderingProps().transform ? {
-                transform: getOptimizedRenderingProps().transform,
-                transformOrigin: getOptimizedRenderingProps().transformOrigin,
-              } : undefined}
-            >
+            <div className="relative inline-block shadow-2xl">
               <Page
                 pageNumber={currentPage}
-                scale={getOptimizedRenderingProps().scale}
+                scale={scale}
                 rotate={rotation}
-                renderTextLayer={getRenderingConfig().renderTextLayer}
-                renderAnnotationLayer={getRenderingConfig().renderAnnotationLayer}
+                renderTextLayer={true}
+                renderAnnotationLayer={true}
                 className="bg-white"
                 loading={<div className="w-full h-[800px] bg-muted animate-pulse" />}
                 onLoadSuccess={handlePageLoadSuccess}
-                devicePixelRatio={getRenderingConfig().devicePixelRatio}
               />
-              
-              {/* Indicador de PDF grande */}
-              {isLargePDF && (
-                <div className="absolute top-2 right-2 bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs">
-                  PDF Grande - Otimizações ativas
-                </div>
-              )}
               
               {/* Overlay de Seleção de Texto - Deve ficar abaixo */}
               {pageSize.width > 0 && (

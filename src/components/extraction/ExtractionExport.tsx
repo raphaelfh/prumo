@@ -5,7 +5,7 @@
  * (CSV, JSON, Excel) com opções de filtros e formatação.
  */
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,7 +14,6 @@ import {
   FileText, 
   Database, 
   Settings,
-  CheckCircle,
   AlertCircle
 } from 'lucide-react';
 import { 
@@ -31,7 +30,7 @@ interface ExtractionExportProps {
 }
 
 export function ExtractionExport({
-  projectId,
+  projectId: _projectId,
   template,
   instances,
   values

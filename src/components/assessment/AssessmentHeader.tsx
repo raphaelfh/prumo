@@ -1,178 +1,87 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/button";
-import { ArrowLeft, Undo2, Redo2, ChevronLeft, ChevronRight } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { useNavigate } from 'react-router-dom';
+import { useProject } from '@/contexts/ProjectContext';
 
 interface AssessmentHeaderProps {
-  projectId: string;
-  articles: any[];
-  currentArticleIndex?: number;
-  onUndo?: () => void;
-  onRedo?: () => void;
-  canUndo?: boolean;
-  canRedo?: boolean;
-  lastSaved?: Date | null;
-  progressPercentage?: number;
-  className?: string;
+  projectName?: string;
+  articleTitle?: string;
 }
 
-export const AssessmentHeader = ({
-  projectId,
-  articles,
-  currentArticleIndex,
-  onUndo,
-  onRedo,
-  canUndo = false,
-  canRedo = false,
-  lastSaved,
-  progressPercentage = 0,
-  className,
-}: AssessmentHeaderProps) => {
+export function AssessmentHeader({ projectName, articleTitle }: AssessmentHeaderProps) {
   const navigate = useNavigate();
-  const [saveStatus, setSaveStatus] = useState<string>("");
+  const { project } = useProject();
 
-  // Atualiza status de salvamento
-  useEffect(() => {
-    if (!lastSaved) {
-      setSaveStatus("Não salvo");
-      return;
-    }
-
-    const now = new Date();
-    const diffInSeconds = Math.floor((now.getTime() - lastSaved.getTime()) / 1000);
-
-    if (diffInSeconds < 60) {
-      setSaveStatus("Salvo há menos de um minuto");
-    } else if (diffInSeconds < 3600) {
-      const minutes = Math.floor(diffInSeconds / 60);
-      setSaveStatus(`Salvo há ${minutes} minuto${minutes > 1 ? 's' : ''}`);
-    } else {
-      const hours = Math.floor(diffInSeconds / 3600);
-      setSaveStatus(`Salvo há ${hours} hora${hours > 1 ? 's' : ''}`);
-    }
-  }, [lastSaved]);
-
-  // Atalhos de teclado para undo/redo
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "z") {
-        e.preventDefault();
-        if (e.shiftKey) {
-          onRedo?.();
-        } else {
-          onUndo?.();
-        }
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onUndo, onRedo]);
-
-  const handleGoBack = () => {
-    navigate(`/projects/${projectId}`);
+  const handleBackToProjects = () => {
+    navigate('/projects');
   };
 
-  const handlePreviousArticle = () => {
-    if (currentArticleIndex !== undefined && currentArticleIndex > 0) {
-      const prevArticle = articles[currentArticleIndex - 1];
-      if (prevArticle) {
-        navigate(`/projects/${projectId}/assessment/${prevArticle.id}`);
-      }
+  const handleBackToProject = () => {
+    if (project?.id) {
+      navigate(`/projects/${project.id}`);
     }
   };
-
-  const handleNextArticle = () => {
-    if (currentArticleIndex !== undefined && currentArticleIndex < articles.length - 1) {
-      const nextArticle = articles[currentArticleIndex + 1];
-      if (nextArticle) {
-        navigate(`/projects/${projectId}/assessment/${nextArticle.id}`);
-      }
-    }
-  };
-
-  const canGoPrevious = currentArticleIndex !== undefined && currentArticleIndex > 0;
-  const canGoNext = currentArticleIndex !== undefined && currentArticleIndex < articles.length - 1;
 
   return (
-    <header className={cn("sticky top-0 z-40 w-full border-b bg-background", className)}>
-      <div className="mx-auto flex h-14 w-full max-w-[1400px] items-center gap-3 px-4">
-        {/* Botão de voltar - extremo esquerdo */}
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={handleGoBack}
-          className="shrink-0"
-          title="Voltar para o projeto"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-
-        {/* Undo/Redo - centro esquerdo */}
-        <div className="flex items-center gap-1">
+    <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="container flex h-16 items-center">
+        <div className="flex items-center space-x-2">
+          {/* Botão Voltar */}
           <Button
             variant="ghost"
-            size="icon"
-            onClick={onUndo}
-            disabled={!canUndo}
-            title="Desfazer (Ctrl+Z)"
-            className="shrink-0"
+            size="sm"
+            onClick={handleBackToProjects}
+            className="flex items-center gap-1 text-muted-foreground hover:text-foreground"
           >
-            <Undo2 className="h-4 w-4" />
+            <ChevronLeft className="h-4 w-4" />
+            Voltar
           </Button>
+
+          {/* Separador */}
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+
+          {/* Breadcrumb Projetos */}
           <Button
             variant="ghost"
-            size="icon"
-            onClick={onRedo}
-            disabled={!canRedo}
-            title="Refazer (Ctrl+Shift+Z)"
-            className="shrink-0"
+            size="sm"
+            onClick={handleBackToProjects}
+            className="text-muted-foreground hover:text-foreground"
           >
-            <Redo2 className="h-4 w-4" />
+            Projetos
           </Button>
-        </div>
 
-        {/* Status de salvamento - centro */}
-        <div className="flex-1 flex items-center justify-center">
-          <span className="text-sm text-muted-foreground">{saveStatus}</span>
-        </div>
+          {/* Separador */}
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
 
-        {/* Navegação entre artigos - centro direita */}
-        {articles.length > 1 && (
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handlePreviousArticle}
-              disabled={!canGoPrevious}
-              title="Artigo anterior"
-              className="shrink-0"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <span className="text-sm text-muted-foreground px-2">
-              {currentArticleIndex !== undefined ? `${currentArticleIndex + 1}/${articles.length}` : ''}
-            </span>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleNextArticle}
-              disabled={!canGoNext}
-              title="Próximo artigo"
-              className="shrink-0"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        )}
+          {/* Breadcrumb Projeto */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleBackToProject}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            {projectName || project?.name || 'Projeto'}
+          </Button>
 
-        {/* Progresso - extremo direita */}
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-sm text-muted-foreground">Progresso:</span>
-          <span className="text-sm font-medium">{progressPercentage}%</span>
+          {/* Separador */}
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+
+          {/* Breadcrumb Atual - Avaliação */}
+          <span className="text-sm font-medium text-foreground">
+            Avaliação
+          </span>
+
+          {/* Título do artigo se disponível */}
+          {articleTitle && (
+            <>
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium text-foreground truncate max-w-[300px]">
+                {articleTitle}
+              </span>
+            </>
+          )}
         </div>
       </div>
-    </header>
+    </div>
   );
-};
+}

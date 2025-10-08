@@ -32,7 +32,7 @@ interface Project {
   id: string;
   name: string;
   description: string | null;
-  review_type?: ReviewType;
+  review_type?: ReviewType | null;
   review_title: string | null;
   condition_studied: string | null;
   review_rationale: string | null;
@@ -41,7 +41,7 @@ interface Project {
   settings: any;
   eligibility_criteria: any;
   study_design: any;
-  review_keywords: string[];
+  review_keywords: any;
   review_context: string | null;
 }
 

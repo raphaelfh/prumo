@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { toast } from 'sonner';
 import { validateFile, generateStorageKey, detectFileFormat } from '@/lib/file-validation';
 import { FILE_ERROR_MESSAGES } from '@/lib/file-constants';
 import type { FileUploadResult, FileUploadProgress, ArticleFileInsert } from '@/types/article-files';

@@ -57,7 +57,7 @@ export const useAIAssessmentConfig = ({
         component: 'useAIAssessmentConfig',
         action: 'loadConfig',
         projectId,
-        instrumentId,
+        metadata: { instrumentId },
       });
     } finally {
       setLoading(false);
@@ -89,7 +89,7 @@ export const useAIAssessmentConfig = ({
         component: 'useAIAssessmentConfig',
         action: 'saveConfig',
         projectId,
-        instrumentId,
+        metadata: { instrumentId },
       });
       throw err;
     }
@@ -120,7 +120,7 @@ export const useAIAssessmentConfig = ({
         component: 'useAIAssessmentConfig',
         action: 'updateConfig',
         projectId,
-        instrumentId,
+        metadata: { instrumentId },
       });
       throw err;
     }
@@ -149,7 +149,7 @@ export const useAIAssessmentConfig = ({
         component: 'useAIAssessmentConfig',
         action: 'deleteConfig',
         projectId,
-        instrumentId,
+        metadata: { instrumentId },
       });
       throw err;
     }

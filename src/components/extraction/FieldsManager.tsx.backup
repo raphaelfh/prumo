@@ -1,0 +1,247 @@
+/**
+ * Gerenciador de Campos de uma Seção
+ * 
+ * Permite visualizar e editar os campos de uma seção/entidade
+ */
+
+import { useEffect, useState } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Edit2, Save, X, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+import type { ExtractionField } from '@/types/extraction';
+
+interface FieldsManagerProps {
+  entityTypeId: string;
+}
+
+export function FieldsManager({ entityTypeId }: FieldsManagerProps) {
+  const [fields, setFields] = useState<ExtractionField[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editData, setEditData] = useState<Partial<ExtractionField>>({});
+
+  // DEBUG: Log entity type ID
+  useEffect(() => {
+    console.log('🔍 FieldsManager montado para entity_type:', entityTypeId);
+  }, []);
+
+  useEffect(() => {
+    console.log('🔄 FieldsManager useEffect disparado:', { entityTypeId });
+    if (entityTypeId) {
+      loadFields();
+    } else {
+      console.warn('⚠️ entityTypeId está undefined');
+    }
+  }, [entityTypeId]);
+
+  const loadFields = async () => {
+    setLoading(true);
+    
+    try {
+      console.log('📥 Carregando campos para entity_type:', entityTypeId);
+      
+      const { data, error } = await supabase
+        .from('extraction_fields')
+        .select('*')
+        .eq('entity_type_id', entityTypeId)
+        .order('sort_order', { ascending: true });
+
+      if (error) {
+        console.error('❌ Erro ao buscar campos:', error);
+        throw error;
+      }
+
+      console.log('✅ Campos carregados do banco:', data?.length || 0, data);
+      setFields((data as ExtractionField[]) || []);
+    } catch (err: any) {
+      console.error('❌ ERRO ao carregar campos:', err);
+      toast.error(`Erro ao carregar campos: ${err.message}`);
+    } finally {
+      setLoading(false);
+      console.log('🏁 FieldsManager loading finalizado');
+    }
+  };
+
+  const handleStartEdit = (field: ExtractionField) => {
+    setEditingId(field.id);
+    setEditData({
+      label: field.label,
+      description: field.description,
+      is_required: field.is_required,
+    });
+  };
+
+  const handleSaveEdit = async (fieldId: string) => {
+    try {
+      const { error } = await supabase
+        .from('extraction_fields')
+        .update(editData)
+        .eq('id', fieldId);
+
+      if (error) throw error;
+
+      toast.success('Campo atualizado com sucesso');
+      setEditingId(null);
+      setEditData({});
+      await loadFields();
+    } catch (err: any) {
+      console.error('Erro ao atualizar campo:', err);
+      toast.error(`Erro: ${err.message}`);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditData({});
+  };
+
+  const getFieldTypeLabel = (type: string) => {
+    const labels: Record<string, string> = {
+      text: 'Texto',
+      number: 'Número',
+      date: 'Data',
+      select: 'Seleção',
+      multiselect: 'Múltipla Escolha',
+      boolean: 'Sim/Não',
+    };
+    return labels[type] || type;
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center p-4">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (fields.length === 0) {
+    return (
+      <Card>
+        <CardContent className="pt-6">
+          <p className="text-sm text-muted-foreground text-center">
+            Nenhum campo encontrado nesta seção
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-[50px]">#</TableHead>
+            <TableHead>Campo</TableHead>
+            <TableHead>Tipo</TableHead>
+            <TableHead className="text-center">Obrigatório</TableHead>
+            <TableHead className="text-right">Ações</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {fields.map((field, index) => (
+            <TableRow key={field.id}>
+              <TableCell className="font-mono text-xs text-muted-foreground">
+                {index + 1}
+              </TableCell>
+              <TableCell>
+                {editingId === field.id ? (
+                  <div className="space-y-2">
+                    <Input
+                      value={editData.label || ''}
+                      onChange={(e) => setEditData({ ...editData, label: e.target.value })}
+                      placeholder="Label do campo"
+                    />
+                    <Textarea
+                      value={editData.description || ''}
+                      onChange={(e) => setEditData({ ...editData, description: e.target.value })}
+                      placeholder="Descrição"
+                      rows={2}
+                      className="text-sm"
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <div className="font-medium">{field.label}</div>
+                    {field.description && (
+                      <div className="text-sm text-muted-foreground mt-1">
+                        {field.description}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </TableCell>
+              <TableCell>
+                <Badge variant="secondary" className="font-mono text-xs">
+                  {getFieldTypeLabel(field.field_type)}
+                </Badge>
+              </TableCell>
+              <TableCell className="text-center">
+                {editingId === field.id ? (
+                  <Switch
+                    checked={editData.is_required ?? field.is_required}
+                    onCheckedChange={(checked) => 
+                      setEditData({ ...editData, is_required: checked })
+                    }
+                  />
+                ) : (
+                  <Badge variant={field.is_required ? 'default' : 'outline'}>
+                    {field.is_required ? 'Sim' : 'Não'}
+                  </Badge>
+                )}
+              </TableCell>
+              <TableCell className="text-right">
+                {editingId === field.id ? (
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => handleSaveEdit(field.id)}
+                      className="gap-1"
+                    >
+                      <Save className="h-3 w-3" />
+                      Salvar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleCancelEdit}
+                      className="gap-1"
+                    >
+                      <X className="h-3 w-3" />
+                      Cancelar
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => handleStartEdit(field)}
+                    className="gap-1"
+                  >
+                    <Edit2 className="h-3 w-3" />
+                    Editar
+                  </Button>
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}

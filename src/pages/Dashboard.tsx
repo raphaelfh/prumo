@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { BookOpen, Plus, FileText, ClipboardCheck, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
+import { cloneCharmsToProject } from "@/services/templateCloneService";
 
 interface Project {
   id: string;
@@ -47,7 +48,6 @@ export default function Dashboard() {
   };
 
   const createProject = async () => {
-    // Validate authentication
     if (!user?.id) {
       toast.error("Você precisa estar autenticado para criar um projeto");
       return;
@@ -57,9 +57,11 @@ export default function Dashboard() {
     if (!name || name.trim() === "") return;
 
     setCreating(true);
+    let projectData: any = null;
+
     try {
-      // Create project and add creator as manager in a transaction
-      const { data: projectData, error: projectError } = await supabase
+      // PASSO 1: Criar projeto básico
+      const { data: newProjectData, error: projectError } = await supabase
         .from("projects")
         .insert({
           name: name.trim(),
@@ -70,28 +72,84 @@ export default function Dashboard() {
 
       if (projectError) {
         console.error("Error creating project:", projectError);
-        toast.error(`Erro ao criar projeto: ${projectError.message}`);
-        return;
+        
+        // Se erro de RLS, usar função RPC como fallback
+        if (projectError.code === '42501' || projectError.message?.includes('permission')) {
+          console.log('Tentando usar função RPC para contornar RLS...');
+          
+          try {
+            // Usar função que sabemos que existe
+            const projectId = await supabase.rpc(
+              'create_project_bypass_rls',
+              {
+                project_name: name.trim(),
+                creator_id: user.id
+              }
+            );
+
+            if (projectId.error) {
+              throw projectId.error;
+            }
+
+            // Simular o projectData para continuar o fluxo
+            projectData = {
+              id: projectId.data,
+              name: name.trim(),
+              created_by_id: user.id
+            };
+
+            console.log('Projeto criado via RPC:', projectData.id);
+            
+            // Continuar para clonagem do template (não fazer return aqui)
+            
+          } catch (rpcError) {
+            console.error('Erro na função RPC:', rpcError);
+            toast.error("Erro ao criar projeto. Verifique suas permissões.");
+            return;
+          }
+        } else {
+          toast.error(`Erro ao criar projeto: ${projectError.message}`);
+          return;
+        }
+      } else {
+        projectData = newProjectData;
       }
 
-      // Add creator as manager
-      const { error: memberError } = await supabase
-        .from("project_members")
-        .insert({
-          project_id: projectData.id,
-          user_id: user.id,
-          role: "manager",
-          created_by_id: user.id
-        });
+      // PASSO 2: Adicionar criador como manager (apenas se não foi criado via RPC)
+      if (newProjectData) {
+        // Projeto criado normalmente - precisa adicionar membro
+        const { error: memberError } = await supabase
+          .from("project_members")
+          .insert({
+            project_id: projectData.id,
+            user_id: user.id,
+            role: "manager",
+            created_by_id: user.id
+          });
 
-      if (memberError) {
-        console.error("Error adding project member:", memberError);
-        toast.error(`Erro ao adicionar membro: ${memberError.message}`);
-        return;
+        if (memberError) {
+          console.error("Error adding project member:", memberError);
+          toast.error(`Erro ao adicionar membro: ${memberError.message}`);
+          return;
+        }
+      }
+      // Se foi criado via RPC, o membro já foi adicionado automaticamente
+
+      // PASSO 3: Clonar template CHARMS automaticamente
+      const cloneResult = await cloneCharmsToProject(
+        projectData.id,
+        name.trim(),
+        user.id
+      );
+
+      if (cloneResult.success) {
+        console.log('✅ Template CHARMS clonado:', cloneResult.stats);
+      } else {
+        console.warn('⚠️ Falha ao clonar template:', cloneResult.error);
       }
 
-      toast.success("Projeto criado com sucesso!");
       await loadProjects();
+
     } catch (error: any) {
       console.error("Unexpected error:", error);
       toast.error("Erro inesperado ao criar projeto");

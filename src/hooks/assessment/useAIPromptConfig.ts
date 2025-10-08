@@ -73,7 +73,7 @@ export const useAIPromptConfig = ({
       captureError(err instanceof Error ? err : new Error(errorMessage), {
         component: 'useAIPromptConfig',
         action: 'loadPromptConfig',
-        assessmentItemId,
+        metadata: { assessmentItemId },
       });
     } finally {
       setLoading(false);
@@ -103,7 +103,7 @@ export const useAIPromptConfig = ({
       captureError(err instanceof Error ? err : new Error(errorMessage), {
         component: 'useAIPromptConfig',
         action: 'savePromptConfig',
-        assessmentItemId,
+        metadata: { assessmentItemId },
       });
       throw err;
     }
@@ -133,7 +133,7 @@ export const useAIPromptConfig = ({
       captureError(err instanceof Error ? err : new Error(errorMessage), {
         component: 'useAIPromptConfig',
         action: 'updatePromptConfig',
-        assessmentItemId,
+        metadata: { assessmentItemId },
       });
       throw err;
     }
@@ -161,7 +161,7 @@ export const useAIPromptConfig = ({
       captureError(err instanceof Error ? err : new Error(errorMessage), {
         component: 'useAIPromptConfig',
         action: 'deletePromptConfig',
-        assessmentItemId,
+        metadata: { assessmentItemId },
       });
       throw err;
     }
@@ -188,7 +188,7 @@ export const useAIPromptConfig = ({
       captureError(err instanceof Error ? err : new Error(errorMessage), {
         component: 'useAIPromptConfig',
         action: 'resetToDefaults',
-        assessmentItemId,
+        metadata: { assessmentItemId },
       });
       throw err;
     }

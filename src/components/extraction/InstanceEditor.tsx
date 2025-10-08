@@ -5,7 +5,6 @@
  * para extração de dados de artigos.
  */
 
-import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -24,7 +23,7 @@ import {
 } from '@/types/extraction';
 
 interface InstanceEditorProps {
-  projectId: string;
+  projectId?: string; // Mantido para compatibilidade, mas não usado atualmente
   template: ProjectExtractionTemplate | null;
   instances: ExtractionInstance[];
   values: ExtractedValue[];
@@ -38,16 +37,16 @@ interface InstanceEditorProps {
 }
 
 export function InstanceEditor({
-  projectId,
+  projectId: _projectId,
   template,
   instances,
   values,
-  onInstanceCreate,
-  onInstanceUpdate,
-  onInstanceDelete,
-  onValueSave,
-  onValueUpdate,
-  onValueDelete,
+  onInstanceCreate: _onInstanceCreate,
+  onInstanceUpdate: _onInstanceUpdate,
+  onInstanceDelete: _onInstanceDelete,
+  onValueSave: _onValueSave,
+  onValueUpdate: _onValueUpdate,
+  onValueDelete: _onValueDelete,
   loading
 }: InstanceEditorProps) {
   if (!template) {

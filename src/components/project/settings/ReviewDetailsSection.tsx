@@ -36,7 +36,7 @@ interface Project {
   review_rationale: string | null;
   search_strategy: string | null;
   review_context: string | null;
-  review_type?: ReviewType;
+  review_type?: ReviewType | null;
   picots_config_ai_review: {
     population?: PICOTSItem;
     index_models?: PICOTSItem;

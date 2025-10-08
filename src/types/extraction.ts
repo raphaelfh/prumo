@@ -3,7 +3,11 @@
  * 
  * Este arquivo define todas as interfaces e tipos necessários
  * para o sistema de extração de dados estruturados.
+ * 
+ * Inclui schemas Zod para validação runtime.
  */
+
+import { z } from 'zod';
 
 // =================== ENUMS ===================
 
@@ -277,4 +281,119 @@ export interface ExtractionValidationResult {
   valid: boolean;
   errors: ExtractionValidationError[];
   warnings: ExtractionValidationError[];
+}
+
+// =================== ZOD SCHEMAS (Validação Runtime) ===================
+
+/**
+ * Schema Zod para validação de campo de extração
+ * Usado ao criar ou editar campos
+ */
+export const ExtractionFieldSchema = z.object({
+  name: z.string()
+    .regex(/^[a-z][a-z0-9_]*$/, 'Nome deve estar em snake_case (ex: campo_exemplo)')
+    .min(2, 'Nome deve ter no mínimo 2 caracteres')
+    .max(50, 'Nome deve ter no máximo 50 caracteres'),
+  
+  label: z.string()
+    .min(1, 'Label é obrigatório')
+    .max(100, 'Label deve ter no máximo 100 caracteres'),
+  
+  description: z.string()
+    .max(500, 'Descrição deve ter no máximo 500 caracteres')
+    .optional()
+    .nullable(),
+  
+  field_type: z.enum(['text', 'number', 'date', 'select', 'multiselect', 'boolean'], {
+    errorMap: () => ({ message: 'Tipo de campo inválido' }),
+  }),
+  
+  is_required: z.boolean().default(false),
+  
+  unit: z.string()
+    .max(20, 'Unidade deve ter no máximo 20 caracteres')
+    .optional()
+    .nullable(),
+  
+  allowed_values: z.array(z.string())
+    .min(1, 'Deve ter pelo menos um valor permitido')
+    .max(100, 'Máximo de 100 valores permitidos')
+    .optional()
+    .nullable()
+    .refine(
+      (values) => {
+        if (!values) return true;
+        const unique = new Set(values);
+        return unique.size === values.length;
+      },
+      { message: 'Valores permitidos não podem ter duplicatas' }
+    ),
+  
+  validation_schema: z.record(z.any())
+    .optional()
+    .nullable(),
+  
+  sort_order: z.number()
+    .int('Ordem deve ser um número inteiro')
+    .min(0, 'Ordem deve ser maior ou igual a 0')
+    .default(0),
+});
+
+/**
+ * Tipo inferido do schema Zod
+ */
+export type ExtractionFieldInput = z.infer<typeof ExtractionFieldSchema>;
+
+/**
+ * Schema parcial para atualização (todos os campos opcionais)
+ */
+export const ExtractionFieldUpdateSchema = ExtractionFieldSchema.partial();
+export type ExtractionFieldUpdate = z.infer<typeof ExtractionFieldUpdateSchema>;
+
+/**
+ * Tipo para inserção no banco (adiciona entity_type_id)
+ */
+export interface ExtractionFieldInsert extends Omit<ExtractionFieldInput, 'sort_order'> {
+  entity_type_id: string;
+  sort_order?: number;
+}
+
+// =================== TIPOS PARA GERENCIAMENTO DE CAMPOS ===================
+
+/**
+ * Resultado da validação de um campo antes de operações
+ */
+export interface FieldValidationResult {
+  canDelete: boolean;
+  canUpdate: boolean;
+  canChangeType: boolean;
+  extractedValuesCount: number;
+  affectedArticles: string[];
+  message?: string;
+}
+
+/**
+ * Resultado de operações de campo
+ */
+export interface FieldOperationResult {
+  success: boolean;
+  field?: ExtractionField;
+  error?: string;
+}
+
+/**
+ * Role do usuário no projeto (para controle de permissões)
+ */
+export type ProjectMemberRole = 'manager' | 'reviewer' | 'viewer' | 'consensus';
+
+/**
+ * Resultado de verificação de permissões
+ */
+export interface PermissionCheckResult {
+  canView: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+  canCreate: boolean;
+  role: ProjectMemberRole | null;
+  message?: string;
 }

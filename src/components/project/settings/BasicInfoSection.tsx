@@ -15,7 +15,7 @@ type ReviewType = 'interventional' | 'predictive_model' | 'diagnostic' | 'progno
 interface Project {
   name: string;
   description: string | null;
-  review_type?: ReviewType;
+  review_type?: ReviewType | null;
 }
 
 interface BasicInfoSectionProps {

@@ -3,8 +3,7 @@ import { VirtualList } from '@/components/performance/VirtualList';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Button } from '@/components/ui/button';
-import { FileText, Eye, CheckCircle, Clock } from 'lucide-react';
+import { FileText, CheckCircle, Clock } from 'lucide-react';
 import { withListMemo } from '@/components/performance/ReactMemoWrapper';
 
 interface Article {
@@ -28,12 +27,16 @@ const ArticleItem: React.FC<{
   article: Article;
   onArticleClick: (articleId: string) => void;
 }> = React.memo(({ article, onArticleClick }) => {
-  const getStatusColor = (status?: string) => {
+  const getStatusBadgeProps = (status?: string) => {
     switch (status) {
-      case 'completed': return 'bg-green-100 text-green-800';
-      case 'in_progress': return 'bg-blue-100 text-blue-800';
-      case 'not_started': return 'bg-gray-100 text-gray-800';
-      default: return 'bg-gray-100 text-gray-800';
+      case 'completed': 
+        return { variant: 'default' as const, className: 'bg-green-500' };
+      case 'in_progress': 
+        return { variant: 'default' as const, className: 'bg-blue-500' };
+      case 'not_started': 
+        return { variant: 'secondary' as const, className: '' };
+      default: 
+        return { variant: 'secondary' as const, className: '' };
     }
   };
 
@@ -45,6 +48,8 @@ const ArticleItem: React.FC<{
     }
   };
 
+  const badgeProps = getStatusBadgeProps(article.status);
+
   return (
     <Card className="mb-4 hover:shadow-md transition-shadow cursor-pointer" 
           onClick={() => onArticleClick(article.id)}>
@@ -53,9 +58,9 @@ const ArticleItem: React.FC<{
           <CardTitle className="text-lg line-clamp-2 flex-1">
             {article.title}
           </CardTitle>
-          <Badge className={`ml-2 ${getStatusColor(article.status)}`}>
+          <Badge {...badgeProps} className={`ml-2 gap-1 ${badgeProps.className}`}>
             {getStatusIcon(article.status)}
-            <span className="ml-1 capitalize">
+            <span className="capitalize">
               {article.status?.replace('_', ' ') || 'Not Started'}
             </span>
           </Badge>
@@ -104,7 +109,7 @@ const OptimizedArticlesListComponent: React.FC<OptimizedArticlesListProps> = ({
   height = 600,
   className = '',
 }) => {
-  const renderItem = React.useCallback((article: Article, index: number) => (
+  const renderItem = React.useCallback((article: Article) => (
     <ArticleItem
       key={article.id}
       article={article}
@@ -112,7 +117,7 @@ const OptimizedArticlesListComponent: React.FC<OptimizedArticlesListProps> = ({
     />
   ), [onArticleClick]);
 
-  const keyExtractor = React.useCallback((article: Article, index: number) => 
+  const keyExtractor = React.useCallback((article: Article) => 
     article.id, []
   );
 
@@ -145,5 +150,5 @@ const OptimizedArticlesListComponent: React.FC<OptimizedArticlesListProps> = ({
 // Componente otimizado com memoização
 export const OptimizedArticlesList = withListMemo(
   OptimizedArticlesListComponent,
-  (props) => props.articles.length.toString()
+  (prevProps, nextProps) => prevProps.articles.length === nextProps.articles.length
 );

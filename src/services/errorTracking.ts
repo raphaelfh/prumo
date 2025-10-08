@@ -141,14 +141,14 @@ class ErrorTrackingService {
       name: `ai.${model}.tokens`,
       value: tokens,
       unit: 'count',
-      context: { ...context, model },
+      context: { ...context, metadata: { ...context?.metadata, model } },
     });
 
     this.captureMetric({
       name: `ai.${model}.duration`,
       value: duration,
       unit: 'ms',
-      context: { ...context, model },
+      context: { ...context, metadata: { ...context?.metadata, model } },
     });
   }
 
