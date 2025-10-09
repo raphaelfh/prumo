@@ -3,7 +3,8 @@
  * Single Source of Truth para activeTab
  */
 
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 export interface Project {
   id: string;
@@ -28,8 +29,18 @@ interface ProjectProviderProps {
 }
 
 export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) => {
+  const [searchParams] = useSearchParams();
   const [project, setProject] = useState<Project | null>(null);
   const [activeTab, setActiveTab] = useState<string>('articles');
+
+  // Ler tab da URL ao montar
+  useEffect(() => {
+    const tabFromUrl = searchParams.get('tab');
+    if (tabFromUrl && ['articles', 'extraction', 'assessment', 'settings'].includes(tabFromUrl)) {
+      console.log('📌 Definindo tab inicial da URL:', tabFromUrl);
+      setActiveTab(tabFromUrl);
+    }
+  }, []); // Roda apenas na montagem
 
   // Função centralizada para mudança de tabs
   // Preparada para adicionar analytics, validações, etc.

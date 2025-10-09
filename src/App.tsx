@@ -13,6 +13,7 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import ProjectView from "./pages/ProjectView";
 import AssessmentFullScreen from "./pages/AssessmentFullScreen";
+import ExtractionFullScreen from "./pages/ExtractionFullScreen";
 import AddArticle from "./pages/AddArticle";
 import EditArticle from "./pages/EditArticle";
 import NotFound from "./pages/NotFound";
@@ -63,6 +64,16 @@ const App = () => {
                       <ProtectedRoute>
                         <ErrorBoundary context="Avaliação Completa">
                           <AssessmentFullScreen />
+                        </ErrorBoundary>
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/projects/:projectId/extraction/:articleId"
+                    element={
+                      <ProtectedRoute>
+                        <ErrorBoundary context="Extração de Dados">
+                          <ExtractionFullScreen />
                         </ErrorBoundary>
                       </ProtectedRoute>
                     }

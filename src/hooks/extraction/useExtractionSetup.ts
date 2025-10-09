@@ -153,32 +153,80 @@ export function useExtractionSetup() {
     templateId: string
   ): Promise<ExtractionProgress | null> => {
     try {
-      const { data, error } = await supabase
-        .rpc('calculate_extraction_progress', {
-          p_article_id: articleId,
-          p_template_id: templateId
+      console.log('📊 Calculando progresso para artigo:', articleId);
+
+      // 1. Buscar entity types e campos do template
+      const { data: entityTypes, error: etError } = await supabase
+        .from('extraction_entity_types')
+        .select(`
+          id,
+          fields:extraction_fields(id, is_required)
+        `)
+        .eq('project_template_id', templateId);
+
+      if (etError) throw etError;
+
+      // Contar campos obrigatórios e opcionais
+      let totalRequired = 0;
+      let totalOptional = 0;
+      const requiredFieldIds: string[] = [];
+      const optionalFieldIds: string[] = [];
+
+      (entityTypes || []).forEach(et => {
+        (et.fields || []).forEach(field => {
+          if (field.is_required) {
+            totalRequired++;
+            requiredFieldIds.push(field.id);
+          } else {
+            totalOptional++;
+            optionalFieldIds.push(field.id);
+          }
         });
+      });
 
-      if (error) {
-        console.error('Erro ao calcular progresso:', error);
-        throw error;
-      }
+      // 2. Buscar valores extraídos para este artigo
+      const { data: extractedValues, error: valuesError } = await supabase
+        .from('extracted_values')
+        .select('field_id, value')
+        .eq('article_id', articleId);
 
-      if (!data || data.length === 0) {
-        return null;
-      }
+      if (valuesError) throw valuesError;
 
-      const result = data[0];
-      return {
-        totalRequiredFields: result.total_required_fields || 0,
-        completedRequiredFields: result.completed_required_fields || 0,
-        totalOptionalFields: result.total_optional_fields || 0,
-        completedOptionalFields: result.completed_optional_fields || 0,
-        progressPercentage: result.progress_percentage || 0,
+      // Contar campos preenchidos (valor não vazio)
+      const filledFieldIds = new Set(
+        (extractedValues || [])
+          .filter(v => {
+            const val = v.value?.value ?? v.value;
+            return val !== null && val !== undefined && val !== '';
+          })
+          .map(v => v.field_id)
+      );
+
+      const completedRequired = requiredFieldIds.filter(id => 
+        filledFieldIds.has(id)
+      ).length;
+
+      const completedOptional = optionalFieldIds.filter(id => 
+        filledFieldIds.has(id)
+      ).length;
+
+      const progressPercentage = totalRequired > 0
+        ? Math.round((completedRequired / totalRequired) * 100)
+        : 0;
+
+      const result = {
+        totalRequiredFields: totalRequired,
+        completedRequiredFields: completedRequired,
+        totalOptionalFields: totalOptional,
+        completedOptionalFields: completedOptional,
+        progressPercentage
       };
 
+      console.log('✅ Progresso calculado:', result);
+      return result;
+
     } catch (err: any) {
-      console.error('Erro ao calcular progresso:', err);
+      console.error('❌ Erro ao calcular progresso:', err);
       return null;
     }
   }, []);
