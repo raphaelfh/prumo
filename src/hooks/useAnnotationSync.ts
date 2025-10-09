@@ -3,7 +3,7 @@ import { usePDFStore } from '@/stores/usePDFStore';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import type { Annotation, HighlightAnnotation, AreaAnnotation } from '@/types/annotations-new';
-import { isHighlight, isArea } from '@/types/annotations-new';
+import { isHighlight, isArea, colorToRGB } from '@/types/annotations-new';
 
 interface UseAnnotationSyncProps {
   articleId: string;
@@ -19,13 +19,29 @@ export function useAnnotationSync({ articleId }: UseAnnotationSyncProps) {
 
   // Função para converter Annotation para formato do banco
   const annotationToDbFormat = useCallback((annotation: Annotation) => {
+    // Validar articleId
+    if (!annotation.articleId || !articleId) {
+      console.error('❌ [Sync] articleId faltando:', { annotation: annotation.id, articleId });
+      throw new Error('articleId é obrigatório para salvar anotação');
+    }
+    
+    // ✨ Para highlights com textRanges, salvar no scaled_position.ranges
+    const scaledPosition = { ...annotation.position };
+    if (isHighlight(annotation) && annotation.textRanges && annotation.textRanges.length > 0) {
+      scaledPosition.ranges = annotation.textRanges;
+      console.log('📐 [Sync] Salvando highlight com', annotation.textRanges.length, 'ranges');
+    }
+    
+    // ✅ Converter cor de hex para RGB (formato esperado pelo banco)
+    const colorRGB = colorToRGB(annotation.color, annotation.opacity);
+    
     const baseData = {
       id: annotation.id,
-      article_id: articleId,
+      article_id: annotation.articleId, // Usar articleId da annotation
       page_number: annotation.pageNumber,
-      scaled_position: annotation.position,
-      color: { ...annotation.color, opacity: annotation.opacity },
-      author_id: annotation.authorId,
+      scaled_position: scaledPosition,
+      color: colorRGB, // ✅ Formato RGB correto
+      author_id: annotation.authorId || null,
       created_at: annotation.createdAt,
       updated_at: annotation.updatedAt,
     };
@@ -43,23 +59,37 @@ export function useAnnotationSync({ articleId }: UseAnnotationSyncProps) {
   // Função para salvar highlight no banco
   const saveHighlight = useCallback(async (annotation: HighlightAnnotation) => {
     try {
-      console.log('💾 Salvando highlight no banco:', annotation.id);
+      console.log('💾 [Sync] Salvando highlight no banco:', annotation.id);
       
       const dbData = annotationToDbFormat(annotation);
       
-      const { error } = await supabase
+      // Logs detalhados para debug
+      console.log('📦 [Sync] Dados para salvar:', {
+        id: dbData.id,
+        article_id: dbData.article_id,
+        page_number: dbData.page_number,
+        selected_text: dbData.selected_text?.substring(0, 50) + '...',
+        color: dbData.color,
+        author_id: dbData.author_id,
+        has_ranges: !!dbData.scaled_position.ranges,
+        ranges_count: dbData.scaled_position.ranges?.length || 0,
+      });
+      
+      const { data, error } = await supabase
         .from('article_highlights')
         .upsert(dbData, { 
           onConflict: 'id',
           ignoreDuplicates: false 
-        });
+        })
+        .select();
 
       if (error) {
-        console.error('❌ Erro ao salvar highlight:', error);
+        console.error('❌ [Sync] Erro ao salvar highlight:', error);
+        console.error('❌ [Sync] Dados que causaram erro:', dbData);
         throw error;
       }
 
-      console.log('✅ Highlight salvo com sucesso:', annotation.id);
+      console.log('✅ [Sync] Highlight salvo com sucesso:', annotation.id, data);
     } catch (err) {
       console.error('❌ Erro ao salvar highlight:', err);
       throw err;
@@ -69,23 +99,35 @@ export function useAnnotationSync({ articleId }: UseAnnotationSyncProps) {
   // Função para salvar box no banco
   const saveBox = useCallback(async (annotation: AreaAnnotation) => {
     try {
-      console.log('💾 Salvando box no banco:', annotation.id);
+      console.log('💾 [Sync] Salvando box no banco:', annotation.id);
       
       const dbData = annotationToDbFormat(annotation);
       
-      const { error } = await supabase
+      // Logs detalhados para debug
+      console.log('📦 [Sync] Dados do box:', {
+        id: dbData.id,
+        article_id: dbData.article_id,
+        page_number: dbData.page_number,
+        position: dbData.scaled_position,
+        color: dbData.color,
+        author_id: dbData.author_id,
+      });
+      
+      const { data, error } = await supabase
         .from('article_boxes')
         .upsert(dbData, { 
           onConflict: 'id',
           ignoreDuplicates: false 
-        });
+        })
+        .select();
 
       if (error) {
-        console.error('❌ Erro ao salvar box:', error);
+        console.error('❌ [Sync] Erro ao salvar box:', error);
+        console.error('❌ [Sync] Dados que causaram erro:', dbData);
         throw error;
       }
 
-      console.log('✅ Box salvo com sucesso:', annotation.id);
+      console.log('✅ [Sync] Box salvo com sucesso:', annotation.id, data);
     } catch (err) {
       console.error('❌ Erro ao salvar box:', err);
       throw err;

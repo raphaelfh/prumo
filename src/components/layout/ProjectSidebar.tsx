@@ -4,18 +4,25 @@
  */
 
 import React from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
 import { 
   FileText, 
   ClipboardCheck, 
   BarChart3, 
-  Settings, 
-  ChevronLeft,
-  Folder
+  Settings,
+  Folder,
+  ChevronDown,
+  Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { useProjectsList } from '@/hooks/useProjectsList';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface ProjectSidebarProps {
   isCollapsed: boolean;
@@ -65,12 +72,7 @@ export const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
   projectName,
   className,
 }) => {
-  const navigate = useNavigate();
-
-  const handleBackToDashboard = () => {
-    navigate('/');
-  };
-
+  const { projects, loading, switchProject } = useProjectsList();
   return (
     <aside 
       className={cn(
@@ -83,21 +85,63 @@ export const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
     >
       {/* Header do Sidebar */}
       <div className="p-4 border-b">
-        <div className="flex items-center gap-2">
-          <div className="p-2 rounded-lg bg-primary/10">
-            <Folder className="h-5 w-5 text-primary" />
-          </div>
-          {!isCollapsed && (
-            <div className="min-w-0 flex-1">
-              <h2 className="text-sm font-semibold truncate">
-                {projectName || 'Projeto'}
-              </h2>
-              <p className="text-xs text-muted-foreground truncate">
-                {projectName ? 'Projeto de revisão sistemática' : 'Carregando...'}
-              </p>
+        {!isCollapsed ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                className="w-full justify-start gap-2 h-auto p-0 hover:bg-transparent hover:text-foreground"
+              >
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <Folder className="h-5 w-5 text-primary" />
+                </div>
+                <div className="min-w-0 flex-1 text-left">
+                  <h2 className="text-sm font-semibold truncate">
+                    {projectName || 'Projeto'}
+                  </h2>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {projectName ? 'Projeto de revisão sistemática' : 'Carregando...'}
+                  </p>
+                </div>
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-64">
+              {loading ? (
+                <div className="flex items-center justify-center p-4">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="ml-2 text-sm text-muted-foreground">
+                    Carregando projetos...
+                  </span>
+                </div>
+              ) : (
+                projects.map((project) => (
+                  <DropdownMenuItem
+                    key={project.id}
+                    onClick={() => switchProject(project.id)}
+                    className="flex flex-col items-start gap-1 p-3"
+                  >
+                    <div className="flex items-center gap-2 w-full">
+                      <Folder className="h-4 w-4 text-muted-foreground" />
+                      <span className="font-medium truncate flex-1">
+                        {project.name}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate w-full ml-6">
+                      {project.description || 'Projeto de revisão sistemática'}
+                    </p>
+                  </DropdownMenuItem>
+                ))
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <div className="flex items-center justify-center">
+            <div className="p-2 rounded-lg bg-primary/10">
+              <Folder className="h-5 w-5 text-primary" />
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Navegação Principal */}
@@ -140,24 +184,6 @@ export const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
           );
         })}
       </nav>
-
-      {/* Footer do Sidebar */}
-      <div className="p-4 border-t">
-        <Button
-          variant="outline"
-          className={cn(
-            "w-full justify-start gap-3 h-auto py-3",
-            isCollapsed && "justify-center p-3"
-          )}
-          onClick={handleBackToDashboard}
-          title={isCollapsed ? "Voltar ao Dashboard" : undefined}
-        >
-          <ChevronLeft className="h-4 w-4 flex-shrink-0" />
-          {!isCollapsed && (
-            <span className="truncate">Voltar ao Dashboard</span>
-          )}
-        </Button>
-      </div>
     </aside>
   );
 };

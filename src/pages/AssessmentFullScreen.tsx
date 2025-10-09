@@ -391,7 +391,7 @@ export default function AssessmentFullScreen() {
           minSize={showPDF ? 30 : 0}
           className={showPDF ? "" : "hidden"}
         >
-          <PDFViewer articleId={articleId || ""} />
+          <PDFViewer articleId={articleId || ""} projectId={projectId || ""} />
         </ResizablePanel>
       </ResizablePanelGroup>
     </div>

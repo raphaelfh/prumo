@@ -70,7 +70,7 @@ export async function cloneTemplateToProject(
 
     // PASSO 1: Buscar template global
     const { data: globalTemplate, error: globalError } = await supabase
-      .from('extraction_templates')
+      .from('extraction_templates_global')
       .select('*')
       .eq('id', globalTemplateId)
       .eq('is_global', true)
@@ -292,7 +292,7 @@ async function cleanupIncompleteTemplate(templateId: string): Promise<void> {
 export async function findCharmsTemplate(): Promise<string | null> {
   try {
     const { data, error } = await supabase
-      .from('extraction_templates')
+      .from('extraction_templates_global')
       .select('id')
       .eq('is_global', true)
       .eq('framework', 'CHARMS')

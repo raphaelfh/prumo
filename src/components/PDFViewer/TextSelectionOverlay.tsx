@@ -44,15 +44,11 @@ export function TextSelectionOverlay({ pageNumber, pageWidth, pageHeight }: Text
       return;
     }
 
-    // Verificar se a seleção está dentro da página atual
-    const pageElement = overlayRef.current?.closest('.react-pdf__Page');
-    if (!pageElement || !pageElement.contains(range.commonAncestorContainer)) {
-      console.log('⚠️ Seleção fora da página atual');
-      return;
-    }
-
     // Obter retângulos da seleção
     const rects = Array.from(range.getClientRects());
+    
+    // Validação simples: se temos retângulos, a seleção é válida
+    // REMOVIDO: validação de pageElement (causava false positives)
     
     if (rects.length > 0) {
       console.log('✅ Texto selecionado com sucesso:', { 
@@ -80,7 +76,8 @@ export function TextSelectionOverlay({ pageNumber, pageWidth, pageHeight }: Text
     console.log('🎨 Criando highlight do texto:', text.substring(0, 50));
     
     // Pegar elemento da página para calcular coordenadas relativas
-    const pageElement = overlayRef.current?.closest('.react-pdf__Page');
+    // Usar querySelector global pois closest() falha em alguns casos
+    const pageElement = document.querySelector('.react-pdf__Page');
     if (!pageElement) {
       console.log('❌ Elemento da página não encontrado');
       return;
@@ -88,13 +85,27 @@ export function TextSelectionOverlay({ pageNumber, pageWidth, pageHeight }: Text
 
     const pageRect = pageElement.getBoundingClientRect();
     
-    // Calcular bounding box de todos os retângulos (em coordenadas da página)
+    // ✨ NOVO: Converter TODOS os retângulos para coordenadas relativas
+    // Isso permite renderização precisa de múltiplas linhas
+    const textRanges = rects.map(rect => {
+      const relX = rect.left - pageRect.left;
+      const relY = rect.top - pageRect.top;
+      return {
+        x: relX / pageWidth,
+        y: relY / pageHeight,
+        width: rect.width / pageWidth,
+        height: rect.height / pageHeight,
+      };
+    });
+    
+    console.log('📐 [TextSelection] TextRanges (múltiplas linhas):', textRanges.length, 'retângulos');
+    
+    // Também calcular bounding box (para seleção e fallback)
     const minX = Math.min(...rects.map(r => r.left - pageRect.left));
     const minY = Math.min(...rects.map(r => r.top - pageRect.top));
     const maxX = Math.max(...rects.map(r => r.right - pageRect.left));
     const maxY = Math.max(...rects.map(r => r.bottom - pageRect.top));
     
-    // Converter para coordenadas relativas (0-1)
     const position = {
       x: minX / pageWidth,
       y: minY / pageHeight,
@@ -102,22 +113,28 @@ export function TextSelectionOverlay({ pageNumber, pageWidth, pageHeight }: Text
       height: (maxY - minY) / pageHeight,
     };
 
-    console.log('📏 Posição do highlight:', position);
+    console.log('📏 [TextSelection] Bounding box (fallback):', position);
 
     // Adicionar anotação diretamente
     const { addAnnotation, currentColor, currentOpacity } = usePDFStore.getState();
+    
+    console.log('🎨 [TextSelection] Cores:', { currentColor, currentOpacity });
+    
+    console.log('💾 [TextSelection] Criando anotação no store...');
     
     const newId = addAnnotation({
       pageNumber,
       type: 'highlight',
       position,
       selectedText: text,
+      textRanges, // ✨ Múltiplos retângulos para renderização precisa
       color: currentColor,
       opacity: currentOpacity,
       status: 'active',
     } as Omit<Annotation, 'id' | 'createdAt' | 'updatedAt'>);
 
-    console.log('✅ Highlight criado com ID:', newId);
+    console.log('✅ [TextSelection] Highlight criado com ID:', newId);
+    console.log('📊 [TextSelection] Total de anotações agora:', usePDFStore.getState().annotations.length);
 
     // Limpar seleção
     if (selectionRef.current) {
@@ -174,17 +191,24 @@ export function TextSelectionOverlay({ pageNumber, pageWidth, pageHeight }: Text
 
     // Posicionar botões no final da seleção
     const lastRect = rects[rects.length - 1];
-    const pageElement = overlayRef.current?.closest('.react-pdf__Page');
-    const pageRect = pageElement?.getBoundingClientRect();
     
-    if (!pageRect) return null;
+    // Usar querySelector global (closest falha em alguns casos)
+    const pageElement = document.querySelector('.react-pdf__Page');
+    if (!pageElement) {
+      console.log('⚠️ [TextSelection] Página não encontrada para posicionar botões');
+      return null;
+    }
+    
+    const pageRect = pageElement.getBoundingClientRect();
 
     const x = lastRect.right - pageRect.left;
     const y = lastRect.bottom - pageRect.top + 5;
+    
+    console.log('🎨 [TextSelection] Renderizando botões em:', { x, y });
 
     return (
       <div
-        className="absolute z-50 flex gap-1 bg-background border rounded-md shadow-lg p-1"
+        className="absolute z-50 flex gap-1 bg-background border rounded-md shadow-lg p-1 pointer-events-auto"
         style={{
           left: Math.min(x, pageWidth - 120), // Evitar overflow
           top: Math.min(y, pageHeight - 40),
@@ -194,7 +218,10 @@ export function TextSelectionOverlay({ pageNumber, pageWidth, pageHeight }: Text
           size="sm"
           variant="default"
           className="h-8 px-2"
-          onClick={() => handleCreateHighlight()}
+          onClick={() => {
+            console.log('🖱️ [TextSelection] Botão DESTACAR clicado!');
+            handleCreateHighlight();
+          }}
           title="Criar Destaque"
         >
           <Highlighter className="h-3 w-3 mr-1" />
@@ -217,17 +244,19 @@ export function TextSelectionOverlay({ pageNumber, pageWidth, pageHeight }: Text
     );
   };
 
+  // Container para botões de ação (sem bloquear seleção)
   return (
     <div
       ref={overlayRef}
-      className="absolute inset-0 pointer-events-none z-20"
+      className="absolute inset-0 pointer-events-none"
       style={{
         width: pageWidth,
         height: pageHeight,
-        userSelect: annotationMode === 'text' ? 'text' : 'none',
-        pointerEvents: annotationMode === 'text' ? 'auto' : 'none',
+        zIndex: 30,
       }}
     >
+      {/* Botões de ação aparecem APENAS quando há texto selecionado */}
+      {/* Os botões têm pointer-events: auto para serem clicáveis */}
       {renderSelectionActions()}
     </div>
   );

@@ -20,11 +20,12 @@ import {
 } from 'lucide-react';
 import { ProjectExtractionTemplate } from '@/types/extraction';
 import { useExtractionTemplates } from '@/hooks/extraction/useExtractionTemplates';
-import { ArticleExtractionList } from './ArticleExtractionList';
+import { ArticleExtractionTable } from './ArticleExtractionTable';
 import { TemplateConfigEditor } from './TemplateConfigEditor';
 import { useAuth } from '@/contexts/AuthContext';
-import { checkAndRepairProject } from '@/utils/repairProjectTemplates';
 import { ImportTemplateDialog } from './dialogs';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 interface ExtractionInterfaceProps {
   projectId: string;
@@ -34,8 +35,14 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   const { user } = useAuth();
   const [activeTemplate, setActiveTemplate] = useState<ProjectExtractionTemplate | null>(null);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'extraction' | 'ai' | 'configuration'>('dashboard');
-  const [repairAttempted, setRepairAttempted] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
+  const [articles, setArticles] = useState<any[]>([]);
+  const [extractionStats, setExtractionStats] = useState({
+    totalArticles: 0,
+    extractionsStarted: 0,
+    extractionsCompleted: 0,
+    progressPercentage: 0,
+  });
 
   // Hook para gerenciar templates
   const { 
@@ -52,17 +59,87 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     }
   }, [templates]);
 
-  // Verificar e reparar projeto automaticamente quando necessário
+  // Carregar artigos e estatísticas
   useEffect(() => {
-    if (activeTemplate && user && !repairAttempted && activeTab === 'configuration') {
-      setRepairAttempted(true);
-      console.log('🔧 Verificando se projeto precisa de reparo...');
-      checkAndRepairProject(projectId, user.id).then(() => {
-        // Opcional: recarregar templates após reparo
-        console.log('Reparo verificado/executado');
-      });
+    if (projectId) {
+      loadArticles();
     }
-  }, [activeTemplate, user, activeTab, projectId, repairAttempted]);
+  }, [projectId]);
+
+  // Carregar estatísticas quando artigos ou template mudam
+  useEffect(() => {
+    if (articles.length > 0 && activeTemplate && user) {
+      loadExtractionStats();
+    }
+  }, [articles, activeTemplate, user]);
+
+
+  const loadArticles = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("articles")
+        .select("*")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setArticles(data || []);
+    } catch (error: any) {
+      console.error("Error loading articles:", error);
+      toast.error("Erro ao carregar artigos");
+    }
+  };
+
+  const loadExtractionStats = async () => {
+    if (!activeTemplate || !user) return;
+
+    try {
+      // Buscar instâncias de extração para o template ativo
+      const { data: instances, error: instancesError } = await supabase
+        .from("extraction_instances")
+        .select("article_id")
+        .eq("project_id", projectId)
+        .eq("template_id", activeTemplate.id);
+
+      if (instancesError) throw instancesError;
+
+      // Buscar valores extraídos pelo usuário logado
+      const { data: extractedValues, error: valuesError } = await supabase
+        .from("extracted_values")
+        .select(`
+          instance_id,
+          extraction_instances!inner(article_id, template_id)
+        `)
+        .eq("extraction_instances.project_id", projectId)
+        .eq("extraction_instances.template_id", activeTemplate.id)
+        .eq("reviewer_id", user.id);
+
+      if (valuesError) throw valuesError;
+
+      // Calcular estatísticas
+      const totalArticles = articles.length;
+      const articlesWithInstances = new Set(instances?.map(i => i.article_id) || []);
+      const extractionsStarted = articlesWithInstances.size;
+      
+      // Contar artigos com extração completa (pelo menos uma instância com valores)
+      const articlesWithValues = new Set(extractedValues?.map(v => v.extraction_instances.article_id) || []);
+      const extractionsCompleted = articlesWithValues.size;
+      
+      const progressPercentage = totalArticles > 0 
+        ? Math.round((extractionsCompleted / totalArticles) * 100)
+        : 0;
+
+      setExtractionStats({
+        totalArticles,
+        extractionsStarted,
+        extractionsCompleted,
+        progressPercentage,
+      });
+    } catch (error: any) {
+      console.error("Error loading extraction stats:", error);
+      toast.error("Erro ao carregar estatísticas de extração");
+    }
+  };
 
   // Renderizar aba Dashboard
   const renderDashboard = () => (
@@ -75,7 +152,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
             <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">-</div>
+            <div className="text-2xl font-bold">{extractionStats.totalArticles}</div>
             <p className="text-xs text-muted-foreground">
               no projeto
             </p>
@@ -88,7 +165,14 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
             <CheckCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">-</div>
+            <div className="text-2xl font-bold">
+              {extractionStats.extractionsStarted}
+              {extractionStats.extractionsCompleted > 0 && (
+                <span className="text-sm text-muted-foreground ml-2">
+                  ({extractionStats.extractionsCompleted} completas)
+                </span>
+              )}
+            </div>
             <p className="text-xs text-muted-foreground">
               artigos em extração
             </p>
@@ -101,7 +185,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
             <AlertCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">-</div>
+            <div className="text-2xl font-bold">{extractionStats.progressPercentage}%</div>
             <p className="text-xs text-muted-foreground">
               completude média
             </p>
@@ -137,7 +221,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
       
       case 'extraction':
         return activeTemplate ? (
-          <ArticleExtractionList 
+          <ArticleExtractionTable 
             projectId={projectId} 
             templateId={activeTemplate.id}
           />

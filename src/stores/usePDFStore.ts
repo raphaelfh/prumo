@@ -30,9 +30,14 @@ interface PDFState {
   
   // UI State
   showAnnotations: boolean;
-  annotationMode: 'select' | 'area' | 'text';
+  annotationMode: 'select' | 'area' | 'text' | 'note';
   sidebarCollapsed: boolean;
   sidebarView: 'annotations' | 'thumbnails';
+  ui: {
+    viewMode: 'continuous' | 'single' | 'two-page' | 'book' | 'presentation';
+    presentationMode: boolean;
+    searchOpen: boolean;
+  };
   
   // Annotation Style
   currentColor: string;
@@ -98,9 +103,12 @@ interface PDFState {
   prevPage: () => void;
   goToPage: (page: number) => void;
   toggleAnnotations: () => void;
-  setAnnotationMode: (mode: 'select' | 'area' | 'text') => void;
+  setAnnotationMode: (mode: 'select' | 'area' | 'text' | 'note') => void;
   toggleSidebar: () => void;
   setSidebarView: (view: 'annotations' | 'thumbnails') => void;
+  setViewMode: (mode: 'continuous' | 'single' | 'two-page' | 'book' | 'presentation') => void;
+  setPresentationMode: (enabled: boolean) => void;
+  setSearchOpen: (open: boolean) => void;
   
   // Color Management
   setCurrentColor: (color: string) => void;
@@ -138,6 +146,11 @@ export const usePDFStore = create<PDFState>()(
         annotationMode: 'select',
         sidebarCollapsed: false,
         sidebarView: 'annotations',
+        ui: {
+          viewMode: 'continuous', // Scroll contínuo como padrão
+          presentationMode: false,
+          searchOpen: false,
+        },
         currentColor: '#FFEB3B', // Amarelo padrão
         currentOpacity: 0.4,
         selectedText: null,
@@ -499,6 +512,12 @@ export const usePDFStore = create<PDFState>()(
   setAnnotationMode: (mode) => set({ annotationMode: mode }),
   toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
   setSidebarView: (view: 'annotations' | 'thumbnails') => set({ sidebarView: view }),
+  setViewMode: (mode: 'continuous' | 'single' | 'two-page' | 'book' | 'presentation') => 
+    set((state) => ({ ui: { ...state.ui, viewMode: mode } })),
+  setPresentationMode: (enabled: boolean) => 
+    set((state) => ({ ui: { ...state.ui, presentationMode: enabled } })),
+  setSearchOpen: (open: boolean) => 
+    set((state) => ({ ui: { ...state.ui, searchOpen: open } })),
 
         // Color Management
         setCurrentColor: (color) => set({ currentColor: color }),

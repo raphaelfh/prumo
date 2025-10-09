@@ -59,12 +59,20 @@ export function useAnnotations({ articleId }: UseAnnotationsProps) {
       const allAnnotations: Annotation[] = [
         ...(highlights || []).map((row): HighlightAnnotation => {
           const { color, opacity } = colorFromRGB(row.color);
+          
+          // ✨ Restaurar textRanges se existir no banco
+          const textRanges = row.scaled_position.ranges || undefined;
+          if (textRanges) {
+            console.log('📐 [Load] Highlight com', textRanges.length, 'ranges:', row.id);
+          }
+          
           return {
             id: row.id,
             type: 'highlight',
             pageNumber: row.page_number,
             position: row.scaled_position,
             selectedText: row.selected_text,
+            textRanges, // ✨ Múltiplos retângulos para renderização precisa
             color,
             opacity,
             authorId: row.author_id || undefined,

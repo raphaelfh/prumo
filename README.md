@@ -1,4 +1,19 @@
-# Welcome to your Lovable project
+# Review Hub
+
+Sistema completo para gerenciamento de revisões sistemáticas e meta-análises.
+
+## Funcionalidades Principais
+
+- **Gerenciamento de Artigos**: Importe, organize e gerencie artigos de pesquisa
+- **Integração com Zotero**: Importe artigos diretamente das suas collections do Zotero
+- **Extração de Dados**: Crie formulários customizados para extração de dados
+- **Avaliação de Qualidade**: Avalie o risco de viés usando instrumentos padronizados
+- **Colaboração**: Trabalhe em equipe com controle de acesso e permissões
+- **Visualização de PDFs**: Leitor de PDF integrado com anotações
+
+## Documentação
+
+- [Integração com Zotero](./docs/ZOTERO_INTEGRATION.md)
 
 ## Project info
 

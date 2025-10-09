@@ -8,10 +8,8 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
-  ClipboardCheck, 
   FileText, 
   Brain,
   CheckCircle,
@@ -21,11 +19,9 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAssessmentInstruments } from "@/hooks/assessment/useAssessmentInstruments";
-import { ArticleAssessmentList } from "./ArticleAssessmentList";
+import { ArticleAssessmentTable } from "./ArticleAssessmentTable";
 import { AIAssessmentConfigModal } from "./AIAssessmentConfigModal";
-import { AssessmentHeader } from "./AssessmentHeader";
 import { useAssessmentItems } from "@/hooks/assessment/useAssessmentInstruments";
-import { useProject } from "@/contexts/ProjectContext";
 import { toast } from "sonner";
 
 interface AssessmentInterfaceProps {
@@ -33,7 +29,6 @@ interface AssessmentInterfaceProps {
 }
 
 export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => {
-  const { project } = useProject();
   const [activeInstrument, setActiveInstrument] = useState<any | null>(null);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'assessment' | 'ai' | 'configuration'>('dashboard');
   const [aiConfigModalOpen, setAiConfigModalOpen] = useState(false);
@@ -250,7 +245,7 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
       
       case 'assessment':
         return activeInstrument ? (
-          <ArticleAssessmentList 
+          <ArticleAssessmentTable 
             projectId={projectId} 
             instrumentId={activeInstrument.id}
           />
@@ -303,11 +298,7 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
   };
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header com Breadcrumb */}
-      <AssessmentHeader projectName={project?.name} />
-      
-      <div className="flex-1 space-y-6 p-6">
+    <div className="space-y-6">
         {/* Título da Seção */}
         <div className="flex items-center justify-between">
           <div>
@@ -315,12 +306,6 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
             <p className="text-sm text-muted-foreground mt-1">
               Avalie a qualidade metodológica dos artigos usando instrumentos padronizados
             </p>
-          </div>
-          <div className="flex items-center space-x-2">
-            <ClipboardCheck className="h-5 w-5 text-muted-foreground" />
-            <Badge variant="outline">
-              {activeInstrument?.tool_type || 'Sem Instrumento'}
-            </Badge>
           </div>
         </div>
 
@@ -361,16 +346,15 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
         />
       )}
 
-        {/* Loading state */}
-        {instrumentsLoading && (
-          <div className="flex items-center justify-center py-12">
-            <div className="text-center">
-              <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4"></div>
-              <p className="text-muted-foreground">Carregando instrumentos...</p>
-            </div>
+      {/* Loading state */}
+      {instrumentsLoading && (
+        <div className="flex items-center justify-center py-12">
+          <div className="text-center">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Carregando instrumentos...</p>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

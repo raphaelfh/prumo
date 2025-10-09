@@ -7,32 +7,21 @@ import React, { useState } from 'react';
 import { Menu, PanelLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { useNavigation, useUserProfile } from '@/hooks/useNavigation';
+import { useUserProfile } from '@/hooks/useNavigation';
 import { useSidebar } from '@/contexts/SidebarContext';
 import { useProject } from '@/contexts/ProjectContext';
-import { BreadcrumbSection } from './BreadcrumbSection';
-import { GlobalSearch, MobileSearchTrigger } from './GlobalSearch';
 import { ProfileMenu } from './ProfileMenu';
 import { MobileSidebar } from '@/components/layout/MobileSidebar';
 import type { TopbarProps } from '@/types/navigation';
 
 export const Topbar: React.FC<TopbarProps> = ({
-  config = {
-    showSearch: true,
-    showNotifications: true,
-    showHelp: true,
-    showThemeToggle: true,
-  },
   className,
 }) => {
-  const { breadcrumbs } = useNavigation();
   const { user, isLoading } = useUserProfile();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
   // Usar contexto do sidebar apenas em páginas de projeto
-  const isProjectPage = breadcrumbs.some(breadcrumb => 
-    breadcrumb.label.toLowerCase().includes('projeto')
-  );
+  const isProjectPage = window.location.pathname.includes('/projects/');
   
   let sidebarContext;
   let projectContext;
@@ -75,16 +64,16 @@ export const Topbar: React.FC<TopbarProps> = ({
   return (
     <header className={cn("z-40 w-full border-b bg-background", className)}>
       <div className="flex h-14 w-full items-center justify-between px-6 flex-shrink-0">
-        {/* Left Section - Breadcrumbs + Toggle */}
+        {/* Left Section - Toggle */}
         <div className="flex items-center gap-3">
-          {/* Sidebar Toggle - Desktop e Mobile */}
+          {/* Sidebar Toggle - Apenas Desktop */}
           {sidebarContext && isProjectPage && (
             <Button
               variant="ghost"
               size="icon"
               onClick={sidebarContext.toggleSidebar}
               aria-label={sidebarContext.sidebarCollapsed ? "Expandir sidebar" : "Recolher sidebar"}
-              className="flex-shrink-0"
+              className="hidden lg:flex flex-shrink-0"
             >
               <PanelLeft className="h-4 w-4" />
             </Button>
@@ -112,22 +101,10 @@ export const Topbar: React.FC<TopbarProps> = ({
               />
             </>
           )}
-
-          {/* Breadcrumb Section */}
-          <BreadcrumbSection items={breadcrumbs} />
         </div>
 
-        {/* Center Section - Search */}
-        {config.showSearch && (
-          <div className="hidden md:block flex-1 max-w-md mx-6">
-            <GlobalSearch placeholder="Buscar artigos..." />
-          </div>
-        )}
-
-        {/* Right Section - Profile Menu + Mobile Search */}
+        {/* Right Section - Profile Menu */}
         <div className="flex items-center gap-1">
-          {/* Mobile Search */}
-          {config.showSearch && <MobileSearchTrigger />}
           <ProfileMenu user={user} />
         </div>
       </div>

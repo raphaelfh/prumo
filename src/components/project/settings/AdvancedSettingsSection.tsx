@@ -4,6 +4,7 @@
  */
 
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,9 +13,13 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { X, Plus } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { X, Plus, Trash2, AlertTriangle } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 interface Project {
+  name?: string;
   settings: {
     blind_mode?: boolean;
   } | null;
@@ -33,13 +38,16 @@ interface Project {
 interface AdvancedSettingsSectionProps {
   project: Project;
   onChange: (updates: Partial<Project>) => void;
+  projectId: string;
 }
 
-export function AdvancedSettingsSection({ project, onChange }: AdvancedSettingsSectionProps) {
+export function AdvancedSettingsSection({ project, onChange, projectId }: AdvancedSettingsSectionProps) {
   const [newKeyword, setNewKeyword] = useState("");
   const [newInclusion, setNewInclusion] = useState("");
   const [newExclusion, setNewExclusion] = useState("");
   const [newStudyType, setNewStudyType] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
+  const navigate = useNavigate();
 
   const settings = project.settings || { blind_mode: false };
   const eligibility = project.eligibility_criteria || { inclusion: [], exclusion: [] };
@@ -128,6 +136,27 @@ export function AdvancedSettingsSection({ project, onChange }: AdvancedSettingsS
         types: (studyDesign.types || []).filter((_, i) => i !== index)
       }
     });
+  };
+
+  const handleDeleteProject = async () => {
+    setIsDeleting(true);
+    try {
+      // Deletar o projeto (cascade vai deletar todos os dados relacionados)
+      const { error } = await supabase
+        .from("projects")
+        .delete()
+        .eq("id", projectId);
+
+      if (error) throw error;
+
+      toast.success("Projeto deletado com sucesso!");
+      navigate("/"); // Redirecionar para o dashboard
+    } catch (error: any) {
+      console.error("Error deleting project:", error);
+      toast.error("Erro ao deletar projeto. Tente novamente.");
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -362,6 +391,74 @@ export function AdvancedSettingsSection({ project, onChange }: AdvancedSettingsS
               rows={3}
               className="resize-none"
             />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Zona de Perigo - Deletar Projeto */}
+      <Card className="border-destructive/20">
+        <CardHeader>
+          <CardTitle className="text-destructive flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5" />
+            Zona de Perigo
+          </CardTitle>
+          <CardDescription>
+            Ações irreversíveis que podem afetar permanentemente o projeto.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div>
+              <h4 className="font-medium text-destructive mb-2">Deletar Projeto</h4>
+              <p className="text-sm text-muted-foreground mb-4">
+                Esta ação irá deletar permanentemente o projeto e todos os dados associados, 
+                incluindo artigos, extrações, avaliações e configurações. Esta ação não pode ser desfeita.
+              </p>
+              
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive" size="sm">
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Deletar Projeto
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle className="text-destructive">
+                      Confirmar Exclusão do Projeto
+                    </AlertDialogTitle>
+                    <AlertDialogDescription className="space-y-2">
+                      <p>
+                        Você está prestes a deletar permanentemente o projeto <strong>"{project.name}"</strong>.
+                      </p>
+                      <p>
+                        Esta ação irá remover:
+                      </p>
+                      <ul className="list-disc list-inside space-y-1 text-sm">
+                        <li>Todos os artigos e arquivos associados</li>
+                        <li>Todas as extrações de dados realizadas</li>
+                        <li>Todas as avaliações de qualidade</li>
+                        <li>Todas as configurações e templates</li>
+                        <li>Histórico completo do projeto</li>
+                      </ul>
+                      <p className="font-medium text-destructive">
+                        Esta ação não pode ser desfeita.
+                      </p>
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleDeleteProject}
+                      disabled={isDeleting}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      {isDeleting ? "Deletando..." : "Sim, Deletar Projeto"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
           </div>
         </CardContent>
       </Card>

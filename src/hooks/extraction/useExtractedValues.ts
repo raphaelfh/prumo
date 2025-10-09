@@ -80,6 +80,7 @@ export function useExtractedValues(props: UseExtractedValuesProps): UseExtracted
           instance_id,
           field_id,
           value,
+          unit,
           source,
           confidence_score,
           ai_suggestion_id,
@@ -91,14 +92,19 @@ export function useExtractedValues(props: UseExtractedValuesProps): UseExtracted
 
       if (queryError) throw queryError;
 
-      // Converter para formato { instanceId_fieldId: value }
+      // Converter para formato { instanceId_fieldId: { value, unit } }
       const valuesMap: Record<string, any> = {};
 
       (data || []).forEach(item => {
         const key = `${item.instance_id}_${item.field_id}`;
         // Extrair valor do jsonb (pode estar em { value: X } ou diretamente)
         const extractedValue = item.value?.value ?? item.value;
-        valuesMap[key] = extractedValue;
+        
+        // Se tiver unit, armazenar como objeto { value, unit }
+        // Senão, armazenar apenas o valor (backward compatible)
+        valuesMap[key] = item.unit 
+          ? { value: extractedValue, unit: item.unit }
+          : extractedValue;
       });
 
       setValues(valuesMap);

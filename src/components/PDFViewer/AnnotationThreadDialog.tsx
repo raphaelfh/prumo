@@ -52,7 +52,12 @@ export function AnnotationThreadDialog({
 
   // Carregar comentários
   const loadComments = useCallback(async () => {
-    if (!annotationId || !annotation) return;
+    if (!annotationId || !annotation) {
+      console.log('⚠️ [Comments] Sem annotationId ou annotation');
+      return;
+    }
+
+    console.log('💬 [Comments] Carregando comentários para:', annotationId, annotation.type);
 
     setLoading(true);
     try {
@@ -60,14 +65,16 @@ export function AnnotationThreadDialog({
       const getForeignKey = (annotation: any) => {
         if (annotation.type === 'highlight') return 'highlight_id';
         if (annotation.type === 'area') return 'box_id';
-        return null; // Comentário standalone (sem highlight_id nem box_id)
+        return null;
       };
       
       const foreignKey = getForeignKey(annotation);
       if (!foreignKey) {
-        console.warn('⚠️ Tipo de anotação não suportado para comentários:', annotation.type);
+        console.warn('⚠️ [Comments] Tipo de anotação não suportado:', annotation.type);
         return;
       }
+      
+      console.log('🔑 [Comments] Foreign key:', foreignKey, '=', annotationId);
       
       const { data, error } = await supabase
         .from('article_annotations')

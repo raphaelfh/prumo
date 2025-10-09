@@ -199,6 +199,7 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
           <AdvancedSettingsSection
             project={project}
             onChange={handleProjectChange}
+            projectId={projectId}
           />
         );
       default:

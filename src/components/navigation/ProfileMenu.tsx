@@ -1,5 +1,5 @@
 import React from 'react';
-import { LogOut, User, Settings } from 'lucide-react';
+import { LogOut, User, Settings, Folder } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
   DropdownMenu,
@@ -47,9 +47,9 @@ export const ProfileMenu: React.FC<ProfileMenuProps> = ({ user }) => {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => navigate('/profile')}>
-          <User className="mr-2 h-4 w-4" />
-          <span>Perfil</span>
+        <DropdownMenuItem onClick={() => navigate('/')}>
+          <Folder className="mr-2 h-4 w-4" />
+          <span>Voltar aos Projetos</span>
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => navigate('/settings')}>
           <Settings className="mr-2 h-4 w-4" />

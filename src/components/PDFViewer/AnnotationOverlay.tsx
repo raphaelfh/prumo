@@ -218,19 +218,49 @@ export function AnnotationOverlay({ pageNumber, pageWidth, pageHeight }: Annotat
 
   const renderAnnotation = (annotation: Annotation) => {
     const { position, color, opacity, type, id } = annotation;
-    const x = position.x * pageWidth;
-    const y = position.y * pageHeight;
-    const w = position.width * pageWidth;
-    const h = position.height * pageHeight;
-
+    
     const isSelected = selectedAnnotationId === id;
     const isHovered = hoveredId === id;
 
     const strokeWidth = isSelected ? 2 : isHovered ? 1.5 : 1;
     const strokeColor = isSelected ? 'hsl(var(--primary))' : color;
 
-    return (
-      <g key={id}>
+    // Para highlights, usar stroke mais fino para parecer mais natural
+    const highlightStrokeWidth = type === 'highlight' ? 0.5 : strokeWidth;
+
+    // ✨ RENDERIZAÇÃO DE MÚLTIPLAS LINHAS para highlights
+    const renderHighlightRects = () => {
+      // Se tem textRanges, renderizar múltiplos retângulos (perfeito para múltiplas linhas)
+      if (type === 'highlight' && 'textRanges' in annotation && annotation.textRanges && annotation.textRanges.length > 0) {
+        console.log('🎨 [Annotation] Renderizando', annotation.textRanges.length, 'retângulos para highlight:', id);
+        return annotation.textRanges.map((range: any, index: number) => (
+          <rect
+            key={`${id}-range-${index}`}
+            x={range.x * pageWidth}
+            y={range.y * pageHeight}
+            width={range.width * pageWidth}
+            height={range.height * pageHeight}
+            fill={color}
+            fillOpacity={opacity}
+            stroke={strokeColor}
+            strokeWidth={highlightStrokeWidth}
+            className="cursor-pointer transition-all"
+            onClick={() => selectAnnotation(id)}
+            onMouseEnter={() => setHoveredId(id)}
+            onMouseLeave={() => setHoveredId(null)}
+            rx={2}
+            ry={2}
+          />
+        ));
+      }
+      
+      // Fallback: bounding box único (compatibilidade com highlights antigos)
+      const x = position.x * pageWidth;
+      const y = position.y * pageHeight;
+      const w = position.width * pageWidth;
+      const h = position.height * pageHeight;
+      
+      return (
         <rect
           x={x}
           y={y}
@@ -239,12 +269,42 @@ export function AnnotationOverlay({ pageNumber, pageWidth, pageHeight }: Annotat
           fill={color}
           fillOpacity={opacity}
           stroke={strokeColor}
-          strokeWidth={strokeWidth}
+          strokeWidth={highlightStrokeWidth}
           className="cursor-pointer transition-all"
           onClick={() => selectAnnotation(id)}
           onMouseEnter={() => setHoveredId(id)}
           onMouseLeave={() => setHoveredId(null)}
+          rx={type === 'highlight' ? 2 : 0}
+          ry={type === 'highlight' ? 2 : 0}
         />
+      );
+    };
+
+    // Para áreas, renderizar normalmente
+    const x = position.x * pageWidth;
+    const y = position.y * pageHeight;
+    const w = position.width * pageWidth;
+    const h = position.height * pageHeight;
+
+    return (
+      <g key={id}>
+        {/* Renderizar highlight (pode ser múltiplos rects ou único) */}
+        {type === 'highlight' ? renderHighlightRects() : (
+          <rect
+            x={x}
+            y={y}
+            width={w}
+            height={h}
+            fill={color}
+            fillOpacity={opacity}
+            stroke={strokeColor}
+            strokeWidth={strokeWidth}
+            className="cursor-pointer transition-all"
+            onClick={() => selectAnnotation(id)}
+            onMouseEnter={() => setHoveredId(id)}
+            onMouseLeave={() => setHoveredId(null)}
+          />
+        )}
         
         {/* Action buttons when selected */}
         {isSelected && (
@@ -261,6 +321,7 @@ export function AnnotationOverlay({ pageNumber, pageWidth, pageHeight }: Annotat
                 className="h-7 w-7"
                 onClick={(e) => {
                   e.stopPropagation();
+                  console.log('💬 [Annotation] Abrindo comentários para:', id);
                   setEditingId(id);
                   setCommentDialogOpen(true);
                 }}
@@ -379,13 +440,15 @@ export function AnnotationOverlay({ pageNumber, pageWidth, pageHeight }: Annotat
         ref={svgRef}
         width={pageWidth}
         height={pageHeight}
-        className="absolute inset-0 z-10"
+        className="absolute inset-0"
         style={{ 
           cursor: annotationMode === 'area' ? 'crosshair' : 
                   (annotationMode === 'select' && hoveredId) ? 'move' : 
                   isDragging ? 'grabbing' : 
                   annotationMode === 'select' ? 'default' : 'text',
-          pointerEvents: 'auto' // Sempre permitir eventos de mouse
+          // CRÍTICO: Apenas capturar eventos quando em modo select ou area
+          pointerEvents: (annotationMode === 'select' || annotationMode === 'area') ? 'auto' : 'none',
+          zIndex: (annotationMode === 'select' || annotationMode === 'area') ? 10 : 5,
         }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}

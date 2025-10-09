@@ -21,7 +21,11 @@ export type SuggestionStatus = 'pending' | 'accepted' | 'rejected';
 
 // =================== TEMPLATES ===================
 
-export interface ExtractionTemplate {
+/**
+ * Template global padronizado (CHARMS, PICOS, PRISMA, etc.)
+ * Mantido por administradores, read-only para usuários
+ */
+export interface GlobalExtractionTemplate {
   id: string;
   name: string;
   description: string | null;
@@ -32,6 +36,9 @@ export interface ExtractionTemplate {
   created_at: string;
   updated_at: string;
 }
+
+// Alias para compatibilidade (deprecated, usar GlobalExtractionTemplate)
+export type ExtractionTemplate = GlobalExtractionTemplate;
 
 export interface ProjectExtractionTemplate {
   id: string;
@@ -102,6 +109,7 @@ export interface ExtractedValue {
   instance_id: string;
   field_id: string;
   value: any;
+  unit?: string | null;
   source: ExtractionSource;
   confidence_score: number | null;
   evidence: any[];
@@ -179,6 +187,7 @@ export interface ExtractedValueInsert {
   instance_id: string;
   field_id: string;
   value: any;
+  unit?: string | null;
   source: ExtractionSource;
   confidence_score?: number;
   evidence?: any[];

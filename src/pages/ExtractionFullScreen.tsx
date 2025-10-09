@@ -34,7 +34,6 @@ import { useAISuggestions } from '@/hooks/extraction/ai/useAISuggestions';
 
 // Components
 import { ExtractionHeader } from '@/components/extraction/ExtractionHeader';
-import { ExtractionToolbar } from '@/components/extraction/ExtractionToolbar';
 import { SectionAccordion } from '@/components/extraction/SectionAccordion';
 import { ComparisonGridView } from '@/components/extraction/colaboracao/ComparisonGridView';
 
@@ -64,6 +63,7 @@ export default function ExtractionFullScreen() {
   const [template, setTemplate] = useState<ProjectExtractionTemplate | null>(null);
   const [entityTypes, setEntityTypes] = useState<EntityTypeWithFields[]>([]);
   const [instances, setInstances] = useState<ExtractionInstance[]>([]);
+  const [articles, setArticles] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string>('');
@@ -160,7 +160,18 @@ export default function ExtractionFullScreen() {
       setProject(projectData);
       console.log('✅ Projeto carregado:', projectData.name);
 
-      // 3. Carregar template ativo do projeto
+      // 3. Carregar lista de artigos do projeto para navegação
+      const { data: articlesData, error: articlesError } = await supabase
+        .from('articles')
+        .select('id, title')
+        .eq('project_id', projectId)
+        .order('created_at', { ascending: false });
+
+      if (articlesError) throw articlesError;
+      setArticles(articlesData || []);
+      console.log('✅ Lista de artigos carregada:', articlesData?.length || 0);
+
+      // 4. Carregar template ativo do projeto
       const { data: templateData, error: templateError } = await supabase
         .from('project_extraction_templates')
         .select('*')
@@ -174,7 +185,7 @@ export default function ExtractionFullScreen() {
       setTemplate(templateData);
       console.log('✅ Template carregado:', templateData.name);
 
-      // 4. Carregar entity types com seus campos
+      // 5. Carregar entity types com seus campos
       const { data: entityTypesData, error: entityTypesError } = await supabase
         .from('extraction_entity_types')
         .select(`
@@ -194,7 +205,7 @@ export default function ExtractionFullScreen() {
       setEntityTypes(typesWithFields);
       console.log('✅ Entity types carregados:', typesWithFields.length);
 
-      // 5. Carregar ou criar instâncias para este artigo
+      // 6. Carregar ou criar instâncias para este artigo
       await loadOrCreateInstances(templateData.id, typesWithFields);
 
     } catch (error: any) {
@@ -276,6 +287,10 @@ export default function ExtractionFullScreen() {
 
   const handleBack = () => {
     navigate(`/projects/${projectId}?tab=extraction`);
+  };
+
+  const handleNavigateToArticle = (newArticleId: string) => {
+    navigate(`/projects/${projectId}/extraction/${newArticleId}`);
   };
 
   const handleAddInstance = async (entityTypeId: string) => {
@@ -413,28 +428,25 @@ export default function ExtractionFullScreen() {
 
   return (
     <div className="h-screen flex flex-col bg-background">
-      {/* Header */}
+      {/* Header Unificado */}
       <ExtractionHeader
         projectId={projectId || ''}
         projectName={project?.name || 'Projeto'}
         articleTitle={article.title}
-        isSaving={isSaving}
-        lastSaved={lastSaved}
         onBack={handleBack}
-      />
-
-      {/* Toolbar */}
-      <ExtractionToolbar
+        articles={articles}
+        currentArticleId={articleId || ''}
+        onNavigateToArticle={handleNavigateToArticle}
+        completedFields={completedFields}
+        totalFields={totalFields}
+        completionPercentage={completionPercentage}
         showPDF={showPDF}
         onTogglePDF={() => setShowPDF(!showPDF)}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
-        templateName={template.name}
-        framework={template.framework}
-        completedFields={completedFields}
-        totalFields={totalFields}
-        completionPercentage={completionPercentage}
         hasOtherExtractions={otherExtractions.length > 0}
+        isSaving={isSaving}
+        lastSaved={lastSaved}
         isComplete={isComplete}
         onFinalize={handleFinalize}
         submitting={submitting}
@@ -448,7 +460,7 @@ export default function ExtractionFullScreen() {
             <>
               <ResizablePanel defaultSize={50} minSize={30} maxSize={70}>
                 <div className="h-full">
-                  <PDFViewer articleId={articleId || ''} />
+                  <PDFViewer articleId={articleId || ''} projectId={projectId || ''} />
                 </div>
               </ResizablePanel>
               <ResizableHandle withHandle />

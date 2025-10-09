@@ -36,6 +36,7 @@ import { OtherExtractionsPopover } from './colaboracao/OtherExtractionsPopover';
 import { OtherExtractionsButton } from './colaboracao/OtherExtractionsButton';
 import { AISuggestionBadge } from './ai/AISuggestionBadge';
 import { AIAcceptRejectButtons } from './ai/AIAcceptRejectButtons';
+import { getRelatedUnits } from '@/lib/unitConversions';
 
 // =================== INTERFACES ===================
 
@@ -123,21 +124,69 @@ export function FieldInput(props: FieldInputProps) {
         );
 
       case 'number':
+        // Parse valor (pode ser objeto {value, unit} ou valor simples)
+        const numValue = typeof displayValue === 'object' && displayValue !== null && 'value' in displayValue
+          ? displayValue.value
+          : displayValue;
+        
+        const currentUnit = typeof displayValue === 'object' && displayValue !== null && 'unit' in displayValue
+          ? displayValue.unit
+          : field.unit;
+        
+        const relatedUnits = field.unit ? getRelatedUnits(field.unit) : [];
+        const hasMultipleUnits = field.unit && relatedUnits.length > 0;
+
         return (
           <div className="flex gap-2">
             <Input
               type="number"
-              value={value || ''}
-              onChange={(e) => handleChange(e.target.value)}
+              value={numValue || ''}
+              onChange={(e) => {
+                if (hasMultipleUnits) {
+                  handleChange({ value: e.target.value, unit: currentUnit || field.unit });
+                } else {
+                  handleChange(e.target.value);
+                }
+              }}
               placeholder="0"
               disabled={disabled}
               className={cn("flex-1", validationError && "border-destructive")}
             />
-            {field.unit && (
+            
+            {/* Unit selector se houver unidades relacionadas */}
+            {hasMultipleUnits ? (
+              <Select
+                value={currentUnit || field.unit || ''}
+                onValueChange={(newUnit) => {
+                  handleChange({ value: numValue, unit: newUnit });
+                }}
+                disabled={disabled}
+              >
+                <SelectTrigger className="w-32 shrink-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {/* Unidade padrão */}
+                  {field.unit && (
+                    <SelectItem value={field.unit}>
+                      {field.unit}
+                    </SelectItem>
+                  )}
+                  
+                  {/* Unidades relacionadas */}
+                  {relatedUnits.map(unit => (
+                    <SelectItem key={unit} value={unit}>
+                      {unit}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : field.unit ? (
+              // Badge fixo se não houver alternativas
               <Badge variant="outline" className="shrink-0 self-center">
                 {field.unit}
               </Badge>
-            )}
+            ) : null}
           </div>
         );
 

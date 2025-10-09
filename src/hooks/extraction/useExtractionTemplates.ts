@@ -10,7 +10,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { 
-  ExtractionTemplate, 
+  GlobalExtractionTemplate, 
   ProjectExtractionTemplate, 
   ExtractionTemplateOption 
 } from '@/types/extraction';
@@ -22,7 +22,7 @@ interface UseExtractionTemplatesProps {
 export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProps) {
   const { user } = useAuth();
   const [templates, setTemplates] = useState<ProjectExtractionTemplate[]>([]);
-  const [globalTemplates, setGlobalTemplates] = useState<ExtractionTemplate[]>([]);
+  const [globalTemplates, setGlobalTemplates] = useState<GlobalExtractionTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,7 +44,7 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
       try {
         // Carregar templates globais primeiro (sempre)
         const { data: globalData, error: globalError } = await supabase
-          .from('extraction_templates')
+          .from('extraction_templates_global')
           .select('*')
           .eq('is_global', true)
           .order('name', { ascending: true });
@@ -101,7 +101,7 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
 
       // Buscar template global
       const { data: globalTemplate, error: globalError } = await supabase
-        .from('extraction_templates')
+        .from('extraction_templates_global')
         .select('*')
         .eq('id', globalTemplateId)
         .single();

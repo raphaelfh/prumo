@@ -16,6 +16,7 @@ import AssessmentFullScreen from "./pages/AssessmentFullScreen";
 import ExtractionFullScreen from "./pages/ExtractionFullScreen";
 import AddArticle from "./pages/AddArticle";
 import EditArticle from "./pages/EditArticle";
+import UserSettings from "./pages/UserSettings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -98,6 +99,16 @@ const App = () => {
                           <ProjectProvider>
                             <EditArticle />
                           </ProjectProvider>
+                        </ErrorBoundary>
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/settings"
+                    element={
+                      <ProtectedRoute>
+                        <ErrorBoundary context="Configurações do Usuário">
+                          <UserSettings />
                         </ErrorBoundary>
                       </ProtectedRoute>
                     }

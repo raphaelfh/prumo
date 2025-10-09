@@ -47,7 +47,7 @@ export function useGlobalTemplates(): UseGlobalTemplatesReturn {
 
       // Buscar templates globais
       const { data: templatesData, error: templatesError } = await supabase
-        .from('extraction_templates')
+        .from('extraction_templates_global')
         .select('*')
         .eq('is_global', true)
         .order('framework', { ascending: true });
