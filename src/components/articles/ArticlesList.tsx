@@ -201,9 +201,11 @@ export function ArticlesList({ articles, onArticleClick, projectId, onArticlesCh
               Filtrar por {columnLabels[column]}
             </label>
             <Input
+              autoFocus
               placeholder={columnPlaceholders[column]}
               value={columnFilters[column]}
               onChange={(e) => updateColumnFilter(column, e.target.value)}
+              onKeyDown={(e) => e.stopPropagation()}
               className="h-8"
             />
             {hasFilter && (
@@ -644,7 +646,7 @@ export function ArticlesList({ articles, onArticleClick, projectId, onArticlesCh
 
                     {/* Revista */}
                     {visibleColumns.journal && (
-                      <TableHead className="w-[180px]">
+                      <TableHead className="w-[140px]">
                         <div className="flex items-center gap-1.5">
                           <Button
                             variant="ghost"
@@ -824,7 +826,10 @@ export function ArticlesList({ articles, onArticleClick, projectId, onArticlesCh
                       {/* Revista */}
                       {visibleColumns.journal && (
                         <TableCell className="text-sm text-muted-foreground">
-                          <span className="line-clamp-2 italic">
+                          <span 
+                            className="line-clamp-2 italic block" 
+                            title={article.journal_title || undefined}
+                          >
                             {article.journal_title || "-"}
                           </span>
                         </TableCell>

@@ -39,7 +39,7 @@ export function SidebarContainer({ className }: SidebarContainerProps) {
   };
 
   return (
-    <div className={`w-[280px] border-r bg-muted/20 flex flex-col ${className || ''}`}>
+    <div className={`w-full h-full border-r bg-background flex flex-col ${className || ''}`}>
       <Tabs value={currentTab} onValueChange={handleTabChange} className="flex flex-col h-full">
         {/* Tabs de Navegação */}
         <TabsList className="grid grid-cols-5 rounded-none border-b">

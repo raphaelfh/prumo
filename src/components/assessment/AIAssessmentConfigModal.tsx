@@ -756,89 +756,111 @@ export const AIAssessmentConfigModal = ({
                 </div>
               </TabsContent>
 
-              <TabsContent value="prompts" className="space-y-4 p-1 h-full flex flex-col">
-                {/* Seletor de Questão */}
-                <div className="space-y-3 flex-shrink-0">
-                  <Label className="text-base font-medium">Selecionar Questão para Configurar</Label>
-                  <ScrollArea className="h-32 border rounded-lg">
-                    <div className="grid grid-cols-1 gap-2 p-2">
-                      {assessmentItems.map((item) => (
-                        <Button
-                          key={item.id}
-                          variant={selectedItem?.id === item.id ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => {
-                            setSelectedItem(item);
-                            loadItemConfiguration(item);
-                          }}
-                          className="justify-start text-left h-auto p-3"
-                        >
-                          <div className="flex flex-col items-start w-full">
-                            <span className="font-medium text-xs">{item.item_code}</span>
-                            <span className="text-xs text-muted-foreground truncate w-full">
-                              {item.question}
-                            </span>
-                          </div>
-                        </Button>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                </div>
-
-                {selectedItem && (
-                  <>
-                    <Separator className="flex-shrink-0" />
-                    
-                    <div className="space-y-4 flex-1 flex flex-col min-h-0">
-                      <div className="flex items-center justify-between flex-shrink-0">
-                        <div>
-                          <h4 className="font-medium">Configuração da Questão</h4>
-                          <p className="text-sm text-muted-foreground">{selectedItem.item_code}</p>
-                        </div>
-                        <Button
-                          onClick={handleSaveItemConfig}
-                          disabled={saving}
-                          size="sm"
-                        >
-                          {saving ? (
-                            <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                          ) : (
-                            <Save className="mr-2 h-3 w-3" />
-                          )}
-                          Salvar Questão
-                        </Button>
+              <TabsContent value="prompts" className="p-1 h-full flex flex-col min-h-0">
+                <div className="flex flex-col h-full space-y-4">
+                  {/* Seletor de Questão */}
+                  <div className="space-y-3 flex-shrink-0">
+                    <Label className="text-base font-medium">Selecionar Questão para Configurar</Label>
+                    <ScrollArea className="h-32 border rounded-lg">
+                      <div className="grid grid-cols-1 gap-2 p-2">
+                        {assessmentItems.map((item) => (
+                          <Button
+                            key={item.id}
+                            variant={selectedItem?.id === item.id ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => {
+                              setSelectedItem(item);
+                              loadItemConfiguration(item);
+                            }}
+                            className="justify-start text-left h-auto p-3"
+                          >
+                            <div className="flex flex-col items-start w-full">
+                              <span className="font-medium text-xs">{item.item_code}</span>
+                              <span className="text-xs text-muted-foreground truncate w-full">
+                                {item.question}
+                              </span>
+                            </div>
+                          </Button>
+                        ))}
                       </div>
-
-                      <div className="space-y-3 flex-1 flex flex-col min-h-0">
-                        <div className="space-y-2 flex-1 flex flex-col min-h-0">
-                          <Label className="text-sm font-medium flex-shrink-0">Prompt do Sistema</Label>
-                          <Textarea
-                            value={itemConfig.systemPrompt}
-                            onChange={(e) => setItemConfig(prev => ({ ...prev, systemPrompt: e.target.value }))}
-                            placeholder="Defina o papel e expertise da IA..."
-                            className="flex-1 font-mono text-xs resize-none min-h-[100px]"
-                          />
-                        </div>
-
-                        <div className="space-y-2 flex-1 flex flex-col min-h-0">
-                          <Label className="text-sm font-medium flex-shrink-0">Template do Prompt do Usuário</Label>
-                          <Textarea
-                            value={itemConfig.userPromptTemplate}
-                            onChange={(e) => setItemConfig(prev => ({ ...prev, userPromptTemplate: e.target.value }))}
-                            placeholder="Template para a pergunta específica..."
-                            className="flex-1 font-mono text-xs resize-none min-h-[120px]"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </>
-                )}
-                
-                {!selectedItem && (
-                  <div className="flex-1 flex items-center justify-center text-muted-foreground">
-                    <p className="text-sm">Selecione uma questão para configurar seus prompts</p>
+                    </ScrollArea>
                   </div>
-                )}
+
+                  {selectedItem && (
+                    <>
+                      <Separator className="flex-shrink-0" />
+                      
+                      <div className="flex-1 flex flex-col min-h-0 space-y-4">
+                        <div className="flex items-center justify-between flex-shrink-0">
+                          <div>
+                            <h4 className="font-medium">Configuração da Questão</h4>
+                            <p className="text-sm text-muted-foreground">{selectedItem.item_code}</p>
+                          </div>
+                          <Button
+                            onClick={handleSaveItemConfig}
+                            disabled={saving}
+                            size="sm"
+                          >
+                            {saving ? (
+                              <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                            ) : (
+                              <Save className="mr-2 h-3 w-3" />
+                            )}
+                            Salvar Questão
+                          </Button>
+                        </div>
+
+                        <div className="flex-1 flex flex-col min-h-0 space-y-4">
+                          <div className="flex-1 flex flex-col space-y-2 min-h-0">
+                            <div className="flex items-center justify-between">
+                              <Label className="text-sm font-medium">Prompt do Sistema</Label>
+                              <Badge variant="outline" className="text-xs">
+                                {itemConfig.systemPrompt.length} caracteres
+                              </Badge>
+                            </div>
+                            <Textarea
+                              value={itemConfig.systemPrompt}
+                              onChange={(e) => setItemConfig(prev => ({ ...prev, systemPrompt: e.target.value }))}
+                              placeholder="Defina o papel e expertise da IA..."
+                              className="flex-1 font-mono text-xs resize-none min-h-[120px] max-h-[200px]"
+                            />
+                          </div>
+
+                          <div className="flex-1 flex flex-col space-y-2 min-h-0">
+                            <div className="flex items-center justify-between">
+                              <Label className="text-sm font-medium">Template do Prompt do Usuário</Label>
+                              <Badge variant="outline" className="text-xs">
+                                {itemConfig.userPromptTemplate.length} caracteres
+                              </Badge>
+                            </div>
+                            <Textarea
+                              value={itemConfig.userPromptTemplate}
+                              onChange={(e) => setItemConfig(prev => ({ ...prev, userPromptTemplate: e.target.value }))}
+                              placeholder="Template para a pergunta específica..."
+                              className="flex-1 font-mono text-xs resize-none min-h-[150px] max-h-[250px]"
+                            />
+                            <div className="space-y-2">
+                              <div className="flex flex-wrap gap-1 text-xs text-muted-foreground">
+                                <span className="font-medium">Variáveis disponíveis:</span>
+                                <code className="px-1 py-0.5 bg-muted rounded text-xs">{'{{question}}'}</code>
+                                <code className="px-1 py-0.5 bg-muted rounded text-xs">{'{{levels}}'}</code>
+                                <code className="px-1 py-0.5 bg-blue-100 text-blue-800 rounded text-xs">{'{{review_title}}'}</code>
+                                <code className="px-1 py-0.5 bg-blue-100 text-blue-800 rounded text-xs">{'{{condition_studied}}'}</code>
+                                <code className="px-1 py-0.5 bg-blue-100 text-blue-800 rounded text-xs">{'{{study_design}}'}</code>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                  
+                  {!selectedItem && (
+                    <div className="flex-1 flex items-center justify-center text-muted-foreground">
+                      <p className="text-sm">Selecione uma questão para configurar seus prompts</p>
+                    </div>
+                  )}
+                </div>
               </TabsContent>
             </ScrollArea>
           </Tabs>

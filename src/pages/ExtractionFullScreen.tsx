@@ -469,8 +469,8 @@ export default function ExtractionFullScreen() {
 
           {/* Formulário de extração */}
           <ResizablePanel defaultSize={showPDF ? 50 : 100} minSize={30}>
-            <ScrollArea className="h-full">
-              <div className="p-6 space-y-4">
+            <ScrollArea className="h-full bg-slate-50">
+              <div className="p-8 space-y-4">
                 {viewMode === 'extract' ? (
                   // Modo extração: Accordion por seção
                   entityTypes.map(entityType => {

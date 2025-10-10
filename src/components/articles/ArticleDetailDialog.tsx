@@ -43,7 +43,7 @@ interface Article {
 interface ArticleFile {
   id: string;
   file_type: string;   // Formato: PDF, DOC, etc.
-  file_role?: string;  // Função: MAIN, SUPPLEMENT, etc.
+  file_role?: string | null;  // Função: MAIN, SUPPLEMENT, etc.
   storage_key: string;
   original_filename: string | null;
   bytes: number | null;
@@ -186,7 +186,7 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
     }
   };
 
-  const getFileRoleLabel = (fileRole: string | undefined): string => {
+  const getFileRoleLabel = (fileRole: string | null | undefined): string => {
     if (!fileRole) return 'Não especificado';
     return FILE_ROLE_LABELS[fileRole as keyof typeof FILE_ROLE_LABELS] || fileRole;
   };

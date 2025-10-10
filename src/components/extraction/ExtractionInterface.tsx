@@ -8,10 +8,8 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
-  ClipboardCheck, 
   FileText, 
   Brain, 
   Download,
@@ -304,12 +302,6 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
           <p className="text-sm text-muted-foreground mt-1">
             Extraia dados estruturados dos artigos usando templates padronizados
           </p>
-        </div>
-        <div className="flex items-center space-x-2">
-          <ClipboardCheck className="h-5 w-5 text-muted-foreground" />
-          <Badge variant="outline">
-            {activeTemplate?.framework || 'Sem Template'}
-          </Badge>
         </div>
       </div>
 

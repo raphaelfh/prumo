@@ -69,15 +69,21 @@ export function ZoteroImportDialog({
     conflictResolution: 'update',
   });
 
-  // Carregar collections quando abrir o diálogo
+  // Carregar collections quando abrir o diálogo ou projectId mudar
   useEffect(() => {
     if (open) {
+      console.log('[ZoteroImportDialog] Dialog aberto com projectId:', projectId);
       listCollections();
       setCurrentStep('select-collection');
       setSelectedCollection(null);
       resetProgress();
     }
-  }, [open, listCollections, resetProgress]);
+  }, [open, projectId, listCollections, resetProgress]);
+
+  // Log quando projectId muda
+  useEffect(() => {
+    console.log('[ZoteroImportDialog] ProjectId atualizado:', projectId);
+  }, [projectId]);
 
   const handleNext = () => {
     if (currentStep === 'select-collection' && selectedCollection) {

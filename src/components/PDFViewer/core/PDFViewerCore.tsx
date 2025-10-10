@@ -39,6 +39,7 @@ export function PDFViewerCore({ articleId, projectId, className }: PDFViewerCore
     url,
     setUrl,
     setArticleId,
+    setPdfDocument,
     setNumPages,
   } = usePDFStore();
 
@@ -127,9 +128,11 @@ export function PDFViewerCore({ articleId, projectId, className }: PDFViewerCore
     }
   };
 
-  const handleLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
-    setNumPages(numPages);
-  }, [setNumPages]);
+  const handleLoadSuccess = useCallback((pdf: any) => {
+    console.log('📄 PDF carregado com sucesso:', pdf.numPages, 'páginas');
+    setNumPages(pdf.numPages);
+    setPdfDocument(pdf);
+  }, [setNumPages, setPdfDocument]);
 
   const handleLoadError = useCallback((error: Error) => {
     console.error('❌ Erro ao carregar documento:', error);

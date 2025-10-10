@@ -463,6 +463,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
               </Select>
             ) : (
               <Input
+                autoFocus
                 placeholder={
                   column === 'title' ? 'Buscar no título...' :
                   column === 'publication_year' ? 'Ex: 2023, 2020-2024...' :
@@ -472,6 +473,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                 }
                 value={columnFilters[column]}
                 onChange={(e) => updateColumnFilter(column, e.target.value)}
+                onKeyDown={(e) => e.stopPropagation()}
                 className="h-8"
               />
             )}
@@ -569,7 +571,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                   <ColumnFilterButton column="title" />
                 </div>
               </TableHead>
-              <TableHead className="w-[20%]">
+              <TableHead className="w-[12%]">
                 <div className="flex items-center gap-2">
                   <span className="font-semibold">Autores</span>
                   <ColumnFilterButton column="authors" />
@@ -589,7 +591,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                   <ColumnFilterButton column="publication_year" />
                 </div>
               </TableHead>
-              <TableHead className="w-[15%]">
+              <TableHead className="w-[18%]">
                 <div className="flex items-center gap-2">
                   <Button
                     variant="ghost"
@@ -633,14 +635,23 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                       {article.title}
                     </div>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="max-w-[120px]">
                     {article.authors && article.authors.length > 0 ? (
-                      <div className="text-sm flex items-center gap-1">
+                      <div 
+                        className="text-sm flex items-center gap-1 cursor-help group relative"
+                        title={article.authors.join(', ')}
+                      >
                         <User className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                        <span className="truncate">
-                          {article.authors.slice(0, 2).join(', ')}
-                          {article.authors.length > 2 && ` +${article.authors.length - 2}`}
+                        <span className="truncate block min-w-0">
+                          {article.authors.slice(0, 1).join(', ')}
+                          {article.authors.length > 1 && ` +${article.authors.length - 1}`}
                         </span>
+                        {/* Tooltip no hover */}
+                        <div className="absolute left-0 top-full mt-1 z-10 hidden group-hover:block bg-popover border rounded-md shadow-lg p-2 max-w-xs">
+                          <div className="text-xs text-popover-foreground">
+                            {article.authors.join(', ')}
+                          </div>
+                        </div>
                       </div>
                     ) : (
                       <span className="text-sm text-muted-foreground">N/A</span>

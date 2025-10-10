@@ -85,57 +85,42 @@ export function SectionAccordion(props: SectionAccordionProps) {
 
   const isComplete = totalRequired > 0 && completedRequired === totalRequired;
 
+  // Calcular porcentagem de progresso
+  const progressPercentage = totalRequired > 0 ? Math.round((completedRequired / totalRequired) * 100) : 0;
+
+  // Determinar cor da borda esquerda baseada no status
+  const borderColor = isComplete 
+    ? "border-l-green-500" 
+    : completedRequired > 0
+    ? "border-l-blue-500"
+    : "border-l-slate-300";
+
   return (
     <Accordion 
       type="single" 
       collapsible 
-      className="border rounded-lg"
+      className={cn("bg-white border-l-4", borderColor)}
     >
       <AccordionItem value={entityType.id} className="border-none">
-        <AccordionTrigger className="px-4 hover:no-underline hover:bg-muted/50">
-          <div className="flex items-center justify-between w-full pr-2">
+        <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-slate-50/50">
+          <div className="flex items-center justify-between w-full">
             <div className="flex items-center gap-3">
-              {/* Badge de progresso */}
-              <div className={cn(
-                "flex items-center justify-center w-10 h-10 rounded-full text-sm font-medium transition-colors",
-                isComplete 
-                  ? "bg-green-500 text-white" 
-                  : completedRequired > 0
-                  ? "bg-blue-500 text-white"
-                  : "bg-muted text-muted-foreground"
-              )}>
-                {completedRequired}/{totalRequired}
-              </div>
-
-              {/* Título e descrição */}
-              <div className="text-left">
-                <h3 className="font-semibold text-base">{entityType.label}</h3>
-                {entityType.description && (
-                  <p className="text-sm text-muted-foreground mt-0.5 line-clamp-1">
-                    {entityType.description}
-                  </p>
-                )}
-              </div>
-
-              {/* Badges */}
-              <div className="flex items-center gap-2">
-                {entityType.is_required && (
-                  <Badge variant="destructive" className="text-xs">
-                    Obrigatório
-                  </Badge>
-                )}
-                {isMultiple && (
-                  <Badge variant="outline" className="text-xs">
-                    Múltipla ({instances.length})
-                  </Badge>
-                )}
-              </div>
+              <h3 className="font-semibold text-base">{entityType.label}</h3>
+              {isMultiple && (
+                <Badge variant="outline" className="text-xs">
+                  Múltipla ({instances.length})
+                </Badge>
+              )}
+            </div>
+            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+              <span className="font-medium">{completedRequired}/{totalRequired}</span>
+              <span>{progressPercentage}%</span>
             </div>
           </div>
         </AccordionTrigger>
 
-        <AccordionContent className="px-4 pb-4">
-          <div className="space-y-4 pt-4">
+        <AccordionContent className="px-6 pb-6">
+          <div className="space-y-0 divide-y divide-slate-100">
             {instances.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <p>Nenhuma instância criada para esta seção</p>
@@ -144,40 +129,43 @@ export function SectionAccordion(props: SectionAccordionProps) {
               // Seção múltipla: Mostrar cards de instâncias
               <>
                 {instances.map((instance, index) => (
-                  <InstanceCard
-                    key={instance.id}
-                    instance={instance}
-                    index={index + 1}
-                    fields={fields}
-                    values={values}
-                    onValueChange={(fieldId, value) =>
-                      onValueChange(instance.id, fieldId, value)
-                    }
-                    onRemove={() => props.onRemoveInstance?.(instance.id)}
-                    canRemove={instances.length > 1}
-                    projectId={projectId}
-                    articleId={articleId}
-                    otherExtractions={props.otherExtractions}
-                    aiSuggestions={props.aiSuggestions}
-                    onAcceptAI={(fieldId) => props.onAcceptAI?.(instance.id, fieldId)}
-                    onRejectAI={(fieldId) => props.onRejectAI?.(instance.id, fieldId)}
-                  />
+                  <div key={instance.id} className="py-4">
+                    <InstanceCard
+                      instance={instance}
+                      index={index + 1}
+                      fields={fields}
+                      values={values}
+                      onValueChange={(fieldId, value) =>
+                        onValueChange(instance.id, fieldId, value)
+                      }
+                      onRemove={() => props.onRemoveInstance?.(instance.id)}
+                      canRemove={instances.length > 1}
+                      projectId={projectId}
+                      articleId={articleId}
+                      otherExtractions={props.otherExtractions}
+                      aiSuggestions={props.aiSuggestions}
+                      onAcceptAI={(fieldId) => props.onAcceptAI?.(instance.id, fieldId)}
+                      onRejectAI={(fieldId) => props.onRejectAI?.(instance.id, fieldId)}
+                    />
+                  </div>
                 ))}
 
                 {props.onAddInstance && (
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={props.onAddInstance}
-                  >
-                    <Plus className="mr-2 h-4 w-4" />
-                    Adicionar {entityType.label}
-                  </Button>
+                  <div className="pt-4 border-t border-slate-100">
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={props.onAddInstance}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Adicionar {entityType.label}
+                    </Button>
+                  </div>
                 )}
               </>
             ) : (
               // Seção única: Mostrar campos diretamente
-              <div className="grid gap-4">
+              <>
                 {fields.map(field => {
                   const key = `${instances[0].id}_${field.id}`;
                   
@@ -199,7 +187,7 @@ export function SectionAccordion(props: SectionAccordionProps) {
                     />
                   );
                 })}
-              </div>
+              </>
             )}
           </div>
         </AccordionContent>

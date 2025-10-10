@@ -12,6 +12,7 @@ import { useSidebar } from '@/contexts/SidebarContext';
 import { useProject } from '@/contexts/ProjectContext';
 import { ProfileMenu } from './ProfileMenu';
 import { MobileSidebar } from '@/components/layout/MobileSidebar';
+import { FeedbackButton } from '@/components/feedback/FeedbackButton';
 import type { TopbarProps } from '@/types/navigation';
 
 export const Topbar: React.FC<TopbarProps> = ({
@@ -52,10 +53,11 @@ export const Topbar: React.FC<TopbarProps> = ({
   if (!user) {
     return (
       <header className={cn("sticky top-0 z-40 w-full border-b bg-background", className)}>
-        <div className="mx-auto flex h-14 w-full max-w-[1200px] items-center gap-3 px-4">
+        <div className="mx-auto flex h-14 w-full max-w-[1200px] items-center justify-between gap-3 px-4">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium">Review Hub</span>
           </div>
+          <FeedbackButton />
         </div>
       </header>
     );
@@ -103,8 +105,9 @@ export const Topbar: React.FC<TopbarProps> = ({
           )}
         </div>
 
-        {/* Right Section - Profile Menu */}
+        {/* Right Section - Feedback + Profile Menu */}
         <div className="flex items-center gap-1">
+          <FeedbackButton />
           <ProfileMenu user={user} />
         </div>
       </div>
@@ -135,7 +138,12 @@ export const SimpleTopbar: React.FC<{
           <h1 className="text-lg font-semibold truncate">{title}</h1>
         </div>
 
-        {user && <ProfileMenu user={user} />}
+        {user && (
+          <div className="flex items-center gap-1">
+            <FeedbackButton />
+            <ProfileMenu user={user} />
+          </div>
+        )}
       </div>
     </header>
   );

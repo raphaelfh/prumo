@@ -14,7 +14,6 @@
  */
 
 import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -88,12 +87,13 @@ export function InstanceCard(props: InstanceCardProps) {
   };
 
   return (
-    <Card className="relative">
-      <CardHeader className="pb-3">
+    <div className="bg-slate-50 rounded-lg border border-slate-200">
+      {/* Header da instância */}
+      <div className="px-6 py-4 border-b border-slate-200">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 flex-1">
             {/* Badge com número */}
-            <Badge variant="secondary" className="text-xs shrink-0">
+            <Badge variant="outline" className="text-xs shrink-0 bg-white">
               #{index}
             </Badge>
 
@@ -131,13 +131,13 @@ export function InstanceCard(props: InstanceCardProps) {
                 </Button>
               </div>
             ) : (
-              <CardTitle
-                className="text-base cursor-pointer hover:text-primary flex items-center gap-2"
+              <h4
+                className="text-sm font-semibold cursor-pointer hover:text-primary flex items-center gap-2"
                 onClick={() => setIsEditingLabel(true)}
               >
                 {instance.label}
                 <Edit2 className="h-3 w-3 text-muted-foreground" />
-              </CardTitle>
+              </h4>
             )}
           </div>
 
@@ -153,9 +153,10 @@ export function InstanceCard(props: InstanceCardProps) {
             </Button>
           )}
         </div>
-      </CardHeader>
+      </div>
 
-      <CardContent className="space-y-4">
+      {/* Campos da instância */}
+      <div className="bg-white rounded-b-lg">
         {fields.map(field => {
           const key = `${instance.id}_${field.id}`;
           
@@ -175,8 +176,8 @@ export function InstanceCard(props: InstanceCardProps) {
             />
           );
         })}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 

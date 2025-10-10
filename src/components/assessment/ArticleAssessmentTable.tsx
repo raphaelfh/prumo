@@ -419,6 +419,7 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
               </Select>
             ) : (
               <Input
+                autoFocus
                 placeholder={
                   column === 'title' ? 'Buscar no título...' :
                   column === 'publication_year' ? 'Ex: 2023, 2020-2024...' :
@@ -428,6 +429,7 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
                 }
                 value={columnFilters[column]}
                 onChange={(e) => updateColumnFilter(column, e.target.value)}
+                onKeyDown={(e) => e.stopPropagation()}
                 className="h-8"
               />
             )}
@@ -525,7 +527,7 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
                   <ColumnFilterButton column="title" />
                 </div>
               </TableHead>
-              <TableHead className="w-[20%]">
+              <TableHead className="w-[15%]">
                 <div className="flex items-center gap-2">
                   <span className="font-semibold">Autores</span>
                   <ColumnFilterButton column="authors" />
@@ -590,9 +592,9 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
                   </TableCell>
                   <TableCell>
                     {article.authors && article.authors.length > 0 ? (
-                      <div className="text-sm flex items-center gap-1">
+                      <div className="text-sm flex items-center gap-1 max-w-full overflow-hidden">
                         <User className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                        <span className="truncate">
+                        <span className="truncate block" title={article.authors.join(', ')}>
                           {article.authors.slice(0, 2).join(', ')}
                           {article.authors.length > 2 && ` +${article.authors.length - 2}`}
                         </span>

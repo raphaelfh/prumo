@@ -36,11 +36,11 @@ export function PDFViewer({ articleId, projectId, className }: PDFViewerProps) {
       />
 
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Sidebar - Desktop only */}
-        <Sidebar className="hidden lg:flex" />
+        {/* Sidebar - Overlay sobre o PDF */}
+        <Sidebar />
 
-        {/* PDF Viewer Core */}
-        <div className="flex-1">
+        {/* PDF Viewer Core - Ocupa todo o espaço */}
+        <div className="flex-1 w-full">
           <PDFViewerCore articleId={articleId} projectId={projectId} />
         </div>
       </div>

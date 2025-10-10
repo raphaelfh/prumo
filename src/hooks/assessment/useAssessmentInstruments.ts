@@ -8,6 +8,7 @@ export type AssessmentItem = Tables<"assessment_items">;
 export const useAssessmentInstruments = () => {
   const [instruments, setInstruments] = useState<AssessmentInstrument[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadInstruments();
@@ -15,6 +16,7 @@ export const useAssessmentInstruments = () => {
 
   const loadInstruments = async () => {
     try {
+      setError(null);
       const { data, error } = await supabase
         .from("assessment_instruments")
         .select("*")
@@ -23,14 +25,15 @@ export const useAssessmentInstruments = () => {
 
       if (error) throw error;
       setInstruments((data || []) as AssessmentInstrument[]);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error loading instruments:", error);
+      setError(error.message || "Erro ao carregar instrumentos");
     } finally {
       setLoading(false);
     }
   };
 
-  return { instruments, loading };
+  return { instruments, loading, error };
 };
 
 export const useAssessmentItems = (instrumentId: string | null) => {

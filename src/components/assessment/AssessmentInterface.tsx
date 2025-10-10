@@ -44,7 +44,8 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
   // Hook para gerenciar instrumentos
   const { 
     instruments, 
-    loading: instrumentsLoading
+    loading: instrumentsLoading,
+    error: instrumentsError
   } = useAssessmentInstruments();
 
   const { items: assessmentItems } = useAssessmentItems(activeInstrument?.id || "");
@@ -137,7 +138,7 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
   const renderDashboard = () => (
     <div className="space-y-6">
       {/* Estatísticas Principais */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Artigos</CardTitle>
@@ -324,10 +325,35 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value={activeTab} className="mt-6 min-h-[400px]">
+        <TabsContent value={activeTab} className="mt-6">
           {renderTabContent()}
         </TabsContent>
       </Tabs>
+
+      {/* Loading state */}
+      {instrumentsLoading && (
+        <div className="flex items-center justify-center py-12">
+          <div className="text-center">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Carregando instrumentos...</p>
+          </div>
+        </div>
+      )}
+
+      {/* Error state */}
+      {instrumentsError && (
+        <Card className="border-destructive">
+          <CardContent className="pt-6">
+            <div className="flex items-center space-x-2 text-destructive">
+              <AlertCircle className="h-5 w-5" />
+              <div>
+                <p className="font-medium">Erro ao carregar instrumentos</p>
+                <p className="text-sm">{instrumentsError}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Modal de Configuração de IA */}
       {activeInstrument && (
@@ -344,16 +370,6 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
             setAiConfigModalOpen(false);
           }}
         />
-      )}
-
-      {/* Loading state */}
-      {instrumentsLoading && (
-        <div className="flex items-center justify-center py-12">
-          <div className="text-center">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4"></div>
-            <p className="text-muted-foreground">Carregando instrumentos...</p>
-          </div>
-        </div>
       )}
     </div>
   );

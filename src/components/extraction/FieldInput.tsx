@@ -102,7 +102,7 @@ export function FieldInput(props: FieldInputProps) {
               placeholder={`Digite ${field.label.toLowerCase()}`}
               disabled={disabled}
               className={cn(
-                "min-h-[80px]",
+                "min-h-[100px] text-base",
                 hasAIPending && "border-purple-500 bg-purple-50/30 dark:bg-purple-950/10",
                 validationError && "border-destructive"
               )}
@@ -117,6 +117,7 @@ export function FieldInput(props: FieldInputProps) {
             placeholder={`Digite ${field.label.toLowerCase()}`}
             disabled={disabled}
             className={cn(
+              "h-11 text-base",
               hasAIPending && "border-purple-500 bg-purple-50/30 dark:bg-purple-950/10 pr-32",
               validationError && "border-destructive"
             )}
@@ -150,7 +151,7 @@ export function FieldInput(props: FieldInputProps) {
               }}
               placeholder="0"
               disabled={disabled}
-              className={cn("flex-1", validationError && "border-destructive")}
+              className={cn("flex-1 h-11 text-base", validationError && "border-destructive")}
             />
             
             {/* Unit selector se houver unidades relacionadas */}
@@ -197,7 +198,7 @@ export function FieldInput(props: FieldInputProps) {
             value={value || ''}
             onChange={(e) => handleChange(e.target.value)}
             disabled={disabled}
-            className={cn(validationError && "border-destructive")}
+            className={cn("h-11 text-base", validationError && "border-destructive")}
           />
         );
 
@@ -209,7 +210,7 @@ export function FieldInput(props: FieldInputProps) {
             onValueChange={handleChange} 
             disabled={disabled}
           >
-            <SelectTrigger className={cn(validationError && "border-destructive")}>
+            <SelectTrigger className={cn("h-11 text-base", validationError && "border-destructive")}>
               <SelectValue placeholder={`Selecione ${field.label.toLowerCase()}`} />
             </SelectTrigger>
             <SelectContent>
@@ -235,7 +236,7 @@ export function FieldInput(props: FieldInputProps) {
             onChange={(e) => handleChange(e.target.value.split(',').map(v => v.trim()))}
             placeholder="Valores separados por vírgula"
             disabled={disabled}
-            className={cn(validationError && "border-destructive")}
+            className={cn("h-11 text-base", validationError && "border-destructive")}
           />
         );
 
@@ -259,28 +260,32 @@ export function FieldInput(props: FieldInputProps) {
             value={value || ''}
             onChange={(e) => handleChange(e.target.value)}
             disabled={disabled}
-            className={cn(validationError && "border-destructive")}
+            className={cn("h-11 text-base", validationError && "border-destructive")}
           />
         );
     }
   };
 
   return (
-    <div className="space-y-2">
-      {/* Label */}
-      <div className="flex items-center justify-between">
-        <Label className="flex items-center gap-2">
+    <div className="grid grid-cols-[30%_1fr] gap-6 items-start py-4">
+      {/* Coluna esquerda: Label + Description */}
+      <div className="space-y-1 pt-2">
+        <Label className="text-sm font-medium flex items-center gap-2">
           {field.label}
-          {field.is_required && (
-            <Badge variant="destructive" className="text-xs">
-              Obrigatório
-            </Badge>
-          )}
+          {field.is_required && <span className="text-destructive ml-1">*</span>}
         </Label>
-
+        {field.description && (
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            {field.description}
+          </p>
+        )}
+      </div>
+      
+      {/* Coluna direita: Input */}
+      <div className="space-y-2">
         {/* Badges de colaboração */}
-        <div className="flex items-center gap-2">
-          {otherExtractions && otherExtractions.length > 0 && (
+        {otherExtractions && otherExtractions.length > 0 && (
+          <div className="flex items-center gap-2 mb-2">
             <OtherExtractionsPopover
               fieldId={field.id}
               instanceId={instanceId}
@@ -289,41 +294,34 @@ export function FieldInput(props: FieldInputProps) {
             >
               <OtherExtractionsButton count={otherExtractions.length} />
             </OtherExtractionsPopover>
-          )}
-        </div>
-      </div>
-
-      {/* Input com IA badges inline */}
-      <div className="relative">
-        {renderInput()}
-        
-        {/* IA Badge + Buttons (posição absoluta dentro do input) */}
-        {hasAIPending && field.field_type === 'text' && (
-          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-            <AISuggestionBadge suggestion={aiSuggestion} />
-            <AIAcceptRejectButtons
-              onAccept={onAcceptAI}
-              onReject={onRejectAI}
-              size="sm"
-            />
           </div>
         )}
+
+        {/* Input com IA badges inline */}
+        <div className="relative">
+          {renderInput()}
+          
+          {/* IA Badge + Buttons (posição absoluta dentro do input) */}
+          {hasAIPending && field.field_type === 'text' && (
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+              <AISuggestionBadge suggestion={aiSuggestion} />
+              <AIAcceptRejectButtons
+                onAccept={onAcceptAI}
+                onReject={onRejectAI}
+                size="sm"
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Validation error */}
+        {validationError && (
+          <p className="text-xs text-destructive flex items-center gap-1">
+            <AlertCircle className="h-3 w-3" />
+            {validationError}
+          </p>
+        )}
       </div>
-
-      {/* Description */}
-      {field.description && (
-        <p className="text-xs text-muted-foreground">
-          {field.description}
-        </p>
-      )}
-
-      {/* Validation error */}
-      {validationError && (
-        <p className="text-xs text-destructive flex items-center gap-1">
-          <AlertCircle className="h-3 w-3" />
-          {validationError}
-        </p>
-      )}
     </div>
   );
 }

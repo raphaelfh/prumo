@@ -3,11 +3,13 @@ import { devtools, persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import { v4 as uuidv4 } from 'uuid';
 import type { Annotation, AnnotationType, DrawingState } from '@/types/annotations-new';
+import type { PDFDocumentProxy } from 'pdfjs-dist';
 
 interface PDFState {
   // PDF State
   url: string | null;
   articleId: string | null;
+  pdfDocument: PDFDocumentProxy | null;
   numPages: number;
   currentPage: number;
   scale: number;
@@ -58,6 +60,7 @@ interface PDFState {
   // Actions
   setUrl: (url: string) => void;
   setArticleId: (articleId: string) => void;
+  setPdfDocument: (doc: PDFDocumentProxy | null) => void;
   setNumPages: (pages: number) => void;
   setCurrentPage: (page: number) => void;
   setScale: (scale: number) => void;
@@ -121,6 +124,7 @@ interface PDFState {
   // Getters
   getAnnotationsForPage: (page: number) => Annotation[];
   getAnnotation: (id: string) => Annotation | undefined;
+  getPdfDocument: () => PDFDocumentProxy | null;
 }
 
 export const usePDFStore = create<PDFState>()(
@@ -130,6 +134,7 @@ export const usePDFStore = create<PDFState>()(
         // Initial State
         url: null,
         articleId: null,
+        pdfDocument: null,
         numPages: 0,
         currentPage: 1,
         scale: 1.0,
@@ -161,6 +166,7 @@ export const usePDFStore = create<PDFState>()(
         // Basic Setters
         setUrl: (url) => set({ url }),
         setArticleId: (articleId) => set({ articleId }),
+        setPdfDocument: (pdfDocument) => set({ pdfDocument }),
         setNumPages: (numPages) => set({ numPages }),
         setCurrentPage: (page) => set({ currentPage: Math.max(1, Math.min(page, get().numPages)) }),
         setScale: (scale) => set({ scale: Math.max(0.5, Math.min(scale, 3.0)) }),
@@ -574,6 +580,10 @@ export const usePDFStore = create<PDFState>()(
 
         getAnnotation: (id) => {
           return get().annotations.find((a) => a.id === id);
+        },
+
+        getPdfDocument: () => {
+          return get().pdfDocument;
         },
       })),
       {

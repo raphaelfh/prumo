@@ -221,6 +221,13 @@ export class ZoteroImportService {
     options: ImportOptions
   ): Promise<{ action: 'imported' | 'updated' | 'skipped'; articleId?: string; error?: string }> {
     try {
+      // Log para debug
+      console.log('[processItem] Processando item:', {
+        projectId,
+        itemTitle: item.data.title?.substring(0, 50),
+        doi: item.data.DOI,
+      });
+
       // Verificar se item tem título
       if (!item.data.title) {
         return { action: 'skipped', error: 'Item sem título' };
@@ -261,6 +268,13 @@ export class ZoteroImportService {
         action = 'updated';
       } else {
         // Criar novo artigo
+        console.log('[processItem] Tentando inserir novo artigo:', {
+          projectId,
+          doi: articleData.doi,
+          title: articleData.title?.substring(0, 50),
+          zotero_item_key: articleData.zotero_item_key,
+        });
+
         const { data: newArticle, error } = await supabase
           .from('articles')
           .insert({
@@ -270,7 +284,16 @@ export class ZoteroImportService {
           .select('id')
           .single();
 
-        if (error) throw error;
+        if (error) {
+          console.error('[processItem] Erro ao inserir artigo:', {
+            error,
+            code: error.code,
+            message: error.message,
+            details: error.details,
+            hint: error.hint,
+          });
+          throw error;
+        }
         if (!newArticle) throw new Error('Falha ao criar artigo');
 
         articleId = newArticle.id;

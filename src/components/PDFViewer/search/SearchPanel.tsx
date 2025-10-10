@@ -23,20 +23,16 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
+import { usePDFStore } from '@/stores/usePDFStore';
+import { searchInDocument, type SearchResult } from '@/services/pdfSearchService';
 
 interface SearchPanelProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-interface SearchResult {
-  pageNumber: number;
-  text: string;
-  context: string;
-  position: { start: number; end: number };
-}
-
 export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
+  const { getPdfDocument, goToPage } = usePDFStore();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [currentIndex, setCurrentIndex] = useState(-1);
@@ -45,34 +41,55 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
   const [useRegex, setUseRegex] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [searchProgress, setSearchProgress] = useState({ current: 0, total: 0 });
 
-  // Função de busca (placeholder - será implementada com PDF.js API)
+  // Função de busca real usando PDF.js
   const performSearch = useCallback(async () => {
     if (!query.trim()) {
       setResults([]);
       setCurrentIndex(-1);
+      setSearchProgress({ current: 0, total: 0 });
+      return;
+    }
+
+    const pdfDoc = getPdfDocument();
+    if (!pdfDoc) {
+      console.warn('⚠️ Documento PDF não disponível para busca');
       return;
     }
 
     setIsSearching(true);
+    setSearchProgress({ current: 0, total: pdfDoc.numPages });
     
     try {
-      // TODO: Integrar com PDF.js para busca real
-      // Por ora, simulação
       console.log('🔍 Buscando:', { query, caseSensitive, wholeWords, useRegex });
       
-      // Simulação de resultados
-      await new Promise(resolve => setTimeout(resolve, 300));
+      const searchResults = await searchInDocument(
+        pdfDoc,
+        query,
+        { caseSensitive, wholeWords, useRegex },
+        (current, total) => {
+          setSearchProgress({ current, total });
+        }
+      );
       
+      console.log(`✅ Busca concluída: ${searchResults.length} página(s) com resultados`);
+      setResults(searchResults);
+      setCurrentIndex(searchResults.length > 0 ? 0 : -1);
+      
+      // Navegar para primeira página com resultado
+      if (searchResults.length > 0) {
+        goToPage(searchResults[0].pageNumber);
+      }
+    } catch (error) {
+      console.error('❌ Erro na busca:', error);
       setResults([]);
       setCurrentIndex(-1);
-      
-    } catch (error) {
-      console.error('Erro na busca:', error);
     } finally {
       setIsSearching(false);
+      setSearchProgress({ current: 0, total: 0 });
     }
-  }, [query, caseSensitive, wholeWords, useRegex]);
+  }, [query, caseSensitive, wholeWords, useRegex, getPdfDocument, goToPage]);
 
   // Buscar quando query mudar (debounced)
   useEffect(() => {
@@ -82,12 +99,16 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
 
   const goToNextResult = () => {
     if (results.length === 0) return;
-    setCurrentIndex((prev) => (prev + 1) % results.length);
+    const newIndex = (currentIndex + 1) % results.length;
+    setCurrentIndex(newIndex);
+    goToPage(results[newIndex].pageNumber);
   };
 
   const goToPrevResult = () => {
     if (results.length === 0) return;
-    setCurrentIndex((prev) => (prev - 1 + results.length) % results.length);
+    const newIndex = (currentIndex - 1 + results.length) % results.length;
+    setCurrentIndex(newIndex);
+    goToPage(results[newIndex].pageNumber);
   };
 
   // Atalhos de teclado
@@ -236,15 +257,22 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
         </Collapsible>
 
         {/* Status da busca */}
-        {isSearching && (
+        {isSearching && searchProgress.total > 0 && (
           <div className="text-xs text-muted-foreground">
-            Buscando...
+            Buscando... {searchProgress.current}/{searchProgress.total} páginas
           </div>
         )}
         
         {query && !isSearching && results.length === 0 && (
           <div className="text-xs text-muted-foreground">
             Nenhum resultado encontrado para "{query}"
+          </div>
+        )}
+        
+        {query && !isSearching && results.length > 0 && (
+          <div className="text-xs text-muted-foreground">
+            Encontrado em {results.length} página(s) • 
+            Total: {results.reduce((sum, r) => sum + r.matches.length, 0)} resultado(s)
           </div>
         )}
       </div>

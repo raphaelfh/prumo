@@ -14,29 +14,14 @@
  * @component
  */
 
-import { useState } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Edit2, Save, X, Loader2, Plus, Trash2, Lock } from 'lucide-react';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { useMemo, useCallback } from 'react';
+import { Loader2 } from 'lucide-react';
 import { useFieldManagement } from '@/hooks/extraction/useFieldManagement';
+import { useFieldsManagerState } from '@/hooks/extraction/useFieldsManagerState';
+import { useErrorHandler } from '@/hooks/extraction/useErrorHandler';
+import { FieldsHeader } from './FieldsHeader';
+import { FieldsTable } from './FieldsTable';
+import { EmptyFieldsState } from './EmptyFieldsState';
 import { AddFieldDialog } from './dialogs/AddFieldDialog';
 import { DeleteFieldConfirm } from './dialogs/DeleteFieldConfirm';
 import { EditFieldDialog } from './dialogs/EditFieldDialog';
@@ -65,59 +50,58 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
     validateField,
   } = useFieldManagement({ entityTypeId, projectId });
 
-  // Estados locais para edição inline
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editData, setEditData] = useState<Partial<ExtractionField>>({});
-  const [savingEdit, setSavingEdit] = useState(false);
+  // Estado local centralizado
+  const { state, actions } = useFieldsManagerState();
+  const {
+    editingId,
+    editData,
+    savingEdit,
+    showAddDialog,
+    showEditDialog,
+    fieldToEdit,
+    fieldToDelete,
+    deleteValidation,
+    validatingDelete,
+  } = state;
 
-  // Estados para dialogs
-  const [showAddDialog, setShowAddDialog] = useState(false);
-  const [showEditDialog, setShowEditDialog] = useState(false);
-  const [fieldToEdit, setFieldToEdit] = useState<ExtractionField | null>(null);
-  const [fieldToDelete, setFieldToDelete] = useState<ExtractionField | null>(null);
-  const [deleteValidation, setDeleteValidation] = useState<FieldValidationResult | null>(null);
-  const [validatingDelete, setValidatingDelete] = useState(false);
+  // Tratamento de erros
+  const { handleFieldOperationError, handleFieldValidationError } = useErrorHandler();
 
-  const handleStartEdit = (field: ExtractionField) => {
-    setEditingId(field.id);
-    setEditData({
-      label: field.label,
-      description: field.description,
-      is_required: field.is_required,
-    });
-  };
+  const handleStartEdit = useCallback((field: ExtractionField) => {
+    actions.startEdit(field);
+  }, [actions]);
 
-  const handleSaveEdit = async (fieldId: string) => {
-    setSavingEdit(true);
+  const handleSaveEdit = useCallback(async (fieldId: string) => {
+    actions.setSavingEdit(true);
     try {
-      await updateField(fieldId, editData);
-      setEditingId(null);
-      setEditData({});
+      const result = await updateField(fieldId, editData);
+      if (result) {
+        actions.cancelEdit();
+      }
+    } catch (error) {
+      handleFieldOperationError(error, 'editar');
     } finally {
-      setSavingEdit(false);
+      actions.setSavingEdit(false);
     }
-  };
+  }, [actions, updateField, editData, handleFieldOperationError]);
 
-  const handleCancelEdit = () => {
-    setEditingId(null);
-    setEditData({});
-  };
+  const handleCancelEdit = useCallback(() => {
+    actions.cancelEdit();
+  }, [actions]);
 
-  const handleOpenEditDialog = (field: ExtractionField) => {
-    setFieldToEdit(field);
-    setShowEditDialog(true);
-  };
+  const handleOpenEditDialog = useCallback((field: ExtractionField) => {
+    actions.openEditDialog(field);
+  }, [actions]);
 
-  const handleOpenDeleteDialog = async (field: ExtractionField) => {
-    setValidatingDelete(true);
-    setFieldToDelete(field);
+  const handleOpenDeleteDialog = useCallback(async (field: ExtractionField) => {
+    actions.openDeleteDialog(field);
     
     try {
       const validation = await validateField(field.id);
-      setDeleteValidation(validation);
-    } catch (err) {
-      console.error('Erro ao validar campo para exclusão:', err);
-      setDeleteValidation({
+      actions.setDeleteValidation(validation);
+    } catch (error) {
+      handleFieldValidationError(error);
+      actions.setDeleteValidation({
         canDelete: false,
         canUpdate: false,
         canChangeType: false,
@@ -126,15 +110,24 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
         message: 'Erro ao validar campo',
       });
     } finally {
-      setValidatingDelete(false);
+      actions.setValidatingDelete(null);
     }
-  };
+  }, [actions, validateField, handleFieldValidationError]);
 
-  const handleConfirmDelete = async (fieldId: string) => {
-    return await deleteField(fieldId);
-  };
+  const handleConfirmDelete = useCallback(async (fieldId: string) => {
+    try {
+      const success = await deleteField(fieldId);
+      if (success) {
+        actions.closeDeleteDialog();
+      }
+      return success;
+    } catch (error) {
+      handleFieldOperationError(error, 'excluir');
+      return false;
+    }
+  }, [actions, deleteField, handleFieldOperationError]);
 
-  const getFieldTypeLabel = (type: string) => {
+  const getFieldTypeLabel = useCallback((type: string) => {
     const labels: Record<string, string> = {
       text: 'Texto',
       number: 'Número',
@@ -144,7 +137,16 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
       boolean: 'Sim/Não',
     };
     return labels[type] || type;
-  };
+  }, []);
+
+  // Memoizar valores computados
+  const hasFields = useMemo(() => fields.length > 0, [fields.length]);
+  
+  const dialogHandlers = useMemo(() => ({
+    addDialog: (open: boolean) => !open && actions.closeAddDialog(),
+    editDialog: (open: boolean) => !open && actions.closeEditDialog(),
+    deleteDialog: (open: boolean) => !open && actions.closeDeleteDialog(),
+  }), [actions]);
 
   if (loading) {
     return (
@@ -156,242 +158,43 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" role="main" aria-labelledby="fields-header">
       {/* Header com ações */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <h4 className="text-sm font-medium">
-            Campos desta seção ({fields.length})
-          </h4>
-          {userRole && (
-            <Badge variant="outline" className="text-xs">
-              {userRole === 'manager' ? '👑 Manager' : userRole === 'reviewer' ? '📝 Reviewer' : '👁️ Viewer'}
-            </Badge>
-          )}
-        </div>
-        
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div>
-                <Button
-                  size="sm"
-                  onClick={() => setShowAddDialog(true)}
-                  disabled={!canCreate}
-                  className="gap-2"
-                >
-                  {canCreate ? (
-                    <>
-                      <Plus className="h-4 w-4" />
-                      Adicionar Campo
-                    </>
-                  ) : (
-                    <>
-                      <Lock className="h-4 w-4" />
-                      Adicionar Campo
-                    </>
-                  )}
-                </Button>
-              </div>
-            </TooltipTrigger>
-            {!canCreate && (
-              <TooltipContent>
-                <p>Apenas managers podem adicionar campos</p>
-              </TooltipContent>
-            )}
-          </Tooltip>
-        </TooltipProvider>
-      </div>
+      <FieldsHeader
+        fieldsCount={fields.length}
+        userRole={userRole}
+        canCreate={canCreate}
+        onAddField={actions.openAddDialog}
+      />
 
       {/* Tabela de campos */}
-      {fields.length === 0 ? (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center py-8">
-              <p className="text-sm text-muted-foreground mb-4">
-                Nenhum campo nesta seção
-              </p>
-              {canCreate && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowAddDialog(true)}
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Adicionar Primeiro Campo
-                </Button>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+      {!hasFields ? (
+        <EmptyFieldsState
+          canCreate={canCreate}
+          onAddField={actions.openAddDialog}
+        />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[50px]">#</TableHead>
-              <TableHead>Campo</TableHead>
-              <TableHead>Tipo</TableHead>
-              <TableHead className="text-center">Obrigatório</TableHead>
-              <TableHead className="text-right">Ações</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {fields.map((field, index) => (
-              <TableRow key={field.id}>
-                <TableCell className="font-mono text-xs text-muted-foreground">
-                  {index + 1}
-                </TableCell>
-                <TableCell>
-                  {editingId === field.id ? (
-                    <div className="space-y-2">
-                      <Input
-                        value={editData.label || ''}
-                        onChange={(e) => setEditData({ ...editData, label: e.target.value })}
-                        placeholder="Label do campo"
-                        disabled={savingEdit}
-                      />
-                      <Textarea
-                        value={editData.description || ''}
-                        onChange={(e) => setEditData({ ...editData, description: e.target.value })}
-                        placeholder="Descrição"
-                        rows={2}
-                        className="text-sm"
-                        disabled={savingEdit}
-                      />
-                    </div>
-                  ) : (
-                    <div>
-                      <div className="font-medium">{field.label}</div>
-                      {field.description && (
-                        <div className="text-sm text-muted-foreground mt-1">
-                          {field.description}
-                        </div>
-                      )}
-                      {field.unit && (
-                        <div className="text-xs text-muted-foreground mt-1">
-                          Unidade: <span className="font-mono">{field.unit}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Badge variant="secondary" className="font-mono text-xs">
-                    {getFieldTypeLabel(field.field_type)}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-center">
-                  {editingId === field.id ? (
-                    <Switch
-                      checked={editData.is_required ?? field.is_required}
-                      onCheckedChange={(checked) =>
-                        setEditData({ ...editData, is_required: checked })
-                      }
-                      disabled={savingEdit}
-                    />
-                  ) : (
-                    <Badge variant={field.is_required ? 'default' : 'outline'}>
-                      {field.is_required ? 'Sim' : 'Não'}
-                    </Badge>
-                  )}
-                </TableCell>
-                <TableCell className="text-right">
-                  {editingId === field.id ? (
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        size="sm"
-                        onClick={() => handleSaveEdit(field.id)}
-                        disabled={savingEdit}
-                        className="gap-1"
-                      >
-                        {savingEdit ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : (
-                          <Save className="h-3 w-3" />
-                        )}
-                        Salvar
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={handleCancelEdit}
-                        disabled={savingEdit}
-                        className="gap-1"
-                      >
-                        <X className="h-3 w-3" />
-                        Cancelar
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="flex justify-end gap-1">
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => handleStartEdit(field)}
-                                disabled={!canEdit}
-                                className="gap-1"
-                              >
-                                {canEdit ? (
-                                  <Edit2 className="h-3 w-3" />
-                                ) : (
-                                  <Lock className="h-3 w-3" />
-                                )}
-                              </Button>
-                            </div>
-                          </TooltipTrigger>
-                          {!canEdit && (
-                            <TooltipContent>
-                              <p>Apenas managers podem editar</p>
-                            </TooltipContent>
-                          )}
-                        </Tooltip>
-                      </TooltipProvider>
-
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => handleOpenDeleteDialog(field)}
-                                disabled={!canDelete || validatingDelete}
-                                className="gap-1 text-destructive hover:text-destructive"
-                              >
-                                {validatingDelete ? (
-                                  <Loader2 className="h-3 w-3 animate-spin" />
-                                ) : canDelete ? (
-                                  <Trash2 className="h-3 w-3" />
-                                ) : (
-                                  <Lock className="h-3 w-3" />
-                                )}
-                              </Button>
-                            </div>
-                          </TooltipTrigger>
-                          {!canDelete && !validatingDelete && (
-                            <TooltipContent>
-                              <p>Apenas managers podem excluir</p>
-                            </TooltipContent>
-                          )}
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <FieldsTable
+          fields={fields}
+          editingId={editingId}
+          editData={editData}
+          savingEdit={savingEdit}
+          validatingDelete={validatingDelete}
+          canEdit={canEdit}
+          canDelete={canDelete}
+          onStartEdit={handleStartEdit}
+          onUpdateEditData={actions.updateEditData}
+          onSaveEdit={handleSaveEdit}
+          onCancelEdit={handleCancelEdit}
+          onOpenDeleteDialog={handleOpenDeleteDialog}
+          getFieldTypeLabel={getFieldTypeLabel}
+        />
       )}
 
       {/* Dialogs */}
       <AddFieldDialog
         open={showAddDialog}
-        onOpenChange={setShowAddDialog}
+        onOpenChange={dialogHandlers.addDialog}
         onSave={addField}
         sectionName={sectionName}
       />
@@ -399,10 +202,7 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
       <EditFieldDialog
         field={fieldToEdit}
         open={showEditDialog}
-        onOpenChange={(open) => {
-          setShowEditDialog(open);
-          if (!open) setFieldToEdit(null);
-        }}
+        onOpenChange={dialogHandlers.editDialog}
         onSave={updateField}
         onValidate={validateField}
         sectionName={sectionName}
@@ -411,15 +211,10 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
       <DeleteFieldConfirm
         field={fieldToDelete}
         open={!!fieldToDelete}
-        onOpenChange={(open) => {
-          if (!open) {
-            setFieldToDelete(null);
-            setDeleteValidation(null);
-          }
-        }}
+        onOpenChange={dialogHandlers.deleteDialog}
         onConfirm={handleConfirmDelete}
         validation={deleteValidation}
-        loading={false}
+        loading={!!validatingDelete}
       />
     </div>
   );

@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAssessmentItems, AssessmentInstrument } from "@/hooks/assessment/useAssessmentInstruments";
 import { DomainAccordion } from "@/components/assessment/DomainAccordion";
-import { AssessmentToolbar } from "@/components/assessment/AssessmentToolbar";
+import { AssessmentHeader } from "@/components/assessment/AssessmentHeader";
 import { BatchAssessmentBar } from "@/components/assessment/BatchAssessmentBar";
 import { useAutoSave } from "@/hooks/assessment/useAutoSave";
 import { useUndoRedo } from "@/hooks/assessment/useUndoRedo";
@@ -16,16 +16,7 @@ import { AssessmentComparisonCard } from "@/components/assessment/AssessmentComp
 import { AssessmentComparisonView } from "@/components/assessment/AssessmentComparisonView";
 import { PDFViewer } from "@/components/PDFViewer";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
-import { ArrowLeft, CheckCircle, Loader2, FileText, Users, ChevronLeft, ChevronRight } from "lucide-react";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
-import { Progress } from "@/components/ui/progress";
+import { CheckCircle, Loader2 } from "lucide-react";
 
 export default function AssessmentFullScreen() {
   const { projectId, articleId, instrumentId } = useParams();
@@ -33,6 +24,8 @@ export default function AssessmentFullScreen() {
   
   const [instrument, setInstrument] = useState<AssessmentInstrument | null>(null);
   const [article, setArticle] = useState<any>(null);
+  const [project, setProject] = useState<any>(null);
+  const [articles, setArticles] = useState<any[]>([]);
   const [existingAssessment, setExistingAssessment] = useState<any>(null);
   const [assessmentId, setAssessmentId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -79,64 +72,84 @@ export default function AssessmentFullScreen() {
   });
 
   useEffect(() => {
-    const loadData = async () => {
-      if (!projectId || !articleId || !instrumentId) return;
+  const loadData = async () => {
+    if (!projectId || !articleId || !instrumentId) return;
 
-      try {
-        // Load article
-        const { data: articleData, error: articleError } = await supabase
-          .from("articles")
-          .select("*")
-          .eq("id", articleId)
-          .single();
+    try {
+      // Load project
+      const { data: projectData, error: projectError } = await supabase
+        .from("projects")
+        .select("id, name")
+        .eq("id", projectId)
+        .single();
 
-        if (articleError) throw articleError;
-        setArticle(articleData);
+      if (projectError) throw projectError;
+      setProject(projectData);
 
-        // Load instrument directly from URL parameter
-        const { data: instrumentData, error: instrumentError } = await supabase
-          .from("assessment_instruments")
-          .select("*")
-          .eq("id", instrumentId)
-          .single();
+      // Load article
+      const { data: articleData, error: articleError } = await supabase
+        .from("articles")
+        .select("*")
+        .eq("id", articleId)
+        .single();
 
-        if (instrumentError) throw instrumentError;
-        
-        if (!instrumentData) {
-          toast.error("Instrumento de avaliação não encontrado");
-          setLoading(false);
-          return;
-        }
-        
-        setInstrument(instrumentData);
+      if (articleError) throw articleError;
+      setArticle(articleData);
 
-        // Load existing assessment
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          setCurrentUserId(user.id);
-          
-          const { data: assessmentData } = await supabase
-            .from("assessments")
-            .select("*")
-            .eq("article_id", articleId)
-            .eq("instrument_id", instrumentId)
-            .eq("user_id", user.id)
-            .eq("is_current_version", true)
-            .maybeSingle();
+      // Load articles list for navigation
+      const { data: articlesData, error: articlesError } = await supabase
+        .from("articles")
+        .select("id, title")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false });
 
-          if (assessmentData) {
-            setExistingAssessment(assessmentData);
-            setAssessmentId(assessmentData.id);
-            setResponses(assessmentData.responses as Record<string, { level: string; comment?: string }> || {});
-          }
-        }
-      } catch (error: any) {
-        console.error("Error loading data:", error);
-        toast.error("Erro ao carregar dados");
-      } finally {
+      if (articlesError) throw articlesError;
+      setArticles(articlesData || []);
+
+      // Load instrument directly from URL parameter
+      const { data: instrumentData, error: instrumentError } = await supabase
+        .from("assessment_instruments")
+        .select("*")
+        .eq("id", instrumentId)
+        .single();
+
+      if (instrumentError) throw instrumentError;
+      
+      if (!instrumentData) {
+        toast.error("Instrumento de avaliação não encontrado");
         setLoading(false);
+        return;
       }
-    };
+      
+      setInstrument(instrumentData);
+
+      // Load existing assessment
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setCurrentUserId(user.id);
+        
+        const { data: assessmentData } = await supabase
+          .from("assessments")
+          .select("*")
+          .eq("article_id", articleId)
+          .eq("instrument_id", instrumentId)
+          .eq("user_id", user.id)
+          .eq("is_current_version", true)
+          .maybeSingle();
+
+        if (assessmentData) {
+          setExistingAssessment(assessmentData);
+          setAssessmentId(assessmentData.id);
+          setResponses(assessmentData.responses as Record<string, { level: string; comment?: string }> || {});
+        }
+      }
+    } catch (error: any) {
+      console.error("Error loading data:", error);
+      toast.error("Erro ao carregar dados");
+    } finally {
+      setLoading(false);
+    }
+  };
 
     loadData();
   }, [projectId, articleId, instrumentId]);
@@ -153,6 +166,10 @@ export default function AssessmentFullScreen() {
       ...prev,
       [itemCode]: { ...prev[itemCode], comment },
     }));
+  };
+
+  const handleNavigateToArticle = (newArticleId: string) => {
+    navigate(`/projects/${projectId}/assessment/${newArticleId}/${instrumentId}`);
   };
 
   const calculateCompletion = () => {
@@ -228,17 +245,37 @@ export default function AssessmentFullScreen() {
 
   return (
     <div className="h-screen flex flex-col">
-      <AssessmentToolbar
+      {/* Header unificado */}
+      <AssessmentHeader
+        projectId={projectId || ''}
+        projectName={project?.name || 'Projeto'}
+        instrumentName={instrument?.name || ''}
+        articleTitle={article?.title || ''}
+        onBack={() => navigate(`/projects/${projectId}?tab=assessment`)}
+        articles={articles}
+        currentArticleId={articleId || ''}
+        onNavigateToArticle={handleNavigateToArticle}
+        completedItems={Object.values(responses).filter((r) => r.level).length}
+        totalItems={items.length}
+        completionPercentage={completion}
+        showPDF={showPDF}
+        onTogglePDF={() => setShowPDF(!showPDF)}
+        showComparison={showComparison}
+        onToggleComparison={() => setShowComparison(!showComparison)}
+        hasOtherAssessments={hasOtherAssessments}
         canUndo={canUndo}
         canRedo={canRedo}
         onUndo={undo}
         onRedo={redo}
         isSaving={isSaving}
         lastSaved={lastSaved}
-        completionPercentage={completion}
+        isComplete={canComplete}
+        onFinalize={handleSubmit}
+        submitting={submitting}
       />
 
-      <ResizablePanelGroup direction="horizontal" className="flex-1">
+      <div className="flex-1 overflow-hidden">
+        <ResizablePanelGroup direction="horizontal" className="h-full">
         {/* Comparison Panel - lado esquerdo */}
         <ResizablePanel 
           defaultSize={showOtherAssessments ? 30 : 0} 
@@ -268,72 +305,6 @@ export default function AssessmentFullScreen() {
         >
           <div className="h-full overflow-y-auto">
             <div className="container max-w-5xl py-6 space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => navigate(`/projects/${projectId}`)}
-                  >
-                    <ArrowLeft className="mr-2 h-4 w-4" />
-                    Voltar
-                  </Button>
-                  
-                  <Breadcrumb>
-                    <BreadcrumbList>
-                      <BreadcrumbItem>
-                        <BreadcrumbLink onClick={() => navigate("/")}>
-                          Projetos
-                        </BreadcrumbLink>
-                      </BreadcrumbItem>
-                      <BreadcrumbSeparator />
-                      <BreadcrumbItem>
-                        <BreadcrumbLink onClick={() => navigate(`/projects/${projectId}`)}>
-                          Projeto
-                        </BreadcrumbLink>
-                      </BreadcrumbItem>
-                      <BreadcrumbSeparator />
-                      <BreadcrumbItem>
-                        <BreadcrumbPage>Avaliação</BreadcrumbPage>
-                      </BreadcrumbItem>
-                    </BreadcrumbList>
-                  </Breadcrumb>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {/* Botão de Comparação - apenas quando há outros assessments */}
-                  {hasOtherAssessments && (
-                    <Button
-                      variant={showComparison ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setShowComparison(!showComparison)}
-                      className="flex items-center gap-2"
-                    >
-                      <Users className="h-4 w-4" />
-                      {showComparison ? "Ocultar Comparação" : "Comparar com Outros"}
-                    </Button>
-                  )}
-                  
-                  <Button
-                    variant={showPDF ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setShowPDF(!showPDF)}
-                    className="flex items-center gap-2"
-                    title={showPDF ? "Ocultar PDF" : "Mostrar PDF"}
-                  >
-                    <FileText className="h-4 w-4" />
-                    {showPDF ? "Ocultar PDF" : "Mostrar PDF"}
-                  </Button>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <h1 className="text-2xl font-bold">{instrument.name}</h1>
-                <p className="text-sm text-muted-foreground">
-                  Artigo: {article?.title}
-                </p>
-                <Progress value={completion} className="h-2" />
-              </div>
 
               {/* Barra de Avaliação em Lote */}
               <BatchAssessmentBar
@@ -393,7 +364,8 @@ export default function AssessmentFullScreen() {
         >
           <PDFViewer articleId={articleId || ""} projectId={projectId || ""} />
         </ResizablePanel>
-      </ResizablePanelGroup>
+        </ResizablePanelGroup>
+      </div>
     </div>
   );
 }

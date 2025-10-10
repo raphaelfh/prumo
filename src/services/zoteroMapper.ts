@@ -142,42 +142,68 @@ export async function findDuplicateArticle(
 ): Promise<{ id: string; zotero_version: number | null } | null> {
   const data = item.data;
 
+  // Log para debug: verificar qual project_id está sendo usado
+  console.log('[findDuplicateArticle] Verificando duplicatas:', {
+    projectId,
+    itemKey: item.key,
+    doi: data.DOI,
+    title: data.title?.substring(0, 50) + '...',
+  });
+
   // Prioridade 1: Buscar por zotero_item_key (caso já tenha sido importado)
   if (item.key) {
     const { data: byZoteroKey } = await supabase
       .from('articles')
-      .select('id, zotero_version')
+      .select('id, zotero_version, project_id')
       .eq('project_id', projectId)
       .eq('zotero_item_key', item.key)
       .maybeSingle();
 
-    if (byZoteroKey) return byZoteroKey;
+    if (byZoteroKey) {
+      console.log('[findDuplicateArticle] Duplicata encontrada por zotero_item_key:', byZoteroKey);
+      return byZoteroKey;
+    }
   }
 
   // Prioridade 2: Buscar por DOI
   if (data.DOI) {
-    const { data: byDoi } = await supabase
+    const { data: byDoi, error: doiError } = await supabase
       .from('articles')
-      .select('id, zotero_version')
+      .select('id, zotero_version, project_id, zotero_item_key, doi')
       .eq('project_id', projectId)
       .eq('doi', data.DOI)
       .maybeSingle();
 
-    if (byDoi) return byDoi;
+    console.log('[findDuplicateArticle] Resultado da busca por DOI:', {
+      found: !!byDoi,
+      error: doiError,
+      result: byDoi,
+      searchedDOI: data.DOI,
+      searchedProjectId: projectId,
+    });
+
+    if (byDoi) {
+      console.log('[findDuplicateArticle] Duplicata encontrada por DOI:', byDoi);
+      return byDoi;
+    }
   }
 
   // Prioridade 3: Buscar por título exato (fallback)
   if (data.title) {
     const { data: byTitle } = await supabase
       .from('articles')
-      .select('id, zotero_version')
+      .select('id, zotero_version, project_id')
       .eq('project_id', projectId)
       .eq('title', data.title)
       .maybeSingle();
 
-    if (byTitle) return byTitle;
+    if (byTitle) {
+      console.log('[findDuplicateArticle] Duplicata encontrada por título:', byTitle);
+      return byTitle;
+    }
   }
 
+  console.log('[findDuplicateArticle] Nenhuma duplicata encontrada');
   return null;
 }
 
