@@ -15,13 +15,14 @@
  * @page
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 import { PDFViewer } from '@/components/PDFViewer';
 
@@ -31,11 +32,17 @@ import { useExtractionProgress } from '@/hooks/extraction/useExtractionProgress'
 import { useExtractionAutoSave } from '@/hooks/extraction/useExtractionAutoSave';
 import { useOtherExtractions } from '@/hooks/extraction/colaboracao/useOtherExtractions';
 import { useAISuggestions } from '@/hooks/extraction/ai/useAISuggestions';
+import { getTemplateDebugInfo, logTemplateDebug } from '@/lib/template-helpers';
 
 // Components
 import { ExtractionHeader } from '@/components/extraction/ExtractionHeader';
 import { SectionAccordion } from '@/components/extraction/SectionAccordion';
 import { ComparisonGridView } from '@/components/extraction/colaboracao/ComparisonGridView';
+import { ModelSelector, AddModelDialog, RemoveModelDialog } from '@/components/extraction/hierarchy';
+import { Separator } from '@/components/ui/separator';
+
+// Hooks adicionais
+import { useModelManagement } from '@/hooks/extraction/useModelManagement';
 
 // Types
 import type { 
@@ -71,6 +78,15 @@ export default function ExtractionFullScreen() {
   // UI state
   const [showPDF, setShowPDF] = useState(true);
   const [viewMode, setViewMode] = useState<'extract' | 'compare'>('extract');
+  
+  // Hierarchy state
+  const [showAddModelDialog, setShowAddModelDialog] = useState(false);
+  const [modelToRemove, setModelToRemove] = useState<{
+    id: string; 
+    name: string;
+    hasData: boolean;
+    fieldsCount: number;
+  } | null>(null);
 
   // Hook para gerenciar valores extraídos
   const {
@@ -112,6 +128,69 @@ export default function ExtractionFullScreen() {
     enabled: !!articleId && !!projectId
   });
 
+  // Identificar model parent entity type
+  const modelParentEntityType = entityTypes.find(et => et.name === 'prediction_models');
+  
+  // Hook para gerenciamento de modelos
+  const {
+    models,
+    activeModelId,
+    setActiveModelId,
+    loading: modelsLoading,
+    createModel,
+    removeModel,
+    refreshModels,
+    getModelProgress
+  } = useModelManagement({
+    projectId: projectId || '',
+    articleId: articleId || '',
+    templateId: template?.id || '',
+    modelParentEntityTypeId: modelParentEntityType?.id || null,
+    enabled: !!template && !!modelParentEntityType
+  });
+
+  // Persistência do modelo ativo no localStorage
+  useEffect(() => {
+    if (activeModelId && articleId) {
+      localStorage.setItem(`active-model-${articleId}`, activeModelId);
+    }
+  }, [activeModelId, articleId]);
+
+  // Restaurar modelo ativo ao carregar
+  useEffect(() => {
+    if (articleId && models.length > 0 && !activeModelId) {
+      const saved = localStorage.getItem(`active-model-${articleId}`);
+      if (saved && models.some(m => m.instanceId === saved)) {
+        setActiveModelId(saved);
+      } else {
+        setActiveModelId(models[0].instanceId);
+      }
+    }
+  }, [articleId, models, activeModelId, setActiveModelId]);
+
+  // =================== MEMOIZAÇÕES PARA PERFORMANCE ===================
+
+  // ✅ Memoizar entity types filtrados (evita recalcular a cada render)
+  const studyLevelSections = useMemo(
+    () => entityTypes.filter(et => !et.parent_entity_type_id && et.name !== 'prediction_models'),
+    [entityTypes]
+  );
+
+  const modelChildSections = useMemo(
+    () => entityTypes.filter(et => et.parent_entity_type_id === modelParentEntityType?.id),
+    [entityTypes, modelParentEntityType]
+  );
+
+  // ✅ Memoizar função de filtro de instances (evita recrear função)
+  const getInstancesForModel = useCallback((entityTypeId: string, modelId: string) => {
+    return instances.filter(
+      i => i.entity_type_id === entityTypeId && i.parent_instance_id === modelId
+    );
+  }, [instances]);
+
+  // ✅ Memoizar SectionAccordion (componente pesado)
+  const MemoizedSectionAccordion = memo(SectionAccordion);
+
   // Carregar dados iniciais
   useEffect(() => {
     if (!projectId || !articleId) {
@@ -138,7 +217,7 @@ export default function ExtractionFullScreen() {
       const { data: articleData, error: articleError } = await supabase
         .from('articles')
         .select('*')
-        .eq('id', articleId)
+        .eq('id', articleId!)
         .single();
 
       if (articleError) throw articleError;
@@ -151,7 +230,7 @@ export default function ExtractionFullScreen() {
       const { data: projectData, error: projectError } = await supabase
         .from('projects')
         .select('*')
-        .eq('id', projectId)
+        .eq('id', projectId!)
         .single();
 
       if (projectError) throw projectError;
@@ -164,7 +243,7 @@ export default function ExtractionFullScreen() {
       const { data: articlesData, error: articlesError } = await supabase
         .from('articles')
         .select('id, title')
-        .eq('project_id', projectId)
+        .eq('project_id', projectId!)
         .order('created_at', { ascending: false });
 
       if (articlesError) throw articlesError;
@@ -175,7 +254,7 @@ export default function ExtractionFullScreen() {
       const { data: templateData, error: templateError } = await supabase
         .from('project_extraction_templates')
         .select('*')
-        .eq('project_id', projectId)
+        .eq('project_id', projectId!)
         .eq('is_active', true)
         .single();
 
@@ -184,6 +263,26 @@ export default function ExtractionFullScreen() {
 
       setTemplate(templateData);
       console.log('✅ Template carregado:', templateData.name);
+
+      // Debug: Validar template e obter informações detalhadas
+      logTemplateDebug('ExtractionFullScreen', templateData.id, {
+        templateName: templateData.name,
+        framework: templateData.framework,
+        version: templateData.version
+      });
+
+      const debugInfo = await getTemplateDebugInfo(templateData.id);
+      if (debugInfo.error) {
+        console.warn('⚠️ Erro no debug do template:', debugInfo.error);
+      } else {
+        console.log('🔍 Debug Template:', {
+          name: debugInfo.templateInfo?.name,
+          entityTypesCount: debugInfo.entityTypesCount,
+          fieldsCount: debugInfo.fieldsCount,
+          isActive: debugInfo.templateInfo?.is_active,
+          globalTemplate: debugInfo.templateInfo?.globalTemplateName
+        });
+      }
 
       // 5. Carregar entity types com seus campos
       const { data: entityTypesData, error: entityTypesError } = await supabase
@@ -199,11 +298,30 @@ export default function ExtractionFullScreen() {
 
       const typesWithFields: EntityTypeWithFields[] = (entityTypesData || []).map(et => ({
         ...et,
-        fields: et.fields || []
+        template_id: et.template_id!,
+        fields: (et.fields || []).map(field => ({
+          ...field,
+          allowed_values: field.allowed_values as string[] | null,
+          allowed_units: field.allowed_units as string[] | null,
+          validation_schema: field.validation_schema as any
+        }))
       }));
 
       setEntityTypes(typesWithFields);
-      console.log('✅ Entity types carregados:', typesWithFields.length);
+      
+      // Log estruturado dos entity types carregados
+      console.log('✅ Entity types carregados:', {
+        total: typesWithFields.length,
+        rootTypes: typesWithFields.filter(et => !et.parent_entity_type_id).length,
+        childTypes: typesWithFields.filter(et => et.parent_entity_type_id).length,
+        hierarchy: typesWithFields.map(et => ({
+          id: et.id,
+          name: et.name,
+          label: et.label,
+          parent: et.parent_entity_type_id,
+          fieldsCount: et.fields.length
+        }))
+      });
 
       // 6. Carregar ou criar instâncias para este artigo
       await loadOrCreateInstances(templateData.id, typesWithFields);
@@ -229,7 +347,7 @@ export default function ExtractionFullScreen() {
       const { data: existingInstances, error: instancesError } = await supabase
         .from('extraction_instances')
         .select('*')
-        .eq('article_id', articleId)
+        .eq('article_id', articleId!)
         .eq('template_id', templateId);
 
       if (instancesError) throw instancesError;
@@ -243,7 +361,14 @@ export default function ExtractionFullScreen() {
 
       entityTypesList.forEach(entityType => {
         if (!existingEntityTypeIds.has(entityType.id)) {
-          // Criar instância para este entity type
+          // ✅ CORREÇÃO: NÃO criar instance automaticamente para entity types hierárquicos (cardinality='many')
+          // Entity types com cardinality='many' (como prediction_models) devem ser criados sob demanda
+          if (entityType.cardinality === 'many') {
+            console.log(`⏭️ Pulando criação automática de instance para "${entityType.name}" (cardinality=many)`);
+            return;
+          }
+          
+          // Criar instância apenas para entity types com cardinality='one' (study-level)
           instancesToCreate.push({
             project_id: projectId,
             article_id: articleId,
@@ -251,7 +376,6 @@ export default function ExtractionFullScreen() {
             entity_type_id: entityType.id,
             label: entityType.label,
             sort_order: entityType.sort_order,
-            is_template: false,
             status: 'pending',
             created_by: user.id,
             metadata: {}
@@ -271,9 +395,21 @@ export default function ExtractionFullScreen() {
         console.log(`✅ Criadas ${newInstances?.length} novas instâncias`);
 
         // Combinar existentes + novas
-        setInstances([...(existingInstances || []), ...(newInstances || [])]);
+        setInstances([...(existingInstances || []).map(instance => ({
+          ...instance,
+          article_id: instance.article_id!,
+          metadata: instance.metadata as any
+        })), ...(newInstances || []).map(instance => ({
+          ...instance,
+          article_id: instance.article_id!,
+          metadata: instance.metadata as any
+        }))]);
       } else {
-        setInstances(existingInstances || []);
+        setInstances((existingInstances || []).map(instance => ({
+          ...instance,
+          article_id: instance.article_id!,
+          metadata: instance.metadata as any
+        })));
       }
 
       console.log('✅ Instâncias carregadas/criadas:', 
@@ -291,6 +427,82 @@ export default function ExtractionFullScreen() {
 
   const handleNavigateToArticle = (newArticleId: string) => {
     navigate(`/projects/${projectId}/extraction/${newArticleId}`);
+  };
+
+  // Handlers para gerenciamento de modelos
+  const handleAddModel = () => {
+    setShowAddModelDialog(true);
+  };
+
+  const handleConfirmAddModel = async (modelName: string, modellingMethod: string) => {
+    console.log('🎯 Iniciando criação de modelo:', modelName);
+    const result = await createModel(modelName, modellingMethod);
+    
+    if (result) {
+      console.log('✅ Modelo criado com sucesso:', result.model);
+      setShowAddModelDialog(false);
+      
+      // ✅ OTIMIZAÇÃO: Atualizar estado local DIRETAMENTE com child instances retornadas
+      // Evita query extra de loadOrCreateInstances()
+      if (result.childInstances && result.childInstances.length > 0) {
+        console.log(`🚀 Adicionando ${result.childInstances.length} child instances ao estado local`);
+        setInstances(prev => [...prev, ...result.childInstances.map((instance: any) => ({
+          ...instance,
+          article_id: instance.article_id!,
+          metadata: instance.metadata as any
+        }))]);
+      }
+      
+      // Atualizar lista de modelos (apenas 1 query necessária)
+      await refreshModels();
+      
+      console.log('✅ Estado atualizado, campos devem aparecer imediatamente!');
+    }
+  };
+
+  const handleRemoveModel = async (instanceId: string) => {
+    const model = models.find(m => m.instanceId === instanceId);
+    if (!model) return;
+
+    // Calcular se tem dados extraídos
+    const progress = await getModelProgress(instanceId);
+    const hasData = !!(progress && progress.completed > 0);
+
+    setModelToRemove({ 
+      id: instanceId, 
+      name: model.modelName,
+      hasData,
+      fieldsCount: progress?.completed || 0
+    });
+  };
+
+  const handleConfirmRemoveModel = async () => {
+    if (!modelToRemove) return;
+    
+    console.log('🗑️ Removendo modelo:', modelToRemove.name);
+    const modelIdToRemove = modelToRemove.id;
+    const success = await removeModel(modelIdToRemove);
+    
+    if (success) {
+      console.log('✅ Modelo removido com sucesso');
+      setModelToRemove(null);
+      
+      // ✅ OTIMIZAÇÃO: Atualizar estado local DIRETAMENTE (sem query pesada)
+      // Remover todas as instances relacionadas ao modelo (parent + children)
+      setInstances(prev => prev.filter(
+        instance => {
+          // Manter instances que NÃO são do modelo removido
+          // Remove parent instance E child instances (que têm parent_instance_id)
+          return instance.id !== modelIdToRemove && 
+                 instance.parent_instance_id !== modelIdToRemove;
+        }
+      ));
+      
+      // Atualizar lista de modelos (apenas 1 query necessária)
+      await refreshModels();
+      
+      console.log('✅ Estado atualizado, modelo removido da interface!');
+    }
   };
 
   const handleAddInstance = async (entityTypeId: string) => {
@@ -312,13 +524,12 @@ export default function ExtractionFullScreen() {
       const { data: newInstance, error } = await supabase
         .from('extraction_instances')
         .insert({
-          project_id: projectId,
-          article_id: articleId,
+          project_id: projectId!,
+          article_id: articleId!,
           template_id: template.id,
           entity_type_id: entityTypeId,
           label: newLabel,
           sort_order: existingCount,
-          is_template: false,
           status: 'pending',
           created_by: user.id,
           metadata: {}
@@ -329,7 +540,11 @@ export default function ExtractionFullScreen() {
       if (error) throw error;
 
       // Atualizar estado local
-      setInstances(prev => [...prev, newInstance]);
+      setInstances(prev => [...prev, {
+        ...newInstance,
+        article_id: newInstance.article_id!,
+        metadata: newInstance.metadata as any
+      }]);
       toast.success(`${newLabel} adicionado com sucesso`);
 
     } catch (error: any) {
@@ -386,7 +601,7 @@ export default function ExtractionFullScreen() {
           status: 'completed',
           completed_at: new Date().toISOString()
         })
-        .eq('article_id', articleId)
+        .eq('article_id', articleId!)
         .in('id', instances.map(i => i.id));
 
       if (error) throw error;
@@ -415,11 +630,38 @@ export default function ExtractionFullScreen() {
   }
 
   // Error state
-  if (!article || !template || entityTypes.length === 0) {
+  if (!article || !template) {
     return (
       <div className="h-screen flex items-center justify-center">
         <div className="text-center space-y-4">
           <p className="text-destructive">Erro ao carregar dados</p>
+          <Button onClick={handleBack}>Voltar</Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Template sem campos configurados
+  if (entityTypes.length === 0) {
+    return (
+      <div className="h-screen flex items-center justify-center">
+        <div className="text-center space-y-6 max-w-md">
+          <div className="space-y-2">
+            <h3 className="text-lg font-semibold">Nenhum campo para extração</h3>
+            <p className="text-muted-foreground">
+              O template <strong>{template?.name}</strong> não possui campos configurados para extração de dados.
+            </p>
+          </div>
+          
+          <div className="bg-muted/50 p-4 rounded-lg space-y-2 text-sm">
+            <p className="font-medium">Para resolver:</p>
+            <ul className="text-left space-y-1 text-muted-foreground">
+              <li>• Entre em contato com o gerente do projeto</li>
+              <li>• Solicite a configuração dos campos de extração</li>
+              <li>• Ou configure um novo template com campos</li>
+            </ul>
+          </div>
+          
           <Button onClick={handleBack}>Voltar</Button>
         </div>
       </div>
@@ -472,32 +714,82 @@ export default function ExtractionFullScreen() {
             <ScrollArea className="h-full bg-slate-50">
               <div className="p-8 space-y-4">
                 {viewMode === 'extract' ? (
-                  // Modo extração: Accordion por seção
-                  entityTypes.map(entityType => {
-                    // Buscar instâncias deste entity type
-                    const typeInstances = instances.filter(
-                      i => i.entity_type_id === entityType.id
-                    );
+                  // Modo extração: Renderização hierárquica
+                  <>
+                    {/* Study-level sections (sempre visíveis) - MEMOIZADO */}
+                    {studyLevelSections.map(entityType => {
+                      const typeInstances = instances.filter(
+                        i => i.entity_type_id === entityType.id
+                      );
 
-                    return (
-                      <SectionAccordion
-                        key={entityType.id}
-                        entityType={entityType}
-                        instances={typeInstances}
-                        fields={entityType.fields}
-                        values={values}
-                        onValueChange={updateValue}
-                        projectId={projectId || ''}
-                        articleId={articleId || ''}
-                        otherExtractions={otherExtractions}
-                        aiSuggestions={aiSuggestions}
-                        onAcceptAI={acceptSuggestion}
-                        onRejectAI={rejectSuggestion}
-                        onAddInstance={() => handleAddInstance(entityType.id)}
-                        onRemoveInstance={handleRemoveInstance}
-                      />
-                    );
-                  })
+                      return (
+                        <MemoizedSectionAccordion
+                          key={entityType.id}
+                          entityType={entityType}
+                          instances={typeInstances}
+                          fields={entityType.fields}
+                          values={values}
+                          onValueChange={updateValue}
+                          projectId={projectId || ''}
+                          articleId={articleId || ''}
+                          otherExtractions={otherExtractions}
+                          aiSuggestions={aiSuggestions}
+                          onAcceptAI={acceptSuggestion}
+                          onRejectAI={rejectSuggestion}
+                          onAddInstance={() => handleAddInstance(entityType.id)}
+                          onRemoveInstance={handleRemoveInstance}
+                          viewMode={viewMode}
+                        />
+                      );
+                    })}
+
+                    {/* Divider */}
+                    {modelParentEntityType && (
+                      <>
+                        <div className="py-4">
+                          <Separator />
+                        </div>
+
+                        {/* Model Selector */}
+                        <ModelSelector
+                          models={models}
+                          activeModelId={activeModelId}
+                          onSelectModel={setActiveModelId}
+                          onAddModel={handleAddModel}
+                          onRemoveModel={handleRemoveModel}
+                          loading={modelsLoading}
+                        />
+
+                        {/* Model-level sections (filtradas por modelo ativo) - MEMOIZADO */}
+                        {activeModelId && (
+                          <div className="space-y-4 mt-4">
+                            {modelChildSections.map(entityType => {
+                              // Usar função memoizada para filtrar instances
+                              const typeInstances = getInstancesForModel(entityType.id, activeModelId);
+
+                              return (
+                                <MemoizedSectionAccordion
+                                  key={entityType.id}
+                                  entityType={entityType}
+                                  instances={typeInstances}
+                                  fields={entityType.fields}
+                                  values={values}
+                                  onValueChange={updateValue}
+                                  projectId={projectId || ''}
+                                  articleId={articleId || ''}
+                                  otherExtractions={otherExtractions}
+                                  aiSuggestions={aiSuggestions}
+                                  onAcceptAI={acceptSuggestion}
+                                  onRejectAI={rejectSuggestion}
+                                  viewMode={viewMode}
+                                />
+                              );
+                            })}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </>
                 ) : (
                   // Modo comparação: Grid completo por seção
                   <div className="space-y-6">
@@ -549,6 +841,23 @@ export default function ExtractionFullScreen() {
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
+
+      {/* Dialogs */}
+      <AddModelDialog
+        open={showAddModelDialog}
+        onConfirm={handleConfirmAddModel}
+        onCancel={() => setShowAddModelDialog(false)}
+        existingModels={models.map(m => m.modelName)}
+      />
+
+      <RemoveModelDialog
+        open={!!modelToRemove}
+        modelName={modelToRemove?.name || ''}
+        hasExtractedData={modelToRemove?.hasData || false}
+        extractedFieldsCount={modelToRemove?.fieldsCount || 0}
+        onConfirm={handleConfirmRemoveModel}
+        onCancel={() => setModelToRemove(null)}
+      />
     </div>
   );
 }

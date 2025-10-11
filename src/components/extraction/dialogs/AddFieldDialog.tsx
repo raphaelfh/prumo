@@ -50,6 +50,7 @@ import {
   ExtractionField,
 } from '@/types/extraction';
 import { AllowedValuesList } from './AllowedValuesList';
+import { AllowedUnitsList } from './AllowedUnitsList';
 
 interface AddFieldDialogProps {
   open: boolean;
@@ -89,6 +90,7 @@ export function AddFieldDialog({
       field_type: 'text',
       is_required: false,
       unit: null,
+      allowed_units: null,
       allowed_values: null,
       validation_schema: {},
       sort_order: 0,
@@ -268,24 +270,30 @@ export function AddFieldDialog({
               )}
             />
 
-            {/* Unidade (condicional - apenas para números) */}
+            {/* Unidades Disponíveis (condicional - apenas para números) */}
             {fieldType === 'number' && (
               <FormField
                 control={form.control}
-                name="unit"
+                name="allowed_units"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Unidade (opcional)</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        value={field.value || ''}
-                        placeholder="Ex: anos, kg, %"
-                        disabled={loading}
-                      />
-                    </FormControl>
+                    <FormLabel>Unidades Disponíveis (opcional)</FormLabel>
+                    <AllowedUnitsList
+                      values={Array.isArray(field.value) ? field.value : []}
+                      onChange={(newUnits) => {
+                        field.onChange(newUnits.length > 0 ? newUnits : null);
+                        // Sincronizar unit com a primeira unidade
+                        if (newUnits.length > 0) {
+                          form.setValue('unit', newUnits[0]);
+                        } else {
+                          form.setValue('unit', null);
+                        }
+                      }}
+                      disabled={loading}
+                    />
                     <FormDescription>
-                      Unidade de medida (pode deixar vazio se não aplicável)
+                      Configure as unidades que o revisor poderá escolher durante a extração.
+                      A primeira unidade é a padrão/sugerida. Deixe vazio para usar sugestões automáticas.
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -347,7 +355,8 @@ export function AddFieldDialog({
                   <p className="font-medium">Dicas:</p>
                   <ul className="mt-1 list-disc list-inside space-y-1 text-xs">
                     <li>O nome técnico é gerado automaticamente do label</li>
-                    <li>Unidade é opcional - use apenas para campos numéricos quando aplicável</li>
+                    <li>Unidades disponíveis: configure as opções que aparecerão para o revisor (a primeira é a padrão)</li>
+                    <li>Deixe as unidades vazias para usar sugestões automáticas baseadas no contexto</li>
                     <li>Para campos de seleção, defina pelo menos 2 opções</li>
                   </ul>
                 </div>

@@ -53,7 +53,7 @@ import {
   FieldValidationResult,
 } from '@/types/extraction';
 import { AllowedValuesList } from './AllowedValuesList';
-import { UnitEditor } from './UnitEditor';
+import { AllowedUnitsList } from './AllowedUnitsList';
 
 interface EditFieldDialogProps {
   field: ExtractionField | null;
@@ -85,6 +85,7 @@ export function EditFieldDialog({
       field_type: 'text',
       is_required: false,
       unit: null,
+      allowed_units: null,
       allowed_values: null,
       validation_schema: {},
     },
@@ -101,6 +102,7 @@ export function EditFieldDialog({
         field_type: field.field_type,
         is_required: field.is_required,
         unit: field.unit,
+        allowed_units: field.allowed_units,
         allowed_values: field.allowed_values,
         validation_schema: field.validation_schema || {},
       });
@@ -145,9 +147,10 @@ export function EditFieldDialog({
       form.setValue('allowed_values', null);
     }
     
-    // Limpar unit se não for number
+    // Limpar unit e allowed_units se não for number
     if (newType !== 'number') {
       form.setValue('unit', null);
+      form.setValue('allowed_units', null);
     }
   };
 
@@ -314,19 +317,36 @@ export function EditFieldDialog({
                 <div>
                   <h3 className="text-lg font-medium mb-4">Configurações Específicas</h3>
 
-                  {/* Unidade (condicional - para números) */}
+                  {/* Unidades Disponíveis (condicional - para números) */}
                   {fieldType === 'number' && (
                     <FormField
                       control={form.control}
-                      name="unit"
+                      name="allowed_units"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Unidade (opcional)</FormLabel>
-                          <UnitEditor
-                            value={field.value || ''}
-                            onChange={field.onChange}
+                          <FormLabel>Unidades Disponíveis (opcional)</FormLabel>
+                          <AllowedUnitsList
+                            values={Array.isArray(field.value) ? field.value : []}
+                            onChange={(newUnits) => {
+                              field.onChange(newUnits.length > 0 ? newUnits : null);
+                              // Sincronizar unit com a primeira unidade
+                              if (newUnits.length > 0) {
+                                form.setValue('unit', newUnits[0]);
+                              } else {
+                                form.setValue('unit', null);
+                              }
+                            }}
                             disabled={loading}
                           />
+                          <FormDescription>
+                            Configure as unidades que o revisor poderá escolher durante a extração.
+                            A primeira unidade é a padrão. Deixe vazio para usar sugestões automáticas.
+                            {validation && validation.extractedValuesCount > 0 && (
+                              <span className="block mt-1 text-amber-600">
+                                ⚠️ Mudanças afetarão apenas novas extrações ({validation.extractedValuesCount} valores existentes).
+                              </span>
+                            )}
+                          </FormDescription>
                           <FormMessage />
                         </FormItem>
                       )}

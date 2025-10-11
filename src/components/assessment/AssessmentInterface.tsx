@@ -77,7 +77,7 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
     try {
       const { data, error } = await supabase
         .from("articles")
-        .select("*")
+        .select("id, title, doi, created_at")
         .eq("project_id", projectId)
         .order("created_at", { ascending: false });
 

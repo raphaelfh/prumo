@@ -81,6 +81,7 @@ export interface ExtractionField {
   validation_schema: any;
   allowed_values: string[] | null;
   unit: string | null;
+  allowed_units: string[] | null; // Unidades alternativas configuráveis para campos numéricos
   sort_order: number;
   created_at: string;
 }
@@ -320,9 +321,23 @@ export const ExtractionFieldSchema = z.object({
   is_required: z.boolean().default(false),
   
   unit: z.string()
-    .max(20, 'Unidade deve ter no máximo 20 caracteres')
+    .max(50, 'Unidade deve ter no máximo 50 caracteres')
     .optional()
     .nullable(),
+  
+  allowed_units: z.array(z.string().max(50))
+    .min(1, 'Deve ter pelo menos uma unidade alternativa')
+    .max(20, 'Máximo de 20 unidades alternativas')
+    .optional()
+    .nullable()
+    .refine(
+      (units) => {
+        if (!units) return true;
+        const unique = new Set(units);
+        return unique.size === units.length;
+      },
+      { message: 'Unidades não podem ter duplicatas' }
+    ),
   
   allowed_values: z.array(z.string())
     .min(1, 'Deve ter pelo menos um valor permitido')
@@ -365,6 +380,7 @@ export type ExtractionFieldUpdate = z.infer<typeof ExtractionFieldUpdateSchema>;
 export interface ExtractionFieldInsert extends Omit<ExtractionFieldInput, 'sort_order'> {
   entity_type_id: string;
   sort_order?: number;
+  allowed_units?: string[] | null;
 }
 
 // =================== TIPOS PARA GERENCIAMENTO DE CAMPOS ===================
@@ -405,4 +421,37 @@ export interface PermissionCheckResult {
   canCreate: boolean;
   role: ProjectMemberRole | null;
   message?: string;
+}
+
+// =================== TIPOS PARA HIERARQUIA ===================
+
+/**
+ * Nó na árvore hierárquica de entities e instances
+ * Usado para renderização recursiva de UI
+ */
+export interface EntityNode {
+  entityType: ExtractionEntityType;
+  instances: ExtractionInstance[];
+  children: EntityNode[];
+}
+
+/**
+ * Contexto completo da hierarquia de extraction
+ * Inclui árvore e maps auxiliares para queries rápidas
+ */
+export interface ExtractionHierarchyContext {
+  tree: EntityNode[];
+  flatMap: Map<string, ExtractionInstance>;
+  parentMap: Map<string, string>; // instance_id → parent_instance_id
+  childrenMap: Map<string, ExtractionInstance[]>; // parent_id → children[]
+}
+
+/**
+ * Resultado de query recursiva de children
+ */
+export interface InstanceChild {
+  id: string;
+  label: string;
+  entity_type_id: string;
+  level: number;
 }

@@ -75,7 +75,7 @@ export const AIGlobalConfigModal = ({
   const [config, setConfig] = useState<AIGlobalConfig>(DEFAULT_CONFIG);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [projectData, setProjectData] = useState<any>(null);
+  const [projectData, setProjectData] = useState<ProjectConfigData | null>(null);
   const [selectedItem, setSelectedItem] = useState<AssessmentItem | null>(null);
   const [itemConfig, setItemConfig] = useState<{ systemPrompt: string; userPromptTemplate: string }>({
     systemPrompt: DEFAULT_CONFIG.systemPrompt,

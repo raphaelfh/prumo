@@ -44,6 +44,7 @@ interface SectionAccordionProps {
   onRejectAI?: (instanceId: string, fieldId: string) => Promise<void>;
   onAddInstance?: () => void;
   onRemoveInstance?: (instanceId: string) => void;
+  viewMode?: 'extract' | 'compare';
 }
 
 // =================== COMPONENT ===================
@@ -119,8 +120,8 @@ export function SectionAccordion(props: SectionAccordionProps) {
           </div>
         </AccordionTrigger>
 
-        <AccordionContent className="px-6 pb-6">
-          <div className="space-y-0 divide-y divide-slate-100">
+        <AccordionContent className="px-8 pb-8">
+          <div className="space-y-6">
             {instances.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <p>Nenhuma instância criada para esta seção</p>
@@ -129,7 +130,7 @@ export function SectionAccordion(props: SectionAccordionProps) {
               // Seção múltipla: Mostrar cards de instâncias
               <>
                 {instances.map((instance, index) => (
-                  <div key={instance.id} className="py-4">
+                  <div key={instance.id}>
                     <InstanceCard
                       instance={instance}
                       index={index + 1}
@@ -146,12 +147,13 @@ export function SectionAccordion(props: SectionAccordionProps) {
                       aiSuggestions={props.aiSuggestions}
                       onAcceptAI={(fieldId) => props.onAcceptAI?.(instance.id, fieldId)}
                       onRejectAI={(fieldId) => props.onRejectAI?.(instance.id, fieldId)}
+                      viewMode={props.viewMode}
                     />
                   </div>
                 ))}
 
                 {props.onAddInstance && (
-                  <div className="pt-4 border-t border-slate-100">
+                  <div className="mt-2">
                     <Button
                       variant="outline"
                       className="w-full"
@@ -165,7 +167,7 @@ export function SectionAccordion(props: SectionAccordionProps) {
               </>
             ) : (
               // Seção única: Mostrar campos diretamente
-              <>
+              <div className="divide-y divide-slate-100">
                 {fields.map(field => {
                   const key = `${instances[0].id}_${field.id}`;
                   
@@ -184,10 +186,11 @@ export function SectionAccordion(props: SectionAccordionProps) {
                       aiSuggestion={props.aiSuggestions?.[key]}
                       onAcceptAI={() => props.onAcceptAI?.(instances[0].id, field.id)}
                       onRejectAI={() => props.onRejectAI?.(instances[0].id, field.id)}
+                      viewMode={props.viewMode}
                     />
                   );
                 })}
-              </>
+              </div>
             )}
           </div>
         </AccordionContent>

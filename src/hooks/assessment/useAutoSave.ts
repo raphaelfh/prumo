@@ -12,6 +12,7 @@ interface UseAutoSaveProps {
   onAssessmentIdChange: (id: string) => void;
   debounceMs?: number;
   enabled?: boolean;
+  extractionInstanceId?: string | null; // Novo: para assessment por instância
 }
 
 export const useAutoSave = ({
@@ -24,6 +25,7 @@ export const useAutoSave = ({
   onAssessmentIdChange,
   debounceMs = 2000,
   enabled = true,
+  extractionInstanceId = null,
 }: UseAutoSaveProps) => {
   const [isSaving, setIsSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
@@ -69,6 +71,7 @@ export const useAutoSave = ({
         responses: responsesRef.current,
         status: "in_progress" as const,
         completion_percentage: completionPercentage,
+        extraction_instance_id: extractionInstanceId, // Incluir se fornecido
       };
 
       if (assessmentId) {
@@ -104,7 +107,7 @@ export const useAutoSave = ({
     } finally {
       setIsSaving(false);
     }
-  }, [projectId, articleId, instrumentId, toolType, assessmentId, onAssessmentIdChange]);
+  }, [projectId, articleId, instrumentId, toolType, assessmentId, onAssessmentIdChange, extractionInstanceId]);
 
   useEffect(() => {
     // Only auto-save if enabled and all required data is present

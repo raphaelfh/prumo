@@ -14,7 +14,8 @@ import {
   Users, 
   Settings as SettingsIcon,
   Save,
-  AlertCircle
+  AlertCircle,
+  ClipboardCheck
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -25,6 +26,7 @@ import { BasicInfoSection } from "./settings/BasicInfoSection";
 import { ReviewDetailsSection } from "./settings/ReviewDetailsSection";
 import { TeamMembersSection } from "./settings/TeamMembersSection";
 import { AdvancedSettingsSection } from "./settings/AdvancedSettingsSection";
+import { AssessmentConfigSection } from "./settings/AssessmentConfigSection";
 
 type ReviewType = 'interventional' | 'predictive_model' | 'diagnostic' | 'prognostic' | 'qualitative' | 'other';
 
@@ -49,7 +51,7 @@ interface ProjectSettingsProps {
   projectId: string;
 }
 
-type TabId = 'basic' | 'review' | 'team' | 'advanced';
+type TabId = 'basic' | 'review' | 'team' | 'assessment' | 'advanced';
 
 interface Tab {
   id: TabId;
@@ -76,6 +78,12 @@ const TABS: Tab[] = [
     label: 'Equipe',
     icon: Users,
     description: 'Membros e permissões'
+  },
+  {
+    id: 'assessment',
+    label: 'Assessment',
+    icon: ClipboardCheck,
+    description: 'Configuração de avaliação de qualidade'
   },
   {
     id: 'advanced',
@@ -191,6 +199,12 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
       case 'team':
         return (
           <TeamMembersSection
+            projectId={projectId}
+          />
+        );
+      case 'assessment':
+        return (
+          <AssessmentConfigSection
             projectId={projectId}
           />
         );

@@ -124,24 +124,8 @@ export function RemoveSectionDialog({
     try {
       console.log('🔍 Analisando impacto da remoção:', { sectionId, sectionName });
 
-      // 1. Buscar entity_type_id da seção
-      const { data: instance, error: instanceError } = await supabase
-        .from('extraction_instances')
-        .select('entity_type_id')
-        .eq('id', sectionId)
-        .eq('is_template', true)
-        .single();
-
-      if (instanceError) {
-        console.error('Erro ao buscar instância:', instanceError);
-        throw instanceError;
-      }
-
-      if (!instance) {
-        throw new Error('Instância não encontrada');
-      }
-
-      const entityTypeId = instance.entity_type_id;
+      // sectionId agora é entity_type_id diretamente
+      const entityTypeId = sectionId;
 
       // 2. Contar campos da seção
       const { count: fieldsCount, error: fieldsError } = await supabase
@@ -165,11 +149,11 @@ export function RemoveSectionDialog({
         throw instancesError;
       }
 
-      // 4. Contar dados extraídos (aproximação via extraction_data)
+      // 4. Contar dados extraídos (via extracted_values)
       const { count: dataCount, error: dataError } = await supabase
-        .from('extraction_data')
+        .from('extracted_values')
         .select('id', { count: 'exact', head: true })
-        .in('instance_id', [sectionId]); // Simplificado por agora
+        .eq('instance_id', entityTypeId);
 
       if (dataError) {
         console.error('Erro ao contar dados:', dataError);
@@ -232,61 +216,12 @@ export function RemoveSectionDialog({
     try {
       console.log('🗑️ Iniciando remoção da seção:', { sectionId, sectionName });
 
-      // 1. Buscar entity_type_id
-      const { data: instance, error: instanceError } = await supabase
-        .from('extraction_instances')
-        .select('entity_type_id')
-        .eq('id', sectionId)
-        .eq('is_template', true)
-        .single();
-
-      if (instanceError) throw instanceError;
-      if (!instance) throw new Error('Instância não encontrada');
-
-      const entityTypeId = instance.entity_type_id;
+      // sectionId agora é entity_type_id diretamente
+      const entityTypeId = sectionId;
 
       console.log('🎯 Entity type a ser removido:', entityTypeId);
 
-      // 2. Remover em ordem (CASCADE manual para controle)
-      
-      // 2.1. Remover dados extraídos primeiro (se existirem)
-      const { error: dataError } = await supabase
-        .from('extraction_data')
-        .delete()
-        .in('instance_id', [sectionId]);
-
-      if (dataError) {
-        console.warn('Erro ao remover dados:', dataError);
-        // Continuar mesmo assim
-      } else {
-        console.log('✅ Dados extraídos removidos');
-      }
-
-      // 2.2. Remover campos da seção
-      const { error: fieldsError } = await supabase
-        .from('extraction_fields')
-        .delete()
-        .eq('entity_type_id', entityTypeId);
-
-      if (fieldsError) {
-        console.error('Erro ao remover campos:', fieldsError);
-        throw fieldsError;
-      }
-      console.log('✅ Campos removidos');
-
-      // 2.3. Remover todas as instâncias da seção
-      const { error: instancesError } = await supabase
-        .from('extraction_instances')
-        .delete()
-        .eq('entity_type_id', entityTypeId);
-
-      if (instancesError) {
-        console.error('Erro ao remover instâncias:', instancesError);
-        throw instancesError;
-      }
-      console.log('✅ Instâncias removidas');
-
-      // 2.4. Remover entity type
+      // Deletar entity type (CASCADE automático deleta fields, instances e values)
       const { error: entityError } = await supabase
         .from('extraction_entity_types')
         .delete()
@@ -296,7 +231,8 @@ export function RemoveSectionDialog({
         console.error('Erro ao remover entity type:', entityError);
         throw entityError;
       }
-      console.log('✅ Entity type removido');
+
+      console.log('✅ Entity type e todas as dependências removidos via CASCADE');
 
       toast.success(`Seção "${sectionName}" removida com sucesso!`);
       

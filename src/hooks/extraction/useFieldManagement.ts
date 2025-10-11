@@ -219,6 +219,7 @@ export function useFieldManagement({
         validation_schema: validatedData.validation_schema || {},
         allowed_values: validatedData.allowed_values || null,
         unit: validatedData.unit || null,
+        allowed_units: validatedData.allowed_units || null,
         sort_order: maxSortOrder + 1,
       };
 

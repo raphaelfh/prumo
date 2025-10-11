@@ -41,6 +41,7 @@ interface InstanceCardProps {
   aiSuggestions?: Record<string, AISuggestion>;
   onAcceptAI?: (fieldId: string) => Promise<void>;
   onRejectAI?: (fieldId: string) => Promise<void>;
+  viewMode?: 'extract' | 'compare';
 }
 
 // =================== COMPONENT ===================
@@ -87,9 +88,9 @@ export function InstanceCard(props: InstanceCardProps) {
   };
 
   return (
-    <div className="bg-slate-50 rounded-lg border border-slate-200">
+    <div className="bg-slate-50 rounded-lg border border-slate-200 shadow-sm">
       {/* Header da instância */}
-      <div className="px-6 py-4 border-b border-slate-200">
+      <div className="px-8 py-5 border-b border-slate-200">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 flex-1">
             {/* Badge com número */}
@@ -156,7 +157,7 @@ export function InstanceCard(props: InstanceCardProps) {
       </div>
 
       {/* Campos da instância */}
-      <div className="bg-white rounded-b-lg">
+      <div className="bg-white rounded-b-lg px-2">
         {fields.map(field => {
           const key = `${instance.id}_${field.id}`;
           
@@ -173,6 +174,7 @@ export function InstanceCard(props: InstanceCardProps) {
               aiSuggestion={props.aiSuggestions?.[key]}
               onAcceptAI={() => props.onAcceptAI?.(field.id)}
               onRejectAI={() => props.onRejectAI?.(field.id)}
+              viewMode={props.viewMode}
             />
           );
         })}

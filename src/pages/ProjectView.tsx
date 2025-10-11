@@ -45,7 +45,12 @@ export default function ProjectView() {
     try {
       const { data, error } = await supabase
         .from("projects")
-        .select("*")
+        .select(`
+          id, name, description, review_title, review_type,
+          settings, assessment_scope, assessment_entity_type_id,
+          condition_studied,
+          created_at, updated_at
+        `)
         .eq("id", projectId)
         .single();
 
@@ -65,7 +70,10 @@ export default function ProjectView() {
     try {
       const { data, error } = await supabase
         .from("articles")
-        .select("*")
+        .select(`
+          id, title, abstract, authors, publication_year,
+          journal_title, doi, pmid, keywords, created_at
+        `)
         .eq("project_id", projectId)
         .order("created_at", { ascending: false });
 

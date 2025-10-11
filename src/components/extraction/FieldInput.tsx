@@ -52,12 +52,13 @@ interface FieldInputProps {
   onAcceptAI?: () => void;
   onRejectAI?: () => void;
   disabled?: boolean;
+  viewMode?: 'extract' | 'compare';
 }
 
 // =================== COMPONENT ===================
 
 export function FieldInput(props: FieldInputProps) {
-  const { field, instanceId, value, onChange, disabled, otherExtractions, aiSuggestion, onAcceptAI, onRejectAI } = props;
+  const { field, instanceId, value, onChange, disabled, otherExtractions, aiSuggestion, onAcceptAI, onRejectAI, viewMode } = props;
   const [validationError, setValidationError] = useState<string | null>(null);
 
   // Usar sugestão de IA como valor inicial se não houver valor manual
@@ -132,10 +133,14 @@ export function FieldInput(props: FieldInputProps) {
         
         const currentUnit = typeof displayValue === 'object' && displayValue !== null && 'unit' in displayValue
           ? displayValue.unit
-          : field.unit;
+          : (field.allowed_units && field.allowed_units.length > 0 ? field.allowed_units[0] : field.unit);
         
-        const relatedUnits = field.unit ? getRelatedUnits(field.unit) : [];
-        const hasMultipleUnits = field.unit && relatedUnits.length > 0;
+        // Priorizar allowed_units customizadas sobre dicionário automático
+        const relatedUnits = field.allowed_units && field.allowed_units.length > 0
+          ? field.allowed_units // Usar unidades configuradas pelo manager (primeira é padrão)
+          : (field.unit ? getRelatedUnits(field.unit) : []); // Fallback para dicionário automático
+        
+        const hasMultipleUnits = relatedUnits.length > 0;
 
         return (
           <div className="flex gap-2">
@@ -154,10 +159,10 @@ export function FieldInput(props: FieldInputProps) {
               className={cn("flex-1 h-11 text-base", validationError && "border-destructive")}
             />
             
-            {/* Unit selector se houver unidades relacionadas */}
+            {/* Unit selector se houver unidades */}
             {hasMultipleUnits ? (
               <Select
-                value={currentUnit || field.unit || ''}
+                value={currentUnit || ''}
                 onValueChange={(newUnit) => {
                   handleChange({ value: numValue, unit: newUnit });
                 }}
@@ -167,25 +172,21 @@ export function FieldInput(props: FieldInputProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {/* Unidade padrão */}
-                  {field.unit && (
-                    <SelectItem value={field.unit}>
-                      {field.unit}
-                    </SelectItem>
-                  )}
-                  
-                  {/* Unidades relacionadas */}
-                  {relatedUnits.map(unit => (
+                  {/* Todas as unidades disponíveis (allowed_units ou relacionadas) */}
+                  {relatedUnits.map((unit, index) => (
                     <SelectItem key={unit} value={unit}>
                       {unit}
+                      {index === 0 && field.allowed_units && field.allowed_units.length > 0 && (
+                        <span className="ml-1 text-xs text-muted-foreground">(padrão)</span>
+                      )}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            ) : field.unit ? (
-              // Badge fixo se não houver alternativas
+            ) : (field.allowed_units && field.allowed_units.length > 0 ? field.allowed_units[0] : field.unit) ? (
+              // Badge fixo se não houver múltiplas unidades mas houver uma unidade definida
               <Badge variant="outline" className="shrink-0 self-center">
-                {field.unit}
+                {field.allowed_units && field.allowed_units.length > 0 ? field.allowed_units[0] : field.unit}
               </Badge>
             ) : null}
           </div>
@@ -267,7 +268,7 @@ export function FieldInput(props: FieldInputProps) {
   };
 
   return (
-    <div className="grid grid-cols-[30%_1fr] gap-6 items-start py-4">
+    <div className="grid grid-cols-[30%_1fr] gap-6 items-start py-6">
       {/* Coluna esquerda: Label + Description */}
       <div className="space-y-1 pt-2">
         <Label className="text-sm font-medium flex items-center gap-2">
@@ -283,8 +284,8 @@ export function FieldInput(props: FieldInputProps) {
       
       {/* Coluna direita: Input */}
       <div className="space-y-2">
-        {/* Badges de colaboração */}
-        {otherExtractions && otherExtractions.length > 0 && (
+        {/* Badges de colaboração - apenas no modo comparação */}
+        {viewMode === 'compare' && otherExtractions && otherExtractions.length > 0 && (
           <div className="flex items-center gap-2 mb-2">
             <OtherExtractionsPopover
               fieldId={field.id}

@@ -14,7 +14,9 @@ import {
   Brain, 
   Download,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Settings,
+  PlusCircle
 } from 'lucide-react';
 import { ProjectExtractionTemplate } from '@/types/extraction';
 import { useExtractionTemplates } from '@/hooks/extraction/useExtractionTemplates';
@@ -76,7 +78,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     try {
       const { data, error } = await supabase
         .from("articles")
-        .select("*")
+        .select("id, title, doi, created_at")
         .eq("project_id", projectId)
         .order("created_at", { ascending: false });
 
@@ -193,17 +195,32 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
 
       {/* Mensagem se não houver template */}
       {!activeTemplate && !templatesLoading && (
-        <Card className="border-yellow-200 bg-yellow-50">
+        <Card className="border-blue-200 bg-blue-50">
           <CardContent className="pt-6">
-            <div className="flex items-center space-x-3">
-              <AlertCircle className="h-5 w-5 text-yellow-600" />
-              <div>
-                <p className="font-medium text-yellow-900">Nenhum template configurado</p>
-                <p className="text-sm text-yellow-700 mt-1">
-                  Um template CHARMS deveria ter sido criado automaticamente. 
-                  Se não foi, entre em contato com o suporte.
-                </p>
+            <div className="flex items-start justify-between">
+              <div className="flex items-start space-x-3">
+                <Settings className="h-5 w-5 text-blue-600 mt-0.5" />
+                <div>
+                  <p className="font-medium text-blue-900">Configure seu template de extração</p>
+                  <p className="text-sm text-blue-700 mt-1">
+                    Para começar a extrair dados, você precisa configurar as variáveis que serão coletadas.
+                  </p>
+                  <div className="mt-3 space-y-2">
+                    <p className="text-sm text-blue-800 font-medium">Você pode:</p>
+                    <ul className="text-sm text-blue-700 space-y-1 ml-4">
+                      <li>• Importar o template CHARMS (checklist oficial)</li>
+                      <li>• Criar suas próprias seções e campos personalizados</li>
+                    </ul>
+                  </div>
+                </div>
               </div>
+              <Button 
+                onClick={() => setActiveTab('configuration')}
+                className="ml-4"
+              >
+                <Settings className="h-4 w-4 mr-2" />
+                Configurar
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -226,15 +243,42 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
         ) : (
           <Card>
             <CardHeader>
-              <CardTitle>Nenhum Template Ativo</CardTitle>
+              <CardTitle>Configure o template primeiro</CardTitle>
               <CardDescription>
-                Um template CHARMS deveria ter sido criado automaticamente ao criar este projeto.
+                Você precisa configurar as variáveis que serão extraídas dos artigos.
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Entre em contato com o suporte se este problema persistir.
+                Vá para a aba <strong>Configuração</strong> e escolha:
               </p>
+              <div className="bg-muted/50 rounded-lg p-4 space-y-3">
+                <div className="flex items-start space-x-3">
+                  <Download className="h-5 w-5 text-muted-foreground mt-0.5" />
+                  <div>
+                    <p className="font-medium text-sm">Importar template CHARMS</p>
+                    <p className="text-sm text-muted-foreground">
+                      Use o checklist oficial para revisões de modelos preditivos
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-start space-x-3">
+                  <PlusCircle className="h-5 w-5 text-muted-foreground mt-0.5" />
+                  <div>
+                    <p className="font-medium text-sm">Criar seções personalizadas</p>
+                    <p className="text-sm text-muted-foreground">
+                      Defina suas próprias variáveis de extração
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <Button 
+                onClick={() => setActiveTab('configuration')}
+                className="w-full"
+              >
+                <Settings className="h-4 w-4 mr-2" />
+                Ir para Configuração
+              </Button>
             </CardContent>
           </Card>
         );
@@ -272,19 +316,66 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
         ) : (
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Nenhum Template Ativo</CardTitle>
-                  <CardDescription>
-                    Importe um template global para começar a configurar a extração de dados.
-                  </CardDescription>
-                </div>
-                <Button onClick={() => setShowImportDialog(true)}>
-                  <Download className="h-4 w-4 mr-2" />
-                  Importar Template
-                </Button>
-              </div>
+              <CardTitle>Configure seu template de extração</CardTitle>
+              <CardDescription>
+                Escolha como você deseja estruturar a extração de dados dos artigos
+              </CardDescription>
             </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Opção 1: Importar Template Global */}
+              <div className="border rounded-lg p-4 hover:bg-muted/50 transition-colors">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-2 flex-1">
+                    <div className="flex items-center space-x-2">
+                      <Download className="h-5 w-5 text-primary" />
+                      <h3 className="font-semibold">Importar Template CHARMS</h3>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Use o checklist oficial para revisões sistemáticas de modelos preditivos. 
+                      Inclui 11 seções e 45 campos pré-configurados seguindo as diretrizes CHARMS.
+                    </p>
+                  </div>
+                  <Button onClick={() => setShowImportDialog(true)} className="ml-4">
+                    <Download className="h-4 w-4 mr-2" />
+                    Importar
+                  </Button>
+                </div>
+              </div>
+
+              {/* Opção 2: Criar Custom */}
+              <div className="border rounded-lg p-4 hover:bg-muted/50 transition-colors">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-2 flex-1">
+                    <div className="flex items-center space-x-2">
+                      <PlusCircle className="h-5 w-5 text-primary" />
+                      <h3 className="font-semibold">Criar Template Personalizado</h3>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Defina suas próprias seções e campos de extração. Ideal para revisões 
+                      com necessidades específicas ou frameworks diferentes.
+                    </p>
+                  </div>
+                  <Button variant="outline" className="ml-4" disabled>
+                    <PlusCircle className="h-4 w-4 mr-2" />
+                    Em breve
+                  </Button>
+                </div>
+              </div>
+
+              {/* Nota informativa */}
+              <div className="bg-blue-50 border-blue-200 rounded-lg p-4">
+                <div className="flex items-start space-x-3">
+                  <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5" />
+                  <div className="text-sm text-blue-800">
+                    <p className="font-medium mb-1">Managers podem configurar templates</p>
+                    <p className="text-blue-700">
+                      Se você não é manager do projeto, solicite que um manager configure 
+                      o template de extração antes de começar.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
           </Card>
         );
       

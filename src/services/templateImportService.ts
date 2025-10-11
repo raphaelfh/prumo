@@ -1,113 +1,50 @@
 /**
- * Serviço de Importação Inteligente de Templates
+ * Serviço de Importação de Templates - VERSÃO LIMPA
  * 
- * Implementa lógica robusta para:
- * - Detectar conflitos de templates
- * - Mesclar templates sem perda de dados
- * - Substituir templates com confirmação
- * - Garantir integridade referencial
+ * Simplificado e refatorado para:
+ * - Trabalhar apenas com entity_types (sem template instances)
+ * - Preservar hierarquia sempre
+ * - Código limpo e production-ready
  * 
- * @module
+ * @module services/templateImportService
  */
 
 import { supabase } from '@/integrations/supabase/client';
-import type { 
-  GlobalExtractionTemplate, 
-  ProjectExtractionTemplate,
-  ExtractionEntityType,
-  ExtractionField 
-} from '@/types/extraction';
 
 // =================== INTERFACES ===================
-
-export interface TemplateConflictInfo {
-  hasConflict: boolean;
-  existingTemplate?: {
-    id: string;
-    name: string;
-    framework: string;
-    extractedValuesCount: number;
-  };
-}
-
-export interface MergeResult {
-  success: boolean;
-  sectionsAdded: number;
-  fieldsAdded: number;
-  error?: string;
-}
 
 export interface ImportResult {
   success: boolean;
   templateId?: string;
-  action?: 'created' | 'merged' | 'replaced';
-  details?: {
-    sectionsAdded?: number;
-    fieldsAdded?: number;
-  };
   error?: string;
+  details?: {
+    entityTypesAdded: number;
+    fieldsAdded: number;
+  };
 }
 
-// =================== VERIFICAÇÃO DE CONFLITO ===================
+// =================== FUNÇÃO PRINCIPAL: IMPORTAR TEMPLATE ===================
 
 /**
- * Verifica se já existe um template ativo no projeto
+ * Importa template global para o projeto
+ * 
+ * Fluxo simplificado:
+ * 1. Verifica se já existe template ativo (apenas 1 permitido)
+ * 2. Se existe, desativa o antigo
+ * 3. Clona template global
+ * 4. Preserva hierarquia (parent_entity_type_id)
  */
-export async function checkTemplateConflict(
-  projectId: string
-): Promise<TemplateConflictInfo> {
-  try {
-    // Buscar template ativo
-    const { data: existingTemplate, error: queryError } = await supabase
-      .from('project_extraction_templates')
-      .select('id, name, framework')
-      .eq('project_id', projectId)
-      .eq('is_active', true)
-      .single();
-
-    if (queryError && queryError.code !== 'PGRST116') { // PGRST116 = not found
-      throw queryError;
-    }
-
-    if (!existingTemplate) {
-      return { hasConflict: false };
-    }
-
-    // Contar valores extraídos
-    const { data: countData, error: countError } = await supabase
-      .rpc('count_extracted_values', { p_template_id: existingTemplate.id });
-
-    if (countError) throw countError;
-
-    return {
-      hasConflict: true,
-      existingTemplate: {
-        id: existingTemplate.id,
-        name: existingTemplate.name,
-        framework: existingTemplate.framework,
-        extractedValuesCount: countData || 0
-      }
-    };
-  } catch (err: any) {
-    console.error('❌ Erro ao verificar conflito de template:', err);
-    throw err;
-  }
-}
-
-// =================== CLONE SIMPLES ===================
-
-/**
- * Clona template global para o projeto (sem conflito)
- */
-export async function cloneTemplateToProject(
+export async function importGlobalTemplate(
   projectId: string,
   globalTemplateId: string
 ): Promise<ImportResult> {
   try {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('User not authenticated');
+    if (!user) throw new Error('Usuário não autenticado');
 
-    console.log('📋 Clonando template para projeto...');
+    console.log('🚀 Importando template global...');
+    console.log('  Project:', projectId);
+    console.log('  Template:', globalTemplateId);
 
     // 1. Buscar template global
     const { data: globalTemplate, error: templateError } = await supabase
@@ -117,15 +54,35 @@ export async function cloneTemplateToProject(
       .single();
 
     if (templateError) throw templateError;
-    if (!globalTemplate) throw new Error('Template global não encontrado');
+    if (!globalTemplate) throw new Error('Template não encontrado');
 
-    // 2. Criar project_extraction_template
+    console.log(`  ✅ Template: ${globalTemplate.name} v${globalTemplate.version}`);
+
+    // 2. Desativar qualquer template ativo existente
+    const { data: existingTemplates } = await supabase
+      .from('project_extraction_templates')
+      .select('id')
+      .eq('project_id', projectId)
+      .eq('is_active', true);
+
+    if (existingTemplates && existingTemplates.length > 0) {
+      console.log(`  📝 Desativando ${existingTemplates.length} template(s) antigo(s)...`);
+      
+      const { error: deactivateError } = await supabase
+        .from('project_extraction_templates')
+        .update({ is_active: false })
+        .in('id', existingTemplates.map(t => t.id));
+
+      if (deactivateError) throw deactivateError;
+    }
+
+    // 3. Criar project_extraction_template
     const { data: projectTemplate, error: projectTemplateError } = await supabase
       .from('project_extraction_templates')
       .insert({
         project_id: projectId,
         global_template_id: globalTemplateId,
-        name: `${globalTemplate.name} (Importado)`,
+        name: globalTemplate.name,
         description: globalTemplate.description,
         framework: globalTemplate.framework,
         version: globalTemplate.version,
@@ -138,19 +95,28 @@ export async function cloneTemplateToProject(
 
     if (projectTemplateError) throw projectTemplateError;
 
-    // 3. Buscar entity types do template global
+    console.log(`  ✅ Project template criado: ${projectTemplate.id}`);
+
+    // 4. Buscar entity_types do template global
     const { data: globalEntityTypes, error: entityTypesError } = await supabase
       .from('extraction_entity_types')
       .select('*')
-      .is('template_id', globalTemplateId)
+      .eq('template_id', globalTemplateId)
+      .is('project_template_id', null)
       .order('sort_order');
 
     if (entityTypesError) throw entityTypesError;
+    if (!globalEntityTypes || globalEntityTypes.length === 0) {
+      throw new Error('Template não tem entity types');
+    }
 
-    // 4. Clonar entity types
+    console.log(`  ✅ Entity types encontrados: ${globalEntityTypes.length}`);
+
+    // 5. Clonar entity_types (2 passadas para preservar hierarquia)
     const entityTypeMapping: Record<string, string> = {};
 
-    for (const globalEntity of globalEntityTypes || []) {
+    console.log('  🔄 Clonando entity types (passada 1/2)...');
+    for (const globalEntity of globalEntityTypes) {
       const { data: newEntity, error: insertError } = await supabase
         .from('extraction_entity_types')
         .insert({
@@ -161,6 +127,7 @@ export async function cloneTemplateToProject(
           cardinality: globalEntity.cardinality,
           sort_order: globalEntity.sort_order,
           is_required: globalEntity.is_required
+          // parent_entity_type_id: null por enquanto
         })
         .select()
         .single();
@@ -170,7 +137,26 @@ export async function cloneTemplateToProject(
       entityTypeMapping[globalEntity.id] = newEntity.id;
     }
 
-    // 5. Buscar e clonar fields
+    console.log('  🔄 Atualizando parent references (passada 2/2)...');
+    for (const globalEntity of globalEntityTypes) {
+      if (globalEntity.parent_entity_type_id) {
+        const newEntityId = entityTypeMapping[globalEntity.id];
+        const newParentId = entityTypeMapping[globalEntity.parent_entity_type_id];
+        
+        if (newEntityId && newParentId) {
+          const { error: updateError } = await supabase
+            .from('extraction_entity_types')
+            .update({ parent_entity_type_id: newParentId })
+            .eq('id', newEntityId);
+
+          if (updateError) throw updateError;
+        }
+      }
+    }
+
+    // 6. Buscar e clonar fields
+    console.log('  🔄 Clonando fields...');
+    
     const { data: globalFields, error: fieldsError } = await supabase
       .from('extraction_fields')
       .select('*')
@@ -179,6 +165,9 @@ export async function cloneTemplateToProject(
 
     if (fieldsError) throw fieldsError;
 
+    console.log(`  ✅ Fields encontrados: ${(globalFields || []).length}`);
+
+    let fieldsCloned = 0;
     for (const globalField of globalFields || []) {
       const newEntityTypeId = entityTypeMapping[globalField.entity_type_id];
       if (!newEntityTypeId) continue;
@@ -195,258 +184,92 @@ export async function cloneTemplateToProject(
           validation_schema: globalField.validation_schema,
           allowed_values: globalField.allowed_values,
           unit: globalField.unit,
-          sort_order: globalField.sort_order
+          sort_order: globalField.sort_order,
+          allowed_units: globalField.allowed_units
         });
 
       if (insertFieldError) throw insertFieldError;
+      fieldsCloned++;
     }
 
-    console.log('✅ Template clonado com sucesso!');
+    console.log(`  ✅ Total de ${fieldsCloned} fields clonados`);
+    console.log('✅✅✅ IMPORT COMPLETO! ✅✅✅');
 
     return {
       success: true,
       templateId: projectTemplate.id,
-      action: 'created'
+      details: {
+        entityTypesAdded: Object.keys(entityTypeMapping).length,
+        fieldsAdded: fieldsCloned
+      }
     };
   } catch (err: any) {
-    console.error('❌ Erro ao clonar template:', err);
+    console.error('❌ ERRO NO IMPORT:', err);
     return {
       success: false,
-      error: err.message
+      error: err.message || 'Erro desconhecido'
     };
   }
 }
 
-// =================== MERGE INTELIGENTE ===================
+// =================== FUNÇÃO HELPER: CRIAR INSTÂNCIAS INICIAIS ===================
 
 /**
- * Mescla novo template com o existente (adiciona só o que é novo)
+ * Cria extraction_instances iniciais para entity_types 'one'
+ * 
+ * Para cada entity_type com cardinality='one', cria uma instância
+ * vinculada ao artigo. Isso facilita o preenchimento de campos.
+ * 
+ * Entity_types 'many' não criam instâncias automaticamente.
  */
-export async function mergeTemplates(
+export async function createInitialInstances(
   projectId: string,
-  existingTemplateId: string,
-  globalTemplateId: string
-): Promise<MergeResult> {
+  articleId: string,
+  templateId: string,
+  userId: string
+): Promise<{ success: boolean; error?: string }> {
   try {
-    console.log('🔀 Iniciando merge de templates...');
+    console.log('📝 Criando instâncias iniciais...');
 
-    // 1. Buscar entity types existentes
-    const { data: existingEntityTypes, error: existingError } = await supabase
+    // Buscar entity_types do template
+    const { data: entityTypes, error: etError } = await supabase
       .from('extraction_entity_types')
-      .select('id, name, label')
-      .eq('project_template_id', existingTemplateId);
+      .select('id, name, label, cardinality, parent_entity_type_id')
+      .eq('project_template_id', templateId)
+      .eq('cardinality', 'one')
+      .is('parent_entity_type_id', null); // Apenas ROOT com cardinality='one'
 
-    if (existingError) throw existingError;
+    if (etError) throw etError;
 
-    // 2. Buscar entity types do template global
-    const { data: globalEntityTypes, error: globalError } = await supabase
-      .from('extraction_entity_types')
-      .select('*')
-      .is('template_id', globalTemplateId)
-      .order('sort_order');
-
-    if (globalError) throw globalError;
-
-    // 3. Identificar entity types novos (por label)
-    const existingLabels = new Set(existingEntityTypes?.map(e => e.label) || []);
-    const newEntityTypes = (globalEntityTypes || []).filter(
-      ge => !existingLabels.has(ge.label)
-    );
-
-    let sectionsAdded = 0;
-    let fieldsAdded = 0;
-    const entityTypeMapping: Record<string, string> = {};
-
-    // 4. Adicionar novos entity types
-    for (const newEntity of newEntityTypes) {
-      const { data: addedEntity, error: insertError } = await supabase
-        .from('extraction_entity_types')
+    // Criar instância para cada entity_type 'one'
+    for (const et of entityTypes || []) {
+      const { error: insertError } = await supabase
+        .from('extraction_instances')
         .insert({
-          project_template_id: existingTemplateId,
-          name: newEntity.name,
-          label: newEntity.label,
-          description: newEntity.description,
-          cardinality: newEntity.cardinality,
-          sort_order: newEntity.sort_order,
-          is_required: newEntity.is_required
-        })
-        .select()
-        .single();
-
-      if (insertError) throw insertError;
-
-      entityTypeMapping[newEntity.id] = addedEntity.id;
-      sectionsAdded++;
-    }
-
-    // 5. Para seções existentes, verificar campos novos
-    const existingMapping: Record<string, string> = {};
-    for (const existingEntity of existingEntityTypes || []) {
-      const globalEntity = globalEntityTypes?.find(ge => ge.label === existingEntity.label);
-      if (globalEntity) {
-        existingMapping[globalEntity.id] = existingEntity.id;
-      }
-    }
-
-    // 6. Buscar todos os fields do template global
-    const { data: globalFields, error: globalFieldsError } = await supabase
-      .from('extraction_fields')
-      .select('*')
-      .in('entity_type_id', globalEntityTypes?.map(e => e.id) || [])
-      .order('sort_order');
-
-    if (globalFieldsError) throw globalFieldsError;
-
-    // 7. Para cada seção (nova ou existente), adicionar campos
-    for (const globalField of globalFields || []) {
-      // Determinar o entity_type_id no projeto
-      let targetEntityTypeId = 
-        entityTypeMapping[globalField.entity_type_id] || // Novo entity type
-        existingMapping[globalField.entity_type_id];     // Entity type existente
-
-      if (!targetEntityTypeId) continue;
-
-      // Verificar se campo já existe (por label)
-      const { data: existingFields } = await supabase
-        .from('extraction_fields')
-        .select('id, label')
-        .eq('entity_type_id', targetEntityTypeId);
-
-      const fieldExists = existingFields?.some(f => f.label === globalField.label);
-      if (fieldExists) continue; // Skip se já existe
-
-      // Adicionar campo novo
-      const { error: insertFieldError } = await supabase
-        .from('extraction_fields')
-        .insert({
-          entity_type_id: targetEntityTypeId,
-          name: globalField.name,
-          label: globalField.label,
-          description: globalField.description,
-          field_type: globalField.field_type,
-          is_required: globalField.is_required,
-          validation_schema: globalField.validation_schema,
-          allowed_values: globalField.allowed_values,
-          unit: globalField.unit,
-          sort_order: globalField.sort_order
+          project_id: projectId,
+          article_id: articleId,
+          template_id: templateId,
+          entity_type_id: et.id,
+          parent_instance_id: null,
+          label: et.label,
+          sort_order: 0,
+          created_by: userId
         });
 
-      if (insertFieldError) throw insertFieldError;
-      fieldsAdded++;
-    }
-
-    console.log(`✅ Merge concluído: +${sectionsAdded} seções, +${fieldsAdded} campos`);
-
-    return {
-      success: true,
-      sectionsAdded,
-      fieldsAdded
-    };
-  } catch (err: any) {
-    console.error('❌ Erro ao mesclar templates:', err);
-    return {
-      success: false,
-      sectionsAdded: 0,
-      fieldsAdded: 0,
-      error: err.message
-    };
-  }
-}
-
-// =================== REPLACE (SUBSTITUIR) ===================
-
-/**
- * Substitui template atual por um novo (PERDE DADOS!)
- */
-export async function replaceTemplate(
-  projectId: string,
-  existingTemplateId: string,
-  globalTemplateId: string
-): Promise<ImportResult> {
-  try {
-    console.log('🔄 Substituindo template (PERDA DE DADOS)...');
-
-    // 1. Desativar template antigo
-    await supabase
-      .rpc('switch_active_template', {
-        p_project_id: projectId,
-        p_new_template_id: existingTemplateId // Temporariamente
-      });
-
-    // 2. Deletar dados antigos em cascata
-    // (As foreign keys com ON DELETE CASCADE cuidam disso)
-    const { error: deleteError } = await supabase
-      .from('project_extraction_templates')
-      .delete()
-      .eq('id', existingTemplateId);
-
-    if (deleteError) throw deleteError;
-
-    // 3. Clonar novo template
-    const result = await cloneTemplateToProject(projectId, globalTemplateId);
-
-    if (!result.success) throw new Error(result.error);
-
-    console.log('✅ Template substituído com sucesso!');
-
-    return {
-      success: true,
-      templateId: result.templateId,
-      action: 'replaced'
-    };
-  } catch (err: any) {
-    console.error('❌ Erro ao substituir template:', err);
-    return {
-      success: false,
-      error: err.message
-    };
-  }
-}
-
-// =================== FUNÇÃO PRINCIPAL ===================
-
-/**
- * Importa template com detecção inteligente de conflitos
- * 
- * Fluxo:
- * 1. Verifica se há conflito
- * 2. Se não: clona normalmente
- * 3. Se sim: retorna info do conflito para o usuário decidir
- */
-export async function importTemplateWithConflictDetection(
-  projectId: string,
-  globalTemplateId: string
-): Promise<{
-  needsUserDecision: boolean;
-  conflictInfo?: TemplateConflictInfo;
-  result?: ImportResult;
-}> {
-  try {
-    // Verificar conflito
-    const conflictInfo = await checkTemplateConflict(projectId);
-
-    if (!conflictInfo.hasConflict) {
-      // Sem conflito, clonar diretamente
-      const result = await cloneTemplateToProject(projectId, globalTemplateId);
-      return {
-        needsUserDecision: false,
-        result
-      };
-    }
-
-    // Tem conflito, retornar para usuário decidir
-    return {
-      needsUserDecision: true,
-      conflictInfo
-    };
-  } catch (err: any) {
-    console.error('❌ Erro na importação:', err);
-    return {
-      needsUserDecision: false,
-      result: {
-        success: false,
-        error: err.message
+      // Ignore duplicate errors (instância já existe)
+      if (insertError && !insertError.message.includes('duplicate')) {
+        throw insertError;
       }
+    }
+
+    console.log(`  ✅ Instâncias iniciais criadas`);
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('❌ Erro ao criar instâncias:', err);
+    return {
+      success: false,
+      error: err.message
     };
   }
 }

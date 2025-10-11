@@ -58,7 +58,6 @@ export function useExtractionSetup() {
         .select('id')
         .eq('article_id', articleId)
         .eq('template_id', templateId)
-        .eq('is_template', false)
         .limit(1);
 
       if (checkError) {
@@ -72,39 +71,36 @@ export function useExtractionSetup() {
         return { success: true, instancesCreated: 0, error: message };
       }
 
-      // 2. Buscar instâncias template do projeto
-      const { data: templateInstances, error: templateError } = await supabase
-        .from('extraction_instances')
+      // 2. Buscar entity types do template do projeto para criar instâncias
+      const { data: entityTypes, error: entityTypesError } = await supabase
+        .from('extraction_entity_types')
         .select('*')
-        .eq('project_id', projectId)
-        .eq('template_id', templateId)
-        .eq('is_template', true)
+        .eq('project_template_id', templateId)
         .order('sort_order', { ascending: true });
 
-      if (templateError) {
-        console.error('Erro ao buscar instâncias template:', templateError);
-        throw templateError;
+      if (entityTypesError) {
+        console.error('Erro ao buscar entity types:', entityTypesError);
+        throw entityTypesError;
       }
 
-      if (!templateInstances || templateInstances.length === 0) {
+      if (!entityTypes || entityTypes.length === 0) {
         const error = 'Nenhuma configuração de template encontrada. Configure o template primeiro.';
         toast.error(error);
         return { success: false, instancesCreated: 0, error };
       }
 
-      console.log(`Copiando ${templateInstances.length} instâncias template para o artigo`);
+      console.log(`Criando ${entityTypes.length} instâncias para o artigo`);
 
-      // 3. Copiar instâncias template para o artigo
-      const instances = templateInstances.map((templateInstance) => ({
+      // 3. Criar instâncias baseadas nos entity types
+      const instances = entityTypes.map((entityType, index) => ({
         project_id: projectId,
         article_id: articleId,
         template_id: templateId,
-        entity_type_id: templateInstance.entity_type_id,
-        label: templateInstance.label,
-        sort_order: templateInstance.sort_order,
+        entity_type_id: entityType.id,
+        label: entityType.label,
+        sort_order: entityType.sort_order,
         status: 'pending',
-        is_template: false,
-        metadata: templateInstance.metadata || {},
+        metadata: {},
         created_by: user.id
       }));
 
@@ -244,7 +240,6 @@ export function useExtractionSetup() {
         .select('id')
         .eq('article_id', articleId)
         .eq('template_id', templateId)
-        .eq('is_template', false)
         .limit(1);
 
       if (error) {

@@ -34,15 +34,9 @@ import {
   Layers,
   AlertTriangle
 } from 'lucide-react';
-import { useGlobalTemplates, GlobalTemplate } from '@/hooks/extraction/useGlobalTemplates';
-import { 
-  importTemplateWithConflictDetection,
-  mergeTemplates,
-  replaceTemplate,
-  cloneTemplateToProject
-} from '@/services/templateImportService';
+import { useGlobalTemplates } from '@/hooks/extraction/useGlobalTemplates';
+import { importGlobalTemplate } from '@/services/templateImportService';
 import { toast } from 'sonner';
-import { TemplateConflictDialog } from './TemplateConflictDialog';
 
 // =================== INTERFACES ===================
 
@@ -64,10 +58,6 @@ export function ImportTemplateDialog({
   const { templates, loading: loadingTemplates } = useGlobalTemplates();
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
-  
-  // Estados para conflito
-  const [showConflictDialog, setShowConflictDialog] = useState(false);
-  const [conflictInfo, setConflictInfo] = useState<any>(null);
 
   const selectedTemplate = templates.find(t => t.id === selectedTemplateId);
 
@@ -82,36 +72,16 @@ export function ImportTemplateDialog({
     try {
       console.log('📥 Importando template:', selectedTemplate.name);
 
-      // Usar nova lógica com detecção de conflito
-      const importResult = await importTemplateWithConflictDetection(
-        projectId,
-        selectedTemplate.id
-      );
+      const result = await importGlobalTemplate(projectId, selectedTemplate.id);
 
-      if (importResult.needsUserDecision) {
-        // Tem conflito, mostrar dialog para usuário decidir
-        setConflictInfo({
-          ...importResult.conflictInfo,
-          newTemplate: {
-            name: selectedTemplate.name,
-            framework: selectedTemplate.framework,
-            description: selectedTemplate.description
-          }
-        });
-        setShowConflictDialog(true);
-        setImporting(false);
-        return;
-      }
-
-      // Sem conflito, processar resultado
-      if (importResult.result?.success) {
+      if (result.success) {
         toast.success(
-          `Template "${selectedTemplate.name}" importado com sucesso!`
+          `Template "${selectedTemplate.name}" importado com sucesso! ${result.details?.entityTypesAdded} seções, ${result.details?.fieldsAdded} campos.`
         );
         onOpenChange(false);
         onTemplateImported();
       } else {
-        throw new Error(importResult.result?.error || 'Erro desconhecido');
+        throw new Error(result.error || 'Erro desconhecido');
       }
 
     } catch (error: any) {
@@ -122,67 +92,9 @@ export function ImportTemplateDialog({
     }
   };
 
-  const handleConflictAction = async (action: 'merge' | 'replace' | 'cancel') => {
-    if (action === 'cancel') {
-      setShowConflictDialog(false);
-      setConflictInfo(null);
-      return;
-    }
-
-    if (!selectedTemplate || !conflictInfo?.existingTemplate) return;
-
-    setImporting(true);
-
-    try {
-      if (action === 'merge') {
-        console.log('🔀 Mesclando templates...');
-        const result = await mergeTemplates(
-          projectId,
-          conflictInfo.existingTemplate.id,
-          selectedTemplate.id
-        );
-
-        if (result.success) {
-          toast.success(
-            `Template mesclado! +${result.sectionsAdded} seções, +${result.fieldsAdded} campos`
-          );
-          setShowConflictDialog(false);
-          onOpenChange(false);
-          onTemplateImported();
-        } else {
-          throw new Error(result.error || 'Erro ao mesclar');
-        }
-      } else if (action === 'replace') {
-        console.log('🔄 Substituindo template...');
-        const result = await replaceTemplate(
-          projectId,
-          conflictInfo.existingTemplate.id,
-          selectedTemplate.id
-        );
-
-        if (result.success) {
-          toast.success('Template substituído com sucesso!');
-          setShowConflictDialog(false);
-          onOpenChange(false);
-          onTemplateImported();
-        } else {
-          throw new Error(result.error || 'Erro ao substituir');
-        }
-      }
-    } catch (error: any) {
-      console.error('Erro na ação de conflito:', error);
-      toast.error(`Erro: ${error.message}`);
-    } finally {
-      setImporting(false);
-      setConflictInfo(null);
-    }
-  };
-
   const handleClose = () => {
     if (!importing) {
       setSelectedTemplateId(null);
-      setShowConflictDialog(false);
-      setConflictInfo(null);
       onOpenChange(false);
     }
   };
@@ -307,21 +219,6 @@ export function ImportTemplateDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
-
-      {/* Dialog de Conflito de Template */}
-      {conflictInfo && (
-        <TemplateConflictDialog
-          open={showConflictDialog}
-          onClose={() => {
-            setShowConflictDialog(false);
-            setConflictInfo(null);
-          }}
-          existingTemplate={conflictInfo.existingTemplate}
-          newTemplate={conflictInfo.newTemplate}
-          onAction={handleConflictAction}
-          loading={importing}
-        />
-      )}
     </Dialog>
   );
 }

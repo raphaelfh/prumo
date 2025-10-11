@@ -597,6 +597,9 @@ export type Database = {
           url_landing: string | null
           url_pdf: string | null
           volume: string | null
+          zotero_collection_key: string | null
+          zotero_item_key: string | null
+          zotero_version: number | null
         }
         Insert: {
           abstract?: string | null
@@ -639,6 +642,9 @@ export type Database = {
           url_landing?: string | null
           url_pdf?: string | null
           volume?: string | null
+          zotero_collection_key?: string | null
+          zotero_item_key?: string | null
+          zotero_version?: number | null
         }
         Update: {
           abstract?: string | null
@@ -681,6 +687,9 @@ export type Database = {
           url_landing?: string | null
           url_pdf?: string | null
           volume?: string | null
+          zotero_collection_key?: string | null
+          zotero_item_key?: string | null
+          zotero_version?: number | null
         }
         Relationships: [
           {
@@ -784,6 +793,7 @@ export type Database = {
           completion_percentage: number | null
           confidence_level: number | null
           created_at: string
+          extraction_instance_id: string | null
           id: string
           instrument_id: string | null
           is_blind: boolean
@@ -809,6 +819,7 @@ export type Database = {
           completion_percentage?: number | null
           confidence_level?: number | null
           created_at?: string
+          extraction_instance_id?: string | null
           id?: string
           instrument_id?: string | null
           is_blind?: boolean
@@ -834,6 +845,7 @@ export type Database = {
           completion_percentage?: number | null
           confidence_level?: number | null
           created_at?: string
+          extraction_instance_id?: string | null
           id?: string
           instrument_id?: string | null
           is_blind?: boolean
@@ -857,6 +869,13 @@ export type Database = {
             columns: ["article_id"]
             isOneToOne: false
             referencedRelation: "articles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assessments_extraction_instance_id_fkey"
+            columns: ["extraction_instance_id"]
+            isOneToOne: false
+            referencedRelation: "extraction_instances"
             referencedColumns: ["id"]
           },
           {
@@ -891,6 +910,7 @@ export type Database = {
       }
       extracted_values: {
         Row: {
+          ai_suggestion_id: string | null
           article_id: string
           confidence_score: number | null
           created_at: string
@@ -902,10 +922,12 @@ export type Database = {
           project_id: string
           reviewer_id: string | null
           source: Database["public"]["Enums"]["extraction_source"]
+          unit: string | null
           updated_at: string
           value: Json
         }
         Insert: {
+          ai_suggestion_id?: string | null
           article_id: string
           confidence_score?: number | null
           created_at?: string
@@ -917,10 +939,12 @@ export type Database = {
           project_id: string
           reviewer_id?: string | null
           source: Database["public"]["Enums"]["extraction_source"]
+          unit?: string | null
           updated_at?: string
           value?: Json
         }
         Update: {
+          ai_suggestion_id?: string | null
           article_id?: string
           confidence_score?: number | null
           created_at?: string
@@ -932,10 +956,18 @@ export type Database = {
           project_id?: string
           reviewer_id?: string | null
           source?: Database["public"]["Enums"]["extraction_source"]
+          unit?: string | null
           updated_at?: string
           value?: Json
         }
         Relationships: [
+          {
+            foreignKeyName: "extracted_values_ai_suggestion_id_fkey"
+            columns: ["ai_suggestion_id"]
+            isOneToOne: false
+            referencedRelation: "ai_suggestions"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "extracted_values_article_id_fkey"
             columns: ["article_id"]
@@ -1103,6 +1135,7 @@ export type Database = {
       }
       extraction_fields: {
         Row: {
+          allowed_units: Json | null
           allowed_values: Json | null
           created_at: string
           description: string | null
@@ -1117,6 +1150,7 @@ export type Database = {
           validation_schema: Json | null
         }
         Insert: {
+          allowed_units?: Json | null
           allowed_values?: Json | null
           created_at?: string
           description?: string | null
@@ -1131,6 +1165,7 @@ export type Database = {
           validation_schema?: Json | null
         }
         Update: {
+          allowed_units?: Json | null
           allowed_values?: Json | null
           created_at?: string
           description?: string | null
@@ -1325,7 +1360,7 @@ export type Database = {
           },
         ]
       }
-      extraction_templates: {
+      extraction_templates_global: {
         Row: {
           created_at: string
           description: string | null
@@ -1360,6 +1395,78 @@ export type Database = {
           version?: string
         }
         Relationships: []
+      }
+      feedback_reports: {
+        Row: {
+          admin_notes: string | null
+          article_id: string | null
+          created_at: string | null
+          description: string
+          id: string
+          priority: number | null
+          project_id: string | null
+          screenshot_url: string | null
+          severity: string | null
+          status: string | null
+          type: string
+          updated_at: string | null
+          url: string
+          user_agent: string | null
+          user_id: string | null
+          viewport_size: Json | null
+        }
+        Insert: {
+          admin_notes?: string | null
+          article_id?: string | null
+          created_at?: string | null
+          description: string
+          id?: string
+          priority?: number | null
+          project_id?: string | null
+          screenshot_url?: string | null
+          severity?: string | null
+          status?: string | null
+          type: string
+          updated_at?: string | null
+          url: string
+          user_agent?: string | null
+          user_id?: string | null
+          viewport_size?: Json | null
+        }
+        Update: {
+          admin_notes?: string | null
+          article_id?: string | null
+          created_at?: string | null
+          description?: string
+          id?: string
+          priority?: number | null
+          project_id?: string | null
+          screenshot_url?: string | null
+          severity?: string | null
+          status?: string | null
+          type?: string
+          updated_at?: string | null
+          url?: string
+          user_agent?: string | null
+          user_id?: string | null
+          viewport_size?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "feedback_reports_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
+            referencedRelation: "articles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "feedback_reports_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
@@ -1443,7 +1550,7 @@ export type Database = {
             foreignKeyName: "project_extraction_templates_global_template_id_fkey"
             columns: ["global_template_id"]
             isOneToOne: false
-            referencedRelation: "extraction_templates"
+            referencedRelation: "extraction_templates_global"
             referencedColumns: ["id"]
           },
           {
@@ -1524,6 +1631,8 @@ export type Database = {
       }
       projects: {
         Row: {
+          assessment_entity_type_id: string | null
+          assessment_scope: string | null
           condition_studied: string | null
           created_at: string
           created_by_id: string
@@ -1545,6 +1654,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          assessment_entity_type_id?: string | null
+          assessment_scope?: string | null
           condition_studied?: string | null
           created_at?: string
           created_by_id: string
@@ -1566,6 +1677,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          assessment_entity_type_id?: string | null
+          assessment_scope?: string | null
           condition_studied?: string | null
           created_at?: string
           created_by_id?: string
@@ -1588,9 +1701,60 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "projects_assessment_entity_type_id_fkey"
+            columns: ["assessment_entity_type_id"]
+            isOneToOne: false
+            referencedRelation: "extraction_entity_types"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "projects_created_by_id_fkey"
             columns: ["created_by_id"]
             isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      zotero_integrations: {
+        Row: {
+          created_at: string
+          encrypted_api_key: string | null
+          id: string
+          is_active: boolean
+          last_sync_at: string | null
+          library_type: string
+          updated_at: string
+          user_id: string
+          zotero_user_id: string
+        }
+        Insert: {
+          created_at?: string
+          encrypted_api_key?: string | null
+          id?: string
+          is_active?: boolean
+          last_sync_at?: string | null
+          library_type: string
+          updated_at?: string
+          user_id: string
+          zotero_user_id: string
+        }
+        Update: {
+          created_at?: string
+          encrypted_api_key?: string | null
+          id?: string
+          is_active?: boolean
+          last_sync_at?: string | null
+          library_type?: string
+          updated_at?: string
+          user_id?: string
+          zotero_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "zotero_integrations_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -1620,14 +1784,8 @@ export type Database = {
         }[]
       }
       calculate_extraction_progress: {
-        Args: { p_article_id: string; p_template_id: string }
-        Returns: {
-          completed_optional_fields: number
-          completed_required_fields: number
-          progress_percentage: number
-          total_optional_fields: number
-          total_required_fields: number
-        }[]
+        Args: { p_article_id: string; p_project_id: string }
+        Returns: Json
       }
       can_access_article: {
         Args: { p_project_id: string; p_user_id: string }
@@ -1641,6 +1799,10 @@ export type Database = {
         Args: { p_project_id: string; p_user_id: string }
         Returns: boolean
       }
+      count_extracted_values: {
+        Args: { p_template_id: string }
+        Returns: number
+      }
       create_project_bypass_rls: {
         Args: { creator_id: string; project_name: string }
         Returns: string
@@ -1649,13 +1811,46 @@ export type Database = {
         Args: { creator_id: string; project_name: string }
         Returns: string
       }
+      create_project_with_member: {
+        Args: {
+          p_description?: string
+          p_name: string
+          p_review_title?: string
+        }
+        Returns: string
+      }
+      create_project_with_validation: {
+        Args: { p_description?: string; p_name: string }
+        Returns: Json
+      }
       debug_edge_function_call: {
         Args: Record<PropertyKey, never>
         Returns: Json
       }
+      diagnose_user_permissions: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
+      ensure_user_profile: {
+        Args: { p_user_id: string }
+        Returns: boolean
+      }
       final_edge_function_test: {
         Args: Record<PropertyKey, never>
         Returns: Json
+      }
+      get_instance_children: {
+        Args: { p_parent_id: string }
+        Returns: {
+          entity_type_id: string
+          id: string
+          label: string
+          level: number
+        }[]
+      }
+      get_instance_path: {
+        Args: { p_instance_id: string }
+        Returns: string
       }
       gtrgm_compress: {
         Args: { "": unknown }
@@ -1677,17 +1872,17 @@ export type Database = {
         Args: { "": unknown }
         Returns: unknown
       }
+      has_extracted_values: {
+        Args: { p_template_id: string }
+        Returns: boolean
+      }
       has_main_file: {
         Args: { p_article_id: string }
         Returns: boolean
       }
       initialize_existing_project_template: {
         Args: { p_project_id: string }
-        Returns: {
-          entities_created: number
-          fields_created: number
-          instances_created: number
-        }[]
+        Returns: undefined
       }
       initialize_project_vocabularies: {
         Args: { project_uuid: string }
@@ -1712,6 +1907,10 @@ export type Database = {
       show_trgm: {
         Args: { "": string }
         Returns: string[]
+      }
+      switch_active_template: {
+        Args: { p_new_template_id: string; p_project_id: string }
+        Returns: undefined
       }
       test_ai_assessment_comprehensive: {
         Args: Record<PropertyKey, never>

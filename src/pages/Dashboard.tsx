@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { BookOpen, Plus, FileText, ClipboardCheck, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
-import { cloneCharmsToProject } from "@/services/templateCloneService";
+import { AddProjectDialog } from "@/components/project/AddProjectDialog";
 
 interface Project {
   id: string;
@@ -25,6 +25,7 @@ export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
 
   useEffect(() => {
     loadProjects();
@@ -34,7 +35,7 @@ export default function Dashboard() {
     try {
       const { data, error } = await supabase
         .from("projects")
-        .select("*")
+        .select("id, name, description, created_at, is_active, review_title")
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -47,107 +48,43 @@ export default function Dashboard() {
     }
   };
 
-  const createProject = async () => {
+  const handleCreateProject = async (data: { name: string; description?: string }) => {
     if (!user?.id) {
       toast.error("Você precisa estar autenticado para criar um projeto");
       return;
     }
 
-    const name = prompt("Nome do projeto:");
-    if (!name || name.trim() === "") return;
-
     setCreating(true);
-    let projectData: any = null;
 
     try {
-      // PASSO 1: Criar projeto básico
-      const { data: newProjectData, error: projectError } = await supabase
-        .from("projects")
-        .insert({
-          name: name.trim(),
-          created_by_id: user.id
-        })
-        .select()
-        .single();
-
-      if (projectError) {
-        console.error("Error creating project:", projectError);
-        
-        // Se erro de RLS, usar função RPC como fallback
-        if (projectError.code === '42501' || projectError.message?.includes('permission')) {
-          console.log('Tentando usar função RPC para contornar RLS...');
-          
-          try {
-            // Usar função que sabemos que existe
-            const projectId = await supabase.rpc(
-              'create_project_bypass_rls',
-              {
-                project_name: name.trim(),
-                creator_id: user.id
-              }
-            );
-
-            if (projectId.error) {
-              throw projectId.error;
-            }
-
-            // Simular o projectData para continuar o fluxo
-            projectData = {
-              id: projectId.data,
-              name: name.trim(),
-              created_by_id: user.id
-            };
-
-            console.log('Projeto criado via RPC:', projectData.id);
-            
-            // Continuar para clonagem do template (não fazer return aqui)
-            
-          } catch (rpcError) {
-            console.error('Erro na função RPC:', rpcError);
-            toast.error("Erro ao criar projeto. Verifique suas permissões.");
-            return;
-          }
-        } else {
-          toast.error(`Erro ao criar projeto: ${projectError.message}`);
-          return;
+      // Usar função RPC que cria projeto e adiciona criador como manager atomicamente
+      const { data: projectId, error: rpcError } = await supabase.rpc(
+        'create_project_with_member',
+        {
+          p_name: data.name,
+          p_description: data.description || undefined,
+          p_review_title: undefined
         }
-      } else {
-        projectData = newProjectData;
-      }
-
-      // PASSO 2: Adicionar criador como manager (apenas se não foi criado via RPC)
-      if (newProjectData) {
-        // Projeto criado normalmente - precisa adicionar membro
-        const { error: memberError } = await supabase
-          .from("project_members")
-          .insert({
-            project_id: projectData.id,
-            user_id: user.id,
-            role: "manager",
-            created_by_id: user.id
-          });
-
-        if (memberError) {
-          console.error("Error adding project member:", memberError);
-          toast.error(`Erro ao adicionar membro: ${memberError.message}`);
-          return;
-        }
-      }
-      // Se foi criado via RPC, o membro já foi adicionado automaticamente
-
-      // PASSO 3: Clonar template CHARMS automaticamente
-      const cloneResult = await cloneCharmsToProject(
-        projectData.id,
-        name.trim(),
-        user.id
       );
 
-      if (cloneResult.success) {
-        console.log('✅ Template CHARMS clonado:', cloneResult.stats);
-      } else {
-        console.warn('⚠️ Falha ao clonar template:', cloneResult.error);
+      if (rpcError) {
+        console.error("Error creating project via RPC:", rpcError);
+        toast.error(`Erro ao criar projeto: ${rpcError.message}`);
+        return;
       }
 
+      if (!projectId) {
+        toast.error("Erro: ID do projeto não foi retornado");
+        return;
+      }
+
+      console.log('✅ Projeto criado com sucesso:', projectId);
+
+      // Feedback para usuário
+      toast.success("Projeto criado com sucesso!");
+
+      // Fechar diálogo e recarregar lista de projetos
+      setAddDialogOpen(false);
       await loadProjects();
 
     } catch (error: any) {
@@ -180,9 +117,9 @@ export default function Dashboard() {
             <h2 className="text-2xl font-bold">Meus Projetos</h2>
             <p className="text-muted-foreground">Gerencie suas revisões sistemáticas</p>
           </div>
-          <Button onClick={createProject} disabled={creating}>
+          <Button onClick={() => setAddDialogOpen(true)} disabled={creating}>
             <Plus className="mr-2 h-4 w-4" />
-            {creating ? "Criando..." : "Novo Projeto"}
+            Novo Projeto
           </Button>
         </div>
 
@@ -194,9 +131,9 @@ export default function Dashboard() {
               <p className="mb-4 text-center text-sm text-muted-foreground">
                 Crie seu primeiro projeto de revisão sistemática
               </p>
-              <Button onClick={createProject} disabled={creating}>
+              <Button onClick={() => setAddDialogOpen(true)} disabled={creating}>
                 <Plus className="mr-2 h-4 w-4" />
-                {creating ? "Criando..." : "Criar Primeiro Projeto"}
+                Criar Primeiro Projeto
               </Button>
             </CardContent>
           </Card>
@@ -242,6 +179,14 @@ export default function Dashboard() {
           </div>
         )}
         </main>
+
+        {/* Diálogo de Adicionar Projeto */}
+        <AddProjectDialog
+          open={addDialogOpen}
+          onOpenChange={setAddDialogOpen}
+          onProjectCreate={handleCreateProject}
+          isCreating={creating}
+        />
       </div>
     </AppLayout>
   );

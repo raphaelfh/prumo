@@ -31,7 +31,7 @@ interface AIAssessmentHistoryItem {
   selected_level: string;
   confidence_score: number;
   justification: string;
-  evidence_passages: any[];
+  evidence_passages: EvidencePassage[];
   ai_model_used: string;
   processing_time_ms?: number;
   prompt_tokens?: number;

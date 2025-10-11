@@ -1,10 +1,10 @@
 /**
- * Editor de Configuração do Template
+ * Editor de Configuração do Template (REFATORADO)
  * 
- * Permite ao usuário gerenciar:
- * - Instâncias template (modelos de entidades)
- * - Campos de cada entidade
- * - Labels e descrições customizadas
+ * Mudança principal: Trabalha diretamente com extraction_entity_types
+ * ao invés de usar "template instances" (is_template=true).
+ * 
+ * Isso simplifica o código e permite suporte natural a hierarquia.
  */
 
 import { useEffect, useState } from 'react';
@@ -27,30 +27,22 @@ import {
   X,
   Loader2,
   Trash2,
-  Download
+  Download,
+  ChevronRight
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import { FieldsManager } from './FieldsManager';
 import { AddSectionDialog, RemoveSectionDialog, ImportTemplateDialog } from './dialogs';
+import { ExtractionEntityType } from '@/types/extraction';
 
 interface TemplateConfigEditorProps {
   projectId: string;
   templateId: string;
 }
 
-interface TemplateInstance {
-  id: string;
-  label: string;
-  entity_type_id: string;
-  entity_name: string;
-  entity_label: string;
-  cardinality: string;
-  sort_order: number;
-  num_fields: number;
-}
-
 export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEditorProps) {
-  const [instances, setInstances] = useState<TemplateInstance[]>([]);
+  const [entityTypes, setEntityTypes] = useState<ExtractionEntityType[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState('');
@@ -61,95 +53,75 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
 
   useEffect(() => {
     if (projectId && templateId) {
-      loadTemplateInstances();
+      loadEntityTypes();
     }
   }, [projectId, templateId]);
 
-  const loadTemplateInstances = async () => {
+  const loadEntityTypes = async () => {
     setLoading(true);
     
     try {
-      // Buscar instâncias template
-      const { data: instancesData, error: instancesError } = await supabase
-        .from('extraction_instances')
-        .select('id, label, entity_type_id, sort_order')
-        .eq('project_id', projectId)
-        .eq('template_id', templateId)
-        .eq('is_template', true)
+      console.log('📦 Carregando entity types do template:', templateId);
+
+      // Buscar entity types do project_template
+      const { data: entityTypesData, error: entityTypesError } = await supabase
+        .from('extraction_entity_types')
+        .select('*, extraction_fields(count)')
+        .eq('project_template_id', templateId)
         .order('sort_order', { ascending: true });
 
-      if (instancesError) {
-        console.error('Erro ao buscar instâncias:', instancesError);
-        throw instancesError;
+      if (entityTypesError) {
+        console.error('❌ Erro ao buscar entity types:', entityTypesError);
+        throw entityTypesError;
       }
 
-      if (!instancesData || instancesData.length === 0) {
-        setInstances([]);
-        return;
-      }
+      console.log(`✅ Entity types encontrados: ${(entityTypesData || []).length}`);
 
-      // Buscar dados das entidades e campos
-      const instancesWithDetails = await Promise.all(
-        instancesData.map(async (instance) => {
-          // Buscar entidade
-          const { data: entityData, error: entityError } = await supabase
-            .from('extraction_entity_types')
-            .select('name, label, cardinality')
-            .eq('id', instance.entity_type_id)
-            .single();
+      // Para cada entity type, contar fields
+      const entityTypesWithCounts = await Promise.all(
+        (entityTypesData || []).map(async (et) => {
+          const { count, error: countError } = await supabase
+            .from('extraction_fields')
+            .select('*', { count: 'exact', head: true })
+            .eq('entity_type_id', et.id);
 
-          if (entityError) {
-            console.error('Erro ao buscar entidade:', entityError);
-            return null;
+          if (countError) {
+            console.error(`Erro ao contar fields de ${et.name}:`, countError);
           }
 
-          // Buscar contagem de campos
-          const { count } = await supabase
-            .from('extraction_fields')
-            .select('id', { count: 'exact', head: true })
-            .eq('entity_type_id', instance.entity_type_id);
-
           return {
-            id: instance.id,
-            label: instance.label,
-            entity_type_id: instance.entity_type_id,
-            entity_name: entityData.name,
-            entity_label: entityData.label,
-            cardinality: entityData.cardinality,
-            sort_order: instance.sort_order,
-            num_fields: count || 0,
+            ...et,
+            fieldsCount: count || 0
           };
         })
       );
 
-      // Filtrar nulls
-      const validInstances = instancesWithDetails.filter(i => i !== null) as TemplateInstance[];
-      setInstances(validInstances);
+      setEntityTypes(entityTypesWithCounts as ExtractionEntityType[]);
     } catch (err: any) {
-      console.error('Erro ao carregar instâncias template:', err);
+      console.error('Erro ao carregar entity types:', err);
       toast.error(`Erro: ${err.message}`);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleStartEdit = (instance: TemplateInstance) => {
-    setEditingId(instance.id);
-    setEditLabel(instance.label);
+  const handleStartEdit = (entityType: ExtractionEntityType) => {
+    setEditingId(entityType.id);
+    setEditLabel(entityType.label);
   };
 
-  const handleSaveEdit = async (instanceId: string) => {
+  const handleSaveEdit = async (entityTypeId: string) => {
     try {
       const { error } = await supabase
-        .from('extraction_instances')
+        .from('extraction_entity_types')
         .update({ label: editLabel })
-        .eq('id', instanceId);
+        .eq('id', entityTypeId);
 
       if (error) throw error;
 
       toast.success('Label atualizado com sucesso');
       setEditingId(null);
-      await loadTemplateInstances();
+      await loadEntityTypes();
     } catch (err: any) {
       console.error('Erro ao atualizar label:', err);
       toast.error(`Erro: ${err.message}`);
@@ -161,29 +133,42 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
     setEditLabel('');
   };
 
-  const handleSectionAdded = async () => {
-    console.log('🔄 Recarregando seções após criação...');
-    await loadTemplateInstances();
+  const handleRemoveSection = (entityType: ExtractionEntityType) => {
+    setRemovingSectionId(entityType.id);
+    setRemovingSectionName(entityType.label);
   };
 
-  const handleRemoveSection = (instance: TemplateInstance) => {
-    console.log('🗑️ Preparando remoção de seção:', instance.label);
-    setRemovingSectionId(instance.id);
-    setRemovingSectionName(instance.label);
+  const handleSectionAdded = () => {
+    setShowAddSectionDialog(false);
+    loadEntityTypes();
   };
 
-  const handleSectionRemoved = async () => {
-    console.log('🔄 Recarregando seções após remoção...');
+  const handleSectionRemoved = () => {
     setRemovingSectionId(null);
     setRemovingSectionName('');
-    await loadTemplateInstances();
+    loadEntityTypes();
   };
+
+  // Organizar entity types por hierarquia
+  const rootEntityTypes = entityTypes.filter(et => !et.parent_entity_type_id);
+  const childEntityTypes = entityTypes.filter(et => et.parent_entity_type_id);
+
+  // Map de children por parent
+  const childrenByParent: Record<string, ExtractionEntityType[]> = {};
+  childEntityTypes.forEach(child => {
+    if (child.parent_entity_type_id) {
+      if (!childrenByParent[child.parent_entity_type_id]) {
+        childrenByParent[child.parent_entity_type_id] = [];
+      }
+      childrenByParent[child.parent_entity_type_id].push(child);
+    }
+  });
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        <span className="ml-2 text-muted-foreground">Carregando configuração...</span>
+      <div className="flex items-center justify-center p-12">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-3 text-muted-foreground">Carregando configuração...</span>
       </div>
     );
   }
@@ -213,7 +198,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
                 Importar Template
               </Button>
               <Badge variant="outline">
-                {instances.length} seções configuradas
+                {entityTypes.length} seções ({rootEntityTypes.length} principais)
               </Badge>
             </div>
           </div>
@@ -221,124 +206,204 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
       </Card>
 
       <Accordion type="single" collapsible className="space-y-2">
-        {instances.map((instance) => (
-          <AccordionItem key={instance.id} value={instance.id}>
-            <Card>
-              <AccordionTrigger className="px-6 py-4 hover:no-underline">
-                <div className="flex items-center justify-between w-full pr-4">
-                  <div className="flex items-center gap-3">
-                    <Badge variant="secondary" className="font-mono text-xs">
-                      {instance.sort_order}
-                    </Badge>
-                    {editingId === instance.id ? (
-                      <Input
-                        value={editLabel}
-                        onChange={(e) => setEditLabel(e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="max-w-xs"
-                      />
-                    ) : (
-                      <span className="font-medium">{instance.label}</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline">
-                      {instance.num_fields} campos
-                    </Badge>
-                    <Badge variant="outline">
-                      {instance.cardinality === 'one' ? 'Único' : 'Múltiplo'}
-                    </Badge>
-                  </div>
-                </div>
-              </AccordionTrigger>
-              <AccordionContent>
-                <CardContent className="pt-4 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm text-muted-foreground">
-                      <p><strong>Nome técnico:</strong> {instance.entity_name}</p>
-                      <p className="mt-1"><strong>Tipo:</strong> {instance.cardinality === 'one' ? 'Seção única' : 'Seção múltipla'}</p>
-                    </div>
-                    <div className="flex gap-2">
-                      {editingId === instance.id ? (
-                        <>
-                          <Button
-                            size="sm"
-                            onClick={() => handleSaveEdit(instance.id)}
-                            className="gap-1"
-                          >
-                            <Save className="h-4 w-4" />
-                            Salvar
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={handleCancelEdit}
-                            className="gap-1"
-                          >
-                            <X className="h-4 w-4" />
-                            Cancelar
-                          </Button>
-                        </>
+        {rootEntityTypes.map((entityType) => {
+          const children = childrenByParent[entityType.id] || [];
+          const hasChildren = children.length > 0;
+          
+          return (
+            <AccordionItem key={entityType.id} value={entityType.id}>
+              <Card className={cn(hasChildren && "border-l-4 border-l-primary")}>
+                <AccordionTrigger className="px-6 py-4 hover:no-underline">
+                  <div className="flex items-center justify-between w-full pr-4">
+                    <div className="flex items-center gap-3">
+                      <Badge variant="secondary" className="font-mono text-xs">
+                        {entityType.sort_order}
+                      </Badge>
+                      {editingId === entityType.id ? (
+                        <Input
+                          value={editLabel}
+                          onChange={(e) => setEditLabel(e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="max-w-xs"
+                          autoFocus
+                        />
                       ) : (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleStartEdit(instance)}
-                            className="gap-1"
-                          >
-                            <Edit2 className="h-4 w-4" />
-                            Editar Label
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleRemoveSection(instance)}
-                            className="gap-1 text-destructive hover:text-destructive"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            Remover
-                          </Button>
-                        </>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{entityType.label}</span>
+                          {hasChildren && (
+                            <Badge variant="secondary" className="text-xs">
+                              {children.length} sub-seções
+                            </Badge>
+                          )}
+                        </div>
                       )}
                     </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">
+                        {(entityType as any).fieldsCount || 0} campos
+                      </Badge>
+                      <Badge variant="outline">
+                        {entityType.cardinality === 'one' ? 'Único' : 'Múltiplo'}
+                      </Badge>
+                    </div>
                   </div>
+                </AccordionTrigger>
+                <AccordionContent>
+                  <CardContent className="pt-4 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm text-muted-foreground">
+                        <p><strong>Nome técnico:</strong> {entityType.name}</p>
+                        <p className="mt-1">
+                          <strong>Tipo:</strong> {entityType.cardinality === 'one' ? 'Seção única' : 'Seção múltipla'}
+                        </p>
+                        {entityType.description && (
+                          <p className="mt-1">{entityType.description}</p>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        {editingId === entityType.id ? (
+                          <>
+                            <Button
+                              size="sm"
+                              onClick={() => handleSaveEdit(entityType.id)}
+                              className="gap-1"
+                            >
+                              <Save className="h-4 w-4" />
+                              Salvar
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={handleCancelEdit}
+                              className="gap-1"
+                            >
+                              <X className="h-4 w-4" />
+                              Cancelar
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleStartEdit(entityType)}
+                              className="gap-1"
+                            >
+                              <Edit2 className="h-4 w-4" />
+                              Editar Label
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleRemoveSection(entityType)}
+                              className="gap-1 text-destructive hover:text-destructive"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              Remover
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
 
-                  <div className="border-t pt-4">
-                    <FieldsManager 
-                      entityTypeId={instance.entity_type_id}
-                      sectionName={instance.label}
-                    />
-                  </div>
-                </CardContent>
-              </AccordionContent>
-            </Card>
-          </AccordionItem>
-        ))}
+                    {/* Campos deste entity type */}
+                    <div className="border-t pt-4">
+                      <FieldsManager 
+                        entityTypeId={entityType.id}
+                        sectionName={entityType.label}
+                      />
+                    </div>
+
+                    {/* Children deste entity type (sub-seções) */}
+                    {hasChildren && (
+                      <div className="border-t pt-4 mt-4">
+                        <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                          <ChevronRight className="h-4 w-4" />
+                          Sub-seções ({children.length})
+                        </h4>
+                        <div className="space-y-3 pl-4">
+                          {children.map((child) => (
+                            <Card key={child.id} className="bg-slate-50">
+                              <CardHeader className="pb-3">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <CardTitle className="text-sm">{child.label}</CardTitle>
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                      {child.name} • {child.cardinality === 'many' ? 'Múltiplo' : 'Único'}
+                                    </p>
+                                  </div>
+                                  <Badge variant="outline" className="text-xs">
+                                    {(child as any).fieldsCount || 0} campos
+                                  </Badge>
+                                </div>
+                              </CardHeader>
+                              <CardContent>
+                                <FieldsManager 
+                                  entityTypeId={child.id}
+                                  sectionName={child.label}
+                                />
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </AccordionContent>
+              </Card>
+            </AccordionItem>
+          );
+        })}
       </Accordion>
 
-      <Card>
-        <CardContent className="pt-6">
-          <div className="text-center text-muted-foreground">
-            <Plus className="h-8 w-8 mx-auto mb-2 text-primary" />
-            <p className="text-sm font-medium">Adicionar nova seção</p>
-            <p className="text-xs text-muted-foreground mt-1 mb-4">
-              Crie seções personalizadas para seu projeto
-            </p>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="mt-2"
-              onClick={() => setShowAddSectionDialog(true)}
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Adicionar Seção
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      {entityTypes.length === 0 && (
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-center text-muted-foreground">
+              <Plus className="h-12 w-12 mx-auto mb-3 text-muted-foreground/50" />
+              <p className="text-sm font-medium mb-1">Nenhuma seção configurada</p>
+              <p className="text-xs mb-4">
+                Importe um template global ou crie seções personalizadas
+              </p>
+              <div className="flex gap-2 justify-center">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setShowImportDialog(true)}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Importar Template
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={() => setShowAddSectionDialog(true)}
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Adicionar Seção
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-      {/* Dialog para adicionar nova seção */}
+      {/* Botão adicionar seção */}
+      {entityTypes.length > 0 && (
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-center">
+              <Button 
+                variant="outline" 
+                onClick={() => setShowAddSectionDialog(true)}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Adicionar Nova Seção
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Dialogs */}
       <AddSectionDialog
         projectId={projectId}
         templateId={templateId}
@@ -347,7 +412,6 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         onSectionAdded={handleSectionAdded}
       />
 
-      {/* Dialog para remover seção */}
       <RemoveSectionDialog
         projectId={projectId}
         templateId={templateId}
@@ -363,16 +427,16 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         onSectionRemoved={handleSectionRemoved}
       />
 
-      {/* Dialog para importar template */}
       <ImportTemplateDialog
         projectId={projectId}
         open={showImportDialog}
         onOpenChange={setShowImportDialog}
         onTemplateImported={() => {
-          // Recarregar página para atualizar templates
-          window.location.reload();
+          setShowImportDialog(false);
+          loadEntityTypes();
         }}
       />
     </div>
   );
 }
+

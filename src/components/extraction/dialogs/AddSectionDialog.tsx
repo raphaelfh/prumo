@@ -139,13 +139,11 @@ export function AddSectionDialog({
     try {
       console.log('🆕 Criando nova seção:', data);
 
-      // 1. Buscar próximo sort_order
-      const { data: existingInstances, error: orderError } = await supabase
-        .from('extraction_instances')
+      // 1. Buscar próximo sort_order dos entity_types existentes
+      const { data: existingEntityTypes, error: orderError } = await supabase
+        .from('extraction_entity_types')
         .select('sort_order')
-        .eq('project_id', projectId)
-        .eq('template_id', templateId)
-        .eq('is_template', true)
+        .eq('project_template_id', templateId)
         .order('sort_order', { ascending: false })
         .limit(1);
 
@@ -154,19 +152,20 @@ export function AddSectionDialog({
         throw orderError;
       }
 
-      const nextSortOrder = (existingInstances?.[0]?.sort_order || 0) + 1;
+      const nextSortOrder = (existingEntityTypes?.[0]?.sort_order || 0) + 1;
 
       // 2. Criar entity type
       const { data: newEntityType, error: entityError } = await supabase
         .from('extraction_entity_types')
         .insert({
-          project_template_id: templateId, // Corrigido: templateId é na verdade um project_extraction_templates.id
+          project_template_id: templateId,
           name: data.name,
           label: data.label,
           description: data.description || null,
           cardinality: data.cardinality,
           sort_order: nextSortOrder,
           is_required: data.is_required,
+          parent_entity_type_id: null // Nova seção sempre é ROOT
         })
         .select()
         .single();
@@ -177,29 +176,6 @@ export function AddSectionDialog({
       }
 
       console.log('✅ Entity type criado:', newEntityType.id);
-
-      // 3. Criar instância template
-      const { error: instanceError } = await supabase
-        .from('extraction_instances')
-        .insert({
-          project_id: projectId,
-          template_id: templateId,
-          entity_type_id: newEntityType.id,
-          label: data.label,
-          sort_order: nextSortOrder,
-          metadata: {},
-          created_by: (await supabase.auth.getUser()).data.user?.id || '',
-          status: 'pending',
-          is_template: true,
-          article_id: null
-        });
-
-      if (instanceError) {
-        console.error('Erro ao criar instância template:', instanceError);
-        throw instanceError;
-      }
-
-      console.log('✅ Instância template criada');
 
       toast.success(`Seção "${data.label}" criada com sucesso!`);
       

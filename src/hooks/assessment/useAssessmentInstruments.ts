@@ -19,7 +19,7 @@ export const useAssessmentInstruments = () => {
       setError(null);
       const { data, error } = await supabase
         .from("assessment_instruments")
-        .select("*")
+        .select("id, name, tool_type, version, mode, aggregation_rules")
         .eq("is_active", true)
         .order("name");
 
@@ -53,7 +53,7 @@ export const useAssessmentItems = (instrumentId: string | null) => {
     try {
       const { data, error } = await supabase
         .from("assessment_items")
-        .select("*")
+        .select("id, item_code, domain, question, sort_order, required, allowed_levels")
         .eq("instrument_id", instrumentId)
         .order("sort_order");
 

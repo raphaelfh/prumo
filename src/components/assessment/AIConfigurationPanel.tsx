@@ -64,7 +64,7 @@ export const AIConfigurationPanel = ({
   const [config, setConfig] = useState<AIConfiguration>(DEFAULT_CONFIG);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [projectData, setProjectData] = useState<any>(null);
+  const [projectData, setProjectData] = useState<ProjectConfigData | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {

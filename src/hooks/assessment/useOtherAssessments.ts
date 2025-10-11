@@ -11,6 +11,7 @@ export interface OtherAssessment {
   completion_percentage: number;
   user_name?: string;
   user_email?: string;
+  extraction_instance_id?: string | null; // Novo: para assessment por instância
 }
 
 export const useOtherAssessments = (
@@ -38,6 +39,7 @@ export const useOtherAssessments = (
           responses,
           status,
           completion_percentage,
+          extraction_instance_id,
           profiles!inner(
             full_name,
             email
@@ -59,6 +61,7 @@ export const useOtherAssessments = (
         responses: assessment.responses,
         status: assessment.status,
         completion_percentage: assessment.completion_percentage,
+        extraction_instance_id: assessment.extraction_instance_id,
         user_name: assessment.profiles?.full_name || 'Usuário',
         user_email: assessment.profiles?.email || ''
       }));
@@ -106,12 +109,46 @@ export const useOtherAssessments = (
       }));
   };
 
+  /**
+   * Novo: Buscar assessments de outros usuários para uma instância específica
+   */
+  const getOtherAssessmentsForInstance = (
+    extractionInstanceId: string,
+    instrumentId: string
+  ): OtherAssessment[] => {
+    return otherAssessments.filter(
+      assessment => 
+        assessment.extraction_instance_id === extractionInstanceId && 
+        assessment.instrument_id === instrumentId
+    );
+  };
+
+  /**
+   * Novo: Buscar respostas de outros para um item específico de uma instância
+   */
+  const getOtherAssessmentsForInstanceItem = (
+    extractionInstanceId: string,
+    instrumentId: string,
+    itemId: string
+  ): Array<{ user_name: string; response: any }> => {
+    const instanceAssessments = getOtherAssessmentsForInstance(extractionInstanceId, instrumentId);
+    
+    return instanceAssessments
+      .filter(assessment => assessment.responses?.[itemId])
+      .map(assessment => ({
+        user_name: assessment.user_name || 'Usuário',
+        response: assessment.responses[itemId]
+      }));
+  };
+
   return {
     otherAssessments,
     loading,
     error,
     getOtherAssessmentsForArticle,
     getOtherAssessmentsForItem,
+    getOtherAssessmentsForInstance,
+    getOtherAssessmentsForInstanceItem,
     refresh: loadOtherAssessments
   };
 };
