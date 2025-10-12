@@ -14,7 +14,7 @@
  * @component
  */
 
-import { useState } from 'react';
+import { useState, memo } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -67,14 +67,29 @@ export function FieldInput(props: FieldInputProps) {
 
   // Validação básica
   const validateValue = (val: any): boolean => {
-    if (field.is_required && (val === null || val === undefined || val === '')) {
-      setValidationError('Campo obrigatório');
-      return false;
+    // Para campos obrigatórios, verificar se o valor não está vazio
+    if (field.is_required) {
+      // Extrair valor do objeto {value, unit} se necessário
+      const actualValue = typeof val === 'object' && val !== null && 'value' in val
+        ? val.value
+        : val;
+        
+      if (actualValue === null || actualValue === undefined || actualValue === '') {
+        setValidationError('Campo obrigatório');
+        return false;
+      }
     }
 
-    if (field.field_type === 'number' && val !== '' && isNaN(Number(val))) {
-      setValidationError('Valor deve ser um número');
-      return false;
+    if (field.field_type === 'number') {
+      // Extrair valor numérico do objeto {value, unit} se necessário
+      const numericValue = typeof val === 'object' && val !== null && 'value' in val
+        ? val.value
+        : val;
+      
+      if (numericValue !== '' && numericValue !== null && numericValue !== undefined && isNaN(Number(numericValue))) {
+        setValidationError('Valor deve ser um número');
+        return false;
+      }
     }
 
     setValidationError(null);
@@ -326,4 +341,22 @@ export function FieldInput(props: FieldInputProps) {
     </div>
   );
 }
+
+/**
+ * Exporta versão memoizada para evitar re-renders desnecessários
+ * 
+ * Performance crítica: Só re-renderiza se valor DESTE campo específico mudou
+ * Soluciona bug de input perdendo foco a cada caractere
+ */
+export default memo(FieldInput, (prevProps, nextProps) => {
+  // Comparação otimizada: apenas props que afetam ESTE campo
+  return (
+    prevProps.field.id === nextProps.field.id &&
+    prevProps.instanceId === nextProps.instanceId &&
+    prevProps.value === nextProps.value &&
+    prevProps.disabled === nextProps.disabled &&
+    prevProps.viewMode === nextProps.viewMode
+    // NÃO comparar onChange, otherExtractions, aiSuggestion (não afetam render)
+  );
+});
 

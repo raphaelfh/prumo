@@ -20,7 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import { Edit2, Trash2, Save, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
-import { FieldInput } from './FieldInput';
+import MemoizedFieldInput from './FieldInput'; // Usar versão memoizada
 import type { ExtractionField, ExtractionInstance } from '@/types/extraction';
 import type { OtherExtraction } from '@/hooks/extraction/colaboracao/useOtherExtractions';
 import type { AISuggestion } from '@/hooks/extraction/ai/useAISuggestions';
@@ -162,7 +162,7 @@ export function InstanceCard(props: InstanceCardProps) {
           const key = `${instance.id}_${field.id}`;
           
           return (
-            <FieldInput
+            <MemoizedFieldInput
               key={field.id}
               field={field}
               instanceId={instance.id}

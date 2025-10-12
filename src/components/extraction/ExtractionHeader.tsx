@@ -34,10 +34,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { ArrowLeft, Loader2, Clock, CheckCircle, ChevronLeft, ChevronRight, MoreHorizontal, FileText, Users } from 'lucide-react';
+import { ArrowLeft, Loader2, Clock, CheckCircle, ChevronLeft, ChevronRight, MoreHorizontal, FileText, Users, Eye, EyeOff } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useNavigate } from 'react-router-dom';
+import { getRoleLabel, type UserRole } from '@/lib/comparison/permissions';
 
 // =================== INTERFACES ===================
 
@@ -70,6 +71,10 @@ interface ExtractionHeaderProps {
   onViewModeChange: (mode: 'extract' | 'compare') => void;
   hasOtherExtractions: boolean;
   
+  // Permissões e role (opcional)
+  userRole?: UserRole;
+  isBlindMode?: boolean;
+  
   // Status e ações
   isSaving?: boolean;
   lastSaved?: Date | null;
@@ -98,6 +103,8 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
     viewMode,
     onViewModeChange,
     hasOtherExtractions,
+    userRole,
+    isBlindMode,
     isSaving = false,
     lastSaved = null,
     isComplete,
@@ -192,6 +199,21 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
 
           {/* Seção de Status (centro-direita) */}
           <div className="flex items-center gap-3">
+            {/* Badge de Role */}
+            {userRole && (
+              <Badge variant="secondary" className="text-xs gap-1">
+                {getRoleLabel(userRole)}
+              </Badge>
+            )}
+            
+            {/* Badge de Blind Mode */}
+            {isBlindMode && (
+              <Badge variant="outline" className="text-xs gap-1">
+                <EyeOff className="h-3 w-3" />
+                Modo Cego
+              </Badge>
+            )}
+
             <Badge variant="outline" className="text-xs">
               <span className="text-muted-foreground">Progresso:</span>
               <span className="font-semibold tabular-nums ml-1">{completionPercentage}%</span>

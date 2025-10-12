@@ -142,10 +142,17 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
   // Memoizar valores computados
   const hasFields = useMemo(() => fields.length > 0, [fields.length]);
   
+  // Handlers de dialog - corrigido para não fechar inadvertidamente
   const dialogHandlers = useMemo(() => ({
-    addDialog: (open: boolean) => !open && actions.closeAddDialog(),
-    editDialog: (open: boolean) => !open && actions.closeEditDialog(),
-    deleteDialog: (open: boolean) => !open && actions.closeDeleteDialog(),
+    addDialog: (open: boolean) => {
+      if (!open) actions.closeAddDialog();
+    },
+    editDialog: (open: boolean) => {
+      if (!open) actions.closeEditDialog();
+    },
+    deleteDialog: (open: boolean) => {
+      if (!open) actions.closeDeleteDialog();
+    },
   }), [actions]);
 
   if (loading) {

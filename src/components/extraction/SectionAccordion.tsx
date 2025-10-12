@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { FieldInput } from './FieldInput';
+import MemoizedFieldInput from './FieldInput'; // Usar versão memoizada
 import { InstanceCard } from './InstanceCard';
 import type { 
   ExtractionEntityType,
@@ -98,8 +98,9 @@ export function SectionAccordion(props: SectionAccordionProps) {
 
   return (
     <Accordion 
-      type="single" 
-      collapsible 
+      type="single"
+      collapsible
+      defaultValue={entityType.id}
       className={cn("bg-white border-l-4", borderColor)}
     >
       <AccordionItem value={entityType.id} className="border-none">
@@ -172,7 +173,7 @@ export function SectionAccordion(props: SectionAccordionProps) {
                   const key = `${instances[0].id}_${field.id}`;
                   
                   return (
-                    <FieldInput
+                    <MemoizedFieldInput
                       key={field.id}
                       field={field}
                       instanceId={instances[0].id}

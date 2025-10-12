@@ -32,14 +32,14 @@ import { useExtractionProgress } from '@/hooks/extraction/useExtractionProgress'
 import { useExtractionAutoSave } from '@/hooks/extraction/useExtractionAutoSave';
 import { useOtherExtractions } from '@/hooks/extraction/colaboracao/useOtherExtractions';
 import { useAISuggestions } from '@/hooks/extraction/ai/useAISuggestions';
+import { useComparisonPermissions } from '@/hooks/shared/useComparisonPermissions';
 import { getTemplateDebugInfo, logTemplateDebug } from '@/lib/template-helpers';
 
 // Components
 import { ExtractionHeader } from '@/components/extraction/ExtractionHeader';
-import { SectionAccordion } from '@/components/extraction/SectionAccordion';
-import { ComparisonGridView } from '@/components/extraction/colaboracao/ComparisonGridView';
-import { ModelSelector, AddModelDialog, RemoveModelDialog } from '@/components/extraction/hierarchy';
-import { Separator } from '@/components/ui/separator';
+import { ExtractionFormView } from '@/components/extraction/ExtractionFormView';
+import { ExtractionCompareView } from '@/components/extraction/ExtractionCompareView';
+import { AddModelDialog, RemoveModelDialog } from '@/components/extraction/hierarchy';
 
 // Hooks adicionais
 import { useModelManagement } from '@/hooks/extraction/useModelManagement';
@@ -51,6 +51,19 @@ import type {
   ExtractionField,
   ExtractionInstance
 } from '@/types/extraction';
+
+// =================== MEMOIZATION ===================
+
+/**
+ * PDFViewer memoizado para evitar re-renders desnecessários
+ * Causa do bug: Auto-save causa re-render que re-cria PDFViewer
+ */
+const MemoizedPDFViewer = memo(PDFViewer, (prevProps, nextProps) => {
+  return prevProps.articleId === nextProps.articleId && 
+         prevProps.projectId === nextProps.projectId;
+});
+
+MemoizedPDFViewer.displayName = 'MemoizedPDFViewer';
 
 // =================== INTERFACES ===================
 
@@ -113,12 +126,18 @@ export default function ExtractionFullScreen() {
     enabled: !!articleId && !!projectId && !loading && valuesInitialized
   });
 
-  // Hook para outras extrações (colaboração)
+  // Hook de permissões (controla acesso a comparação)
+  const permissions = useComparisonPermissions(
+    projectId || '',
+    currentUserId
+  );
+
+  // Hook para outras extrações (colaboração) - controlado por permissões
   const { otherExtractions } = useOtherExtractions({
     articleId: articleId || '',
     projectId: projectId || '',
     currentUserId,
-    enabled: !!currentUserId
+    enabled: permissions.canSeeOthers && !!currentUserId
   });
 
   // Hook para sugestões de IA
@@ -188,8 +207,7 @@ export default function ExtractionFullScreen() {
     );
   }, [instances]);
 
-  // ✅ Memoizar SectionAccordion (componente pesado)
-  const MemoizedSectionAccordion = memo(SectionAccordion);
+  // Removido: SectionAccordion não precisa memo, FieldInput é memoizado individualmente
 
   // Carregar dados iniciais
   useEffect(() => {
@@ -686,7 +704,9 @@ export default function ExtractionFullScreen() {
         onTogglePDF={() => setShowPDF(!showPDF)}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
-        hasOtherExtractions={otherExtractions.length > 0}
+        hasOtherExtractions={permissions.canSeeOthers && otherExtractions.length > 0}
+        userRole={permissions.userRole}
+        isBlindMode={permissions.isBlindMode}
         isSaving={isSaving}
         lastSaved={lastSaved}
         isComplete={isComplete}
@@ -697,13 +717,11 @@ export default function ExtractionFullScreen() {
       {/* Main content */}
       <div className="flex-1 overflow-hidden">
         <ResizablePanelGroup direction="horizontal">
-          {/* PDF Viewer (opcional) */}
+          {/* PDF Viewer (opcional) - Memoizado para evitar re-renders */}
           {showPDF && (
             <>
               <ResizablePanel defaultSize={50} minSize={30} maxSize={70}>
-                <div className="h-full">
-                  <PDFViewer articleId={articleId || ''} projectId={projectId || ''} />
-                </div>
+                <MemoizedPDFViewer articleId={articleId || ''} projectId={projectId || ''} />
               </ResizablePanel>
               <ResizableHandle withHandle />
             </>
@@ -714,127 +732,45 @@ export default function ExtractionFullScreen() {
             <ScrollArea className="h-full bg-slate-50">
               <div className="p-8 space-y-4">
                 {viewMode === 'extract' ? (
-                  // Modo extração: Renderização hierárquica
-                  <>
-                    {/* Study-level sections (sempre visíveis) - MEMOIZADO */}
-                    {studyLevelSections.map(entityType => {
-                      const typeInstances = instances.filter(
-                        i => i.entity_type_id === entityType.id
-                      );
-
-                      return (
-                        <MemoizedSectionAccordion
-                          key={entityType.id}
-                          entityType={entityType}
-                          instances={typeInstances}
-                          fields={entityType.fields}
-                          values={values}
-                          onValueChange={updateValue}
-                          projectId={projectId || ''}
-                          articleId={articleId || ''}
-                          otherExtractions={otherExtractions}
-                          aiSuggestions={aiSuggestions}
-                          onAcceptAI={acceptSuggestion}
-                          onRejectAI={rejectSuggestion}
-                          onAddInstance={() => handleAddInstance(entityType.id)}
-                          onRemoveInstance={handleRemoveInstance}
-                          viewMode={viewMode}
-                        />
-                      );
-                    })}
-
-                    {/* Divider */}
-                    {modelParentEntityType && (
-                      <>
-                        <div className="py-4">
-                          <Separator />
-                        </div>
-
-                        {/* Model Selector */}
-                        <ModelSelector
-                          models={models}
-                          activeModelId={activeModelId}
-                          onSelectModel={setActiveModelId}
-                          onAddModel={handleAddModel}
-                          onRemoveModel={handleRemoveModel}
-                          loading={modelsLoading}
-                        />
-
-                        {/* Model-level sections (filtradas por modelo ativo) - MEMOIZADO */}
-                        {activeModelId && (
-                          <div className="space-y-4 mt-4">
-                            {modelChildSections.map(entityType => {
-                              // Usar função memoizada para filtrar instances
-                              const typeInstances = getInstancesForModel(entityType.id, activeModelId);
-
-                              return (
-                                <MemoizedSectionAccordion
-                                  key={entityType.id}
-                                  entityType={entityType}
-                                  instances={typeInstances}
-                                  fields={entityType.fields}
-                                  values={values}
-                                  onValueChange={updateValue}
-                                  projectId={projectId || ''}
-                                  articleId={articleId || ''}
-                                  otherExtractions={otherExtractions}
-                                  aiSuggestions={aiSuggestions}
-                                  onAcceptAI={acceptSuggestion}
-                                  onRejectAI={rejectSuggestion}
-                                  viewMode={viewMode}
-                                />
-                              );
-                            })}
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </>
+                  <ExtractionFormView
+                    studyLevelSections={studyLevelSections}
+                    modelParentEntityType={modelParentEntityType}
+                    modelChildSections={modelChildSections}
+                    instances={instances}
+                    values={values}
+                    updateValue={updateValue}
+                    otherExtractions={otherExtractions}
+                    aiSuggestions={aiSuggestions}
+                    acceptSuggestion={acceptSuggestion}
+                    rejectSuggestion={rejectSuggestion}
+                    models={models}
+                    activeModelId={activeModelId}
+                    setActiveModelId={setActiveModelId}
+                    onAddModel={handleAddModel}
+                    onRemoveModel={handleRemoveModel}
+                    getInstancesForModel={getInstancesForModel}
+                    handleAddInstance={handleAddInstance}
+                    handleRemoveInstance={handleRemoveInstance}
+                    projectId={projectId || ''}
+                    articleId={articleId || ''}
+                    modelsLoading={modelsLoading}
+                  />
                 ) : (
-                  // Modo comparação: Grid completo por seção
-                  <div className="space-y-6">
-                    {entityTypes.map(entityType => {
-                      const typeInstances = instances.filter(
-                        i => i.entity_type_id === entityType.id
-                      );
-
-                      return (
-                        <div key={entityType.id} className="space-y-3">
-                          <div className="flex items-center gap-3">
-                            <h3 className="text-lg font-semibold">{entityType.label}</h3>
-                            {entityType.cardinality === 'many' && (
-                              <Badge variant="outline">Múltipla</Badge>
-                            )}
-                          </div>
-
-                          {typeInstances.map(instance => {
-                            // Preparar valores desta instância
-                            const instanceValues: Record<string, any> = {};
-                            entityType.fields.forEach(field => {
-                              const key = `${instance.id}_${field.id}`;
-                              instanceValues[field.id] = values[key];
-                            });
-
-                            return (
-                              <div key={instance.id}>
-                                {entityType.cardinality === 'many' && (
-                                  <p className="text-sm text-muted-foreground mb-2">
-                                    {instance.label}
-                                  </p>
-                                )}
-                                <ComparisonGridView
-                                  fields={entityType.fields}
-                                  instanceId={instance.id}
-                                  myValues={instanceValues}
-                                  otherExtractions={otherExtractions}
-                                />
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <ExtractionCompareView
+                    studyLevelSections={studyLevelSections}
+                    modelParentEntityType={modelParentEntityType}
+                    modelChildSections={modelChildSections}
+                    instances={instances}
+                    values={values}
+                    updateValue={updateValue}
+                    otherExtractions={otherExtractions}
+                    currentUser={{
+                      userId: currentUserId,
+                      userName: article?.created_by?.full_name || 'Você',
+                      isCurrentUser: true
+                    }}
+                    editable={true}
+                  />
                 )}
               </div>
             </ScrollArea>
