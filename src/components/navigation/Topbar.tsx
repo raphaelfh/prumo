@@ -13,6 +13,7 @@ import { useProject } from '@/contexts/ProjectContext';
 import { ProfileMenu } from './ProfileMenu';
 import { MobileSidebar } from '@/components/layout/MobileSidebar';
 import { FeedbackButton } from '@/components/feedback/FeedbackButton';
+import { NotificationCenter } from './NotificationCenter';
 import type { TopbarProps } from '@/types/navigation';
 
 export const Topbar: React.FC<TopbarProps> = ({
@@ -105,8 +106,9 @@ export const Topbar: React.FC<TopbarProps> = ({
           )}
         </div>
 
-        {/* Right Section - Feedback + Profile Menu */}
+        {/* Right Section - Notifications + Feedback + Profile Menu */}
         <div className="flex items-center gap-1">
+          <NotificationCenter />
           <FeedbackButton />
           <ProfileMenu user={user} />
         </div>

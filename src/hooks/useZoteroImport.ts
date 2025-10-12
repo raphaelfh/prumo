@@ -17,6 +17,7 @@ export function useZoteroImport() {
   const [loadingCollections, setLoadingCollections] = useState(false);
   const [importing, setImporting] = useState(false);
   const [progress, setProgress] = useState<ImportProgress | null>(null);
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
 
   /**
    * Lista collections disponíveis no Zotero
@@ -42,10 +43,16 @@ export function useZoteroImport() {
   const startImport = useCallback(async (
     projectId: string,
     collectionKey: string,
-    options: ImportOptions
+    options: ImportOptions,
+    jobId?: string,
+    onProgressUpdate?: (progress: ImportProgress) => void
   ): Promise<ImportResult | null> => {
     setImporting(true);
-    setProgress({
+    if (jobId) {
+      setCurrentJobId(jobId);
+    }
+
+    const initialProgress: ImportProgress = {
       phase: 'fetching',
       current: 0,
       total: 0,
@@ -57,7 +64,10 @@ export function useZoteroImport() {
         errors: 0,
         pdfsDownloaded: 0,
       },
-    });
+    };
+
+    setProgress(initialProgress);
+    onProgressUpdate?.(initialProgress);
 
     try {
       const result = await zoteroService.importFromCollection(
@@ -66,6 +76,7 @@ export function useZoteroImport() {
         options,
         (progressUpdate) => {
           setProgress(progressUpdate);
+          onProgressUpdate?.(progressUpdate);
         }
       );
 
@@ -85,7 +96,7 @@ export function useZoteroImport() {
       console.error('Erro na importação:', error);
       toast.error(error.message || 'Erro ao importar artigos');
       
-      setProgress({
+      const errorProgress: ImportProgress = {
         phase: 'error',
         current: 0,
         total: 0,
@@ -96,11 +107,15 @@ export function useZoteroImport() {
           skipped: 0,
           errors: 1,
         },
-      });
+      };
+
+      setProgress(errorProgress);
+      onProgressUpdate?.(errorProgress);
 
       return null;
     } finally {
       setImporting(false);
+      setCurrentJobId(null);
     }
   }, []);
 
@@ -111,6 +126,7 @@ export function useZoteroImport() {
     zoteroService.cancelImport();
     setImporting(false);
     setProgress(null);
+    setCurrentJobId(null);
     toast.info('Importação cancelada');
   }, []);
 
@@ -126,6 +142,7 @@ export function useZoteroImport() {
     loadingCollections,
     importing,
     progress,
+    currentJobId,
     listCollections,
     startImport,
     cancelImport,

@@ -92,6 +92,7 @@ export function AddFieldDialog({
       unit: null,
       allowed_units: null,
       allowed_values: null,
+      llm_description: null,
       validation_schema: {},
       sort_order: 0,
     },
@@ -264,6 +265,30 @@ export function AddFieldDialog({
                   </FormControl>
                   <FormDescription>
                     Instruções para ajudar os revisores a preencher corretamente
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Instrução para IA */}
+            <FormField
+              control={form.control}
+              name="llm_description"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Instrução para IA (opcional)</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      {...field}
+                      value={field.value || ''}
+                      placeholder="Exemplo: Extraia o número total de participantes no baseline, antes de exclusões..."
+                      rows={3}
+                      disabled={loading}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Instrução específica para extração automática com IA. Seja claro sobre O QUE extrair e ONDE encontrar no artigo.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

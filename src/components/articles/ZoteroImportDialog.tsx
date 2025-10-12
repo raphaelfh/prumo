@@ -10,6 +10,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -28,10 +38,15 @@ import {
   AlertCircle,
   Info,
   FolderOpen,
+  Minimize2,
 } from 'lucide-react';
 import { useZoteroImport } from '@/hooks/useZoteroImport';
+import { useBackgroundJobs } from '@/stores/useBackgroundJobs';
+import { useProject } from '@/contexts/ProjectContext';
+import { createZoteroImportJob } from '@/types/background-jobs';
 import type { ZoteroCollection, ImportOptions } from '@/types/zotero';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 interface ZoteroImportDialogProps {
   open: boolean;
@@ -57,10 +72,15 @@ export function ZoteroImportDialog({
     startImport,
     cancelImport,
     resetProgress,
+    currentJobId,
   } = useZoteroImport();
+
+  const { addJob, updateJob } = useBackgroundJobs();
+  const { project } = useProject();
 
   const [currentStep, setCurrentStep] = useState<Step>('select-collection');
   const [selectedCollection, setSelectedCollection] = useState<string | null>(null);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [importOptions, setImportOptions] = useState<ImportOptions>({
     downloadPdfs: true, // Habilitado agora que está implementado
     onlyPdfs: true, // Por padrão, baixar apenas PDFs
@@ -100,20 +120,89 @@ export function ZoteroImportDialog({
   const handleStartImport = async () => {
     if (!selectedCollection) return;
 
+    const selectedCollectionData = collections.find(c => c.key === selectedCollection);
+
+    // Criar background job
+    const job = createZoteroImportJob(
+      projectId,
+      selectedCollection,
+      importOptions,
+      {
+        projectName: project?.name,
+        collectionName: selectedCollectionData?.data.name,
+      }
+    );
+
+    // Adicionar job ao store
+    addJob(job);
+
     setCurrentStep('importing');
 
-    const result = await startImport(projectId, selectedCollection, importOptions);
+    // Iniciar importação com callback para atualizar job
+    const result = await startImport(
+      projectId, 
+      selectedCollection, 
+      importOptions,
+      job.id,
+      (updatedProgress) => {
+        // Atualizar job com progresso
+        updateJob(job.id, {
+          status: 'running',
+          progress: updatedProgress,
+          stats: updatedProgress.stats,
+          startedAt: job.startedAt || Date.now(),
+        });
+      }
+    );
 
+    // Atualizar job com resultado final
     if (result?.success) {
+      updateJob(job.id, {
+        status: 'completed',
+        completedAt: Date.now(),
+        stats: result.stats,
+      });
       onImportComplete?.();
+    } else {
+      updateJob(job.id, {
+        status: 'failed',
+        completedAt: Date.now(),
+        error: result?.errors?.[0]?.error || 'Erro na importação',
+      });
     }
   };
 
   const handleClose = () => {
     if (importing) {
-      cancelImport();
+      // Se está importando, mostrar confirmação
+      setShowCloseConfirm(true);
+    } else {
+      onOpenChange(false);
     }
+  };
+
+  const handleConfirmMinimize = () => {
+    // Minimizar: apenas fechar dialog, importação continua
+    setShowCloseConfirm(false);
     onOpenChange(false);
+    toast.info('Importação continuando em background. Você será notificado quando concluir.', {
+      duration: 4000,
+    });
+  };
+
+  const handleConfirmCancel = () => {
+    // Cancelar: interromper importação
+    cancelImport();
+    setShowCloseConfirm(false);
+    onOpenChange(false);
+    
+    // Atualizar job como cancelado
+    if (currentJobId) {
+      updateJob(currentJobId, {
+        status: 'cancelled',
+        completedAt: Date.now(),
+      });
+    }
   };
 
   const canProceed = selectedCollection !== null;
@@ -122,8 +211,9 @@ export function ZoteroImportDialog({
     : 0;
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+    <>
+      <Dialog open={open} onOpenChange={handleClose}>
+        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
         <DialogHeader className="flex-shrink-0">
           <DialogTitle>Importar do Zotero</DialogTitle>
           <DialogDescription>
@@ -392,8 +482,15 @@ export function ZoteroImportDialog({
           </div>
 
           <div className="flex gap-2">
-            <Button variant="outline" onClick={handleClose} disabled={importing}>
-              {importing ? 'Cancelar' : 'Fechar'}
+            <Button variant="outline" onClick={handleClose}>
+              {importing ? (
+                <>
+                  <Minimize2 className="mr-2 h-4 w-4" />
+                  Minimizar
+                </>
+              ) : (
+                'Fechar'
+              )}
             </Button>
 
             {currentStep === 'select-collection' && (
@@ -422,6 +519,30 @@ export function ZoteroImportDialog({
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Confirmação ao fechar durante importação */}
+    <AlertDialog open={showCloseConfirm} onOpenChange={setShowCloseConfirm}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Importação em andamento</AlertDialogTitle>
+          <AlertDialogDescription>
+            A importação ainda está em execução. Você pode minimizar o diálogo e a importação 
+            continuará em background, ou cancelar para interromper o processo.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={handleConfirmCancel}>
+            <XCircle className="mr-2 h-4 w-4" />
+            Cancelar Importação
+          </AlertDialogCancel>
+          <AlertDialogAction onClick={handleConfirmMinimize}>
+            <Minimize2 className="mr-2 h-4 w-4" />
+            Continuar em Background
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }
 

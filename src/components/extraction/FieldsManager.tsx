@@ -26,7 +26,7 @@ import { AddFieldDialog } from './dialogs/AddFieldDialog';
 import { DeleteFieldConfirm } from './dialogs/DeleteFieldConfirm';
 import { EditFieldDialog } from './dialogs/EditFieldDialog';
 import { useProject } from '@/contexts/ProjectContext';
-import type { ExtractionField, FieldValidationResult } from '@/types/extraction';
+import type { ExtractionField } from '@/types/extraction';
 
 interface FieldsManagerProps {
   entityTypeId: string;
@@ -183,6 +183,7 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
           canEdit={canEdit}
           canDelete={canDelete}
           onStartEdit={handleStartEdit}
+          onOpenEditDialog={handleOpenEditDialog}
           onUpdateEditData={actions.updateEditData}
           onSaveEdit={handleSaveEdit}
           onCancelEdit={handleCancelEdit}

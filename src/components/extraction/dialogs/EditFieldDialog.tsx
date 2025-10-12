@@ -6,7 +6,6 @@
  * - Validação de mudança de tipo (não permitir se houver dados)
  * - Editor de unit com sugestões
  * - Editor de allowed_values com drag-drop
- * - Preview do campo
  * - Validação em tempo real
  * 
  * @component
@@ -25,7 +24,6 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -35,7 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, Info, AlertTriangle, Eye } from 'lucide-react';
+import { Loader2, Info, AlertTriangle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Form,
@@ -75,7 +73,6 @@ export function EditFieldDialog({
   const [loading, setLoading] = useState(false);
   const [validation, setValidation] = useState<FieldValidationResult | null>(null);
   const [validatingType, setValidatingType] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
 
   const form = useForm<ExtractionFieldUpdate>({
     resolver: zodResolver(ExtractionFieldSchema.partial()),
@@ -87,6 +84,7 @@ export function EditFieldDialog({
       unit: null,
       allowed_units: null,
       allowed_values: null,
+      llm_description: null,
       validation_schema: {},
     },
   });
@@ -104,6 +102,7 @@ export function EditFieldDialog({
         unit: field.unit,
         allowed_units: field.allowed_units,
         allowed_values: field.allowed_values,
+        llm_description: field.llm_description || '',
         validation_schema: field.validation_schema || {},
       });
       
@@ -288,6 +287,30 @@ export function EditFieldDialog({
                   )}
                 />
 
+                {/* Instrução para IA */}
+                <FormField
+                  control={form.control}
+                  name="llm_description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Instrução para IA (opcional)</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          {...field}
+                          value={field.value || ''}
+                          placeholder="Exemplo: Extraia o número total de participantes no baseline, antes de exclusões..."
+                          rows={4}
+                          disabled={loading}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Instrução específica para extração automática com IA. Descreva O QUE extrair e ONDE encontrar no artigo.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
                 {/* Campo Obrigatório */}
                 <FormField
                   control={form.control}
@@ -376,43 +399,9 @@ export function EditFieldDialog({
                       )}
                     />
                   )}
-
-                  {/* Preview Toggle */}
-                  <div className="flex items-center space-x-2 pt-4">
-                    <Switch
-                      id="show-preview"
-                      checked={showPreview}
-                      onCheckedChange={setShowPreview}
-                    />
-                    <Label htmlFor="show-preview" className="cursor-pointer">
-                      Mostrar preview do campo
-                    </Label>
-                  </div>
                 </div>
               </div>
             </div>
-
-            {/* Preview do Campo (condicional) */}
-            {showPreview && (
-              <div className="border-t pt-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <Eye className="h-5 w-5 text-muted-foreground" />
-                  <h3 className="text-lg font-medium">Preview</h3>
-                  <p className="text-sm text-muted-foreground">Como aparecerá para o revisor</p>
-                </div>
-                
-                <div className="rounded-lg border bg-muted/30 p-4">
-                  {/* TODO: FieldPreview component será implementado depois */}
-                  <div className="text-center text-muted-foreground py-8">
-                    <Eye className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                    <p>Preview do campo será implementado no Sprint 3</p>
-                    <p className="text-xs mt-1">
-                      Mostrará como este campo aparecerá na interface de extração
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* Info sobre impacto (se houver dados extraídos) */}
             {validation && validation.extractedValuesCount > 0 && (

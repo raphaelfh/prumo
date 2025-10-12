@@ -82,6 +82,7 @@ export interface ExtractionField {
   allowed_values: string[] | null;
   unit: string | null;
   allowed_units: string[] | null; // Unidades alternativas configuráveis para campos numéricos
+  llm_description: string | null; // Instrução específica para extração com IA
   sort_order: number;
   created_at: string;
 }
@@ -338,6 +339,11 @@ export const ExtractionFieldSchema = z.object({
       },
       { message: 'Unidades não podem ter duplicatas' }
     ),
+  
+  llm_description: z.string()
+    .max(1000, 'Instrução para IA deve ter no máximo 1000 caracteres')
+    .optional()
+    .nullable(),
   
   allowed_values: z.array(z.string())
     .min(1, 'Deve ter pelo menos um valor permitido')

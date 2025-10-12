@@ -27,7 +27,14 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Edit2, Save, X, Loader2, Trash2, Lock } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Edit2, Save, X, Loader2, Trash2, Lock, Settings, MoreVertical } from 'lucide-react';
 import type { ExtractionField } from '@/types/extraction';
 
 interface FieldsTableProps {
@@ -39,6 +46,7 @@ interface FieldsTableProps {
   canEdit: boolean;
   canDelete: boolean;
   onStartEdit: (field: ExtractionField) => void;
+  onOpenEditDialog: (field: ExtractionField) => void;
   onUpdateEditData: (data: Partial<ExtractionField>) => void;
   onSaveEdit: (fieldId: string) => void;
   onCancelEdit: () => void;
@@ -55,6 +63,7 @@ export const FieldsTable = memo(function FieldsTable({
   canEdit,
   canDelete,
   onStartEdit,
+  onOpenEditDialog,
   onUpdateEditData,
   onSaveEdit,
   onCancelEdit,
@@ -179,64 +188,74 @@ export const FieldsTable = memo(function FieldsTable({
                   </Button>
                 </div>
               ) : (
-                <div className="flex justify-end gap-1">
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => onStartEdit(field)}
-                            disabled={!canEdit}
-                            className="gap-1"
-                            aria-label={`Editar campo ${field.label}`}
-                          >
-                            {canEdit ? (
-                              <Edit2 className="h-3 w-3" aria-hidden="true" />
-                            ) : (
-                              <Lock className="h-3 w-3" aria-hidden="true" />
-                            )}
-                          </Button>
-                        </div>
-                      </TooltipTrigger>
-                      {!canEdit && (
-                        <TooltipContent>
-                          <p>Apenas managers podem editar</p>
-                        </TooltipContent>
-                      )}
-                    </Tooltip>
-                  </TooltipProvider>
-
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div>
-                          <Button
-                            size="sm"
-                            variant="ghost"
+                <div className="flex justify-end">
+                  {canEdit || canDelete ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 w-8 p-0"
+                          aria-label={`Ações para o campo ${field.label}`}
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        {canEdit && (
+                          <>
+                            <DropdownMenuItem
+                              onClick={() => onStartEdit(field)}
+                              className="gap-2"
+                            >
+                              <Edit2 className="h-4 w-4" />
+                              Edição Rápida
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => onOpenEditDialog(field)}
+                              className="gap-2"
+                            >
+                              <Settings className="h-4 w-4" />
+                              Edição Completa
+                            </DropdownMenuItem>
+                          </>
+                        )}
+                        {canEdit && canDelete && <DropdownMenuSeparator />}
+                        {canDelete && (
+                          <DropdownMenuItem
                             onClick={() => onOpenDeleteDialog(field)}
-                            disabled={!canDelete || validatingDelete === field.id}
-                            className="gap-1 text-destructive hover:text-destructive"
-                            aria-label={`Excluir campo ${field.label}`}
+                            disabled={validatingDelete === field.id}
+                            className="gap-2 text-destructive focus:text-destructive"
                           >
                             {validatingDelete === field.id ? (
-                              <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
-                            ) : canDelete ? (
-                              <Trash2 className="h-3 w-3" aria-hidden="true" />
+                              <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
-                              <Lock className="h-3 w-3" aria-hidden="true" />
+                              <Trash2 className="h-4 w-4" />
                             )}
+                            Excluir Campo
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 w-8 p-0"
+                            disabled
+                          >
+                            <Lock className="h-4 w-4 text-muted-foreground" />
                           </Button>
-                        </div>
-                      </TooltipTrigger>
-                      {!canDelete && validatingDelete !== field.id && (
+                        </TooltipTrigger>
                         <TooltipContent>
-                          <p>Apenas managers podem excluir</p>
+                          <p>Apenas managers podem editar ou excluir</p>
                         </TooltipContent>
-                      )}
-                    </Tooltip>
-                  </TooltipProvider>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
                 </div>
               )}
             </TableCell>

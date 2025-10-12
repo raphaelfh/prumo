@@ -23,7 +23,7 @@ import { useExtractionTemplates } from '@/hooks/extraction/useExtractionTemplate
 import { ArticleExtractionTable } from './ArticleExtractionTable';
 import { TemplateConfigEditor } from './TemplateConfigEditor';
 import { useAuth } from '@/contexts/AuthContext';
-import { ImportTemplateDialog } from './dialogs';
+import { ImportTemplateDialog, CreateCustomTemplateDialog } from './dialogs';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -36,6 +36,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   const [activeTemplate, setActiveTemplate] = useState<ProjectExtractionTemplate | null>(null);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'extraction' | 'ai' | 'configuration'>('dashboard');
   const [showImportDialog, setShowImportDialog] = useState(false);
+  const [showCreateCustomDialog, setShowCreateCustomDialog] = useState(false);
   const [articles, setArticles] = useState<any[]>([]);
   const [extractionStats, setExtractionStats] = useState({
     totalArticles: 0,
@@ -355,9 +356,13 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
                       com necessidades específicas ou frameworks diferentes.
                     </p>
                   </div>
-                  <Button variant="outline" className="ml-4" disabled>
+                  <Button 
+                    variant="outline" 
+                    className="ml-4"
+                    onClick={() => setShowCreateCustomDialog(true)}
+                  >
                     <PlusCircle className="h-4 w-4 mr-2" />
-                    Em breve
+                    Criar Template
                   </Button>
                 </div>
               </div>
@@ -447,6 +452,17 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
         open={showImportDialog}
         onOpenChange={setShowImportDialog}
         onTemplateImported={() => {
+          // Recarregar página para atualizar templates
+          window.location.reload();
+        }}
+      />
+
+      {/* Dialog para criar template personalizado */}
+      <CreateCustomTemplateDialog
+        projectId={projectId}
+        open={showCreateCustomDialog}
+        onOpenChange={setShowCreateCustomDialog}
+        onTemplateCreated={() => {
           // Recarregar página para atualizar templates
           window.location.reload();
         }}
