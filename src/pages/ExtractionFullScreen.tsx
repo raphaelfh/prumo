@@ -19,6 +19,8 @@ import { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { extractionInstanceService } from '@/services/extractionInstanceService';
+import { extractionLogger } from '@/lib/extraction/observability';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
@@ -361,77 +363,22 @@ export default function ExtractionFullScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Usuário não autenticado');
 
-      // Buscar instâncias existentes para este artigo
-      const { data: existingInstances, error: instancesError } = await supabase
-        .from('extraction_instances')
-        .select('*')
-        .eq('article_id', articleId!)
-        .eq('template_id', templateId);
-
-      if (instancesError) throw instancesError;
-
-      // Verificar se precisa criar instâncias para novos entity types
-      const existingEntityTypeIds = new Set(
-        (existingInstances || []).map(i => i.entity_type_id)
+      // Delegar para o service (inicialização automática)
+      const instances = await extractionInstanceService.initializeArticleInstances(
+        articleId!,
+        projectId!,
+        { id: templateId } as any,
+        entityTypesList,
+        user.id
       );
 
-      const instancesToCreate: any[] = [];
+      setInstances(instances.map(instance => ({
+        ...instance,
+        article_id: instance.article_id!,
+        metadata: instance.metadata as any
+      })));
 
-      entityTypesList.forEach(entityType => {
-        if (!existingEntityTypeIds.has(entityType.id)) {
-          // ✅ CORREÇÃO: NÃO criar instance automaticamente para entity types hierárquicos (cardinality='many')
-          // Entity types com cardinality='many' (como prediction_models) devem ser criados sob demanda
-          if (entityType.cardinality === 'many') {
-            console.log(`⏭️ Pulando criação automática de instance para "${entityType.name}" (cardinality=many)`);
-            return;
-          }
-          
-          // Criar instância apenas para entity types com cardinality='one' (study-level)
-          instancesToCreate.push({
-            project_id: projectId,
-            article_id: articleId,
-            template_id: templateId,
-            entity_type_id: entityType.id,
-            label: entityType.label,
-            sort_order: entityType.sort_order,
-            status: 'pending',
-            created_by: user.id,
-            metadata: {}
-          });
-        }
-      });
-
-      // Criar instâncias faltantes
-      if (instancesToCreate.length > 0) {
-        const { data: newInstances, error: createError } = await supabase
-          .from('extraction_instances')
-          .insert(instancesToCreate)
-          .select();
-
-        if (createError) throw createError;
-
-        console.log(`✅ Criadas ${newInstances?.length} novas instâncias`);
-
-        // Combinar existentes + novas
-        setInstances([...(existingInstances || []).map(instance => ({
-          ...instance,
-          article_id: instance.article_id!,
-          metadata: instance.metadata as any
-        })), ...(newInstances || []).map(instance => ({
-          ...instance,
-          article_id: instance.article_id!,
-          metadata: instance.metadata as any
-        }))]);
-      } else {
-        setInstances((existingInstances || []).map(instance => ({
-          ...instance,
-          article_id: instance.article_id!,
-          metadata: instance.metadata as any
-        })));
-      }
-
-      console.log('✅ Instâncias carregadas/criadas:', 
-        (existingInstances?.length || 0) + instancesToCreate.length);
+      console.log('✅ Instâncias inicializadas:', instances.length);
 
     } catch (error: any) {
       console.error('❌ Erro ao carregar/criar instâncias:', error);
@@ -497,12 +444,25 @@ export default function ExtractionFullScreen() {
   const handleConfirmRemoveModel = async () => {
     if (!modelToRemove) return;
     
-    console.log('🗑️ Removendo modelo:', modelToRemove.name);
-    const modelIdToRemove = modelToRemove.id;
-    const success = await removeModel(modelIdToRemove);
-    
-    if (success) {
-      console.log('✅ Modelo removido com sucesso');
+    try {
+      extractionLogger.info('removeModelHandler', 'Iniciando remoção de modelo', {
+        modelId: modelToRemove.id,
+        modelName: modelToRemove.name,
+        hasData: modelToRemove.hasData,
+        fieldsCount: modelToRemove.fieldsCount
+      });
+
+      const modelIdToRemove = modelToRemove.id;
+      
+      // ✅ MELHORIA: Usar try/catch em vez de verificar boolean
+      // Isso permite que o modal capture e trate erros adequadamente
+      await removeModel(modelIdToRemove);
+      
+      extractionLogger.info('removeModelHandler', 'Modelo removido com sucesso', {
+        modelId: modelIdToRemove,
+        modelName: modelToRemove.name
+      });
+
       setModelToRemove(null);
       
       // ✅ OTIMIZAÇÃO: Atualizar estado local DIRETAMENTE (sem query pesada)
@@ -519,7 +479,20 @@ export default function ExtractionFullScreen() {
       // Atualizar lista de modelos (apenas 1 query necessária)
       await refreshModels();
       
-      console.log('✅ Estado atualizado, modelo removido da interface!');
+      extractionLogger.info('removeModelHandler', 'Estado atualizado, modelo removido da interface', {
+        modelId: modelIdToRemove,
+        instancesRemoved: instances.filter(i => 
+          i.id === modelIdToRemove || i.parent_instance_id === modelIdToRemove
+        ).length
+      });
+      
+    } catch (error: any) {
+      // ✅ Re-throw para o modal capturar e exibir erro
+      extractionLogger.error('removeModelHandler', 'Falha ao remover modelo', error, {
+        modelId: modelToRemove.id,
+        modelName: modelToRemove.name
+      });
+      throw error;
     }
   };
 
@@ -527,47 +500,112 @@ export default function ExtractionFullScreen() {
     if (!template) return;
 
     try {
+      extractionLogger.info('handleAddInstance', 'Iniciando criação de instância', {
+        entityTypeId,
+        templateId: template.id
+      });
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Usuário não autenticado');
 
       // Encontrar entity type
       const entityType = entityTypes.find(et => et.id === entityTypeId);
-      if (!entityType) return;
+      if (!entityType) {
+        extractionLogger.warn('handleAddInstance', 'Entity type não encontrado', { entityTypeId });
+        return;
+      }
 
-      // Contar instâncias existentes para gerar label
-      const existingCount = instances.filter(i => i.entity_type_id === entityTypeId).length;
-      const newLabel = `${entityType.label} ${existingCount + 1}`;
+      // Determinar parent_instance_id se for uma entity type hierárquica
+      let parentInstanceId: string | undefined = undefined;
+      
+      // Se tem parent_entity_type_id, é uma child entity (ex: model child sections)
+      if (entityType.parent_entity_type_id) {
+        // Se o parent é prediction_models, usar activeModelId
+        if (entityType.parent_entity_type_id === modelParentEntityType?.id) {
+          if (!activeModelId) {
+            toast.error('Selecione um modelo antes de adicionar esta seção');
+            return;
+          }
+          parentInstanceId = activeModelId;
+        } else {
+          // Para outras hierarquias, buscar parent instance
+          const parentInstance = instances.find(
+            i => i.entity_type_id === entityType.parent_entity_type_id
+          );
+          if (parentInstance) {
+            parentInstanceId = parentInstance.id;
+          } else {
+            toast.error('Instância pai não encontrada. Crie a seção pai primeiro.');
+            return;
+          }
+        }
+      }
 
-      // Criar nova instância
-      const { data: newInstance, error } = await supabase
-        .from('extraction_instances')
-        .insert({
-          project_id: projectId!,
-          article_id: articleId!,
-          template_id: template.id,
-          entity_type_id: entityTypeId,
-          label: newLabel,
-          sort_order: existingCount,
-          status: 'pending',
-          created_by: user.id,
-          metadata: {}
-        })
-        .select()
-        .single();
+      // Contar instâncias existentes para gerar label (considerar mesmo parent)
+      const existingCount = instances.filter(i => 
+        i.entity_type_id === entityTypeId && 
+        i.parent_instance_id === (parentInstanceId || null)
+      ).length;
+      
+      // Gerar label único
+      let newLabel: string;
+      if (parentInstanceId) {
+        // Para child instances, incluir referência ao parent para evitar conflitos
+        const parentInstance = instances.find(i => i.id === parentInstanceId);
+        newLabel = parentInstance 
+          ? `${parentInstance.label} - ${entityType.label} ${existingCount + 1}`
+          : `${entityType.label} ${existingCount + 1}`;
+      } else {
+        newLabel = `${entityType.label} ${existingCount + 1}`;
+      }
 
-      if (error) throw error;
+      extractionLogger.debug('handleAddInstance', 'Criando instância via service', {
+        entityTypeId,
+        entityTypeName: entityType.name,
+        parentInstanceId,
+        label: newLabel
+      });
 
-      // Atualizar estado local
-      setInstances(prev => [...prev, {
-        ...newInstance,
-        article_id: newInstance.article_id!,
-        metadata: newInstance.metadata as any
-      }]);
-      toast.success(`${newLabel} adicionado com sucesso`);
+      // ✅ MELHORIA: Usar service layer em vez de INSERT direto
+      // Isso garante validações, logs e consistência
+      const result = await extractionInstanceService.createInstance({
+        projectId: projectId!,
+        articleId: articleId!,
+        templateId: template.id,
+        entityTypeId,
+        entityType,
+        parentInstanceId,
+        label: newLabel,
+        userId: user.id
+      });
+
+      if (result.wasCreated) {
+        // Atualizar estado local
+        setInstances(prev => [...prev, result.instance]);
+        
+        extractionLogger.info('handleAddInstance', 'Instância criada com sucesso', {
+          instanceId: result.instance.id,
+          label: result.instance.label
+        });
+        
+        toast.success(`${result.instance.label} adicionado com sucesso`);
+      } else {
+        extractionLogger.info('handleAddInstance', 'Instância já existia', {
+          instanceId: result.instance.id,
+          label: result.instance.label
+        });
+        
+        toast.info('Instância já existe');
+      }
 
     } catch (error: any) {
+      extractionLogger.error('handleAddInstance', 'Falha ao criar instância', error, {
+        entityTypeId,
+        templateId: template.id
+      });
+      
       console.error('Erro ao adicionar instância:', error);
-      toast.error('Erro ao adicionar instância');
+      toast.error(`Erro ao adicionar instância: ${error.message}`);
     }
   };
 

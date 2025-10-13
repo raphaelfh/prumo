@@ -8,6 +8,9 @@
  * - Calcular progresso por modelo
  * - Gerenciar modelo ativo
  * 
+ * REFATORADO (Fase 2): Usa extractionInstanceService e função SQL otimizada
+ * para calcular progresso (1 query para todos os modelos).
+ * 
  * @module hooks/extraction/useModelManagement
  */
 
@@ -15,6 +18,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import { extractionInstanceService } from '@/services/extractionInstanceService';
 import type { Model } from '@/components/extraction/hierarchy/ModelSelector';
 
 // =================== INTERFACES ===================
@@ -39,7 +43,7 @@ interface UseModelManagementReturn {
   loading: boolean;
   error: string | null;
   createModel: (modelName: string, modellingMethod: string) => Promise<CreateModelResult | null>;
-  removeModel: (instanceId: string) => Promise<boolean>;
+  removeModel: (instanceId: string) => Promise<void>;
   refreshModels: () => Promise<void>;
   getModelProgress: (instanceId: string) => Promise<Model['progress']>;
 }
@@ -120,85 +124,37 @@ export function useModelManagement({
     }
   }, [enabled, modelParentEntityTypeId, articleId, activeModelId]);
 
-  // Calcular progresso de um modelo
+  // Calcular progresso de um modelo (usando função SQL otimizada)
   const getModelProgress = useCallback(async (instanceId: string): Promise<Model['progress']> => {
     try {
-      // Buscar child entity types do prediction_models
-      const { data: childEntityTypes, error: etError } = await supabase
-        .from('extraction_entity_types')
-        .select('id')
-        .eq('parent_entity_type_id', modelParentEntityTypeId);
+      // Usar função SQL otimizada (1 query)
+      const { data, error } = await supabase
+        .rpc('calculate_model_progress', {
+          p_article_id: articleId,
+          p_model_id: instanceId
+        });
 
-      if (etError) throw etError;
-
-      if (!childEntityTypes || childEntityTypes.length === 0) {
+      if (error) {
+        console.warn('Erro ao calcular progresso (fallback para 0):', error);
         return { completed: 0, total: 0, percentage: 0 };
       }
 
-      const childEntityTypeIds = childEntityTypes.map(et => et.id);
-
-      // Buscar child instances deste modelo
-      const { data: childInstances, error: childError } = await supabase
-        .from('extraction_instances')
-        .select('id, entity_type_id')
-        .eq('article_id', articleId)
-        .eq('parent_instance_id', instanceId)
-        .in('entity_type_id', childEntityTypeIds);
-
-      if (childError) throw childError;
-
-      if (!childInstances || childInstances.length === 0) {
+      if (!data || data.length === 0) {
         return { completed: 0, total: 0, percentage: 0 };
       }
 
-      const childInstanceIds = childInstances.map(ci => ci.id);
-
-      // Buscar todos os fields dos child entity types
-      const { data: fields, error: fieldsError } = await supabase
-        .from('extraction_fields')
-        .select('id, is_required, entity_type_id')
-        .in('entity_type_id', childEntityTypeIds);
-
-      if (fieldsError) throw fieldsError;
-
-      const totalFields = fields?.length || 0;
-
-      if (totalFields === 0) {
-        return { completed: 0, total: 0, percentage: 0 };
-      }
-
-      // Buscar valores extraídos das child instances
-      const { data: values, error: valuesError } = await supabase
-        .from('extracted_values')
-        .select('field_id, value')
-        .in('instance_id', childInstanceIds);
-
-      if (valuesError) throw valuesError;
-
-      // Contar campos preenchidos
-      const filledFieldIds = new Set(
-        (values || [])
-          .filter(v => {
-            const val = v.value?.value ?? v.value;
-            return val !== null && val !== undefined && val !== '';
-          })
-          .map(v => v.field_id)
-      );
-
-      const completedFields = filledFieldIds.size;
-      const percentage = Math.round((completedFields / totalFields) * 100);
-
+      const result = data[0];
       return {
-        completed: completedFields,
-        total: totalFields,
-        percentage
+        completed: result.completed_fields || 0,
+        total: result.total_fields || 0,
+        percentage: result.percentage || 0
       };
 
     } catch (err) {
       console.error('Erro ao calcular progresso do modelo:', err);
       return { completed: 0, total: 0, percentage: 0 };
     }
-  }, [articleId, modelParentEntityTypeId]);
+  }, [articleId]);
 
   // Função para gerar nome único
   const generateUniqueModelName = useCallback(async (
@@ -234,11 +190,11 @@ export function useModelManagement({
     return `${baseName} (${Date.now()})`;
   }, [articleId, modelParentEntityTypeId]);
 
-  // Criar novo modelo
+  // Criar novo modelo (usando service - simplificado)
   const createModel = useCallback(async (
     modelName: string,
     modellingMethod: string
-  ): Promise<Model | null> => {
+  ): Promise<CreateModelResult | null> => {
     if (!user || !modelParentEntityTypeId) {
       toast.error('Usuário não autenticado ou template inválido');
       return null;
@@ -247,90 +203,52 @@ export function useModelManagement({
     try {
       console.log('🆕 Criando novo modelo:', modelName);
 
-      // 1. Gerar nome único
-      const uniqueModelName = await generateUniqueModelName(modelName.trim());
-      if (uniqueModelName !== modelName.trim()) {
-        console.log('📝 Nome ajustado para:', uniqueModelName);
-        toast.info(`Nome ajustado para "${uniqueModelName}" para evitar duplicatas`);
+      // 1. Buscar parent entity type
+      const { data: parentEntityType, error: etError } = await supabase
+        .from('extraction_entity_types')
+        .select('*')
+        .eq('id', modelParentEntityTypeId)
+        .single();
+
+      if (etError || !parentEntityType) {
+        throw new Error('Entity type de modelo não encontrado');
       }
 
       // 2. Buscar child entity types
       const { data: childEntityTypes, error: childTypesError } = await supabase
         .from('extraction_entity_types')
-        .select('id, name, label, sort_order, cardinality')
+        .select('*')
         .eq('parent_entity_type_id', modelParentEntityTypeId)
         .order('sort_order');
 
       if (childTypesError) throw childTypesError;
 
-      // 3. Calcular próximo sort_order
-      const maxSortOrder = models.reduce((max, m) => Math.max(max, 0), 0);
+      // 3. Delegar criação de hierarquia para o service
+      const result = await extractionInstanceService.createHierarchy({
+        projectId,
+        articleId,
+        templateId,
+        parentEntityType,
+        childEntityTypes: childEntityTypes || [],
+        label: modelName.trim(),
+        metadata: {},
+        userId: user.id
+      });
 
-      // 4. Criar instance de prediction_models (parent)
-      let parentInstance;
-      const { data: initialInstance, error: parentError } = await supabase
-        .from('extraction_instances')
-        .insert({
-          project_id: projectId,
-          article_id: articleId,
-          template_id: templateId,
-          entity_type_id: modelParentEntityTypeId,
-          label: uniqueModelName, // Usar nome único
-          sort_order: maxSortOrder + 1,
-          status: 'pending',
-          metadata: {},
-          created_by: user.id
-        })
-        .select()
-        .single();
-
-      if (parentError) {
-        // Se ainda assim falhar, tentar com timestamp
-        if (parentError.code === '23505') { // unique_violation
-          console.warn('⚠️ Ainda há conflito, usando timestamp');
-          const fallbackName = `${modelName} (${Date.now()})`;
-          
-          const { data: fallbackInstance, error: fallbackError } = await supabase
-            .from('extraction_instances')
-            .insert({
-              project_id: projectId,
-              article_id: articleId,
-              template_id: templateId,
-              entity_type_id: modelParentEntityTypeId,
-              label: fallbackName,
-              sort_order: maxSortOrder + 1,
-              status: 'pending',
-              metadata: {},
-              created_by: user.id
-            })
-            .select()
-            .single();
-
-          if (fallbackError) throw fallbackError;
-          parentInstance = fallbackInstance;
-        } else {
-          throw parentError;
-        }
-      } else {
-        parentInstance = initialInstance;
-      }
-
-      console.log('✅ Parent instance criada:', parentInstance.id);
-
-      // 4. Se modellingMethod foi fornecido, buscar o field e salvar
+      // 4. Se modellingMethod foi fornecido, salvar valor
       if (modellingMethod) {
-        const { data: modellingMethodField, error: fieldError } = await supabase
+        const { data: modellingMethodField } = await supabase
           .from('extraction_fields')
           .select('id')
           .eq('entity_type_id', modelParentEntityTypeId)
           .eq('name', 'modelling_method')
           .single();
 
-        if (!fieldError && modellingMethodField) {
+        if (modellingMethodField) {
           await supabase.from('extracted_values').insert({
             project_id: projectId,
             article_id: articleId,
-            instance_id: parentInstance.id,
+            instance_id: result.parent.id,
             field_id: modellingMethodField.id,
             value: { value: modellingMethod },
             source: 'human',
@@ -339,115 +257,61 @@ export function useModelManagement({
         }
       }
 
-      // 5. Criar child instances com labels únicos
-      let createdChildInstances: any[] = [];
-      
-      if (childEntityTypes && childEntityTypes.length > 0) {
-        const childInstancesToCreate = childEntityTypes.map((childType, index) => ({
-          project_id: projectId,
-          article_id: articleId,
-          template_id: templateId,
-          entity_type_id: childType.id,
-          parent_instance_id: parentInstance.id,
-          // ✅ Label único: inclui nome do modelo parent para evitar conflitos
-          label: `${parentInstance.label} - ${childType.label}`,
-          sort_order: childType.sort_order,
-          status: 'pending',
-          metadata: {},
-          created_by: user.id
-        }));
-
-        console.log('🔄 Criando child instances:', childInstancesToCreate.map(ci => ci.label));
-
-        const { data: insertedChildInstances, error: childError } = await supabase
-          .from('extraction_instances')
-          .insert(childInstancesToCreate)
-          .select('*');
-
-        if (childError) {
-          console.error('❌ Erro ao criar child instances:', childError);
-          throw childError;
-        }
-
-        createdChildInstances = insertedChildInstances || [];
-        console.log(`✅ Criadas ${createdChildInstances.length} child instances`);
-      }
-
-      // 6. Criar objeto Model
+      // 5. Criar objeto Model
       const newModel: Model = {
-        instanceId: parentInstance.id,
-        modelName: parentInstance.label, // Usar o nome final (pode ter sido ajustado)
+        instanceId: result.parent.id,
+        modelName: result.parent.label,
         progress: { completed: 0, total: 0, percentage: 0 }
       };
 
-      // 7. Atualizar estado
+      // 6. Atualizar estado
       setModels(prev => [...prev, newModel]);
       setActiveModelId(newModel.instanceId);
 
-      toast.success(`Modelo "${modelName}" criado com sucesso!`);
+      toast.success(`Modelo "${result.parent.label}" criado com sucesso!`);
       
-      // ✅ Retornar modelo E child instances criadas (para evitar query extra)
+      console.log(`✅ Hierarquia criada: 1 parent + ${result.children.length} children`);
+
+      // Retornar modelo E child instances criadas
       return {
         model: newModel,
-        childInstances: createdChildInstances
+        childInstances: result.children
       };
 
     } catch (err: any) {
       console.error('Erro ao criar modelo:', err);
-      
-      // Tratamento específico para constraint violations
-      if (err.code === '23505') {
-        toast.error('Erro: Já existe um modelo com este nome. Tente novamente.');
-      } else if (err.message?.includes('duplicate key')) {
-        toast.error('Erro: Nome duplicado. Tente com um nome diferente.');
-      } else {
-        toast.error(`Erro ao criar modelo: ${err.message}`);
-      }
-      
+      toast.error(`Erro ao criar modelo: ${err.message}`);
       return null;
     }
-  }, [user, modelParentEntityTypeId, models, projectId, articleId, templateId]);
+  }, [user, modelParentEntityTypeId, projectId, articleId, templateId]);
 
-  // Remover modelo
-  const removeModel = useCallback(async (instanceId: string): Promise<boolean> => {
+  // Remover modelo (usando service - simplificado)
+  const removeModel = useCallback(async (instanceId: string): Promise<void> => {
     try {
       console.log('🗑️ Removendo modelo:', instanceId);
       
       const removedModel = models.find(m => m.instanceId === instanceId);
       console.log('📝 Modelo a ser removido:', removedModel?.modelName);
 
-      // ✅ CORREÇÃO: Deletar apenas o parent instance
-      // O CASCADE DELETE do Postgres cuida automaticamente de:
-      // - Child instances (via FK parent_instance_id ON DELETE CASCADE)
-      // - Extracted values (via FK instance_id ON DELETE CASCADE)
-      const { error: deleteError } = await supabase
-        .from('extraction_instances')
-        .delete()
-        .eq('id', instanceId);
-
-      if (deleteError) {
-        console.error('❌ Erro ao deletar instance:', deleteError);
-        throw deleteError;
-      }
-
-      console.log('✅ Instance deletada com CASCADE');
+      // Delegar para o service (CASCADE automático)
+      await extractionInstanceService.removeInstance(instanceId);
 
       // Atualizar estado local
       setModels(prev => prev.filter(m => m.instanceId !== instanceId));
 
       // Se era o modelo ativo, limpar activeModelId
-      // O useEffect em ExtractionFullScreen vai selecionar outro automaticamente
       if (activeModelId === instanceId) {
         setActiveModelId(null);
       }
 
       toast.success(`Modelo "${removedModel?.modelName}" removido com sucesso`);
-      return true;
 
     } catch (err: any) {
       console.error('❌ Erro ao remover modelo:', err);
       toast.error(`Erro ao remover modelo: ${err.message}`);
-      return false;
+      // ✅ MELHORIA: Re-throw erro em vez de retornar boolean
+      // Isso permite tratamento consistente de erro em toda a aplicação
+      throw err;
     }
   }, [models, activeModelId]);
 

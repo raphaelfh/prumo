@@ -104,6 +104,8 @@ export function ExtractionFormView(props: ExtractionFormViewProps) {
                     aiSuggestions={props.aiSuggestions}
                     onAcceptAI={props.acceptSuggestion}
                     onRejectAI={props.rejectSuggestion}
+                    onAddInstance={() => props.handleAddInstance(entityType.id)}
+                    onRemoveInstance={props.handleRemoveInstance}
                     viewMode="extract"
                   />
                 );

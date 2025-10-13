@@ -124,8 +124,17 @@ export function SectionAccordion(props: SectionAccordionProps) {
         <AccordionContent className="px-8 pb-8">
           <div className="space-y-6">
             {instances.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <p>Nenhuma instância criada para esta seção</p>
+              <div className="text-center py-8">
+                <p className="text-muted-foreground mb-4">Nenhuma instância criada para esta seção</p>
+                {isMultiple && props.onAddInstance && (
+                  <Button
+                    variant="outline"
+                    onClick={props.onAddInstance}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Adicionar {entityType.label}
+                  </Button>
+                )}
               </div>
             ) : isMultiple ? (
               // Seção múltipla: Mostrar cards de instâncias

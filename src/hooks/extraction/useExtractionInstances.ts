@@ -3,11 +3,15 @@
  * 
  * Gerencia a criação, atualização e exclusão de instâncias
  * de entidades para artigos específicos.
+ * 
+ * REFATORADO (Fase 2): Agora usa extractionInstanceService
+ * para centralizar lógica e evitar duplicação.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { extractionInstanceService } from '@/services/extractionInstanceService';
 import { 
   ExtractionInstance, 
   ExtractionInstanceInsert,
@@ -29,6 +33,9 @@ export function useExtractionInstances({
   const [entityTypes, setEntityTypes] = useState<ExtractionEntityType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Memoizar service (singleton, mas garantir estabilidade)
+  const service = useMemo(() => extractionInstanceService, []);
 
   // Carregar instâncias do artigo
   const loadInstances = useCallback(async () => {
@@ -109,7 +116,7 @@ export function useExtractionInstances({
     loadData();
   }, [articleId, templateId]); // Dependências simplificadas
 
-  // Criar nova instância
+  // Criar nova instância (usando service)
   const createInstance = useCallback(async (
     entityTypeId: string,
     label: string,
@@ -119,56 +126,41 @@ export function useExtractionInstances({
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) throw new Error('Usuário não autenticado');
 
-      // Verificar se já existe instância com mesmo label para esta entidade
-      const existingInstance = instances.find(
-        instance => instance.entity_type_id === entityTypeId && instance.label === label
-      );
-
-      if (existingInstance) {
-        toast.error('Já existe uma instância com este nome para esta entidade');
+      // Buscar entity type
+      const entityType = entityTypes.find(et => et.id === entityTypeId);
+      if (!entityType) {
+        toast.error('Tipo de entidade não encontrado');
         return null;
       }
 
-      // Calcular próximo sort_order
-      const maxSortOrder = instances
-        .filter(instance => instance.entity_type_id === entityTypeId)
-        .reduce((max, instance) => Math.max(max, instance.sort_order), 0);
-
-      const instanceData: ExtractionInstanceInsert = {
-        project_id: projectId,
-        article_id: articleId,
-        template_id: templateId,
-        entity_type_id: entityTypeId,
-        parent_instance_id: parentInstanceId,
+      // Delegar para o service
+      const result = await service.createInstance({
+        projectId,
+        articleId,
+        templateId,
+        entityTypeId,
+        entityType,
+        parentInstanceId,
         label,
-        sort_order: maxSortOrder + 1,
-        metadata: {},
-        created_by: user.id
-      };
-
-      const { data, error } = await supabase
-        .from('extraction_instances')
-        .insert(instanceData)
-        .select(`
-          *,
-          extraction_entity_types (*)
-        `)
-        .single();
-
-      if (error) throw error;
+        userId: user.id
+      });
 
       // Atualizar estado local
-      setInstances(prev => [...prev, data]);
+      if (result.wasCreated) {
+        setInstances(prev => [...prev, result.instance]);
+        toast.success(`Instância "${result.instance.label}" criada com sucesso!`);
+      } else {
+        toast.info('Instância já existe');
+      }
 
-      toast.success(`Instância "${label}" criada com sucesso!`);
-      return data;
+      return result.instance;
 
     } catch (err: any) {
       console.error('Erro ao criar instância:', err);
       toast.error(`Erro ao criar instância: ${err.message}`);
       return null;
     }
-  }, [projectId, articleId, templateId, instances]);
+  }, [projectId, articleId, templateId, entityTypes, service]);
 
   // Atualizar instância
   const updateInstance = useCallback(async (
@@ -208,10 +200,10 @@ export function useExtractionInstances({
     }
   }, []);
 
-  // Excluir instância
+  // Excluir instância (usando service)
   const deleteInstance = useCallback(async (instanceId: string): Promise<boolean> => {
     try {
-      // Verificar se há valores associados
+      // Verificar se há valores associados (validação local)
       const { data: values, error: valuesError } = await supabase
         .from('extracted_values')
         .select('id')
@@ -225,12 +217,8 @@ export function useExtractionInstances({
         return false;
       }
 
-      const { error } = await supabase
-        .from('extraction_instances')
-        .delete()
-        .eq('id', instanceId);
-
-      if (error) throw error;
+      // Delegar para o service (CASCADE automático)
+      await service.removeInstance(instanceId);
 
       // Atualizar estado local
       setInstances(prev => prev.filter(instance => instance.id !== instanceId));
@@ -243,7 +231,7 @@ export function useExtractionInstances({
       toast.error(`Erro ao excluir instância: ${err.message}`);
       return false;
     }
-  }, []);
+  }, [service]);
 
   // Reordenar instâncias
   const reorderInstances = useCallback(async (
