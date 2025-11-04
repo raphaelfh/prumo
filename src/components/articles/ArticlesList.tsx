@@ -28,7 +28,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { ArticleFileUploadDialog } from "./ArticleFileUploadDialog";
+import { ArticleFileUploadDialogNew } from "./ArticleFileUploadDialogNew";
 import { ZoteroImportDialog } from "./ZoteroImportDialog";
 import { useZoteroIntegration } from "@/hooks/useZoteroIntegration";
 
@@ -1030,7 +1030,7 @@ export function ArticlesList({ articles, onArticleClick, projectId, onArticlesCh
 
       {/* File Upload Dialog */}
       {articleToUpload && (
-        <ArticleFileUploadDialog
+        <ArticleFileUploadDialogNew
           open={uploadDialogOpen}
           onOpenChange={setUploadDialogOpen}
           articleId={articleToUpload}

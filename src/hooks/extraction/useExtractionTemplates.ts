@@ -143,31 +143,58 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
       if (templateError) throw templateError;
 
       // Criar entidades e campos para o template do projeto
-      for (const entityType of entityTypes || []) {
-        // Criar entidade
-        const { data: newEntityType, error: entityError } = await supabase
+      // Clonar entity_types (2 passadas para preservar hierarquia)
+      const entityTypeMapping: Record<string, string> = {};
+
+      // Passada 1: Criar todos os entity types sem parent (temporariamente)
+      for (const globalEntity of entityTypes || []) {
+        const { data: newEntity, error: insertError } = await supabase
           .from('extraction_entity_types')
           .insert({
-            template_id: projectTemplate.id,
-            name: entityType.name,
-            label: entityType.label,
-            description: entityType.description,
-            parent_entity_type_id: entityType.parent_entity_type_id,
-            cardinality: entityType.cardinality,
-            sort_order: entityType.sort_order,
-            is_required: entityType.is_required
+            project_template_id: projectTemplate.id,
+            name: globalEntity.name,
+            label: globalEntity.label,
+            description: globalEntity.description,
+            cardinality: globalEntity.cardinality,
+            sort_order: globalEntity.sort_order,
+            is_required: globalEntity.is_required
+            // parent_entity_type_id: null por enquanto (será atualizado na passada 2)
           })
           .select()
           .single();
 
-        if (entityError) throw entityError;
+        if (insertError) throw insertError;
 
-        // Criar campos da entidade
-        for (const field of entityType.extraction_fields || []) {
+        entityTypeMapping[globalEntity.id] = newEntity.id;
+      }
+
+      // Passada 2: Atualizar parent references com IDs mapeados
+      for (const globalEntity of entityTypes || []) {
+        if (globalEntity.parent_entity_type_id) {
+          const newEntityId = entityTypeMapping[globalEntity.id];
+          const newParentId = entityTypeMapping[globalEntity.parent_entity_type_id];
+          
+          if (newEntityId && newParentId) {
+            const { error: updateError } = await supabase
+              .from('extraction_entity_types')
+              .update({ parent_entity_type_id: newParentId })
+              .eq('id', newEntityId);
+
+            if (updateError) throw updateError;
+          }
+        }
+      }
+
+      // Passada 3: Clonar fields
+      for (const globalEntity of entityTypes || []) {
+        const newEntityTypeId = entityTypeMapping[globalEntity.id];
+        if (!newEntityTypeId) continue;
+
+        for (const field of globalEntity.extraction_fields || []) {
           const { error: fieldError } = await supabase
             .from('extraction_fields')
             .insert({
-              entity_type_id: newEntityType.id,
+              entity_type_id: newEntityTypeId,
               name: field.name,
               label: field.label,
               description: field.description,

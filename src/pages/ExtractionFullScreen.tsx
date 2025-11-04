@@ -23,7 +23,6 @@ import { extractionInstanceService } from '@/services/extractionInstanceService'
 import { extractionLogger } from '@/lib/extraction/observability';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 import { PDFViewer } from '@/components/PDFViewer';
@@ -142,11 +141,25 @@ export default function ExtractionFullScreen() {
     enabled: permissions.canSeeOthers && !!currentUserId
   });
 
-  // Hook para sugestões de IA
-  const { suggestions: aiSuggestions, acceptSuggestion, rejectSuggestion } = useAISuggestions({
+  // Hook para sugestões de IA com callback para preencher campo automaticamente
+  const handleAISuggestionAccepted = useCallback((instanceId: string, fieldId: string, value: any) => {
+    // Preencher o campo automaticamente quando sugestão é aceita
+    console.log('🤖 Aceitando sugestão de IA:', { instanceId, fieldId, value });
+    updateValue(instanceId, fieldId, value);
+  }, [updateValue]);
+
+  const { 
+    suggestions: aiSuggestions, 
+    acceptSuggestion, 
+    rejectSuggestion, 
+    getSuggestionsHistory,
+    refresh: refreshAISuggestions,
+    isActionLoading 
+  } = useAISuggestions({
     articleId: articleId || '',
     projectId: projectId || '',
-    enabled: !!articleId && !!projectId
+    enabled: !!articleId && !!projectId,
+    onSuggestionAccepted: handleAISuggestionAccepted
   });
 
   // Identificar model parent entity type
@@ -385,6 +398,30 @@ export default function ExtractionFullScreen() {
       throw error;
     }
   };
+
+  // Função para recarregar instâncias (usada após extração de modelos)
+  const handleRefreshInstances = useCallback(async () => {
+    if (!template) return;
+    
+    try {
+      console.log('🔄 Recarregando instâncias...');
+      const refreshedInstances = await extractionInstanceService.getInstances({
+        articleId: articleId!,
+        templateId: template.id
+      });
+      
+      setInstances(refreshedInstances.map(instance => ({
+        ...instance,
+        article_id: instance.article_id!,
+        metadata: instance.metadata as any
+      })));
+      
+      console.log(`✅ ${refreshedInstances.length} instância(s) recarregada(s)`);
+    } catch (error: any) {
+      console.error('❌ Erro ao recarregar instâncias:', error);
+      throw error;
+    }
+  }, [template, articleId]);
 
   const handleBack = () => {
     navigate(`/projects/${projectId}?tab=extraction`);
@@ -724,6 +761,111 @@ export default function ExtractionFullScreen() {
     );
   }
 
+  /**
+   * Handler chamado após extração de seção ser concluída
+   * 
+   * Faz refresh de sugestões e valores extraídos em background.
+   * Usa polling para garantir que sugestões sejam carregadas quando disponíveis.
+   * 
+   * IMPORTANTE: Esta função não deve bloquear - executa em background.
+   */
+  const handleExtractionComplete = (runId?: string) => {
+    console.log('✅ Extraction completed', runId ? `runId: ${runId}` : '');
+    
+    // Executar refresh em background (não bloquear)
+    // O loading do hook deve ser resetado independentemente deste callback
+    (async () => {
+      try {
+        // IMPORTANTE: Recarregar instâncias primeiro (o backend pode ter criado novas para cardinality="many")
+        // Aguardar tempo suficiente para garantir que o backend terminou de criar as instâncias
+        // e que o Supabase sincronizou as mudanças no banco
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        
+        if (template) {
+          console.log('🔄 Recarregando instâncias após extração...');
+          try {
+            const refreshedInstances = await extractionInstanceService.getInstances({
+              articleId: articleId!,
+              templateId: template.id
+            });
+            
+            setInstances(refreshedInstances.map(instance => ({
+              ...instance,
+              article_id: instance.article_id!,
+              metadata: instance.metadata as any
+            })));
+            
+            console.log(`✅ ${refreshedInstances.length} instância(s) recarregada(s)`);
+          } catch (err) {
+            console.error('⚠️ Erro ao recarregar instâncias (não crítico):', err);
+            // Não bloquear o fluxo - instâncias serão recarregadas no próximo refresh da página
+          }
+        }
+        
+        // Refresh imediato de valores extraídos
+        await values.refresh();
+        
+        // IMPORTANTE: Aguardar adicional antes de buscar sugestões
+        // Isso garante que as instâncias recém-recargadas estejam disponíveis quando buscarmos sugestões
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Polling otimizado: usar resultado direto do refresh ao invés de estado React
+        // Isso elimina dependência de estado assíncrono e torna polling mais confiável
+        let attempts = 0;
+        const maxAttempts = 5; // 5 tentativas = ~5 segundos total (reduzido de 6)
+        const pollDelay = 1000; // 1 segundo entre tentativas
+        
+        // Primeira tentativa (após delays acima)
+        console.log('🔄 Recarregando sugestões de IA...');
+        let result = await refreshAISuggestions();
+        
+        // Verificar se há sugestões usando resultado direto (não estado React)
+        let foundSuggestions = result.count > 0;
+        
+        if (foundSuggestions) {
+          console.log(`✅ ${result.count} sugestão(ões) encontrada(s) imediatamente`);
+          toast.success(`${result.count} sugestão(ões) de IA disponível(is). Revise os campos com badge ⚡`);
+          return;
+        }
+        
+        // Continuar polling se não encontramos sugestões
+        while (!foundSuggestions && attempts < maxAttempts) {
+          attempts++;
+          
+          console.log(`🔄 Tentativa ${attempts + 1}/${maxAttempts + 1}: Recarregando sugestões...`);
+          
+          // Aguardar antes de recarregar (dar tempo para backend criar sugestões)
+          await new Promise(resolve => setTimeout(resolve, pollDelay));
+          
+          // Recarregar sugestões e obter resultado diretamente
+          result = await refreshAISuggestions();
+          
+          // Verificar usando resultado direto (mais confiável que estado React)
+          foundSuggestions = result.count > 0;
+          
+          if (foundSuggestions) {
+            console.log(`✅ ${result.count} sugestão(ões) encontrada(s) após ${attempts + 1} tentativa(s)`);
+            toast.success(`${result.count} sugestão(ões) de IA disponível(is). Revise os campos com badge ⚡`);
+            return;
+          }
+        }
+        
+        // Se chegamos aqui sem encontrar sugestões
+        if (!foundSuggestions) {
+          console.log('⚠️ Nenhuma sugestão encontrada após múltiplas tentativas');
+          console.log('   Pode ser que:');
+          console.log('   - Sugestões não tenham sido criadas (campos já preenchidos, etc)');
+          console.log('   - Sugestões foram criadas mas ainda não estão disponíveis no banco');
+          console.log('   - Há um problema com o carregamento das sugestões');
+        }
+      } catch (error) {
+        console.error('❌ Erro ao recarregar sugestões:', error);
+        // Não mostrar toast de erro - pode ser que sugestões não tenham sido criadas
+        // (já tratado pelo hook de extração)
+      }
+    })(); // IIFE - executar imediatamente sem bloquear
+  };
+
   return (
     <div className="h-screen flex flex-col bg-background">
       {/* Header Unificado */}
@@ -750,6 +892,9 @@ export default function ExtractionFullScreen() {
         isComplete={isComplete}
         onFinalize={handleFinalize}
         submitting={submitting}
+        templateId={template?.id}
+        templateName={template?.name}
+        onExtractionComplete={handleExtractionComplete}
       />
 
       {/* Main content */}
@@ -781,17 +926,23 @@ export default function ExtractionFullScreen() {
                     aiSuggestions={aiSuggestions}
                     acceptSuggestion={acceptSuggestion}
                     rejectSuggestion={rejectSuggestion}
+                    getSuggestionsHistory={getSuggestionsHistory}
+                    isActionLoading={isActionLoading}
                     models={models}
                     activeModelId={activeModelId}
                     setActiveModelId={setActiveModelId}
                     onAddModel={handleAddModel}
                     onRemoveModel={handleRemoveModel}
+                    onRefreshModels={refreshModels}
+                    onRefreshInstances={handleRefreshInstances}
                     getInstancesForModel={getInstancesForModel}
                     handleAddInstance={handleAddInstance}
                     handleRemoveInstance={handleRemoveInstance}
                     projectId={projectId || ''}
                     articleId={articleId || ''}
+                    templateId={template?.id || ''}
                     modelsLoading={modelsLoading}
+                    onExtractionComplete={handleExtractionComplete}
                   />
                 ) : (
                   <ExtractionCompareView

@@ -34,9 +34,17 @@ import type { OtherExtraction } from '@/hooks/extraction/colaboracao/useOtherExt
 import type { AISuggestion } from '@/hooks/extraction/ai/useAISuggestions';
 import { OtherExtractionsPopover } from './colaboracao/OtherExtractionsPopover';
 import { OtherExtractionsButton } from './colaboracao/OtherExtractionsButton';
+import { AISuggestionDisplay } from './ai/AISuggestionDisplay';
 import { AISuggestionBadge } from './ai/AISuggestionBadge';
-import { AIAcceptRejectButtons } from './ai/AIAcceptRejectButtons';
 import { getRelatedUnits } from '@/lib/unitConversions';
+import type { AISuggestionHistoryItem } from '@/hooks/extraction/ai/useAISuggestions';
+import {
+  extractValue,
+  isEmptyValue,
+  isValidNumber,
+  extractUnit,
+} from '@/lib/ai-extraction/valueParser';
+import { isSuggestionPending } from '@/lib/ai-extraction/suggestionUtils';
 
 // =================== INTERFACES ===================
 
@@ -51,6 +59,8 @@ interface FieldInputProps {
   aiSuggestion?: AISuggestion;
   onAcceptAI?: () => void;
   onRejectAI?: () => void;
+  getSuggestionsHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
+  isActionLoading?: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null;
   disabled?: boolean;
   viewMode?: 'extract' | 'compare';
 }
@@ -58,35 +68,42 @@ interface FieldInputProps {
 // =================== COMPONENT ===================
 
 export function FieldInput(props: FieldInputProps) {
-  const { field, instanceId, value, onChange, disabled, otherExtractions, aiSuggestion, onAcceptAI, onRejectAI, viewMode } = props;
+  const { field, instanceId, value, onChange, disabled, otherExtractions, aiSuggestion, onAcceptAI, onRejectAI, getSuggestionsHistory, isActionLoading, viewMode } = props;
   const [validationError, setValidationError] = useState<string | null>(null);
+  
+  // Espaçamento fixo confortável
+  const containerPadding = 'py-6';
+  const inputHeight = 'h-11';
+  const inputPadding = 'px-4 py-2.5';
+  const gap = 'gap-6';
 
-  // Usar sugestão de IA como valor inicial se não houver valor manual
-  const hasAIPending = aiSuggestion?.status === 'pending';
-  const displayValue = value ?? (hasAIPending ? aiSuggestion.value : '');
+  // Se houver sugestão pendente, mostrar o valor sugerido no campo para o usuário decidir
+  // Prioridade: valor manual existente > sugestão pendente > vazio
+  const hasAIPending = aiSuggestion ? isSuggestionPending(aiSuggestion) : false;
+  const hasAIAccepted = aiSuggestion ? aiSuggestion.status === 'accepted' : false;
+  const hasManualValue = !isEmptyValue(value);
+  
+  // Se não tem valor manual E tem sugestão pendente, usar o valor sugerido
+  // Se aceita, também mostrar o valor sugerido (mas badge mostra "IA aceita")
+  const displayValue = hasManualValue 
+    ? value 
+    : ((hasAIPending || hasAIAccepted) && aiSuggestion?.value !== null && aiSuggestion?.value !== undefined)
+      ? aiSuggestion.value
+      : (value ?? '');
 
   // Validação básica
   const validateValue = (val: any): boolean => {
     // Para campos obrigatórios, verificar se o valor não está vazio
     if (field.is_required) {
-      // Extrair valor do objeto {value, unit} se necessário
-      const actualValue = typeof val === 'object' && val !== null && 'value' in val
-        ? val.value
-        : val;
-        
-      if (actualValue === null || actualValue === undefined || actualValue === '') {
+      if (isEmptyValue(val)) {
         setValidationError('Campo obrigatório');
         return false;
       }
     }
 
     if (field.field_type === 'number') {
-      // Extrair valor numérico do objeto {value, unit} se necessário
-      const numericValue = typeof val === 'object' && val !== null && 'value' in val
-        ? val.value
-        : val;
-      
-      if (numericValue !== '' && numericValue !== null && numericValue !== undefined && isNaN(Number(numericValue))) {
+      // Se tem valor mas não é um número válido
+      if (!isEmptyValue(val) && !isValidNumber(val)) {
         setValidationError('Valor deve ser um número');
         return false;
       }
@@ -118,7 +135,7 @@ export function FieldInput(props: FieldInputProps) {
               placeholder={`Digite ${field.label.toLowerCase()}`}
               disabled={disabled}
               className={cn(
-                "min-h-[100px] text-base",
+                "text-base min-h-[100px]",
                 hasAIPending && "border-purple-500 bg-purple-50/30 dark:bg-purple-950/10",
                 validationError && "border-destructive"
               )}
@@ -132,23 +149,20 @@ export function FieldInput(props: FieldInputProps) {
             onChange={(e) => handleChange(e.target.value)}
             placeholder={`Digite ${field.label.toLowerCase()}`}
             disabled={disabled}
-            className={cn(
-              "h-11 text-base",
-              hasAIPending && "border-purple-500 bg-purple-50/30 dark:bg-purple-950/10 pr-32",
-              validationError && "border-destructive"
-            )}
+              className={cn(
+                inputHeight,
+                "text-base",
+                hasAIPending && "border-purple-500 bg-purple-50/30 dark:bg-purple-950/10",
+                validationError && "border-destructive"
+              )}
           />
         );
 
       case 'number':
         // Parse valor (pode ser objeto {value, unit} ou valor simples)
-        const numValue = typeof displayValue === 'object' && displayValue !== null && 'value' in displayValue
-          ? displayValue.value
-          : displayValue;
-        
-        const currentUnit = typeof displayValue === 'object' && displayValue !== null && 'unit' in displayValue
-          ? displayValue.unit
-          : (field.allowed_units && field.allowed_units.length > 0 ? field.allowed_units[0] : field.unit);
+        const numValue = extractValue(displayValue);
+        const currentUnit = extractUnit(displayValue) 
+          ?? (field.allowed_units && field.allowed_units.length > 0 ? field.allowed_units[0] : field.unit);
         
         // Priorizar allowed_units customizadas sobre dicionário automático
         const relatedUnits = field.allowed_units && field.allowed_units.length > 0
@@ -171,7 +185,7 @@ export function FieldInput(props: FieldInputProps) {
               }}
               placeholder="0"
               disabled={disabled}
-              className={cn("flex-1 h-11 text-base", validationError && "border-destructive")}
+              className={cn("flex-1", inputHeight, "text-base", validationError && "border-destructive")}
             />
             
             {/* Unit selector se houver unidades */}
@@ -214,7 +228,7 @@ export function FieldInput(props: FieldInputProps) {
             value={value || ''}
             onChange={(e) => handleChange(e.target.value)}
             disabled={disabled}
-            className={cn("h-11 text-base", validationError && "border-destructive")}
+            className={cn(inputHeight, "text-base", validationError && "border-destructive")}
           />
         );
 
@@ -226,7 +240,7 @@ export function FieldInput(props: FieldInputProps) {
             onValueChange={handleChange} 
             disabled={disabled}
           >
-            <SelectTrigger className={cn("h-11 text-base", validationError && "border-destructive")}>
+            <SelectTrigger className={cn(inputHeight, "text-base", validationError && "border-destructive")}>
               <SelectValue placeholder={`Selecione ${field.label.toLowerCase()}`} />
             </SelectTrigger>
             <SelectContent>
@@ -252,7 +266,7 @@ export function FieldInput(props: FieldInputProps) {
             onChange={(e) => handleChange(e.target.value.split(',').map(v => v.trim()))}
             placeholder="Valores separados por vírgula"
             disabled={disabled}
-            className={cn("h-11 text-base", validationError && "border-destructive")}
+            className={cn(inputHeight, "text-base", validationError && "border-destructive")}
           />
         );
 
@@ -276,14 +290,21 @@ export function FieldInput(props: FieldInputProps) {
             value={value || ''}
             onChange={(e) => handleChange(e.target.value)}
             disabled={disabled}
-            className={cn("h-11 text-base", validationError && "border-destructive")}
+            className={cn(inputHeight, "text-base", validationError && "border-destructive")}
           />
         );
     }
   };
 
+  // Determinar se deve mostrar display de sugestão abaixo do input (Opção F: Máxima Simplicidade)
+  // Mostrar apenas se não há valor manual E sugestão existe e está pending (não aceita)
+  // Quando aceita, o badge permanece visível mas o display com botões desaparece
+  const shouldShowSuggestion = !hasManualValue && 
+    aiSuggestion && 
+    aiSuggestion.status === 'pending'; // Apenas pending mostra botões e valor abaixo
+
   return (
-    <div className="grid grid-cols-[30%_1fr] gap-6 items-start py-6">
+    <div className={cn("grid grid-cols-[30%_1fr] items-start", gap, containerPadding)}>
       {/* Coluna esquerda: Label + Description */}
       <div className="space-y-1 pt-2">
         <Label className="text-sm font-medium flex items-center gap-2">
@@ -298,7 +319,7 @@ export function FieldInput(props: FieldInputProps) {
       </div>
       
       {/* Coluna direita: Input */}
-      <div className="space-y-2">
+      <div className="space-y-2 min-w-0 overflow-hidden">
         {/* Badges de colaboração - apenas no modo comparação */}
         {viewMode === 'compare' && otherExtractions && otherExtractions.length > 0 && (
           <div className="flex items-center gap-2 mb-2">
@@ -313,22 +334,34 @@ export function FieldInput(props: FieldInputProps) {
           </div>
         )}
 
-        {/* Input com IA badges inline */}
-        <div className="relative">
-          {renderInput()}
+        {/* Input com badge + info ao lado direito (sempre visível se houver sugestão) */}
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="flex-1 min-w-0 overflow-hidden">
+            {renderInput()}
+          </div>
           
-          {/* IA Badge + Buttons (posição absoluta dentro do input) */}
-          {hasAIPending && field.field_type === 'text' && (
-            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-              <AISuggestionBadge suggestion={aiSuggestion} />
-              <AIAcceptRejectButtons
-                onAccept={onAcceptAI}
-                onReject={onRejectAI}
-                size="sm"
-              />
-            </div>
+          {/* Badge + Info sempre visíveis ao lado direito do input (se houver sugestão e não rejeitada) */}
+          {aiSuggestion && 
+           aiSuggestion.status !== 'rejected' && 
+           (aiSuggestion.status === 'pending' || aiSuggestion.status === 'accepted') && (
+            <AISuggestionBadge
+              instanceId={instanceId}
+              fieldId={field.id}
+              suggestion={aiSuggestion}
+              getHistory={getSuggestionsHistory}
+            />
           )}
         </div>
+
+        {/* Valor sugerido + botões aceitar/rejeitar abaixo do input - apenas se não há valor manual (Opção F) */}
+        {shouldShowSuggestion && (
+          <AISuggestionDisplay
+            suggestion={aiSuggestion}
+            onAccept={onAcceptAI}
+            onReject={onRejectAI}
+            loading={isActionLoading ? isActionLoading(instanceId, field.id) === 'accept' || isActionLoading(instanceId, field.id) === 'reject' : false}
+          />
+        )}
 
         {/* Validation error */}
         {validationError && (
@@ -350,13 +383,16 @@ export function FieldInput(props: FieldInputProps) {
  */
 export default memo(FieldInput, (prevProps, nextProps) => {
   // Comparação otimizada: apenas props que afetam ESTE campo
+  const aiSuggestionChanged = prevProps.aiSuggestion?.id !== nextProps.aiSuggestion?.id ||
+                                prevProps.aiSuggestion?.status !== nextProps.aiSuggestion?.status;
+  
   return (
     prevProps.field.id === nextProps.field.id &&
     prevProps.instanceId === nextProps.instanceId &&
     prevProps.value === nextProps.value &&
     prevProps.disabled === nextProps.disabled &&
-    prevProps.viewMode === nextProps.viewMode
-    // NÃO comparar onChange, otherExtractions, aiSuggestion (não afetam render)
+    prevProps.viewMode === nextProps.viewMode &&
+    !aiSuggestionChanged // Re-renderizar se sugestão mudar (status ou ID)
   );
 });
 

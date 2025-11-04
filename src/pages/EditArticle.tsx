@@ -19,7 +19,8 @@ function EditArticle() {
   }
 
   const handleComplete = () => {
-    navigate(`/project/${projectId}/article/${articleId}`);
+    // Navegar de volta para a lista de artigos do projeto
+    navigate(`/projects/${projectId}?tab=articles`);
   };
 
   return (

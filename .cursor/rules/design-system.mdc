@@ -133,6 +133,22 @@ className="focus-visible:ring-2 focus-visible:ring-ring"
 - Texto grande: **3:1**
 - Nossos tokens já garantem isso
 
+### Dark Mode
+- **Sempre testar** componentes em light e dark mode.
+- Tokens HSL suportam ambos modos automaticamente via `next-themes`.
+- **Storybook**: adicionar toggle dark/light em todas as stories.
+- **Contraste**: verificar com axe DevTools em ambos modos.
+
+```tsx
+// ✅ Funciona em ambos modos (tokens HSL)
+<div className="bg-background text-foreground">
+  <p className="text-muted-foreground">Texto secundário</p>
+</div>
+
+// ❌ Hardcode não funciona em dark mode
+<div style={{ backgroundColor: '#ffffff', color: '#000000' }}>
+```
+
 ### Alvos de Toque
 - Mínimo **44x44px** para mobile
 
@@ -174,6 +190,7 @@ xl: 1280px  → Large desktop
 - [ ] 4 estados de dados implementados
 - [ ] Foco visível + aria-labels
 - [ ] Contraste OK (4.5:1 texto, 3:1 grande)
+- [ ] **Testado em dark mode** (toggle e verificar contraste)
 - [ ] Alvos toque ≥ 44px
 - [ ] Testado: mobile (375px), tablet (768px), desktop (1440px)
 - [ ] Tabs/Modals com tamanhos estáveis (min-h)

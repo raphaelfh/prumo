@@ -4,12 +4,12 @@
 -- Descrição: Insere o template CHARMS como template global padrão
 -- com todas as entidades e campos necessários
 -- 
--- ROLLBACK: DELETE FROM extraction_entity_types WHERE template_id = (SELECT id FROM extraction_templates WHERE name = 'CHARMS');
---           DELETE FROM extraction_templates WHERE name = 'CHARMS';
+-- ROLLBACK: DELETE FROM extraction_entity_types WHERE template_id = (SELECT id FROM extraction_templates_global WHERE name = 'CHARMS');
+--           DELETE FROM extraction_templates_global WHERE name = 'CHARMS';
 -- =====================================================
 
 -- =================== TEMPLATE CHARMS ===================
-INSERT INTO extraction_templates (
+INSERT INTO extraction_templates_global (
   name,
   description,
   framework,
@@ -94,7 +94,7 @@ DECLARE
   results_id UUID;
   discussion_id UUID;
 BEGIN
-  SELECT id INTO charms_template_id FROM extraction_templates WHERE name = 'CHARMS';
+  SELECT id INTO charms_template_id FROM extraction_templates_global WHERE name = 'CHARMS';
   
   -- =================== ENTIDADES CHARMS ===================
   INSERT INTO extraction_entity_types (template_id, name, label, description, cardinality, sort_order, is_required) VALUES
@@ -225,10 +225,10 @@ DECLARE
   entity_count INTEGER;
   field_count INTEGER;
 BEGIN
-  SELECT COUNT(*) INTO template_count FROM extraction_templates WHERE name = 'CHARMS';
-  SELECT COUNT(*) INTO entity_count FROM extraction_entity_types WHERE template_id = (SELECT id FROM extraction_templates WHERE name = 'CHARMS');
+  SELECT COUNT(*) INTO template_count FROM extraction_templates_global WHERE name = 'CHARMS';
+  SELECT COUNT(*) INTO entity_count FROM extraction_entity_types WHERE template_id IN (SELECT id FROM extraction_templates_global WHERE name = 'CHARMS');
   SELECT COUNT(*) INTO field_count FROM extraction_fields WHERE entity_type_id IN (
-    SELECT id FROM extraction_entity_types WHERE template_id = (SELECT id FROM extraction_templates WHERE name = 'CHARMS')
+    SELECT id FROM extraction_entity_types WHERE template_id IN (SELECT id FROM extraction_templates_global WHERE name = 'CHARMS')
   );
   
   RAISE NOTICE 'Template CHARMS criado com sucesso:';

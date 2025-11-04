@@ -25,7 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, X, ChevronRight } from 'lucide-react';
+import { Plus, X, ChevronRight, Sparkles, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 
@@ -47,6 +47,8 @@ interface ModelSelectorProps {
   onSelectModel: (instanceId: string) => void;
   onAddModel: () => void;
   onRemoveModel: (instanceId: string) => void;
+  onExtractModels?: () => Promise<void>;
+  extractingModels?: boolean;
   loading?: boolean;
 }
 
@@ -58,6 +60,8 @@ export function ModelSelector({
   onSelectModel,
   onAddModel,
   onRemoveModel,
+  onExtractModels,
+  extractingModels = false,
   loading = false
 }: ModelSelectorProps) {
   const isMobile = useIsMobile();
@@ -107,12 +111,35 @@ export function ModelSelector({
           </h3>
           <p className="text-sm text-slate-600 mb-4 max-w-md mx-auto">
             Para extrair dados de modelos de predição, adicione pelo menos um modelo.
-            Você poderá adicionar quantos modelos quiser.
+            Você poderá adicionar quantos modelos quiser ou extrair automaticamente do artigo.
           </p>
-          <Button onClick={onAddModel} size="lg" className="gap-2">
+          <div className="flex flex-col sm:flex-row gap-2 justify-center">
+            {onExtractModels && (
+              <Button 
+                onClick={onExtractModels} 
+                size="lg" 
+                variant="default"
+                className="gap-2"
+                disabled={extractingModels}
+              >
+                {extractingModels ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    Extraindo...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-5 w-5" />
+                    Extrair Modelos com IA
+                  </>
+                )}
+              </Button>
+            )}
+            <Button onClick={onAddModel} size="lg" variant="outline" className="gap-2">
             <Plus className="h-5 w-5" />
-            Adicionar Primeiro Modelo
+              Adicionar Manualmente
           </Button>
+          </div>
         </div>
       </div>
     );
@@ -124,10 +151,27 @@ export function ModelSelector({
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-slate-700">Modelo Ativo</h3>
+          <div className="flex gap-2">
+            {onExtractModels && (
+              <Button 
+                onClick={onExtractModels} 
+                size="sm" 
+                variant="default"
+                className="gap-1"
+                disabled={extractingModels}
+              >
+                {extractingModels ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+              </Button>
+            )}
           <Button onClick={onAddModel} size="sm" variant="outline" className="gap-1">
             <Plus className="h-4 w-4" />
             Novo
           </Button>
+          </div>
         </div>
 
         <Select value={activeModelId || undefined} onValueChange={onSelectModel}>
@@ -176,10 +220,33 @@ export function ModelSelector({
               Selecione um modelo para extrair seus dados
             </p>
           </div>
-          <Button onClick={onAddModel} size="sm" className="gap-2">
+          <div className="flex gap-2">
+            {onExtractModels && (
+              <Button 
+                onClick={onExtractModels} 
+                size="sm" 
+                variant="default"
+                className="gap-2"
+                disabled={extractingModels}
+              >
+                {extractingModels ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Extraindo...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4" />
+                    Extrair com IA
+                  </>
+                )}
+              </Button>
+            )}
+            <Button onClick={onAddModel} size="sm" variant="outline" className="gap-2">
             <Plus className="h-4 w-4" />
             Novo Modelo
           </Button>
+          </div>
         </div>
 
         <Tabs value={activeModelId || undefined} onValueChange={onSelectModel}>

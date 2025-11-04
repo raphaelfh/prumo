@@ -75,7 +75,7 @@ export function useExtractionInstances({
       const { data, error } = await supabase
         .from('extraction_entity_types')
         .select('*')
-        .eq('template_id', templateId)
+        .eq('project_template_id', templateId)
         .order('sort_order', { ascending: true });
 
       if (error) throw error;

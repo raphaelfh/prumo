@@ -6,7 +6,7 @@ import { Separator } from "@/components/ui/separator";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { FileText, ExternalLink, Download, Eye, Upload, Trash2 } from "lucide-react";
-import { ArticleFileUploadDialog } from "./ArticleFileUploadDialog";
+import { ArticleFileUploadDialogNew } from "./ArticleFileUploadDialogNew";
 import { formatFileSize } from "@/lib/file-validation";
 import { FILE_ROLE_LABELS } from "@/lib/file-constants";
 import {
@@ -443,7 +443,7 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
 
       {/* Upload Dialog */}
       {articleId && article && (
-        <ArticleFileUploadDialog
+        <ArticleFileUploadDialogNew
           open={uploadDialogOpen}
           onOpenChange={setUploadDialogOpen}
           articleId={articleId}

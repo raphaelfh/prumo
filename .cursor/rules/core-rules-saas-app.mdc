@@ -12,5 +12,34 @@ alwaysApply: false
 - Sem introdução de libs grandes sem justificar (tamanho, manutenção, licença).
 - **Observabilidade desde o início** (logs, traces, métricas).
 - **Segurança por padrão**: RLS obrigatória, segregação de segredos, *least privilege*.
-- **Multi-tenant**: todas as tabelas de domínio possuem `org_id` e políticas RLS coerentes.
+- **Multi-tenant**: todas as tabelas de domínio possuem `org_id` e políticas RLS coerentes (ver `database-supabase-rules.mdc`).
 - **Infra como código**: esquema versionado em `supabase/migrations/`.
+
+## Testes
+- **Cobertura mínima**: 70% em lógica de negócio crítica (services, hooks, Edge Functions).
+- **Estratégia por camada**:
+  - **Unit**: lib, services, utils (Vitest + Testing Library)
+  - **Integration**: hooks com TanStack Query (MSW para mocks)
+  - **E2E**: fluxos principais (ex: criar projeto → avaliar artigo)
+- **Obrigatório testar**: RLS policies, Edge Functions, services críticos, validações zod.
+- **MSW** para mockar chamadas Supabase/API em testes.
+
+## Observabilidade
+- **Error Tracking**: use `errorTracker.captureError()` para erros de UI (ErrorBoundary, catch blocks).
+  ```tsx
+  import { useErrorTracking } from '@/services/errorTracking';
+  
+  const { captureError } = useErrorTracking();
+  try {
+    // ...
+  } catch (error) {
+    captureError(error, { component: 'ArticleList', action: 'fetch' });
+  }
+  ```
+- **Logging**: use `logger` apenas em desenvolvimento; produção via `errorTracker`.
+- **Métricas**: capture AI usage, PDF load times, query latências.
+  ```tsx
+  const { captureMetric, captureAIUsage } = useErrorTracking();
+  captureAIUsage('gpt-4', tokens, duration, { articleId });
+  ```
+- **Edge Functions**: sempre incluir `traceId` em logs (ver `supabase-edge-function-rules.mdc`).

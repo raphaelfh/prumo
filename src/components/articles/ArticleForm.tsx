@@ -19,6 +19,16 @@ import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { 
@@ -33,7 +43,8 @@ import {
   Loader2,
   Plus,
   Eye,
-  Download
+  Download,
+  Trash2
 } from "lucide-react";
 import { FILE_ROLES } from "@/lib/file-constants";
 import { validateFile, detectFileFormat } from "@/lib/file-validation";
@@ -168,6 +179,9 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
   const [article, setArticle] = useState<Article | null>(null);
   const [files, setFiles] = useState<ArticleFile[]>([]);
   const [showFileUpload, setShowFileUpload] = useState(false);
+  const [fileToDelete, setFileToDelete] = useState<ArticleFile | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deletingFile, setDeletingFile] = useState(false);
   
   // Formulário
   const [formData, setFormData] = useState<FormData>({
@@ -350,7 +364,8 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
       toast.success(`Artigo ${mode === 'add' ? 'criado' : 'atualizado'} com sucesso!`);
       
       if (mode === 'add') {
-        navigate(`/project/${projectId}/article/${result.id}`);
+        // Navegar de volta para a lista de artigos do projeto
+        navigate(`/projects/${projectId}?tab=articles`);
       } else {
         onComplete?.();
       }
@@ -382,6 +397,45 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
       console.error("Error downloading file:", error);
       toast.error("Erro ao baixar arquivo");
     }
+  };
+
+  const handleDeleteFile = async () => {
+    if (!fileToDelete) return;
+
+    setDeletingFile(true);
+    try {
+      // Deletar arquivo do storage
+      const { error: storageError } = await supabase.storage
+        .from("articles")
+        .remove([fileToDelete.storage_key]);
+
+      if (storageError) {
+        console.warn("Erro ao deletar arquivo do storage:", storageError);
+      }
+
+      // Deletar registro do banco
+      const { error: dbError } = await supabase
+        .from("article_files")
+        .delete()
+        .eq("id", fileToDelete.id);
+
+      if (dbError) throw dbError;
+
+      toast.success("Arquivo removido com sucesso!");
+      loadFiles(); // Recarregar lista de arquivos
+      setDeleteDialogOpen(false);
+      setFileToDelete(null);
+    } catch (error: any) {
+      console.error("Error deleting file:", error);
+      toast.error("Erro ao remover arquivo");
+    } finally {
+      setDeletingFile(false);
+    }
+  };
+
+  const openDeleteDialog = (file: ArticleFile) => {
+    setFileToDelete(file);
+    setDeleteDialogOpen(true);
   };
 
   const viewPDF = async (file: ArticleFile) => {
@@ -766,6 +820,15 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
                           <Download className="mr-2 h-4 w-4" />
                           Baixar
                         </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openDeleteDialog(file)}
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Excluir
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -917,6 +980,29 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
           }}
         />
       )}
+
+      {/* Dialog de Confirmação de Exclusão */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar Remoção</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja remover o arquivo "{fileToDelete?.original_filename}"?
+              Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingFile}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteFile}
+              disabled={deletingFile}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deletingFile ? "Removendo..." : "Remover"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

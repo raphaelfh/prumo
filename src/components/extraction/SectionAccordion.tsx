@@ -7,7 +7,6 @@
  * @component
  */
 
-import { useState } from 'react';
 import {
   Accordion,
   AccordionContent,
@@ -16,17 +15,19 @@ import {
 } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Plus } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Plus, Sparkles, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import MemoizedFieldInput from './FieldInput'; // Usar versão memoizada
 import { InstanceCard } from './InstanceCard';
+import { useSectionExtraction } from '@/hooks/extraction/useSectionExtraction';
 import type { 
   ExtractionEntityType,
   ExtractionField,
   ExtractionInstance
 } from '@/types/extraction';
 import type { OtherExtraction } from '@/hooks/extraction/colaboracao/useOtherExtractions';
-import type { AISuggestion } from '@/hooks/extraction/ai/useAISuggestions';
+import type { AISuggestion, AISuggestionHistoryItem } from '@/hooks/extraction/ai/useAISuggestions';
 
 // =================== INTERFACES ===================
 
@@ -38,13 +39,18 @@ interface SectionAccordionProps {
   onValueChange: (instanceId: string, fieldId: string, value: any) => void;
   projectId: string;
   articleId: string;
+  templateId: string; // Nova: necessário para extração de seção
+  parentInstanceId?: string; // Nova: ID da instância pai (para filtrar child entities por modelo)
   otherExtractions?: OtherExtraction[];
   aiSuggestions?: Record<string, AISuggestion>;
   onAcceptAI?: (instanceId: string, fieldId: string) => Promise<void>;
   onRejectAI?: (instanceId: string, fieldId: string) => Promise<void>;
+  getSuggestionsHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
+  isActionLoading?: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null;
   onAddInstance?: () => void;
   onRemoveInstance?: (instanceId: string) => void;
   viewMode?: 'extract' | 'compare';
+  onExtractionComplete?: () => void; // Callback para refresh de sugestões após extração
 }
 
 // =================== COMPONENT ===================
@@ -57,10 +63,53 @@ export function SectionAccordion(props: SectionAccordionProps) {
     values,
     onValueChange,
     projectId,
-    articleId
+    articleId,
+    templateId
   } = props;
 
   const isMultiple = entityType.cardinality === 'many';
+
+  // Hook para extração de seção específica
+  // Callback onSuccess notifica componente pai para refresh de sugestões
+  // IMPORTANTE: onSuccess não deve bloquear - chamar sem await para não travar o loading
+  const { extractSection, loading: extractionLoading } = useSectionExtraction({
+    onSuccess: async (runId, suggestionsCreated) => {
+      // Notificar componente pai que extração foi concluída
+      // CRÍTICO: Não fazer await aqui - deixar executar em background
+      // O loading deve ser resetado pelo hook independentemente deste callback
+      props.onExtractionComplete?.(runId).catch(err => {
+        console.error('Erro no callback onExtractionComplete:', err);
+        // Não bloquear o hook de resetar loading
+      });
+    },
+  });
+
+  /**
+   * Handler para extração de seção
+   * IMPORTANTE: Para cardinality="many", o backend agora cria instâncias automaticamente,
+   * então permitimos extração mesmo sem instâncias pré-existentes.
+   */
+  const handleExtractSection = async () => {
+    // Verificar se há instâncias existentes
+    // EXCEÇÃO: Para cardinality="many", permitir extração (backend cria instâncias automaticamente)
+    if (instances.length === 0 && !isMultiple) {
+      // Toast já será mostrado pelo hook, mas podemos adicionar aqui também se necessário
+      return;
+    }
+
+    try {
+      await extractSection({
+        projectId,
+        articleId,
+        templateId,
+        entityTypeId: entityType.id,
+        parentInstanceId: props.parentInstanceId, // Nova: passar parentInstanceId quando fornecido
+      });
+    } catch (error) {
+      // Erro já tratado pelo hook com toast
+      console.error('Section extraction failed:', error);
+    }
+  };
 
   // Calcular progresso desta seção
   const requiredFields = fields.filter(f => f.is_required);
@@ -104,7 +153,7 @@ export function SectionAccordion(props: SectionAccordionProps) {
       className={cn("bg-white border-l-4", borderColor)}
     >
       <AccordionItem value={entityType.id} className="border-none">
-        <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-slate-50/50">
+        <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-slate-50/50 group">
           <div className="flex items-center justify-between w-full">
             <div className="flex items-center gap-3">
               <h3 className="font-semibold text-base">{entityType.label}</h3>
@@ -114,9 +163,50 @@ export function SectionAccordion(props: SectionAccordionProps) {
                 </Badge>
               )}
             </div>
-            <div className="flex items-center gap-3 text-sm text-muted-foreground">
-              <span className="font-medium">{completedRequired}/{totalRequired}</span>
-              <span>{progressPercentage}%</span>
+            <div className="flex items-center gap-3">
+              {/* Botão minimalista de extração de IA */}
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0"
+                      onClick={(e) => {
+                        e.stopPropagation(); // Prevenir toggle do accordion
+                        handleExtractSection();
+                      }}
+                      disabled={extractionLoading || (instances.length === 0 && !isMultiple)}
+                      title={
+                        instances.length === 0 && !isMultiple
+                          ? "Crie pelo menos uma instância desta seção antes de extrair"
+                          : `Extrair dados de "${entityType.label}" com IA`
+                      }
+                    >
+                      {extractionLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      ) : (
+                        <Sparkles className="h-4 w-4 text-primary" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>
+                      {instances.length === 0 && !isMultiple
+                        ? "Crie pelo menos uma instância desta seção antes de extrair"
+                        : extractionLoading
+                        ? "Extraindo dados com IA..."
+                        : `Extrair dados de "${entityType.label}" com IA`}
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+
+              {/* Progresso */}
+              <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                <span className="font-medium">{completedRequired}/{totalRequired}</span>
+                <span>{progressPercentage}%</span>
+              </div>
             </div>
           </div>
         </AccordionTrigger>
@@ -157,6 +247,8 @@ export function SectionAccordion(props: SectionAccordionProps) {
                       aiSuggestions={props.aiSuggestions}
                       onAcceptAI={(fieldId) => props.onAcceptAI?.(instance.id, fieldId)}
                       onRejectAI={(fieldId) => props.onRejectAI?.(instance.id, fieldId)}
+                      getSuggestionsHistory={props.getSuggestionsHistory}
+                      isActionLoading={props.isActionLoading}
                       viewMode={props.viewMode}
                     />
                   </div>
@@ -196,6 +288,8 @@ export function SectionAccordion(props: SectionAccordionProps) {
                       aiSuggestion={props.aiSuggestions?.[key]}
                       onAcceptAI={() => props.onAcceptAI?.(instances[0].id, field.id)}
                       onRejectAI={() => props.onRejectAI?.(instances[0].id, field.id)}
+                      getSuggestionsHistory={props.getSuggestionsHistory}
+                      isActionLoading={props.isActionLoading}
                       viewMode={props.viewMode}
                     />
                   );

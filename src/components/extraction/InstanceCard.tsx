@@ -23,7 +23,7 @@ import { supabase } from '@/integrations/supabase/client';
 import MemoizedFieldInput from './FieldInput'; // Usar versão memoizada
 import type { ExtractionField, ExtractionInstance } from '@/types/extraction';
 import type { OtherExtraction } from '@/hooks/extraction/colaboracao/useOtherExtractions';
-import type { AISuggestion } from '@/hooks/extraction/ai/useAISuggestions';
+import type { AISuggestion, AISuggestionHistoryItem } from '@/hooks/extraction/ai/useAISuggestions';
 
 // =================== INTERFACES ===================
 
@@ -41,6 +41,8 @@ interface InstanceCardProps {
   aiSuggestions?: Record<string, AISuggestion>;
   onAcceptAI?: (fieldId: string) => Promise<void>;
   onRejectAI?: (fieldId: string) => Promise<void>;
+  getSuggestionsHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
+  isActionLoading?: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null;
   viewMode?: 'extract' | 'compare';
 }
 
@@ -174,6 +176,8 @@ export function InstanceCard(props: InstanceCardProps) {
               aiSuggestion={props.aiSuggestions?.[key]}
               onAcceptAI={() => props.onAcceptAI?.(field.id)}
               onRejectAI={() => props.onRejectAI?.(field.id)}
+              getSuggestionsHistory={props.getSuggestionsHistory}
+              isActionLoading={props.isActionLoading}
               viewMode={props.viewMode}
             />
           );

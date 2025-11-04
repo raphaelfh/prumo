@@ -81,6 +81,11 @@ interface ExtractionHeaderProps {
   isComplete: boolean;
   onFinalize: () => void;
   submitting?: boolean;
+  
+  // AI Extraction (opcional)
+  templateId?: string;
+  templateName?: string;
+  onExtractionComplete?: (runId: string) => void;
 }
 
 // =================== COMPONENT ===================
@@ -235,7 +240,8 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
           </div>
 
           {/* Ação Principal (direita) */}
-          <div className="flex items-center">
+          <div className="flex items-center gap-2">
+            {/* Nota: Extração com IA agora é feita por seção via botão inline em cada SectionAccordion */}
             <Button
               variant="outline"
               size="sm"
