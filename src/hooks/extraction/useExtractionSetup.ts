@@ -1,10 +1,10 @@
 /**
- * Hook para configuração e inicialização de extração de dados
+ * Hook para inicialização de extração de dados
  * 
- * Responsável por:
- * - Inicializar extração para um artigo (criar instâncias automáticas)
- * - Calcular progresso de extração
- * - Gerenciar status de extração
+ * Responsável APENAS por inicializar extração (criar instâncias automáticas).
+ * Cálculo de progresso foi movido para useExtractionProgressCalc (SRP).
+ * 
+ * REFATORADO (Fase 5): Separado de cálculo de progresso para seguir SRP.
  */
 
 import { useCallback, useState } from 'react';
@@ -141,91 +141,8 @@ export function useExtractionSetup() {
     }
   }, [user]);
 
-  /**
-   * Calcula o progresso de extração para um artigo
-   */
-  const calculateProgress = useCallback(async (
-    articleId: string,
-    templateId: string
-  ): Promise<ExtractionProgress | null> => {
-    try {
-      console.log('📊 Calculando progresso para artigo:', articleId);
-
-      // 1. Buscar entity types e campos do template
-      const { data: entityTypes, error: etError } = await supabase
-        .from('extraction_entity_types')
-        .select(`
-          id,
-          fields:extraction_fields(id, is_required)
-        `)
-        .eq('project_template_id', templateId);
-
-      if (etError) throw etError;
-
-      // Contar campos obrigatórios e opcionais
-      let totalRequired = 0;
-      let totalOptional = 0;
-      const requiredFieldIds: string[] = [];
-      const optionalFieldIds: string[] = [];
-
-      (entityTypes || []).forEach(et => {
-        (et.fields || []).forEach(field => {
-          if (field.is_required) {
-            totalRequired++;
-            requiredFieldIds.push(field.id);
-          } else {
-            totalOptional++;
-            optionalFieldIds.push(field.id);
-          }
-        });
-      });
-
-      // 2. Buscar valores extraídos para este artigo
-      const { data: extractedValues, error: valuesError } = await supabase
-        .from('extracted_values')
-        .select('field_id, value')
-        .eq('article_id', articleId);
-
-      if (valuesError) throw valuesError;
-
-      // Contar campos preenchidos (valor não vazio)
-      const filledFieldIds = new Set(
-        (extractedValues || [])
-          .filter(v => {
-            const val = v.value?.value ?? v.value;
-            return val !== null && val !== undefined && val !== '';
-          })
-          .map(v => v.field_id)
-      );
-
-      const completedRequired = requiredFieldIds.filter(id => 
-        filledFieldIds.has(id)
-      ).length;
-
-      const completedOptional = optionalFieldIds.filter(id => 
-        filledFieldIds.has(id)
-      ).length;
-
-      const progressPercentage = totalRequired > 0
-        ? Math.round((completedRequired / totalRequired) * 100)
-        : 0;
-
-      const result = {
-        totalRequiredFields: totalRequired,
-        completedRequiredFields: completedRequired,
-        totalOptionalFields: totalOptional,
-        completedOptionalFields: completedOptional,
-        progressPercentage
-      };
-
-      console.log('✅ Progresso calculado:', result);
-      return result;
-
-    } catch (err: any) {
-      console.error('❌ Erro ao calcular progresso:', err);
-      return null;
-    }
-  }, []);
+  // NOTA: Cálculo de progresso foi movido para useExtractionProgressCalc
+  // para seguir SRP (Single Responsibility Principle)
 
   /**
    * Verifica se a extração foi iniciada para um artigo
@@ -258,7 +175,6 @@ export function useExtractionSetup() {
 
   return {
     initializeArticleExtraction,
-    calculateProgress,
     isExtractionInitialized,
     loading,
     error,

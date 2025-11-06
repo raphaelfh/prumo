@@ -155,7 +155,7 @@ export function EntityTreeNode({
                             )}
                             {instance.label}
                           </CardTitle>
-                          {entityType.cardinality === 'many' && onRemoveInstance && instances.length > 1 && (
+                          {entityType.cardinality === 'many' && onRemoveInstance && (
                             <Button
                               variant="ghost"
                               size="icon"

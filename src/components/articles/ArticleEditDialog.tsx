@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { FileText, ExternalLink, Download, Eye, Save, X } from "lucide-react";
+import { FileText, ExternalLink, Download, Eye, Save, X, AlertCircle } from "lucide-react";
 
 interface Article {
   id: string;
@@ -72,6 +72,20 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
   const [keywordsInput, setKeywordsInput] = useState("");
   const [authorsInput, setAuthorsInput] = useState("");
   const [meshTermsInput, setMeshTermsInput] = useState("");
+  
+  // Campos de data como strings para validação no input
+  const [dateFields, setDateFields] = useState({
+    publication_year: "",
+    publication_month: "",
+    publication_day: "",
+  });
+  
+  // Estado para erros de validação
+  const [validationErrors, setValidationErrors] = useState<{
+    publication_year?: string;
+    publication_month?: string;
+    publication_day?: string;
+  }>({});
 
   useEffect(() => {
     if (articleId && open) {
@@ -86,6 +100,14 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
       setKeywordsInput(article.keywords?.join(", ") || "");
       setAuthorsInput(article.authors?.join(", ") || "");
       setMeshTermsInput(article.mesh_terms?.join(", ") || "");
+      // Converter números de data para strings para os inputs
+      setDateFields({
+        publication_year: article.publication_year?.toString() || "",
+        publication_month: article.publication_month?.toString() || "",
+        publication_day: article.publication_day?.toString() || "",
+      });
+      // Limpar erros de validação ao carregar artigo
+      setValidationErrors({});
     }
   }, [article]);
 
@@ -127,17 +149,78 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
     }
   };
 
+  // Validação de campos de data
+  const validateDateField = (field: 'publication_year' | 'publication_month' | 'publication_day', value: string): string | undefined => {
+    if (!value || value.trim() === '') {
+      setValidationErrors(prev => ({ ...prev, [field]: undefined }));
+      return undefined;
+    }
+
+    const num = parseInt(value.trim(), 10);
+    if (isNaN(num)) {
+      const error = 'Deve ser um número válido';
+      setValidationErrors(prev => ({ ...prev, [field]: error }));
+      return error;
+    }
+
+    let error: string | undefined;
+    if (field === 'publication_month') {
+      if (num < 1 || num > 12) {
+        error = 'Mês deve estar entre 1 e 12';
+      }
+    } else if (field === 'publication_day') {
+      if (num < 1 || num > 31) {
+        error = 'Dia deve estar entre 1 e 31';
+      }
+    } else if (field === 'publication_year') {
+      if (num < 1600 || num > 2500) {
+        error = 'Ano deve estar entre 1600 e 2500';
+      }
+    }
+
+    setValidationErrors(prev => ({ ...prev, [field]: error }));
+    return error;
+  };
+
+  // Handler para mudanças nos campos de data
+  const handleDateFieldChange = (field: 'publication_year' | 'publication_month' | 'publication_day', value: string) => {
+    setDateFields(prev => ({ ...prev, [field]: value }));
+    validateDateField(field, value);
+  };
+
   const handleSave = async () => {
     if (!articleId) return;
 
+    // Validar todos os campos de data antes de salvar
+    const yearError = validateDateField('publication_year', dateFields.publication_year);
+    const monthError = validateDateField('publication_month', dateFields.publication_month);
+    const dayError = validateDateField('publication_day', dateFields.publication_day);
+
+    if (yearError || monthError || dayError) {
+      toast.error("Por favor, corrija os erros nos campos de data antes de salvar");
+      return;
+    }
+
     setSaving(true);
     try {
-      // Process arrays
+      // Helper para converter string para número ou null
+      const parseDateValue = (value: string): number | null => {
+        if (!value || value.trim() === '') return null;
+        const num = parseInt(value.trim(), 10);
+        if (isNaN(num)) return null;
+        return num;
+      };
+
+      // Process arrays e converter valores numéricos de data
       const processedData = {
         ...formData,
         keywords: keywordsInput ? keywordsInput.split(",").map(k => k.trim()).filter(Boolean) : null,
         authors: authorsInput ? authorsInput.split(",").map(a => a.trim()).filter(Boolean) : null,
         mesh_terms: meshTermsInput ? meshTermsInput.split(",").map(m => m.trim()).filter(Boolean) : null,
+        // Converter strings para números (já validados acima)
+        publication_year: parseDateValue(dateFields.publication_year),
+        publication_month: parseDateValue(dateFields.publication_month),
+        publication_day: parseDateValue(dateFields.publication_day),
       };
 
       const { error } = await supabase
@@ -153,7 +236,8 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
       loadArticle(); // Reload to get updated data
     } catch (error: any) {
       console.error("Error updating article:", error);
-      toast.error("Erro ao atualizar artigo");
+      const errorMessage = error?.message || error?.details || "Erro desconhecido";
+      toast.error(`Erro ao atualizar artigo: ${errorMessage}`);
     } finally {
       setSaving(false);
     }
@@ -315,12 +399,25 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
             <div className="space-y-2">
               <Label htmlFor="publication_year">Ano</Label>
               {editing ? (
-                <Input
-                  id="publication_year"
-                  type="number"
-                  value={formData.publication_year || ""}
-                  onChange={(e) => setFormData({ ...formData, publication_year: e.target.value ? parseInt(e.target.value) : null })}
-                />
+                <>
+                  <Input
+                    id="publication_year"
+                    type="number"
+                    value={dateFields.publication_year}
+                    onChange={(e) => handleDateFieldChange('publication_year', e.target.value)}
+                    onBlur={(e) => validateDateField('publication_year', e.target.value)}
+                    placeholder="1600-2500"
+                    min="1600"
+                    max="2500"
+                    className={validationErrors.publication_year ? "border-destructive" : ""}
+                  />
+                  {validationErrors.publication_year && (
+                    <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" />
+                      {validationErrors.publication_year}
+                    </p>
+                  )}
+                </>
               ) : (
                 <p className="text-sm text-muted-foreground">
                   {article.publication_year || "Não informado"}

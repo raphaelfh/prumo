@@ -6,7 +6,6 @@
     "langchain": "npm:langchain@1"
   },
   "compilerOptions": {
-    "allowJs": true,
     "lib": ["deno.window"],
     "strict": true
   }

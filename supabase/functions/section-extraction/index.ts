@@ -23,6 +23,8 @@ import { Logger } from "../_shared/core/logger.ts";
 import { ErrorHandler, AppError, ErrorCode } from "../_shared/core/error-handler.ts";
 import { z } from "npm:zod@3.23.8";
 import { Validator } from "../_shared/core/validation.ts";
+import { corsHeaders } from "../_shared/core/cors.ts";
+import { authenticateUser } from "../_shared/core/auth.ts";
 import { SectionExtractionPipeline } from "./pipeline.ts";
 import { CONFIG } from "./config.ts";
 
@@ -30,15 +32,6 @@ import { CONFIG } from "./config.ts";
 declare const Deno: {
   env: { get(key: string): string | undefined };
   serve: (handler: (req: Request) => Response | Promise<Response>) => void;
-};
-
-/**
- * Headers CORS para permitir requisições do frontend
- */
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-client-trace-id",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
 /**
@@ -91,32 +84,8 @@ Deno.serve(async (req: Request) => {
     const input: SectionExtractionRequest = Validator.validate(SectionExtractionRequestSchema, body);
 
     // ==================== 2. AUTENTICAÇÃO ====================
-    // Validar header de autorização
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      throw new AppError(ErrorCode.AUTH_ERROR, "Missing authorization", 401);
-    }
-
-    // Buscar variáveis de ambiente (configuradas no dashboard Supabase)
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-      throw new AppError(ErrorCode.INTERNAL_ERROR, "Server configuration error", 500);
-    }
-
-    // Criar cliente Supabase com autorização do usuário
-    // Service role key permite acesso completo, mas mantemos autorização do usuário
-    // para logging e auditoria
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-      global: { headers: { Authorization: authHeader } },
-    });
-
-    // Verificar se o usuário está autenticado
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      throw new AppError(ErrorCode.AUTH_ERROR, "Unauthorized", 401);
-    }
+    const { user, supabase } = await authenticateUser(authHeader, logger);
 
     // Criar logger filho com contexto completo para rastreabilidade
     const contextualLogger = logger.child({
@@ -129,7 +98,7 @@ Deno.serve(async (req: Request) => {
 
     contextualLogger.info("Section extraction request authenticated", {
       entityTypeId: input.entityTypeId,
-      model: input.options?.model || "gpt-4o", // Padrão: gpt-4o (mais econômico)
+      model: input.options?.model || "gpt-4o-mini", // Padrão: gpt-4o-mini (mais rápido e estável)
     });
 
     // ==================== 3. BUSCAR PDF DO ARTIGO ====================

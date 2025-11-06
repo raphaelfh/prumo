@@ -34,7 +34,7 @@ import {
 export type { AISuggestion, AISuggestionHistoryItem } from '@/types/ai-extraction';
 
 export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestionsReturn {
-  const { articleId, projectId, enabled = true, onSuggestionAccepted } = props;
+  const { articleId, projectId, enabled = true, onSuggestionAccepted, onSuggestionRejected } = props;
 
   const [suggestions, setSuggestions] = useState<Record<string, AISuggestion>>({});
   const [loading, setLoading] = useState(false);
@@ -68,10 +68,18 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
 
       // CRÍTICO: setSuggestions atualiza o estado de forma assíncrona
       // Usar função de atualização para garantir que estado anterior seja considerado
-      setSuggestions(prev => {
+      setSuggestions(() => {
         const newSuggestions = result.suggestions;
         const count = Object.keys(newSuggestions).length;
-        console.log(`✅ ${count} sugestão(ões) carregada(s) e estado atualizado`);
+        console.log(`✅ [useAISuggestions] ${count} sugestão(ões) carregada(s) e estado atualizado`);
+        
+        // Log detalhado das chaves das sugestões carregadas para debug
+        const suggestionKeys = Object.keys(newSuggestions).slice(0, 10);
+        console.log(`📝 [useAISuggestions] Primeiras sugestões carregadas:`, {
+          keys: suggestionKeys,
+          total: count
+        });
+        
         return newSuggestions;
       });
 
@@ -130,9 +138,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
         const next = { ...prev };
         next[key] = {
           ...next[key],
-          status: 'accepted',
-          reviewed_at: new Date().toISOString(),
-          reviewed_by: user.id,
+          status: 'accepted' as const,
         };
         console.log(`✅ Sugestão ${key} aceita - estado atualizado para 'accepted'`);
         return { ...next }; // Nova referência para garantir re-render
@@ -175,23 +181,42 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new AuthenticationError();
 
+      // Verificar se foi aceito antes (precisa remover extracted_value)
+      const wasAccepted = suggestion.status === 'accepted';
+
       // Rejeitar sugestão usando o serviço
       await AISuggestionService.rejectSuggestion({
         suggestionId: suggestion.id,
         reviewerId: user.id,
+        wasAccepted, // Passa flag para remover extracted_value se necessário
+        instanceId,
+        fieldId,
+        projectId,
+        articleId,
       });
 
-      // Remover do estado local completamente
-      // IMPORTANTE: Criar novo objeto sem a key para garantir re-render
+      // Atualizar status no estado local para 'rejected' (não remover!)
+      // IMPORTANTE: Criar novo objeto para garantir re-render e mostrar indicador visual
       setSuggestions(prev => {
         if (!prev[key]) {
           console.warn(`⚠️ Sugestão ${key} não encontrada no estado ao rejeitar`);
           return prev;
         }
-        const { [key]: removed, ...rest } = prev;
-        console.log(`✅ Sugestão ${key} rejeitada - removida do estado`);
-        return { ...rest }; // Nova referência sem a sugestão rejeitada
+        const next = { ...prev };
+        next[key] = {
+          ...next[key],
+          status: 'rejected' as const,
+        };
+        console.log(`✅ Sugestão ${key} rejeitada - estado atualizado para 'rejected'`);
+        return { ...next }; // Nova referência para garantir re-render
       });
+
+      // Callback para limpar campo quando rejeitar
+      if (onSuggestionRejected) {
+        Promise.resolve(onSuggestionRejected(instanceId, fieldId)).catch(err => {
+          console.error('Erro no callback onSuggestionRejected:', err);
+        });
+      }
 
       toast.success('Sugestão rejeitada');
 
@@ -207,7 +232,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
         return next;
       });
     }
-  }, [suggestions]);
+  }, [suggestions, projectId, articleId, onSuggestionRejected]);
 
   const batchAccept = useCallback(async (threshold = 0.8) => {
     try {

@@ -3,7 +3,6 @@
  * 
  * Features:
  * - Configurações de visualização
- * - Preferências de anotações
  * - Atalhos de teclado
  */
 
@@ -15,10 +14,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { usePDFStore } from '@/stores/usePDFStore';
-import { Separator } from '@/components/ui/separator';
 import { Keyboard } from 'lucide-react';
 
 interface SettingsDialogProps {
@@ -27,20 +22,13 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
-  const { showAnnotations, toggleAnnotations } = usePDFStore();
-
   const shortcuts = [
     { keys: 'PageDown / PageUp', action: 'Navegar entre páginas' },
     { keys: 'Home / End', action: 'Primeira / Última página' },
     { keys: 'Ctrl + / Ctrl -', action: 'Zoom In / Out' },
     { keys: 'Ctrl 0', action: 'Resetar zoom' },
-    { keys: 'V', action: 'Ferramenta de seleção' },
-    { keys: 'H', action: 'Ferramenta de highlight' },
-    { keys: 'R', action: 'Ferramenta de área' },
-    { keys: 'Ctrl Z', action: 'Desfazer' },
-    { keys: 'Ctrl Shift Z', action: 'Refazer' },
-    { keys: 'Delete', action: 'Deletar selecionado' },
-    { keys: 'Escape', action: 'Cancelar ação atual' },
+    { keys: 'Ctrl F', action: 'Buscar no documento' },
+    { keys: 'Escape', action: 'Fechar diálogos' },
   ];
 
   return (
@@ -61,24 +49,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
           <TabsContent value="general" className="space-y-4 pt-4">
             <div className="space-y-4">
-              <h3 className="text-sm font-medium">Visualização</h3>
-              
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label htmlFor="show-annotations">Mostrar Anotações</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Exibir highlights e áreas no documento
-                  </p>
-                </div>
-                <Switch
-                  id="show-annotations"
-                  checked={showAnnotations}
-                  onCheckedChange={toggleAnnotations}
-                />
-              </div>
-
-              <Separator />
-
               <div className="space-y-2">
                 <h4 className="text-sm font-medium">Sobre</h4>
                 <div className="text-sm text-muted-foreground space-y-1">
@@ -123,4 +93,3 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     </Dialog>
   );
 }
-

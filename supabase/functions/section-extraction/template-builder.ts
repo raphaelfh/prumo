@@ -301,13 +301,47 @@ export class SectionTemplateBuilder {
   }
 
   /**
+   * Constrói descrição do campo combinando llm_description e description
+   * 
+   * KISS & DRY: Centraliza lógica de combinação de descrições para uso
+   * tanto no schema Zod quanto no prompt.
+   * 
+   * ESTRATÉGIA:
+   * - Label sempre incluído como identificador principal
+   * - Se tem llm_description, usa como instrução principal
+   * - Se também tem description, adiciona como contexto adicional
+   * 
+   * @param field - Campo a processar
+   * @returns Descrição combinada para uso no schema/prompt
+   */
+  private buildFieldDescription(field: DbExtractionField): string {
+    // Label sempre incluído como base
+    let desc = field.label;
+    
+    // Se tem llm_description, adicionar como instrução principal
+    if (field.llm_description) {
+      desc = `${field.label}: ${field.llm_description}`;
+      
+      // Se também tem description, adicionar como contexto adicional
+      if (field.description) {
+        desc = `${field.label}: ${field.llm_description} (Context: ${field.description})`;
+      }
+    } else if (field.description) {
+      // Se não tem llm_description mas tem description, usar description
+      desc = `${field.label}: ${field.description}`;
+    }
+    
+    return desc;
+  }
+
+  /**
    * Constrói schema Zod para o valor do campo (sem metadata)
    * 
    * @param field - Campo a processar
    * @returns Schema Zod para o tipo de valor do campo
    */
   private buildFieldValueSchema(field: DbExtractionField): z.ZodTypeAny {
-    const desc = field.llm_description || field.description || field.label;
+    const desc = this.buildFieldDescription(field);
 
     switch (field.field_type) {
       case "text":
@@ -368,10 +402,10 @@ export class SectionTemplateBuilder {
     const fieldsList = fields
       .sort((a, b) => a.sort_order - b.sort_order)
       .map((f) => {
+        const fieldDesc = this.buildFieldDescription(f);
         let line = `- **${f.label}**`;
-        if (f.llm_description || f.description) {
-          line += `: ${f.llm_description || f.description}`;
-        }
+        // Sempre incluir descrição (já combina llm_description + description)
+        line += `: ${fieldDesc}`;
         if (f.allowed_values && f.allowed_values.length > 0) {
           line += ` (allowed values: ${f.allowed_values.join(", ")})`;
         }

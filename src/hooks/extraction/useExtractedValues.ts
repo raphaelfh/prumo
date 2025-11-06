@@ -74,7 +74,7 @@ export function useExtractedValues(props: UseExtractedValuesProps): UseExtracted
       }
 
       const { data, error: queryError } = await supabase
-        .from('extracted_values')
+        .from('extracted_values' as any)
         .select(`
           id,
           instance_id,
@@ -95,7 +95,7 @@ export function useExtractedValues(props: UseExtractedValuesProps): UseExtracted
       // Converter para formato { instanceId_fieldId: { value, unit } }
       const valuesMap: Record<string, any> = {};
 
-      (data || []).forEach(item => {
+      (data || []).forEach((item: any) => {
         const key = `${item.instance_id}_${item.field_id}`;
         // Extrair valor do jsonb (pode estar em { value: X } ou diretamente)
         const extractedValue = item.value?.value ?? item.value;
@@ -164,14 +164,60 @@ export function useExtractedValues(props: UseExtractedValuesProps): UseExtracted
         return;
       }
 
-      // Batch upsert (atualiza se existe, insere se não)
-      const { error: upsertError } = await supabase
-        .from('extracted_values')
-        .upsert(upserts, {
-          onConflict: 'instance_id,field_id,reviewer_id'
-        });
+      // Verificar quais valores já existem (batch SELECT)
+      const { data: existingValues, error: selectError } = await supabase
+        .from('extracted_values' as any)
+        .select('id, instance_id, field_id, reviewer_id')
+        .eq('article_id', articleId)
+        .eq('reviewer_id', user.id)
+        .in('instance_id', [...new Set(upserts.map(u => u.instance_id))]);
 
-      if (upsertError) throw upsertError;
+      if (selectError) throw selectError;
+
+      // Criar mapa de IDs existentes: key => id
+      const existingMap = new Map<string, string>();
+      (existingValues || []).forEach((ev: any) => {
+        const key = `${ev.instance_id}_${ev.field_id}_${ev.reviewer_id}`;
+        existingMap.set(key, ev.id);
+      });
+
+      // Separar em UPDATEs e INSERTs
+      const toUpdate: Array<{ id: string; data: any }> = [];
+      const toInsert: any[] = [];
+
+      upserts.forEach(upsert => {
+        const key = `${upsert.instance_id}_${upsert.field_id}_${upsert.reviewer_id}`;
+        const existingId = existingMap.get(key);
+        
+        if (existingId) {
+          toUpdate.push({ id: existingId, data: upsert });
+        } else {
+          toInsert.push(upsert);
+        }
+      });
+
+      // Executar UPDATEs em lote (se houver)
+      if (toUpdate.length > 0) {
+        const updatePromises = toUpdate.map(({ id, data }) =>
+          supabase
+            .from('extracted_values' as any)
+            .update(data)
+            .eq('id', id)
+        );
+        const updateResults = await Promise.all(updatePromises);
+        const updateErrors = updateResults.filter(r => r.error).map(r => r.error);
+        if (updateErrors.length > 0) {
+          throw new Error(`Erro ao atualizar ${updateErrors.length} valores: ${updateErrors[0]?.message}`);
+        }
+      }
+
+      // Executar INSERTs em lote (se houver)
+      if (toInsert.length > 0) {
+        const { error: insertError } = await supabase
+          .from('extracted_values' as any)
+          .insert(toInsert);
+        if (insertError) throw insertError;
+      }
 
       console.log(`✅ Salvos ${upserts.length} valores`);
 

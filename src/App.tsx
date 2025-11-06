@@ -3,23 +3,44 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { lazy, Suspense } from "react";
 import { AuthProvider } from "./contexts/AuthContext";
 import { ProjectProvider } from "./contexts/ProjectContext";
 import { SidebarProvider } from "./contexts/SidebarContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ProjectLayout } from "./components/layout/AppLayout";
-import Auth from "./pages/Auth";
-import Dashboard from "./pages/Dashboard";
-import ProjectView from "./pages/ProjectView";
-import AssessmentFullScreen from "./pages/AssessmentFullScreen";
-import ExtractionFullScreen from "./pages/ExtractionFullScreen";
-import AddArticle from "./pages/AddArticle";
-import EditArticle from "./pages/EditArticle";
-import UserSettings from "./pages/UserSettings";
-import NotFound from "./pages/NotFound";
+import { Loader2 } from "lucide-react";
 
-const queryClient = new QueryClient();
+// Lazy loading de rotas para code splitting
+const Auth = lazy(() => import("./pages/Auth"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const ProjectView = lazy(() => import("./pages/ProjectView"));
+const AssessmentFullScreen = lazy(() => import("./pages/AssessmentFullScreen"));
+const ExtractionFullScreen = lazy(() => import("./pages/ExtractionFullScreen"));
+const AddArticle = lazy(() => import("./pages/AddArticle"));
+const EditArticle = lazy(() => import("./pages/EditArticle"));
+const UserSettings = lazy(() => import("./pages/UserSettings"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+
+// Componente de loading para Suspense
+const PageLoader = () => (
+  <div className="flex items-center justify-center min-h-screen">
+    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+  </div>
+);
+
+// QueryClient configurado com opções otimizadas
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // 5 minutos
+      gcTime: 10 * 60 * 1000, // 10 minutos (antigo cacheTime)
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
 
 const App = () => {
   return (
@@ -28,10 +49,16 @@ const App = () => {
         <TooltipProvider>
           <Toaster />
           <Sonner />
-          <BrowserRouter>
-            <ErrorBoundary context="Autenticação">
-              <AuthProvider>
-                <Routes>
+            <BrowserRouter
+              future={{
+                v7_startTransition: true,
+                v7_relativeSplatPath: true,
+              }}
+            >
+              <ErrorBoundary context="Autenticação">
+                <AuthProvider>
+                  <Suspense fallback={<PageLoader />}>
+                    <Routes>
                   <Route path="/auth" element={<Auth />} />
                   <Route
                     path="/"
@@ -115,7 +142,8 @@ const App = () => {
                   />
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />
-                </Routes>
+                    </Routes>
+                  </Suspense>
               </AuthProvider>
             </ErrorBoundary>
           </BrowserRouter>

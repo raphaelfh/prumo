@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/supabase/baseRepository';
 import { AssessmentItem } from '@/hooks/assessment/useAssessmentInstruments';
 
 export interface BatchAssessmentConfig {
@@ -119,29 +120,19 @@ export class BatchAssessmentService {
         max_tokens: config.maxTokens,
       };
 
-      const { data, error } = await supabase.functions.invoke('ai-assessment', {
-        body: payload,
-        headers: {
-          'x-client-trace-id': clientTraceId,
-        },
-      });
-
-      if (error) {
-        let traceFromBody: string | undefined;
-        try {
-          const parsed = JSON.parse(error.message);
-          traceFromBody = parsed?.traceId;
-        } catch {
-          /* ignore */
+      // Usar callEdgeFunction do baseRepository com headers customizados
+      const result = await callEdgeFunction(
+        'ai-assessment',
+        payload,
+        {
+          headers: {
+            'x-client-trace-id': clientTraceId,
+          },
         }
-        throw new Error(
-          `Falha ao invocar a avaliação de IA. ${error.message}${
-            traceFromBody ? ` | traceId: ${traceFromBody}` : ''
-          }`
-        );
-      }
+      );
 
-      const assessment = data?.assessment ?? data;
+      // Extrair assessment da resposta (pode estar em result.assessment ou result diretamente)
+      const assessment = (result as any)?.assessment ?? result;
       if (!assessment) {
         throw new Error('Resposta da função sem assessment.');
       }

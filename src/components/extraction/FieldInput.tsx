@@ -27,7 +27,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, History } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import type { ExtractionField } from '@/types/extraction';
 import type { OtherExtraction } from '@/hooks/extraction/colaboracao/useOtherExtractions';
@@ -36,6 +38,7 @@ import { OtherExtractionsPopover } from './colaboracao/OtherExtractionsPopover';
 import { OtherExtractionsButton } from './colaboracao/OtherExtractionsButton';
 import { AISuggestionDisplay } from './ai/AISuggestionDisplay';
 import { AISuggestionBadge } from './ai/AISuggestionBadge';
+import { AISuggestionHistoryPopover } from './ai/AISuggestionHistoryPopover';
 import { getRelatedUnits } from '@/lib/unitConversions';
 import type { AISuggestionHistoryItem } from '@/hooks/extraction/ai/useAISuggestions';
 import {
@@ -74,22 +77,46 @@ export function FieldInput(props: FieldInputProps) {
   // Espaçamento fixo confortável
   const containerPadding = 'py-6';
   const inputHeight = 'h-11';
-  const inputPadding = 'px-4 py-2.5';
   const gap = 'gap-6';
 
-  // Se houver sugestão pendente, mostrar o valor sugerido no campo para o usuário decidir
-  // Prioridade: valor manual existente > sugestão pendente > vazio
+  // Lógica de valor exibido no campo:
+  // - Valor do estado local sempre tem prioridade (pode ser manual ou aceito da IA)
+  // - Se há sugestão aceita e não há valor manual, mostrar valor da sugestão
   const hasAIPending = aiSuggestion ? isSuggestionPending(aiSuggestion) : false;
   const hasAIAccepted = aiSuggestion ? aiSuggestion.status === 'accepted' : false;
-  const hasManualValue = !isEmptyValue(value);
   
-  // Se não tem valor manual E tem sugestão pendente, usar o valor sugerido
-  // Se aceita, também mostrar o valor sugerido (mas badge mostra "IA aceita")
-  const displayValue = hasManualValue 
-    ? value 
-    : ((hasAIPending || hasAIAccepted) && aiSuggestion?.value !== null && aiSuggestion?.value !== undefined)
-      ? aiSuggestion.value
-      : (value ?? '');
+  // Função helper para normalizar valores para comparação
+  const normalizeValueForComparison = (val: any): any => {
+    if (val === null || val === undefined) return null;
+    if (typeof val === 'object' && 'value' in val) {
+      return { value: val.value, unit: val.unit || null };
+    }
+    return val;
+  };
+  
+  // Distinguir valor manual de valor aceito da IA:
+  // - Se há sugestão aceita e o valor atual é igual ao valor da sugestão, NÃO é manual
+  // - Se o valor atual é diferente do valor da sugestão aceita, é manual (usuário editou)
+  // - Se não há sugestão aceita, qualquer valor não vazio é considerado manual
+  const aiAcceptedValue = hasAIAccepted && aiSuggestion?.value !== null && aiSuggestion?.value !== undefined 
+    ? aiSuggestion.value 
+    : null;
+  
+  // Comparação mais robusta de valores (considera objetos e arrays)
+  const isValueEqualToAccepted = aiAcceptedValue !== null && 
+    JSON.stringify(normalizeValueForComparison(value)) === JSON.stringify(normalizeValueForComparison(aiAcceptedValue));
+  
+  // Se há valor no campo mas não é igual ao aceito, é manual
+  // Se não há sugestão aceita, valor no campo é considerado manual
+  const hasManualValue = !isEmptyValue(value) && (!hasAIAccepted || !isValueEqualToAccepted);
+  
+  // Valor a exibir: priorizar valor do estado (que já foi atualizado após aceitar)
+  // Se não há valor no estado mas há sugestão aceita, mostrar valor da sugestão
+  const displayValue = !isEmptyValue(value)
+    ? value
+    : (hasAIAccepted && aiAcceptedValue !== null)
+      ? aiAcceptedValue
+      : '';
 
   // Validação básica
   const validateValue = (val: any): boolean => {
@@ -123,9 +150,19 @@ export function FieldInput(props: FieldInputProps) {
     switch (field.field_type) {
       case 'text':
         // Se description longa, usar textarea
-        const isLongText = field.label.toLowerCase().includes('descrição') ||
-                          field.label.toLowerCase().includes('justificativa') ||
-                          field.label.toLowerCase().includes('comentário');
+        const labelLower = field.label.toLowerCase();
+        const isLongText = labelLower.includes('descrição') ||
+                          labelLower.includes('justificativa') ||
+                          labelLower.includes('comentário') ||
+                          labelLower.includes('conclusão') ||
+                          labelLower.includes('conclusões') ||
+                          labelLower.includes('resultado') ||
+                          labelLower.includes('resultados') ||
+                          labelLower.includes('análise') ||
+                          labelLower.includes('análises') ||
+                          labelLower.includes('discussão') ||
+                          labelLower.includes('observação') ||
+                          labelLower.includes('observações');
         
         if (isLongText) {
           return (
@@ -296,12 +333,20 @@ export function FieldInput(props: FieldInputProps) {
     }
   };
 
-  // Determinar se deve mostrar display de sugestão abaixo do input (Opção F: Máxima Simplicidade)
-  // Mostrar apenas se não há valor manual E sugestão existe e está pending (não aceita)
-  // Quando aceita, o badge permanece visível mas o display com botões desaparece
-  const shouldShowSuggestion = !hasManualValue && 
-    aiSuggestion && 
-    aiSuggestion.status === 'pending'; // Apenas pending mostra botões e valor abaixo
+  // Determinar se deve mostrar display de sugestão abaixo do input
+  // Mostrar se:
+  // - Sugestão existe (pending, accepted ou rejected) E
+  // - Para sugestões PENDING: mostrar sempre (mesmo se campo tem valor)
+  // - Para sugestões ACCEPTED: mostrar se o valor atual é igual ao aceito (não foi editado manualmente)
+  // - Para sugestões REJECTED: mostrar para permitir reverter
+  const shouldShowSuggestion = aiSuggestion && (
+    // Sempre mostrar sugestões pendentes
+    aiSuggestion.status === 'pending' ||
+    // Mostrar aceitas se o valor ainda é igual (não foi editado manualmente)
+    (aiSuggestion.status === 'accepted' && !hasManualValue) ||
+    // Mostrar rejeitadas para permitir reverter
+    aiSuggestion.status === 'rejected'
+  );
 
   return (
     <div className={cn("grid grid-cols-[30%_1fr] items-start", gap, containerPadding)}>
@@ -319,7 +364,7 @@ export function FieldInput(props: FieldInputProps) {
       </div>
       
       {/* Coluna direita: Input */}
-      <div className="space-y-2 min-w-0 overflow-hidden">
+              <div className="space-y-2 min-w-0">
         {/* Badges de colaboração - apenas no modo comparação */}
         {viewMode === 'compare' && otherExtractions && otherExtractions.length > 0 && (
           <div className="flex items-center gap-2 mb-2">
@@ -334,32 +379,65 @@ export function FieldInput(props: FieldInputProps) {
           </div>
         )}
 
-        {/* Input com badge + info ao lado direito (sempre visível se houver sugestão) */}
+        {/* Input com badge + histórico ao lado direito */}
         <div className="flex items-center gap-2 min-w-0">
           <div className="flex-1 min-w-0 overflow-hidden">
             {renderInput()}
           </div>
           
-          {/* Badge + Info sempre visíveis ao lado direito do input (se houver sugestão e não rejeitada) */}
+          <div className="flex items-center gap-1 shrink-0">
+            {/* Badge + Info sempre visíveis ao lado direito do input (se houver sugestão pendente ou aceita) */}
           {aiSuggestion && 
-           aiSuggestion.status !== 'rejected' && 
            (aiSuggestion.status === 'pending' || aiSuggestion.status === 'accepted') && (
             <AISuggestionBadge
-              instanceId={instanceId}
-              fieldId={field.id}
               suggestion={aiSuggestion}
-              getHistory={getSuggestionsHistory}
             />
           )}
+
+            {/* Botão de Histórico - sempre visível se houver função getHistory */}
+            {getSuggestionsHistory && aiSuggestion && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div>
+                    <AISuggestionHistoryPopover
+                      instanceId={instanceId}
+                      fieldId={field.id}
+                      currentSuggestionId={aiSuggestion.id}
+                      getHistory={getSuggestionsHistory}
+                      trigger={
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className={cn(
+                            "h-7 w-7",
+                            "text-muted-foreground hover:text-foreground hover:bg-muted"
+                          )}
+                          title="Histórico de sugestões"
+                        >
+                          <History className="h-4 w-4" />
+                        </Button>
+                      }
+                    />
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Histórico de sugestões</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </div>
         </div>
 
         {/* Valor sugerido + botões aceitar/rejeitar abaixo do input - apenas se não há valor manual (Opção F) */}
         {shouldShowSuggestion && (
           <AISuggestionDisplay
             suggestion={aiSuggestion}
+            instanceId={instanceId}
+            fieldId={field.id}
             onAccept={onAcceptAI}
             onReject={onRejectAI}
             loading={isActionLoading ? isActionLoading(instanceId, field.id) === 'accept' || isActionLoading(instanceId, field.id) === 'reject' : false}
+            getHistory={getSuggestionsHistory}
           />
         )}
 

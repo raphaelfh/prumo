@@ -5,21 +5,27 @@
  * Extraído do ExtractionFullScreen para modularidade.
  */
 
+import { memo } from 'react';
 import { SectionAccordion } from './SectionAccordion';
 import { ModelSelector } from './hierarchy/ModelSelector';
 import { Separator } from '@/components/ui/separator';
 import { useModelExtraction } from '@/hooks/extraction/useModelExtraction';
-import type { ExtractionEntityType, ExtractionInstance } from '@/types/extraction';
+import type { ExtractionEntityType, ExtractionInstance, ExtractionValue, ExtractionField } from '@/types/extraction';
+
+// Tipo auxiliar para entity types com fields
+interface EntityTypeWithFields extends ExtractionEntityType {
+  fields: ExtractionField[];
+}
 import type { OtherExtraction } from '@/hooks/extraction/colaboracao/useOtherExtractions';
 import type { AISuggestion, AISuggestionHistoryItem } from '@/hooks/extraction/ai/useAISuggestions';
 
 export interface ExtractionFormViewProps {
-  studyLevelSections: ExtractionEntityType[];
-  modelParentEntityType: ExtractionEntityType | undefined;
-  modelChildSections: ExtractionEntityType[];
+  studyLevelSections: EntityTypeWithFields[];
+  modelParentEntityType: EntityTypeWithFields | undefined;
+  modelChildSections: EntityTypeWithFields[];
   instances: ExtractionInstance[];
-  values: Record<string, any>;
-  updateValue: (instanceId: string, fieldId: string, value: any) => void;
+  values: Record<string, ExtractionValue>;
+  updateValue: (instanceId: string, fieldId: string, value: ExtractionValue) => void;
   otherExtractions: OtherExtraction[];
   aiSuggestions: Record<string, AISuggestion>;
   acceptSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
@@ -43,7 +49,7 @@ export interface ExtractionFormViewProps {
   onExtractionComplete?: () => void; // Callback para refresh após extração
 }
 
-export function ExtractionFormView(props: ExtractionFormViewProps) {
+function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
   // Hook para extração de modelos
   const { extractModels, loading: extractingModels } = useModelExtraction({
     onSuccess: async (runId, modelsCreated) => {
@@ -152,7 +158,7 @@ export function ExtractionFormView(props: ExtractionFormViewProps) {
                     projectId={props.projectId}
                     articleId={props.articleId}
                     templateId={props.templateId}
-                    parentInstanceId={props.activeModelId}
+                    parentInstanceId={props.activeModelId || undefined}
                     otherExtractions={props.otherExtractions}
                     aiSuggestions={props.aiSuggestions}
                     onAcceptAI={props.acceptSuggestion}
@@ -173,3 +179,25 @@ export function ExtractionFormView(props: ExtractionFormViewProps) {
     </>
   );
 }
+
+// Memoizar componente para evitar re-renders desnecessários
+// Compara props críticas que realmente causam mudanças visuais
+export const ExtractionFormView = memo(ExtractionFormViewComponent, (prevProps, nextProps) => {
+  // Comparação customizada focada em props que realmente importam
+  // IMPORTANTE: Incluir aiSuggestions para garantir re-render quando sugestões são atualizadas após extração
+  const aiSuggestionsChanged = 
+    prevProps.aiSuggestions !== nextProps.aiSuggestions ||
+    Object.keys(prevProps.aiSuggestions).length !== Object.keys(nextProps.aiSuggestions).length;
+  
+  return (
+    prevProps.values === nextProps.values &&
+    prevProps.instances === nextProps.instances &&
+    prevProps.studyLevelSections === nextProps.studyLevelSections &&
+    prevProps.modelChildSections === nextProps.modelChildSections &&
+    prevProps.activeModelId === nextProps.activeModelId &&
+    prevProps.models.length === nextProps.models.length &&
+    !aiSuggestionsChanged // Se aiSuggestions mudou, precisa re-renderizar
+  );
+});
+
+ExtractionFormView.displayName = 'ExtractionFormView';

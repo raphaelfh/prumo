@@ -1,44 +1,29 @@
 /**
  * Header unificado da interface de extração
  * 
- * Componente minimalista que consolida:
- * - Navegação (voltar + breadcrumb)
- * - Progresso de completude
- * - Controles de visualização (PDF toggle + modo comparação)
- * - Status de auto-save
- * - Ação principal (finalizar)
+ * Componente refatorado seguindo princípios DRY, KISS, unificado e responsivo.
+ * Usa componentes menores extraídos para melhor manutenibilidade.
  * 
  * @component
  */
 
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
-  Tooltip,
-  TooltipContent,
   TooltipProvider,
-  TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { ArrowLeft, Loader2, Clock, CheckCircle, ChevronLeft, ChevronRight, MoreHorizontal, FileText, Users, Eye, EyeOff } from 'lucide-react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
-import { useNavigate } from 'react-router-dom';
-import { getRoleLabel, type UserRole } from '@/lib/comparison/permissions';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { type UserRole } from '@/lib/comparison/permissions';
+import { HeaderNavigation } from './header/HeaderNavigation';
+import { HeaderPDFControls } from './header/HeaderPDFControls';
+import { HeaderStatusBadges } from './header/HeaderStatusBadges';
+import { HeaderFinalizeButton } from './header/HeaderFinalizeButton';
+import { HeaderAIActions } from './header/HeaderAIActions';
+import { HeaderMoreMenu } from './header/HeaderMoreMenu';
+import type { AISuggestion } from '@/types/ai-extraction';
+import type { 
+  ProjectExtractionTemplate, 
+  ExtractionInstance, 
+  ExtractedValue 
+} from '@/types/extraction';
 
 // =================== INTERFACES ===================
 
@@ -82,16 +67,24 @@ interface ExtractionHeaderProps {
   onFinalize: () => void;
   submitting?: boolean;
   
-  // AI Extraction (opcional)
+  // AI Extraction (opcional - mantido para compatibilidade)
   templateId?: string;
   templateName?: string;
-  onExtractionComplete?: (runId: string) => void;
+  onExtractionComplete?: (runId?: string) => void | Promise<void>;
+  
+  // Sugestões de IA (para badge na Zona 4)
+  aiSuggestions?: Record<string, AISuggestion>;
+  onAISuggestionsClick?: () => void;
+  
+  // Dados para export (Zona 4 - Menu Mais)
+  template?: ProjectExtractionTemplate | null;
+  instances?: ExtractionInstance[];
+  values?: ExtractedValue[];
 }
 
 // =================== COMPONENT ===================
 
 export function ExtractionHeader(props: ExtractionHeaderProps) {
-  const navigate = useNavigate();
   const {
     projectId,
     projectName,
@@ -114,379 +107,169 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
     lastSaved = null,
     isComplete,
     onFinalize,
-    submitting = false
+    submitting = false,
+    aiSuggestions = {},
+    onAISuggestionsClick,
+    template,
+    instances = [],
+    values = [],
   } = props;
 
-  // Encontrar posição do artigo atual e artigos adjacentes
-  const currentIndex = articles.findIndex(article => article.id === currentArticleId);
-  const previousArticle = currentIndex > 0 ? articles[currentIndex - 1] : null;
-  const nextArticle = currentIndex < articles.length - 1 ? articles[currentIndex + 1] : null;
+  const isMobile = useIsMobile();
 
   return (
-    <TooltipProvider>
-      <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        {/* Desktop Layout (1280px+) */}
-        <div className="hidden xl:flex items-center justify-between px-6 py-3.5">
-          {/* Navegação (esquerda) */}
-          <div className="flex items-center gap-3">
-            <Button variant="outline" size="sm" onClick={onBack}>
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Voltar
-            </Button>
-            
-            <Separator orientation="vertical" className="h-5" />
-            
-            <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem>
-                  <BreadcrumbLink
-                    onClick={() => navigate(`/projects/${projectId}`)}
-                    className="cursor-pointer hover:text-foreground"
-                  >
-                    {projectName}
-                  </BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbPage className="max-w-[400px] truncate">
-                    {articleTitle}
-                  </BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
-          </div>
-
-          {/* Seção de Edição (centro-esquerda) */}
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onTogglePDF}
-            >
-              {showPDF ? 'Ocultar PDF' : 'Mostrar PDF'}
-            </Button>
-            
-            {/* Navegação entre artigos */}
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => previousArticle && onNavigateToArticle(previousArticle.id)}
-                disabled={!previousArticle}
-                className="h-8 w-8 p-0"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => nextArticle && onNavigateToArticle(nextArticle.id)}
-                disabled={!nextArticle}
-                className="h-8 w-8 p-0"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-            
-            {hasOtherExtractions && (
-              <>
-                <Separator orientation="vertical" className="h-5" />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onViewModeChange(viewMode === 'extract' ? 'compare' : 'extract')}
-                >
-                  Comparação
-                </Button>
-              </>
-            )}
-          </div>
-
-          {/* Seção de Status (centro-direita) */}
-          <div className="flex items-center gap-3">
-            {/* Badge de Role */}
-            {userRole && (
-              <Badge variant="secondary" className="text-xs gap-1">
-                {getRoleLabel(userRole)}
-              </Badge>
-            )}
-            
-            {/* Badge de Blind Mode */}
-            {isBlindMode && (
-              <Badge variant="outline" className="text-xs gap-1">
-                <EyeOff className="h-3 w-3" />
-                Modo Cego
-              </Badge>
-            )}
-
-            <Badge variant="outline" className="text-xs">
-              <span className="text-muted-foreground">Progresso:</span>
-              <span className="font-semibold tabular-nums ml-1">{completionPercentage}%</span>
-              <span className="text-muted-foreground ml-1">({completedFields}/{totalFields})</span>
-            </Badge>
-            
-            {/* Auto-save indicator */}
-            {isSaving ? (
-              <Badge variant="outline" className="gap-2 text-xs">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                Salvando...
-              </Badge>
-            ) : lastSaved ? (
-              <Badge variant="outline" className="gap-1 text-xs text-muted-foreground">
-                <Clock className="h-3 w-3" />
-                Salvo {format(lastSaved, 'HH:mm', { locale: ptBR })}
-              </Badge>
-            ) : null}
-          </div>
-
-          {/* Ação Principal (direita) */}
-          <div className="flex items-center gap-2">
-            {/* Nota: Extração com IA agora é feita por seção via botão inline em cada SectionAccordion */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onFinalize}
-              disabled={!isComplete || submitting}
-            >
-              {submitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Finalizando...
-                </>
-              ) : (
-                <>
-                  <CheckCircle className="mr-2 h-4 w-4" />
-                  Finalizar
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
-
-        {/* Tablet Layout (768px - 1279px) */}
-        <div className="hidden lg:flex xl:hidden flex-col px-6 py-3 space-y-2">
-          {/* Linha 1: Navegação + Título + Finalizar */}
-          <div className="flex items-center justify-between">
+    <TooltipProvider delayDuration={200}>
+      <header className="border-b border-border/40 bg-background/80 backdrop-blur-sm relative z-10 shadow-sm">
+        {isMobile ? (
+          /* Mobile Layout: Minimalista e organizado */
+          <div className="flex flex-col px-4 py-2.5 gap-2.5">
+            {/* Linha 1: Navegação + Status + Finalizar */}
             <div className="flex items-center gap-3">
-              <Button variant="outline" size="sm" onClick={onBack}>
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Voltar
-              </Button>
-              <Separator orientation="vertical" className="h-5" />
-              <Breadcrumb>
-                <BreadcrumbList>
-                  <BreadcrumbItem>
-                    <BreadcrumbLink
-                      onClick={() => navigate(`/projects/${projectId}`)}
-                      className="cursor-pointer hover:text-foreground"
-                    >
-                      {projectName}
-                    </BreadcrumbLink>
-                  </BreadcrumbItem>
-                  <BreadcrumbSeparator />
-                  <BreadcrumbItem>
-                    <BreadcrumbPage className="max-w-[250px] truncate">
-                      {articleTitle}
-                    </BreadcrumbPage>
-                  </BreadcrumbItem>
-                </BreadcrumbList>
-              </Breadcrumb>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onFinalize}
-              disabled={!isComplete || submitting}
-            >
-              {submitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Finalizando...
-                </>
-              ) : (
-                <>
-                  <CheckCircle className="mr-2 h-4 w-4" />
-                  Finalizar
-                </>
-              )}
-            </Button>
-          </div>
-
-          {/* Linha 2: Controles + Status */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={onTogglePDF}
-                    className="h-8 w-8 p-0"
-                  >
-                    <FileText className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{showPDF ? 'Ocultar PDF' : 'Mostrar PDF'}</TooltipContent>
-              </Tooltip>
-              
-              <div className="flex items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => previousArticle && onNavigateToArticle(previousArticle.id)}
-                  disabled={!previousArticle}
-                  className="h-8 w-8 p-0"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => nextArticle && onNavigateToArticle(nextArticle.id)}
-                  disabled={!nextArticle}
-                  className="h-8 w-8 p-0"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
+              <div className="flex-1 min-w-0">
+                <HeaderNavigation
+                  projectId={projectId}
+                  projectName={projectName}
+                  articleTitle={articleTitle}
+                  onBack={onBack}
+                  showBackText={false}
+                  maxBreadcrumbWidth="200px"
+                  articles={articles}
+                  currentArticleId={currentArticleId}
+                  onNavigateToArticle={onNavigateToArticle}
+                />
               </div>
-
-              {hasOtherExtractions && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onViewModeChange(viewMode === 'extract' ? 'compare' : 'extract')}
-                      className="h-8 w-8 p-0"
-                    >
-                      <Users className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Comparação</TooltipContent>
-                </Tooltip>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-xs">
-                <span className="font-semibold tabular-nums">{completionPercentage}%</span>
-                <span className="text-muted-foreground ml-1">({completedFields}/{totalFields})</span>
-              </Badge>
               
-              {isSaving ? (
-                <Badge variant="outline" className="gap-1 text-xs">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  Salvando...
-                </Badge>
-              ) : lastSaved ? (
-                <Badge variant="outline" className="gap-1 text-xs text-muted-foreground">
-                  <Clock className="h-3 w-3" />
-                  {format(lastSaved, 'HH:mm', { locale: ptBR })}
-                </Badge>
-              ) : null}
-            </div>
-          </div>
-        </div>
-
-        {/* Mobile Layout (< 768px) */}
-        <div className="flex lg:hidden flex-col px-4 py-3 space-y-3">
-          {/* Linha 1: Voltar + Título + Menu */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-              <Button variant="outline" size="sm" onClick={onBack}>
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-              <Breadcrumb>
-                <BreadcrumbList>
-                  <BreadcrumbItem>
-                    <BreadcrumbPage className="max-w-[200px] truncate text-sm">
-                      {articleTitle}
-                    </BreadcrumbPage>
-                  </BreadcrumbItem>
-                </BreadcrumbList>
-              </Breadcrumb>
-            </div>
-            
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem onClick={onTogglePDF}>
-                  <FileText className="mr-2 h-4 w-4" />
-                  {showPDF ? 'Ocultar PDF' : 'Mostrar PDF'}
-                </DropdownMenuItem>
-                
-                <DropdownMenuItem 
-                  onClick={() => previousArticle && onNavigateToArticle(previousArticle.id)}
-                  disabled={!previousArticle}
-                >
-                  <ChevronLeft className="mr-2 h-4 w-4" />
-                  Artigo Anterior
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={() => nextArticle && onNavigateToArticle(nextArticle.id)}
-                  disabled={!nextArticle}
-                >
-                  <ChevronRight className="mr-2 h-4 w-4" />
-                  Próximo Artigo
-                </DropdownMenuItem>
-                
-                {hasOtherExtractions && (
-                  <DropdownMenuItem onClick={() => onViewModeChange(viewMode === 'extract' ? 'compare' : 'extract')}>
-                    <Users className="mr-2 h-4 w-4" />
-                    Comparação
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-
-          {/* Linha 2: Progresso + Finalizar */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-xs">
-                <span className="font-semibold tabular-nums">{completionPercentage}%</span>
-                <span className="text-muted-foreground ml-1">({completedFields}/{totalFields})</span>
-              </Badge>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <HeaderStatusBadges
+                  userRole={userRole}
+                  isBlindMode={isBlindMode}
+                  completedFields={completedFields}
+                  totalFields={totalFields}
+                  completionPercentage={completionPercentage}
+                  isSaving={isSaving}
+                  lastSaved={lastSaved}
+                  compact={true}
+                />
+              </div>
               
-              {isSaving ? (
-                <Badge variant="outline" className="gap-1 text-xs">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  Salvando...
-                </Badge>
-              ) : lastSaved ? (
-                <Badge variant="outline" className="gap-1 text-xs text-muted-foreground">
-                  <Clock className="h-3 w-3" />
-                  {format(lastSaved, 'HH:mm', { locale: ptBR })}
-                </Badge>
-              ) : null}
+              <div className="flex-shrink-0">
+                <HeaderFinalizeButton
+                  isComplete={isComplete}
+                  onSubmit={onFinalize}
+                  submitting={submitting}
+                  variant="default"
+                  size="sm"
+                />
+              </div>
             </div>
-            
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onFinalize}
-              disabled={!isComplete || submitting}
-            >
-              {submitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Finalizando...
-                </>
-              ) : (
-                <>
-                  <CheckCircle className="mr-2 h-4 w-4" />
-                  Finalizar
-                </>
-              )}
-            </Button>
+
+            {/* Linha 2: Controles PDF + Ações Secundárias */}
+            <div className="flex items-center justify-between pt-2 border-t border-border/40">
+              <HeaderPDFControls
+                showPDF={showPDF}
+                onTogglePDF={onTogglePDF}
+                articles={articles}
+                currentArticleId={currentArticleId}
+                onNavigateToArticle={onNavigateToArticle}
+                viewMode={viewMode}
+                onViewModeChange={onViewModeChange}
+                hasOtherExtractions={hasOtherExtractions}
+                compact={true}
+              />
+              
+              {/* Zona 4: Ações Secundárias (Mobile) */}
+              <div className="flex items-center gap-2">
+                <HeaderAIActions
+                  suggestions={aiSuggestions}
+                  onClick={onAISuggestionsClick}
+                  compact={true}
+                />
+                <HeaderMoreMenu
+                  projectId={projectId}
+                  template={template}
+                  instances={instances}
+                  values={values}
+                  compact={true}
+                />
+              </div>
+            </div>
           </div>
-        </div>
+        ) : (
+          /* Desktop Layout: 5 Zonas conforme análise UX */
+          <div className="flex items-center justify-between gap-6 px-6 py-3.5">
+            {/* Zona 1: Navegação Contextual (Extrema Esquerda) */}
+            <div className="flex-1 min-w-0">
+              <HeaderNavigation
+                projectId={projectId}
+                projectName={projectName}
+                articleTitle={articleTitle}
+                onBack={onBack}
+                showBackText={true}
+                maxBreadcrumbWidth="400px"
+                articles={articles}
+                currentArticleId={currentArticleId}
+                onNavigateToArticle={onNavigateToArticle}
+              />
+            </div>
+
+            {/* Zona 2: Controles de Visualização (Centro-Esquerda) */}
+            <div className="flex items-center gap-1 flex-shrink-0">
+              <HeaderPDFControls
+                showPDF={showPDF}
+                onTogglePDF={onTogglePDF}
+                articles={articles}
+                currentArticleId={currentArticleId}
+                onNavigateToArticle={onNavigateToArticle}
+                viewMode={viewMode}
+                onViewModeChange={onViewModeChange}
+                hasOtherExtractions={hasOtherExtractions}
+                compact={false}
+              />
+            </div>
+
+            {/* Zona 3: Status e Feedback (Centro) */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <HeaderStatusBadges
+                userRole={userRole}
+                isBlindMode={isBlindMode}
+                completedFields={completedFields}
+                totalFields={totalFields}
+                completionPercentage={completionPercentage}
+                isSaving={isSaving}
+                lastSaved={lastSaved}
+                compact={false}
+              />
+            </div>
+
+            {/* Zona 4: Ações Secundárias (Centro-Direita) */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <HeaderAIActions
+                suggestions={aiSuggestions}
+                onClick={onAISuggestionsClick}
+                compact={false}
+              />
+              <HeaderMoreMenu
+                projectId={projectId}
+                template={template}
+                instances={instances}
+                values={values}
+                compact={false}
+              />
+            </div>
+
+            {/* Zona 5: Ação Principal (Extrema Direita) */}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <HeaderFinalizeButton
+                isComplete={isComplete}
+                onSubmit={onFinalize}
+                submitting={submitting}
+                variant="default"
+                size="sm"
+              />
+            </div>
+          </div>
+        )}
       </header>
     </TooltipProvider>
   );
 }
-

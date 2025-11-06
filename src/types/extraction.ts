@@ -19,6 +19,18 @@ export type ExtractionRunStage = 'data_suggest' | 'parsing' | 'validation' | 'co
 export type ExtractionRunStatus = 'pending' | 'running' | 'completed' | 'failed';
 export type SuggestionStatus = 'pending' | 'accepted' | 'rejected';
 
+/**
+ * Tipo para valores de extração baseado no tipo de campo
+ * Garante type safety ao invés de usar `any`
+ */
+export type ExtractionValue = 
+  | string      // text, select
+  | number      // number
+  | Date        // date
+  | string[]    // multiselect
+  | boolean     // boolean
+  | null;       // valores não preenchidos
+
 // =================== TEMPLATES ===================
 
 /**

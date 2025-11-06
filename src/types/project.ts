@@ -3,14 +3,33 @@
  * 
  * Centraliza interfaces relacionadas a projetos para evitar 'any'
  * e garantir type safety.
+ * 
+ * Baseado nos tipos gerados do Supabase para garantir consistência.
  */
 
-export interface ProjectData {
-  id: string;
-  name: string;
-  description: string | null;
-  review_title: string | null;
-  condition_studied: string | null;
+import type { Database } from '@/integrations/supabase/types';
+
+/**
+ * Tipo base de Project do banco de dados
+ * Usa o tipo gerado do Supabase para garantir type safety
+ */
+export type Project = Database['public']['Tables']['projects']['Row'];
+
+/**
+ * Tipo para inserção de Project
+ */
+export type ProjectInsert = Database['public']['Tables']['projects']['Insert'];
+
+/**
+ * Tipo para atualização de Project
+ */
+export type ProjectUpdate = Partial<Omit<Project, 'id' | 'created_at'>>;
+
+/**
+ * Tipo completo de Project com todas as configurações
+ * Mantido para compatibilidade com código existente
+ */
+export interface ProjectData extends Project {
   review_rationale: string | null;
   review_keywords: string[];
   eligibility_criteria: EligibilityCriteria;
@@ -21,9 +40,6 @@ export interface ProjectData {
   assessment_scope?: 'article' | 'extraction_instance';
   assessment_entity_type_id?: string | null;
   risk_of_bias_instrument_id?: string | null;
-  created_by_id: string;
-  created_at: string;
-  updated_at: string;
 }
 
 export interface ProjectSettings {

@@ -4,6 +4,7 @@
  */
 
 import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/supabase/baseRepository';
 import type {
   ZoteroCredentialsInput,
   ZoteroTestConnectionResult,
@@ -34,31 +35,18 @@ export class ZoteroImportService {
   private abortController: AbortController | null = null;
 
   /**
-   * Faz chamada à Edge Function do Zotero
+   * Faz chamada à Edge Function do Zotero usando baseRepository
    */
-  private async callEdgeFunction(action: string, payload: Record<string, unknown> = {}) {
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    if (!session) {
-      throw new Error('Usuário não autenticado');
-    }
-
-    const response = await fetch(EDGE_FUNCTION_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${session.access_token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ action, ...payload }),
-      signal: this.abortController?.signal,
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Erro ao chamar Edge Function');
-    }
-
-    return await response.json();
+  private async callEdgeFunction<T = unknown>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
+    // Usar callEdgeFunction do baseRepository
+    // O nome da função é 'zotero-import' (extraído da constante EDGE_FUNCTION_URL)
+    return await callEdgeFunction<T>(
+      'zotero-import',
+      { action, ...payload },
+      {
+        signal: this.abortController?.signal,
+      }
+    );
   }
 
   /**
@@ -79,10 +67,11 @@ export class ZoteroImportService {
         userName: result.userName,
         error: result.error,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Erro desconhecido';
       return {
         success: false,
-        error: error.message,
+        error: message,
       };
     }
   }

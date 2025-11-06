@@ -39,8 +39,8 @@ interface InstanceCardProps {
   articleId: string;
   otherExtractions?: OtherExtraction[];
   aiSuggestions?: Record<string, AISuggestion>;
-  onAcceptAI?: (fieldId: string) => Promise<void>;
-  onRejectAI?: (fieldId: string) => Promise<void>;
+  onAcceptAI?: (instanceId: string, fieldId: string) => Promise<void>;
+  onRejectAI?: (instanceId: string, fieldId: string) => Promise<void>;
   getSuggestionsHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
   isActionLoading?: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null;
   viewMode?: 'extract' | 'compare';
@@ -162,6 +162,24 @@ export function InstanceCard(props: InstanceCardProps) {
       <div className="bg-white rounded-b-lg px-2">
         {fields.map(field => {
           const key = `${instance.id}_${field.id}`;
+          const suggestion = props.aiSuggestions?.[key];
+          
+          // Debug: log quando sugestão não é encontrada mas deveria existir
+          if (process.env.NODE_ENV === 'development' && !suggestion) {
+            // Verificar se há sugestões para outras instâncias do mesmo campo
+            const hasSuggestionsForField = Object.keys(props.aiSuggestions || {}).some(
+              k => k.endsWith(`_${field.id}`)
+            );
+            if (hasSuggestionsForField) {
+              console.warn(`⚠️ [InstanceCard] Sugestão não encontrada para ${key}, mas há sugestões para o campo ${field.id} em outras instâncias`, {
+                instanceId: instance.id,
+                fieldId: field.id,
+                fieldName: field.name,
+                fieldLabel: field.label,
+                availableKeys: Object.keys(props.aiSuggestions || {}).filter(k => k.endsWith(`_${field.id}`))
+              });
+            }
+          }
           
           return (
             <MemoizedFieldInput
@@ -173,9 +191,21 @@ export function InstanceCard(props: InstanceCardProps) {
               projectId={projectId}
               articleId={articleId}
               otherExtractions={props.otherExtractions}
-              aiSuggestion={props.aiSuggestions?.[key]}
-              onAcceptAI={() => props.onAcceptAI?.(field.id)}
-              onRejectAI={() => props.onRejectAI?.(field.id)}
+              aiSuggestion={suggestion}
+              onAcceptAI={() => {
+                // Wrapper para passar instanceId junto com fieldId
+                if (props.onAcceptAI) {
+                  // onAcceptAI espera (instanceId, fieldId)
+                  props.onAcceptAI(instance.id, field.id);
+                }
+              }}
+              onRejectAI={() => {
+                // Wrapper para passar instanceId junto com fieldId
+                if (props.onRejectAI) {
+                  // onRejectAI espera (instanceId, fieldId)
+                  props.onRejectAI(instance.id, field.id);
+                }
+              }}
               getSuggestionsHistory={props.getSuggestionsHistory}
               isActionLoading={props.isActionLoading}
               viewMode={props.viewMode}

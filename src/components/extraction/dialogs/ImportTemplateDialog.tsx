@@ -44,7 +44,7 @@ interface ImportTemplateDialogProps {
   projectId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onTemplateImported: () => void;
+  onTemplateImported: (templateId?: string) => void;
 }
 
 // =================== COMPONENT ===================
@@ -79,7 +79,7 @@ export function ImportTemplateDialog({
           `Template "${selectedTemplate.name}" importado com sucesso! ${result.details?.entityTypesAdded} seções, ${result.details?.fieldsAdded} campos.`
         );
         onOpenChange(false);
-        onTemplateImported();
+        onTemplateImported(result.templateId);
       } else {
         throw new Error(result.error || 'Erro desconhecido');
       }

@@ -61,7 +61,7 @@ interface CreateCustomTemplateDialogProps {
   projectId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onTemplateCreated: () => void;
+  onTemplateCreated: (templateId?: string) => void;
 }
 
 export function CreateCustomTemplateDialog({
@@ -115,7 +115,7 @@ export function CreateCustomTemplateDialog({
       toast.info('Agora adicione seções e campos na aba Configuração');
       
       form.reset();
-      onTemplateCreated();
+      onTemplateCreated(template.id);
       onOpenChange(false);
 
     } catch (err: any) {

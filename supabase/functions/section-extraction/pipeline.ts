@@ -20,9 +20,10 @@ import { Logger } from "../_shared/core/logger.ts";
 import { AppError, ErrorCode } from "../_shared/core/error-handler.ts";
 import { SectionPDFProcessor } from "./pdf-processor.ts";
 import { SectionTemplateBuilder } from "./template-builder.ts";
-import { SectionLLMExtractor } from "./llm-extractor.ts";
+import { ExtractorFactory } from "../_shared/extraction/extractor-factory.ts";
 import { SectionDBWriter } from "./db-writer.ts";
 import type { SupportedModel } from "../_shared/extraction/model-config.ts";
+import { CONFIG } from "./config.ts";
 
 /**
  * Opções do pipeline
@@ -153,7 +154,7 @@ export class SectionExtractionPipeline {
         options.entityTypeId,
         options.userId,
         {
-          model: options.model || "gpt-4o", // Padrão: gpt-4o (mais econômico)
+          model: options.model || "gpt-4o-mini", // Padrão: gpt-4o-mini (mais rápido e estável)
           entityTypeId: options.entityTypeId,
         },
       );
@@ -209,7 +210,7 @@ export class SectionExtractionPipeline {
       });
 
       // ==================== 4. EXTRAIR COM LLM ====================
-      const modelToUse = options.model || "gpt-4o"; // Padrão: gpt-4o (mais econômico)
+      const modelToUse = options.model || "gpt-4o-mini"; // Padrão: gpt-4o-mini (mais rápido e estável)
       const llmStart = performance.now();
       runLogger.info("Extracting with LLM", {
         model: modelToUse,
@@ -217,7 +218,25 @@ export class SectionExtractionPipeline {
         fieldsCount: fields.length,
       });
 
-      const llmExtractor = new SectionLLMExtractor(this.openaiKey, runLogger);
+      // Criar extractor via factory (modular: LangChain ou Instructor)
+      const extractionConfig = {
+        retry: {
+          maxAttempts: CONFIG.retry.maxAttempts,
+          initialDelayMs: CONFIG.retry.initialDelayMs,
+        },
+        llm: {
+          timeout: {
+            base: CONFIG.llm.timeout.base,
+            gpt5: CONFIG.llm.timeout.gpt5,
+            warningThreshold: CONFIG.llm.timeout.warningThreshold,
+          },
+          maxTextLength: {
+            base: CONFIG.llm.maxTextLength.base,
+            gpt5: CONFIG.llm.maxTextLength.gpt5,
+          },
+        },
+      };
+      const llmExtractor = ExtractorFactory.createExtractor(this.openaiKey, runLogger, extractionConfig);
       const extraction = await llmExtractor.extract(pdf.text, schema, prompt, {
         model: modelToUse,
       });

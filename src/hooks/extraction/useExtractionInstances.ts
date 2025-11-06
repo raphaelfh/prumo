@@ -1,17 +1,18 @@
 /**
  * Hook para gerenciar instâncias de extração
  * 
- * Gerencia a criação, atualização e exclusão de instâncias
- * de entidades para artigos específicos.
+ * Gerencia APENAS instâncias (criação, atualização, exclusão).
+ * Entity types são carregados separadamente usando useEntityTypes.
  * 
- * REFATORADO (Fase 2): Agora usa extractionInstanceService
- * para centralizar lógica e evitar duplicação.
+ * REFATORADO (Fase 5): Separado de entity types para seguir SRP.
+ * Agora usa extractionInstanceService para centralizar lógica.
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { extractionInstanceService } from '@/services/extractionInstanceService';
+import { useEntityTypes } from './useEntityTypes';
 import { 
   ExtractionInstance, 
   ExtractionInstanceInsert,
@@ -30,9 +31,14 @@ export function useExtractionInstances({
   templateId 
 }: UseExtractionInstancesProps) {
   const [instances, setInstances] = useState<ExtractionInstance[]>([]);
-  const [entityTypes, setEntityTypes] = useState<ExtractionEntityType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Carregar entity types usando hook dedicado (SRP)
+  const { entityTypes, loading: entityTypesLoading } = useEntityTypes({
+    templateId,
+    enabled: !!templateId,
+  });
 
   // Memoizar service (singleton, mas garantir estabilidade)
   const service = useMemo(() => extractionInstanceService, []);
@@ -58,40 +64,17 @@ export function useExtractionInstances({
       if (error) throw error;
 
       setInstances(data || []);
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Erro desconhecido ao carregar instâncias';
       console.error('Erro ao carregar instâncias:', err);
-      setError(err.message);
+      setError(message);
     }
   }, [articleId, templateId]);
 
-  // Carregar tipos de entidades do template
-  const loadEntityTypes = useCallback(async () => {
-    if (!templateId) {
-      setEntityTypes([]);
-      return;
-    }
-
-    try {
-      const { data, error } = await supabase
-        .from('extraction_entity_types')
-        .select('*')
-        .eq('project_template_id', templateId)
-        .order('sort_order', { ascending: true });
-
-      if (error) throw error;
-
-      setEntityTypes(data || []);
-    } catch (err: any) {
-      console.error('Erro ao carregar tipos de entidades:', err);
-      setError(err.message);
-    }
-  }, [templateId]);
-
-  // Carregar dados iniciais
+  // Carregar dados iniciais (apenas instâncias)
   useEffect(() => {
     if (!articleId || !templateId) {
       setInstances([]);
-      setEntityTypes([]);
       setLoading(false);
       return;
     }
@@ -101,20 +84,18 @@ export function useExtractionInstances({
       setError(null);
       
       try {
-        await Promise.all([
-          loadEntityTypes(),
-          loadInstances()
-        ]);
-      } catch (err: any) {
+        await loadInstances();
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Erro ao carregar instâncias';
         console.error('Erro ao carregar dados de instâncias:', err);
-        setError(err.message);
+        setError(message);
       } finally {
         setLoading(false);
       }
     };
 
     loadData();
-  }, [articleId, templateId]); // Dependências simplificadas
+  }, [articleId, templateId, loadInstances]);
 
   // Criar nova instância (usando service)
   const createInstance = useCallback(async (
@@ -321,11 +302,14 @@ export function useExtractionInstances({
     return `${baseLabel} ${nextNumber}`;
   }, [entityTypes, getInstancesByEntityType]);
 
+  // Loading combinado (instâncias OU entity types)
+  const combinedLoading = loading || entityTypesLoading;
+
   return {
     // Estado
     instances,
-    entityTypes,
-    loading,
+    entityTypes, // Mantido para compatibilidade, mas carregado via hook dedicado
+    loading: combinedLoading,
     error,
 
     // Ações

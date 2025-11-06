@@ -11,6 +11,14 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { extractionLogger, performanceTracker } from '@/lib/extraction/observability';
+import { 
+  insertOne, 
+  deleteOne, 
+  queryBuilder,
+  queryBuilderSingle,
+  handleSupabaseError,
+  SupabaseRepositoryError
+} from '@/lib/supabase/baseRepository';
 import type { 
   ExtractionInstance, 
   ExtractionEntityType,
@@ -161,18 +169,22 @@ export class ExtractionInstanceService {
       });
       // Se for cardinality='one', verificar se já existe
       if (entityType.cardinality === 'one') {
-        const { data: existing } = await supabase
-          .from('extraction_instances')
-          .select('*')
-          .eq('article_id', articleId)
-          .eq('entity_type_id', entityTypeId)
-          .eq('parent_instance_id', parentInstanceId || null)
-          .single();
+        const { data: existing } = await queryBuilderSingle<ExtractionInstance>(
+          'extraction_instances',
+          {
+            select: '*',
+            filters: {
+              article_id: articleId,
+              entity_type_id: entityTypeId,
+              parent_instance_id: parentInstanceId || null,
+            },
+          }
+        );
 
         if (existing) {
           console.log('Instância cardinality=one já existe:', existing.label);
           return {
-            instance: existing as ExtractionInstance,
+            instance: existing,
             wasCreated: false
           };
         }
@@ -181,14 +193,16 @@ export class ExtractionInstanceService {
       // Buscar parent instance se necessário
       let parentInstance: ExtractionInstance | undefined;
       if (parentInstanceId) {
-        const { data } = await supabase
-          .from('extraction_instances')
-          .select('*')
-          .eq('id', parentInstanceId)
-          .single();
+        const { data } = await queryBuilderSingle<ExtractionInstance>(
+          'extraction_instances',
+          {
+            select: '*',
+            filters: { id: parentInstanceId },
+          }
+        );
         
         if (data) {
-          parentInstance = data as ExtractionInstance;
+          parentInstance = data;
         }
       }
 
@@ -217,10 +231,10 @@ export class ExtractionInstanceService {
 
       const sortOrder = count || 0;
 
-      // Criar instância
-      const { data: newInstance, error } = await supabase
-        .from('extraction_instances')
-        .insert({
+      // Criar instância usando baseRepository
+      const newInstance = await insertOne<ExtractionInstance>(
+        'extraction_instances',
+        {
           project_id: projectId,
           article_id: articleId,
           template_id: templateId,
@@ -230,11 +244,9 @@ export class ExtractionInstanceService {
           sort_order: sortOrder,
           metadata,
           created_by: userId
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
+        },
+        'createInstance'
+      );
 
       const duration = performanceTracker.end(perfId);
       
@@ -249,13 +261,20 @@ export class ExtractionInstanceService {
         wasCreated: true
       };
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       performanceTracker.end(perfId);
-      extractionLogger.error('createInstance', 'Falha ao criar instância', error, {
+      const message = error instanceof Error ? error.message : 'Erro desconhecido';
+      extractionLogger.error('createInstance', 'Falha ao criar instância', error as Error, {
         entityType: entityType.name,
         label: customLabel
       });
-      throw new Error(`Falha ao criar instância: ${error.message}`);
+      
+      // Se já é SupabaseRepositoryError, re-throw
+      if (error instanceof SupabaseRepositoryError) {
+        throw error;
+      }
+      
+      throw new Error(`Falha ao criar instância: ${message}`);
     }
   }
 
@@ -353,12 +372,8 @@ export class ExtractionInstanceService {
     try {
       extractionLogger.debug('removeInstance', 'Removendo instância', { instanceId });
 
-      const { error } = await supabase
-        .from('extraction_instances')
-        .delete()
-        .eq('id', instanceId);
-
-      if (error) throw error;
+      // Usar baseRepository para delete padronizado
+      await deleteOne('extraction_instances', instanceId, 'removeInstance');
 
       const duration = performanceTracker.end(perfId);
       
@@ -369,12 +384,19 @@ export class ExtractionInstanceService {
 
       return true;
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       performanceTracker.end(perfId);
-      extractionLogger.error('removeInstance', 'Falha ao remover instância', error, {
+      const message = error instanceof Error ? error.message : 'Erro desconhecido';
+      extractionLogger.error('removeInstance', 'Falha ao remover instância', error as Error, {
         instanceId
       });
-      throw new Error(`Falha ao remover instância: ${error.message}`);
+      
+      // Se já é SupabaseRepositoryError, re-throw
+      if (error instanceof SupabaseRepositoryError) {
+        throw error;
+      }
+      
+      throw new Error(`Falha ao remover instância: ${message}`);
     }
   }
 
@@ -385,31 +407,43 @@ export class ExtractionInstanceService {
     const { articleId, templateId, options = {} } = params;
 
     try {
-      let query = supabase
-        .from('extraction_instances')
-        .select('*')
-        .eq('article_id', articleId)
-        .eq('template_id', templateId)
-        .order('sort_order', { ascending: true });
+      // Construir filtros para queryBuilder
+      const filters: Record<string, unknown> = {
+        article_id: articleId,
+        template_id: templateId,
+      };
 
-      // Filtros opcionais
       if (options.entityTypeId) {
-        query = query.eq('entity_type_id', options.entityTypeId);
+        filters.entity_type_id = options.entityTypeId;
       }
 
       if (options.parentInstanceId !== undefined) {
-        query = query.eq('parent_instance_id', options.parentInstanceId);
+        filters.parent_instance_id = options.parentInstanceId;
       }
 
-      const { data, error } = await query;
+      // Usar queryBuilder do baseRepository
+      const { data, error } = await queryBuilder<ExtractionInstance>(
+        'extraction_instances',
+        {
+          select: '*',
+          filters,
+          orderBy: { column: 'sort_order', ascending: true },
+        }
+      );
 
-      if (error) throw error;
+      if (error) {
+        handleSupabaseError(error, 'getInstances');
+      }
 
-      return (data || []) as ExtractionInstance[];
+      return data || [];
 
-    } catch (error: any) {
+    } catch (error: unknown) {
+      if (error instanceof SupabaseRepositoryError) {
+        throw error;
+      }
+      const message = error instanceof Error ? error.message : 'Erro desconhecido';
       console.error('❌ Erro ao buscar instâncias:', error);
-      throw new Error(`Falha ao buscar instâncias: ${error.message}`);
+      throw new Error(`Falha ao buscar instâncias: ${message}`);
     }
   }
 

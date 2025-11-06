@@ -241,6 +241,7 @@ export interface UseAISuggestionsProps {
   projectId: string;
   enabled?: boolean;
   onSuggestionAccepted?: (instanceId: string, fieldId: string, value: any) => void;
+  onSuggestionRejected?: (instanceId: string, fieldId: string) => void;
 }
 
 /**

@@ -9,8 +9,8 @@
  * - Ações contextuais
  */
 
-import { useState, useMemo, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -99,6 +99,7 @@ interface ColumnFilter {
 
 export function ArticleExtractionTable({ projectId, templateId }: ArticleExtractionTableProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [articles, setArticles] = useState<ArticleWithExtraction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -117,19 +118,12 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [activeFilterColumn, setActiveFilterColumn] = useState<keyof ColumnFilter | null>(null);
 
-  // Carregar ID do usuário atual
-  useEffect(() => {
-    loadCurrentUser();
-  }, []);
+  // Ref para rastrear última rota visitada (evitar refresh desnecessário)
+  const lastPathRef = useRef<string>('');
+  const loadArticlesRef = useRef<() => Promise<void>>();
 
-  // Carregar artigos do projeto
-  useEffect(() => {
-    if (projectId && templateId && currentUserId) {
-      loadArticles();
-    }
-  }, [projectId, templateId, currentUserId]);
-
-  const loadCurrentUser = async () => {
+  // Declarar loadCurrentUser antes de qualquer uso para evitar TDZ
+  const loadCurrentUser = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
@@ -138,9 +132,14 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     } catch (error: any) {
       console.error('Erro ao carregar usuário:', error);
     }
-  };
+  }, []);
 
-  const loadArticles = async () => {
+  // Declarar loadArticles antes de qualquer uso para evitar TDZ
+  const loadArticles = useCallback(async () => {
+    if (!projectId || !templateId || !currentUserId) {
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -179,7 +178,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
         .from('extracted_values')
         .select('*')
         .eq('project_id', projectId)
-        .eq('reviewer_id', currentUserId!);
+        .eq('reviewer_id', currentUserId);
 
       if (valuesError) {
         console.error('Erro ao buscar valores extraídos:', valuesError);
@@ -209,11 +208,73 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     } finally {
       setLoading(false);
     }
-  };
+  }, [projectId, templateId, currentUserId]);
+
+  // Atualizar ref da função loadArticles quando ela mudar (deve vir antes de qualquer uso)
+  useEffect(() => {
+    loadArticlesRef.current = loadArticles;
+  }, [loadArticles]);
+
+  // Carregar ID do usuário atual
+  useEffect(() => {
+    loadCurrentUser();
+  }, [loadCurrentUser]);
+
+  // Carregar artigos do projeto
+  useEffect(() => {
+    if (projectId && templateId && currentUserId) {
+      // Usar loadArticles diretamente para evitar problemas de timing com o ref
+      loadArticles();
+    }
+  }, [projectId, templateId, currentUserId, loadArticles]);
+
+  // Refresh automático quando voltar para a página (após finalizar extração)
+  // Isso garante que os dados sejam atualizados após mudanças feitas em outras páginas
+  useEffect(() => {
+    const currentPath = location.pathname;
+    
+    // Só recarregar se:
+    // 1. Estamos na rota de projetos (mas não na rota de extração fullscreen)
+    // 2. A rota mudou (não é a primeira renderização)
+    // 3. Voltamos de uma página de extração fullscreen (tinha articleId antes, não tem agora)
+    const isProjectExtractionRoute = currentPath.includes('/projects/') && 
+                                     !currentPath.match(/\/extraction\/[^/]+$/); // Não está na rota de extração específica
+    const cameFromExtractionFullscreen = lastPathRef.current.match(/\/extraction\/[^/]+$/); // Veio de uma rota de extração específica
+    
+    if (
+      projectId && 
+      templateId && 
+      currentUserId && 
+      isProjectExtractionRoute &&
+      currentPath !== lastPathRef.current &&
+      cameFromExtractionFullscreen &&
+      loadArticlesRef.current
+    ) {
+      lastPathRef.current = currentPath;
+      
+      // Pequeno delay para garantir que a navegação foi completada
+      const timer = setTimeout(() => {
+        if (loadArticlesRef.current) {
+          loadArticlesRef.current();
+        }
+      }, 300);
+      
+      return () => clearTimeout(timer);
+    } else if (currentPath !== lastPathRef.current) {
+      // Atualizar ref mesmo se não recarregar
+      lastPathRef.current = currentPath;
+    }
+  }, [location.pathname, projectId, templateId, currentUserId]); // Recarregar quando a rota mudar
 
   // Função para calcular progresso de extração
   const calculateExtractionProgress = (article: ArticleWithExtraction) => {
     if (article.instances.length === 0) return 0;
+    
+    // Verificar se todas as instâncias estão com status 'completed'
+    const allCompleted = article.instances.every(instance => instance.status === 'completed');
+    if (allCompleted && article.instances.length > 0) {
+      return 100;
+    }
     
     // Contar instâncias com pelo menos um valor extraído
     const instancesWithValues = article.instances.filter(instance =>
@@ -515,7 +576,15 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
             <p className="text-sm mt-1">{error}</p>
           </div>
         </div>
-        <Button onClick={loadArticles} variant="outline" className="mt-4">
+        <Button 
+          onClick={() => {
+            if (loadArticlesRef.current) {
+              loadArticlesRef.current();
+            }
+          }} 
+          variant="outline" 
+          className="mt-4"
+        >
           Tentar novamente
         </Button>
       </div>

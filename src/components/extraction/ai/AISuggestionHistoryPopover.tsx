@@ -7,7 +7,7 @@
  * @component
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Popover,
   PopoverContent,
@@ -22,14 +22,23 @@ import { cn } from '@/lib/utils';
 import type { AISuggestionHistoryItem } from '@/hooks/extraction/ai/useAISuggestions';
 
 // Função simples para formatar data (sem dependência externa)
-const formatTimestamp = (date: Date): string => {
-  return new Intl.DateTimeFormat('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
+const formatTimestamp = (date: Date | string): string => {
+  try {
+    const dateObj = date instanceof Date ? date : new Date(date);
+    if (isNaN(dateObj.getTime())) {
+      return 'Data inválida';
+    }
+    return new Intl.DateTimeFormat('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(dateObj);
+  } catch (err) {
+    console.error('Erro ao formatar timestamp:', err, date);
+    return 'Data inválida';
+  }
 };
 
 // =================== INTERFACES ===================
@@ -61,27 +70,38 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
 
-  useEffect(() => {
-    if (open && instanceId && fieldId) {
-      loadHistory();
+  const loadHistory = useCallback(async () => {
+    if (!instanceId || !fieldId) {
+      console.warn('⚠️ [AISuggestionHistoryPopover] instanceId ou fieldId não fornecidos');
+      return;
     }
-  }, [open, instanceId, fieldId]);
 
-  const loadHistory = async () => {
     setLoading(true);
     try {
+      console.log('🔄 [AISuggestionHistoryPopover] Carregando histórico...', { instanceId, fieldId });
       const data = await getHistory(instanceId, fieldId);
+      console.log('✅ [AISuggestionHistoryPopover] Histórico carregado:', { count: data.length, data });
       setHistory(data);
     } catch (err) {
-      console.error('Erro ao carregar histórico:', err);
+      console.error('❌ [AISuggestionHistoryPopover] Erro ao carregar histórico:', err);
+      setHistory([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [instanceId, fieldId, getHistory]);
 
-  // Agrupar por runId
+  useEffect(() => {
+    if (open) {
+      loadHistory();
+    } else {
+      // Limpar histórico ao fechar para garantir dados frescos na próxima abertura
+      setHistory([]);
+    }
+  }, [open, loadHistory]);
+
+  // Agrupar por runId (tratar casos onde runId pode ser undefined/null)
   const groupedByRun = history.reduce((acc, suggestion) => {
-    const runId = suggestion.runId;
+    const runId = suggestion.runId || 'unknown';
     if (!acc[runId]) {
       acc[runId] = [];
     }
@@ -104,7 +124,7 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
       <PopoverTrigger asChild>
         {trigger}
       </PopoverTrigger>
-      <PopoverContent className="w-96 p-0" align="start">
+      <PopoverContent className="w-96 max-w-[90vw] sm:max-w-md p-0 z-50" align="start" side="bottom">
         <div className="p-4 border-b">
           <h4 className="font-semibold text-sm">Histórico de Sugestões</h4>
           <p className="text-xs text-muted-foreground mt-1">
@@ -112,7 +132,7 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
           </p>
         </div>
 
-        <ScrollArea className="h-[400px]">
+        <ScrollArea className="h-[400px] max-h-[70vh]">
           {loading ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -122,16 +142,16 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
               Nenhuma sugestão anterior encontrada
             </div>
           ) : (
-            <div className="p-2">
+            <div className="p-2 sm:p-3">
               {Object.entries(groupedByRun).map(([runId, suggestions], runIndex) => (
                 <div key={runId} className="mb-4">
                   {/* Header do Run */}
                   <div className="px-2 py-1.5 mb-2 bg-muted/50 rounded">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-medium truncate">
                         Extração #{runIndex + 1}
                       </span>
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-xs text-muted-foreground shrink-0">
                         {formatTimestamp(suggestions[0].timestamp)}
                       </span>
                     </div>
@@ -147,7 +167,7 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
                         <div
                           key={suggestion.id}
                           className={cn(
-                            "p-3 rounded-lg border transition-colors",
+                            "p-2 sm:p-3 rounded-lg border transition-colors",
                             isCurrent
                               ? "bg-purple-50 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800"
                               : "bg-background border-border hover:bg-muted/50"
@@ -155,12 +175,12 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
                         >
                           {/* Valor e Status */}
                           <div className="flex items-start justify-between gap-2 mb-2">
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium truncate">
+                            <div className="flex-1 min-w-0 overflow-hidden">
+                              <p className="text-sm font-medium break-words">
                                 {formatValue(suggestion.value)}
                               </p>
                               {suggestion.reasoning && (
-                                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                                <p className="text-xs text-muted-foreground mt-1 line-clamp-3 break-words">
                                   {suggestion.reasoning}
                                 </p>
                               )}
@@ -187,14 +207,14 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
                           </div>
 
                           {/* Metadata e Ações */}
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
                               <Clock className="h-3 w-3" />
-                              <span>{formatTimestamp(suggestion.timestamp)}</span>
+                              <span className="truncate">{formatTimestamp(suggestion.timestamp)}</span>
                             </div>
 
                             {suggestion.status === 'pending' && (
-                              <div className="flex items-center gap-1">
+                              <div className="flex items-center gap-1 shrink-0">
                                 <Button
                                   size="sm"
                                   variant="ghost"
@@ -204,7 +224,7 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
                                   }}
                                 >
                                   <Check className="h-3 w-3 mr-1" />
-                                  Aceitar
+                                  <span className="hidden sm:inline">Aceitar</span>
                                 </Button>
                                 <Button
                                   size="sm"
@@ -215,7 +235,7 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
                                   }}
                                 >
                                   <X className="h-3 w-3 mr-1" />
-                                  Rejeitar
+                                  <span className="hidden sm:inline">Rejeitar</span>
                                 </Button>
                               </div>
                             )}

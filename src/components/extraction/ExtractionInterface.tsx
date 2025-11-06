@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -33,8 +34,16 @@ interface ExtractionInterfaceProps {
 
 export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  
+  // Ler aba da URL ou usar padrão
+  const tabFromUrl = searchParams.get('extractionTab') as 'dashboard' | 'extraction' | 'ai' | 'configuration' | null;
+  const initialTab = (tabFromUrl && ['dashboard', 'extraction', 'ai', 'configuration'].includes(tabFromUrl)) 
+    ? tabFromUrl 
+    : 'dashboard';
+  
   const [activeTemplate, setActiveTemplate] = useState<ProjectExtractionTemplate | null>(null);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'extraction' | 'ai' | 'configuration'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'extraction' | 'ai' | 'configuration'>(initialTab);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showCreateCustomDialog, setShowCreateCustomDialog] = useState(false);
   const [articles, setArticles] = useState<any[]>([]);
@@ -49,16 +58,42 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   const { 
     templates, 
     loading: templatesLoading, 
-    error: templatesError
+    error: templatesError,
+    refreshTemplates
   } = useExtractionTemplates({ projectId });
 
   // Carregar template ativo quando templates são carregados
   useEffect(() => {
-    if (templates.length > 0 && !activeTemplate) {
-      const defaultTemplate = templates.find(t => t.is_active) || templates[0];
-      setActiveTemplate(defaultTemplate);
+    if (templates.length > 0) {
+      if (!activeTemplate) {
+        // Se não há template ativo, selecionar o padrão
+        const defaultTemplate = templates.find(t => t.is_active) || templates[0];
+        setActiveTemplate(defaultTemplate);
+      } else {
+        // Verificar se o template ativo ainda existe na lista
+        const currentTemplate = templates.find(t => t.id === activeTemplate.id);
+        if (!currentTemplate) {
+          // Template foi removido ou recriado, pegar o mais recente
+          const defaultTemplate = templates.find(t => t.is_active) || templates[0];
+          if (defaultTemplate) {
+            setActiveTemplate(defaultTemplate);
+          }
+        }
+      }
     }
   }, [templates]);
+
+  // Sincronizar aba ativa com URL
+  useEffect(() => {
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set('extractionTab', activeTab);
+    setSearchParams(newParams, { replace: true });
+  }, [activeTab, searchParams, setSearchParams]);
+
+  // Função para mudar aba e atualizar URL
+  const handleTabChange = (tab: 'dashboard' | 'extraction' | 'ai' | 'configuration') => {
+    setActiveTab(tab);
+  };
 
   // Carregar artigos e estatísticas
   useEffect(() => {
@@ -97,7 +132,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     try {
       // Buscar instâncias de extração para o template ativo
       const { data: instances, error: instancesError } = await supabase
-        .from("extraction_instances")
+        .from("extraction_instances" as any)
         .select("article_id")
         .eq("project_id", projectId)
         .eq("template_id", activeTemplate.id);
@@ -106,7 +141,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
 
       // Buscar valores extraídos pelo usuário logado
       const { data: extractedValues, error: valuesError } = await supabase
-        .from("extracted_values")
+        .from("extracted_values" as any)
         .select(`
           instance_id,
           extraction_instances!inner(article_id, template_id)
@@ -119,11 +154,11 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
 
       // Calcular estatísticas
       const totalArticles = articles.length;
-      const articlesWithInstances = new Set(instances?.map(i => i.article_id) || []);
+      const articlesWithInstances = new Set(instances?.map((i: any) => i.article_id) || []);
       const extractionsStarted = articlesWithInstances.size;
       
       // Contar artigos com extração completa (pelo menos uma instância com valores)
-      const articlesWithValues = new Set(extractedValues?.map(v => v.extraction_instances.article_id) || []);
+      const articlesWithValues = new Set(extractedValues?.map((v: any) => v.extraction_instances?.article_id).filter(Boolean) || []);
       const extractionsCompleted = articlesWithValues.size;
       
       const progressPercentage = totalArticles > 0 
@@ -402,7 +437,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
       </div>
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)}>
+      <Tabs value={activeTab} onValueChange={(value) => handleTabChange(value as any)}>
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
           <TabsTrigger value="extraction" disabled={!activeTemplate}>
@@ -451,9 +486,24 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
         projectId={projectId}
         open={showImportDialog}
         onOpenChange={setShowImportDialog}
-        onTemplateImported={() => {
-          // Recarregar página para atualizar templates
-          window.location.reload();
+        onTemplateImported={async (templateId?: string) => {
+          // Recarregar templates sem recarregar a página
+          const updatedTemplates = await refreshTemplates() || [];
+          // Manter na aba de configuração
+          handleTabChange('configuration');
+          // Selecionar o template recém-importado
+          if (templateId && updatedTemplates.length > 0) {
+            const newTemplate = updatedTemplates.find((t: ProjectExtractionTemplate) => t.id === templateId);
+            if (newTemplate) {
+              setActiveTemplate(newTemplate);
+            } else {
+              // Se não encontrou pelo ID, seleciona o mais recente
+              setActiveTemplate(updatedTemplates[0]);
+            }
+          } else if (updatedTemplates.length > 0) {
+            // Seleciona o mais recente se não tiver ID
+            setActiveTemplate(updatedTemplates[0]);
+          }
         }}
       />
 
@@ -462,9 +512,24 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
         projectId={projectId}
         open={showCreateCustomDialog}
         onOpenChange={setShowCreateCustomDialog}
-        onTemplateCreated={() => {
-          // Recarregar página para atualizar templates
-          window.location.reload();
+        onTemplateCreated={async (templateId?: string) => {
+          // Recarregar templates sem recarregar a página
+          const updatedTemplates = await refreshTemplates() || [];
+          // Manter na aba de configuração
+          handleTabChange('configuration');
+          // Selecionar o template recém-criado
+          if (templateId && updatedTemplates.length > 0) {
+            const newTemplate = updatedTemplates.find((t: ProjectExtractionTemplate) => t.id === templateId);
+            if (newTemplate) {
+              setActiveTemplate(newTemplate);
+            } else {
+              // Se não encontrou pelo ID, seleciona o mais recente
+              setActiveTemplate(updatedTemplates[0]);
+            }
+          } else if (updatedTemplates.length > 0) {
+            // Seleciona o mais recente se não tiver ID
+            setActiveTemplate(updatedTemplates[0]);
+          }
         }}
       />
     </div>

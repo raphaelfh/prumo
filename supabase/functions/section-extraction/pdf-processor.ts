@@ -80,6 +80,8 @@ export class SectionPDFProcessor {
             const pdfParse = mod.default ?? mod;
 
             // Converter Uint8Array para Buffer (formato esperado pelo pdf-parse)
+            // No Deno, precisamos importar Buffer do módulo node:buffer
+            const { Buffer } = await import("node:buffer");
             const data = await pdfParse(Buffer.from(buffer));
 
             // Validar que extraiu algum texto
@@ -108,6 +110,49 @@ export class SectionPDFProcessor {
             // CRÍTICO: Garantir que sempre retornamos uma string válida (nunca undefined/null)
             if (!extractedText || typeof extractedText !== 'string') {
               extractedText = "";
+            }
+
+            // VALIDAÇÃO: Detectar se o texto contém conteúdo binário do PDF
+            // Isso pode acontecer se pdf-parse extraiu bytes brutos ao invés de texto
+            // NOTA: Validação mais conservadora - apenas detectar casos extremos
+            if (extractedText.length > 0) {
+              // Verificar se contém muitos caracteres não-imprimíveis ou binários
+              // Aumentar threshold para 20% (antes era 5%) para ser menos restritivo
+              const nonPrintableChars = extractedText.match(/[\x00-\x08\x0E-\x1F\x7F-\x9F]/g);
+              const nonPrintableRatio = nonPrintableChars ? nonPrintableChars.length / extractedText.length : 0;
+              
+              // Verificar se contém muitos padrões de PDF binário (objetos, streams, etc)
+              // Padrões mais específicos que indicam conteúdo binário real
+              const pdfBinaryPatterns = [
+                /stream[\x00-\xFF]{100,}/g, // Streams grandes com muitos bytes não-ASCII
+                /endobj[\x00-\xFF]{50,}stream/g, // Sequência que indica estrutura binária
+              ];
+              const binaryPatternMatches = pdfBinaryPatterns.reduce((count, pattern) => {
+                const matches = extractedText.match(pattern);
+                return count + (matches ? matches.length : 0);
+              }, 0);
+              
+              // Validação mais conservadora: apenas se MUITO binário (20%+ não-imprimíveis E padrões binários)
+              // Se pdf-parse conseguiu extrair texto, geralmente está OK
+              if (nonPrintableRatio > 0.20 && binaryPatternMatches > 5) {
+                this.logger.error("Extracted text appears to be binary PDF content, not readable text", {
+                  textLength: extractedText.length,
+                  nonPrintableRatio: `${(nonPrintableRatio * 100).toFixed(2)}%`,
+                  binaryPatternMatches,
+                  textSample: extractedText.substring(0, 200),
+                });
+                
+                throw new AppError(
+                  ErrorCode.PDF_PROCESSING_ERROR,
+                  "PDF text extraction failed: extracted content appears to be binary PDF data instead of readable text. The PDF may be corrupted or in an unsupported format.",
+                  500,
+                  {
+                    textLength: extractedText.length,
+                    nonPrintableRatio: `${(nonPrintableRatio * 100).toFixed(2)}%`,
+                    suggestion: "Try re-uploading the PDF or ensure it contains readable text (not scanned images).",
+                  },
+                );
+              }
             }
 
             return {
@@ -140,33 +185,23 @@ export class SectionPDFProcessor {
               );
             }
 
-            // Para outros erros, tentar fallback apenas na primeira tentativa
-            // Não usar fallback em retries (pode indicar problema real)
-            this.logger.warn("pdf-parse failed; attempting fallback decode", {
+            // NÃO usar fallback de decodificação UTF-8 direta do buffer
+            // Isso resulta em conteúdo binário do PDF ao invés de texto extraído
+            // Se pdf-parse falhou, é melhor falhar explicitamente
+            this.logger.error("pdf-parse failed - cannot extract text from binary PDF", error, {
               error: error.message,
               bufferSize: buffer.byteLength,
             });
-
-            // Fallback: tentar decodificar como texto (apenas se for erro conhecido)
-            // Este fallback é muito básico e só deve ser usado em casos extremos
-            const decoder = new TextDecoder("utf-8", { fatal: false });
-            const fallbackText = decoder.decode(buffer);
             
-            // Validar que o fallback produziu algo útil (mais de 50 caracteres)
-            if (fallbackText.trim().length < 50) {
-              throw new AppError(
-                ErrorCode.PDF_PROCESSING_ERROR,
-                "Failed to extract meaningful text from PDF",
-                500,
-                { error: error.message },
-              );
-            }
-
-            return {
-              text: fallbackText,
-              pageCount: 0, // Desconhecido com fallback
-              metadata: {},
-            } satisfies ProcessedPDF;
+            throw new AppError(
+              ErrorCode.PDF_PROCESSING_ERROR,
+              "Failed to extract text from PDF. The PDF may be corrupted, encrypted, or in an unsupported format.",
+              500,
+              { 
+                error: error.message,
+                suggestion: "Try re-uploading the PDF or ensure it is not password-protected or corrupted.",
+              },
+            );
           }
         },
         {

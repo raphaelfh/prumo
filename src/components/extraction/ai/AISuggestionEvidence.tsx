@@ -29,6 +29,7 @@ interface AISuggestionEvidenceProps {
 export function AISuggestionEvidence(props: AISuggestionEvidenceProps) {
   const { evidence, className, showCopyButton = true } = props;
   const [copied, setCopied] = useState(false);
+  const [showTooltip, setShowTooltip] = useState(false);
 
   const handleCopy = async () => {
     try {
@@ -41,44 +42,51 @@ export function AISuggestionEvidence(props: AISuggestionEvidenceProps) {
   };
 
   return (
-    <div className={cn("flex flex-col gap-2 p-3 bg-muted/50 rounded-lg border", className)}>
+    <div className={cn("flex flex-col gap-4 p-4 bg-muted/50 rounded-lg border", className)}>
       {/* Header com ícone e página */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <FileText className="h-3.5 w-3.5" />
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+          <FileText className="h-4 w-4 shrink-0" />
           <span className="font-medium">Evidência citada</span>
           {evidence.pageNumber !== null && evidence.pageNumber !== undefined && (
-            <span className="px-1.5 py-0.5 bg-background rounded text-xs">
+            <span className="px-2 py-1 bg-background rounded text-xs shrink-0">
               Página {evidence.pageNumber}
             </span>
           )}
         </div>
         
         {showCopyButton && (
-          <Tooltip>
+          <Tooltip open={showTooltip && !copied} delayDuration={300}>
             <TooltipTrigger asChild>
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-7 w-7 p-0"
-                onClick={handleCopy}
+                className="h-8 w-8 p-0 shrink-0 hover:bg-muted"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCopy();
+                  setShowTooltip(false);
+                }}
+                onMouseEnter={() => setShowTooltip(true)}
+                onMouseLeave={() => setShowTooltip(false)}
+                aria-label={copied ? 'Copiado!' : 'Copiar trecho'}
               >
                 {copied ? (
-                  <Check className="h-3.5 w-3.5 text-green-600" />
+                  <Check className="h-4 w-4 text-green-600" />
                 ) : (
-                  <Copy className="h-3.5 w-3.5" />
+                  <Copy className="h-4 w-4" />
                 )}
               </Button>
             </TooltipTrigger>
-            <TooltipContent>
-              <p>{copied ? 'Copiado!' : 'Copiar trecho'}</p>
+            <TooltipContent side="top" onPointerDownOutside={() => setShowTooltip(false)}>
+              <p>Copiar trecho</p>
             </TooltipContent>
           </Tooltip>
         )}
       </div>
 
       {/* Trecho do texto */}
-      <blockquote className="text-sm text-foreground/90 italic pl-4 border-l-2 border-primary/20 whitespace-pre-wrap break-words">
+      <blockquote className="text-sm text-foreground/90 italic pl-3 sm:pl-5 border-l-2 border-primary/20 whitespace-pre-wrap break-words leading-relaxed">
         "{evidence.text}"
       </blockquote>
     </div>

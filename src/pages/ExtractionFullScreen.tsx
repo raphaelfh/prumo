@@ -15,62 +15,34 @@
  * @page
  */
 
-import { useState, useEffect, useMemo, useCallback, memo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { extractionInstanceService } from '@/services/extractionInstanceService';
 import { extractionLogger } from '@/lib/extraction/observability';
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { errorTracker } from '@/services/errorTracking';
+import { ResizablePanelGroup, ResizablePanel } from '@/components/ui/resizable';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
-import { PDFViewer } from '@/components/PDFViewer';
 
 // Hooks
+import { useExtractionData } from '@/hooks/extraction/useExtractionData';
 import { useExtractedValues } from '@/hooks/extraction/useExtractedValues';
 import { useExtractionProgress } from '@/hooks/extraction/useExtractionProgress';
 import { useExtractionAutoSave } from '@/hooks/extraction/useExtractionAutoSave';
 import { useOtherExtractions } from '@/hooks/extraction/colaboracao/useOtherExtractions';
 import { useAISuggestions } from '@/hooks/extraction/ai/useAISuggestions';
 import { useComparisonPermissions } from '@/hooks/shared/useComparisonPermissions';
-import { getTemplateDebugInfo, logTemplateDebug } from '@/lib/template-helpers';
 
 // Components
 import { ExtractionHeader } from '@/components/extraction/ExtractionHeader';
-import { ExtractionFormView } from '@/components/extraction/ExtractionFormView';
-import { ExtractionCompareView } from '@/components/extraction/ExtractionCompareView';
+import { ExtractionPDFPanel } from '@/components/extraction/ExtractionPDFPanel';
+import { ExtractionFormPanel } from '@/components/extraction/ExtractionFormPanel';
 import { AddModelDialog, RemoveModelDialog } from '@/components/extraction/hierarchy';
 
 // Hooks adicionais
 import { useModelManagement } from '@/hooks/extraction/useModelManagement';
-
-// Types
-import type { 
-  ProjectExtractionTemplate,
-  ExtractionEntityType,
-  ExtractionField,
-  ExtractionInstance
-} from '@/types/extraction';
-
-// =================== MEMOIZATION ===================
-
-/**
- * PDFViewer memoizado para evitar re-renders desnecessários
- * Causa do bug: Auto-save causa re-render que re-cria PDFViewer
- */
-const MemoizedPDFViewer = memo(PDFViewer, (prevProps, nextProps) => {
-  return prevProps.articleId === nextProps.articleId && 
-         prevProps.projectId === nextProps.projectId;
-});
-
-MemoizedPDFViewer.displayName = 'MemoizedPDFViewer';
-
-// =================== INTERFACES ===================
-
-interface EntityTypeWithFields extends ExtractionEntityType {
-  fields: ExtractionField[];
-}
 
 // =================== COMPONENT ===================
 
@@ -78,14 +50,24 @@ export default function ExtractionFullScreen() {
   const { projectId, articleId } = useParams();
   const navigate = useNavigate();
 
-  // Estado principal
-  const [article, setArticle] = useState<any>(null);
-  const [project, setProject] = useState<any>(null);
-  const [template, setTemplate] = useState<ProjectExtractionTemplate | null>(null);
-  const [entityTypes, setEntityTypes] = useState<EntityTypeWithFields[]>([]);
-  const [instances, setInstances] = useState<ExtractionInstance[]>([]);
-  const [articles, setArticles] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Carregar dados usando hook dedicado (SRP: separação de responsabilidades)
+  const {
+    article,
+    project,
+    template,
+    entityTypes,
+    instances,
+    articles,
+    loading,
+    error: dataError,
+    refreshInstances,
+  } = useExtractionData({
+    projectId,
+    articleId,
+    enabled: !!projectId && !!articleId,
+  });
+
+  // Estado local
   const [submitting, setSubmitting] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string>('');
 
@@ -108,7 +90,8 @@ export default function ExtractionFullScreen() {
     updateValue,
     loading: valuesLoading,
     initialized: valuesInitialized,
-    save: saveValues
+    save: saveValues,
+    refresh: refreshValues
   } = useExtractedValues({
     articleId: articleId || '',
     projectId: projectId || '',
@@ -141,11 +124,23 @@ export default function ExtractionFullScreen() {
     enabled: permissions.canSeeOthers && !!currentUserId
   });
 
-  // Hook para sugestões de IA com callback para preencher campo automaticamente
-  const handleAISuggestionAccepted = useCallback((instanceId: string, fieldId: string, value: any) => {
+  // Hook para sugestões de IA com callbacks para preencher/limpar campo
+  const handleAISuggestionAccepted = useCallback(async (instanceId: string, fieldId: string, value: any) => {
     // Preencher o campo automaticamente quando sugestão é aceita
     console.log('🤖 Aceitando sugestão de IA:', { instanceId, fieldId, value });
+    // updateValue atualiza o estado local imediatamente
+    // O serviço AISuggestionService.acceptSuggestion já salva no banco
+    // Não é necessário recarregar todos os valores (refreshValues causava recarregamento da página)
     updateValue(instanceId, fieldId, value);
+  }, [updateValue]);
+
+  const handleAISuggestionRejected = useCallback(async (instanceId: string, fieldId: string) => {
+    // Limpar o campo quando sugestão é rejeitada
+    console.log('🤖 Rejeitando sugestão de IA - limpando campo:', { instanceId, fieldId });
+    // updateValue atualiza o estado local imediatamente
+    // O serviço AISuggestionService.rejectSuggestion já atualiza o status no banco
+    // Não é necessário recarregar todos os valores (refreshValues causava recarregamento da página)
+    updateValue(instanceId, fieldId, null);
   }, [updateValue]);
 
   const { 
@@ -159,7 +154,8 @@ export default function ExtractionFullScreen() {
     articleId: articleId || '',
     projectId: projectId || '',
     enabled: !!articleId && !!projectId,
-    onSuggestionAccepted: handleAISuggestionAccepted
+    onSuggestionAccepted: handleAISuggestionAccepted,
+    onSuggestionRejected: handleAISuggestionRejected
   });
 
   // Identificar model parent entity type
@@ -224,204 +220,29 @@ export default function ExtractionFullScreen() {
 
   // Removido: SectionAccordion não precisa memo, FieldInput é memoizado individualmente
 
-  // Carregar dados iniciais
+  // Carregar usuário atual
   useEffect(() => {
-    if (!projectId || !articleId) {
-      toast.error('Parâmetros inválidos');
-      navigate('/');
-      return;
-    }
-
-    loadInitialData();
-  }, [projectId, articleId]);
-
-  const loadInitialData = async () => {
-    setLoading(true);
-
-    try {
-      console.log('📥 Carregando dados para extração...');
-
-      // 0. Carregar usuário atual
+    const loadUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Usuário não autenticado');
-      setCurrentUserId(user.id);
-
-      // 1. Carregar artigo
-      const { data: articleData, error: articleError } = await supabase
-        .from('articles')
-        .select('*')
-        .eq('id', articleId!)
-        .single();
-
-      if (articleError) throw articleError;
-      if (!articleData) throw new Error('Artigo não encontrado');
-
-      setArticle(articleData);
-      console.log('✅ Artigo carregado:', articleData.title);
-
-      // 2. Carregar projeto
-      const { data: projectData, error: projectError } = await supabase
-        .from('projects')
-        .select('*')
-        .eq('id', projectId!)
-        .single();
-
-      if (projectError) throw projectError;
-      if (!projectData) throw new Error('Projeto não encontrado');
-
-      setProject(projectData);
-      console.log('✅ Projeto carregado:', projectData.name);
-
-      // 3. Carregar lista de artigos do projeto para navegação
-      const { data: articlesData, error: articlesError } = await supabase
-        .from('articles')
-        .select('id, title')
-        .eq('project_id', projectId!)
-        .order('created_at', { ascending: false });
-
-      if (articlesError) throw articlesError;
-      setArticles(articlesData || []);
-      console.log('✅ Lista de artigos carregada:', articlesData?.length || 0);
-
-      // 4. Carregar template ativo do projeto
-      const { data: templateData, error: templateError } = await supabase
-        .from('project_extraction_templates')
-        .select('*')
-        .eq('project_id', projectId!)
-        .eq('is_active', true)
-        .single();
-
-      if (templateError) throw templateError;
-      if (!templateData) throw new Error('Template de extração não configurado');
-
-      setTemplate(templateData);
-      console.log('✅ Template carregado:', templateData.name);
-
-      // Debug: Validar template e obter informações detalhadas
-      logTemplateDebug('ExtractionFullScreen', templateData.id, {
-        templateName: templateData.name,
-        framework: templateData.framework,
-        version: templateData.version
-      });
-
-      const debugInfo = await getTemplateDebugInfo(templateData.id);
-      if (debugInfo.error) {
-        console.warn('⚠️ Erro no debug do template:', debugInfo.error);
-      } else {
-        console.log('🔍 Debug Template:', {
-          name: debugInfo.templateInfo?.name,
-          entityTypesCount: debugInfo.entityTypesCount,
-          fieldsCount: debugInfo.fieldsCount,
-          isActive: debugInfo.templateInfo?.is_active,
-          globalTemplate: debugInfo.templateInfo?.globalTemplateName
-        });
+      if (user) {
+        setCurrentUserId(user.id);
       }
+    };
+    loadUser();
+  }, []);
 
-      // 5. Carregar entity types com seus campos
-      const { data: entityTypesData, error: entityTypesError } = await supabase
-        .from('extraction_entity_types')
-        .select(`
-          *,
-          fields:extraction_fields(*)
-        `)
-        .eq('project_template_id', templateData.id)
-        .order('sort_order', { ascending: true });
-
-      if (entityTypesError) throw entityTypesError;
-
-      const typesWithFields: EntityTypeWithFields[] = (entityTypesData || []).map(et => ({
-        ...et,
-        template_id: et.template_id!,
-        fields: (et.fields || []).map(field => ({
-          ...field,
-          allowed_values: field.allowed_values as string[] | null,
-          allowed_units: field.allowed_units as string[] | null,
-          validation_schema: field.validation_schema as any
-        }))
-      }));
-
-      setEntityTypes(typesWithFields);
-      
-      // Log estruturado dos entity types carregados
-      console.log('✅ Entity types carregados:', {
-        total: typesWithFields.length,
-        rootTypes: typesWithFields.filter(et => !et.parent_entity_type_id).length,
-        childTypes: typesWithFields.filter(et => et.parent_entity_type_id).length,
-        hierarchy: typesWithFields.map(et => ({
-          id: et.id,
-          name: et.name,
-          label: et.label,
-          parent: et.parent_entity_type_id,
-          fieldsCount: et.fields.length
-        }))
-      });
-
-      // 6. Carregar ou criar instâncias para este artigo
-      await loadOrCreateInstances(templateData.id, typesWithFields);
-
-    } catch (error: any) {
-      console.error('❌ Erro ao carregar dados:', error);
-      toast.error(`Erro ao carregar dados: ${error.message}`);
-      navigate(`/projects/${projectId}`);
-    } finally {
-      setLoading(false);
+  // Redirecionar se erro crítico
+  useEffect(() => {
+    if (dataError && projectId) {
+      toast.error(dataError);
+      navigate(`/projects/${projectId}?tab=extraction`);
     }
-  };
-
-  const loadOrCreateInstances = async (
-    templateId: string,
-    entityTypesList: EntityTypeWithFields[]
-  ) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Usuário não autenticado');
-
-      // Delegar para o service (inicialização automática)
-      const instances = await extractionInstanceService.initializeArticleInstances(
-        articleId!,
-        projectId!,
-        { id: templateId } as any,
-        entityTypesList,
-        user.id
-      );
-
-      setInstances(instances.map(instance => ({
-        ...instance,
-        article_id: instance.article_id!,
-        metadata: instance.metadata as any
-      })));
-
-      console.log('✅ Instâncias inicializadas:', instances.length);
-
-    } catch (error: any) {
-      console.error('❌ Erro ao carregar/criar instâncias:', error);
-      throw error;
-    }
-  };
+  }, [dataError, projectId, navigate]);
 
   // Função para recarregar instâncias (usada após extração de modelos)
   const handleRefreshInstances = useCallback(async () => {
-    if (!template) return;
-    
-    try {
-      console.log('🔄 Recarregando instâncias...');
-      const refreshedInstances = await extractionInstanceService.getInstances({
-        articleId: articleId!,
-        templateId: template.id
-      });
-      
-      setInstances(refreshedInstances.map(instance => ({
-        ...instance,
-        article_id: instance.article_id!,
-        metadata: instance.metadata as any
-      })));
-      
-      console.log(`✅ ${refreshedInstances.length} instância(s) recarregada(s)`);
-    } catch (error: any) {
-      console.error('❌ Erro ao recarregar instâncias:', error);
-      throw error;
-    }
-  }, [template, articleId]);
+    await refreshInstances();
+  }, [refreshInstances]);
 
   const handleBack = () => {
     navigate(`/projects/${projectId}?tab=extraction`);
@@ -444,16 +265,8 @@ export default function ExtractionFullScreen() {
       console.log('✅ Modelo criado com sucesso:', result.model);
       setShowAddModelDialog(false);
       
-      // ✅ OTIMIZAÇÃO: Atualizar estado local DIRETAMENTE com child instances retornadas
-      // Evita query extra de loadOrCreateInstances()
-      if (result.childInstances && result.childInstances.length > 0) {
-        console.log(`🚀 Adicionando ${result.childInstances.length} child instances ao estado local`);
-        setInstances(prev => [...prev, ...result.childInstances.map((instance: any) => ({
-          ...instance,
-          article_id: instance.article_id!,
-          metadata: instance.metadata as any
-        }))]);
-      }
+      // Recarregar instâncias após criar modelo (child instances serão incluídas)
+      await refreshInstances();
       
       // Atualizar lista de modelos (apenas 1 query necessária)
       await refreshModels();
@@ -502,16 +315,7 @@ export default function ExtractionFullScreen() {
 
       setModelToRemove(null);
       
-      // ✅ OTIMIZAÇÃO: Atualizar estado local DIRETAMENTE (sem query pesada)
-      // Remover todas as instances relacionadas ao modelo (parent + children)
-      setInstances(prev => prev.filter(
-        instance => {
-          // Manter instances que NÃO são do modelo removido
-          // Remove parent instance E child instances (que têm parent_instance_id)
-          return instance.id !== modelIdToRemove && 
-                 instance.parent_instance_id !== modelIdToRemove;
-        }
-      ));
+      // Recarregar instâncias após remover modelo (instances relacionadas serão removidas)
       
       // Atualizar lista de modelos (apenas 1 query necessária)
       await refreshModels();
@@ -617,8 +421,8 @@ export default function ExtractionFullScreen() {
       });
 
       if (result.wasCreated) {
-        // Atualizar estado local
-        setInstances(prev => [...prev, result.instance]);
+        // Recarregar instâncias após criar
+        await refreshInstances();
         
         extractionLogger.info('handleAddInstance', 'Instância criada com sucesso', {
           instanceId: result.instance.id,
@@ -665,8 +469,8 @@ export default function ExtractionFullScreen() {
 
       if (error) throw error;
 
-      // Atualizar estado local
-      setInstances(prev => prev.filter(i => i.id !== instanceId));
+      // Recarregar instâncias após remover
+      await refreshInstances();
       toast.success('Instância removida com sucesso');
 
     } catch (error: any) {
@@ -681,30 +485,167 @@ export default function ExtractionFullScreen() {
       return;
     }
 
+    // Validar dados necessários
+    if (!articleId || !projectId) {
+      extractionLogger.error('handleFinalize', 'Dados incompletos para finalizar extração', undefined, {
+        articleId,
+        projectId
+      });
+      toast.error('Erro: Dados do artigo não encontrados');
+      return;
+    }
+
+    // Validar se há instâncias para atualizar
+    if (!instances || instances.length === 0) {
+      extractionLogger.warn('handleFinalize', 'Nenhuma instância encontrada para finalizar', {
+        articleId,
+        projectId
+      });
+      toast.error('Erro: Nenhuma instância de extração encontrada');
+      return;
+    }
+
     setSubmitting(true);
 
-    try {
-      // Salvar valores pendentes
-      await saveValues();
+    const logger = extractionLogger;
+    logger.info('handleFinalize', 'Iniciando finalização de extração', {
+      articleId,
+      projectId,
+      instancesCount: instances.length,
+      instanceIds: instances.map(i => i.id)
+    });
 
-      // Atualizar status das instâncias
-      const { error } = await supabase
+    try {
+      // 1. Salvar valores pendentes
+      logger.debug('handleFinalize', 'Salvando valores pendentes...', {
+        valuesCount: Object.keys(values).length
+      });
+
+      try {
+        await saveValues();
+        logger.info('handleFinalize', 'Valores salvos com sucesso');
+      } catch (saveError: any) {
+        logger.error('handleFinalize', 'Erro ao salvar valores pendentes', saveError as Error, {
+          errorMessage: saveError.message,
+          errorCode: saveError.code
+        });
+        
+        errorTracker.captureError(
+          saveError instanceof Error ? saveError : new Error(saveError?.message || 'Erro desconhecido ao salvar valores'),
+          {
+            component: 'ExtractionFullScreen',
+            action: 'handleFinalize',
+            projectId,
+            articleId,
+            metadata: {
+              step: 'saveValues',
+              errorCode: saveError?.code,
+              errorDetails: saveError?.details
+            }
+          }
+        );
+
+        throw new Error(`Erro ao salvar valores: ${saveError.message || 'Erro desconhecido'}`);
+      }
+
+      // 2. Atualizar status das instâncias
+      const instanceIds = instances.map(i => i.id);
+      logger.debug('handleFinalize', 'Atualizando status das instâncias...', {
+        instanceIds,
+        instancesCount: instanceIds.length
+      });
+
+      const { error: updateError, data: updatedData } = await supabase
         .from('extraction_instances')
         .update({
-          status: 'completed',
-          completed_at: new Date().toISOString()
+          status: 'completed'
+          // ❌ Removido: completed_at não existe na tabela extraction_instances
+          // (existe apenas em extraction_runs)
         })
-        .eq('article_id', articleId!)
-        .in('id', instances.map(i => i.id));
+        .eq('article_id', articleId)
+        .in('id', instanceIds)
+        .select('id, status'); // Retornar dados para confirmar atualização
 
-      if (error) throw error;
+      if (updateError) {
+        logger.error('handleFinalize', 'Erro ao atualizar status das instâncias', updateError as Error, {
+          errorCode: updateError.code,
+          errorMessage: updateError.message,
+          errorDetails: updateError.details,
+          instanceIds,
+          articleId
+        });
+
+        errorTracker.captureError(
+          new Error(updateError.message || 'Erro ao atualizar status das instâncias'),
+          {
+            component: 'ExtractionFullScreen',
+            action: 'handleFinalize',
+            projectId,
+            articleId,
+            metadata: {
+              step: 'updateInstances',
+              errorCode: updateError.code,
+              errorDetails: updateError.details,
+              instanceIds
+            }
+          }
+        );
+
+        // Mensagem de erro mais específica baseada no código de erro
+        let errorMessage = 'Erro ao atualizar status das instâncias';
+        if (updateError.code === 'PGRST301' || updateError.message.includes('permission denied')) {
+          errorMessage = 'Erro de permissão: Você não tem permissão para finalizar esta extração';
+        } else if (updateError.code === '23503' || updateError.message.includes('foreign key')) {
+          errorMessage = 'Erro: Dados relacionados não encontrados. Recarregue a página e tente novamente';
+        } else if (updateError.message) {
+          errorMessage = `Erro: ${updateError.message}`;
+        }
+
+        throw new Error(errorMessage);
+      }
+
+      // Confirmar que instâncias foram atualizadas
+      const updatedCount = updatedData?.length || 0;
+      if (updatedCount === 0) {
+        logger.warn('handleFinalize', 'Nenhuma instância foi atualizada', {
+          instanceIds,
+          articleId
+        });
+        throw new Error('Nenhuma instância foi atualizada. Verifique as permissões e tente novamente');
+      }
+
+      if (updatedCount < instanceIds.length) {
+        logger.warn('handleFinalize', 'Algumas instâncias não foram atualizadas', {
+          expected: instanceIds.length,
+          actual: updatedCount,
+          instanceIds
+        });
+      }
+
+      logger.info('handleFinalize', 'Extração finalizada com sucesso', {
+        articleId,
+        instancesUpdated: updatedCount,
+        totalInstances: instanceIds.length
+      });
 
       toast.success('Extração finalizada com sucesso!');
       handleBack();
 
     } catch (error: any) {
-      console.error('Erro ao finalizar:', error);
-      toast.error('Erro ao finalizar extração');
+      // Erro já foi logado e capturado acima, apenas exibir mensagem ao usuário
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : (error?.message || 'Erro desconhecido ao finalizar extração');
+
+      logger.error('handleFinalize', 'Falha ao finalizar extração', error instanceof Error ? error : new Error(errorMessage), {
+        articleId,
+        projectId,
+        finalError: errorMessage
+      });
+
+      toast.error(errorMessage, {
+        duration: 6000
+      });
     } finally {
       setSubmitting(false);
     }
@@ -781,29 +722,20 @@ export default function ExtractionFullScreen() {
         // e que o Supabase sincronizou as mudanças no banco
         await new Promise(resolve => setTimeout(resolve, 1500));
         
+        // 1. Recarregar instâncias (backend pode ter criado novas para cardinality="many")
         if (template) {
           console.log('🔄 Recarregando instâncias após extração...');
           try {
-            const refreshedInstances = await extractionInstanceService.getInstances({
-              articleId: articleId!,
-              templateId: template.id
-            });
-            
-            setInstances(refreshedInstances.map(instance => ({
-              ...instance,
-              article_id: instance.article_id!,
-              metadata: instance.metadata as any
-            })));
-            
-            console.log(`✅ ${refreshedInstances.length} instância(s) recarregada(s)`);
+            await refreshInstances();
+            console.log('✅ Instâncias recarregadas com sucesso');
           } catch (err) {
             console.error('⚠️ Erro ao recarregar instâncias (não crítico):', err);
-            // Não bloquear o fluxo - instâncias serão recarregadas no próximo refresh da página
+            // Não bloquear o fluxo - instâncias serão recarregadas no próximo refresh
           }
         }
         
         // Refresh imediato de valores extraídos
-        await values.refresh();
+        await refreshValues();
         
         // IMPORTANTE: Aguardar adicional antes de buscar sugestões
         // Isso garante que as instâncias recém-recargadas estejam disponíveis quando buscarmos sugestões
@@ -824,7 +756,6 @@ export default function ExtractionFullScreen() {
         
         if (foundSuggestions) {
           console.log(`✅ ${result.count} sugestão(ões) encontrada(s) imediatamente`);
-          toast.success(`${result.count} sugestão(ões) de IA disponível(is). Revise os campos com badge ⚡`);
           return;
         }
         
@@ -845,7 +776,6 @@ export default function ExtractionFullScreen() {
           
           if (foundSuggestions) {
             console.log(`✅ ${result.count} sugestão(ões) encontrada(s) após ${attempts + 1} tentativa(s)`);
-            toast.success(`${result.count} sugestão(ões) de IA disponível(is). Revise os campos com badge ⚡`);
             return;
           }
         }
@@ -895,74 +825,77 @@ export default function ExtractionFullScreen() {
         templateId={template?.id}
         templateName={template?.name}
         onExtractionComplete={handleExtractionComplete}
+        aiSuggestions={aiSuggestions}
+        onAISuggestionsClick={() => {
+          // Scroll para primeira sugestão ou abrir painel
+          // Por enquanto, apenas log - pode ser melhorado depois
+          console.log('Clicou no badge de IA - scroll para primeira sugestão');
+        }}
+        template={template}
+        instances={instances}
+        values={values}
       />
 
       {/* Main content */}
       <div className="flex-1 overflow-hidden">
         <ResizablePanelGroup direction="horizontal">
-          {/* PDF Viewer (opcional) - Memoizado para evitar re-renders */}
-          {showPDF && (
-            <>
-              <ResizablePanel defaultSize={50} minSize={30} maxSize={70}>
-                <MemoizedPDFViewer articleId={articleId || ''} projectId={projectId || ''} />
-              </ResizablePanel>
-              <ResizableHandle withHandle />
-            </>
-          )}
+          {/* PDF Viewer (opcional) - Extraído para componente isolado */}
+          <ExtractionPDFPanel 
+            articleId={articleId || ''} 
+            projectId={projectId || ''} 
+            showPDF={showPDF}
+          />
 
-          {/* Formulário de extração */}
+          {/* Formulário de extração - Extraído para componente isolado */}
           <ResizablePanel defaultSize={showPDF ? 50 : 100} minSize={30}>
-            <ScrollArea className="h-full bg-slate-50">
-              <div className="p-8 space-y-4">
-                {viewMode === 'extract' ? (
-                  <ExtractionFormView
-                    studyLevelSections={studyLevelSections}
-                    modelParentEntityType={modelParentEntityType}
-                    modelChildSections={modelChildSections}
-                    instances={instances}
-                    values={values}
-                    updateValue={updateValue}
-                    otherExtractions={otherExtractions}
-                    aiSuggestions={aiSuggestions}
-                    acceptSuggestion={acceptSuggestion}
-                    rejectSuggestion={rejectSuggestion}
-                    getSuggestionsHistory={getSuggestionsHistory}
-                    isActionLoading={isActionLoading}
-                    models={models}
-                    activeModelId={activeModelId}
-                    setActiveModelId={setActiveModelId}
-                    onAddModel={handleAddModel}
-                    onRemoveModel={handleRemoveModel}
-                    onRefreshModels={refreshModels}
-                    onRefreshInstances={handleRefreshInstances}
-                    getInstancesForModel={getInstancesForModel}
-                    handleAddInstance={handleAddInstance}
-                    handleRemoveInstance={handleRemoveInstance}
-                    projectId={projectId || ''}
-                    articleId={articleId || ''}
-                    templateId={template?.id || ''}
-                    modelsLoading={modelsLoading}
-                    onExtractionComplete={handleExtractionComplete}
-                  />
-                ) : (
-                  <ExtractionCompareView
-                    studyLevelSections={studyLevelSections}
-                    modelParentEntityType={modelParentEntityType}
-                    modelChildSections={modelChildSections}
-                    instances={instances}
-                    values={values}
-                    updateValue={updateValue}
-                    otherExtractions={otherExtractions}
-                    currentUser={{
-                      userId: currentUserId,
-                      userName: article?.created_by?.full_name || 'Você',
-                      isCurrentUser: true
-                    }}
-                    editable={true}
-                  />
-                )}
-              </div>
-            </ScrollArea>
+            <ExtractionFormPanel
+              viewMode={viewMode}
+              showPDF={showPDF}
+              formViewProps={{
+                studyLevelSections,
+                modelParentEntityType,
+                modelChildSections,
+                instances,
+                values,
+                updateValue,
+                otherExtractions,
+                aiSuggestions,
+                acceptSuggestion,
+                rejectSuggestion,
+                getSuggestionsHistory,
+                isActionLoading,
+                models,
+                activeModelId,
+                setActiveModelId,
+                onAddModel: handleAddModel,
+                onRemoveModel: handleRemoveModel,
+                onRefreshModels: refreshModels,
+                onRefreshInstances: handleRefreshInstances,
+                getInstancesForModel,
+                handleAddInstance,
+                handleRemoveInstance,
+                projectId: projectId || '',
+                articleId: articleId || '',
+                templateId: template?.id || '',
+                modelsLoading,
+                onExtractionComplete: handleExtractionComplete,
+              }}
+              compareViewProps={{
+                studyLevelSections,
+                modelParentEntityType,
+                modelChildSections,
+                instances,
+                values,
+                updateValue,
+                otherExtractions,
+                currentUser: {
+                  userId: currentUserId,
+                  userName: 'Você', // TODO: Usar nome real do usuário quando disponível
+                  isCurrentUser: true
+                },
+                editable: true,
+              }}
+            />
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>

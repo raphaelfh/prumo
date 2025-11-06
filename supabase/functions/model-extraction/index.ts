@@ -20,6 +20,8 @@ import { Logger } from "../_shared/core/logger.ts";
 import { ErrorHandler, AppError, ErrorCode } from "../_shared/core/error-handler.ts";
 import { z } from "npm:zod@3.23.8";
 import { Validator } from "../_shared/core/validation.ts";
+import { corsHeaders } from "../_shared/core/cors.ts";
+import { authenticateUser } from "../_shared/core/auth.ts";
 import { ModelExtractionPipeline } from "./pipeline.ts";
 import { CONFIG } from "../section-extraction/config.ts";
 
@@ -27,15 +29,6 @@ import { CONFIG } from "../section-extraction/config.ts";
 declare const Deno: {
   env: { get(key: string): string | undefined };
   serve: (handler: (req: Request) => Response | Promise<Response>) => void;
-};
-
-/**
- * Headers CORS para permitir requisições do frontend
- */
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-client-trace-id",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
 /**
@@ -69,44 +62,8 @@ Deno.serve(async (req: Request) => {
 
   try {
     // ==================== 1. AUTENTICAÇÃO (ANTES DO PARSE) ====================
-    // Validar header de autorização PRIMEIRO (como em section-extraction)
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      throw new AppError(ErrorCode.AUTH_ERROR, "Missing authorization", 401);
-    }
-
-    // Buscar variáveis de ambiente (configuradas no dashboard Supabase)
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-      throw new AppError(ErrorCode.INTERNAL_ERROR, "Server configuration error", 500);
-    }
-
-    // Criar cliente Supabase com autorização do usuário
-    // Service role key permite acesso completo, mas mantemos autorização do usuário
-    // para logging e auditoria
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-      global: { headers: { Authorization: authHeader } },
-    });
-
-    // Verificar se o usuário está autenticado
-    // Extrair JWT do header para passar diretamente (padrão usado em outras edge functions)
-    const jwt = authHeader.startsWith("Bearer ") ? authHeader.replace("Bearer ", "") : authHeader;
-    const { data: { user }, error: authError } = await supabase.auth.getUser(jwt);
-    
-    if (authError) {
-      logger.error("Auth error from getUser", authError as Error, {
-        errorMessage: authError.message,
-        errorStatus: (authError as any).status,
-      });
-      throw new AppError(ErrorCode.AUTH_ERROR, `Unauthorized: ${authError.message}`, 401);
-    }
-    
-    if (!user) {
-      logger.error("No user returned from getUser");
-      throw new AppError(ErrorCode.AUTH_ERROR, "Unauthorized: No user found", 401);
-    }
+    const { user, supabase } = await authenticateUser(authHeader, logger);
 
     // ==================== 2. PARSE E VALIDAÇÃO ====================
     const body = await req.json().catch(() => {
@@ -124,7 +81,7 @@ Deno.serve(async (req: Request) => {
     });
 
     contextualLogger.info("Model extraction request received", {
-      model: input.options?.model || "gpt-4o",
+      model: input.options?.model || "gpt-4o-mini",
     });
 
     // ==================== 3. BUSCAR PDF DO ARTIGO ====================

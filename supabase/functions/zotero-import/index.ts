@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Edge Function: Zotero Import Proxy
  * 
@@ -6,7 +5,11 @@
  * Evita problemas de permissões do pgcrypto/vault
  */
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2";
+import { corsHeaders } from "../_shared/core/cors.ts";
+import { authenticateUser } from "../_shared/core/auth.ts";
+import { Logger } from "../_shared/core/logger.ts";
+import { ErrorHandler, AppError, ErrorCode } from "../_shared/core/error-handler.ts";
 
 declare const Deno: {
   env: { get(key: string): string | undefined };
@@ -18,24 +21,15 @@ declare const Deno: {
 const ZOTERO_API_BASE = "https://api.zotero.org";
 const ZOTERO_API_VERSION = "3";
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const ENCRYPTION_KEY = Deno.env.get("ZOTERO_ENCRYPTION_KEY") || "review_hub_zotero_default_key_change_me_in_production";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set");
+}
 
 // =================== CRYPTO UTILS ===================
-
-const jlog = (level: "info" | "warn" | "error", msg: string, extra: Record<string, unknown> = {}) => {
-  console[level === "error" ? "error" : level === "warn" ? "warn" : "log"](
-    JSON.stringify({ level, msg, ...extra, timestamp: new Date().toISOString() })
-  );
-};
 
 // Deriva chave de criptografia usando Web Crypto API
 async function deriveKey(userId: string): Promise<CryptoKey> {
@@ -108,7 +102,10 @@ interface ZoteroRequestOptions {
   params?: Record<string, string>;
 }
 
-async function makeZoteroRequest({ endpoint, credentials, params }: ZoteroRequestOptions) {
+async function makeZoteroRequest(
+  { endpoint, credentials, params }: ZoteroRequestOptions,
+  logger: Logger
+) {
   const url = new URL(`${ZOTERO_API_BASE}${endpoint}`);
   
   if (params) {
@@ -117,7 +114,7 @@ async function makeZoteroRequest({ endpoint, credentials, params }: ZoteroReques
     });
   }
 
-  jlog("info", "Making Zotero API request", { endpoint, params });
+  logger.info("Making Zotero API request", { endpoint, params });
 
   const response = await fetch(url.toString(), {
     method: "GET",
@@ -130,12 +127,15 @@ async function makeZoteroRequest({ endpoint, credentials, params }: ZoteroReques
 
   if (!response.ok) {
     const errorText = await response.text();
-    jlog("error", "Zotero API error", { 
-      status: response.status, 
+    logger.error("Zotero API error", new Error(errorText), {
+      status: response.status,
       statusText: response.statusText,
-      body: errorText 
     });
-    throw new Error(`Zotero API error: ${response.status} ${response.statusText}`);
+    throw new AppError(
+      ErrorCode.INTERNAL_ERROR,
+      `Zotero API error: ${response.status} ${response.statusText}`,
+      500
+    );
   }
 
   const data = await response.json();
@@ -152,18 +152,31 @@ async function makeZoteroRequest({ endpoint, credentials, params }: ZoteroReques
 
 // =================== HANDLERS ===================
 
-async function handleSaveCredentials(supabase: any, userId: string, body: any) {
+async function handleSaveCredentials(
+  supabase: any,
+  userId: string,
+  body: any,
+  logger: Logger
+) {
   const { zoteroUserId, apiKey, libraryType } = body;
 
   if (!zoteroUserId || !apiKey || !libraryType) {
-    throw new Error("Missing required fields: zoteroUserId, apiKey, libraryType");
+    throw new AppError(
+      ErrorCode.VALIDATION_ERROR,
+      "Missing required fields: zoteroUserId, apiKey, libraryType",
+      400
+    );
   }
 
   if (!['user', 'group'].includes(libraryType)) {
-    throw new Error("libraryType must be 'user' or 'group'");
+    throw new AppError(
+      ErrorCode.VALIDATION_ERROR,
+      "libraryType must be 'user' or 'group'",
+      400
+    );
   }
 
-  jlog("info", "Saving Zotero credentials", { userId, zoteroUserId, libraryType });
+  logger.info("Saving Zotero credentials", { zoteroUserId, libraryType });
 
   // Criptografar API key usando Web Crypto API
   const encryptedApiKey = await encryptText(apiKey, userId);
@@ -184,17 +197,25 @@ async function handleSaveCredentials(supabase: any, userId: string, body: any) {
     .single();
 
   if (error) {
-    jlog("error", "Error saving credentials", { error: error.message });
-    throw new Error(`Failed to save credentials: ${error.message}`);
+    logger.error("Error saving credentials", error as Error);
+    throw new AppError(
+      ErrorCode.DB_ERROR,
+      `Failed to save credentials: ${error.message}`,
+      500
+    );
   }
 
-  jlog("info", "Credentials saved successfully", { integrationId: data.id });
+  logger.info("Credentials saved successfully", { integrationId: data.id });
 
-  return { success: true, integrationId: data.id };
+  return { integrationId: data.id };
 }
 
-async function handleTestConnection(supabase: any, userId: string) {
-  jlog("info", "Testing Zotero connection", { userId });
+async function handleTestConnection(
+  supabase: any,
+  userId: string,
+  logger: Logger
+) {
+  logger.info("Testing Zotero connection");
 
   // Buscar credenciais
   const { data: integration, error: fetchError } = await supabase
@@ -205,7 +226,7 @@ async function handleTestConnection(supabase: any, userId: string) {
     .maybeSingle();
 
   if (fetchError || !integration) {
-    jlog("error", "No credentials found", { error: fetchError?.message });
+    logger.error("No credentials found", fetchError as Error);
     return { success: false, error: "Credenciais não encontradas. Configure a integração primeiro." };
   }
 
@@ -213,11 +234,8 @@ async function handleTestConnection(supabase: any, userId: string) {
   const apiKey = await decryptText(integration.encrypted_api_key, userId);
 
   try {
-    // Usar endpoint /keys/current para validar a API key
-    // Este é o endpoint oficial do Zotero para verificar chaves
     const url = new URL(`${ZOTERO_API_BASE}/keys/current`);
-    
-    jlog("info", "Testing API key", { endpoint: "/keys/current" });
+    logger.info("Testing API key", { endpoint: "/keys/current" });
 
     const response = await fetch(url.toString(), {
       method: "GET",
@@ -229,25 +247,26 @@ async function handleTestConnection(supabase: any, userId: string) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      jlog("error", "API key validation failed", { 
-        status: response.status, 
-        body: errorText 
+      logger.error("API key validation failed", new Error(errorText), {
+        status: response.status,
       });
       
       if (response.status === 403) {
         return { success: false, error: "API Key inválida ou sem permissões. Verifique se a chave tem 'Allow library access'." };
       }
       
-      throw new Error(`Zotero API error: ${response.status}`);
+      throw new AppError(
+        ErrorCode.INTERNAL_ERROR,
+        `Zotero API error: ${response.status}`,
+        500
+      );
     }
 
     const keyInfo = await response.json();
-    
-    // Extrair informações da resposta
     const userName = keyInfo.username || integration.zotero_user_id;
     const userID = keyInfo.userID || integration.zotero_user_id;
     
-    jlog("info", "Connection test successful", { userName, userID, access: keyInfo.access });
+    logger.info("Connection test successful", { userName, userID, access: keyInfo.access });
 
     // Atualizar last_sync_at
     await supabase
@@ -262,13 +281,17 @@ async function handleTestConnection(supabase: any, userId: string) {
       access: keyInfo.access || {}
     };
   } catch (error: any) {
-    jlog("error", "Connection test failed", { error: error.message });
+    logger.error("Connection test failed", error);
     return { success: false, error: error.message };
   }
 }
 
-async function handleListCollections(supabase: any, userId: string) {
-  jlog("info", "Listing Zotero collections", { userId });
+async function handleListCollections(
+  supabase: any,
+  userId: string,
+  logger: Logger
+) {
+  logger.info("Listing Zotero collections");
 
   // Buscar credenciais
   const { data: integration, error: fetchError } = await supabase
@@ -279,7 +302,11 @@ async function handleListCollections(supabase: any, userId: string) {
     .maybeSingle();
 
   if (fetchError || !integration) {
-    throw new Error("Credenciais não encontradas");
+    throw new AppError(
+      ErrorCode.NOT_FOUND,
+      "Credenciais não encontradas",
+      404
+    );
   }
 
   // Descriptografar API key
@@ -299,21 +326,30 @@ async function handleListCollections(supabase: any, userId: string) {
     params: {
       format: 'json',
     },
-  });
+  }, logger);
 
-  jlog("info", "Collections retrieved", { count: result.data?.length || 0 });
+  logger.info("Collections retrieved", { count: result.data?.length || 0 });
 
   return { collections: result.data };
 }
 
-async function handleFetchItems(supabase: any, userId: string, body: any) {
+async function handleFetchItems(
+  supabase: any,
+  userId: string,
+  body: any,
+  logger: Logger
+) {
   const { collectionKey, limit = 100, start = 0 } = body;
 
   if (!collectionKey) {
-    throw new Error("collectionKey is required");
+    throw new AppError(
+      ErrorCode.VALIDATION_ERROR,
+      "collectionKey is required",
+      400
+    );
   }
 
-  jlog("info", "Fetching items from collection", { userId, collectionKey, limit, start });
+  logger.info("Fetching items from collection", { collectionKey, limit, start });
 
   // Buscar credenciais
   const { data: integration, error: fetchError } = await supabase
@@ -324,7 +360,11 @@ async function handleFetchItems(supabase: any, userId: string, body: any) {
     .maybeSingle();
 
   if (fetchError || !integration) {
-    throw new Error("Credenciais não encontradas");
+    throw new AppError(
+      ErrorCode.NOT_FOUND,
+      "Credenciais não encontradas",
+      404
+    );
   }
 
   // Descriptografar API key
@@ -347,9 +387,9 @@ async function handleFetchItems(supabase: any, userId: string, body: any) {
       start: start.toString(),
       itemType: '-attachment',
     },
-  });
+  }, logger);
 
-  jlog("info", "Items retrieved", { 
+  logger.info("Items retrieved", { 
     count: result.data?.length || 0, 
     total: result.totalResults 
   });
@@ -361,14 +401,23 @@ async function handleFetchItems(supabase: any, userId: string, body: any) {
   };
 }
 
-async function handleFetchAttachments(supabase: any, userId: string, body: any) {
+async function handleFetchAttachments(
+  supabase: any,
+  userId: string,
+  body: any,
+  logger: Logger
+) {
   const { itemKey } = body;
 
   if (!itemKey) {
-    throw new Error("itemKey is required");
+    throw new AppError(
+      ErrorCode.VALIDATION_ERROR,
+      "itemKey is required",
+      400
+    );
   }
 
-  jlog("info", "Fetching attachments", { userId, itemKey });
+  logger.info("Fetching attachments", { itemKey });
 
   // Buscar credenciais
   const { data: integration, error: fetchError } = await supabase
@@ -379,7 +428,11 @@ async function handleFetchAttachments(supabase: any, userId: string, body: any) 
     .maybeSingle();
 
   if (fetchError || !integration) {
-    throw new Error("Credenciais não encontradas");
+    throw new AppError(
+      ErrorCode.NOT_FOUND,
+      "Credenciais não encontradas",
+      404
+    );
   }
 
   // Descriptografar API key
@@ -400,21 +453,30 @@ async function handleFetchAttachments(supabase: any, userId: string, body: any) 
       format: 'json',
       itemType: 'attachment',
     },
-  });
+  }, logger);
 
-  jlog("info", "Attachments retrieved", { count: result.data?.length || 0 });
+  logger.info("Attachments retrieved", { count: result.data?.length || 0 });
 
   return { attachments: result.data };
 }
 
-async function handleDownloadAttachment(supabase: any, userId: string, body: any) {
+async function handleDownloadAttachment(
+  supabase: any,
+  userId: string,
+  body: any,
+  logger: Logger
+) {
   const { attachmentKey } = body;
 
   if (!attachmentKey) {
-    throw new Error("attachmentKey is required");
+    throw new AppError(
+      ErrorCode.VALIDATION_ERROR,
+      "attachmentKey is required",
+      400
+    );
   }
 
-  jlog("info", "Downloading attachment", { userId, attachmentKey });
+  logger.info("Downloading attachment", { attachmentKey });
 
   // Buscar credenciais
   const { data: integration, error: fetchError } = await supabase
@@ -425,7 +487,11 @@ async function handleDownloadAttachment(supabase: any, userId: string, body: any
     .maybeSingle();
 
   if (fetchError || !integration) {
-    throw new Error("Credenciais não encontradas");
+    throw new AppError(
+      ErrorCode.NOT_FOUND,
+      "Credenciais não encontradas",
+      404
+    );
   }
 
   // Descriptografar API key
@@ -437,8 +503,7 @@ async function handleDownloadAttachment(supabase: any, userId: string, body: any
     : `/groups/${integration.zotero_user_id}/items/${attachmentKey}/file`;
 
   const url = new URL(`${ZOTERO_API_BASE}${endpoint}`);
-  
-  jlog("info", "Downloading file from Zotero", { endpoint });
+  logger.info("Downloading file from Zotero", { endpoint });
 
   const response = await fetch(url.toString(), {
     method: "GET",
@@ -450,11 +515,14 @@ async function handleDownloadAttachment(supabase: any, userId: string, body: any
 
   if (!response.ok) {
     const errorText = await response.text();
-    jlog("error", "Download failed", { 
-      status: response.status, 
-      body: errorText 
+    logger.error("Download failed", new Error(errorText), {
+      status: response.status,
     });
-    throw new Error(`Download failed: ${response.status} ${response.statusText}`);
+    throw new AppError(
+      ErrorCode.INTERNAL_ERROR,
+      `Download failed: ${response.status} ${response.statusText}`,
+      500
+    );
   }
 
   // Verificar tamanho do arquivo
@@ -464,7 +532,11 @@ async function handleDownloadAttachment(supabase: any, userId: string, body: any
 
   // Limite de 50MB
   if (fileSizeMB > 50) {
-    throw new Error(`Arquivo muito grande: ${fileSizeMB.toFixed(1)}MB. Máximo: 50MB`);
+    throw new AppError(
+      ErrorCode.VALIDATION_ERROR,
+      `Arquivo muito grande: ${fileSizeMB.toFixed(1)}MB. Máximo: 50MB`,
+      400
+    );
   }
 
   // Converter para base64 para transporte
@@ -492,7 +564,7 @@ async function handleDownloadAttachment(supabase: any, userId: string, body: any
 
   const contentType = response.headers.get("Content-Type") || "application/pdf";
 
-  jlog("info", "File downloaded successfully", { 
+  logger.info("File downloaded successfully", { 
     size: fileSizeBytes, 
     filename,
     contentType
@@ -513,82 +585,78 @@ Deno.serve(async (req: Request) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  const traceId = crypto.randomUUID();
+  const traceId = req.headers.get("x-client-trace-id") || crypto.randomUUID();
+  const logger = new Logger({ traceId });
 
   try {
+    // Autenticação
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      throw new Error("Missing Authorization header");
+    const { user, supabase } = await authenticateUser(authHeader, logger);
+    logger.info("Request authenticated", { userId: user.id });
+
+    // Parse body
+    let body: any;
+    try {
+      body = await req.json();
+    } catch (e) {
+      throw new AppError(
+        ErrorCode.VALIDATION_ERROR,
+        "Invalid JSON body",
+        400
+      );
     }
 
-    const supabaseClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-      global: {
-        headers: { Authorization: authHeader },
-      },
-    });
-
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
-
-    if (authError || !user) {
-      throw new Error("Unauthorized");
-    }
-
-    jlog("info", "Request authenticated", { userId: user.id, traceId });
-
-    const body = await req.json();
     const { action } = body;
 
     if (!action) {
-      throw new Error("Missing 'action' field in request body");
+      throw new AppError(
+        ErrorCode.VALIDATION_ERROR,
+        "Missing 'action' field in request body",
+        400
+      );
     }
 
     let result;
 
     switch (action) {
       case 'save-credentials':
-        result = await handleSaveCredentials(supabaseClient, user.id, body);
+        result = await handleSaveCredentials(supabase, user.id, body, logger);
         break;
 
       case 'test-connection':
-        result = await handleTestConnection(supabaseClient, user.id);
+        result = await handleTestConnection(supabase, user.id, logger);
         break;
 
       case 'list-collections':
-        result = await handleListCollections(supabaseClient, user.id);
+        result = await handleListCollections(supabase, user.id, logger);
         break;
 
       case 'fetch-items':
-        result = await handleFetchItems(supabaseClient, user.id, body);
+        result = await handleFetchItems(supabase, user.id, body, logger);
         break;
 
       case 'fetch-attachments':
-        result = await handleFetchAttachments(supabaseClient, user.id, body);
+        result = await handleFetchAttachments(supabase, user.id, body, logger);
         break;
 
       case 'download-attachment':
-        result = await handleDownloadAttachment(supabaseClient, user.id, body);
+        result = await handleDownloadAttachment(supabase, user.id, body, logger);
         break;
 
       default:
-        throw new Error(`Unknown action: ${action}`);
+        throw new AppError(
+          ErrorCode.VALIDATION_ERROR,
+          `Unknown action: ${action}`,
+          400
+        );
     }
 
     return new Response(
-      JSON.stringify({ success: true, ...result, traceId }),
+      JSON.stringify({ ok: true, data: result, traceId }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 
-  } catch (error: any) {
-    const message = error instanceof Error ? error.message : String(error);
-    const stack = error instanceof Error ? error.stack : undefined;
-    jlog("error", "Request failed", { error: message, stack, traceId });
-    
-    return new Response(
-      JSON.stringify({ success: false, error: message, traceId }),
-      { 
-        status: error.message.includes("Unauthorized") ? 401 : 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" } 
-      }
-    );
+  } catch (error) {
+    return ErrorHandler.handle(error, logger);
   }
 });

@@ -10,7 +10,7 @@
  */
 
 import { useState } from 'react';
-import { Download, Printer, FileOutput, Info, Settings, MoreVertical } from 'lucide-react';
+import { Download, Printer, Info, Settings, MoreVertical } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -40,12 +40,6 @@ export function MoreTools() {
     });
   };
 
-  const handleExport = () => {
-    toast({
-      title: 'Exportar Anotações',
-      description: 'Funcionalidade de exportação será implementada em breve.',
-    });
-  };
 
   const handleProperties = () => {
     toast({
@@ -79,10 +73,6 @@ export function MoreTools() {
           <DropdownMenuItem onClick={handlePrint}>
             <Printer className="h-4 w-4 mr-2" />
             Imprimir
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={handleExport}>
-            <FileOutput className="h-4 w-4 mr-2" />
-            Exportar Anotações
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={handleProperties}>

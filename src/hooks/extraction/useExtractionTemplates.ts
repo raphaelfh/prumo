@@ -86,6 +86,35 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
     loadData();
   }, [projectId]); // Apenas projectId como dependência
 
+  // Função para recarregar templates
+  const refreshTemplates = useCallback(async (): Promise<ProjectExtractionTemplate[]> => {
+    if (!projectId) {
+      setTemplates([]);
+      return [];
+    }
+
+    try {
+      const { data: projectData, error: projectError } = await supabase
+        .from('project_extraction_templates')
+        .select('*')
+        .eq('project_id', projectId)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false });
+
+      if (projectError) {
+        console.error('Erro ao recarregar templates:', projectError);
+        throw projectError;
+      }
+
+      const templatesList = projectData || [];
+      setTemplates(templatesList);
+      return templatesList;
+    } catch (err: any) {
+      console.error('Erro ao recarregar templates:', err);
+      throw err;
+    }
+  }, [projectId]);
+
   // Clonar template global para o projeto
   const cloneTemplate = useCallback(async (
     globalTemplateId: string, 
@@ -211,18 +240,7 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
       }
 
       // Recarregar templates do projeto
-      const { data: updatedTemplates, error: reloadError } = await supabase
-        .from('project_extraction_templates')
-        .select('*')
-        .eq('project_id', projectId)
-        .eq('is_active', true)
-        .order('created_at', { ascending: false });
-
-      if (reloadError) {
-        console.error('Erro ao recarregar templates:', reloadError);
-      } else {
-        setTemplates(updatedTemplates || []);
-      }
+      await refreshTemplates();
 
       toast.success(`Template "${templateName}" clonado com sucesso!`);
       return projectTemplate;
@@ -232,7 +250,7 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
       toast.error(`Erro ao clonar template: ${err.message}`);
       return null;
     }
-  }, [projectId, user]);
+  }, [projectId, user, refreshTemplates]);
 
   // Criar template customizado
   const createCustomTemplate = useCallback(async (
@@ -264,7 +282,7 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
       if (error) throw error;
 
       // Recarregar templates
-      await projectId();
+      await refreshTemplates();
 
       toast.success(`Template "${name}" criado com sucesso!`);
       return template;
@@ -274,7 +292,7 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
       toast.error(`Erro ao criar template: ${err.message}`);
       return null;
     }
-  }, [projectId]);
+  }, [projectId, refreshTemplates]);
 
   // Ativar/desativar template
   const toggleTemplateActive = useCallback(async (templateId: string, isActive: boolean) => {
@@ -287,7 +305,7 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
       if (error) throw error;
 
       // Recarregar templates
-      await projectId();
+      await refreshTemplates();
 
       toast.success(`Template ${isActive ? 'ativado' : 'desativado'} com sucesso!`);
 
@@ -295,7 +313,7 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
       console.error('Erro ao alterar status do template:', err);
       toast.error(`Erro ao alterar status: ${err.message}`);
     }
-  }, [projectId]);
+  }, [refreshTemplates]);
 
   // Obter opções de templates globais para clonagem
   const getGlobalTemplateOptions = useCallback((): ExtractionTemplateOption[] => {
@@ -324,7 +342,7 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
     cloneTemplate,
     createCustomTemplate,
     toggleTemplateActive,
-    refreshTemplates: projectId,
+    refreshTemplates,
 
     // Utilitários
     getGlobalTemplateOptions,

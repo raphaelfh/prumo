@@ -97,21 +97,21 @@ export const MobileSidebar: React.FC<MobileSidebarProps> = ({
             <SheetHeader className="p-4 border-b">
               <Button
                 variant="ghost"
-                className="w-full justify-start gap-2 h-auto p-0 hover:bg-transparent hover:text-foreground"
+                className="w-full justify-start gap-2 h-auto p-2 rounded-lg hover:bg-primary/10 transition-colors group"
                 onClick={() => setShowProjectsList(true)}
               >
-                <div className="p-2 rounded-lg bg-primary/10">
-                  <Folder className="h-5 w-5 text-primary" />
+                <div className="p-2 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors">
+                  <Folder className="h-5 w-5 text-primary transition-colors" />
                 </div>
                 <div className="min-w-0 flex-1 text-left">
-                  <SheetTitle className="text-sm font-semibold truncate">
+                  <SheetTitle className="text-sm font-semibold truncate transition-colors">
                     {projectName || 'Projeto'}
                   </SheetTitle>
-                  <p className="text-xs text-muted-foreground truncate">
+                  <p className="text-xs text-muted-foreground truncate transition-colors">
                     {projectName ? 'Projeto de revisão sistemática' : 'Carregando...'}
                   </p>
                 </div>
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                <ChevronDown className="h-4 w-4 text-muted-foreground transition-colors" />
               </Button>
             </SheetHeader>
 
@@ -126,12 +126,17 @@ export const MobileSidebar: React.FC<MobileSidebarProps> = ({
                   key={item.id}
                   variant={isActive ? "secondary" : "ghost"}
                   className={cn(
-                    "w-full justify-start gap-3 h-auto p-3",
-                    isActive && "bg-primary/10 text-primary border-primary/20"
+                    "w-full justify-start gap-3 h-auto p-3 group",
+                    isActive && "bg-primary/10 text-primary border-primary/20",
+                    !isActive && "hover:bg-primary hover:text-white"
                   )}
                   onClick={() => handleTabChange(item.id)}
                 >
-                  <Icon className={cn("h-4 w-4 shrink-0", isActive && "text-primary")} />
+                  <Icon className={cn(
+                    "h-4 w-4 shrink-0 transition-colors",
+                    isActive && "text-primary",
+                    !isActive && "group-hover:text-white"
+                  )} />
                   <div className="flex-1 text-left">
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{item.label}</span>
@@ -141,7 +146,10 @@ export const MobileSidebar: React.FC<MobileSidebarProps> = ({
                         </Badge>
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">
+                    <p className={cn(
+                      "text-xs mt-0.5 transition-colors",
+                      isActive ? "text-muted-foreground" : "text-muted-foreground group-hover:text-white/80"
+                    )}>
                       {item.description}
                     </p>
                   </div>
@@ -199,15 +207,15 @@ export const MobileSidebar: React.FC<MobileSidebarProps> = ({
                     <Button
                       key={project.id}
                       variant="ghost"
-                      className="w-full justify-start gap-3 h-auto p-3"
+                      className="w-full justify-start gap-3 h-auto p-3 hover:bg-primary hover:text-white group transition-colors"
                       onClick={() => handleProjectSwitch(project.id)}
                     >
-                      <Folder className="h-4 w-4 text-muted-foreground" />
+                      <Folder className="h-4 w-4 text-muted-foreground group-hover:text-white transition-colors" />
                       <div className="flex-1 text-left">
                         <div className="font-medium truncate">
                           {project.name}
                         </div>
-                        <p className="text-xs text-muted-foreground truncate mt-0.5">
+                        <p className="text-xs text-muted-foreground group-hover:text-white/80 truncate mt-0.5 transition-colors">
                           {project.description || 'Projeto de revisão sistemática'}
                         </p>
                       </div>
