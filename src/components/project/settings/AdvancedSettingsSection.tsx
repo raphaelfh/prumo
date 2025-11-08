@@ -142,18 +142,30 @@ export function AdvancedSettingsSection({ project, onChange, projectId }: Advanc
     setIsDeleting(true);
     try {
       // Deletar o projeto (cascade vai deletar todos os dados relacionados)
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("projects")
         .delete()
-        .eq("id", projectId);
+        .eq("id", projectId)
+        .select();
 
-      if (error) throw error;
+      if (error) {
+        console.error("Error deleting project:", error);
+        toast.error(`Erro ao deletar projeto: ${error.message || "Tente novamente."}`);
+        return;
+      }
+
+      // Verificar se realmente deletou (data deve conter o registro deletado)
+      if (!data || data.length === 0) {
+        console.error("No project was deleted. Check RLS policies.");
+        toast.error("Não foi possível deletar o projeto. Verifique suas permissões.");
+        return;
+      }
 
       toast.success("Projeto deletado com sucesso!");
       navigate("/"); // Redirecionar para o dashboard
     } catch (error: any) {
       console.error("Error deleting project:", error);
-      toast.error("Erro ao deletar projeto. Tente novamente.");
+      toast.error(`Erro ao deletar projeto: ${error.message || "Tente novamente."}`);
     } finally {
       setIsDeleting(false);
     }

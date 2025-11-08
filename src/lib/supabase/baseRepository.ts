@@ -277,7 +277,28 @@ export async function callEdgeFunction<T = unknown>(
     throw new AuthenticationError();
   }
 
-  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${functionName}`;
+  // Validar URL antes de fazer requisição
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  if (!supabaseUrl) {
+    throw new SupabaseRepositoryError(
+      'VITE_SUPABASE_URL não está configurado. Verifique as variáveis de ambiente.',
+      undefined,
+      { functionName }
+    );
+  }
+
+  // Validar formato básico da URL
+  try {
+    new URL(supabaseUrl);
+  } catch {
+    throw new SupabaseRepositoryError(
+      `URL do Supabase inválida: ${supabaseUrl}. Verifique a configuração.`,
+      undefined,
+      { functionName, url: supabaseUrl }
+    );
+  }
+
+  const url = `${supabaseUrl}/functions/v1/${functionName}`;
   
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -305,6 +326,21 @@ export async function callEdgeFunction<T = unknown>(
     clearTimeout(timeoutId);
 
     if (!response.ok) {
+      // Tratamento especial para 503 (Service Temporarily Unavailable)
+      // Geralmente indica que a edge function não está disponível ou não está rodando
+      if (response.status === 503) {
+        throw new SupabaseRepositoryError(
+          `A função ${functionName} não está disponível. Verifique se o Supabase local está rodando (supabase start) e se a edge function foi deployada.`,
+          undefined,
+          { 
+            status: 503,
+            functionName,
+            errorType: 'SERVICE_UNAVAILABLE',
+            suggestion: 'Execute "supabase start" para iniciar o servidor local ou "supabase functions deploy" para deployar a função'
+          }
+        );
+      }
+
       let errorData: any;
       try {
         errorData = await response.json();
@@ -355,6 +391,32 @@ export async function callEdgeFunction<T = unknown>(
         err,
         { functionName, timeout }
       );
+    }
+    
+    // Detectar erros de rede (DNS, conexão)
+    if (err instanceof Error) {
+      const errorMessage = err.message.toLowerCase();
+      const isNetworkError = 
+        errorMessage.includes('name resolution failed') ||
+        errorMessage.includes('failed to fetch') ||
+        errorMessage.includes('networkerror') ||
+        errorMessage.includes('err_name_not_resolved') ||
+        errorMessage.includes('getaddrinfo enotfound') ||
+        errorMessage.includes('econnrefused') ||
+        errorMessage.includes('connection refused');
+      
+      if (isNetworkError) {
+        throw new SupabaseRepositoryError(
+          `Não foi possível conectar ao servidor. Verifique se o Supabase local está rodando (supabase start) e se a URL está configurada corretamente.`,
+          err,
+          { 
+            functionName,
+            url,
+            errorType: 'NETWORK_ERROR',
+            suggestion: 'Execute "supabase start" para iniciar o servidor local'
+          }
+        );
+      }
     }
     
     throw new SupabaseRepositoryError(

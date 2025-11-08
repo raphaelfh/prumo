@@ -250,6 +250,67 @@ export function useFieldManagement({
   }, [fields, entityTypeId, checkPermissions]);
 
   /**
+   * Criar campo "Other (specify)" associado a um campo select
+   */
+  const createOtherSpecifyField = useCallback(async (
+    parentFieldName: string,
+    parentFieldLabel: string,
+    sortOrder: number
+  ): Promise<ExtractionField | null> => {
+    const perms = await checkPermissions();
+    if (!perms.canCreate) {
+      toast.error('Você não tem permissão para criar campos');
+      return null;
+    }
+
+    try {
+      const otherFieldName = `${parentFieldName}_other_specify`;
+      const otherFieldLabel = `${parentFieldLabel} (Other - Specify)`;
+
+      // Verificar se já existe
+      const existingField = fields.find(f => f.name === otherFieldName);
+      if (existingField) {
+        return existingField;
+      }
+
+      const otherField: ExtractionFieldInsert = {
+        entity_type_id: entityTypeId,
+        name: otherFieldName,
+        label: otherFieldLabel,
+        description: `Especificar quando "Other (specify)" foi selecionado em ${parentFieldLabel}`,
+        field_type: 'text',
+        is_required: false,
+        validation_schema: {
+          conditional_required: {
+            depends_on: parentFieldName,
+            required_when: 'Other (specify)'
+          }
+        },
+        allowed_values: null,
+        unit: null,
+        allowed_units: null,
+        sort_order: sortOrder + 1,
+      };
+
+      const { data, error } = await supabase
+        .from('extraction_fields')
+        .insert(otherField)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      const createdField = data as ExtractionField;
+      setFields(prev => [...prev, createdField]);
+      return createdField;
+    } catch (err: any) {
+      console.error('Erro ao criar campo Other specify:', err);
+      toast.error(`Erro ao criar campo Other specify: ${err.message}`);
+      return null;
+    }
+  }, [fields, entityTypeId, checkPermissions]);
+
+  /**
    * Atualizar campo existente
    */
   const updateField = useCallback(async (
@@ -341,6 +402,44 @@ export function useFieldManagement({
   }, [checkPermissions, validateField]);
 
   /**
+   * Remover campo "Other (specify)" associado
+   */
+  const removeOtherSpecifyField = useCallback(async (
+    parentFieldName: string
+  ): Promise<boolean> => {
+    const perms = await checkPermissions();
+    if (!perms.canDelete) {
+      toast.error('Você não tem permissão para remover campos');
+      return false;
+    }
+
+    try {
+      const otherFieldName = `${parentFieldName}_other_specify`;
+      const otherField = fields.find(f => f.name === otherFieldName);
+
+      if (!otherField) {
+        return true; // Já não existe
+      }
+
+      // Verificar se tem dados extraídos
+      const validation = await validateField(otherField.id);
+      if (validation.extractedValuesCount > 0) {
+        toast.error(
+          `Não é possível remover campo "${otherField.label}" porque possui ${validation.extractedValuesCount} valores extraídos`
+        );
+        return false;
+      }
+
+      const success = await deleteField(otherField.id);
+      return success;
+    } catch (err: any) {
+      console.error('Erro ao remover campo Other specify:', err);
+      toast.error(`Erro ao remover campo Other specify: ${err.message}`);
+      return false;
+    }
+  }, [fields, checkPermissions, validateField, deleteField]);
+
+  /**
    * Reordenar campos (batch update)
    */
   const reorderFields = useCallback(async (
@@ -402,6 +501,10 @@ export function useFieldManagement({
 
     // Validação
     validateField,
+
+    // Campos "Other (specify)"
+    createOtherSpecifyField,
+    removeOtherSpecifyField,
 
     // Utilitários
     refreshFields: loadFields,

@@ -98,37 +98,92 @@ export class ModelBuilder {
     });
 
     // Buscar modelos existentes para evitar duplicatas
-    const { data: existingModels } = await this.supabase
+    const { data: existingModels, error: existingError } = await this.supabase
       .from("extraction_instances")
       .select("id, label")
       .eq("article_id", articleId)
       .eq("entity_type_id", entityTypeId);
 
+    if (existingError) {
+      this.logger.warn("Failed to query existing models, continuing anyway", {
+        error: existingError.message,
+        articleId,
+        entityTypeId,
+      });
+    }
+
     const existingLabels = new Set((existingModels || []).map(m => m.label.toLowerCase().trim()));
+    
+    this.logger.info("Existing models check", {
+      existingModelsCount: existingModels?.length || 0,
+      existingLabels: Array.from(existingLabels),
+      articleId,
+      entityTypeId,
+    });
 
     // Processar cada modelo extraído
     for (let i = 0; i < modelsData.length; i++) {
       const modelData = modelsData[i];
 
       try {
-        // Extrair model_name
+        // Log detalhado do modelo sendo processado
+        this.logger.info("Processing model data", {
+          index: i,
+          modelDataKeys: Object.keys(modelData),
+          modelNameField: modelData.model_name,
+          modelNameFieldType: typeof modelData.model_name,
+          modelNameFieldValue: modelData.model_name && typeof modelData.model_name === 'object'
+            ? modelData.model_name.value
+            : modelData.model_name,
+        });
+
+        // Extrair model_name - suportar múltiplos formatos
         let modelName: string;
         const modelNameField = modelData.model_name;
         
-        if (modelNameField && typeof modelNameField === 'object' && modelNameField.value) {
-          modelName = String(modelNameField.value).trim();
+        if (modelNameField && typeof modelNameField === 'object') {
+          // Formato enriquecido: { value: "...", confidence_score: ..., reasoning: ... }
+          if (modelNameField.value !== undefined && modelNameField.value !== null) {
+            modelName = String(modelNameField.value).trim();
+          } else {
+            // Tentar outras propriedades comuns
+            modelName = (modelNameField.text || modelNameField.name || String(modelNameField)).trim();
+          }
         } else if (typeof modelData.model_name === 'string') {
           modelName = modelData.model_name.trim();
+        } else if (modelData.modelName) {
+          // Formato alternativo: modelName (camelCase)
+          modelName = String(modelData.modelName).trim();
         } else {
           // Fallback: gerar nome baseado no índice
           modelName = `Model ${i + 1}`;
+          this.logger.warn("Model name not found, using fallback", {
+            index: i,
+            availableKeys: Object.keys(modelData),
+          });
         }
+
+        // Validar que modelName não está vazio após trim
+        if (!modelName || modelName.length === 0) {
+          this.logger.warn("Model name is empty after extraction, using fallback", {
+            index: i,
+            originalField: modelData.model_name,
+          });
+          modelName = `Model ${i + 1}`;
+        }
+
+        this.logger.info("Extracted model name", {
+          index: i,
+          modelName,
+          originalField: modelData.model_name,
+        });
 
         // Verificar se modelo já existe (case-insensitive)
         if (existingLabels.has(modelName.toLowerCase())) {
           this.logger.warn("Model already exists, skipping", {
             modelName,
             index: i,
+            existingLabels: Array.from(existingLabels),
           });
           continue;
         }

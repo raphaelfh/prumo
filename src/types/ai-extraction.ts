@@ -202,6 +202,66 @@ export interface ModelExtractionRequest {
 }
 
 /**
+ * Memória resumida de uma seção extraída (para contexto em batch)
+ */
+export interface SectionMemory {
+  entityTypeId: string;
+  entityTypeName: string;
+  summary: string; // Máx 200 chars - resumo estruturado
+}
+
+/**
+ * Request para extração em batch de todas as seções de um modelo
+ */
+export interface BatchSectionExtractionRequest {
+  projectId: string;
+  articleId: string;
+  templateId: string;
+  parentInstanceId: string; // Instância do modelo (obrigatório)
+  extractAllSections: true; // Flag para indicar batch extraction
+  options?: {
+    model?: SupportedAIModel;
+  };
+}
+
+/**
+ * Resultado de extração de uma seção individual (usado no batch)
+ */
+export interface BatchSectionResult {
+  entityTypeId: string;
+  entityTypeName: string;
+  success: boolean;
+  runId?: string;
+  suggestionsCreated?: number;
+  error?: string;
+}
+
+/**
+ * Response da extração em batch de todas as seções
+ */
+export interface BatchSectionExtractionResponse {
+  ok: boolean;
+  data?: {
+    totalSections: number;
+    successfulSections: number;
+    failedSections: number;
+    totalSuggestionsCreated: number;
+    sections: BatchSectionResult[];
+    metadata: {
+      pdfPages: number;
+      totalTokensUsed: number;
+      totalDuration: number;
+    };
+  };
+  error?: {
+    code: string;
+    message: string;
+    details?: unknown;
+  };
+  traceId?: string;
+}
+
+/**
  * Response da extração de modelos
  */
 export interface ModelExtractionResponse {

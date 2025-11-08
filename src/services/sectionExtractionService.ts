@@ -29,6 +29,8 @@ import type {
   SectionExtractionResponse,
   ModelExtractionRequest,
   ModelExtractionResponse,
+  BatchSectionExtractionRequest,
+  BatchSectionExtractionResponse,
 } from "@/types/ai-extraction";
 import {
   AuthenticationError,
@@ -155,19 +157,6 @@ export class SectionExtractionService {
     } catch (error) {
       clearTimeout(timeoutId);
 
-      // Tratamento específico para timeout
-      if (error instanceof Error && error.name === 'AbortError') {
-        console.error('[SectionExtractionService] Timeout na requisição', {
-          timeout: TIMEOUT_MS,
-          functionName,
-        });
-        throw new APIError(
-          "A extração demorou muito tempo e foi cancelada. Tente novamente com um PDF menor ou verifique os logs do servidor.",
-          408, // Request Timeout
-          { timeout: TIMEOUT_MS },
-        );
-      }
-
       // Se já é um APIError ou BaseAuthError, converter para APIError ou re-throw
       if (error instanceof BaseAuthError) {
         throw new AuthenticationError();
@@ -180,8 +169,47 @@ export class SectionExtractionService {
       // Se é SupabaseRepositoryError, extrair contexto e converter para APIError
       if (error instanceof Error && error.name === 'SupabaseRepositoryError') {
         const context = (error as any).context || {};
+        const errorType = context.errorType;
         const errorCode = context.errorCode || 'UNKNOWN_ERROR';
         const errorDetails = context.errorDetails || {};
+        
+        // Erro de serviço indisponível (503)
+        if (errorType === 'SERVICE_UNAVAILABLE' || context.status === 503) {
+          console.error('[SectionExtractionService] Serviço indisponível', {
+            error: error.message,
+            context,
+          });
+          throw new APIError(
+            error.message || "A função não está disponível. Verifique se o Supabase local está rodando (supabase start).",
+            undefined,
+            {
+              code: 'SERVICE_UNAVAILABLE',
+              originalError: error.message,
+              suggestion: context.suggestion,
+            },
+          );
+        }
+
+        // Erro de rede (DNS, conexão)
+        if (errorType === 'NETWORK_ERROR' ||
+          error.message.includes('Não foi possível conectar ao servidor') ||
+          error.message.includes('name resolution failed') ||
+          error.message.includes('Failed to fetch') ||
+          error.message.includes('NetworkError')) {
+          console.error('[SectionExtractionService] Erro de rede na requisição', {
+            error: error.message,
+            context,
+          });
+          throw new APIError(
+            "Não foi possível conectar ao servidor. Verifique se o Supabase local está rodando (supabase start) e se a URL está configurada corretamente.",
+            undefined,
+            {
+              code: 'NETWORK_ERROR',
+              originalError: error.message,
+              suggestion: context.suggestion || 'Execute "supabase start" para iniciar o servidor local',
+            },
+          );
+        }
         
         // Mensagem mais específica baseada no código de erro
         let message = error.message;
@@ -204,16 +232,23 @@ export class SectionExtractionService {
         );
       }
       
-      // Timeout específico
-      if (error instanceof Error && error.message.includes('Timeout')) {
-        throw new APIError(
-          "A extração demorou muito tempo e foi cancelada.",
-          408,
-          { timeout: TIMEOUT_MS },
-        );
+      // Verificar outros tipos de erro
+      if (error instanceof Error) {
+        // Timeout específico
+        if (error.name === 'AbortError' || error.message.includes('Timeout')) {
+          console.error('[SectionExtractionService] Timeout na requisição', {
+            timeout: TIMEOUT_MS,
+            functionName,
+          });
+          throw new APIError(
+            "A extração demorou muito tempo e foi cancelada. Tente novamente com um PDF menor ou verifique os logs do servidor.",
+            408,
+            { timeout: TIMEOUT_MS },
+          );
+        }
       }
 
-      // Erro de rede ou outro erro
+      // Erro genérico
       console.error('[SectionExtractionService] Erro na requisição', {
         error: error instanceof Error ? error.message : String(error),
         name: error instanceof Error ? error.name : 'Unknown',
@@ -328,23 +363,239 @@ export class SectionExtractionService {
         throw error;
       }
 
-      // Se é SupabaseRepositoryError, converter para APIError
-      if (error instanceof Error && error.message.includes('Timeout')) {
-        throw new APIError(
-          "A extração de modelos demorou muito tempo e foi cancelada.",
-          408,
-          { timeout: TIMEOUT_MS },
-        );
+      // Se é SupabaseRepositoryError, verificar tipo de erro
+      if (error instanceof Error && error.name === 'SupabaseRepositoryError') {
+        const errorContext = (error as any)?.context || {};
+        const errorType = errorContext.errorType;
+
+        // Erro de serviço indisponível (503)
+        if (errorType === 'SERVICE_UNAVAILABLE' || errorContext.status === 503) {
+          console.error('[SectionExtractionService] Serviço indisponível (modelos)', {
+            error: error.message,
+            context: errorContext,
+          });
+          throw new APIError(
+            error.message || "A função não está disponível. Verifique se o Supabase local está rodando (supabase start).",
+            undefined,
+            {
+              code: 'SERVICE_UNAVAILABLE',
+              originalError: error.message,
+              suggestion: errorContext.suggestion,
+            },
+          );
+        }
+
+        // Erro de rede (DNS, conexão)
+        if (errorType === 'NETWORK_ERROR' ||
+          error.message.includes('Não foi possível conectar ao servidor') ||
+          error.message.includes('name resolution failed') ||
+          error.message.includes('Failed to fetch') ||
+          error.message.includes('NetworkError')) {
+          console.error('[SectionExtractionService] Erro de rede na requisição (modelos)', {
+            error: error.message,
+            context: errorContext,
+          });
+          throw new APIError(
+            "Não foi possível conectar ao servidor. Verifique se o Supabase local está rodando (supabase start) e se a URL está configurada corretamente.",
+            undefined,
+            {
+              code: 'NETWORK_ERROR',
+              originalError: error.message,
+              suggestion: errorContext.suggestion || 'Execute "supabase start" para iniciar o servidor local',
+            },
+          );
+        }
+      }
+
+      // Verificar outros tipos de erro
+      if (error instanceof Error) {
+        // Timeout específico
+        if (error.message.includes('Timeout') || error.name === 'AbortError') {
+          throw new APIError(
+            "A extração de modelos demorou muito tempo e foi cancelada.",
+            408,
+            { timeout: TIMEOUT_MS },
+          );
+        }
       }
 
       // Erro de rede ou outro erro
       console.error('[SectionExtractionService] Erro na requisição (modelos)', {
         error: error instanceof Error ? error.message : String(error),
         name: error instanceof Error ? error.name : 'Unknown',
+        context: (error as any)?.context,
       });
 
       throw new APIError(
         error instanceof Error ? error.message : "Erro desconhecido ao realizar extração de modelos",
+        undefined,
+        { originalError: String(error) },
+      );
+    }
+  }
+
+  /**
+   * Extrai todas as seções de um modelo de uma vez com memória resumida
+   * 
+   * FLUXO:
+   * 1. Verificar autenticação do usuário
+   * 2. Gerar trace ID para rastreabilidade
+   * 3. Enviar POST para edge function com extractAllSections=true
+   * 4. Parsear response com tratamento de erro robusto
+   * 5. Retornar resultado agregado
+   * 
+   * @param request - Parâmetros da extração (projectId, articleId, templateId, parentInstanceId)
+   * @returns Response com resultados agregados de todas as seções
+   * @throws Error se falhar a extração
+   */
+  static async extractAllSections(request: BatchSectionExtractionRequest): Promise<BatchSectionExtractionResponse> {
+    // Gerar trace ID para rastreabilidade
+    const traceId = crypto.randomUUID();
+    const functionUrl = this.getFunctionUrl();
+    const functionName = functionUrl.split('/functions/v1/')[1]?.split('?')[0] || 'section-extraction';
+
+    console.log('[SectionExtractionService] Iniciando extração de todas as seções', {
+      functionName,
+      traceId,
+      request: { ...request, options: request.options || {} },
+    });
+
+    // Timeout: 145s (menor que Supabase 150s)
+    const TIMEOUT_MS = 145 * 1000;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, TIMEOUT_MS);
+
+    try {
+      // Usar callEdgeFunction do baseRepository com headers customizados
+      const result = await callEdgeFunction<BatchSectionExtractionResponse>(
+        functionName,
+        request,
+        {
+          timeout: TIMEOUT_MS,
+          signal: controller.signal,
+          headers: {
+            'x-client-trace-id': traceId,
+          },
+        }
+      );
+
+      clearTimeout(timeoutId);
+
+      // Verificar se a resposta indica erro
+      if (!result.ok) {
+        const errorMessage = result.error?.message || "Batch section extraction failed";
+        const errorCode = result.error?.code || 'UNKNOWN_ERROR';
+        console.error('[SectionExtractionService] Erro na extração de todas as seções', {
+          errorCode,
+          errorMessage,
+          details: result.error?.details,
+        });
+        throw new APIError(errorMessage, undefined, {
+          code: errorCode,
+          details: result.error?.details,
+        });
+      }
+
+      console.log('[SectionExtractionService] Extração de todas as seções concluída', {
+        totalSections: result.data?.totalSections,
+        successfulSections: result.data?.successfulSections,
+        failedSections: result.data?.failedSections,
+        totalSuggestionsCreated: result.data?.totalSuggestionsCreated,
+      });
+
+      return result;
+    } catch (error) {
+      clearTimeout(timeoutId);
+
+      // Tratamento específico para timeout
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.error('[SectionExtractionService] Timeout na requisição (todas as seções)', {
+          timeout: TIMEOUT_MS,
+          functionName,
+        });
+        throw new APIError(
+          "A extração de todas as seções demorou muito tempo e foi cancelada. Tente novamente com um PDF menor ou verifique os logs do servidor.",
+          408,
+          { timeout: TIMEOUT_MS },
+        );
+      }
+
+      // Se já é um APIError ou BaseAuthError, converter para APIError ou re-throw
+      if (error instanceof BaseAuthError) {
+        throw new AuthenticationError();
+      }
+
+      if (error instanceof APIError) {
+        throw error;
+      }
+
+      // Se é SupabaseRepositoryError, verificar tipo de erro
+      if (error instanceof Error && error.name === 'SupabaseRepositoryError') {
+        const errorContext = (error as any)?.context || {};
+        const errorType = errorContext.errorType;
+
+        // Erro de serviço indisponível (503)
+        if (errorType === 'SERVICE_UNAVAILABLE' || errorContext.status === 503) {
+          console.error('[SectionExtractionService] Serviço indisponível (todas as seções)', {
+            error: error.message,
+            context: errorContext,
+          });
+          throw new APIError(
+            error.message || "A função não está disponível. Verifique se o Supabase local está rodando (supabase start).",
+            undefined,
+            {
+              code: 'SERVICE_UNAVAILABLE',
+              originalError: error.message,
+              suggestion: errorContext.suggestion,
+            },
+          );
+        }
+
+        // Erro de rede (DNS, conexão)
+        if (errorType === 'NETWORK_ERROR' ||
+          error.message.includes('Não foi possível conectar ao servidor') ||
+          error.message.includes('name resolution failed') ||
+          error.message.includes('Failed to fetch') ||
+          error.message.includes('NetworkError')) {
+          console.error('[SectionExtractionService] Erro de rede na requisição (todas as seções)', {
+            error: error.message,
+            context: errorContext,
+          });
+          throw new APIError(
+            "Não foi possível conectar ao servidor. Verifique se o Supabase local está rodando (supabase start) e se a URL está configurada corretamente.",
+            undefined,
+            {
+              code: 'NETWORK_ERROR',
+              originalError: error.message,
+              suggestion: errorContext.suggestion || 'Execute "supabase start" para iniciar o servidor local',
+            },
+          );
+        }
+      }
+
+      // Verificar outros tipos de erro
+      if (error instanceof Error) {
+        // Timeout específico
+        if (error.message.includes('Timeout') || error.name === 'AbortError') {
+          throw new APIError(
+            "A extração de todas as seções demorou muito tempo e foi cancelada.",
+            408,
+            { timeout: TIMEOUT_MS },
+          );
+        }
+      }
+
+      // Erro de rede ou outro erro
+      console.error('[SectionExtractionService] Erro na requisição (todas as seções)', {
+        error: error instanceof Error ? error.message : String(error),
+        name: error instanceof Error ? error.name : 'Unknown',
+        context: (error as any)?.context,
+      });
+
+      throw new APIError(
+        error instanceof Error ? error.message : "Erro desconhecido ao realizar extração de todas as seções",
         undefined,
         { originalError: String(error) },
       );

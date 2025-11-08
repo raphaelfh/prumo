@@ -167,26 +167,46 @@ export class ExtractionInstanceService {
         cardinality: entityType.cardinality,
         hasParent: !!parentInstanceId
       });
-      // Se for cardinality='one', verificar se já existe
-      if (entityType.cardinality === 'one') {
-        const { data: existing } = await queryBuilderSingle<ExtractionInstance>(
-          'extraction_instances',
-          {
-            select: '*',
-            filters: {
-              article_id: articleId,
-              entity_type_id: entityTypeId,
-              parent_instance_id: parentInstanceId || null,
-            },
-          }
-        );
 
-        if (existing) {
-          console.log('Instância cardinality=one já existe:', existing.label);
-          return {
-            instance: existing,
-            wasCreated: false
-          };
+      // Validação proativa de cardinalidade usando função do banco
+      if (entityType.cardinality === 'one') {
+        const { data: canCreate, error: cardinalityError } = await supabase
+          .rpc('check_cardinality_one', {
+            p_article_id: articleId,
+            p_entity_type_id: entityTypeId,
+            p_parent_instance_id: parentInstanceId || null
+          });
+
+        if (cardinalityError) {
+          extractionLogger.warn('createInstance', 'Erro ao validar cardinalidade', cardinalityError, {
+            entityType: entityType.name,
+            articleId
+          });
+          // Continuar com validação antiga como fallback
+        } else if (canCreate === false) {
+          // Já existe instância, buscar e retornar
+          const { data: existing } = await queryBuilderSingle<ExtractionInstance>(
+            'extraction_instances',
+            {
+              select: '*',
+              filters: {
+                article_id: articleId,
+                entity_type_id: entityTypeId,
+                parent_instance_id: parentInstanceId || null,
+              },
+            }
+          );
+
+          if (existing) {
+            extractionLogger.info('createInstance', 'Instância cardinality=one já existe', {
+              instanceId: existing.id,
+              label: existing.label
+            });
+            return {
+              instance: existing,
+              wasCreated: false
+            };
+          }
         }
       }
 
@@ -263,18 +283,41 @@ export class ExtractionInstanceService {
 
     } catch (error: unknown) {
       performanceTracker.end(perfId);
-      const message = error instanceof Error ? error.message : 'Erro desconhecido';
+      
+      // Detectar erros de validação do banco (trigger/constraint)
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      const isValidationError = 
+        errorMessage.includes('parent_entity_type_id') ||
+        errorMessage.includes('template_id') ||
+        errorMessage.includes('Ciclo detectado') ||
+        errorMessage.includes('cardinality') ||
+        errorMessage.includes('não é filho de');
+
       extractionLogger.error('createInstance', 'Falha ao criar instância', error as Error, {
         entityType: entityType.name,
-        label: customLabel
+        label: customLabel,
+        isValidationError
       });
       
-      // Se já é SupabaseRepositoryError, re-throw
+      // Se já é SupabaseRepositoryError, re-throw com contexto adicional
       if (error instanceof SupabaseRepositoryError) {
+        // Melhorar mensagem para erros de validação
+        if (isValidationError) {
+          throw new SupabaseRepositoryError(
+            `Erro de validação: ${errorMessage}. Verifique a hierarquia do template e a cardinalidade da entidade.`,
+            error.code,
+            error.originalError
+          );
+        }
         throw error;
       }
       
-      throw new Error(`Falha ao criar instância: ${message}`);
+      // Mensagem mais específica para erros de validação
+      if (isValidationError) {
+        throw new Error(`Validação de integridade falhou: ${errorMessage}`);
+      }
+      
+      throw new Error(`Falha ao criar instância: ${errorMessage}`);
     }
   }
 

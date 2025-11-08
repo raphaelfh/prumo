@@ -217,6 +217,7 @@ export function useExtractionData({
       console.error('Erro ao carregar dados de extração:', err);
       setError(message);
       toast.error(message);
+      setLoading(false);
     } finally {
       setLoading(false);
     }

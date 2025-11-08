@@ -26,6 +26,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { SelectWithOther } from '@/components/ui/SelectWithOther';
+import { MultiSelectWithOther } from '@/components/ui/MultiSelectWithOther';
 import { Switch } from '@/components/ui/switch';
 import { AlertCircle, History } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -271,6 +273,21 @@ export function FieldInput(props: FieldInputProps) {
 
       case 'select':
         const options = field.allowed_values as any[] || [];
+        if (field.allow_other) {
+          return (
+            <SelectWithOther
+              options={options}
+              value={value || null}
+              onChange={handleChange}
+              allowOther={true}
+              otherLabel={field.other_label || 'Outro (especificar)'}
+              otherPlaceholder={field.other_placeholder || undefined}
+              disabled={disabled}
+              placeholder={`Selecione ${field.label.toLowerCase()}`}
+              className={cn(validationError && 'border-destructive')}
+            />
+          );
+        }
         return (
           <Select 
             value={value || ''} 
@@ -284,7 +301,6 @@ export function FieldInput(props: FieldInputProps) {
               {options.map((option: any, index: number) => {
                 const optionValue = typeof option === 'string' ? option : option.value;
                 const optionLabel = typeof option === 'string' ? option : option.label || option.value;
-                
                 return (
                   <SelectItem key={index} value={optionValue}>
                     {optionLabel}
@@ -296,7 +312,22 @@ export function FieldInput(props: FieldInputProps) {
         );
 
       case 'multiselect':
-        // TODO: Implementar multi-select apropriado
+        const mOptions = field.allowed_values as any[] || [];
+        if (field.allow_other) {
+          return (
+            <MultiSelectWithOther
+              options={mOptions}
+              value={value || null}
+              onChange={handleChange}
+              allowOther={true}
+              otherLabel={field.other_label || 'Outro (especificar)'}
+              otherPlaceholder={field.other_placeholder || undefined}
+              disabled={disabled}
+              placeholder={`Selecione ${field.label.toLowerCase()}`}
+            />
+          );
+        }
+        // fallback simples
         return (
           <Input
             value={Array.isArray(value) ? value.join(', ') : value || ''}

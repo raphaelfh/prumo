@@ -38,19 +38,36 @@ declare const Deno: {
  * Schema de validação do request
  * 
  * DIFERENCIAL: Inclui entityTypeId (obrigatório) para identificar qual seção extrair
+ * NOVO: Suporta extractAllSections para extrair todas as seções de um modelo
  */
 const SectionExtractionRequestSchema = z.object({
   projectId: z.string().uuid("projectId must be a valid UUID"),
   articleId: z.string().uuid("articleId must be a valid UUID"),
   templateId: z.string().uuid("templateId must be a valid UUID"),
-  entityTypeId: z.string().uuid("entityTypeId must be a valid UUID"), // Nova: seção específica
+  entityTypeId: z.string().uuid("entityTypeId must be a valid UUID").optional(), // Opcional quando extractAllSections=true
   parentInstanceId: z.string().uuid("parentInstanceId must be a valid UUID").optional(), // Nova: para filtrar child entities por modelo
+  extractAllSections: z.boolean().optional(), // Novo: flag para extrair todas as seções do modelo
   options: z
     .object({
       model: z.enum(["gpt-4o-mini", "gpt-4o", "gpt-5"]).optional(),
     })
     .optional(),
-});
+}).refine(
+  (data) => {
+    // Se extractAllSections=true, parentInstanceId é obrigatório
+    if (data.extractAllSections && !data.parentInstanceId) {
+      return false;
+    }
+    // Se extractAllSections=false ou undefined, entityTypeId é obrigatório
+    if (!data.extractAllSections && !data.entityTypeId) {
+      return false;
+    }
+    return true;
+  },
+  {
+    message: "When extractAllSections is true, parentInstanceId is required. When extractAllSections is false or undefined, entityTypeId is required.",
+  }
+);
 
 type SectionExtractionRequest = z.infer<typeof SectionExtractionRequestSchema>;
 
@@ -199,22 +216,48 @@ Deno.serve(async (req: Request) => {
     // construção de schema, extração com LLM, e salvamento no banco
     const pipeline = new SectionExtractionPipeline(supabase, OPENAI_API_KEY, contextualLogger);
 
-    // Executar pipeline com todos os parâmetros necessários
-    const result = await pipeline.run(pdfBuffer, {
-      projectId: input.projectId,
-      articleId: input.articleId,
-      templateId: input.templateId,
-      entityTypeId: input.entityTypeId, // Seção específica a extrair
-      userId: user.id,
-      model: input.options?.model,
-      parentInstanceId: input.parentInstanceId, // Nova: filtrar por modelo específico
-    });
+    // Roteamento: extrair todas as seções ou apenas uma
+    let result;
+    if (input.extractAllSections) {
+      // Extrair todas as seções do modelo com memória resumida
+      contextualLogger.info("Extracting all sections with memory", {
+        parentInstanceId: input.parentInstanceId,
+        model: input.options?.model || "gpt-4o-mini",
+      });
+      
+      result = await pipeline.runAllSectionsWithMemory(pdfBuffer, {
+        projectId: input.projectId,
+        articleId: input.articleId,
+        templateId: input.templateId,
+        parentInstanceId: input.parentInstanceId!, // Já validado pelo schema
+        userId: user.id,
+        model: input.options?.model,
+      });
 
-    contextualLogger.info("Section extraction pipeline completed successfully", {
-      runId: result.runId,
-      suggestionsCreated: result.suggestionsCreated,
-      entityTypeId: input.entityTypeId,
-    });
+      contextualLogger.info("Batch section extraction completed", {
+        totalSections: result.totalSections,
+        successfulSections: result.successfulSections,
+        failedSections: result.failedSections,
+        totalSuggestionsCreated: result.totalSuggestionsCreated,
+      });
+    } else {
+      // Extração de seção única (comportamento original)
+      result = await pipeline.run(pdfBuffer, {
+        projectId: input.projectId,
+        articleId: input.articleId,
+        templateId: input.templateId,
+        entityTypeId: input.entityTypeId!, // Já validado pelo schema
+        userId: user.id,
+        model: input.options?.model,
+        parentInstanceId: input.parentInstanceId, // Nova: filtrar por modelo específico
+      });
+
+      contextualLogger.info("Section extraction pipeline completed successfully", {
+        runId: result.runId,
+        suggestionsCreated: result.suggestionsCreated,
+        entityTypeId: input.entityTypeId,
+      });
+    }
 
     // ==================== 6. RETORNAR RESULTADO ====================
     // Retornar resposta JSON com resultado da extração

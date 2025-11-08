@@ -31,6 +31,15 @@ export type ExtractionValue =
   | boolean     // boolean
   | null;       // valores não preenchidos
 
+// Valores com suporte a "Outro (especificar)"
+export type SelectSingleValue = 
+  | string
+  | { selected: 'other'; other_text: string };
+
+export type SelectMultiValue = 
+  | string[]
+  | { selected: string[]; other_texts: string[] };
+
 // =================== TEMPLATES ===================
 
 /**
@@ -97,6 +106,10 @@ export interface ExtractionField {
   llm_description: string | null; // Instrução específica para extração com IA
   sort_order: number;
   created_at: string;
+  // Suporte a "Outro (especificar)" inline
+  allow_other?: boolean;
+  other_label?: string | null;
+  other_placeholder?: string | null;
 }
 
 // =================== INSTÂNCIAS E VALORES ===================
@@ -359,6 +372,18 @@ export const ExtractionFieldSchema = z.object({
       },
       { message: 'Valores permitidos não podem ter duplicatas' }
     ),
+
+  // Suporte a "Outro (especificar)"
+  allow_other: z.boolean().default(false).optional(),
+  other_label: z.string()
+    .max(100, 'Label do "Outro" deve ter no máximo 100 caracteres')
+    .default('Outro (especificar)')
+    .optional()
+    .nullable(),
+  other_placeholder: z.string()
+    .max(200, 'Placeholder deve ter no máximo 200 caracteres')
+    .optional()
+    .nullable(),
   
   validation_schema: z.record(z.any())
     .optional()

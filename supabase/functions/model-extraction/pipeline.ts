@@ -200,6 +200,22 @@ export class ModelExtractionPipeline {
       const isArray = Array.isArray(extraction.data);
       let modelsData: Array<Record<string, any>>;
 
+      // Log detalhado do formato dos dados retornados
+      runLogger.info("Raw extraction data format", {
+        isArray,
+        dataType: typeof extraction.data,
+        dataKeys: extraction.data && typeof extraction.data === 'object' && !Array.isArray(extraction.data)
+          ? Object.keys(extraction.data)
+          : Array.isArray(extraction.data)
+          ? `Array with ${extraction.data.length} items`
+          : 'Not an object/array',
+        firstItemSample: Array.isArray(extraction.data) && extraction.data.length > 0
+          ? JSON.stringify(extraction.data[0]).substring(0, 200)
+          : typeof extraction.data === 'object'
+          ? JSON.stringify(extraction.data).substring(0, 200)
+          : 'N/A',
+      });
+
       if (isArray) {
         modelsData = (extraction.data as Array<Record<string, any>>).filter(
           (item) => item && typeof item === 'object' && !Array.isArray(item)
@@ -219,6 +235,13 @@ export class ModelExtractionPipeline {
         },
         modelsFound: modelsData.length,
         llmDuration: `${llmDuration.toFixed(0)}ms`,
+        modelsDataSample: modelsData.length > 0
+          ? {
+              firstModelKeys: Object.keys(modelsData[0]),
+              firstModelNameField: modelsData[0].model_name,
+              firstModelNameType: typeof modelsData[0].model_name,
+            }
+          : null,
       });
 
       // Se nenhum modelo foi encontrado, retornar resultado vazio (não é erro)
@@ -258,7 +281,17 @@ export class ModelExtractionPipeline {
       runLogger.info("Models created successfully", {
         modelsCreated: createdModels.length,
         totalChildInstances: createdModels.reduce((sum, m) => sum + m.childInstancesCount, 0),
+        modelsDataLength: modelsData.length,
+        skippedModels: modelsData.length - createdModels.length,
       });
+
+      // Se nenhum modelo foi criado mas havia dados, log de warning
+      if (createdModels.length === 0 && modelsData.length > 0) {
+        runLogger.warn("No models were created despite finding data", {
+          modelsDataLength: modelsData.length,
+          sampleModelData: modelsData[0] ? JSON.stringify(modelsData[0]).substring(0, 300) : null,
+        });
+      }
 
       // ==================== 7. SALVAR SUGESTÕES DE IA ====================
       // Para cada modelo criado, salvar sugestões de IA para os campos extraídos

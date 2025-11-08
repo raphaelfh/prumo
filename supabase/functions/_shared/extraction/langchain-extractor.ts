@@ -72,6 +72,7 @@ class ConfigHelpers {
  */
 export interface LangchainExtractionOptions {
   model?: SupportedModel;
+  existingModel?: ChatOpenAI; // NOVO: ChatOpenAI existente para reutilizar (mantém memória entre extrações)
   temperature?: number;
   maxTokens?: number;
 }
@@ -190,7 +191,9 @@ export class LangchainExtractor {
 
       // ==================== 2. CRIAÇÃO DO MODELO CHATOPENAI ====================
       // ChatOpenAI é o wrapper do LangChain para modelos OpenAI
-      const model = new ChatOpenAI(modelConfig);
+      // Se existingModel fornecido, reutilizar (para manter memória entre extrações)
+      // Caso contrário, criar novo
+      const model = options.existingModel || new ChatOpenAI(modelConfig);
 
       // ==================== 3. CRIAÇÃO DO AGENT COM PROVIDERSTRATEGY ====================
       // providerStrategy usa structured output nativo da OpenAI

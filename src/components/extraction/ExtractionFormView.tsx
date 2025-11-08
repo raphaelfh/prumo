@@ -10,6 +10,7 @@ import { SectionAccordion } from './SectionAccordion';
 import { ModelSelector } from './hierarchy/ModelSelector';
 import { Separator } from '@/components/ui/separator';
 import { useModelExtraction } from '@/hooks/extraction/useModelExtraction';
+import { useBatchSectionExtraction } from '@/hooks/extraction/useBatchSectionExtraction';
 import type { ExtractionEntityType, ExtractionInstance, ExtractionValue, ExtractionField } from '@/types/extraction';
 
 // Tipo auxiliar para entity types com fields
@@ -88,6 +89,44 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
     }
   };
 
+  // Hook para extração de todas as seções do modelo
+  const { extractAllSections, loading: extractingAllSections } = useBatchSectionExtraction({
+    onSuccess: async (result) => {
+      console.log('[ExtractionFormView] Todas as seções extraídas:', result);
+      
+      // Recarregar instâncias e sugestões após extração
+      try {
+        await props.onRefreshInstances();
+        if (props.onExtractionComplete) {
+          await props.onExtractionComplete();
+        }
+      } catch (error) {
+        console.error('[ExtractionFormView] Erro ao recarregar após extração de todas as seções:', error);
+      }
+    },
+  });
+
+  // Handler para extrair todas as seções do modelo ativo
+  const handleExtractAllSections = async () => {
+    if (!props.activeModelId) {
+      console.warn('[ExtractionFormView] Nenhum modelo ativo para extrair todas as seções');
+      return;
+    }
+
+    try {
+      await extractAllSections({
+        projectId: props.projectId,
+        articleId: props.articleId,
+        templateId: props.templateId,
+        parentInstanceId: props.activeModelId,
+        extractAllSections: true,
+      });
+    } catch (error) {
+      // Erro já tratado pelo hook com toast
+      console.error('[ExtractionFormView] Erro na extração de todas as seções:', error);
+    }
+  };
+
   return (
     <>
       {/* Study-level sections */}
@@ -137,6 +176,8 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
             onExtractModels={handleExtractModels}
             extractingModels={extractingModels}
             loading={props.modelsLoading}
+            onExtractAllSections={props.activeModelId ? handleExtractAllSections : undefined}
+            extractingAllSections={extractingAllSections}
           />
           
           {props.activeModelId && (

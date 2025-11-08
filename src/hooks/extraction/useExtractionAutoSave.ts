@@ -13,6 +13,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { extractValueForSave } from '@/lib/validations/selectOther';
 
 // =================== INTERFACES ===================
 
@@ -100,22 +101,16 @@ export function useExtractionAutoSave(
       const upserts = valuesToSave.map(([key, valueData]) => {
         const [instanceId, fieldId] = key.split('_');
 
-        // Extrair value e unit (se valueData é objeto com unit)
-        const actualValue = typeof valueData === 'object' && 'value' in valueData
-          ? valueData.value
-          : valueData;
-        
-        const unitValue = typeof valueData === 'object' && 'unit' in valueData
-          ? valueData.unit
-          : null;
+        // Usar helper DRY para extrair valor
+        const { value: actualValue, unit: unitValue, isOther } = extractValueForSave(valueData);
 
         return {
           project_id: projectId,
           article_id: articleId,
           instance_id: instanceId,
           field_id: fieldId,
-          value: { value: actualValue }, // Wrap em objeto conforme schema do banco
-          unit: unitValue, // ✅ Salvar unit se fornecido
+          value: isOther ? actualValue : { value: actualValue }, // Preservar objeto "outro" ou wrap simples
+          unit: unitValue,
           source: 'human' as const,
           reviewer_id: user.id,
           is_consensus: false

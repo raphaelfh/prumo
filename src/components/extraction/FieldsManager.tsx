@@ -48,6 +48,8 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
     updateField,
     deleteField,
     validateField,
+    createOtherSpecifyField,
+    removeOtherSpecifyField,
   } = useFieldManagement({ entityTypeId, projectId });
 
   // Estado local centralizado
@@ -205,6 +207,9 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
         onOpenChange={dialogHandlers.addDialog}
         onSave={addField}
         sectionName={sectionName}
+        entityTypeId={entityTypeId}
+        createOtherSpecifyField={createOtherSpecifyField}
+        removeOtherSpecifyField={removeOtherSpecifyField}
       />
 
       <EditFieldDialog
@@ -214,6 +219,9 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
         onSave={updateField}
         onValidate={validateField}
         sectionName={sectionName}
+        entityTypeId={entityTypeId}
+        createOtherSpecifyField={createOtherSpecifyField}
+        removeOtherSpecifyField={removeOtherSpecifyField}
       />
 
       <DeleteFieldConfirm

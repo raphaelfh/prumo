@@ -14,7 +14,7 @@
  * @module hooks/extraction/useModelManagement
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
@@ -62,6 +62,50 @@ export function useModelManagement({
   const [activeModelId, setActiveModelId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Ref para evitar loop infinito: rastrear activeModelId sem causar re-render
+  const activeModelIdRef = useRef<string | null>(null);
+  
+  // Ref para armazenar loadModels e evitar loops no useEffect
+  const loadModelsRef = useRef<() => Promise<void>>();
+  
+  // Sincronizar ref com state
+  useEffect(() => {
+    activeModelIdRef.current = activeModelId;
+  }, [activeModelId]);
+
+  // Calcular progresso de um modelo (usando função SQL otimizada)
+  // Declarado ANTES de loadModels porque loadModels depende dele
+  const getModelProgress = useCallback(async (instanceId: string): Promise<Model['progress']> => {
+    try {
+      // Usar função SQL otimizada (1 query)
+      const { data, error } = await supabase
+        .rpc('calculate_model_progress', {
+          p_article_id: articleId,
+          p_model_id: instanceId
+        });
+
+      if (error) {
+        console.warn('Erro ao calcular progresso (fallback para 0):', error);
+        return { completed: 0, total: 0, percentage: 0 };
+      }
+
+      if (!data || data.length === 0) {
+        return { completed: 0, total: 0, percentage: 0 };
+      }
+
+      const result = data[0];
+      return {
+        completed: result.completed_fields || 0,
+        total: result.total_fields || 0,
+        percentage: result.percentage || 0
+      };
+
+    } catch (err) {
+      console.error('Erro ao calcular progresso do modelo:', err);
+      return { completed: 0, total: 0, percentage: 0 };
+    }
+  }, [articleId]);
 
   // Carregar modelos existentes
   const loadModels = useCallback(async () => {
@@ -93,68 +137,49 @@ export function useModelManagement({
       if (!instances || instances.length === 0) {
         setModels([]);
         setActiveModelId(null);
-        return;
-      }
+        // ✅ CORREÇÃO: Não retornar aqui - deixar finally executar para garantir loading = false
+        // O finally sempre executa, mas é melhor ser explícito
+      } else {
+        // Para cada modelo, calcular progresso
+        const modelsWithProgress = await Promise.all(
+          instances.map(async (instance) => {
+            const progress = await getModelProgress(instance.id);
+            
+            return {
+              instanceId: instance.id,
+              modelName: instance.label,
+              progress
+            };
+          })
+        );
 
-      // Para cada modelo, calcular progresso
-      const modelsWithProgress = await Promise.all(
-        instances.map(async (instance) => {
-          const progress = await getModelProgress(instance.id);
-          
-          return {
-            instanceId: instance.id,
-            modelName: instance.label,
-            progress
-          };
-        })
-      );
+        setModels(modelsWithProgress);
 
-      setModels(modelsWithProgress);
+        const currentActiveId = activeModelIdRef.current;
+        const hasActiveModel = currentActiveId
+          ? modelsWithProgress.some(model => model.instanceId === currentActiveId)
+          : false;
 
-      // Se não tem modelo ativo, selecionar o primeiro
-      if (!activeModelId && modelsWithProgress.length > 0) {
-        setActiveModelId(modelsWithProgress[0].instanceId);
+        // Se o modelo ativo não existe mais (ou ainda não foi definido), escolher o primeiro disponível
+        if (!hasActiveModel) {
+          const fallbackModelId = modelsWithProgress[0]?.instanceId ?? null;
+          setActiveModelId(fallbackModelId);
+        }
       }
 
     } catch (err: any) {
       console.error('Erro ao carregar modelos:', err);
       setError(err.message);
+      // ✅ CORREÇÃO: Remover setLoading(false) do catch - finally sempre executa
     } finally {
+      // ✅ CORREÇÃO: Garantir que loading sempre seja false, mesmo em retornos antecipados
       setLoading(false);
     }
-  }, [enabled, modelParentEntityTypeId, articleId, activeModelId]);
-
-  // Calcular progresso de um modelo (usando função SQL otimizada)
-  const getModelProgress = useCallback(async (instanceId: string): Promise<Model['progress']> => {
-    try {
-      // Usar função SQL otimizada (1 query)
-      const { data, error } = await supabase
-        .rpc('calculate_model_progress', {
-          p_article_id: articleId,
-          p_model_id: instanceId
-        });
-
-      if (error) {
-        console.warn('Erro ao calcular progresso (fallback para 0):', error);
-        return { completed: 0, total: 0, percentage: 0 };
-      }
-
-      if (!data || data.length === 0) {
-        return { completed: 0, total: 0, percentage: 0 };
-      }
-
-      const result = data[0];
-      return {
-        completed: result.completed_fields || 0,
-        total: result.total_fields || 0,
-        percentage: result.percentage || 0
-      };
-
-    } catch (err) {
-      console.error('Erro ao calcular progresso do modelo:', err);
-      return { completed: 0, total: 0, percentage: 0 };
-    }
-  }, [articleId]);
+  }, [enabled, modelParentEntityTypeId, articleId, getModelProgress]);
+  
+  // ✅ CORREÇÃO: Sincronizar ref com loadModels imediatamente após definição
+  // Isso garante que o ref esteja disponível quando o useEffect tentar usá-lo
+  loadModelsRef.current = loadModels;
 
   // Função para gerar nome único
   const generateUniqueModelName = useCallback(async (
@@ -289,22 +314,46 @@ export function useModelManagement({
   const removeModel = useCallback(async (instanceId: string): Promise<void> => {
     try {
       console.log('🗑️ Removendo modelo:', instanceId);
-      
-      const removedModel = models.find(m => m.instanceId === instanceId);
-      console.log('📝 Modelo a ser removido:', removedModel?.modelName);
 
       // Delegar para o service (CASCADE automático)
       await extractionInstanceService.removeInstance(instanceId);
 
-      // Atualizar estado local
-      setModels(prev => prev.filter(m => m.instanceId !== instanceId));
+      // Atualizar estado local - remover o modelo e capturar nome para toast
+      let removedModelName = 'Modelo';
+      let updatedModels: Model[] = [];
 
-      // Se era o modelo ativo, limpar activeModelId
-      if (activeModelId === instanceId) {
-        setActiveModelId(null);
-      }
+      setModels(prev => {
+        const model = prev.find(m => m.instanceId === instanceId);
+        if (model) {
+          removedModelName = model.modelName;
+        }
 
-      toast.success(`Modelo "${removedModel?.modelName}" removido com sucesso`);
+        const filteredModels = prev.filter(m => m.instanceId !== instanceId);
+        updatedModels = filteredModels;
+
+        return filteredModels;
+      });
+
+      // Garantir que sempre exista um modelo ativo válido após a remoção
+      setActiveModelId(prevActiveId => {
+        if (!updatedModels.length) {
+          return null;
+        }
+
+        const stillExists = prevActiveId
+          ? updatedModels.some(model => model.instanceId === prevActiveId)
+          : false;
+
+        if (stillExists) {
+          return prevActiveId;
+        }
+
+        // Selecionar o primeiro modelo restante como fallback
+        return updatedModels[0].instanceId;
+      });
+
+      console.log('✅ Modelo removido:', removedModelName);
+      toast.success(`Modelo "${removedModelName}" removido com sucesso`);
 
     } catch (err: any) {
       console.error('❌ Erro ao remover modelo:', err);
@@ -313,7 +362,7 @@ export function useModelManagement({
       // Isso permite tratamento consistente de erro em toda a aplicação
       throw err;
     }
-  }, [models, activeModelId]);
+  }, []); // ✅ Sem dependências - usa apenas setters e callbacks funcionais
 
   // Refresh models
   const refreshModels = useCallback(() => {
@@ -321,11 +370,16 @@ export function useModelManagement({
   }, [loadModels]);
 
   // Carregar modelos ao montar
+  // ✅ CORREÇÃO: Remover loadModels das dependências para evitar loops
+  // Usar ref para acessar a função mais recente sem causar re-execução do useEffect
   useEffect(() => {
     if (enabled && projectId && articleId && templateId && modelParentEntityTypeId) {
-      loadModels();
+      // Usar ref para evitar dependência circular
+      if (loadModelsRef.current) {
+        loadModelsRef.current();
+      }
     }
-  }, [enabled, projectId, articleId, templateId, modelParentEntityTypeId, loadModels]);
+  }, [enabled, projectId, articleId, templateId, modelParentEntityTypeId]);
 
   return {
     models,

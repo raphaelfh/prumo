@@ -18,6 +18,8 @@ AS $$
 DECLARE
   v_project_id uuid;
   v_user_id uuid;
+  v_user_email text;
+  v_profile_exists boolean;
 BEGIN
   -- Validar input
   IF p_name IS NULL OR trim(p_name) = '' THEN
@@ -29,6 +31,25 @@ BEGIN
   
   IF v_user_id IS NULL THEN
     RAISE EXCEPTION 'Usuário não autenticado';
+  END IF;
+
+  -- Verificar se profile existe, se não existir, criar
+  SELECT EXISTS(SELECT 1 FROM profiles WHERE id = v_user_id) INTO v_profile_exists;
+  
+  IF NOT v_profile_exists THEN
+    -- Obter email do usuário autenticado
+    SELECT email INTO v_user_email
+    FROM auth.users
+    WHERE id = v_user_id;
+    
+    -- Criar profile se não existir
+    INSERT INTO profiles (id, email, full_name)
+    VALUES (
+      v_user_id,
+      v_user_email,
+      COALESCE((SELECT raw_user_meta_data->>'full_name' FROM auth.users WHERE id = v_user_id), '')
+    )
+    ON CONFLICT (id) DO NOTHING;
   END IF;
 
   -- Criar projeto

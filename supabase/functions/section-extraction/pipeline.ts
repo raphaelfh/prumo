@@ -24,6 +24,8 @@ import { ExtractorFactory } from "../_shared/extraction/extractor-factory.ts";
 import { SectionDBWriter } from "./db-writer.ts";
 import type { SupportedModel } from "../_shared/extraction/model-config.ts";
 import { CONFIG } from "./config.ts";
+import { ChatOpenAI } from "npm:@langchain/openai@1";
+import { getModelConfig, isSupportedModel } from "../_shared/extraction/model-config.ts";
 
 /**
  * Opções do pipeline
@@ -36,6 +38,46 @@ export interface SectionPipelineOptions {
   userId: string;
   model?: SupportedModel;
   parentInstanceId?: string; // Nova: ID da instância pai (para filtrar child entities por modelo)
+}
+
+/**
+ * Opções para extração em batch (todas as seções)
+ */
+export interface BatchSectionOptions {
+  projectId: string;
+  articleId: string;
+  templateId: string;
+  parentInstanceId: string; // Instância do modelo (obrigatório)
+  userId: string;
+  model?: SupportedModel;
+}
+
+/**
+ * Resultado de extração de uma seção individual (usado no batch)
+ */
+interface SectionResult {
+  entityTypeId: string;
+  entityTypeName: string;
+  success: boolean;
+  runId?: string;
+  suggestionsCreated?: number;
+  error?: string;
+}
+
+/**
+ * Resultado do batch de extração
+ */
+export interface BatchSectionResult {
+  totalSections: number;
+  successfulSections: number;
+  failedSections: number;
+  totalSuggestionsCreated: number;
+  sections: SectionResult[];
+  metadata: {
+    pdfPages: number;
+    totalTokensUsed: number;
+    totalDuration: number;
+  };
 }
 
 /**
@@ -980,6 +1022,577 @@ export class SectionExtractionPipeline {
     });
 
     return createdInstances;
+  }
+
+  /**
+   * Busca entity_type do modelo via parentInstanceId
+   * 
+   * @param parentInstanceId - ID da instância do modelo
+   * @param templateId - ID do template
+   * @returns Entity type do modelo
+   */
+  private async getModelEntityType(
+    parentInstanceId: string,
+    templateId: string,
+  ): Promise<{ id: string; name: string }> {
+    // Buscar a instância para obter seu entity_type_id
+    const { data: instance, error: instanceError } = await this.supabase
+      .from("extraction_instances")
+      .select("entity_type_id")
+      .eq("id", parentInstanceId)
+      .eq("template_id", templateId)
+      .maybeSingle();
+
+    if (instanceError) {
+      throw new AppError(ErrorCode.DB_ERROR, "Failed to query model instance", 500, {
+        error: instanceError.message,
+      });
+    }
+
+    if (!instance || !instance.entity_type_id) {
+      throw new AppError(
+        ErrorCode.NOT_FOUND,
+        `Model instance not found: ${parentInstanceId}`,
+        404,
+        { parentInstanceId, templateId },
+      );
+    }
+
+    // Buscar entity_type
+    const { data: entityType, error: entityTypeError } = await this.supabase
+      .from("extraction_entity_types")
+      .select("id, name")
+      .eq("id", instance.entity_type_id)
+      .maybeSingle();
+
+    if (entityTypeError) {
+      throw new AppError(ErrorCode.DB_ERROR, "Failed to query entity type", 500, {
+        error: entityTypeError.message,
+      });
+    }
+
+    if (!entityType) {
+      throw new AppError(
+        ErrorCode.NOT_FOUND,
+        `Entity type not found for model instance: ${parentInstanceId}`,
+        404,
+        { entityTypeId: instance.entity_type_id },
+      );
+    }
+
+    return { id: entityType.id, name: entityType.name };
+  }
+
+  /**
+   * Busca todas as entity_types filhas de um parent entity_type
+   * 
+   * @param parentEntityTypeId - ID do entity_type pai (modelo)
+   * @param templateId - ID do template
+   * @returns Array de entity_types filhas ordenadas por sort_order
+   */
+  private async getChildEntityTypes(
+    parentEntityTypeId: string,
+    templateId: string,
+  ): Promise<Array<{ id: string; name: string; label: string; sort_order: number }>> {
+    // Buscar entity_types filhas - pode estar em project_template_id ou template_id
+    // Tentar primeiro project_template_id (template de projeto)
+    let { data: childTypes, error } = await this.supabase
+      .from("extraction_entity_types")
+      .select("id, name, label, sort_order")
+      .eq("parent_entity_type_id", parentEntityTypeId)
+      .eq("project_template_id", templateId)
+      .order("sort_order", { ascending: true });
+
+    // Se não encontrou, tentar template_id (template global)
+    if (!childTypes || childTypes.length === 0) {
+      const { data: globalChildTypes, error: globalError } = await this.supabase
+        .from("extraction_entity_types")
+        .select("id, name, label, sort_order")
+        .eq("parent_entity_type_id", parentEntityTypeId)
+        .eq("template_id", templateId)
+        .order("sort_order", { ascending: true });
+
+      if (globalError) {
+        throw new AppError(ErrorCode.DB_ERROR, "Failed to query child entity types", 500, {
+          error: globalError.message,
+        });
+      }
+
+      childTypes = globalChildTypes;
+      error = null;
+    }
+
+    if (error) {
+      throw new AppError(ErrorCode.DB_ERROR, "Failed to query child entity types", 500, {
+        error: error.message,
+      });
+    }
+
+    if (!childTypes || childTypes.length === 0) {
+      this.logger.warn("No child entity types found", {
+        parentEntityTypeId,
+        templateId,
+      });
+      return [];
+    }
+
+    this.logger.info("Child entity types found", {
+      parentEntityTypeId,
+      count: childTypes.length,
+      childTypes: childTypes.map((et) => ({ id: et.id, name: et.name, label: et.label })),
+    });
+
+    return childTypes as Array<{ id: string; name: string; label: string; sort_order: number }>;
+  }
+
+  /**
+   * Gera resumo estruturado de uma extração (máx 200 chars)
+   * 
+   * @param entityType - Entity type extraído
+   * @param extractedData - Dados extraídos
+   * @returns Resumo estruturado (máx 200 chars)
+   */
+  private generateExtractionSummary(
+    entityType: { name: string; label: string },
+    extractedData: Record<string, any>,
+  ): string {
+    const MAX_SUMMARY_LENGTH = 200;
+    
+    // Extrair primeiros 3 campos com valores mais relevantes
+    const entries = Object.entries(extractedData).slice(0, 3);
+    const keyFields = entries
+      .map(([field, value]) => {
+        // Extrair valor do campo (pode ser objeto enriquecido ou valor direto)
+        let fieldValue: string;
+        if (value && typeof value === 'object' && 'value' in value) {
+          fieldValue = String(value.value).substring(0, 50);
+        } else {
+          fieldValue = String(value).substring(0, 50);
+        }
+        return `${field}: ${fieldValue}`;
+      })
+      .join(', ');
+
+    const summary = `${entityType.label}: ${keyFields}${Object.keys(extractedData).length > 3 ? '...' : ''}`;
+    
+    // Truncar se exceder limite
+    return summary.length > MAX_SUMMARY_LENGTH
+      ? summary.substring(0, MAX_SUMMARY_LENGTH - 3) + '...'
+      : summary;
+  }
+
+  /**
+   * Enriquece prompt com contexto resumido das seções anteriores
+   * 
+   * @param basePrompt - Prompt base da seção
+   * @param memoryHistory - Histórico resumido das seções já extraídas
+   * @param pdfText - Texto do PDF
+   * @returns Prompt enriquecido com contexto
+   */
+  private buildPromptWithMemory(
+    basePrompt: string,
+    memoryHistory: Array<{ entityTypeName: string; summary: string }>,
+    pdfText: string,
+  ): string {
+    // Construir contexto das seções anteriores
+    const previousSectionsContext = memoryHistory.length > 0
+      ? `\n\n--- CONTEXT FROM PREVIOUSLY EXTRACTED SECTIONS ---\n` +
+        memoryHistory.map((mem, idx) => `${idx + 1}. ${mem.entityTypeName}: ${mem.summary}`).join('\n') +
+        `\n\nUse this context to maintain consistency and avoid contradictions with previously extracted data.`
+      : '';
+
+    return `${basePrompt}${previousSectionsContext}\n\n--- DOCUMENT TEXT ---\n${pdfText}`;
+  }
+
+  /**
+   * Extrai todas as seções de um modelo sequencialmente com memória resumida
+   * 
+   * FLUXO:
+   * 1. Processar PDF uma vez (mantém texto em memória)
+   * 2. Criar ChatOpenAI uma vez (reutilizado para todas as extrações)
+   * 3. Buscar entity_types filhas do modelo
+   * 4. Loop sequencial: para cada seção, extrair com contexto das anteriores
+   * 5. Retornar resultado agregado
+   * 
+   * @param pdfBuffer - Buffer do PDF
+   * @param options - Opções do batch (projectId, articleId, parentInstanceId, etc.)
+   * @returns Resultado agregado com estatísticas de todas as seções
+   */
+  async runAllSectionsWithMemory(
+    pdfBuffer: Uint8Array,
+    options: BatchSectionOptions,
+  ): Promise<BatchSectionResult> {
+    const start = performance.now();
+    const batchLogger = this.logger.child({
+      batchExtraction: true,
+      parentInstanceId: options.parentInstanceId,
+    });
+
+    batchLogger.info("Starting batch section extraction with memory", {
+      parentInstanceId: options.parentInstanceId,
+      model: options.model || "gpt-4o-mini",
+    });
+
+    // Histórico de memória resumida (acumula contexto)
+    const memoryHistory: Array<{ entityTypeName: string; summary: string }> = [];
+    const sectionResults: SectionResult[] = [];
+    let totalSuggestionsCreated = 0;
+    let totalTokensUsed = 0;
+    let pdfPages = 0;
+
+    try {
+      // ==================== 1. PROCESSAR PDF UMA VEZ ====================
+      const pdfStart = performance.now();
+      batchLogger.info("Processing PDF (will be reused for all sections)");
+      const pdfProcessor = new SectionPDFProcessor(batchLogger);
+      const pdf = await pdfProcessor.process(pdfBuffer);
+      const pdfDuration = performance.now() - pdfStart;
+      pdfPages = pdf.pageCount || 0;
+
+      if (!pdf.text || typeof pdf.text !== 'string') {
+        throw new AppError(
+          ErrorCode.PDF_PROCESSING_ERROR,
+          "PDF processing failed: extracted text is invalid or empty",
+          500,
+        );
+      }
+
+      batchLogger.info("PDF processed", {
+        textLength: pdf.text.length,
+        pageCount: pdfPages,
+        duration: `${pdfDuration.toFixed(0)}ms`,
+      });
+
+      // ==================== 2. BUSCAR ENTITY_TYPE DO MODELO ====================
+      const modelEntityType = await this.getModelEntityType(
+        options.parentInstanceId,
+        options.templateId,
+      );
+
+      batchLogger.info("Model entity type found", {
+        modelEntityTypeId: modelEntityType.id,
+        modelEntityTypeName: modelEntityType.name,
+      });
+
+      // ==================== 3. BUSCAR ENTITY_TYPES FILHAS ====================
+      const childEntityTypes = await this.getChildEntityTypes(
+        modelEntityType.id,
+        options.templateId,
+      );
+
+      if (childEntityTypes.length === 0) {
+        batchLogger.warn("No child entity types found for model", {
+          modelEntityTypeId: modelEntityType.id,
+        });
+        return {
+          totalSections: 0,
+          successfulSections: 0,
+          failedSections: 0,
+          totalSuggestionsCreated: 0,
+          sections: [],
+          metadata: {
+            pdfPages,
+            totalTokensUsed: 0,
+            totalDuration: performance.now() - start,
+          },
+        };
+      }
+
+      batchLogger.info("Child entity types found", {
+        count: childEntityTypes.length,
+        entityTypes: childEntityTypes.map((et) => ({ id: et.id, name: et.name, label: et.label })),
+      });
+
+      // ==================== 4. CRIAR CHATOPENAI UMA VEZ ====================
+      const modelToUse = options.model || "gpt-4o-mini";
+      if (!isSupportedModel(modelToUse)) {
+        throw new AppError(
+          ErrorCode.VALIDATION_ERROR,
+          `Unsupported model: ${modelToUse}`,
+          400,
+        );
+      }
+
+      const modelConfig = getModelConfig(modelToUse, this.openaiKey, {});
+      const sharedModel = new ChatOpenAI(modelConfig);
+
+      batchLogger.info("ChatOpenAI created (will be reused for all sections)", {
+        model: modelToUse,
+      });
+
+      // ==================== 5. LOOP SEQUENCIAL COM MEMÓRIA ====================
+      const templateBuilder = new SectionTemplateBuilder(this.supabase, batchLogger);
+      const dbWriter = new SectionDBWriter(this.supabase, batchLogger);
+
+      // Criar extractor com configuração
+      const extractionConfig = {
+        retry: {
+          maxAttempts: CONFIG.retry.maxAttempts,
+          initialDelayMs: CONFIG.retry.initialDelayMs,
+        },
+        llm: {
+          timeout: {
+            base: CONFIG.llm.timeout.base,
+            gpt5: CONFIG.llm.timeout.gpt5,
+            warningThreshold: CONFIG.llm.timeout.warningThreshold,
+          },
+          maxTextLength: {
+            base: CONFIG.llm.maxTextLength.base,
+            gpt5: CONFIG.llm.maxTextLength.gpt5,
+          },
+        },
+      };
+      const llmExtractor = ExtractorFactory.createExtractor(this.openaiKey, batchLogger, extractionConfig);
+
+      for (let i = 0; i < childEntityTypes.length; i++) {
+        const entityType = childEntityTypes[i];
+        const sectionLogger = batchLogger.child({
+          sectionIndex: i + 1,
+          totalSections: childEntityTypes.length,
+          entityTypeId: entityType.id,
+          entityTypeName: entityType.name,
+        });
+
+        try {
+          sectionLogger.info(`Extracting section ${i + 1}/${childEntityTypes.length}`, {
+            entityTypeName: entityType.name,
+            entityTypeLabel: entityType.label,
+            memoryHistorySize: memoryHistory.length,
+          });
+
+          // Construir schema e prompt para esta seção
+          const { schema, prompt, fields } = await templateBuilder.buildSectionSchema(
+            options.templateId,
+            entityType.id,
+            options.projectId,
+          );
+
+          // Adicionar contexto das seções anteriores ao prompt
+          const enrichedPrompt = this.buildPromptWithMemory(prompt, memoryHistory, pdf.text);
+
+          // Criar extraction_run
+          const runId = await dbWriter.createRun(
+            options.projectId,
+            options.articleId,
+            options.templateId,
+            entityType.id,
+            options.userId,
+            {
+              model: modelToUse,
+              entityTypeId: entityType.id,
+              batchExtraction: true,
+              sectionIndex: i + 1,
+              totalSections: childEntityTypes.length,
+            },
+          );
+
+          const runLogger = sectionLogger.child({ runId });
+
+          // Extrair com LLM usando modelo compartilhado
+          const llmStart = performance.now();
+          runLogger.info("Extracting with LLM (using shared model)", {
+            model: modelToUse,
+            hasMemoryContext: memoryHistory.length > 0,
+          });
+
+          const extraction = await llmExtractor.extract(pdf.text, schema, enrichedPrompt, {
+            model: modelToUse,
+            existingModel: sharedModel, // Reutilizar modelo compartilhado
+          });
+
+          const llmDuration = performance.now() - llmStart;
+          totalTokensUsed += extraction.metadata.tokens.total || 0;
+
+          runLogger.info("LLM extraction completed", {
+            tokens: extraction.metadata.tokens.total,
+            duration: `${llmDuration.toFixed(0)}ms`,
+          });
+
+          // Normalizar dados (pode ser array ou objeto)
+          const isArray = Array.isArray(extraction.data);
+          let normalizedData: Record<string, any>[];
+
+          if (isArray) {
+            normalizedData = (extraction.data as Array<Record<string, any>>).filter(
+              (item) => item && typeof item === 'object' && !Array.isArray(item)
+            );
+            if (normalizedData.length === 0) {
+              throw new AppError(
+                ErrorCode.VALIDATION_ERROR,
+                "LLM returned empty array or invalid array items",
+                400,
+              );
+            }
+          } else {
+            normalizedData = [extraction.data as Record<string, any>];
+          }
+
+          // Gerar resumo da extração para memória (usar primeiro item)
+          const summary = this.generateExtractionSummary(entityType, normalizedData[0]);
+          memoryHistory.push({
+            entityTypeName: entityType.label || entityType.name,
+            summary,
+          });
+
+          // Buscar cardinality do entity_type primeiro
+          const { data: etData } = await this.supabase
+            .from("extraction_entity_types")
+            .select("cardinality")
+            .eq("id", entityType.id)
+            .maybeSingle();
+
+          const cardinality = (etData?.cardinality as "one" | "many") || "one";
+
+          // Buscar instâncias existentes
+          let instances = await this.getInstances(
+            options.articleId,
+            options.templateId,
+            entityType.id,
+            cardinality,
+            runLogger,
+            options.parentInstanceId,
+          );
+
+          // Se não houver instâncias e cardinality permitir, criar automaticamente
+          if (instances.length === 0) {
+            if (cardinality === "many") {
+              const itemsCount = normalizedData.length;
+              instances = await this.createInstances(
+                options.projectId,
+                options.articleId,
+                options.templateId,
+                entityType.id,
+                options.userId,
+                itemsCount,
+                entityType,
+                fields,
+                runLogger,
+                normalizedData,
+                options.parentInstanceId,
+              );
+            } else {
+              throw new AppError(
+                ErrorCode.NOT_FOUND,
+                `No instances found for entity type ${entityType.name}. Please create at least one instance before extracting.`,
+                400,
+              );
+            }
+          }
+
+          // Processar dados baseado em cardinality
+          let suggestionsCreated = 0;
+
+          if (isArray && cardinality === "many") {
+            // Array + many: mapear cada item do array para uma instância (por índice)
+            const arrayData = normalizedData;
+            const instanceCount = instances.length;
+            const arrayLength = arrayData.length;
+
+            const dataToProcess = arrayData.slice(0, Math.min(arrayLength, instanceCount));
+
+            // Processar cada item do array para sua instância correspondente
+            for (let i = 0; i < dataToProcess.length; i++) {
+              const itemData = dataToProcess[i];
+              const instance = instances[i];
+
+              // Construir mapeamento de campo para esta instância específica
+              const instanceFieldMapping = this.buildFieldMapping(fields, [instance]);
+
+              // Salvar sugestões para esta instância
+              const itemSuggestions = await dbWriter.saveSuggestions(
+                options.articleId,
+                runId,
+                itemData,
+                instanceFieldMapping,
+              );
+              suggestionsCreated += itemSuggestions;
+            }
+          } else {
+            // Objeto único ou cardinality="one": comportamento padrão
+            const dataForProcessing = normalizedData[0];
+            const fieldMapping = this.buildFieldMapping(fields, instances);
+
+            // Salvar sugestões
+            suggestionsCreated = await dbWriter.saveSuggestions(
+              options.articleId,
+              runId,
+              dataForProcessing,
+              fieldMapping,
+            );
+          }
+
+          totalSuggestionsCreated += suggestionsCreated;
+
+          // Atualizar status do run
+          await dbWriter.updateRunStatus(runId, "completed", {
+            suggestions_created: suggestionsCreated,
+            pdf_pages: pdfPages,
+            tokens_used: extraction.metadata.tokens.total || 0,
+            tokens_prompt: extraction.metadata.tokens.prompt || 0,
+            tokens_completion: extraction.metadata.tokens.completion || 0,
+            entity_type_id: entityType.id,
+          });
+
+          sectionResults.push({
+            entityTypeId: entityType.id,
+            entityTypeName: entityType.name,
+            success: true,
+            runId,
+            suggestionsCreated,
+          });
+
+          runLogger.info("Section extraction completed successfully", {
+            suggestionsCreated,
+            summary,
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          sectionLogger.error("Section extraction failed", error as Error, {
+            entityTypeId: entityType.id,
+            entityTypeName: entityType.name,
+          });
+
+          // Continuar mesmo se uma seção falhar
+          sectionResults.push({
+            entityTypeId: entityType.id,
+            entityTypeName: entityType.name,
+            success: false,
+            error: errorMessage,
+          });
+        }
+      }
+
+      const totalDuration = performance.now() - start;
+      const successfulSections = sectionResults.filter((r) => r.success).length;
+      const failedSections = sectionResults.filter((r) => !r.success).length;
+
+      batchLogger.info("Batch section extraction completed", {
+        totalSections: childEntityTypes.length,
+        successfulSections,
+        failedSections,
+        totalSuggestionsCreated,
+        totalTokensUsed,
+        totalDuration: `${totalDuration.toFixed(0)}ms`,
+      });
+
+      return {
+        totalSections: childEntityTypes.length,
+        successfulSections,
+        failedSections,
+        totalSuggestionsCreated,
+        sections: sectionResults,
+        metadata: {
+          pdfPages,
+          totalTokensUsed,
+          totalDuration,
+        },
+      };
+    } catch (error) {
+      batchLogger.error("Batch section extraction failed", error as Error, {
+        parentInstanceId: options.parentInstanceId,
+      });
+      throw error;
+    }
   }
 
   /**

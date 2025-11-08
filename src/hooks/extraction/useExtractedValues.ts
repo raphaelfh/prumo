@@ -12,6 +12,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { extractValueForSave, extractValueFromDb } from '@/lib/validations/selectOther';
 import { toast } from 'sonner';
 
 // =================== INTERFACES ===================
@@ -97,14 +98,9 @@ export function useExtractedValues(props: UseExtractedValuesProps): UseExtracted
 
       (data || []).forEach((item: any) => {
         const key = `${item.instance_id}_${item.field_id}`;
-        // Extrair valor do jsonb (pode estar em { value: X } ou diretamente)
-        const extractedValue = item.value?.value ?? item.value;
         
-        // Se tiver unit, armazenar como objeto { value, unit }
-        // Senão, armazenar apenas o valor (backward compatible)
-        valuesMap[key] = item.unit 
-          ? { value: extractedValue, unit: item.unit }
-          : extractedValue;
+        // Usar helper DRY para extrair valor do banco
+        valuesMap[key] = extractValueFromDb(item);
       });
 
       setValues(valuesMap);
@@ -137,22 +133,16 @@ export function useExtractedValues(props: UseExtractedValuesProps): UseExtracted
       const upserts = Object.entries(values).map(([key, valueData]) => {
         const [instanceId, fieldId] = key.split('_');
 
-        // Extrair value e unit (se valueData é objeto com unit)
-        const actualValue = typeof valueData === 'object' && 'value' in valueData
-          ? valueData.value
-          : valueData;
-        
-        const unitValue = typeof valueData === 'object' && 'unit' in valueData
-          ? valueData.unit
-          : null;
+        // Usar helper DRY para extrair valor
+        const { value: actualValue, unit: unitValue, isOther } = extractValueForSave(valueData);
 
         return {
           project_id: projectId,
           article_id: articleId,
           instance_id: instanceId,
           field_id: fieldId,
-          value: { value: actualValue }, // Wrap em objeto conforme schema
-          unit: unitValue, // ✅ Salvar unit se fornecido
+          value: isOther ? actualValue : { value: actualValue }, // Preservar objeto "outro" ou wrap simples
+          unit: unitValue,
           source: 'human' as const,
           reviewer_id: user.id,
           is_consensus: false

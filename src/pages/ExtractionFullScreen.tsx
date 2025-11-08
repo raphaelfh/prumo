@@ -265,11 +265,9 @@ export default function ExtractionFullScreen() {
       console.log('✅ Modelo criado com sucesso:', result.model);
       setShowAddModelDialog(false);
       
-      // Recarregar instâncias após criar modelo (child instances serão incluídas)
+      // ✅ CORREÇÃO: Recarregar apenas instâncias (child instances serão incluídas)
+      // Não chamar refreshModels() - o hook já atualiza o estado local
       await refreshInstances();
-      
-      // Atualizar lista de modelos (apenas 1 query necessária)
-      await refreshModels();
       
       console.log('✅ Estado atualizado, campos devem aparecer imediatamente!');
     }
@@ -304,8 +302,7 @@ export default function ExtractionFullScreen() {
 
       const modelIdToRemove = modelToRemove.id;
       
-      // ✅ MELHORIA: Usar try/catch em vez de verificar boolean
-      // Isso permite que o modal capture e trate erros adequadamente
+      // ✅ Remover modelo (já atualiza estado local)
       await removeModel(modelIdToRemove);
       
       extractionLogger.info('removeModelHandler', 'Modelo removido com sucesso', {
@@ -313,19 +310,26 @@ export default function ExtractionFullScreen() {
         modelName: modelToRemove.name
       });
 
+      // Fechar dialog imediatamente após remoção bem-sucedida
       setModelToRemove(null);
       
-      // Recarregar instâncias após remover modelo (instances relacionadas serão removidas)
-      
-      // Atualizar lista de modelos (apenas 1 query necessária)
-      await refreshModels();
-      
-      extractionLogger.info('removeModelHandler', 'Estado atualizado, modelo removido da interface', {
-        modelId: modelIdToRemove,
-        instancesRemoved: instances.filter(i => 
-          i.id === modelIdToRemove || i.parent_instance_id === modelIdToRemove
-        ).length
-      });
+      // ✅ CORREÇÃO: Não chamar refreshModels() - o hook já atualiza o estado local
+      // Apenas recarregar instâncias para garantir que child instances sejam removidas da UI
+      try {
+        await refreshInstances();
+        extractionLogger.info('removeModelHandler', 'Estado atualizado, modelo removido da interface', {
+          modelId: modelIdToRemove,
+          instancesRemoved: instances.filter(i => 
+            i.id === modelIdToRemove || i.parent_instance_id === modelIdToRemove
+          ).length
+        });
+      } catch (refreshError: any) {
+        // Log do erro mas não re-throw - modelo já foi removido com sucesso
+        extractionLogger.error('removeModelHandler', 'Erro ao recarregar instâncias após remoção', refreshError, {
+          modelId: modelIdToRemove
+        });
+        // Não bloquear o fluxo - modelo já foi removido do estado local
+      }
       
     } catch (error: any) {
       // ✅ Re-throw para o modal capturar e exibir erro

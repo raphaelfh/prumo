@@ -105,6 +105,9 @@ export function EditFieldDialog({
         allowed_values: field.allowed_values,
         llm_description: field.llm_description || '',
         validation_schema: field.validation_schema || {},
+        allow_other: field.allow_other || false,
+        other_label: field.other_label || null,
+        other_placeholder: field.other_placeholder || null,
       });
       
       // Buscar validação do campo
@@ -140,7 +143,7 @@ export function EditFieldDialog({
       }
     }
 
-    form.setValue('field_type', newType);
+    form.setValue('field_type', newType as any);
     
     // Limpar allowed_values se não for select/multiselect
     if (newType !== 'select' && newType !== 'multiselect') {
@@ -379,6 +382,7 @@ export function EditFieldDialog({
 
                   {/* Valores Permitidos (condicional - para select) */}
                   {(fieldType === 'select' || fieldType === 'multiselect') && (
+                    <>
                     <FormField
                       control={form.control}
                       name="allowed_values"
@@ -399,6 +403,71 @@ export function EditFieldDialog({
                         </FormItem>
                       )}
                     />
+
+                      {/* Opção: Permitir "Outro (especificar)" */}
+                      <div className="space-y-3 rounded-lg border p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <Label className="font-medium">Permitir "Outro (especificar)"</Label>
+                            <p className="text-xs text-muted-foreground mt-1">Mostra opção inline e input contextual</p>
+                          </div>
+                          <FormField
+                            control={form.control}
+                            name="allow_other"
+                            render={({ field }) => (
+                              <FormControl>
+                                <Switch
+                                  checked={field.value || false}
+                                  onCheckedChange={field.onChange}
+                                  disabled={loading}
+                                />
+                              </FormControl>
+                            )}
+                          />
+                        </div>
+
+                        {form.watch('allow_other') && (
+                          <div className="grid grid-cols-2 gap-3">
+                            <FormField
+                              control={form.control}
+                              name="other_label"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Label do "Outro"</FormLabel>
+                                  <FormControl>
+                                    <Input 
+                                      {...field} 
+                                      value={field.value || ''}
+                                      placeholder="Outro (especificar)" 
+                                      disabled={loading} 
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                            <FormField
+                              control={form.control}
+                              name="other_placeholder"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Placeholder</FormLabel>
+                                  <FormControl>
+                                    <Input 
+                                      {...field} 
+                                      value={field.value || ''}
+                                      placeholder="Digite aqui" 
+                                      disabled={loading} 
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </>
                   )}
                 </div>
               </div>

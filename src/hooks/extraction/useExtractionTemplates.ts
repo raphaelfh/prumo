@@ -232,7 +232,12 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
               validation_schema: field.validation_schema,
               allowed_values: field.allowed_values,
               unit: field.unit,
-              sort_order: field.sort_order
+              allowed_units: field.allowed_units,
+              sort_order: field.sort_order,
+              llm_description: field.llm_description,
+              allow_other: field.allow_other ?? false,
+              other_label: field.other_label ?? 'Outro (especificar)',
+              other_placeholder: field.other_placeholder
             });
 
           if (fieldError) throw fieldError;
