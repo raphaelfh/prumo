@@ -39,6 +39,65 @@ Para mais informações sobre licenciamento comercial, entre em contato através
 
 **Contato para Licenças Comerciais**: [Adicione seu email aqui]
 
+## 🚀 Início Rápido
+
+### Pré-requisitos
+
+- Node.js 18+ e npm (recomendado usar [nvm](https://github.com/nvm-sh/nvm#installing-and-updating))
+- Supabase CLI (para desenvolvimento local)
+- Git
+
+### Instalação
+
+```sh
+# 1. Clone o repositório
+git clone <YOUR_GIT_URL>
+cd review_hub
+
+# 2. Instale as dependências
+npm install
+
+# 3. Configure as variáveis de ambiente
+cp .env.example .env.local
+# Edite .env.local com suas credenciais do Supabase
+
+# 4. Inicie o servidor de desenvolvimento
+npm run dev
+```
+
+O aplicativo estará disponível em `http://localhost:5173`
+
+### Desenvolvimento Local com Supabase
+
+```sh
+# Inicie o Supabase localmente
+supabase start
+
+# Execute as migrações
+supabase db reset
+
+# As Edge Functions estarão disponíveis localmente
+```
+
+## 🛠️ Scripts Disponíveis
+
+- `npm run dev` - Inicia servidor de desenvolvimento com hot-reload
+- `npm run build` - Build de produção
+- `npm run build:dev` - Build em modo desenvolvimento
+- `npm run preview` - Preview do build de produção
+- `npm run lint` - Executa o linter
+- `npm test` - Executa testes em modo watch
+- `npm run test:run` - Executa testes uma vez
+- `npm run test:coverage` - Executa testes com cobertura
+
+## 📚 Documentação
+
+- [Guia de Contribuição](.github/CONTRIBUTING.md)
+- [Código de Conduta](docs/legal/CODE_OF_CONDUCT.md)
+- [Política de Segurança](docs/legal/SECURITY.md)
+- [Integração com Zotero](./docs/tecnicas/ZOTERO_ARCHITECTURE.md)
+- [Análise Crítica da Codebase](./docs/analises/ANALISE_CRITICA_CODEBASE.md)
+
 ## 🤝 Contribuindo
 
 Contribuições são bem-vindas! Por favor, leia nosso [Guia de Contribuição](.github/CONTRIBUTING.md) para detalhes sobre nosso código de conduta e o processo para submeter pull requests.
@@ -55,81 +114,88 @@ Contribuições são bem-vindas! Por favor, leia nosso [Guia de Contribuição](
 
 Para mais detalhes, consulte [CONTRIBUTING.md](.github/CONTRIBUTING.md).
 
-## 📚 Documentação
+## 🏗️ Tecnologias Utilizadas
 
-- [Guia de Contribuição](.github/CONTRIBUTING.md)
-- [Código de Conduta](docs/legal/CODE_OF_CONDUCT.md)
-- [Política de Segurança](docs/legal/SECURITY.md)
-- [Integração com Zotero](./docs/tecnicas/ZOTERO_ARCHITECTURE.md)
+Este projeto é construído com:
 
-## Project info
+- **Frontend:**
+  - [Vite](https://vitejs.dev/) - Build tool e dev server
+  - [React](https://react.dev/) - Biblioteca UI
+  - [TypeScript](https://www.typescriptlang.org/) - Tipagem estática
+  - [Tailwind CSS](https://tailwindcss.com/) - Estilização
+  - [shadcn/ui](https://ui.shadcn.com/) - Componentes UI
+  - [TanStack Query](https://tanstack.com/query) - Gerenciamento de estado servidor
+  - [React Router](https://reactrouter.com/) - Roteamento
 
-**URL**: https://lovable.dev/projects/9ff336a7-e70f-415e-abed-736e290eb468
+- **Backend:**
+  - [Supabase](https://supabase.com/) - Backend as a Service
+    - PostgreSQL - Banco de dados
+    - Edge Functions (Deno) - Funções serverless
+    - Row Level Security (RLS) - Segurança de dados
+    - Realtime - Subscriptions em tempo real
 
-## How can I edit this code?
+- **Ferramentas:**
+  - [Vitest](https://vitest.dev/) - Framework de testes
+  - [Testing Library](https://testing-library.com/) - Testes de componentes
+  - [ESLint](https://eslint.org/) - Linter
+  - [Zod](https://zod.dev/) - Validação de schemas
 
-There are several ways of editing your application.
+## 📦 Estrutura do Projeto
 
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/9ff336a7-e70f-415e-abed-736e290eb468) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+```
+review_hub/
+├── src/                    # Código fonte do frontend
+│   ├── components/         # Componentes React
+│   ├── hooks/              # Custom hooks
+│   ├── services/           # Serviços e APIs
+│   ├── pages/              # Páginas/rotas
+│   ├── types/              # Definições TypeScript
+│   └── lib/                # Utilitários
+├── supabase/
+│   ├── functions/          # Edge Functions (Deno)
+│   └── migrations/         # Migrações do banco de dados
+├── docs/                   # Documentação
+│   ├── legal/              # Documentos legais
+│   ├── tecnicas/           # Documentação técnica
+│   ├── guias/              # Guias de setup
+│   ├── planos/             # Planos de refatoração
+│   ├── analises/           # Análises da codebase
+│   └── templates/          # Templates CHARMS
+└── .cursor/rules/          # Regras do Cursor AI Agent
 ```
 
-**Edit a file directly in GitHub**
+## 🚢 Deploy
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+### Build de Produção
 
-**Use GitHub Codespaces**
+```sh
+npm run build
+```
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+Os arquivos serão gerados em `dist/` e podem ser servidos por qualquer servidor estático.
 
-## What technologies are used for this project?
+### Opções de Deploy
 
-This project is built with:
+- **Vercel**: Conecte seu repositório GitHub e configure as variáveis de ambiente
+- **Netlify**: Similar ao Vercel, com suporte a Edge Functions
+- **Supabase**: Use o Supabase Hosting para frontend + backend integrado
+- **Docker**: Containerize a aplicação para deploy em qualquer plataforma
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+### Variáveis de Ambiente Necessárias
 
-## How can I deploy this project?
+Certifique-se de configurar as seguintes variáveis de ambiente:
 
-Simply open [Lovable](https://lovable.dev/projects/9ff336a7-e70f-415e-abed-736e290eb468) and click on Share -> Publish.
+```env
+VITE_SUPABASE_URL=your_supabase_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
 
-## Can I connect a custom domain to my Lovable project?
+## 📝 Licença
 
-Yes, you can!
+Este projeto está licenciado sob a **GNU Affero General Public License v3.0 (AGPL-3.0)**. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+Para licenças comerciais, entre em contato através do repositório.
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+## 🙏 Agradecimentos
+
+Agradecemos a todos os contribuidores que ajudam a tornar este projeto melhor!
