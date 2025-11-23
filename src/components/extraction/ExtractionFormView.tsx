@@ -10,7 +10,10 @@ import { SectionAccordion } from './SectionAccordion';
 import { ModelSelector } from './hierarchy/ModelSelector';
 import { Separator } from '@/components/ui/separator';
 import { useModelExtraction } from '@/hooks/extraction/useModelExtraction';
-import { useBatchSectionExtraction } from '@/hooks/extraction/useBatchSectionExtraction';
+import { useBatchSectionExtractionChunked } from '@/hooks/extraction/useBatchSectionExtractionChunked';
+import { useBatchAllModelsSectionsExtraction } from '@/hooks/extraction/useBatchAllModelsSectionsExtraction';
+import { BatchExtractionProgress } from './BatchExtractionProgress';
+import { BatchAllModelsSectionsProgress } from './BatchAllModelsSectionsProgress';
 import type { ExtractionEntityType, ExtractionInstance, ExtractionValue, ExtractionField } from '@/types/extraction';
 
 // Tipo auxiliar para entity types com fields
@@ -89,8 +92,8 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
     }
   };
 
-  // Hook para extração de todas as seções do modelo
-  const { extractAllSections, loading: extractingAllSections } = useBatchSectionExtraction({
+  // Hook para extração de todas as seções do modelo com chunking
+  const { extractAllSections, loading: extractingAllSections, progress: extractionProgress } = useBatchSectionExtractionChunked({
     onSuccess: async (result) => {
       console.log('[ExtractionFormView] Todas as seções extraídas:', result);
       
@@ -124,6 +127,46 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
     } catch (error) {
       // Erro já tratado pelo hook com toast
       console.error('[ExtractionFormView] Erro na extração de todas as seções:', error);
+    }
+  };
+
+  // Hook para extração de seções de todos os modelos
+  const { extractAllSectionsForAllModels, loading: extractingAllSectionsForAllModels, progress: allModelsProgress } = useBatchAllModelsSectionsExtraction({
+    onSuccess: async (result) => {
+      console.log('[ExtractionFormView] Seções de todos os modelos extraídas:', result);
+      
+      // Recarregar instâncias e sugestões após extração
+      try {
+        await props.onRefreshInstances();
+        if (props.onExtractionComplete) {
+          await props.onExtractionComplete();
+        }
+      } catch (error) {
+        console.error('[ExtractionFormView] Erro ao recarregar após extração de seções de todos os modelos:', error);
+      }
+    },
+  });
+
+  // Handler para extrair seções de todos os modelos
+  const handleExtractAllSectionsForAllModels = async () => {
+    if (props.models.length === 0) {
+      console.warn('[ExtractionFormView] Nenhum modelo disponível para extrair seções');
+      return;
+    }
+
+    try {
+      await extractAllSectionsForAllModels({
+        projectId: props.projectId,
+        articleId: props.articleId,
+        templateId: props.templateId,
+        models: props.models.map(m => ({
+          instanceId: m.instanceId,
+          modelName: m.modelName,
+        })),
+      });
+    } catch (error) {
+      // Erro já tratado pelo hook com toast
+      console.error('[ExtractionFormView] Erro na extração de seções de todos os modelos:', error);
     }
   };
 
@@ -178,7 +221,23 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
             loading={props.modelsLoading}
             onExtractAllSections={props.activeModelId ? handleExtractAllSections : undefined}
             extractingAllSections={extractingAllSections}
+            onExtractAllSectionsForAllModels={handleExtractAllSectionsForAllModels}
+            extractingAllSectionsForAllModels={extractingAllSectionsForAllModels}
           />
+
+          {/* Progresso de extração em batch de um modelo */}
+          {extractingAllSections && extractionProgress && (
+            <div className="mt-4">
+              <BatchExtractionProgress progress={extractionProgress} />
+            </div>
+          )}
+
+          {/* Progresso de extração em batch de todos os modelos */}
+          {extractingAllSectionsForAllModels && allModelsProgress && (
+            <div className="mt-4">
+              <BatchAllModelsSectionsProgress progress={allModelsProgress} />
+            </div>
+          )}
           
           {props.activeModelId && (
             <div className="space-y-4 mt-4">

@@ -40,6 +40,7 @@ import { ExtractionHeader } from '@/components/extraction/ExtractionHeader';
 import { ExtractionPDFPanel } from '@/components/extraction/ExtractionPDFPanel';
 import { ExtractionFormPanel } from '@/components/extraction/ExtractionFormPanel';
 import { AddModelDialog, RemoveModelDialog } from '@/components/extraction/hierarchy';
+import { FullAIExtractionProgress } from '@/components/extraction/FullAIExtractionProgress';
 
 // Hooks adicionais
 import { useModelManagement } from '@/hooks/extraction/useModelManagement';
@@ -74,6 +75,13 @@ export default function ExtractionFullScreen() {
   // UI state
   const [showPDF, setShowPDF] = useState(true);
   const [viewMode, setViewMode] = useState<'extract' | 'compare'>('extract');
+  
+  // Estado de progresso de extração IA
+  const [aiExtractionState, setAiExtractionState] = useState<{
+    loading: boolean;
+    progress: any;
+  } | null>(null);
+  const [isProgressMinimized, setIsProgressMinimized] = useState(false);
   
   // Hierarchy state
   const [showAddModelDialog, setShowAddModelDialog] = useState(false);
@@ -838,7 +846,25 @@ export default function ExtractionFullScreen() {
         template={template}
         instances={instances}
         values={values}
+        onRefreshInstances={handleRefreshInstances}
+        onExtractionStateChange={setAiExtractionState}
       />
+
+      {/* Progresso de Extração IA - Renderizado no nível da página para evitar conflitos */}
+      {(aiExtractionState?.loading && aiExtractionState?.progress) || isProgressMinimized ? (
+        <div className="fixed bottom-6 right-6 z-[9999] w-96 max-w-[calc(100vw-3rem)]">
+          <FullAIExtractionProgress 
+            progress={aiExtractionState?.progress || { stage: 'extracting_models' }}
+            onClose={() => {
+              setAiExtractionState(null);
+              setIsProgressMinimized(false);
+            }}
+            onMinimize={() => {
+              setIsProgressMinimized(true);
+            }}
+          />
+        </div>
+      ) : null}
 
       {/* Main content */}
       <div className="flex-1 overflow-hidden">

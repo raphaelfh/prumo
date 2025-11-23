@@ -219,6 +219,8 @@ export interface BatchSectionExtractionRequest {
   templateId: string;
   parentInstanceId: string; // Instância do modelo (obrigatório)
   extractAllSections: true; // Flag para indicar batch extraction
+  sectionIds?: string[]; // NOVO: Filtrar seções específicas (para chunking)
+  pdfText?: string; // NOVO: Texto do PDF já processado (evita reprocessar)
   options?: {
     model?: SupportedAIModel;
   };

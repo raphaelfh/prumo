@@ -9,7 +9,7 @@
  * - Ações contextuais
  */
 
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -48,6 +48,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useArticleSelection } from "@/hooks/extraction/useArticleSelection";
+import { ArticleSelectionActions } from "./ArticleSelectionActions";
+import { useFullAIExtraction } from "@/hooks/extraction/useFullAIExtraction";
 
 interface Article {
   id: string;
@@ -121,6 +126,15 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
   // Ref para rastrear última rota visitada (evitar refresh desnecessário)
   const lastPathRef = useRef<string>('');
   const loadArticlesRef = useRef<() => Promise<void>>();
+
+  // Hook para extração IA em batch
+  const { extractFullAI, loading: isExtracting } = useFullAIExtraction({
+    onSuccess: async () => {
+      // Recarregar artigos após extração
+      await loadArticles();
+      toast.success('Extração concluída com sucesso!');
+    },
+  });
 
   // Declarar loadCurrentUser antes de qualquer uso para evitar TDZ
   const loadCurrentUser = useCallback(async () => {
@@ -405,6 +419,100 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     return filtered;
   }, [articles, globalFilter, columnFilters, sortField, sortDirection]);
 
+  // Hook para gerenciar seleção de artigos
+  const allArticleIds = useMemo(() => articles.map(a => a.id), [articles]);
+  const visibleArticleIds = useMemo(() => filteredAndSortedArticles.map(a => a.id), [filteredAndSortedArticles]);
+  
+  const {
+    selectedIds,
+    isAllSelected,
+    isIndeterminate,
+    selectedCount,
+    toggleArticle,
+    selectAll,
+    selectFiltered,
+    deselectAll,
+    isSelected,
+    hasActiveFilters,
+  } = useArticleSelection({
+    allArticleIds,
+    visibleArticleIds,
+  });
+
+  // Handler para extração IA em batch
+  const handleBatchAIExtraction = useCallback(async () => {
+    if (selectedIds.size === 0) {
+      toast.error('Selecione pelo menos um artigo');
+      return;
+    }
+
+    const selectedArticles = filteredAndSortedArticles.filter(a => selectedIds.has(a.id));
+    
+    toast.info(`Iniciando extração IA para ${selectedArticles.length} artigo(s)...`, {
+      description: 'Isso pode levar alguns minutos',
+    });
+
+    try {
+      // Processar artigos sequencialmente para evitar sobrecarga
+      for (let i = 0; i < selectedArticles.length; i++) {
+        const article = selectedArticles[i];
+        toast.info(`Processando artigo ${i + 1}/${selectedArticles.length}: ${article.title}`);
+        
+        await extractFullAI({
+          projectId,
+          articleId: article.id,
+          templateId,
+        });
+      }
+
+      // Limpar seleção após sucesso
+      deselectAll();
+    } catch (error: any) {
+      console.error('Erro na extração IA em batch:', error);
+      toast.error('Erro ao processar extração IA', {
+        description: error.message || 'Erro desconhecido',
+      });
+    }
+  }, [selectedIds, filteredAndSortedArticles, projectId, templateId, extractFullAI, deselectAll]);
+
+  // Componente de checkbox do header com suporte a indeterminate
+  const HeaderCheckbox = React.memo(({ 
+    checked, 
+    indeterminate, 
+    onCheckedChange, 
+    ...props 
+  }: { 
+    checked: boolean; 
+    indeterminate: boolean; 
+    onCheckedChange: (checked: boolean) => void;
+    'aria-label'?: string;
+  }) => {
+    const checkboxRef = useRef<React.ElementRef<typeof Checkbox>>(null);
+
+    useEffect(() => {
+      if (checkboxRef.current) {
+        // Acessar o elemento DOM subjacente do Radix UI
+        const element = checkboxRef.current as unknown as { 
+          querySelector?: (selector: string) => HTMLElement | null;
+        };
+        const buttonElement = element?.querySelector?.('button') as HTMLButtonElement | null;
+        if (buttonElement) {
+          buttonElement.indeterminate = indeterminate;
+        }
+      }
+    }, [indeterminate]);
+
+    return (
+      <Checkbox
+        ref={checkboxRef}
+        checked={indeterminate ? false : checked}
+        onCheckedChange={onCheckedChange}
+        className={indeterminate ? 'data-[state=checked]:bg-primary/50' : ''}
+        {...props}
+      />
+    );
+  });
+
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -603,8 +711,23 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
   }
 
   // Estado: Ready - Renderizar tabela
+  const selectedArticleIds = Array.from(selectedIds);
+  const selectedArticleTitles = filteredAndSortedArticles
+    .filter(a => selectedIds.has(a.id))
+    .map(a => a.title);
+
   return (
     <div className="space-y-4">
+      {/* Barra de ações de seleção */}
+      <ArticleSelectionActions
+        selectedCount={selectedCount}
+        selectedArticleIds={selectedArticleIds}
+        selectedArticleTitles={selectedArticleTitles}
+        onClearSelection={deselectAll}
+        onBatchAIExtraction={handleBatchAIExtraction}
+        isExtracting={isExtracting}
+      />
+
       {/* Filtro Global */}
       <div className="flex items-center gap-2">
         <div className="relative flex-1 max-w-sm">
@@ -626,6 +749,35 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-[40px]">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="flex items-center">
+                        <HeaderCheckbox
+                          checked={isAllSelected}
+                          indeterminate={isIndeterminate}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              hasActiveFilters ? selectFiltered() : selectAll();
+                            } else {
+                              deselectAll();
+                            }
+                          }}
+                          aria-label={hasActiveFilters ? 'Selecionar artigos filtrados' : 'Selecionar todos os artigos'}
+                        />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>
+                        {hasActiveFilters 
+                          ? 'Selecionar artigos filtrados' 
+                          : 'Selecionar todos os artigos'}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </TableHead>
               <TableHead className="w-[30%]">
                 <div className="flex items-center gap-2">
                   <Button
@@ -699,6 +851,13 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
 
               return (
                 <TableRow key={article.id} className="hover:bg-muted/50">
+                  <TableCell className="w-[40px]">
+                    <Checkbox
+                      checked={isSelected(article.id)}
+                      onCheckedChange={() => toggleArticle(article.id)}
+                      aria-label={`Selecionar artigo: ${article.title}`}
+                    />
+                  </TableCell>
                   <TableCell>
                     <div className="font-medium text-sm leading-tight">
                       {article.title}

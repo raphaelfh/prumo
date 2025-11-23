@@ -50,6 +50,8 @@ export interface BatchSectionOptions {
   parentInstanceId: string; // Instância do modelo (obrigatório)
   userId: string;
   model?: SupportedModel;
+  sectionIds?: string[]; // NOVO: Filtrar seções específicas (para chunking)
+  pdfText?: string; // NOVO: Texto do PDF já processado (evita reprocessar)
 }
 
 /**
@@ -61,6 +63,7 @@ interface SectionResult {
   success: boolean;
   runId?: string;
   suggestionsCreated?: number;
+  tokensUsed?: number; // NOVO: Tokens usados nesta seção
   error?: string;
 }
 
@@ -1093,24 +1096,39 @@ export class SectionExtractionPipeline {
   private async getChildEntityTypes(
     parentEntityTypeId: string,
     templateId: string,
+    sectionIds?: string[], // NOVO: Filtrar seções específicas
   ): Promise<Array<{ id: string; name: string; label: string; sort_order: number }>> {
     // Buscar entity_types filhas - pode estar em project_template_id ou template_id
     // Tentar primeiro project_template_id (template de projeto)
-    let { data: childTypes, error } = await this.supabase
+    let query = this.supabase
       .from("extraction_entity_types")
       .select("id, name, label, sort_order")
       .eq("parent_entity_type_id", parentEntityTypeId)
       .eq("project_template_id", templateId)
       .order("sort_order", { ascending: true });
 
+    // Aplicar filtro de sectionIds se fornecido
+    if (sectionIds && sectionIds.length > 0) {
+      query = query.in("id", sectionIds);
+    }
+
+    let { data: childTypes, error } = await query;
+
     // Se não encontrou, tentar template_id (template global)
     if (!childTypes || childTypes.length === 0) {
-      const { data: globalChildTypes, error: globalError } = await this.supabase
+      let globalQuery = this.supabase
         .from("extraction_entity_types")
         .select("id, name, label, sort_order")
         .eq("parent_entity_type_id", parentEntityTypeId)
         .eq("template_id", templateId)
         .order("sort_order", { ascending: true });
+
+      // Aplicar filtro de sectionIds se fornecido
+      if (sectionIds && sectionIds.length > 0) {
+        globalQuery = globalQuery.in("id", sectionIds);
+      }
+
+      const { data: globalChildTypes, error: globalError } = await globalQuery;
 
       if (globalError) {
         throw new AppError(ErrorCode.DB_ERROR, "Failed to query child entity types", 500, {
@@ -1132,6 +1150,7 @@ export class SectionExtractionPipeline {
       this.logger.warn("No child entity types found", {
         parentEntityTypeId,
         templateId,
+        sectionIds,
       });
       return [];
     }
@@ -1139,6 +1158,7 @@ export class SectionExtractionPipeline {
     this.logger.info("Child entity types found", {
       parentEntityTypeId,
       count: childTypes.length,
+      sectionIds,
       childTypes: childTypes.map((et) => ({ id: et.id, name: et.name, label: et.label })),
     });
 
@@ -1205,16 +1225,267 @@ export class SectionExtractionPipeline {
   }
 
   /**
+   * Processa uma única seção (extração, salvamento, etc.)
+   * 
+   * Método privado reutilizável para processar uma seção individual.
+   * Usado tanto em batch completo quanto em chunks.
+   * 
+   * @param pdfText - Texto do PDF já processado
+   * @param entityType - Entity type da seção
+   * @param sectionIndex - Índice da seção (1-based)
+   * @param totalSections - Total de seções
+   * @param options - Opções do batch
+   * @param memoryHistory - Histórico de memória resumida (será atualizado)
+   * @param sharedModel - ChatOpenAI compartilhado
+   * @param llmExtractor - Extractor LLM
+   * @param templateBuilder - Template builder
+   * @param dbWriter - DB writer
+   * @param pdfPages - Número de páginas do PDF
+   * @param batchLogger - Logger do batch
+   * @returns Resultado da extração da seção
+   */
+  private async processSingleSection(
+    pdfText: string,
+    entityType: { id: string; name: string; label: string },
+    sectionIndex: number,
+    totalSections: number,
+    options: BatchSectionOptions,
+    memoryHistory: Array<{ entityTypeName: string; summary: string }>,
+    sharedModel: ChatOpenAI,
+    llmExtractor: UnifiedExtractor,
+    templateBuilder: SectionTemplateBuilder,
+    dbWriter: SectionDBWriter,
+    pdfPages: number,
+    batchLogger: Logger,
+  ): Promise<SectionResult> {
+    const sectionLogger = batchLogger.child({
+      sectionIndex,
+      totalSections,
+      entityTypeId: entityType.id,
+      entityTypeName: entityType.name,
+    });
+
+    try {
+      sectionLogger.info(`Extracting section ${sectionIndex}/${totalSections}`, {
+        entityTypeName: entityType.name,
+        entityTypeLabel: entityType.label,
+        memoryHistorySize: memoryHistory.length,
+      });
+
+      // Construir schema e prompt para esta seção
+      const { schema, prompt, fields } = await templateBuilder.buildSectionSchema(
+        options.templateId,
+        entityType.id,
+        options.projectId,
+      );
+
+      // Adicionar contexto das seções anteriores ao prompt
+      const enrichedPrompt = this.buildPromptWithMemory(prompt, memoryHistory, pdfText);
+
+      const modelToUse = options.model || "gpt-4o-mini";
+
+      // Criar extraction_run
+      const runId = await dbWriter.createRun(
+        options.projectId,
+        options.articleId,
+        options.templateId,
+        entityType.id,
+        options.userId,
+        {
+          model: modelToUse,
+          entityTypeId: entityType.id,
+          batchExtraction: true,
+          sectionIndex,
+          totalSections,
+        },
+      );
+
+      const runLogger = sectionLogger.child({ runId });
+
+      // Extrair com LLM usando modelo compartilhado
+      const llmStart = performance.now();
+      runLogger.info("Extracting with LLM (using shared model)", {
+        model: modelToUse,
+        hasMemoryContext: memoryHistory.length > 0,
+      });
+
+      const extraction = await llmExtractor.extract(pdfText, schema, enrichedPrompt, {
+        model: modelToUse,
+        existingModel: sharedModel,
+      });
+
+      const llmDuration = performance.now() - llmStart;
+
+      runLogger.info("LLM extraction completed", {
+        tokens: extraction.metadata.tokens.total,
+        duration: `${llmDuration.toFixed(0)}ms`,
+      });
+
+      // Normalizar dados (pode ser array ou objeto)
+      const isArray = Array.isArray(extraction.data);
+      let normalizedData: Record<string, any>[];
+
+      if (isArray) {
+        normalizedData = (extraction.data as Array<Record<string, any>>).filter(
+          (item) => item && typeof item === 'object' && !Array.isArray(item)
+        );
+        if (normalizedData.length === 0) {
+          throw new AppError(
+            ErrorCode.VALIDATION_ERROR,
+            "LLM returned empty array or invalid array items",
+            400,
+          );
+        }
+      } else {
+        normalizedData = [extraction.data as Record<string, any>];
+      }
+
+      // Gerar resumo da extração para memória (usar primeiro item)
+      const summary = this.generateExtractionSummary(entityType, normalizedData[0]);
+      memoryHistory.push({
+        entityTypeName: entityType.label || entityType.name,
+        summary,
+      });
+
+      // Buscar cardinality do entity_type primeiro
+      const { data: etData } = await this.supabase
+        .from("extraction_entity_types")
+        .select("cardinality")
+        .eq("id", entityType.id)
+        .maybeSingle();
+
+      const cardinality = (etData?.cardinality as "one" | "many") || "one";
+
+      // Buscar instâncias existentes
+      let instances = await this.getInstances(
+        options.articleId,
+        options.templateId,
+        entityType.id,
+        cardinality,
+        runLogger,
+        options.parentInstanceId,
+      );
+
+      // Se não houver instâncias e cardinality permitir, criar automaticamente
+      if (instances.length === 0) {
+        if (cardinality === "many") {
+          const itemsCount = normalizedData.length;
+          instances = await this.createInstances(
+            options.projectId,
+            options.articleId,
+            options.templateId,
+            entityType.id,
+            options.userId,
+            itemsCount,
+            entityType,
+            fields,
+            runLogger,
+            normalizedData,
+            options.parentInstanceId,
+          );
+        } else {
+          throw new AppError(
+            ErrorCode.NOT_FOUND,
+            `No instances found for entity type ${entityType.name}. Please create at least one instance before extracting.`,
+            400,
+          );
+        }
+      }
+
+      // Processar dados baseado em cardinality
+      let suggestionsCreated = 0;
+
+      if (isArray && cardinality === "many") {
+        // Array + many: mapear cada item do array para uma instância (por índice)
+        const arrayData = normalizedData;
+        const instanceCount = instances.length;
+        const arrayLength = arrayData.length;
+
+        const dataToProcess = arrayData.slice(0, Math.min(arrayLength, instanceCount));
+
+        // Processar cada item do array para sua instância correspondente
+        for (let i = 0; i < dataToProcess.length; i++) {
+          const itemData = dataToProcess[i];
+          const instance = instances[i];
+
+          // Construir mapeamento de campo para esta instância específica
+          const instanceFieldMapping = this.buildFieldMapping(fields, [instance]);
+
+          // Salvar sugestões para esta instância
+          const itemSuggestions = await dbWriter.saveSuggestions(
+            options.articleId,
+            runId,
+            itemData,
+            instanceFieldMapping,
+          );
+          suggestionsCreated += itemSuggestions;
+        }
+      } else {
+        // Objeto único ou cardinality="one": comportamento padrão
+        const dataForProcessing = normalizedData[0];
+        const fieldMapping = this.buildFieldMapping(fields, instances);
+
+        // Salvar sugestões
+        suggestionsCreated = await dbWriter.saveSuggestions(
+          options.articleId,
+          runId,
+          dataForProcessing,
+          fieldMapping,
+        );
+      }
+
+      // Atualizar status do run
+      await dbWriter.updateRunStatus(runId, "completed", {
+        suggestions_created: suggestionsCreated,
+        pdf_pages: pdfPages,
+        tokens_used: extraction.metadata.tokens.total || 0,
+        tokens_prompt: extraction.metadata.tokens.prompt || 0,
+        tokens_completion: extraction.metadata.tokens.completion || 0,
+        entity_type_id: entityType.id,
+      });
+
+      runLogger.info("Section extraction completed successfully", {
+        suggestionsCreated,
+        summary,
+        tokensUsed: extraction.metadata.tokens.total || 0,
+      });
+
+      return {
+        entityTypeId: entityType.id,
+        entityTypeName: entityType.name,
+        success: true,
+        runId,
+        suggestionsCreated,
+        tokensUsed: extraction.metadata.tokens.total || 0,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      sectionLogger.error("Section extraction failed", error as Error, {
+        entityTypeId: entityType.id,
+        entityTypeName: entityType.name,
+      });
+
+      // Retornar erro (não propagar - será tratado no loop)
+      return {
+        entityTypeId: entityType.id,
+        entityTypeName: entityType.name,
+        success: false,
+        error: errorMessage,
+      };
+    }
+  }
+
+  /**
    * Extrai todas as seções de um modelo sequencialmente com memória resumida
    * 
    * FLUXO:
-   * 1. Processar PDF uma vez (mantém texto em memória)
+   * 1. Processar PDF uma vez (mantém texto em memória) ou usar pdfText fornecido
    * 2. Criar ChatOpenAI uma vez (reutilizado para todas as extrações)
-   * 3. Buscar entity_types filhas do modelo
+   * 3. Buscar entity_types filhas do modelo (opcionalmente filtradas por sectionIds)
    * 4. Loop sequencial: para cada seção, extrair com contexto das anteriores
    * 5. Retornar resultado agregado
    * 
-   * @param pdfBuffer - Buffer do PDF
+   * @param pdfBuffer - Buffer do PDF (ignorado se pdfText fornecido)
    * @param options - Opções do batch (projectId, articleId, parentInstanceId, etc.)
    * @returns Resultado agregado com estatísticas de todas as seções
    */
@@ -1241,27 +1512,40 @@ export class SectionExtractionPipeline {
     let pdfPages = 0;
 
     try {
-      // ==================== 1. PROCESSAR PDF UMA VEZ ====================
-      const pdfStart = performance.now();
-      batchLogger.info("Processing PDF (will be reused for all sections)");
-      const pdfProcessor = new SectionPDFProcessor(batchLogger);
-      const pdf = await pdfProcessor.process(pdfBuffer);
-      const pdfDuration = performance.now() - pdfStart;
-      pdfPages = pdf.pageCount || 0;
+      // ==================== 1. PROCESSAR PDF OU USAR TEXTO FORNECIDO ====================
+      let pdfText: string;
+      
+      if (options.pdfText) {
+        // Usar texto fornecido (já processado - evita reprocessar em chunks)
+        pdfText = options.pdfText;
+        pdfPages = 0; // Não sabemos o número de páginas se usar texto fornecido
+        batchLogger.info("Using provided PDF text (skipping PDF processing)", {
+          textLength: pdfText.length,
+        });
+      } else {
+        // Processar PDF normalmente
+        const pdfStart = performance.now();
+        batchLogger.info("Processing PDF (will be reused for all sections)");
+        const pdfProcessor = new SectionPDFProcessor(batchLogger);
+        const pdf = await pdfProcessor.process(pdfBuffer);
+        const pdfDuration = performance.now() - pdfStart;
+        pdfPages = pdf.pageCount || 0;
 
-      if (!pdf.text || typeof pdf.text !== 'string') {
-        throw new AppError(
-          ErrorCode.PDF_PROCESSING_ERROR,
-          "PDF processing failed: extracted text is invalid or empty",
-          500,
-        );
+        if (!pdf.text || typeof pdf.text !== 'string') {
+          throw new AppError(
+            ErrorCode.PDF_PROCESSING_ERROR,
+            "PDF processing failed: extracted text is invalid or empty",
+            500,
+          );
+        }
+
+        pdfText = pdf.text;
+        batchLogger.info("PDF processed", {
+          textLength: pdfText.length,
+          pageCount: pdfPages,
+          duration: `${pdfDuration.toFixed(0)}ms`,
+        });
       }
-
-      batchLogger.info("PDF processed", {
-        textLength: pdf.text.length,
-        pageCount: pdfPages,
-        duration: `${pdfDuration.toFixed(0)}ms`,
-      });
 
       // ==================== 2. BUSCAR ENTITY_TYPE DO MODELO ====================
       const modelEntityType = await this.getModelEntityType(
@@ -1278,6 +1562,7 @@ export class SectionExtractionPipeline {
       const childEntityTypes = await this.getChildEntityTypes(
         modelEntityType.id,
         options.templateId,
+        options.sectionIds, // NOVO: Filtrar seções específicas se fornecido
       );
 
       if (childEntityTypes.length === 0) {
@@ -1344,222 +1629,36 @@ export class SectionExtractionPipeline {
       };
       const llmExtractor = ExtractorFactory.createExtractor(this.openaiKey, batchLogger, extractionConfig);
 
+      // Processar cada seção usando método reutilizável
       for (let i = 0; i < childEntityTypes.length; i++) {
         const entityType = childEntityTypes[i];
-        const sectionLogger = batchLogger.child({
-          sectionIndex: i + 1,
-          totalSections: childEntityTypes.length,
-          entityTypeId: entityType.id,
-          entityTypeName: entityType.name,
-        });
+        const sectionIndex = i + 1;
+        const totalSections = childEntityTypes.length;
 
-        try {
-          sectionLogger.info(`Extracting section ${i + 1}/${childEntityTypes.length}`, {
-            entityTypeName: entityType.name,
-            entityTypeLabel: entityType.label,
-            memoryHistorySize: memoryHistory.length,
-          });
+        const result = await this.processSingleSection(
+          pdfText,
+          entityType,
+          sectionIndex,
+          totalSections,
+          options,
+          memoryHistory,
+          sharedModel,
+          llmExtractor,
+          templateBuilder,
+          dbWriter,
+          pdfPages,
+          batchLogger,
+        );
 
-          // Construir schema e prompt para esta seção
-          const { schema, prompt, fields } = await templateBuilder.buildSectionSchema(
-            options.templateId,
-            entityType.id,
-            options.projectId,
-          );
-
-          // Adicionar contexto das seções anteriores ao prompt
-          const enrichedPrompt = this.buildPromptWithMemory(prompt, memoryHistory, pdf.text);
-
-          // Criar extraction_run
-          const runId = await dbWriter.createRun(
-            options.projectId,
-            options.articleId,
-            options.templateId,
-            entityType.id,
-            options.userId,
-            {
-              model: modelToUse,
-              entityTypeId: entityType.id,
-              batchExtraction: true,
-              sectionIndex: i + 1,
-              totalSections: childEntityTypes.length,
-            },
-          );
-
-          const runLogger = sectionLogger.child({ runId });
-
-          // Extrair com LLM usando modelo compartilhado
-          const llmStart = performance.now();
-          runLogger.info("Extracting with LLM (using shared model)", {
-            model: modelToUse,
-            hasMemoryContext: memoryHistory.length > 0,
-          });
-
-          const extraction = await llmExtractor.extract(pdf.text, schema, enrichedPrompt, {
-            model: modelToUse,
-            existingModel: sharedModel, // Reutilizar modelo compartilhado
-          });
-
-          const llmDuration = performance.now() - llmStart;
-          totalTokensUsed += extraction.metadata.tokens.total || 0;
-
-          runLogger.info("LLM extraction completed", {
-            tokens: extraction.metadata.tokens.total,
-            duration: `${llmDuration.toFixed(0)}ms`,
-          });
-
-          // Normalizar dados (pode ser array ou objeto)
-          const isArray = Array.isArray(extraction.data);
-          let normalizedData: Record<string, any>[];
-
-          if (isArray) {
-            normalizedData = (extraction.data as Array<Record<string, any>>).filter(
-              (item) => item && typeof item === 'object' && !Array.isArray(item)
-            );
-            if (normalizedData.length === 0) {
-              throw new AppError(
-                ErrorCode.VALIDATION_ERROR,
-                "LLM returned empty array or invalid array items",
-                400,
-              );
-            }
-          } else {
-            normalizedData = [extraction.data as Record<string, any>];
-          }
-
-          // Gerar resumo da extração para memória (usar primeiro item)
-          const summary = this.generateExtractionSummary(entityType, normalizedData[0]);
-          memoryHistory.push({
-            entityTypeName: entityType.label || entityType.name,
-            summary,
-          });
-
-          // Buscar cardinality do entity_type primeiro
-          const { data: etData } = await this.supabase
-            .from("extraction_entity_types")
-            .select("cardinality")
-            .eq("id", entityType.id)
-            .maybeSingle();
-
-          const cardinality = (etData?.cardinality as "one" | "many") || "one";
-
-          // Buscar instâncias existentes
-          let instances = await this.getInstances(
-            options.articleId,
-            options.templateId,
-            entityType.id,
-            cardinality,
-            runLogger,
-            options.parentInstanceId,
-          );
-
-          // Se não houver instâncias e cardinality permitir, criar automaticamente
-          if (instances.length === 0) {
-            if (cardinality === "many") {
-              const itemsCount = normalizedData.length;
-              instances = await this.createInstances(
-                options.projectId,
-                options.articleId,
-                options.templateId,
-                entityType.id,
-                options.userId,
-                itemsCount,
-                entityType,
-                fields,
-                runLogger,
-                normalizedData,
-                options.parentInstanceId,
-              );
-            } else {
-              throw new AppError(
-                ErrorCode.NOT_FOUND,
-                `No instances found for entity type ${entityType.name}. Please create at least one instance before extracting.`,
-                400,
-              );
-            }
-          }
-
-          // Processar dados baseado em cardinality
-          let suggestionsCreated = 0;
-
-          if (isArray && cardinality === "many") {
-            // Array + many: mapear cada item do array para uma instância (por índice)
-            const arrayData = normalizedData;
-            const instanceCount = instances.length;
-            const arrayLength = arrayData.length;
-
-            const dataToProcess = arrayData.slice(0, Math.min(arrayLength, instanceCount));
-
-            // Processar cada item do array para sua instância correspondente
-            for (let i = 0; i < dataToProcess.length; i++) {
-              const itemData = dataToProcess[i];
-              const instance = instances[i];
-
-              // Construir mapeamento de campo para esta instância específica
-              const instanceFieldMapping = this.buildFieldMapping(fields, [instance]);
-
-              // Salvar sugestões para esta instância
-              const itemSuggestions = await dbWriter.saveSuggestions(
-                options.articleId,
-                runId,
-                itemData,
-                instanceFieldMapping,
-              );
-              suggestionsCreated += itemSuggestions;
-            }
-          } else {
-            // Objeto único ou cardinality="one": comportamento padrão
-            const dataForProcessing = normalizedData[0];
-            const fieldMapping = this.buildFieldMapping(fields, instances);
-
-            // Salvar sugestões
-            suggestionsCreated = await dbWriter.saveSuggestions(
-              options.articleId,
-              runId,
-              dataForProcessing,
-              fieldMapping,
-            );
-          }
-
-          totalSuggestionsCreated += suggestionsCreated;
-
-          // Atualizar status do run
-          await dbWriter.updateRunStatus(runId, "completed", {
-            suggestions_created: suggestionsCreated,
-            pdf_pages: pdfPages,
-            tokens_used: extraction.metadata.tokens.total || 0,
-            tokens_prompt: extraction.metadata.tokens.prompt || 0,
-            tokens_completion: extraction.metadata.tokens.completion || 0,
-            entity_type_id: entityType.id,
-          });
-
-          sectionResults.push({
-            entityTypeId: entityType.id,
-            entityTypeName: entityType.name,
-            success: true,
-            runId,
-            suggestionsCreated,
-          });
-
-          runLogger.info("Section extraction completed successfully", {
-            suggestionsCreated,
-            summary,
-          });
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          sectionLogger.error("Section extraction failed", error as Error, {
-            entityTypeId: entityType.id,
-            entityTypeName: entityType.name,
-          });
-
-          // Continuar mesmo se uma seção falhar
-          sectionResults.push({
-            entityTypeId: entityType.id,
-            entityTypeName: entityType.name,
-            success: false,
-            error: errorMessage,
-          });
+        // Adicionar tokens usados se sucesso
+        if (result.success && result.tokensUsed) {
+          totalTokensUsed += result.tokensUsed;
         }
+
+        sectionResults.push(result);
+        
+        // Se sucesso, já foi adicionado ao memoryHistory no processSingleSection
+        // Se falhou, apenas continuar (erro já foi logado)
       }
 
       const totalDuration = performance.now() - start;

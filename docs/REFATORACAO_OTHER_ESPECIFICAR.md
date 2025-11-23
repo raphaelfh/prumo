@@ -189,3 +189,9 @@ A refatoração seguiu princípios **KISS**, **DRY** e **código limpo**:
 **Resultado**: Código mais maintível, testável e consistente.
 
 
+
+
+
+
+
+

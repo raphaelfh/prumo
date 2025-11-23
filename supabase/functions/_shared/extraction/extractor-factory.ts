@@ -14,6 +14,11 @@ import { Logger } from "../core/logger.ts";
 import { LangchainExtractor, type ExtractionConfig } from "./langchain-extractor.ts";
 import { InstructorExtractorAdapter } from "./instructor-extractor-adapter.ts";
 
+// Declaração de tipos do Deno (ambiente de execução)
+declare const Deno: {
+  env: { get(key: string): string | undefined };
+};
+
 /**
  * Tipo de extractor disponível
  */

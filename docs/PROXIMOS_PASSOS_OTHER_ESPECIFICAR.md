@@ -289,3 +289,9 @@ other_placeholder: string | null;
 4. **UI/UX**: Componentes `SelectWithOther` e `MultiSelectWithOther` são reutilizáveis e seguem padrões modernos.
 
 
+
+
+
+
+
+

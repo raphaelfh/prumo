@@ -18,6 +18,7 @@ import { HeaderStatusBadges } from './header/HeaderStatusBadges';
 import { HeaderFinalizeButton } from './header/HeaderFinalizeButton';
 import { HeaderAIActions } from './header/HeaderAIActions';
 import { HeaderMoreMenu } from './header/HeaderMoreMenu';
+import { FullAIExtractionProgress } from '@/components/extraction/FullAIExtractionProgress';
 import type { AISuggestion } from '@/types/ai-extraction';
 import type { 
   ProjectExtractionTemplate, 
@@ -80,6 +81,11 @@ interface ExtractionHeaderProps {
   template?: ProjectExtractionTemplate | null;
   instances?: ExtractionInstance[];
   values?: ExtractedValue[];
+  
+  // Callback para refresh após extração
+  onRefreshInstances?: () => Promise<void>;
+  // Callback para expor estado de extração IA
+  onExtractionStateChange?: (state: { loading: boolean; progress: any }) => void;
 }
 
 // =================== COMPONENT ===================
@@ -190,6 +196,10 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                   instances={instances}
                   values={values}
                   compact={true}
+                  articleId={currentArticleId}
+                  templateId={template?.id}
+                  onExtractionComplete={props.onRefreshInstances}
+                  onExtractionStateChange={props.onExtractionStateChange}
                 />
               </div>
             </div>
@@ -254,6 +264,10 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                 instances={instances}
                 values={values}
                 compact={false}
+                articleId={currentArticleId}
+                templateId={template?.id}
+                onExtractionComplete={props.onRefreshInstances}
+                onExtractionStateChange={props.onExtractionStateChange}
               />
             </div>
 

@@ -1,0 +1,70 @@
+---
+description: Diretrizes sobre licenciamento dual (AGPL-3.0 + comercial) e proteção de propriedade intelectual.
+alwaysApply: false
+---
+
+## Modelo de Licenciamento Duplo
+
+Este projeto utiliza um modelo de **licenciamento duplo**:
+
+- **AGPL-3.0 (Padrão)**: Todo o código está disponível sob a GNU Affero General Public License v3.0
+- **Licença Comercial**: Disponível mediante pagamento para uso proprietário/comercial sem obrigações de copyleft
+
+## Diretrizes para o AI
+
+### Cabeçalhos de Copyright
+
+**SEMPRE** adicionar cabeçalho de copyright em novos arquivos de código fonte (excluindo testes e arquivos gerados):
+
+```typescript
+/**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+```
+
+**Arquivos que DEVEM ter cabeçalho:**
+- Arquivos TypeScript/TSX em `src/` (exceto `src/test/`)
+- Edge Functions em `supabase/functions/`
+- Arquivos de configuração principais (`vite.config.ts`, etc.)
+
+**Arquivos que NÃO precisam:**
+- Arquivos de teste (`src/test/`, `*.test.ts`, `*.spec.ts`)
+- Arquivos gerados (`dist/`, `node_modules/`)
+- Arquivos de configuração JSON (não suportam comentários)
+- Migrações SQL (já possuem comentários próprios)
+
+### Código Novo
+
+Ao criar novos arquivos de código fonte:
+1. Adicionar o cabeçalho de copyright no topo do arquivo
+2. Manter o formato exato especificado acima
+3. Não modificar o cabeçalho em arquivos existentes sem necessidade
+
+### Contribuições e CLA
+
+- Contribuições externas devem ser gerenciadas via **CLA Assistant** (configurado externamente)
+- O AI não deve modificar ou remover cabeçalhos de copyright existentes
+- Ao refatorar código, manter os cabeçalhos originais quando possível
+
+## Informações sobre AGPL-3.0
+
+### O que é Copyleft?
+
+A AGPL-3.0 é uma licença copyleft forte que garante:
+- Liberdade de usar, modificar e distribuir
+- **Obrigação**: Se você usar o software em uma aplicação web/SaaS, deve disponibilizar o código-fonte completo sob AGPL-3.0
+
+### Licença Comercial
+
+Empresas que desejam usar o software sem abrir seu código podem adquirir uma licença comercial que:
+- Remove as obrigações de copyleft
+- Permite uso proprietário
+- Inclui suporte e garantias legais
+
+### Referências
+
+- [AGPL-3.0 License Text](https://www.gnu.org/licenses/agpl-3.0.html)
+- [Dual Licensing Model](https://www.gnu.org/licenses/gpl-faq.html#GPLIncompatibleLibs)
+- Arquivo `LICENSE` na raiz do repositório contém o texto completo da licença

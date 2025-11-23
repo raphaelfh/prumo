@@ -21,3 +21,9 @@ COMMENT ON POLICY "Managers or owner can delete projects" ON projects IS
 A deleção em cascade remove automaticamente todos os dados relacionados.';
 
 
+
+
+
+
+
+

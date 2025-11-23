@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * Edge Function: AI Assessment lendo o PDF diretamente (OpenAI Responses API)
  * Suporta: pdf_storage_key (Supabase Storage), pdf_base64, pdf_file_id (OpenAI Files)
  * Fallback automático >32MB (ou force_file_search): File Search + Vector Store

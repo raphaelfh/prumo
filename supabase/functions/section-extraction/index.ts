@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * Edge Function: Section Extraction
  * 
  * Extração de IA focada em uma seção específica (entity type) de um template.
@@ -47,6 +53,8 @@ const SectionExtractionRequestSchema = z.object({
   entityTypeId: z.string().uuid("entityTypeId must be a valid UUID").optional(), // Opcional quando extractAllSections=true
   parentInstanceId: z.string().uuid("parentInstanceId must be a valid UUID").optional(), // Nova: para filtrar child entities por modelo
   extractAllSections: z.boolean().optional(), // Novo: flag para extrair todas as seções do modelo
+  sectionIds: z.array(z.string().uuid()).optional(), // NOVO: Filtrar seções específicas (para chunking)
+  pdfText: z.string().optional(), // NOVO: Texto do PDF já processado (evita reprocessar)
   options: z
     .object({
       model: z.enum(["gpt-4o-mini", "gpt-4o", "gpt-5"]).optional(),
@@ -232,6 +240,8 @@ Deno.serve(async (req: Request) => {
         parentInstanceId: input.parentInstanceId!, // Já validado pelo schema
         userId: user.id,
         model: input.options?.model,
+        sectionIds: input.sectionIds, // NOVO: Filtrar seções específicas se fornecido
+        pdfText: input.pdfText, // NOVO: Texto do PDF já processado se fornecido
       });
 
       contextualLogger.info("Batch section extraction completed", {

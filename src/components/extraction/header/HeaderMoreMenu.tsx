@@ -3,7 +3,7 @@
  * Agrupa ações secundárias: Export, Atalhos, Ajuda
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -30,9 +30,11 @@ import {
   Download, 
   Keyboard, 
   HelpCircle,
-  ExternalLink 
+  ExternalLink,
+  Sparkles
 } from 'lucide-react';
 import { ExtractionExport } from '@/components/extraction/ExtractionExport';
+import { useFullAIExtraction } from '@/hooks/extraction/useFullAIExtraction';
 import type { 
   ProjectExtractionTemplate, 
   ExtractionInstance, 
@@ -50,6 +52,14 @@ interface HeaderMoreMenuProps {
   values?: ExtractedValue[];
   /** Modo compacto (apenas ícone) */
   compact?: boolean;
+  /** Article ID para extração IA */
+  articleId?: string;
+  /** Template ID para extração IA */
+  templateId?: string;
+  /** Callback após extração completa */
+  onExtractionComplete?: () => Promise<void>;
+  /** Callback para expor estado de extração (para renderizar progresso no parent) */
+  onExtractionStateChange?: (state: { loading: boolean; progress: any }) => void;
 }
 
 export function HeaderMoreMenu({
@@ -58,9 +68,32 @@ export function HeaderMoreMenu({
   instances = [],
   values = [],
   compact = false,
+  articleId,
+  templateId,
+  onExtractionComplete,
+  onExtractionStateChange,
 }: HeaderMoreMenuProps) {
   const [exportOpen, setExportOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+
+  // Hook para extração IA completa
+  const { extractFullAI, loading: extractingAI, progress: extractionProgress } = useFullAIExtraction({
+    onSuccess: async () => {
+      if (onExtractionComplete) {
+        await onExtractionComplete();
+      }
+    },
+  });
+
+  // Expor estado para parent (para renderizar progresso fora do menu)
+  useEffect(() => {
+    if (onExtractionStateChange) {
+      onExtractionStateChange({
+        loading: extractingAI,
+        progress: extractionProgress || null,
+      });
+    }
+  }, [extractingAI, extractionProgress, onExtractionStateChange]);
 
   const shortcuts = [
     { keys: 'Ctrl/Cmd + S', action: 'Salvar manualmente' },
@@ -81,6 +114,24 @@ export function HeaderMoreMenu({
   const handleHelp = () => {
     // Abrir documentação em nova aba
     window.open('/docs', '_blank');
+  };
+
+  const handleFullAIExtraction = async () => {
+    if (!articleId || !templateId) {
+      console.warn('[HeaderMoreMenu] articleId ou templateId não fornecido para extração IA');
+      return;
+    }
+
+    try {
+      await extractFullAI({
+        projectId,
+        articleId,
+        templateId,
+      });
+    } catch (error) {
+      // Erro já tratado pelo hook com toast
+      console.error('[HeaderMoreMenu] Erro na extração IA completa:', error);
+    }
   };
 
   const triggerButton = (
@@ -111,6 +162,15 @@ export function HeaderMoreMenu({
           <DropdownMenuLabel className="text-xs text-muted-foreground">
             Ações
           </DropdownMenuLabel>
+          {articleId && templateId && (
+            <DropdownMenuItem 
+              onClick={handleFullAIExtraction}
+              disabled={extractingAI}
+            >
+              <Sparkles className="mr-2 h-4 w-4" />
+              {extractingAI ? 'Extraindo IA...' : 'Extrair IA'}
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onClick={handleExport}>
             <Download className="mr-2 h-4 w-4" />
             Exportar Dados
@@ -176,6 +236,7 @@ export function HeaderMoreMenu({
           </p>
         </DialogContent>
       </Dialog>
+
     </>
   );
 }

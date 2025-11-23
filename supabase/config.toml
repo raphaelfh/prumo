@@ -9,8 +9,5 @@ verify_jwt = true
 [functions.model-extraction]
 verify_jwt = true
 
-[functions.structured-extraction]
-verify_jwt = true
-
 [functions.zotero-import]
 verify_jwt = true

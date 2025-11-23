@@ -1,5 +1,10 @@
 # Review Hub
 
+![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
+![CLA](https://img.shields.io/badge/CLA-Required-orange.svg)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue.svg)
+![React](https://img.shields.io/badge/React-18.3-blue.svg)
+
 Sistema completo para gerenciamento de revisões sistemáticas e meta-análises.
 
 ## Funcionalidades Principais
@@ -11,8 +16,50 @@ Sistema completo para gerenciamento de revisões sistemáticas e meta-análises.
 - **Colaboração**: Trabalhe em equipe com controle de acesso e permissões
 - **Visualização de PDFs**: Leitor de PDF integrado com anotações
 
-## Documentação
+## ⚖️ Licenciamento
 
+Este projeto é Open Source sob a licença **GNU Affero General Public License v3.0 (AGPL-3.0)**.
+
+### O que isso significa?
+
+✅ **Você pode usar, estudar e modificar este software gratuitamente.**
+
+✅ **Se você usar este software em uma aplicação que roda em rede (SaaS, Web)**, você deve disponibilizar o código-fonte da sua aplicação completa sob a mesma licença (AGPL-3.0).
+
+### Licença Comercial (Enterprise)
+
+Se você deseja usar este software em produtos proprietários, aplicações comerciais fechadas, ou sem a obrigação de abrir seu próprio código-fonte, você deve adquirir uma **Licença Comercial**.
+
+**Benefícios da Licença Comercial:**
+- 🛡️ **Isenção das obrigações de Copyleft** (não precisa abrir seu código)
+- 🤝 **Suporte prioritário e garantias legais**
+- 📧 **Entre em contato conosco para adquirir uma licença comercial**
+
+Para mais informações sobre licenciamento comercial, entre em contato através do repositório, via issues ou por email.
+
+**Contato para Licenças Comerciais**: [Adicione seu email aqui]
+
+## 🤝 Contribuindo
+
+Contribuições são bem-vindas! Por favor, leia nosso [Guia de Contribuição](.github/CONTRIBUTING.md) para detalhes sobre nosso código de conduta e o processo para submeter pull requests.
+
+**Importante**: Antes de contribuir, você precisará assinar nosso [Contributor License Agreement (CLA)](CLA.md).
+
+### Primeiros Passos
+
+1. Fork o repositório
+2. Crie uma branch para sua feature (`git checkout -b feature/AmazingFeature`)
+3. Commit suas mudanças (`git commit -m 'feat: adiciona AmazingFeature'`)
+4. Push para a branch (`git push origin feature/AmazingFeature`)
+5. Abra um Pull Request
+
+Para mais detalhes, consulte [CONTRIBUTING.md](.github/CONTRIBUTING.md).
+
+## 📚 Documentação
+
+- [Guia de Contribuição](.github/CONTRIBUTING.md)
+- [Código de Conduta](CODE_OF_CONDUCT.md)
+- [Política de Segurança](SECURITY.md)
 - [Integração com Zotero](./docs/ZOTERO_INTEGRATION.md)
 
 ## Project info

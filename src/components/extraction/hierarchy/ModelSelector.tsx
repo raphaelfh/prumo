@@ -24,9 +24,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Trash2, Sparkles, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Sparkles, Loader2, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 // =================== INTERFACES ===================
 
@@ -49,9 +55,12 @@ interface ModelSelectorProps {
   onExtractModels?: () => Promise<void>;
   extractingModels?: boolean;
   loading?: boolean;
-  // Props para extração de todas as seções
+  // Props para extração de todas as seções de um modelo
   onExtractAllSections?: () => Promise<void>;
   extractingAllSections?: boolean;
+  // Props para extração de seções de todos os modelos
+  onExtractAllSectionsForAllModels?: () => Promise<void>;
+  extractingAllSectionsForAllModels?: boolean;
   projectId?: string;
   articleId?: string;
   templateId?: string;
@@ -70,6 +79,8 @@ export function ModelSelector({
   loading = false,
   onExtractAllSections,
   extractingAllSections = false,
+  onExtractAllSectionsForAllModels,
+  extractingAllSectionsForAllModels = false,
 }: ModelSelectorProps) {
   // Encontrar modelo ativo
   const activeModel = useMemo(() => {
@@ -159,21 +170,41 @@ export function ModelSelector({
         </div>
         <div className="flex gap-2 flex-shrink-0">
           {onExtractModels && (
-            <Button 
-              onClick={onExtractModels} 
-              size="sm" 
-              variant="default"
-              className="gap-2"
-              disabled={extractingModels}
-              title="Extrair modelos automaticamente com IA"
-            >
-              {extractingModels ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Sparkles className="h-4 w-4" />
-              )}
-              <span className="hidden sm:inline">Extrair IA</span>
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  size="sm" 
+                  variant="default"
+                  className="gap-2"
+                  disabled={extractingModels || extractingAllSectionsForAllModels}
+                  title="Extrair modelos automaticamente com IA"
+                >
+                  {extractingModels || extractingAllSectionsForAllModels ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  <span className="hidden sm:inline">Extrair IA</span>
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem 
+                  onClick={onExtractModels}
+                  disabled={extractingModels || extractingAllSectionsForAllModels}
+                >
+                  Extrair apenas modelos
+                </DropdownMenuItem>
+                {onExtractAllSectionsForAllModels && (
+                  <DropdownMenuItem 
+                    onClick={onExtractAllSectionsForAllModels}
+                    disabled={extractingModels || extractingAllSectionsForAllModels || models.length === 0}
+                  >
+                    Extrair seções de todos os modelos
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
           <Button 
             onClick={onAddModel} 

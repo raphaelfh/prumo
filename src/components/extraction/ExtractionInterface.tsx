@@ -12,7 +12,6 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   FileText, 
-  Brain, 
   Download,
   CheckCircle,
   AlertCircle,
@@ -37,13 +36,13 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   
   // Ler aba da URL ou usar padrão
-  const tabFromUrl = searchParams.get('extractionTab') as 'dashboard' | 'extraction' | 'ai' | 'configuration' | null;
-  const initialTab = (tabFromUrl && ['dashboard', 'extraction', 'ai', 'configuration'].includes(tabFromUrl)) 
+  const tabFromUrl = searchParams.get('extractionTab') as 'extraction' | 'dashboard' | 'configuration' | null;
+  const initialTab = (tabFromUrl && ['extraction', 'dashboard', 'configuration'].includes(tabFromUrl)) 
     ? tabFromUrl 
-    : 'dashboard';
+    : 'extraction';
   
   const [activeTemplate, setActiveTemplate] = useState<ProjectExtractionTemplate | null>(null);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'extraction' | 'ai' | 'configuration'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'extraction' | 'dashboard' | 'configuration'>(initialTab);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showCreateCustomDialog, setShowCreateCustomDialog] = useState(false);
   const [articles, setArticles] = useState<any[]>([]);
@@ -91,7 +90,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   }, [activeTab, searchParams, setSearchParams]);
 
   // Função para mudar aba e atualizar URL
-  const handleTabChange = (tab: 'dashboard' | 'extraction' | 'ai' | 'configuration') => {
+  const handleTabChange = (tab: 'extraction' | 'dashboard' | 'configuration') => {
     setActiveTab(tab);
   };
 
@@ -267,9 +266,6 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   // Renderizar conteúdo das abas
   const renderTabContent = () => {
     switch (activeTab) {
-      case 'dashboard':
-        return renderDashboard();
-      
       case 'extraction':
         return activeTemplate ? (
           <ArticleExtractionTable 
@@ -319,29 +315,8 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
           </Card>
         );
       
-      case 'ai':
-        return (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Brain className="h-5 w-5" />
-                Sugestões de IA
-              </CardTitle>
-              <CardDescription>
-                Use inteligência artificial para acelerar a extração de dados
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center py-12">
-                <Brain className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h4 className="font-medium mb-2">Funcionalidade em desenvolvimento</h4>
-                <p className="text-sm text-muted-foreground">
-                  As sugestões de IA serão implementadas em breve
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        );
+      case 'dashboard':
+        return renderDashboard();
       
       case 'configuration':
         return activeTemplate ? (
@@ -420,7 +395,53 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
         );
       
       default:
-        return renderDashboard();
+        return activeTemplate ? (
+          <ArticleExtractionTable 
+            projectId={projectId} 
+            templateId={activeTemplate.id}
+          />
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>Configure o template primeiro</CardTitle>
+              <CardDescription>
+                Você precisa configurar as variáveis que serão extraídas dos artigos.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Vá para a aba <strong>Configuração</strong> e escolha:
+              </p>
+              <div className="bg-muted/50 rounded-lg p-4 space-y-3">
+                <div className="flex items-start space-x-3">
+                  <Download className="h-5 w-5 text-muted-foreground mt-0.5" />
+                  <div>
+                    <p className="font-medium text-sm">Importar template CHARMS</p>
+                    <p className="text-sm text-muted-foreground">
+                      Use o checklist oficial para revisões de modelos preditivos
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-start space-x-3">
+                  <PlusCircle className="h-5 w-5 text-muted-foreground mt-0.5" />
+                  <div>
+                    <p className="font-medium text-sm">Criar seções personalizadas</p>
+                    <p className="text-sm text-muted-foreground">
+                      Defina suas próprias variáveis de extração
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <Button 
+                onClick={() => setActiveTab('configuration')}
+                className="w-full"
+              >
+                <Settings className="h-4 w-4 mr-2" />
+                Ir para Configuração
+              </Button>
+            </CardContent>
+          </Card>
+        );
     }
   };
 
@@ -438,14 +459,11 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(value) => handleTabChange(value as any)}>
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="extraction" disabled={!activeTemplate}>
             Extração
           </TabsTrigger>
-          <TabsTrigger value="ai" disabled={!activeTemplate}>
-            IA
-          </TabsTrigger>
+          <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
           <TabsTrigger value="configuration">
             Configuração
           </TabsTrigger>
