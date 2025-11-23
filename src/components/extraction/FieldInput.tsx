@@ -156,7 +156,7 @@ export function FieldInput(props: FieldInputProps) {
   // Renderizar input baseado no tipo
   const renderInput = () => {
     switch (field.field_type) {
-      case 'text':
+      case 'text': {
         // Se description longa, usar textarea
         const labelLower = field.label.toLowerCase();
         const isLongText = labelLower.includes('descrição') ||
@@ -202,8 +202,9 @@ export function FieldInput(props: FieldInputProps) {
               )}
           />
         );
+      }
 
-      case 'number':
+      case 'number': {
         // Parse valor (pode ser objeto {value, unit} ou valor simples)
         const numValue = extractValue(displayValue);
         const currentUnit = extractUnit(displayValue) 
@@ -265,6 +266,7 @@ export function FieldInput(props: FieldInputProps) {
             ) : null}
           </div>
         );
+      }
 
       case 'date':
         return (
@@ -277,7 +279,7 @@ export function FieldInput(props: FieldInputProps) {
           />
         );
 
-      case 'select':
+      case 'select': {
         const options = field.allowed_values as any[] || [];
         if (field.allow_other) {
           return (
@@ -316,8 +318,9 @@ export function FieldInput(props: FieldInputProps) {
             </SelectContent>
           </Select>
         );
+      }
 
-      case 'multiselect':
+      case 'multiselect': {
         const mOptions = field.allowed_values as any[] || [];
         if (field.allow_other) {
           return (
@@ -343,6 +346,7 @@ export function FieldInput(props: FieldInputProps) {
             className={cn(inputHeight, "text-base", validationError && "border-destructive")}
           />
         );
+      }
 
       case 'boolean':
         return (

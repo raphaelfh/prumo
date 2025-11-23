@@ -353,9 +353,10 @@ export class SectionTemplateBuilder {
       case "text":
         return z.string().describe(desc);
 
-      case "number":
+      case "number": {
         const numberDesc = field.unit ? `${desc} (unit: ${field.unit})` : desc;
         return z.number().describe(numberDesc);
+      }
 
       case "boolean":
         return z.boolean().describe(desc);

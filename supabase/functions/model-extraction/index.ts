@@ -21,7 +21,7 @@
  * 6. Retorno do resultado (runId, modelos criados)
  */
 
-import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { Logger } from "../_shared/core/logger.ts";
 import { ErrorHandler, AppError, ErrorCode } from "../_shared/core/error-handler.ts";
 import { z } from "npm:zod@3.23.8";
@@ -67,16 +67,19 @@ Deno.serve(async (req: Request) => {
   const logger = new Logger({ traceId });
 
   try {
-    // ==================== 1. AUTENTICAÇÃO (ANTES DO PARSE) ====================
-    const authHeader = req.headers.get("Authorization");
-    const { user, supabase } = await authenticateUser(authHeader, logger);
-
-    // ==================== 2. PARSE E VALIDAÇÃO ====================
+    // ==================== 1. PARSE E VALIDAÇÃO ====================
+    // Parse do body JSON com tratamento de erro
     const body = await req.json().catch(() => {
       throw new AppError(ErrorCode.VALIDATION_ERROR, "Invalid JSON body", 400);
     });
 
+    // Validação do schema usando Zod
+    // Isso garante que todos os campos obrigatórios estão presentes e com tipos corretos
     const input: ModelExtractionRequest = Validator.validate(ModelExtractionRequestSchema, body);
+
+    // ==================== 2. AUTENTICAÇÃO ====================
+    const authHeader = req.headers.get("Authorization");
+    const { user, supabase } = await authenticateUser(authHeader, logger);
 
     // Criar logger filho com contexto completo
     const contextualLogger = logger.child({

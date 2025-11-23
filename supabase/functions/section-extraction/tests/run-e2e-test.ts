@@ -551,7 +551,7 @@ async function main() {
 }
 
 // Executar apenas se este arquivo for o main module
-// @ts-ignore - Deno-specific import.meta.main
+// @ts-expect-error - Deno-specific import.meta.main
 if (import.meta.main) {
   main().catch((error) => {
     console.error("Fatal error:", error);

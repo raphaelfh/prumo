@@ -124,13 +124,16 @@ export class SectionPDFProcessor {
             if (extractedText.length > 0) {
               // Verificar se contém muitos caracteres não-imprimíveis ou binários
               // Aumentar threshold para 20% (antes era 5%) para ser menos restritivo
+              // eslint-disable-next-line no-control-regex
               const nonPrintableChars = extractedText.match(/[\x00-\x08\x0E-\x1F\x7F-\x9F]/g);
               const nonPrintableRatio = nonPrintableChars ? nonPrintableChars.length / extractedText.length : 0;
               
               // Verificar se contém muitos padrões de PDF binário (objetos, streams, etc)
               // Padrões mais específicos que indicam conteúdo binário real
               const pdfBinaryPatterns = [
+                // eslint-disable-next-line no-control-regex
                 /stream[\x00-\xFF]{100,}/g, // Streams grandes com muitos bytes não-ASCII
+                // eslint-disable-next-line no-control-regex
                 /endobj[\x00-\xFF]{50,}stream/g, // Sequência que indica estrutura binária
               ];
               const binaryPatternMatches = pdfBinaryPatterns.reduce((count, pattern) => {

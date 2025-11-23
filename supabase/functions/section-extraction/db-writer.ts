@@ -144,7 +144,7 @@ export class SectionDBWriter {
         }
 
         // Buscar mapeamento para este campo (exact match)
-        let mappings = fieldMapping.get(fieldName);
+        const mappings = fieldMapping.get(fieldName);
         
         // Se não encontrou, tentar case-insensitive match (para ajudar com debugging)
         if (!mappings || mappings.length === 0) {

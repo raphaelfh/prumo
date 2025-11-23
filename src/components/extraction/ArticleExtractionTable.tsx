@@ -306,7 +306,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
 
   // Função para filtrar e ordenar artigos
   const filteredAndSortedArticles = useMemo(() => {
-    let filtered = articles.filter(article => {
+    const filtered = articles.filter(article => {
       // Filtro global
       if (globalFilter) {
         const searchText = globalFilter.toLowerCase();
@@ -392,7 +392,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
           aValue = calculateExtractionProgress(a);
           bValue = calculateExtractionProgress(b);
           break;
-        case 'status':
+        case 'status': {
           // Ordenar por status: não iniciado (0), em andamento (1), completo (2)
           const aProgress = calculateExtractionProgress(a);
           const bProgress = calculateExtractionProgress(b);
@@ -402,6 +402,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
           aValue = !aHasInstances ? 0 : (aProgress >= 100 ? 2 : 1);
           bValue = !bHasInstances ? 0 : (bProgress >= 100 ? 2 : 1);
           break;
+        }
         case 'created_at':
           aValue = new Date(a.created_at).getTime();
           bValue = new Date(b.created_at).getTime();
@@ -765,7 +766,11 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                           indeterminate={isIndeterminate}
                           onCheckedChange={(checked) => {
                             if (checked) {
-                              hasActiveFilters ? selectFiltered() : selectAll();
+                              if (hasActiveFilters) {
+                                selectFiltered();
+                              } else {
+                                selectAll();
+                              }
                             } else {
                               deselectAll();
                             }

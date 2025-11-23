@@ -4,7 +4,6 @@
  * Commercial licenses are available upon request.
  */
 
-Connecting to db 5432
 export type Json =
   | string
   | number

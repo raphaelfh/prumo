@@ -139,7 +139,7 @@ export function ComparisonTable<T = any>({
 
   // Estatísticas gerais
   const stats = useMemo(() => {
-    let totalRows = gridData.length;
+    const totalRows = gridData.length;
     let consensusRows = 0;
 
     gridData.forEach(row => {

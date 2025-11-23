@@ -20,14 +20,7 @@ import type { ComparisonSectionViewProps } from './ComparisonSectionView';
 export function SingleInstanceComparison(props: ComparisonSectionViewProps) {
   const instance = props.instances[0];
   
-  if (!instance) {
-    return (
-      <div className="text-center py-4 text-muted-foreground text-sm">
-        Nenhuma instância criada para esta seção
-      </div>
-    );
-  }
-  
+  // IMPORTANTE: Todos os hooks devem ser chamados ANTES de qualquer early return
   // Preparar columns (cada field é uma row)
   const columns = useMemo<ComparisonColumn[]>(() => 
     props.entityType.fields.map(field => ({
@@ -42,6 +35,8 @@ export function SingleInstanceComparison(props: ComparisonSectionViewProps) {
   
   // Preparar data (userId -> fieldId -> value)
   const comparisonData = useMemo(() => {
+    if (!instance) return {};
+    
     const data: Record<string, Record<string, any>> = {};
     
     // Meus valores
@@ -61,7 +56,7 @@ export function SingleInstanceComparison(props: ComparisonSectionViewProps) {
     });
     
     return data;
-  }, [props.currentUser.userId, props.myValues, props.otherExtractions, instance.id]);
+  }, [props.currentUser.userId, props.myValues, props.otherExtractions, instance]);
   
   // Preparar lista de outros usuários
   const otherUsers = useMemo<ComparisonUser[]>(() => 
@@ -76,10 +71,19 @@ export function SingleInstanceComparison(props: ComparisonSectionViewProps) {
   
   // Handler para edição
   const handleValueChange = useCallback((fieldId: string, newValue: any) => {
-    if (props.onValueUpdate) {
+    if (props.onValueUpdate && instance) {
       props.onValueUpdate(instance.id, fieldId, newValue);
     }
-  }, [instance.id, props.onValueUpdate]);
+  }, [instance, props.onValueUpdate]);
+  
+  // Early return APÓS todos os hooks
+  if (!instance) {
+    return (
+      <div className="text-center py-4 text-muted-foreground text-sm">
+        Nenhuma instância criada para esta seção
+      </div>
+    );
+  }
   
   return (
     <ComparisonTable

@@ -347,7 +347,7 @@ export function ArticlesList({ articles, onArticleClick, projectId, onArticlesCh
 
   // Filtrar e ordenar artigos com useMemo
   const filteredArticles = useMemo(() => {
-    let filtered = articles.filter(article => {
+    const filtered = articles.filter(article => {
       // Filtro global de busca
       if (searchTerm) {
         const searchLower = searchTerm.toLowerCase();

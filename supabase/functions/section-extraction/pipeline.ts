@@ -1513,7 +1513,7 @@ export class SectionExtractionPipeline {
     // Histórico de memória resumida (acumula contexto)
     const memoryHistory: Array<{ entityTypeName: string; summary: string }> = [];
     const sectionResults: SectionResult[] = [];
-    let totalSuggestionsCreated = 0;
+    const totalSuggestionsCreated = 0;
     let totalTokensUsed = 0;
     let pdfPages = 0;
 

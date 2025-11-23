@@ -188,7 +188,7 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
 
   // Função para filtrar e ordenar artigos
   const filteredAndSortedArticles = useMemo(() => {
-    let filtered = articles.filter(article => {
+    const filtered = articles.filter(article => {
       // Filtro global
       if (globalFilter) {
         const searchText = globalFilter.toLowerCase();
@@ -268,7 +268,7 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
           aValue = a.assessment?.completion_percentage || 0;
           bValue = b.assessment?.completion_percentage || 0;
           break;
-        case 'status':
+        case 'status': {
           // Ordenar por status: não iniciado (0), em andamento (1), completo (2)
           const aProgress = a.assessment?.completion_percentage || 0;
           const bProgress = b.assessment?.completion_percentage || 0;
@@ -278,6 +278,7 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
           aValue = !aHasAssessment ? 0 : (aProgress >= 100 ? 2 : 1);
           bValue = !bHasAssessment ? 0 : (bProgress >= 100 ? 2 : 1);
           break;
+        }
         case 'created_at':
           aValue = new Date(a.created_at).getTime();
           bValue = new Date(b.created_at).getTime();

@@ -28,7 +28,7 @@ export interface ProjectContextType {
   changeTab: (tab: string) => void;
 }
 
-const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
+export const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
 
 interface ProjectProviderProps {
   children: ReactNode;
