@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * Teste para identificar problema com múltiplos inputs (cardinality="many")
  * 
  * Simula extração de autores (múltiplos) para identificar onde está falhando

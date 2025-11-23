@@ -29,7 +29,7 @@ export default tseslint.config(
         caughtErrorsIgnorePattern: "^_"
       }],
       "@typescript-eslint/no-explicit-any": "warn",
-      "@typescript-eslint/prefer-const": "error",
+      "prefer-const": "error",
       "no-console": ["warn", { allow: ["warn", "error"] }],
     },
   },

@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * Retry Handler para Edge Functions
  * 
  * Retry com exponential backoff e jitter para lidar com falhas transitórias.

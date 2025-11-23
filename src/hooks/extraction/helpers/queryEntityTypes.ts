@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * Helper reutilizável para queries de entity_types com fallback
  * 
  * Abstrai a lógica comum de buscar entity_types que podem estar em:

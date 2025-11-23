@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * Tipos TypeScript para o módulo de extração de dados
  * 
  * Este arquivo define todas as interfaces e tipos necessários

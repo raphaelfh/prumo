@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * Hook para gerenciar extraction_runs
  * 
  * Carrega histórico de extrações de IA (section-extraction) para um artigo específico.

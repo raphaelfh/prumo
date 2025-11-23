@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * DB Writer para Section Extraction
  * 
  * Responsável por salvar resultados de extração em extraction_runs e ai_suggestions.
