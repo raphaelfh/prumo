@@ -13,6 +13,19 @@ export default defineConfig({
       './src/test/setup.ts',
     ],
     css: true,
+    exclude: [
+      'node_modules/**',
+      'dist/**',
+      'build/**',
+      'coverage/**',
+      // Excluir testes de Edge Functions (Deno) - devem ser executados com deno test
+      'supabase/functions/**/*.test.ts',
+      'supabase/functions/**/*.spec.ts',
+      'supabase/functions/**/tests/**',
+      // Excluir testes de bibliotecas em node_modules
+      '**/node_modules/**/*.test.*',
+      '**/node_modules/**/*.spec.*',
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
