@@ -12,10 +12,16 @@ dist
 dist-ssr
 *.local
 
+# retirar cursorignore
+.cursorignore
+
 # retirar .env
 .env
 .env.*
 !.env.example
+
+#remover review-hub.code-workspace
+review-hub.code-workspace
 
 # Editor directories and files
 .vscode/*
@@ -27,3 +33,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.cursor
+.github
+.cursorignore
+.cursor/
+.cursor/rules/
+.cursor/rules/licensing.mdc
+.cursor/rules/licensing.mdc

@@ -1,8 +1,59 @@
 ---
 description: BACKEND - EDGE FUNCTIONS AND DATABASE - Convenções de esquema, RLS e migrações para Postgres/Supabase.
 alwaysApply: false
+priority: high
+globs:
+  - "supabase/migrations/**/*.sql"
+  - "supabase/functions/**/*.ts"
+  - "src/services/**/*.ts"
+  - "src/hooks/**/*.ts"
 ---
+
+## Persona
+
+Atue como um **Senior Software Engineer** com foco em:
+- Segurança de dados (RLS, validação, sanitização)
+- Multi-tenancy robusto e isolado
+- Performance de queries (índices, otimizações)
+- Migrações seguras e reversíveis
+
+## Quando Aplicar Esta Regra
+
+Esta regra se aplica quando trabalhar com:
+- **Schema do banco** (criação/modificação de tabelas)
+- **Migrações SQL** (`supabase/migrations/`)
+- **RLS Policies** (Row Level Security)
+- **Queries Supabase** (client ou MCP)
+- **Multi-tenancy** (isolamento por `org_id`)
+- **Edge Functions** que acessam banco
+
+## Prioridade
+
+**Alta** - Aplicar sempre que trabalhar com banco de dados ou Supabase.
+
+## Princípios Fundamentais
+
+### Segurança Primeiro
+
+- **RLS sempre ON**: Nunca desabilitar RLS em produção
+- **Validação dupla**: Front (zod) + Back (zod no Edge)
+- **Least privilege**: Usuários só acessam seus dados
+- **Multi-tenant isolado**: `org_id` obrigatório, políticas verificam isolamento
+
+### Performance
+
+- **Índices estratégicos**: Em `org_id`, FKs, colunas de busca
+- **Queries otimizadas**: Evitar N+1, usar joins quando apropriado
+- **Índices compostos**: Para queries frequentes com múltiplas condições
+
+### Migrações Seguras
+
+- **Reversíveis**: Sempre incluir comentários de rollback
+- **Idempotentes**: Seeds podem ser executados múltiplas vezes
+- **Testadas**: Validar em ambiente de dev antes de produção
+
 ## Convenções de schema
+
 - `snake_case`; `id uuid default gen_random_uuid()`.
 - `created_at timestamptz default now()`, `updated_at timestamptz` com trigger.
 - FKs com `on delete restrict` (ou `cascade` se justificado), índices nos FKs e colunas de busca.
@@ -10,41 +61,101 @@ alwaysApply: false
 
 ## MCP vs Client Supabase
 
-**Use MCP (Model Context Protocol) quando:**
+### Árvore de Decisão
+
+```
+Precisa acessar banco?
+├─ Operação DDL (CREATE, ALTER, DROP)?
+│  └─ → MCP (mcp_supabase_apply_migration)
+│
+├─ Aplicar migração?
+│  └─ → MCP (mcp_supabase_apply_migration)
+│
+├─ Verificar estrutura/RLS?
+│  └─ → MCP (mcp_supabase_list_tables, mcp_supabase_execute_sql)
+│
+├─ Query em runtime (frontend/hook/service)?
+│  └─ → Client @supabase/supabase-js
+│
+└─ Operação CRUD normal?
+   └─ → Client @supabase/supabase-js
+```
+
+### Quando Usar MCP (Model Context Protocol)
+
+**Use MCP quando:**
 - Criando/migrando schema (DDL operations)
 - Aplicando migrações via `mcp_supabase_apply_migration`
 - Verificando RLS policies e estrutura do banco
 - Operações administrativas (listar tabelas, migrations, etc.)
 - Executando SQL exploratório/debug
+- Verificando advisors de segurança/performance
+
+**Exemplo:**
+```typescript
+// ✅ CORRETO: Usar MCP para migração
+await mcp_supabase_apply_migration({
+  name: 'add_articles_table',
+  query: `
+    CREATE TABLE articles (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      org_id uuid NOT NULL REFERENCES organizations(id),
+      -- ...
+    );
+  `
+});
+```
+
+### Quando Usar Client Supabase
 
 **Use Client `@supabase/supabase-js` quando:**
 - Queries/operações em runtime (frontend, hooks, services)
 - Operações CRUD normais em componentes React
 - Subscriptions realtime
 - Autenticação e sessão do usuário
+- Operações que precisam respeitar RLS do usuário autenticado
 
 **Exemplo:**
 ```typescript
-// ❌ NÃO usar MCP no código de produção
-// ✅ Use no código de produção
+// ✅ CORRETO: Usar Client no código de produção
 import { supabase } from '@/integrations/supabase/client';
-const { data } = await supabase.from('articles').select('*').eq('org_id', orgId);
+
+const { data, error } = await supabase
+  .from('articles')
+  .select('*')
+  .eq('org_id', orgId); // RLS garante que só retorna dados do org do usuário
+```
+
+**Exemplo negativo:**
+```typescript
+// ❌ ERRADO: Tentar usar MCP no código de produção
+// MCP é apenas para operações administrativas/migrações
+const { data } = await mcp_supabase_execute_sql({
+  query: 'SELECT * FROM articles WHERE org_id = $1',
+  // Isso não funciona em runtime, apenas para debug/admin
+});
 ```
 
 ## Multi-tenant (RLS)
 
 ### Estrutura obrigatória
+
 - Todas as tabelas de domínio: `org_id uuid not null` com FK para `organizations(id)`.
 - Índice em `org_id` para performance: `create index idx_<table>_org_id on <table>(org_id)`.
+- RLS sempre ON: `ALTER TABLE <table> ENABLE ROW LEVEL SECURITY;`
 
 ### RLS (sempre ON)
+
 - Política padrão: usuários só leem/escrevem linhas do seu `org_id` e, quando aplicável, do seu `auth.uid()`.
 - **Isolamento garantido**: RLS valida automaticamente; queries sem `org_id` falham por política.
 - Evite exceções; preferir RPC/Edge para ações elevadas.
 
-### Exemplo de política
+### Exemplos de Políticas RLS
+
+#### Caso 1: Tabela com org_id (padrão)
+
 ```sql
--- SELECT: usuário só vê dados do seu org
+-- ✅ CORRETO: Política completa para tabela multi-tenant
 CREATE POLICY "users_select_own_org" ON articles
   FOR SELECT USING (
     org_id IN (
@@ -53,7 +164,6 @@ CREATE POLICY "users_select_own_org" ON articles
     )
   );
 
--- INSERT/UPDATE: usuário só escreve no seu org
 CREATE POLICY "users_insert_own_org" ON articles
   FOR INSERT WITH CHECK (
     org_id IN (
@@ -61,11 +171,102 @@ CREATE POLICY "users_insert_own_org" ON articles
       WHERE user_id = auth.uid()
     )
   );
+
+CREATE POLICY "users_update_own_org" ON articles
+  FOR UPDATE USING (
+    org_id IN (
+      SELECT org_id FROM user_organizations 
+      WHERE user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "users_delete_own_org" ON articles
+  FOR DELETE USING (
+    org_id IN (
+      SELECT org_id FROM user_organizations 
+      WHERE user_id = auth.uid()
+    )
+  );
+```
+
+#### Caso 2: Tabela com user_id (dados pessoais)
+
+```sql
+-- ✅ CORRETO: Política para dados pessoais do usuário
+CREATE POLICY "users_manage_own_data" ON user_preferences
+  FOR ALL USING (user_id = auth.uid());
+```
+
+#### Caso 3: Tabela pública (read-only para todos)
+
+```sql
+-- ✅ CORRETO: Política para dados públicos (ex: templates)
+CREATE POLICY "public_read_templates" ON extraction_templates
+  FOR SELECT USING (is_public = true);
+```
+
+### Exemplos Negativos ❌
+
+#### RLS Desabilitado
+
+```sql
+-- ❌ ERRADO: RLS desabilitado (NUNCA fazer isso)
+ALTER TABLE articles DISABLE ROW LEVEL SECURITY;
+
+-- ✅ CORRETO: RLS sempre ON
+ALTER TABLE articles ENABLE ROW LEVEL SECURITY;
+```
+
+#### Política Insegura
+
+```sql
+-- ❌ ERRADO: Política que permite acesso a qualquer org
+CREATE POLICY "users_select_all" ON articles
+  FOR SELECT USING (true); -- Permite ver dados de todos os orgs!
+
+-- ✅ CORRETO: Política que verifica org_id (ver exemplos acima)
+```
+
+#### Falta de Índice em org_id
+
+```sql
+-- ❌ ERRADO: Tabela sem índice em org_id (performance ruim)
+CREATE TABLE articles (
+  id uuid PRIMARY KEY,
+  org_id uuid NOT NULL REFERENCES organizations(id),
+  -- ...
+);
+-- Sem índice: queries com WHERE org_id = ... serão lentas
+
+-- ✅ CORRETO: Sempre criar índice em org_id
+CREATE TABLE articles (
+  id uuid PRIMARY KEY,
+  org_id uuid NOT NULL REFERENCES organizations(id),
+  -- ...
+);
+CREATE INDEX idx_articles_org_id ON articles(org_id);
+```
+
+#### Query Sem org_id
+
+```typescript
+// ❌ ERRADO: Query sem filtrar por org_id (viola isolamento)
+const { data } = await supabase
+  .from('articles')
+  .select('*');
+// RLS deve bloquear, mas melhor ser explícito
+
+// ✅ CORRETO: Sempre filtrar por org_id
+const { data } = await supabase
+  .from('articles')
+  .select('*')
+  .eq('org_id', orgId); // Explícito e claro
 ```
 
 ## Migrações
 
 ### Template padrão
+
 ```sql
 -- Migration: descrição_da_mudança
 -- Created: YYYY-MM-DD
@@ -89,21 +290,158 @@ CREATE POLICY "users_select_own_org" ON example
     org_id IN (SELECT org_id FROM user_organizations WHERE user_id = auth.uid())
   );
 
+CREATE POLICY "users_insert_own_org" ON example
+  FOR INSERT WITH CHECK (
+    org_id IN (SELECT org_id FROM user_organizations WHERE user_id = auth.uid())
+  );
+
+CREATE POLICY "users_update_own_org" ON example
+  FOR UPDATE USING (
+    org_id IN (SELECT org_id FROM user_organizations WHERE user_id = auth.uid())
+  );
+
+CREATE POLICY "users_delete_own_org" ON example
+  FOR DELETE USING (
+    org_id IN (SELECT org_id FROM user_organizations WHERE user_id = auth.uid())
+  );
+
 -- DOWN (manual steps para reverter):
--- 1. DROP POLICY "users_select_own_org" ON example;
--- 2. ALTER TABLE example DISABLE ROW LEVEL SECURITY;
--- 3. DROP INDEX idx_example_org_id;
--- 4. DROP TABLE example;
+-- 1. DROP POLICY "users_delete_own_org" ON example;
+-- 2. DROP POLICY "users_update_own_org" ON example;
+-- 3. DROP POLICY "users_insert_own_org" ON example;
+-- 4. DROP POLICY "users_select_own_org" ON example;
+-- 5. ALTER TABLE example DISABLE ROW LEVEL SECURITY;
+-- 6. DROP INDEX idx_example_org_id;
+-- 7. DROP TABLE example;
 ```
 
 ### Regras
+
 - Cada mudança via **migration SQL** revisada; nunca editar `.sql` já aplicado.
 - Inclua *down comments* (como reverter manualmente) seguindo template acima.
 - Seeds mínimos e idempotentes somente em `dev`.
 
-## Check do AI antes de propor schema
-- [ ] RLS ON e políticas cobrindo SELECT/INSERT/UPDATE/DELETE  
-- [ ] Índices necessários (incl. compostos, especialmente em `org_id`)  
-- [ ] Constraints (unique, check) documentadas  
-- [ ] `org_id` presente em tabelas de domínio com FK e índice
-- [ ] Plano de migração com passos e rollback
+### Exemplos Negativos ❌
+
+#### Migração Sem RLS
+
+```sql
+-- ❌ ERRADO: Tabela criada sem RLS
+CREATE TABLE articles (
+  id uuid PRIMARY KEY,
+  org_id uuid NOT NULL,
+  -- ...
+);
+-- Falta: ALTER TABLE articles ENABLE ROW LEVEL SECURITY;
+-- Falta: Políticas RLS
+
+-- ✅ CORRETO: Sempre incluir RLS (ver template acima)
+```
+
+#### Migração Sem Índice
+
+```sql
+-- ❌ ERRADO: Tabela sem índice em org_id
+CREATE TABLE articles (
+  id uuid PRIMARY KEY,
+  org_id uuid NOT NULL REFERENCES organizations(id),
+  -- ...
+);
+-- Falta: CREATE INDEX idx_articles_org_id ON articles(org_id);
+
+-- ✅ CORRETO: Sempre criar índice em org_id
+```
+
+#### Migração Sem Rollback
+
+```sql
+-- ❌ ERRADO: Migração sem comentários de rollback
+CREATE TABLE articles (
+  -- ...
+);
+-- Como reverter? Não está documentado
+
+-- ✅ CORRETO: Sempre incluir comentários DOWN (ver template)
+```
+
+## Exemplos Positivos ✅
+
+### Schema Completo e Seguro
+
+```sql
+-- ✅ CORRETO: Tabela com todas as boas práticas
+CREATE TABLE articles (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  title text NOT NULL,
+  content text,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz
+);
+
+-- Índice para performance
+CREATE INDEX idx_articles_org_id ON articles(org_id);
+CREATE INDEX idx_articles_created_at ON articles(created_at DESC);
+
+-- RLS sempre ON
+ALTER TABLE articles ENABLE ROW LEVEL SECURITY;
+
+-- Políticas completas
+CREATE POLICY "users_select_own_org" ON articles
+  FOR SELECT USING (
+    org_id IN (SELECT org_id FROM user_organizations WHERE user_id = auth.uid())
+  );
+-- ... outras políticas (INSERT, UPDATE, DELETE)
+```
+
+### Query Otimizada
+
+```typescript
+// ✅ CORRETO: Query com filtros apropriados e índices
+const { data } = await supabase
+  .from('articles')
+  .select('id, title, created_at')
+  .eq('org_id', orgId) // Usa índice idx_articles_org_id
+  .order('created_at', { ascending: false }) // Usa índice idx_articles_created_at
+  .limit(20);
+```
+
+## Checklist de Validação Detalhado
+
+Antes de propor schema ou migração, verificar:
+
+### Segurança
+- [ ] **RLS ON**: `ALTER TABLE ... ENABLE ROW LEVEL SECURITY;`
+- [ ] **Políticas completas**: SELECT, INSERT, UPDATE, DELETE cobertos
+- [ ] **Isolamento multi-tenant**: Políticas verificam `org_id` via `user_organizations`
+- [ ] **Sem políticas permissivas**: Nenhuma política com `USING (true)`
+- [ ] **Validação dupla**: Front (zod) + Back (zod no Edge Function)
+
+### Multi-tenancy
+- [ ] **org_id presente**: Todas as tabelas de domínio têm `org_id uuid NOT NULL`
+- [ ] **FK correta**: `org_id REFERENCES organizations(id)`
+- [ ] **Índice em org_id**: `CREATE INDEX idx_<table>_org_id ON <table>(org_id)`
+- [ ] **Queries filtram org_id**: Sempre usar `.eq('org_id', orgId)` em queries
+
+### Performance
+- [ ] **Índices estratégicos**: Em `org_id`, FKs, colunas de busca frequente
+- [ ] **Índices compostos**: Para queries com múltiplas condições
+- [ ] **Queries otimizadas**: Evitar N+1, usar joins quando apropriado
+
+### Migrações
+- [ ] **Template seguido**: Estrutura conforme template padrão
+- [ ] **Rollback documentado**: Comentários DOWN incluídos
+- [ ] **Idempotente**: Seeds podem ser executados múltiplas vezes
+- [ ] **Testada**: Validada em ambiente de dev
+
+### Convenções
+- [ ] **snake_case**: Nomes de tabelas e colunas
+- [ ] **Timestamps**: `created_at timestamptz DEFAULT now()`, `updated_at timestamptz`
+- [ ] **UUIDs**: `id uuid PRIMARY KEY DEFAULT gen_random_uuid()`
+- [ ] **FKs**: `on delete restrict` (ou `cascade` se justificado)
+
+## Referências
+
+- `core-rules-saas-app.mdc` - Princípios gerais, segurança, multi-tenant
+- `supabase-edge-function-rules.mdc` - Edge Functions que acessam banco
+- `frontend-react-rule.mdc` - Como usar Client Supabase no frontend
