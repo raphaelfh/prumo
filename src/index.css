@@ -2,6 +2,16 @@
 @import "react-pdf/dist/Page/AnnotationLayer.css";
 @import "react-pdf/dist/Page/TextLayer.css";
 
+/* Estilos para highlights de busca */
+.react-pdf__Page__textContent mark[data-search-match="true"] {
+  background-color: rgba(253, 224, 71, 0.25) !important; /* yellow-300/25 - transparente para legibilidade */
+  color: #000 !important;
+  padding: 1px 2px !important;
+  border-radius: 3px !important;
+  transition: all 0.2s ease !important;
+  font-weight: 500 !important;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

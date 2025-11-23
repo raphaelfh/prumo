@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * Contexto para gerenciar estado do projeto e navegação
  * Single Source of Truth para activeTab
  */
@@ -22,25 +28,41 @@ export interface ProjectContextType {
   changeTab: (tab: string) => void;
 }
 
-const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
+export const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
 
 interface ProjectProviderProps {
   children: ReactNode;
 }
 
 export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) => {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [project, setProject] = useState<Project | null>(null);
-  const [activeTab, setActiveTab] = useState<string>('articles');
+  
+  // Ler tab da URL ou usar padrão
+  const tabFromUrl = searchParams.get('tab');
+  const initialTab = (tabFromUrl && ['articles', 'extraction', 'assessment', 'settings'].includes(tabFromUrl)) 
+    ? tabFromUrl 
+    : 'articles';
+  
+  const [activeTab, setActiveTab] = useState<string>(initialTab);
 
-  // Ler tab da URL ao montar
+  // Sincronizar activeTab quando URL mudar (vindo de outras páginas)
   useEffect(() => {
     const tabFromUrl = searchParams.get('tab');
     if (tabFromUrl && ['articles', 'extraction', 'assessment', 'settings'].includes(tabFromUrl)) {
-      console.log('📌 Definindo tab inicial da URL:', tabFromUrl);
-      setActiveTab(tabFromUrl);
+      // Atualizar apenas se for diferente para evitar loops
+      setActiveTab(prevTab => {
+        return prevTab !== tabFromUrl ? tabFromUrl : prevTab;
+      });
     }
-  }, []); // Roda apenas na montagem
+  }, [searchParams]); // Só observar mudanças na URL, não criar loop com activeTab
+
+  // Sincronizar URL quando activeTab mudar (navegação interna)
+  useEffect(() => {
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set('tab', activeTab);
+    setSearchParams(newParams, { replace: true });
+  }, [activeTab, searchParams, setSearchParams]);
 
   // Função centralizada para mudança de tabs
   // Preparada para adicionar analytics, validações, etc.

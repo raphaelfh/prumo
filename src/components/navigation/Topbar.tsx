@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * Componente principal do Topbar
  * Integra todos os elementos de navegação superior
  */
@@ -8,11 +14,13 @@ import { Menu, PanelLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useUserProfile } from '@/hooks/useNavigation';
-import { useSidebar } from '@/contexts/SidebarContext';
-import { useProject } from '@/contexts/ProjectContext';
+import { useSidebar, SidebarContext } from '@/contexts/SidebarContext';
+import { useProject, ProjectContext } from '@/contexts/ProjectContext';
+import { useContext } from 'react';
 import { ProfileMenu } from './ProfileMenu';
 import { MobileSidebar } from '@/components/layout/MobileSidebar';
 import { FeedbackButton } from '@/components/feedback/FeedbackButton';
+import { NotificationCenter } from './NotificationCenter';
 import type { TopbarProps } from '@/types/navigation';
 
 export const Topbar: React.FC<TopbarProps> = ({
@@ -22,18 +30,17 @@ export const Topbar: React.FC<TopbarProps> = ({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
   // Usar contexto do sidebar apenas em páginas de projeto
+  // IMPORTANTE: Hooks devem sempre ser chamados incondicionalmente
+  // Usar useContext diretamente para evitar erros quando contextos não estão disponíveis
   const isProjectPage = window.location.pathname.includes('/projects/');
   
-  let sidebarContext;
-  let projectContext;
-  try {
-    sidebarContext = useSidebar();
-    projectContext = useProject();
-  } catch {
-    // Se não estiver no contexto, não usar
-    sidebarContext = null;
-    projectContext = null;
-  }
+  // Sempre chamar useContext incondicionalmente (não viola regras do React)
+  const sidebarContextValue = useContext(SidebarContext);
+  const projectContextValue = useContext(ProjectContext);
+  
+  // Usar apenas se estiverem disponíveis e em página de projeto
+  const sidebarContext = (isProjectPage && sidebarContextValue !== undefined) ? sidebarContextValue : null;
+  const projectContext = (isProjectPage && projectContextValue !== undefined) ? projectContextValue : null;
 
   // Renderizar estado de loading de forma mais robusta
   if (isLoading) {
@@ -105,8 +112,9 @@ export const Topbar: React.FC<TopbarProps> = ({
           )}
         </div>
 
-        {/* Right Section - Feedback + Profile Menu */}
+        {/* Right Section - Notifications + Feedback + Profile Menu */}
         <div className="flex items-center gap-1">
+          <NotificationCenter />
           <FeedbackButton />
           <ProfileMenu user={user} />
         </div>

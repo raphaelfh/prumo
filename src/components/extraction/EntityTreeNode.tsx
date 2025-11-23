@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * Componente Recursivo para Renderização de Hierarquia de Extraction
  * 
  * Renderiza entity types e suas instances de forma recursiva,
@@ -155,7 +161,7 @@ export function EntityTreeNode({
                             )}
                             {instance.label}
                           </CardTitle>
-                          {entityType.cardinality === 'many' && onRemoveInstance && instances.length > 1 && (
+                          {entityType.cardinality === 'many' && onRemoveInstance && (
                             <Button
                               variant="ghost"
                               size="icon"

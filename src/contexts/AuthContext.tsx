@@ -3,6 +3,8 @@ import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -22,6 +24,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
+        // Se a sessão é inválida (erro 403), limpar localStorage e fazer logout
+        if (event === 'SIGNED_OUT' || (event === 'TOKEN_REFRESHED' && !session)) {
+          localStorage.removeItem('sb-' + SUPABASE_URL.split('//')[1].split('.')[0] + '-auth-token');
+        }
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
@@ -29,7 +35,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
 
     // Check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      // Se houver erro ao obter sessão (ex: usuário não existe mais), limpar
+      if (error || !session) {
+        supabase.auth.signOut();
+      }
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);

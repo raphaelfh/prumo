@@ -3,18 +3,107 @@ description: Boas práticas para React (Vite ou Next) em SaaS.
 alwaysApply: false
 ---
 ## Arquitetura & Estado
-- `src/` por **feature** (ex.: `features/billing`, `features/auth`), com camadas `ui/`, `model/`, `lib/`.
+
+### Estrutura de Pastas
+**Estrutura atual (aceitável):**
+```
+src/
+├── components/  → Por tipo (ui/, patterns/, domain/)
+├── hooks/       → Por domínio (assessment/, extraction/)
+└── services/    → Por domínio
+```
+
+**Estrutura ideal (futuro - migrar gradualmente):**
+```
+src/
+├── features/
+│   ├── assessment/
+│   │   ├── ui/       → Componentes específicos
+│   │   ├── hooks/    → useAssessment, useBatchAssessment
+│   │   └── services/ → assessmentService
+│   └── extraction/
+└── shared/      → Componentes/hooks compartilhados
+```
+
 - Dados remotos com **TanStack Query** (chaves estáveis, `staleTime` racional).
 - Formulários com **react-hook-form** + **zod** para validação.
 
 ## UI/UX
 - **Tailwind** + lib de componentes consistente (ex.: shadcn/ui); A11y (ARIA) obrigatória.
-- Sempre trate `loading`, `empty state`, `error` e `retry`.
+- Sempre trate `loading`, `empty state`, `error` e `retry` (ver `design-system.mdc`).
 - **ErrorBoundary** por página/feature; *toasts* apenas para feedback transitório.
 
+### ErrorBoundary
+- Um ErrorBoundary por feature/page crítica.
+- Integrar com `errorTracker.captureError()` (ver `core-rules-saas-app.mdc`).
+- Mostrar mensagem amigável + botão "Tentar novamente".
+
+```tsx
+class FeatureErrorBoundary extends React.Component {
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    errorTracker.captureError(error, {
+      component: this.props.componentName,
+      metadata: { errorInfo },
+    });
+  }
+  
+  render() {
+    if (this.state.hasError) {
+      return (
+        <ErrorState 
+          message="Algo deu errado" 
+          onRetry={() => window.location.reload()} 
+        />
+      );
+    }
+    return this.props.children;
+  }
+}
+```
+
 ## Performance
-- Code-splitting por rota/feature; evite re-render desnecessário (`memo`, `useCallback` com critério).
+
+### Regra de Ouro
+**Não otimize prematuramente.** Use React DevTools Profiler para identificar gargalos reais.
+
+### Quando usar otimizações
+- **`React.memo`**: Componente recebe props iguais mas re-renderiza desnecessariamente.
+  ```tsx
+  export const ExpensiveComponent = React.memo(({ data }) => {
+    // Render custoso
+  }, (prevProps, nextProps) => prevProps.data.id === nextProps.data.id);
+  ```
+
+- **`useMemo`**: Cálculo custoso (ex: filtros/transformações grandes).
+  ```tsx
+  const filteredData = useMemo(() => {
+    return largeArray.filter(/* lógica complexa */);
+  }, [largeArray, filterCriteria]);
+  ```
+
+- **`useCallback`**: Callback passado como prop e componente filho é memoizado.
+  ```tsx
+  const handleClick = useCallback(() => {
+    // lógica
+  }, [dependencies]);
+  
+  <MemoizedChild onClick={handleClick} />
+  ```
+
+### Code-splitting
+- **Rotas**: automático com React Router `lazy()`.
+  ```tsx
+  const AssessmentPage = lazy(() => import('./pages/AssessmentFullScreen'));
+  ```
+
+- **Features**: manual para bundles grandes (PDF viewer, charts).
+  ```tsx
+  const PDFViewer = lazy(() => import('./components/PDFViewer'));
+  ```
+
+### Outros
 - Imagens otimizadas; evite libs pesadas para pequenos utilitários.
+- Use `VirtualList` para listas longas (já implementado em `components/performance/`).
 
 ## Segurança no front
 - Nunca expor **service role**; use **anon key** no cliente.

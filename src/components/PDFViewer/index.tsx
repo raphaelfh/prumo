@@ -1,15 +1,19 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * PDFViewer - Componente principal do visualizador de PDF
  * 
  * Container de alto nível que orquestra:
  * - Toolbar de controles
- * - Sidebar com múltiplas views
  * - Core do viewer (PDFViewerCore)
  * - Search panel overlay
  */
 
 import { PDFToolbar } from './PDFToolbar';
-import { Sidebar } from './Sidebar';
 import { PDFViewerCore } from './core/PDFViewerCore';
 import { SearchPanel } from './search/SearchPanel';
 import { usePDFStore } from '@/stores/usePDFStore';
@@ -36,9 +40,6 @@ export function PDFViewer({ articleId, projectId, className }: PDFViewerProps) {
       />
 
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Sidebar - Overlay sobre o PDF */}
-        <Sidebar />
-
         {/* PDF Viewer Core - Ocupa todo o espaço */}
         <div className="flex-1 w-full">
           <PDFViewerCore articleId={articleId} projectId={projectId} />

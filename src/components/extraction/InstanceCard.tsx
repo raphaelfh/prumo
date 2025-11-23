@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * Card de Instância de Extração
  * 
  * Componente usado para seções com cardinality='many'.
@@ -20,10 +26,10 @@ import { Badge } from '@/components/ui/badge';
 import { Edit2, Trash2, Save, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
-import { FieldInput } from './FieldInput';
+import MemoizedFieldInput from './FieldInput'; // Usar versão memoizada
 import type { ExtractionField, ExtractionInstance } from '@/types/extraction';
 import type { OtherExtraction } from '@/hooks/extraction/colaboracao/useOtherExtractions';
-import type { AISuggestion } from '@/hooks/extraction/ai/useAISuggestions';
+import type { AISuggestion, AISuggestionHistoryItem } from '@/hooks/extraction/ai/useAISuggestions';
 
 // =================== INTERFACES ===================
 
@@ -39,8 +45,10 @@ interface InstanceCardProps {
   articleId: string;
   otherExtractions?: OtherExtraction[];
   aiSuggestions?: Record<string, AISuggestion>;
-  onAcceptAI?: (fieldId: string) => Promise<void>;
-  onRejectAI?: (fieldId: string) => Promise<void>;
+  onAcceptAI?: (instanceId: string, fieldId: string) => Promise<void>;
+  onRejectAI?: (instanceId: string, fieldId: string) => Promise<void>;
+  getSuggestionsHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
+  isActionLoading?: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null;
   viewMode?: 'extract' | 'compare';
 }
 
@@ -160,9 +168,27 @@ export function InstanceCard(props: InstanceCardProps) {
       <div className="bg-white rounded-b-lg px-2">
         {fields.map(field => {
           const key = `${instance.id}_${field.id}`;
+          const suggestion = props.aiSuggestions?.[key];
+          
+          // Debug: log quando sugestão não é encontrada mas deveria existir
+          if (process.env.NODE_ENV === 'development' && !suggestion) {
+            // Verificar se há sugestões para outras instâncias do mesmo campo
+            const hasSuggestionsForField = Object.keys(props.aiSuggestions || {}).some(
+              k => k.endsWith(`_${field.id}`)
+            );
+            if (hasSuggestionsForField) {
+              console.warn(`⚠️ [InstanceCard] Sugestão não encontrada para ${key}, mas há sugestões para o campo ${field.id} em outras instâncias`, {
+                instanceId: instance.id,
+                fieldId: field.id,
+                fieldName: field.name,
+                fieldLabel: field.label,
+                availableKeys: Object.keys(props.aiSuggestions || {}).filter(k => k.endsWith(`_${field.id}`))
+              });
+            }
+          }
           
           return (
-            <FieldInput
+            <MemoizedFieldInput
               key={field.id}
               field={field}
               instanceId={instance.id}
@@ -171,9 +197,23 @@ export function InstanceCard(props: InstanceCardProps) {
               projectId={projectId}
               articleId={articleId}
               otherExtractions={props.otherExtractions}
-              aiSuggestion={props.aiSuggestions?.[key]}
-              onAcceptAI={() => props.onAcceptAI?.(field.id)}
-              onRejectAI={() => props.onRejectAI?.(field.id)}
+              aiSuggestion={suggestion}
+              onAcceptAI={() => {
+                // Wrapper para passar instanceId junto com fieldId
+                if (props.onAcceptAI) {
+                  // onAcceptAI espera (instanceId, fieldId)
+                  props.onAcceptAI(instance.id, field.id);
+                }
+              }}
+              onRejectAI={() => {
+                // Wrapper para passar instanceId junto com fieldId
+                if (props.onRejectAI) {
+                  // onRejectAI espera (instanceId, fieldId)
+                  props.onRejectAI(instance.id, field.id);
+                }
+              }}
+              getSuggestionsHistory={props.getSuggestionsHistory}
+              isActionLoading={props.isActionLoading}
               viewMode={props.viewMode}
             />
           );

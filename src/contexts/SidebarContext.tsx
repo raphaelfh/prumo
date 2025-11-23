@@ -6,7 +6,7 @@ interface SidebarContextType {
   setSidebarCollapsed: (collapsed: boolean) => void;
 }
 
-const SidebarContext = createContext<SidebarContextType | undefined>(undefined);
+export const SidebarContext = createContext<SidebarContextType | undefined>(undefined);
 
 interface SidebarProviderProps {
   children: ReactNode;

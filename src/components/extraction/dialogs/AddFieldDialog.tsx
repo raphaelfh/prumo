@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * Dialog para adicionar novo campo de extração
  * 
  * Features:
@@ -57,6 +63,9 @@ interface AddFieldDialogProps {
   onOpenChange: (open: boolean) => void;
   onSave: (fieldData: ExtractionFieldInput) => Promise<ExtractionField | null>;
   sectionName?: string;
+  entityTypeId?: string;
+  createOtherSpecifyField?: (parentFieldName: string, parentFieldLabel: string, sortOrder: number) => Promise<ExtractionField | null>;
+  removeOtherSpecifyField?: (parentFieldName: string) => Promise<boolean>;
 }
 
 /**
@@ -77,9 +86,13 @@ export function AddFieldDialog({
   onOpenChange,
   onSave,
   sectionName,
+  entityTypeId,
+  createOtherSpecifyField,
+  removeOtherSpecifyField,
 }: AddFieldDialogProps) {
   const [loading, setLoading] = useState(false);
   const [autoGenerateName, setAutoGenerateName] = useState(true);
+  const [allowOther, setAllowOther] = useState(false);
 
   const form = useForm<ExtractionFieldInput>({
     resolver: zodResolver(ExtractionFieldSchema),
@@ -92,6 +105,7 @@ export function AddFieldDialog({
       unit: null,
       allowed_units: null,
       allowed_values: null,
+      llm_description: null,
       validation_schema: {},
       sort_order: 0,
     },
@@ -111,11 +125,21 @@ export function AddFieldDialog({
   const handleSubmit = async (data: ExtractionFieldInput) => {
     setLoading(true);
     try {
-      const result = await onSave(data);
+      // Configurar suporte a "Outro (especificar)" via flags dedicadas
+      const finalData = { 
+        ...data,
+        allow_other: (fieldType === 'select' || fieldType === 'multiselect') ? allowOther : false,
+        other_label: (fieldType === 'select' || fieldType === 'multiselect') && allowOther ? (data as any).other_label || 'Outro (especificar)' : null,
+        other_placeholder: (fieldType === 'select' || fieldType === 'multiselect') && allowOther ? (data as any).other_placeholder || null : null,
+      } as any;
+
+      const result = await onSave(finalData);
       if (result) {
+        // Não criar/remover campos auxiliares; "Outro" é inline
         // Resetar formulário e fechar
         form.reset();
         setAutoGenerateName(true);
+        setAllowOther(false);
         onOpenChange(false);
       }
     } finally {
@@ -270,6 +294,30 @@ export function AddFieldDialog({
               )}
             />
 
+            {/* Instrução para IA */}
+            <FormField
+              control={form.control}
+              name="llm_description"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Instrução para IA (opcional)</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      {...field}
+                      value={field.value || ''}
+                      placeholder="Exemplo: Extraia o número total de participantes no baseline, antes de exclusões..."
+                      rows={3}
+                      disabled={loading}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Instrução específica para extração automática com IA. Seja claro sobre O QUE extrair e ONDE encontrar no artigo.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
             {/* Unidades Disponíveis (condicional - apenas para números) */}
             {fieldType === 'number' && (
               <FormField
@@ -303,25 +351,73 @@ export function AddFieldDialog({
 
             {/* Valores Permitidos (condicional - para select/multiselect) */}
             {(fieldType === 'select' || fieldType === 'multiselect') && (
-              <FormField
-                control={form.control}
-                name="allowed_values"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      Valores Permitidos <span className="text-destructive">*</span>
-                    </FormLabel>
-                    <AllowedValuesList
-                      values={Array.isArray(field.value) ? field.value : []}
-                      onChange={(newValues) => {
-                        field.onChange(newValues.length > 0 ? newValues : null);
-                      }}
-                      disabled={loading}
-                    />
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <>
+                <FormField
+                  control={form.control}
+                  name="allowed_values"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        Valores Permitidos <span className="text-destructive">*</span>
+                      </FormLabel>
+                      <AllowedValuesList
+                        values={Array.isArray(field.value) ? field.value : []}
+                        onChange={(newValues) => {
+                          field.onChange(newValues.length > 0 ? newValues : null);
+                        }}
+                        disabled={loading}
+                      />
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {/* Opção: Permitir "Outro (especificar)" */}
+                <div className="space-y-3 rounded-lg border p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="font-medium">Permitir "Outro (especificar)"</Label>
+                      <p className="text-xs text-muted-foreground mt-1">Mostra opção inline e input contextual</p>
+                    </div>
+                  <Switch
+                      checked={allowOther}
+                      onCheckedChange={setAllowOther}
+                    disabled={loading}
+                  />
+                  </div>
+
+                  {allowOther && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <FormField
+                        control={form.control}
+                        name={"other_label" as any}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Label do "Outro"</FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder="Outro (especificar)" disabled={loading} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name={"other_placeholder" as any}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Placeholder</FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder="Digite aqui" disabled={loading} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  )}
+                </div>
+              </>
             )}
 
             {/* Campo Obrigatório */}

@@ -15,13 +15,150 @@ description: Padrões para Edge Functions (Deno) seguras e observáveis.
 - Não vaze mensagens internas; logue detalhes sensíveis apenas no servidor.
 
 ## Observabilidade
-- `console.error` padronizado com `traceId`; registre latências.
-- Inclua **CORS** explícito; *timeouts* e *retries* razoáveis para I/O externo.
+
+### Logging Padronizado
+- Sempre incluir `traceId` único em logs de erro.
+- Formato JSON estruturado para fácil parsing.
+
+```typescript
+const traceId = crypto.randomUUID();
+const startTime = performance.now();
+
+try {
+  // ... lógica ...
+} catch (error) {
+  const duration = performance.now() - startTime;
+  
+  console.error(JSON.stringify({
+    traceId,
+    timestamp: new Date().toISOString(),
+    level: 'error',
+    message: error.message,
+    duration: `${duration.toFixed(2)}ms`,
+    context: { userId, articleId, action: 'assess_article' },
+  }));
+  
+  // Em produção, integrar com Supabase Logs ou serviço externo (Sentry, Datadog)
+}
+```
+
+### Métricas
+- Registre latências de operações críticas (AI calls, queries pesadas).
+- Capture contagem de tokens, duração de processamento, tamanho de payloads.
+
+### CORS e Timeouts
+- Inclua **CORS** explícito para todas as rotas.
+- *Timeouts* razoáveis para I/O externo (AI APIs: 60s, Supabase queries: 10s).
 
 ## Segurança
-- **Rate limit** por IP/uid/rota (estratégia simples por KV/DB se necessário).
-- Assinaturas Webhook verificadas; sempre valide `signature`.
+
+### Rate Limiting
+Estratégia por tipo de rota (implementar com Supabase KV ou tabela simples):
+
+```typescript
+// Estratégia simples com tabela rate_limits
+async function checkRateLimit(
+  key: string, 
+  limit: number, 
+  windowSeconds: number
+): Promise<{ allowed: boolean; remaining: number }> {
+  const { data } = await supabase
+    .from('rate_limits')
+    .select('count, reset_at')
+    .eq('key', key)
+    .single();
+  
+  const now = new Date();
+  const resetAt = data?.reset_at ? new Date(data.reset_at) : null;
+  
+  // Reset se window expirou
+  if (!resetAt || now > resetAt) {
+    await supabase.from('rate_limits').upsert({
+      key,
+      count: 1,
+      reset_at: new Date(now.getTime() + windowSeconds * 1000),
+    });
+    return { allowed: true, remaining: limit - 1 };
+  }
+  
+  // Verificar limite
+  if (data.count >= limit) {
+    return { allowed: false, remaining: 0 };
+  }
+  
+  // Incrementar
+  await supabase.from('rate_limits')
+    .update({ count: data.count + 1 })
+    .eq('key', key);
+  
+  return { allowed: true, remaining: limit - data.count - 1 };
+}
+
+// Uso por rota:
+// - AI assessment: 10/min por user_id
+// - Import: 5/min por org_id
+// - Upload: 20/min por IP
+```
+
+**Limites sugeridos:**
+- AI assessment: `10/min` por `user_id`
+- Import (Zotero): `5/min` por `org_id`
+- Upload: `20/min` por `IP`
+- Queries pesadas: `30/min` por `user_id`
+
+### Validação de Webhooks
+- Assinaturas Webhook verificadas; sempre valide `signature` antes de processar.
+- Use HMAC SHA256 para verificar payloads.
+
+## Testes Edge Functions
+
+### Estrutura com Deno Test
+```typescript
+import { assertEquals } from "https://deno.land/std/testing/asserts.ts";
+import { handler } from "./ai-assessment/index.ts";
+
+Deno.test("assessArticle - valida input com zod", async () => {
+  const request = new Request("http://localhost", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ invalid: "data" }),
+  });
+  
+  const result = await handler({ request });
+  assertEquals(result.status, 400);
+  
+  const body = await result.json();
+  assertEquals(body.ok, false);
+  assertEquals(body.error?.code, "VALIDATION_ERROR");
+});
+
+Deno.test("assessArticle - retorna erro em caso de rate limit", async () => {
+  // Mock rate limit exceeded
+  const request = new Request("http://localhost", {
+    method: "POST",
+    headers: { 
+      "Content-Type": "application/json",
+      "Authorization": "Bearer valid_token"
+    },
+    body: JSON.stringify({ articleId: "123" }),
+  });
+  
+  // Simular rate limit
+  // ...
+  
+  const result = await handler({ request });
+  assertEquals(result.status, 429);
+});
+```
+
+### Quando testar
+- Validação de input (zod schemas)
+- Rate limiting
+- Tratamento de erros
+- Formato de resposta padronizado
+- CORS headers
 
 ## Entregáveis do AI
-** Sempre que criar uma edge function, colocar no código para manter organizado também. Isto é, não fazer apenas o depploy da function sem colcoar em supabase/functions
+- **Sempre** colocar código da edge function em `supabase/functions/` (não apenas deploy).
 - Funções com zod de entrada/saída, tratamento de erro uniforme e testes `deno test`.
+- Incluir exemplos de uso na documentação.

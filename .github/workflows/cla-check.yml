@@ -1,0 +1,43 @@
+name: CLA Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  cla-check:
+    name: Verify CLA Signature
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Check CLA
+        uses: cla-assistant/github-action@v2.2.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PERSONAL_ACCESS_TOKEN: ${{ secrets.CLA_PAT }}
+        with:
+          path-to-signatures: '.github/cla/signatures.json'
+          path-to-document: 'CLA.md'
+          branch: 'main'
+          allowlist: bot, dependabot[bot], dependabot-preview[bot]
+          lock-reasons: true
+          remote-organization-name: ''
+          remote-repository-name: ''
+          create-file-commit-message: 'chore: create CLA signatures file'
+          signed-by-commit-message: 'chore: sign CLA'
+          custom-notsigned-prcomment: |
+            ## ⚠️ CLA Required
+            
+            Obrigado por sua contribuição! Antes de podermos mesclar seu PR, você precisa assinar o [Contributor License Agreement (CLA)](CLA.md).
+            
+            Por favor, clique no link abaixo para assinar:
+            
+            [Assinar CLA](https://cla-assistant.io/seu-usuario/review-hub)
+            
+            Obrigado pela sua compreensão! 🙏
+

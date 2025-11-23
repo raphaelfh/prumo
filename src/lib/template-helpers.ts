@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * Helpers para validação e manipulação de templates
  * 
  * Garante que estamos usando os IDs corretos para templates:
@@ -112,18 +118,27 @@ export async function getTemplateDebugInfo(templateId: string): Promise<{
     }
 
     // Contar fields
-    const { count: fieldsCount, error: fieldsError } = await supabase
-      .from('extraction_fields')
-      .select('*', { count: 'exact', head: true })
-      .in('entity_type_id', 
-        supabase
-          .from('extraction_entity_types')
-          .select('id')
-          .eq('project_template_id', templateId)
-      );
+    // Primeiro, buscar os IDs dos entity types
+    const { data: entityTypeIds, error: etIdsError } = await supabase
+      .from('extraction_entity_types')
+      .select('id')
+      .eq('project_template_id', templateId);
 
-    if (fieldsError) {
-      console.warn('Erro ao contar fields:', fieldsError);
+    let fieldsCount = 0;
+    if (!etIdsError && entityTypeIds && entityTypeIds.length > 0) {
+      const ids = entityTypeIds.map(et => et.id);
+      const { count, error: fieldsError } = await supabase
+        .from('extraction_fields')
+        .select('*', { count: 'exact', head: true })
+        .in('entity_type_id', ids);
+
+      if (fieldsError) {
+        console.warn('Erro ao contar fields:', fieldsError);
+      } else {
+        fieldsCount = count || 0;
+      }
+    } else if (etIdsError) {
+      console.warn('Erro ao buscar IDs de entity types:', etIdsError);
     }
 
     return {

@@ -1,3 +1,9 @@
+/**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
 export type Json =
   | string
   | number
@@ -7,10 +13,30 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "13.0.5"
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
   public: {
     Tables: {
@@ -222,6 +248,7 @@ export type Database = {
           field_id: string
           id: string
           instance_id: string | null
+          metadata: Json
           reasoning: string | null
           reviewed_at: string | null
           reviewed_by: string | null
@@ -235,6 +262,7 @@ export type Database = {
           field_id: string
           id?: string
           instance_id?: string | null
+          metadata?: Json
           reasoning?: string | null
           reviewed_at?: string | null
           reviewed_by?: string | null
@@ -248,6 +276,7 @@ export type Database = {
           field_id?: string
           id?: string
           instance_id?: string | null
+          metadata?: Json
           reasoning?: string | null
           reviewed_at?: string | null
           reviewed_by?: string | null
@@ -1060,6 +1089,13 @@ export type Database = {
             referencedRelation: "project_extraction_templates"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "extraction_entity_types_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "extraction_templates_global"
+            referencedColumns: ["id"]
+          },
         ]
       }
       extraction_evidence: {
@@ -1135,6 +1171,7 @@ export type Database = {
       }
       extraction_fields: {
         Row: {
+          allow_other: boolean
           allowed_units: Json | null
           allowed_values: Json | null
           created_at: string
@@ -1144,12 +1181,16 @@ export type Database = {
           id: string
           is_required: boolean
           label: string
+          llm_description: string | null
           name: string
+          other_label: string
+          other_placeholder: string | null
           sort_order: number
           unit: string | null
           validation_schema: Json | null
         }
         Insert: {
+          allow_other?: boolean
           allowed_units?: Json | null
           allowed_values?: Json | null
           created_at?: string
@@ -1159,12 +1200,16 @@ export type Database = {
           id?: string
           is_required?: boolean
           label: string
+          llm_description?: string | null
           name: string
+          other_label?: string
+          other_placeholder?: string | null
           sort_order?: number
           unit?: string | null
           validation_schema?: Json | null
         }
         Update: {
+          allow_other?: boolean
           allowed_units?: Json | null
           allowed_values?: Json | null
           created_at?: string
@@ -1174,7 +1219,10 @@ export type Database = {
           id?: string
           is_required?: boolean
           label?: string
+          llm_description?: string | null
           name?: string
+          other_label?: string
+          other_placeholder?: string | null
           sort_order?: number
           unit?: string | null
           validation_schema?: Json | null
@@ -1765,51 +1813,13 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      add_custom_vocabulary: {
+      check_cardinality_one: {
         Args: {
-          project_uuid: string
-          vocab_description?: string
-          vocab_name: string
+          p_article_id: string
+          p_entity_type_id: string
+          p_parent_instance_id?: string
         }
-        Returns: string
-      }
-      calculate_assessment_discordances: {
-        Args: { project_id: string }
-        Returns: {
-          article_id: string
-          discordance_percentage: number
-          discordant_items: number
-          instrument_id: string
-          total_items: number
-        }[]
-      }
-      calculate_extraction_progress: {
-        Args: { p_article_id: string; p_project_id: string }
-        Returns: Json
-      }
-      can_access_article: {
-        Args: { p_project_id: string; p_user_id: string }
         Returns: boolean
-      }
-      can_manage_article: {
-        Args: { p_project_id: string; p_user_id: string }
-        Returns: boolean
-      }
-      check_project_access: {
-        Args: { p_project_id: string; p_user_id: string }
-        Returns: boolean
-      }
-      count_extracted_values: {
-        Args: { p_template_id: string }
-        Returns: number
-      }
-      create_project_bypass_rls: {
-        Args: { creator_id: string; project_name: string }
-        Returns: string
-      }
-      create_project_with_creator: {
-        Args: { creator_id: string; project_name: string }
-        Returns: string
       }
       create_project_with_member: {
         Args: {
@@ -1819,75 +1829,6 @@ export type Database = {
         }
         Returns: string
       }
-      create_project_with_validation: {
-        Args: { p_description?: string; p_name: string }
-        Returns: Json
-      }
-      debug_edge_function_call: {
-        Args: Record<PropertyKey, never>
-        Returns: Json
-      }
-      diagnose_user_permissions: {
-        Args: Record<PropertyKey, never>
-        Returns: Json
-      }
-      ensure_user_profile: {
-        Args: { p_user_id: string }
-        Returns: boolean
-      }
-      final_edge_function_test: {
-        Args: Record<PropertyKey, never>
-        Returns: Json
-      }
-      get_instance_children: {
-        Args: { p_parent_id: string }
-        Returns: {
-          entity_type_id: string
-          id: string
-          label: string
-          level: number
-        }[]
-      }
-      get_instance_path: {
-        Args: { p_instance_id: string }
-        Returns: string
-      }
-      gtrgm_compress: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      gtrgm_decompress: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      gtrgm_in: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      gtrgm_options: {
-        Args: { "": unknown }
-        Returns: undefined
-      }
-      gtrgm_out: {
-        Args: { "": unknown }
-        Returns: unknown
-      }
-      has_extracted_values: {
-        Args: { p_template_id: string }
-        Returns: boolean
-      }
-      has_main_file: {
-        Args: { p_article_id: string }
-        Returns: boolean
-      }
-      initialize_existing_project_template: {
-        Args: { p_project_id: string }
-        Returns: undefined
-      }
-      initialize_project_vocabularies: {
-        Args: { project_uuid: string }
-        Returns: undefined
-      }
       is_project_manager: {
         Args: { p_project: string; p_user: string }
         Returns: boolean
@@ -1896,38 +1837,10 @@ export type Database = {
         Args: { p_project: string; p_user: string }
         Returns: boolean
       }
-      set_limit: {
-        Args: { "": number }
-        Returns: number
-      }
-      show_limit: {
-        Args: Record<PropertyKey, never>
-        Returns: number
-      }
-      show_trgm: {
-        Args: { "": string }
-        Returns: string[]
-      }
-      switch_active_template: {
-        Args: { p_new_template_id: string; p_project_id: string }
-        Returns: undefined
-      }
-      test_ai_assessment_comprehensive: {
-        Args: Record<PropertyKey, never>
-        Returns: Json
-      }
-      test_ai_assessment_function: {
-        Args: Record<PropertyKey, never>
-        Returns: Json
-      }
-      test_edge_function_call: {
-        Args: Record<PropertyKey, never>
-        Returns: Json
-      }
+      show_limit: { Args: never; Returns: number }
+      show_trgm: { Args: { "": string }; Returns: string[] }
     }
     Enums: {
-      annotation_status: "active" | "deleted"
-      annotation_type: "text" | "area" | "highlight" | "note" | "underline"
       assessment_status: "in_progress" | "submitted" | "locked" | "archived"
       extraction_cardinality: "one" | "many"
       extraction_field_type:
@@ -2087,10 +2000,11 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
-      annotation_status: ["active", "deleted"],
-      annotation_type: ["text", "area", "highlight", "note", "underline"],
       assessment_status: ["in_progress", "submitted", "locked", "archived"],
       extraction_cardinality: ["one", "many"],
       extraction_field_type: [
@@ -2132,3 +2046,4 @@ export const Constants = {
     },
   },
 } as const
+

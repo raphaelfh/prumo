@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * Dialog para importar template global para o projeto
  * 
  * Features:
@@ -44,7 +50,7 @@ interface ImportTemplateDialogProps {
   projectId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onTemplateImported: () => void;
+  onTemplateImported: (templateId?: string) => void;
 }
 
 // =================== COMPONENT ===================
@@ -79,7 +85,7 @@ export function ImportTemplateDialog({
           `Template "${selectedTemplate.name}" importado com sucesso! ${result.details?.entityTypesAdded} seções, ${result.details?.fieldsAdded} campos.`
         );
         onOpenChange(false);
-        onTemplateImported();
+        onTemplateImported(result.templateId);
       } else {
         throw new Error(result.error || 'Erro desconhecido');
       }
@@ -132,41 +138,41 @@ export function ImportTemplateDialog({
                 {templates.map((template) => (
                   <Card 
                     key={template.id}
-                    className={`cursor-pointer transition-all ${
+                    className={`group cursor-pointer transition-all ${
                       selectedTemplateId === template.id 
                         ? 'ring-2 ring-primary' 
-                        : 'hover:bg-accent'
+                        : 'hover:bg-primary'
                     }`}
                     onClick={() => setSelectedTemplateId(template.id)}
                   >
                     <CardHeader className="pb-3">
                       <div className="flex items-start justify-between">
                         <div className="flex items-center gap-3">
-                          <RadioGroupItem value={template.id} id={template.id} />
+                          <RadioGroupItem value={template.id} id={template.id} className="group-hover:text-white group-hover:border-white" />
                           <div>
-                            <CardTitle className="text-base">
-                              <Label htmlFor={template.id} className="cursor-pointer">
+                            <CardTitle className="text-base group-hover:text-white">
+                              <Label htmlFor={template.id} className="cursor-pointer group-hover:text-white">
                                 {template.name}
                               </Label>
                             </CardTitle>
-                            <CardDescription className="text-xs mt-1">
+                            <CardDescription className="text-xs mt-1 group-hover:text-white">
                               {template.description}
                             </CardDescription>
                           </div>
                         </div>
-                        <Badge variant="outline" className="ml-2">
+                        <Badge variant="outline" className="ml-2 group-hover:text-white group-hover:border-white">
                           {template.framework}
                         </Badge>
                       </div>
                     </CardHeader>
                     <CardContent className="pt-0">
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                      <div className="flex items-center gap-4 text-sm text-muted-foreground group-hover:text-white">
                         <div className="flex items-center gap-1">
-                          <Layers className="h-4 w-4" />
+                          <Layers className="h-4 w-4 group-hover:text-white" />
                           <span>{template.entityTypesCount} seções</span>
                         </div>
                         <div className="flex items-center gap-1">
-                          <FileText className="h-4 w-4" />
+                          <FileText className="h-4 w-4 group-hover:text-white" />
                           <span>v{template.version}</span>
                         </div>
                       </div>

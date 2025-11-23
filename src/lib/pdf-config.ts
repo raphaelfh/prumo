@@ -29,8 +29,8 @@ const getDevicePixelRatio = (): number => {
 
 export const PERFORMANCE_CONFIG = {
   // Lazy loading settings
-  preloadPages: 2, // Number of pages to preload ahead/behind
-  unloadDistance: 5, // Unload pages this far from current page
+  preloadPages: 3, // Number of pages to preload ahead/behind (aumentado para scroll)
+  unloadDistance: 7, // Unload pages this far from current page (aumentado para scroll contínuo)
   
   // Rendering settings - mais conservador para evitar OOM
   maxCanvasPixels: 8388608, // 8MP max canvas size (mais conservador)
@@ -45,4 +45,12 @@ export const PERFORMANCE_CONFIG = {
   renderTimeout: 10000, // Timeout para renderização (10s)
   enableWebGL: true, // Usar WebGL quando disponível
   useOnlyCssZoom: false, // Permitir canvas scaling para melhor qualidade
+};
+
+// Configurações específicas para scroll contínuo
+export const CONTINUOUS_SCROLL_CONFIG = {
+  virtualizationBuffer: 2, // Páginas antes/depois visíveis para pré-carregar
+  scrollThrottle: 100, // ms - throttle para eventos de scroll
+  intersectionRootMargin: '200px', // Margem do Intersection Observer
+  placeholderHeight: 1100, // px - altura estimada de uma página (ajustar baseado no scale)
 };

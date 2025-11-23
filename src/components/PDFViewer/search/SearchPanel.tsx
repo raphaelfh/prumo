@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * SearchPanel - Painel de busca avançada no documento
  * 
  * Features:
@@ -10,7 +16,7 @@
  * - Highlight de resultados
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Search, X, ChevronUp, ChevronDown, Settings2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -32,23 +38,47 @@ interface SearchPanelProps {
 }
 
 export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
-  const { getPdfDocument, goToPage } = usePDFStore();
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<SearchResult[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(-1);
+  const { 
+    getPdfDocument, 
+    goToPage,
+    searchQuery,
+    setSearchQuery,
+    searchResults,
+    setSearchResults,
+    currentSearchIndex,
+    setCurrentSearchIndex,
+    goToSearchResult,
+  } = usePDFStore();
+  
+  const [localResults, setLocalResults] = useState<SearchResult[]>([]);
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [wholeWords, setWholeWords] = useState(false);
   const [useRegex, setUseRegex] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [searchProgress, setSearchProgress] = useState({ current: 0, total: 0 });
+  
+  // Sincronizar query local com store
+  const [query, setQuery] = useState(searchQuery);
+  
+  // Função para scroll fino até resultado (usado como fallback)
+  const scrollToSearchResult = useCallback((pageNumber: number, matchIndex: number) => {
+    // Esta função é mantida como fallback, mas o hook usePDFSearchHighlight
+    // deve fazer o trabalho principal
+    // Deixar aqui apenas para garantir que a página seja renderizada
+    goToSearchResult(searchResults.findIndex(r => r.pageNumber === pageNumber && r.matchIndex === matchIndex));
+  }, [goToSearchResult, searchResults]);
 
   // Função de busca real usando PDF.js
   const performSearch = useCallback(async () => {
-    if (!query.trim()) {
-      setResults([]);
-      setCurrentIndex(-1);
+    const currentQuery = query; // Capturar query atual
+    
+    if (!currentQuery.trim()) {
+      setLocalResults([]);
+      setSearchResults([]);
+      setCurrentSearchIndex(-1);
       setSearchProgress({ current: 0, total: 0 });
+      setSearchQuery('');
       return;
     }
 
@@ -62,11 +92,11 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
     setSearchProgress({ current: 0, total: pdfDoc.numPages });
     
     try {
-      console.log('🔍 Buscando:', { query, caseSensitive, wholeWords, useRegex });
+      console.log('🔍 Buscando:', { query: currentQuery, caseSensitive, wholeWords, useRegex });
       
       const searchResults = await searchInDocument(
         pdfDoc,
-        query,
+        currentQuery,
         { caseSensitive, wholeWords, useRegex },
         (current, total) => {
           setSearchProgress({ current, total });
@@ -74,41 +104,81 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
       );
       
       console.log(`✅ Busca concluída: ${searchResults.length} página(s) com resultados`);
-      setResults(searchResults);
-      setCurrentIndex(searchResults.length > 0 ? 0 : -1);
+      setLocalResults(searchResults);
       
-      // Navegar para primeira página com resultado
-      if (searchResults.length > 0) {
-        goToPage(searchResults[0].pageNumber);
+      // Transformar resultados em formato flat para store
+      const flatResults: Array<{ pageNumber: number; matchIndex: number }> = [];
+      searchResults.forEach((result) => {
+        result.matches.forEach((_, matchIndex) => {
+          flatResults.push({
+            pageNumber: result.pageNumber,
+            matchIndex,
+          });
+        });
+      });
+      
+      setSearchResults(flatResults);
+      setSearchQuery(currentQuery);
+      
+      // Navegar para primeiro resultado
+      if (flatResults.length > 0) {
+        setCurrentSearchIndex(0);
+        goToSearchResult(0);
+        scrollToSearchResult(flatResults[0].pageNumber, flatResults[0].matchIndex);
+      } else {
+        setCurrentSearchIndex(-1);
       }
     } catch (error) {
       console.error('❌ Erro na busca:', error);
-      setResults([]);
-      setCurrentIndex(-1);
+      setLocalResults([]);
+      setSearchResults([]);
+      setCurrentSearchIndex(-1);
     } finally {
       setIsSearching(false);
       setSearchProgress({ current: 0, total: 0 });
     }
-  }, [query, caseSensitive, wholeWords, useRegex, getPdfDocument, goToPage]);
+  }, [query, caseSensitive, wholeWords, useRegex, getPdfDocument, setSearchResults, setSearchQuery, setCurrentSearchIndex, goToSearchResult, scrollToSearchResult]);
 
   // Buscar quando query mudar (debounced)
+  // Usar ref para evitar re-execução quando performSearch muda
+  const performSearchRef = useRef(performSearch);
+  performSearchRef.current = performSearch;
+  
   useEffect(() => {
-    const timer = setTimeout(performSearch, 300);
+    const timer = setTimeout(() => {
+      performSearchRef.current();
+    }, 300);
     return () => clearTimeout(timer);
-  }, [query, performSearch]);
+  }, [query]); // Apenas query como dependência
+
+  // Sincronizar query local com store quando mudar externamente
+  useEffect(() => {
+    if (searchQuery !== query) {
+      setQuery(searchQuery);
+    }
+  }, [searchQuery]);
+
+  // Navegar para página quando currentSearchIndex mudar
+  useEffect(() => {
+    if (currentSearchIndex >= 0 && searchResults.length > 0) {
+      const result = searchResults[currentSearchIndex];
+      if (result) {
+        // Navegar para a página (o hook usePDFSearchHighlight fará o scroll fino)
+        goToSearchResult(currentSearchIndex);
+      }
+    }
+  }, [currentSearchIndex, searchResults, goToSearchResult]);
 
   const goToNextResult = () => {
-    if (results.length === 0) return;
-    const newIndex = (currentIndex + 1) % results.length;
-    setCurrentIndex(newIndex);
-    goToPage(results[newIndex].pageNumber);
+    if (searchResults.length === 0) return;
+    const newIndex = (currentSearchIndex + 1) % searchResults.length;
+    setCurrentSearchIndex(newIndex);
   };
 
   const goToPrevResult = () => {
-    if (results.length === 0) return;
-    const newIndex = (currentIndex - 1 + results.length) % results.length;
-    setCurrentIndex(newIndex);
-    goToPage(results[newIndex].pageNumber);
+    if (searchResults.length === 0) return;
+    const newIndex = (currentSearchIndex - 1 + searchResults.length) % searchResults.length;
+    setCurrentSearchIndex(newIndex);
   };
 
   // Atalhos de teclado
@@ -118,18 +188,18 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         onClose();
-      } else if (e.key === 'Enter') {
-        if (e.shiftKey) {
+      } else if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        goToNextResult();
+      } else if (e.key === 'Enter' && e.shiftKey) {
+        e.preventDefault();
           goToPrevResult();
-        } else {
-          goToNextResult();
-        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose, results]);
+  }, [isOpen, onClose, searchResults, currentSearchIndex, goToNextResult, goToPrevResult]);
 
   if (!isOpen) return null;
 
@@ -156,7 +226,7 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
               variant="ghost"
               size="icon"
               onClick={goToPrevResult}
-              disabled={results.length === 0}
+              disabled={searchResults.length === 0}
               className="h-9 w-9"
               title="Resultado Anterior (Shift+Enter)"
             >
@@ -166,7 +236,7 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
               variant="ghost"
               size="icon"
               onClick={goToNextResult}
-              disabled={results.length === 0}
+              disabled={searchResults.length === 0}
               className="h-9 w-9"
               title="Próximo Resultado (Enter)"
             >
@@ -175,9 +245,9 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
             
             {/* Contador */}
             <Badge variant="secondary" className="min-w-[60px] justify-center">
-              {results.length === 0 
+              {searchResults.length === 0 
                 ? '0/0' 
-                : `${currentIndex + 1}/${results.length}`}
+                : `${currentSearchIndex + 1}/${searchResults.length}`}
             </Badge>
           </div>
 
@@ -263,16 +333,16 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
           </div>
         )}
         
-        {query && !isSearching && results.length === 0 && (
+        {query && !isSearching && searchResults.length === 0 && (
           <div className="text-xs text-muted-foreground">
             Nenhum resultado encontrado para "{query}"
           </div>
         )}
         
-        {query && !isSearching && results.length > 0 && (
+        {query && !isSearching && searchResults.length > 0 && (
           <div className="text-xs text-muted-foreground">
-            Encontrado em {results.length} página(s) • 
-            Total: {results.reduce((sum, r) => sum + r.matches.length, 0)} resultado(s)
+            Encontrado em {localResults.length} página(s) • 
+            Total: {searchResults.length} resultado(s)
           </div>
         )}
       </div>

@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * ArticleForm - Componente Unificado para Adicionar/Editar Artigos
  * 
  * Sistema moderno com:
@@ -19,6 +25,16 @@ import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { 
@@ -33,7 +49,8 @@ import {
   Loader2,
   Plus,
   Eye,
-  Download
+  Download,
+  Trash2
 } from "lucide-react";
 import { FILE_ROLES } from "@/lib/file-constants";
 import { validateFile, detectFileFormat } from "@/lib/file-validation";
@@ -168,6 +185,16 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
   const [article, setArticle] = useState<Article | null>(null);
   const [files, setFiles] = useState<ArticleFile[]>([]);
   const [showFileUpload, setShowFileUpload] = useState(false);
+  const [fileToDelete, setFileToDelete] = useState<ArticleFile | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deletingFile, setDeletingFile] = useState(false);
+  
+  // Estado para erros de validação
+  const [validationErrors, setValidationErrors] = useState<{
+    publication_year?: string;
+    publication_month?: string;
+    publication_day?: string;
+  }>({});
   
   // Formulário
   const [formData, setFormData] = useState<FormData>({
@@ -282,6 +309,46 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
     }
   };
 
+  // Validação de campos de data
+  const validateDateField = (field: 'publication_year' | 'publication_month' | 'publication_day', value: string): string | undefined => {
+    if (!value || value.trim() === '') {
+      // Campo vazio é válido (opcional)
+      setValidationErrors(prev => ({ ...prev, [field]: undefined }));
+      return undefined;
+    }
+
+    const num = parseInt(value.trim(), 10);
+    if (isNaN(num)) {
+      const error = 'Deve ser um número válido';
+      setValidationErrors(prev => ({ ...prev, [field]: error }));
+      return error;
+    }
+
+    let error: string | undefined;
+    if (field === 'publication_month') {
+      if (num < 1 || num > 12) {
+        error = 'Mês deve estar entre 1 e 12';
+      }
+    } else if (field === 'publication_day') {
+      if (num < 1 || num > 31) {
+        error = 'Dia deve estar entre 1 e 31';
+      }
+    } else if (field === 'publication_year') {
+      if (num < 1600 || num > 2500) {
+        error = 'Ano deve estar entre 1600 e 2500';
+      }
+    }
+
+    setValidationErrors(prev => ({ ...prev, [field]: error }));
+    return error;
+  };
+
+  // Handler para mudanças nos campos de data com validação
+  const handleDateFieldChange = (field: 'publication_year' | 'publication_month' | 'publication_day', value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    validateDateField(field, value);
+  };
+
   const handleSave = async () => {
     if (!formData.title.trim()) {
       toast.error("O título é obrigatório");
@@ -289,16 +356,47 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
       return;
     }
 
+    // Validar todos os campos de data antes de salvar
+    const yearError = validateDateField('publication_year', formData.publication_year);
+    const monthError = validateDateField('publication_month', formData.publication_month);
+    const dayError = validateDateField('publication_day', formData.publication_day);
+
+    if (yearError || monthError || dayError) {
+      toast.error("Por favor, corrija os erros nos campos de data antes de salvar");
+      setCurrentStep('publication');
+      return;
+    }
+
     setSaving(true);
     try {
+      // Helper para validar e converter valores numéricos de data
+      const parseDateValue = (value: string | undefined): number | null => {
+        if (!value || value.trim() === '') return null;
+        const num = parseInt(value.trim(), 10);
+        if (isNaN(num)) return null;
+        return num;
+      };
+
+      // Validar publication_month (deve estar entre 1-12)
+      const parsedMonth = parseDateValue(formData.publication_month);
+      const validMonth = parsedMonth !== null && parsedMonth >= 1 && parsedMonth <= 12 ? parsedMonth : null;
+
+      // Validar publication_day (deve estar entre 1-31)
+      const parsedDay = parseDateValue(formData.publication_day);
+      const validDay = parsedDay !== null && parsedDay >= 1 && parsedDay <= 31 ? parsedDay : null;
+
+      // Validar publication_year (deve estar entre 1600-2500)
+      const parsedYear = parseDateValue(formData.publication_year);
+      const validYear = parsedYear !== null && parsedYear >= 1600 && parsedYear <= 2500 ? parsedYear : null;
+
       const articleData = {
         project_id: projectId,
         title: formData.title.trim(),
         abstract: formData.abstract.trim() || null,
         authors: formData.authors.trim() ? formData.authors.split(",").map(a => a.trim()) : null,
-        publication_year: formData.publication_year ? parseInt(formData.publication_year) : null,
-        publication_month: formData.publication_month ? parseInt(formData.publication_month) : null,
-        publication_day: formData.publication_day ? parseInt(formData.publication_day) : null,
+        publication_year: validYear,
+        publication_month: validMonth,
+        publication_day: validDay,
         journal_title: formData.journal_title.trim() || null,
         journal_issn: formData.journal_issn.trim() || null,
         journal_eissn: formData.journal_eissn.trim() || null,
@@ -350,13 +448,15 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
       toast.success(`Artigo ${mode === 'add' ? 'criado' : 'atualizado'} com sucesso!`);
       
       if (mode === 'add') {
-        navigate(`/project/${projectId}/article/${result.id}`);
+        // Navegar de volta para a lista de artigos do projeto
+        navigate(`/projects/${projectId}?tab=articles`);
       } else {
         onComplete?.();
       }
     } catch (error: any) {
       console.error("Error saving article:", error);
-      toast.error(`Erro ao ${mode === 'add' ? 'criar' : 'atualizar'} artigo`);
+      const errorMessage = error?.message || error?.details || `Erro ao ${mode === 'add' ? 'criar' : 'atualizar'} artigo`;
+      toast.error(`Erro ao ${mode === 'add' ? 'criar' : 'atualizar'} artigo: ${errorMessage}`);
     } finally {
       setSaving(false);
     }
@@ -382,6 +482,45 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
       console.error("Error downloading file:", error);
       toast.error("Erro ao baixar arquivo");
     }
+  };
+
+  const handleDeleteFile = async () => {
+    if (!fileToDelete) return;
+
+    setDeletingFile(true);
+    try {
+      // Deletar arquivo do storage
+      const { error: storageError } = await supabase.storage
+        .from("articles")
+        .remove([fileToDelete.storage_key]);
+
+      if (storageError) {
+        console.warn("Erro ao deletar arquivo do storage:", storageError);
+      }
+
+      // Deletar registro do banco
+      const { error: dbError } = await supabase
+        .from("article_files")
+        .delete()
+        .eq("id", fileToDelete.id);
+
+      if (dbError) throw dbError;
+
+      toast.success("Arquivo removido com sucesso!");
+      loadFiles(); // Recarregar lista de arquivos
+      setDeleteDialogOpen(false);
+      setFileToDelete(null);
+    } catch (error: any) {
+      console.error("Error deleting file:", error);
+      toast.error("Erro ao remover arquivo");
+    } finally {
+      setDeletingFile(false);
+    }
+  };
+
+  const openDeleteDialog = (file: ArticleFile) => {
+    setFileToDelete(file);
+    setDeleteDialogOpen(true);
   };
 
   const viewPDF = async (file: ArticleFile) => {
@@ -503,11 +642,19 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
                     id="publication_year"
                     type="number"
                     value={formData.publication_year}
-                    onChange={(e) => setFormData({ ...formData, publication_year: e.target.value })}
+                    onChange={(e) => handleDateFieldChange('publication_year', e.target.value)}
+                    onBlur={(e) => validateDateField('publication_year', e.target.value)}
                     placeholder="2024"
                     min="1600"
                     max="2500"
+                    className={validationErrors.publication_year ? "border-destructive" : ""}
                   />
+                  {validationErrors.publication_year && (
+                    <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" />
+                      {validationErrors.publication_year}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <Label htmlFor="publication_month">Mês de Publicação</Label>
@@ -515,12 +662,41 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
                     id="publication_month"
                     type="number"
                     value={formData.publication_month}
-                    onChange={(e) => setFormData({ ...formData, publication_month: e.target.value })}
+                    onChange={(e) => handleDateFieldChange('publication_month', e.target.value)}
+                    onBlur={(e) => validateDateField('publication_month', e.target.value)}
                     placeholder="1-12"
                     min="1"
                     max="12"
+                    className={validationErrors.publication_month ? "border-destructive" : ""}
                   />
+                  {validationErrors.publication_month && (
+                    <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" />
+                      {validationErrors.publication_month}
+                    </p>
+                  )}
                 </div>
+              </div>
+              
+              <div>
+                <Label htmlFor="publication_day">Dia de Publicação</Label>
+                <Input
+                  id="publication_day"
+                  type="number"
+                  value={formData.publication_day}
+                  onChange={(e) => handleDateFieldChange('publication_day', e.target.value)}
+                  onBlur={(e) => validateDateField('publication_day', e.target.value)}
+                  placeholder="1-31"
+                  min="1"
+                  max="31"
+                  className={validationErrors.publication_day ? "border-destructive" : ""}
+                />
+                {validationErrors.publication_day && (
+                  <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" />
+                    {validationErrors.publication_day}
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-3 gap-4">
@@ -766,6 +942,15 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
                           <Download className="mr-2 h-4 w-4" />
                           Baixar
                         </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openDeleteDialog(file)}
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Excluir
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -917,6 +1102,29 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
           }}
         />
       )}
+
+      {/* Dialog de Confirmação de Exclusão */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar Remoção</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja remover o arquivo "{fileToDelete?.original_filename}"?
+              Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingFile}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteFile}
+              disabled={deletingFile}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deletingFile ? "Removendo..." : "Remover"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

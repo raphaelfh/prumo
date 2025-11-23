@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * Popover com lista de outras extrações
  * 
  * Mostra valores extraídos por outros membros para um campo específico.
@@ -13,15 +19,18 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Users, Check, TrendingUp, Table } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Users, Check, Table as TableIcon } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import { formatComparisonValue } from '@/lib/comparison/formatters';
+import { detectConsensus } from '@/lib/comparison/consensus';
+import { ConsensusIndicator } from '@/components/shared/comparison';
 import type { OtherExtraction } from '@/hooks/extraction/colaboracao/useOtherExtractions';
 
 // =================== INTERFACES ===================
@@ -33,16 +42,6 @@ interface OtherExtractionsPopoverProps {
   myValue: any;
   onViewComparison?: () => void;
   children: React.ReactNode;
-}
-
-// =================== HELPER ===================
-
-function formatValue(value: any): string {
-  if (value === null || value === undefined) return '—';
-  if (typeof value === 'boolean') return value ? 'Sim' : 'Não';
-  if (Array.isArray(value)) return value.join(', ');
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value);
 }
 
 // =================== COMPONENT ===================
@@ -61,42 +60,18 @@ export function OtherExtractionsPopover(props: OtherExtractionsPopoverProps) {
       .filter(ext => ext.value !== null && ext.value !== undefined);
   }, [extractions, fieldId, instanceId]);
 
-  // Detectar consenso
+  // Detectar consenso usando biblioteca compartilhada
   const consensus = useMemo(() => {
     if (relevantExtractions.length === 0) return null;
 
-    // Agrupar por valor
-    const valueCounts: Record<string, number> = {};
-    relevantExtractions.forEach(ext => {
-      const valueStr = formatValue(ext.value);
-      valueCounts[valueStr] = (valueCounts[valueStr] || 0) + 1;
-    });
+    // Coletar todos os valores (meu + outros)
+    const allValues = [
+      myValue,
+      ...relevantExtractions.map(ext => ext.value)
+    ];
 
-    // Adicionar meu valor se existir
-    const myValueStr = formatValue(myValue);
-    if (myValue !== null && myValue !== undefined && myValue !== '') {
-      valueCounts[myValueStr] = (valueCounts[myValueStr] || 0) + 1;
-    }
-
-    // Encontrar valor mais comum
-    let maxCount = 0;
-    let consensusValue = null;
-
-    Object.entries(valueCounts).forEach(([value, count]) => {
-      if (count > maxCount) {
-        maxCount = count;
-        consensusValue = value;
-      }
-    });
-
-    const total = relevantExtractions.length + (myValue ? 1 : 0);
-
-    return {
-      value: consensusValue,
-      count: maxCount,
-      total,
-      hasConsensus: maxCount > 1 && maxCount >= total / 2
-    };
+    // Usar função centralizada de detecção de consenso
+    return detectConsensus(allValues);
   }, [relevantExtractions, myValue]);
 
   if (relevantExtractions.length === 0) return <>{children}</>;
@@ -123,8 +98,8 @@ export function OtherExtractionsPopover(props: OtherExtractionsPopoverProps) {
           <ScrollArea className="max-h-[300px] pr-4">
             <div className="space-y-3">
               {relevantExtractions.map((ext) => {
-                const valueStr = formatValue(ext.value);
-                const myValueStr = formatValue(myValue);
+                const valueStr = formatComparisonValue(ext.value);
+                const myValueStr = formatComparisonValue(myValue);
                 const matchesMe = valueStr === myValueStr;
                 const isConsensusValue = consensus?.value === valueStr;
 
@@ -175,18 +150,11 @@ export function OtherExtractionsPopover(props: OtherExtractionsPopoverProps) {
           </ScrollArea>
 
           {/* Consenso summary */}
-          {consensus && consensus.hasConsensus && (
+          {consensus && (
             <>
               <Separator />
-              <div className="bg-blue-50 dark:bg-blue-950/20 p-3 rounded-lg">
-                <div className="flex items-center gap-2 text-sm flex-wrap">
-                  <TrendingUp className="h-4 w-4 text-blue-600 shrink-0" />
-                  <span className="font-medium">Consenso:</span>
-                  <span className="font-mono break-words">{consensus.value}</span>
-                  <Badge variant="secondary" className="text-xs">
-                    {consensus.count}/{consensus.total}
-                  </Badge>
-                </div>
+              <div className="flex items-center justify-center py-2">
+                <ConsensusIndicator consensus={consensus} variant="default" />
               </div>
             </>
           )}
@@ -201,7 +169,7 @@ export function OtherExtractionsPopover(props: OtherExtractionsPopoverProps) {
                 className="w-full"
                 onClick={onViewComparison}
               >
-                <Table className="mr-2 h-4 w-4" />
+                <TableIcon className="mr-2 h-4 w-4" />
                 Ver Comparação Completa
               </Button>
             </>

@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * Tabela elegante para extração de dados de artigos
  * 
  * Exibe artigos em formato de tabela com:
@@ -9,8 +15,8 @@
  * - Ações contextuais
  */
 
-import { useState, useMemo, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -48,6 +54,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useArticleSelection } from "@/hooks/extraction/useArticleSelection";
+import { ArticleSelectionActions } from "./ArticleSelectionActions";
+import { useFullAIExtraction } from "@/hooks/extraction/useFullAIExtraction";
 
 interface Article {
   id: string;
@@ -99,6 +110,7 @@ interface ColumnFilter {
 
 export function ArticleExtractionTable({ projectId, templateId }: ArticleExtractionTableProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [articles, setArticles] = useState<ArticleWithExtraction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -117,19 +129,21 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [activeFilterColumn, setActiveFilterColumn] = useState<keyof ColumnFilter | null>(null);
 
-  // Carregar ID do usuário atual
-  useEffect(() => {
-    loadCurrentUser();
-  }, []);
+  // Ref para rastrear última rota visitada (evitar refresh desnecessário)
+  const lastPathRef = useRef<string>('');
+  const loadArticlesRef = useRef<() => Promise<void>>();
 
-  // Carregar artigos do projeto
-  useEffect(() => {
-    if (projectId && templateId && currentUserId) {
-      loadArticles();
-    }
-  }, [projectId, templateId, currentUserId]);
+  // Hook para extração IA em batch
+  const { extractFullAI, loading: isExtracting } = useFullAIExtraction({
+    onSuccess: async () => {
+      // Recarregar artigos após extração
+      await loadArticles();
+      toast.success('Extração concluída com sucesso!');
+    },
+  });
 
-  const loadCurrentUser = async () => {
+  // Declarar loadCurrentUser antes de qualquer uso para evitar TDZ
+  const loadCurrentUser = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
@@ -138,9 +152,14 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     } catch (error: any) {
       console.error('Erro ao carregar usuário:', error);
     }
-  };
+  }, []);
 
-  const loadArticles = async () => {
+  // Declarar loadArticles antes de qualquer uso para evitar TDZ
+  const loadArticles = useCallback(async () => {
+    if (!projectId || !templateId || !currentUserId) {
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -179,7 +198,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
         .from('extracted_values')
         .select('*')
         .eq('project_id', projectId)
-        .eq('reviewer_id', currentUserId!);
+        .eq('reviewer_id', currentUserId);
 
       if (valuesError) {
         console.error('Erro ao buscar valores extraídos:', valuesError);
@@ -209,11 +228,73 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     } finally {
       setLoading(false);
     }
-  };
+  }, [projectId, templateId, currentUserId]);
+
+  // Atualizar ref da função loadArticles quando ela mudar (deve vir antes de qualquer uso)
+  useEffect(() => {
+    loadArticlesRef.current = loadArticles;
+  }, [loadArticles]);
+
+  // Carregar ID do usuário atual
+  useEffect(() => {
+    loadCurrentUser();
+  }, [loadCurrentUser]);
+
+  // Carregar artigos do projeto
+  useEffect(() => {
+    if (projectId && templateId && currentUserId) {
+      // Usar loadArticles diretamente para evitar problemas de timing com o ref
+      loadArticles();
+    }
+  }, [projectId, templateId, currentUserId, loadArticles]);
+
+  // Refresh automático quando voltar para a página (após finalizar extração)
+  // Isso garante que os dados sejam atualizados após mudanças feitas em outras páginas
+  useEffect(() => {
+    const currentPath = location.pathname;
+    
+    // Só recarregar se:
+    // 1. Estamos na rota de projetos (mas não na rota de extração fullscreen)
+    // 2. A rota mudou (não é a primeira renderização)
+    // 3. Voltamos de uma página de extração fullscreen (tinha articleId antes, não tem agora)
+    const isProjectExtractionRoute = currentPath.includes('/projects/') && 
+                                     !currentPath.match(/\/extraction\/[^/]+$/); // Não está na rota de extração específica
+    const cameFromExtractionFullscreen = lastPathRef.current.match(/\/extraction\/[^/]+$/); // Veio de uma rota de extração específica
+    
+    if (
+      projectId && 
+      templateId && 
+      currentUserId && 
+      isProjectExtractionRoute &&
+      currentPath !== lastPathRef.current &&
+      cameFromExtractionFullscreen &&
+      loadArticlesRef.current
+    ) {
+      lastPathRef.current = currentPath;
+      
+      // Pequeno delay para garantir que a navegação foi completada
+      const timer = setTimeout(() => {
+        if (loadArticlesRef.current) {
+          loadArticlesRef.current();
+        }
+      }, 300);
+      
+      return () => clearTimeout(timer);
+    } else if (currentPath !== lastPathRef.current) {
+      // Atualizar ref mesmo se não recarregar
+      lastPathRef.current = currentPath;
+    }
+  }, [location.pathname, projectId, templateId, currentUserId]); // Recarregar quando a rota mudar
 
   // Função para calcular progresso de extração
   const calculateExtractionProgress = (article: ArticleWithExtraction) => {
     if (article.instances.length === 0) return 0;
+    
+    // Verificar se todas as instâncias estão com status 'completed'
+    const allCompleted = article.instances.every(instance => instance.status === 'completed');
+    if (allCompleted && article.instances.length > 0) {
+      return 100;
+    }
     
     // Contar instâncias com pelo menos um valor extraído
     const instancesWithValues = article.instances.filter(instance =>
@@ -225,7 +306,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
 
   // Função para filtrar e ordenar artigos
   const filteredAndSortedArticles = useMemo(() => {
-    let filtered = articles.filter(article => {
+    const filtered = articles.filter(article => {
       // Filtro global
       if (globalFilter) {
         const searchText = globalFilter.toLowerCase();
@@ -311,7 +392,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
           aValue = calculateExtractionProgress(a);
           bValue = calculateExtractionProgress(b);
           break;
-        case 'status':
+        case 'status': {
           // Ordenar por status: não iniciado (0), em andamento (1), completo (2)
           const aProgress = calculateExtractionProgress(a);
           const bProgress = calculateExtractionProgress(b);
@@ -321,6 +402,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
           aValue = !aHasInstances ? 0 : (aProgress >= 100 ? 2 : 1);
           bValue = !bHasInstances ? 0 : (bProgress >= 100 ? 2 : 1);
           break;
+        }
         case 'created_at':
           aValue = new Date(a.created_at).getTime();
           bValue = new Date(b.created_at).getTime();
@@ -343,6 +425,100 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
 
     return filtered;
   }, [articles, globalFilter, columnFilters, sortField, sortDirection]);
+
+  // Hook para gerenciar seleção de artigos
+  const allArticleIds = useMemo(() => articles.map(a => a.id), [articles]);
+  const visibleArticleIds = useMemo(() => filteredAndSortedArticles.map(a => a.id), [filteredAndSortedArticles]);
+  
+  const {
+    selectedIds,
+    isAllSelected,
+    isIndeterminate,
+    selectedCount,
+    toggleArticle,
+    selectAll,
+    selectFiltered,
+    deselectAll,
+    isSelected,
+    hasActiveFilters,
+  } = useArticleSelection({
+    allArticleIds,
+    visibleArticleIds,
+  });
+
+  // Handler para extração IA em batch
+  const handleBatchAIExtraction = useCallback(async () => {
+    if (selectedIds.size === 0) {
+      toast.error('Selecione pelo menos um artigo');
+      return;
+    }
+
+    const selectedArticles = filteredAndSortedArticles.filter(a => selectedIds.has(a.id));
+    
+    toast.info(`Iniciando extração IA para ${selectedArticles.length} artigo(s)...`, {
+      description: 'Isso pode levar alguns minutos',
+    });
+
+    try {
+      // Processar artigos sequencialmente para evitar sobrecarga
+      for (let i = 0; i < selectedArticles.length; i++) {
+        const article = selectedArticles[i];
+        toast.info(`Processando artigo ${i + 1}/${selectedArticles.length}: ${article.title}`);
+        
+        await extractFullAI({
+          projectId,
+          articleId: article.id,
+          templateId,
+        });
+      }
+
+      // Limpar seleção após sucesso
+      deselectAll();
+    } catch (error: any) {
+      console.error('Erro na extração IA em batch:', error);
+      toast.error('Erro ao processar extração IA', {
+        description: error.message || 'Erro desconhecido',
+      });
+    }
+  }, [selectedIds, filteredAndSortedArticles, projectId, templateId, extractFullAI, deselectAll]);
+
+  // Componente de checkbox do header com suporte a indeterminate
+  const HeaderCheckbox = React.memo(({ 
+    checked, 
+    indeterminate, 
+    onCheckedChange, 
+    ...props 
+  }: { 
+    checked: boolean; 
+    indeterminate: boolean; 
+    onCheckedChange: (checked: boolean) => void;
+    'aria-label'?: string;
+  }) => {
+    const checkboxRef = useRef<React.ElementRef<typeof Checkbox>>(null);
+
+    useEffect(() => {
+      if (checkboxRef.current) {
+        // Acessar o elemento DOM subjacente do Radix UI
+        const element = checkboxRef.current as unknown as { 
+          querySelector?: (selector: string) => HTMLElement | null;
+        };
+        const buttonElement = element?.querySelector?.('button') as HTMLButtonElement | null;
+        if (buttonElement) {
+          buttonElement.indeterminate = indeterminate;
+        }
+      }
+    }, [indeterminate]);
+
+    return (
+      <Checkbox
+        ref={checkboxRef}
+        checked={indeterminate ? false : checked}
+        onCheckedChange={onCheckedChange}
+        className={indeterminate ? 'data-[state=checked]:bg-primary/50' : ''}
+        {...props}
+      />
+    );
+  });
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -515,7 +691,15 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
             <p className="text-sm mt-1">{error}</p>
           </div>
         </div>
-        <Button onClick={loadArticles} variant="outline" className="mt-4">
+        <Button 
+          onClick={() => {
+            if (loadArticlesRef.current) {
+              loadArticlesRef.current();
+            }
+          }} 
+          variant="outline" 
+          className="mt-4"
+        >
           Tentar novamente
         </Button>
       </div>
@@ -534,8 +718,23 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
   }
 
   // Estado: Ready - Renderizar tabela
+  const selectedArticleIds = Array.from(selectedIds);
+  const selectedArticleTitles = filteredAndSortedArticles
+    .filter(a => selectedIds.has(a.id))
+    .map(a => a.title);
+
   return (
     <div className="space-y-4">
+      {/* Barra de ações de seleção */}
+      <ArticleSelectionActions
+        selectedCount={selectedCount}
+        selectedArticleIds={selectedArticleIds}
+        selectedArticleTitles={selectedArticleTitles}
+        onClearSelection={deselectAll}
+        onBatchAIExtraction={handleBatchAIExtraction}
+        isExtracting={isExtracting}
+      />
+
       {/* Filtro Global */}
       <div className="flex items-center gap-2">
         <div className="relative flex-1 max-w-sm">
@@ -557,6 +756,39 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-[40px]">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="flex items-center">
+                        <HeaderCheckbox
+                          checked={isAllSelected}
+                          indeterminate={isIndeterminate}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              if (hasActiveFilters) {
+                                selectFiltered();
+                              } else {
+                                selectAll();
+                              }
+                            } else {
+                              deselectAll();
+                            }
+                          }}
+                          aria-label={hasActiveFilters ? 'Selecionar artigos filtrados' : 'Selecionar todos os artigos'}
+                        />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>
+                        {hasActiveFilters 
+                          ? 'Selecionar artigos filtrados' 
+                          : 'Selecionar todos os artigos'}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </TableHead>
               <TableHead className="w-[30%]">
                 <div className="flex items-center gap-2">
                   <Button
@@ -630,6 +862,13 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
 
               return (
                 <TableRow key={article.id} className="hover:bg-muted/50">
+                  <TableCell className="w-[40px]">
+                    <Checkbox
+                      checked={isSelected(article.id)}
+                      onCheckedChange={() => toggleArticle(article.id)}
+                      aria-label={`Selecionar artigo: ${article.title}`}
+                    />
+                  </TableCell>
                   <TableCell>
                     <div className="font-medium text-sm leading-tight">
                       {article.title}

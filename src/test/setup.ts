@@ -1,11 +1,17 @@
+// Importar mock de localStorage ANTES de qualquer coisa
+import './mocks/localStorage';
+
 import '@testing-library/jest-dom';
 import { beforeAll, afterEach, afterAll } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import { server } from './mocks/server';
 
 // Estender expect com matchers do jest-dom
+// eslint-disable-next-line @typescript-eslint/no-namespace
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Vi {
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     interface JestAssertion<T = any>
       extends jest.Matchers<void, T>,
         jest.Matchers<Promise<void>, T> {}

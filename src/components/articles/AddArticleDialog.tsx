@@ -37,6 +37,41 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
     keywords: "",
     url_landing: "",
   });
+  
+  // Estado para erros de validação
+  const [validationErrors, setValidationErrors] = useState<{
+    publication_year?: string;
+    publication_month?: string;
+  }>({});
+
+  // Validação de campos de data
+  const validateDateField = (field: 'publication_year' | 'publication_month', value: string): string | undefined => {
+      if (!value || value.trim() === '') {
+        setValidationErrors(prev => ({ ...prev, [field]: undefined }));
+        return undefined;
+      }
+
+      const num = parseInt(value.trim(), 10);
+      if (isNaN(num)) {
+        const error = 'Deve ser um número válido';
+        setValidationErrors(prev => ({ ...prev, [field]: error }));
+        return error;
+      }
+
+      let error: string | undefined;
+      if (field === 'publication_month') {
+        if (num < 1 || num > 12) {
+          error = 'Mês deve estar entre 1 e 12';
+        }
+      } else if (field === 'publication_year') {
+        if (num < 1600 || num > 2500) {
+          error = 'Ano deve estar entre 1600 e 2500';
+        }
+      }
+
+      setValidationErrors(prev => ({ ...prev, [field]: error }));
+      return error;
+    };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,16 +80,41 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
       return;
     }
 
+    // Validar todos os campos antes de salvar
+    const yearError = validateDateField('publication_year', formData.publication_year);
+    const monthError = validateDateField('publication_month', formData.publication_month);
+
+    if (yearError || monthError) {
+      toast.error("Por favor, corrija os erros nos campos de data antes de salvar");
+      return;
+    }
+
     setLoading(true);
     try {
+      // Helper para validar e converter valores numéricos de data
+      const parseDateValue = (value: string | undefined): number | null => {
+        if (!value || value.trim() === '') return null;
+        const num = parseInt(value.trim(), 10);
+        if (isNaN(num)) return null;
+        return num;
+      };
+
+      // Validar publication_month (deve estar entre 1-12)
+      const parsedMonth = parseDateValue(formData.publication_month);
+      const validMonth = parsedMonth !== null && parsedMonth >= 1 && parsedMonth <= 12 ? parsedMonth : null;
+
+      // Validar publication_year (deve estar entre 1600-2500)
+      const parsedYear = parseDateValue(formData.publication_year);
+      const validYear = parsedYear !== null && parsedYear >= 1600 && parsedYear <= 2500 ? parsedYear : null;
+
       // Insert article
       const articleData = {
         project_id: projectId,
         title: formData.title.trim(),
         abstract: formData.abstract.trim() || null,
         authors: formData.authors.trim() ? formData.authors.split(",").map(a => a.trim()) : null,
-        publication_year: formData.publication_year ? parseInt(formData.publication_year) : null,
-        publication_month: formData.publication_month ? parseInt(formData.publication_month) : null,
+        publication_year: validYear,
+        publication_month: validMonth,
         journal_title: formData.journal_title.trim() || null,
         journal_issn: formData.journal_issn.trim() || null,
         volume: formData.volume.trim() || null,
@@ -207,11 +267,21 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
                 id="publication_year"
                 type="number"
                 value={formData.publication_year}
-                onChange={(e) => setFormData({ ...formData, publication_year: e.target.value })}
+                onChange={(e) => {
+                  setFormData({ ...formData, publication_year: e.target.value });
+                  validateDateField('publication_year', e.target.value);
+                }}
+                onBlur={(e) => validateDateField('publication_year', e.target.value)}
                 placeholder="2024"
                 min="1600"
                 max="2500"
+                className={validationErrors.publication_year ? "border-destructive" : ""}
               />
+              {validationErrors.publication_year && (
+                <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                  {validationErrors.publication_year}
+                </p>
+              )}
             </div>
             <div>
               <Label htmlFor="publication_month">Mês de Publicação</Label>
@@ -219,11 +289,21 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
                 id="publication_month"
                 type="number"
                 value={formData.publication_month}
-                onChange={(e) => setFormData({ ...formData, publication_month: e.target.value })}
+                onChange={(e) => {
+                  setFormData({ ...formData, publication_month: e.target.value });
+                  validateDateField('publication_month', e.target.value);
+                }}
+                onBlur={(e) => validateDateField('publication_month', e.target.value)}
                 placeholder="1-12"
                 min="1"
                 max="12"
+                className={validationErrors.publication_month ? "border-destructive" : ""}
               />
+              {validationErrors.publication_month && (
+                <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                  {validationErrors.publication_month}
+                </p>
+              )}
             </div>
           </div>
 

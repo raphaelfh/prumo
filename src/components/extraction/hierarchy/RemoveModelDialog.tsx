@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * Remove Model Dialog
  * 
  * Dialog de confirmação para remover um modelo de predição.
@@ -25,6 +31,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertTriangle, Trash2, Loader2, Info } from 'lucide-react';
+import { extractionLogger } from '@/lib/extraction/observability';
 
 // =================== INTERFACES ===================
 
@@ -56,11 +63,29 @@ export function RemoveModelDialog({
     setError(null);
 
     try {
+      extractionLogger.info('removeModelDialog', 'Iniciando remoção de modelo', {
+        modelName,
+        hasExtractedData,
+        extractedFieldsCount
+      });
+
       await onConfirm();
+      
+      extractionLogger.info('removeModelDialog', 'Modelo removido com sucesso', {
+        modelName
+      });
+      
       // Dialog será fechado pelo parent component
     } catch (err: any) {
-      console.error('Erro ao remover modelo:', err);
+      extractionLogger.error('removeModelDialog', 'Falha ao remover modelo', err, {
+        modelName,
+        hasExtractedData
+      });
+      
       setError(err.message || 'Erro ao remover modelo');
+    } finally {
+      // ✅ SEMPRE resetar loading, independente de sucesso/erro
+      // Isso previne o modal ficar travado no estado "Removendo..."
       setLoading(false);
     }
   };

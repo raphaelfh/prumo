@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * Hook para auto-save de valores extraídos
  * 
  * Features:
@@ -13,6 +19,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { extractValueForSave } from '@/lib/validations/selectOther';
 
 // =================== INTERFACES ===================
 
@@ -100,22 +107,16 @@ export function useExtractionAutoSave(
       const upserts = valuesToSave.map(([key, valueData]) => {
         const [instanceId, fieldId] = key.split('_');
 
-        // Extrair value e unit (se valueData é objeto com unit)
-        const actualValue = typeof valueData === 'object' && 'value' in valueData
-          ? valueData.value
-          : valueData;
-        
-        const unitValue = typeof valueData === 'object' && 'unit' in valueData
-          ? valueData.unit
-          : null;
+        // Usar helper DRY para extrair valor
+        const { value: actualValue, unit: unitValue, isOther } = extractValueForSave(valueData);
 
         return {
           project_id: projectId,
           article_id: articleId,
           instance_id: instanceId,
           field_id: fieldId,
-          value: { value: actualValue }, // Wrap em objeto conforme schema do banco
-          unit: unitValue, // ✅ Salvar unit se fornecido
+          value: isOther ? actualValue : { value: actualValue }, // Preservar objeto "outro" ou wrap simples
+          unit: unitValue,
           source: 'human' as const,
           reviewer_id: user.id,
           is_consensus: false
@@ -124,14 +125,60 @@ export function useExtractionAutoSave(
 
       console.log(`💾 Auto-saving ${upserts.length} valores...`);
 
-      // Batch upsert (atualiza se existe, insere se não)
-      const { error: upsertError } = await supabase
-        .from('extracted_values')
-        .upsert(upserts, {
-          onConflict: 'instance_id,field_id,reviewer_id'
-        });
+      // Verificar quais valores já existem (batch SELECT)
+      const { data: existingValues, error: selectError } = await supabase
+        .from('extracted_values' as any)
+        .select('id, instance_id, field_id, reviewer_id')
+        .eq('article_id', articleId)
+        .eq('reviewer_id', user.id)
+        .in('instance_id', [...new Set(upserts.map(u => u.instance_id))]);
 
-      if (upsertError) throw upsertError;
+      if (selectError) throw selectError;
+
+      // Criar mapa de IDs existentes: key => id
+      const existingMap = new Map<string, string>();
+      (existingValues || []).forEach((ev: any) => {
+        const key = `${ev.instance_id}_${ev.field_id}_${ev.reviewer_id}`;
+        existingMap.set(key, ev.id);
+      });
+
+      // Separar em UPDATEs e INSERTs
+      const toUpdate: Array<{ id: string; data: any }> = [];
+      const toInsert: any[] = [];
+
+      upserts.forEach(upsert => {
+        const key = `${upsert.instance_id}_${upsert.field_id}_${upsert.reviewer_id}`;
+        const existingId = existingMap.get(key);
+        
+        if (existingId) {
+          toUpdate.push({ id: existingId, data: upsert });
+        } else {
+          toInsert.push(upsert);
+        }
+      });
+
+      // Executar UPDATEs em lote (se houver)
+      if (toUpdate.length > 0) {
+        const updatePromises = toUpdate.map(({ id, data }) =>
+          supabase
+            .from('extracted_values' as any)
+            .update(data)
+            .eq('id', id)
+        );
+        const updateResults = await Promise.all(updatePromises);
+        const updateErrors = updateResults.filter(r => r.error).map(r => r.error);
+        if (updateErrors.length > 0) {
+          throw new Error(`Erro ao atualizar ${updateErrors.length} valores: ${updateErrors[0]?.message}`);
+        }
+      }
+
+      // Executar INSERTs em lote (se houver)
+      if (toInsert.length > 0) {
+        const { error: insertError } = await supabase
+          .from('extracted_values' as any)
+          .insert(toInsert);
+        if (insertError) throw insertError;
+      }
 
       setLastSaved(new Date());
       console.log(`✅ Auto-save concluído: ${upserts.length} valores salvos`);

@@ -1,19 +1,21 @@
 /**
- * PDFViewerCore - Container principal do visualizador de PDF (SIMPLIFICADO)
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
+ * PDFViewerCore - Container principal do visualizador de PDF
  * 
  * Responsabilidades:
  * - Gerenciar o ciclo de vida do documento PDF
  * - Carregar PDF do Supabase
- * - Carregar anotações do banco
- * - Coordenar sincronização
- * - Atalhos de teclado globais
+ * - Estados de loading e error
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Document } from 'react-pdf';
 import { usePDFStore } from '@/stores/usePDFStore';
-import { useAnnotations } from '@/hooks/useAnnotations';
-import { useAnnotationSync } from '@/hooks/useAnnotationSync';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { PDF_OPTIONS } from '@/lib/pdf-config';
@@ -21,6 +23,7 @@ import { PDFCanvas } from './PDFCanvas';
 import { LoadingState } from '../LoadingState';
 import { ErrorState } from '../ErrorState';
 import { ArticleFileUploadDialogNew } from '@/components/articles/ArticleFileUploadDialogNew';
+import { cn } from '@/lib/utils';
 
 interface PDFViewerCoreProps {
   articleId: string;
@@ -41,37 +44,16 @@ export function PDFViewerCore({ articleId, projectId, className }: PDFViewerCore
     setArticleId,
     setPdfDocument,
     setNumPages,
+    ui,
   } = usePDFStore();
 
-  // Hook para gerenciar anotações
-  const { loadAnnotations } = useAnnotations({ articleId });
+  const viewMode = ui?.viewMode || 'continuous';
+  const isContinuousMode = viewMode === 'continuous';
   
-  // Hook de sincronização automática com o banco de dados
-  useAnnotationSync({ articleId });
-
-  // Carregar PDF e anotações
+  // Carregar PDF
   useEffect(() => {
     loadPDF();
   }, [articleId]);
-
-  // Atalhos de teclado globais
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const { undo, redo, canUndo, canRedo } = usePDFStore.getState();
-      
-      // Undo/Redo
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
-        e.preventDefault();
-        if (canUndo()) undo();
-      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'z') {
-        e.preventDefault();
-        if (canRedo()) redo();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
 
   const loadPDF = async () => {
     try {
@@ -108,9 +90,6 @@ export function PDFViewerCore({ articleId, projectId, className }: PDFViewerCore
       if (urlError) throw urlError;
 
       setUrl(urlData.signedUrl);
-
-      // Carregar anotações existentes
-      await loadAnnotations();
     } catch (err: any) {
       console.error('❌ Erro ao carregar PDF:', err);
       const errorMessage = err.message || 'Erro ao carregar PDF';
@@ -171,19 +150,41 @@ export function PDFViewerCore({ articleId, projectId, className }: PDFViewerCore
   return (
     <div 
       ref={containerRef}
-      className={`pdf-viewer-core h-full w-full overflow-auto bg-muted/20 ${className || ''}`}
+      className={cn(
+        'pdf-viewer-core h-full w-full bg-muted/20',
+        isContinuousMode ? 'overflow-auto' : 'overflow-auto', // Permitir scroll horizontal e vertical
+        className
+      )}
+      data-scroll-container="true"
     >
-      <Document
-        file={url}
-        onLoadSuccess={handleLoadSuccess}
-        onLoadError={handleLoadError}
-        options={PDF_OPTIONS}
-        loading={<LoadingState />}
-        error={<ErrorState message="Erro ao carregar documento" />}
-        className="flex justify-center p-4 md:p-8"
+      <div
+        className={cn(
+          'flex',
+          isContinuousMode 
+            ? 'justify-start min-w-full' // Usar justify-start para evitar corte da borda esquerda
+            : 'justify-center'
+        )}
+        style={isContinuousMode ? {
+          paddingLeft: '2rem', // Padding maior à esquerda para evitar corte mesmo com zoom alto
+          paddingRight: '1rem',
+          paddingTop: '1rem',
+          paddingBottom: '1rem',
+        } : {
+          padding: '1rem 2rem',
+        }}
       >
-        <PDFCanvas />
-      </Document>
+        <Document
+          file={url}
+          onLoadSuccess={handleLoadSuccess}
+          onLoadError={handleLoadError}
+          options={PDF_OPTIONS}
+          loading={<LoadingState />}
+          error={<ErrorState message="Erro ao carregar documento" />}
+          className="flex"
+        >
+          <PDFCanvas />
+        </Document>
+      </div>
     </div>
   );
 }

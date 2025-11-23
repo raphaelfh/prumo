@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * EditArticle - Página para Editar Artigo Existente
  * 
  * Usa o componente unificado ArticleForm em modo 'edit'
@@ -19,7 +25,8 @@ function EditArticle() {
   }
 
   const handleComplete = () => {
-    navigate(`/project/${projectId}/article/${articleId}`);
+    // Navegar de volta para a lista de artigos do projeto
+    navigate(`/projects/${projectId}?tab=articles`);
   };
 
   return (

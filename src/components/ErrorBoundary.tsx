@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AlertTriangle, RefreshCw, Home, Bug } from 'lucide-react';
 import { toast } from 'sonner';
+import { errorTracker } from '@/services/errorTracking';
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -44,14 +45,26 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       errorInfo,
     });
 
-    // Log do erro para observabilidade
-    console.error(`[ErrorBoundary${this.props.context ? ` - ${this.props.context}` : ''}]`, {
-      error: error.message,
-      stack: error.stack,
-      componentStack: errorInfo.componentStack,
-      errorId: this.state.errorId,
-      timestamp: new Date().toISOString(),
+    // Capturar erro no errorTracker para observabilidade centralizada
+    errorTracker.captureError(error, {
+      component: this.props.context || 'ErrorBoundary',
+      metadata: {
+        componentStack: errorInfo.componentStack,
+        errorId: this.state.errorId,
+        timestamp: new Date().toISOString(),
+      },
     });
+
+    // Log do erro no console para desenvolvimento (mantido para debug)
+    if (import.meta.env.DEV) {
+      console.error(`[ErrorBoundary${this.props.context ? ` - ${this.props.context}` : ''}]`, {
+        error: error.message,
+        stack: error.stack,
+        componentStack: errorInfo.componentStack,
+        errorId: this.state.errorId,
+        timestamp: new Date().toISOString(),
+      });
+    }
 
     // Callback personalizado para tratamento adicional
     if (this.props.onError) {

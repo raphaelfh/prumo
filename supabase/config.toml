@@ -1,4 +1,13 @@
-project_id = "xkpcmcrpghvbldfmaapm"
+project_id = "supabase_local"
 
 [functions.ai-assessment]
+verify_jwt = true
+
+[functions.section-extraction]
+verify_jwt = true
+
+[functions.model-extraction]
+verify_jwt = true
+
+[functions.zotero-import]
 verify_jwt = true

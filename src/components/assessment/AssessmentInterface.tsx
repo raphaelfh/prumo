@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * Interface principal para avaliação de artigos
  * 
  * Componente que gerencia todo o fluxo de avaliação de artigos
@@ -6,6 +12,7 @@
  */
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -29,8 +36,16 @@ interface AssessmentInterfaceProps {
 }
 
 export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  
+  // Ler aba da URL ou usar padrão
+  const tabFromUrl = searchParams.get('assessmentTab') as 'dashboard' | 'assessment' | 'ai' | 'configuration' | null;
+  const initialTab = (tabFromUrl && ['dashboard', 'assessment', 'ai', 'configuration'].includes(tabFromUrl)) 
+    ? tabFromUrl 
+    : 'dashboard';
+  
   const [activeInstrument, setActiveInstrument] = useState<any | null>(null);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'assessment' | 'ai' | 'configuration'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'assessment' | 'ai' | 'configuration'>(initialTab);
   const [aiConfigModalOpen, setAiConfigModalOpen] = useState(false);
   const [articles, setArticles] = useState<any[]>([]);
   const [assessments, setAssessments] = useState<any[]>([]);
@@ -57,6 +72,18 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
       setActiveInstrument(defaultInstrument);
     }
   }, [instruments]);
+
+  // Sincronizar aba ativa com URL
+  useEffect(() => {
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set('assessmentTab', activeTab);
+    setSearchParams(newParams, { replace: true });
+  }, [activeTab, searchParams, setSearchParams]);
+
+  // Função para mudar aba e atualizar URL
+  const handleTabChange = (tab: 'dashboard' | 'assessment' | 'ai' | 'configuration') => {
+    setActiveTab(tab);
+  };
 
   // Carregar artigos e avaliações
   useEffect(() => {
@@ -311,7 +338,7 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
         </div>
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)}>
+      <Tabs value={activeTab} onValueChange={(value) => handleTabChange(value as any)}>
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
           <TabsTrigger value="assessment" disabled={!activeInstrument}>

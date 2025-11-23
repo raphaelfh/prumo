@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * Tipos TypeScript para o módulo de extração de dados
  * 
  * Este arquivo define todas as interfaces e tipos necessários
@@ -18,6 +24,27 @@ export type ExtractionSource = 'human' | 'ai' | 'rule';
 export type ExtractionRunStage = 'data_suggest' | 'parsing' | 'validation' | 'consensus';
 export type ExtractionRunStatus = 'pending' | 'running' | 'completed' | 'failed';
 export type SuggestionStatus = 'pending' | 'accepted' | 'rejected';
+
+/**
+ * Tipo para valores de extração baseado no tipo de campo
+ * Garante type safety ao invés de usar `any`
+ */
+export type ExtractionValue = 
+  | string      // text, select
+  | number      // number
+  | Date        // date
+  | string[]    // multiselect
+  | boolean     // boolean
+  | null;       // valores não preenchidos
+
+// Valores com suporte a "Outro (especificar)"
+export type SelectSingleValue = 
+  | string
+  | { selected: 'other'; other_text: string };
+
+export type SelectMultiValue = 
+  | string[]
+  | { selected: string[]; other_texts: string[] };
 
 // =================== TEMPLATES ===================
 
@@ -82,8 +109,13 @@ export interface ExtractionField {
   allowed_values: string[] | null;
   unit: string | null;
   allowed_units: string[] | null; // Unidades alternativas configuráveis para campos numéricos
+  llm_description: string | null; // Instrução específica para extração com IA
   sort_order: number;
   created_at: string;
+  // Suporte a "Outro (especificar)" inline
+  allow_other?: boolean;
+  other_label?: string | null;
+  other_placeholder?: string | null;
 }
 
 // =================== INSTÂNCIAS E VALORES ===================
@@ -138,35 +170,24 @@ export interface ExtractionEvidence {
 
 // =================== IA E EXECUÇÕES ===================
 
-export interface ExtractionRun {
-  id: string;
-  project_id: string;
-  article_id: string;
-  template_id: string;
-  stage: ExtractionRunStage;
-  status: ExtractionRunStatus;
-  parameters: any;
-  results: any;
-  error_message: string | null;
-  started_at: string | null;
-  completed_at: string | null;
-  created_by: string;
-  created_at: string;
-}
+/**
+ * @deprecated Use ExtractionRunRaw from '@/types/ai-extraction' para dados do banco
+ * Use ExtractionRun from '@/types/ai-extraction' para dados processados
+ * 
+ * Mantido apenas para compatibilidade com código legado.
+ */
+export type { ExtractionRunRaw as ExtractionRun } from '@/types/ai-extraction';
 
-export interface AISuggestion {
-  id: string;
-  run_id: string;
-  instance_id: string | null;
-  field_id: string;
-  suggested_value: any;
-  confidence_score: number | null;
-  reasoning: string | null;
-  status: SuggestionStatus;
-  reviewed_by: string | null;
-  reviewed_at: string | null;
-  created_at: string;
-}
+/**
+ * @deprecated Use AISuggestionRaw from '@/types/ai-extraction' para dados do banco
+ * Use AISuggestion from '@/types/ai-extraction' para dados processados
+ * 
+ * Mantido apenas para compatibilidade com código legado.
+ */
+export type { AISuggestionRaw as AISuggestion } from '@/types/ai-extraction';
+
+// Re-exportar tipos relacionados para conveniência
+export type { SuggestionStatus, ExtractionRunStatus, ExtractionRunStage } from '@/types/ai-extraction';
 
 // =================== TIPOS PARA INSERÇÃO ===================
 
@@ -339,6 +360,11 @@ export const ExtractionFieldSchema = z.object({
       { message: 'Unidades não podem ter duplicatas' }
     ),
   
+  llm_description: z.string()
+    .max(1000, 'Instrução para IA deve ter no máximo 1000 caracteres')
+    .optional()
+    .nullable(),
+  
   allowed_values: z.array(z.string())
     .min(1, 'Deve ter pelo menos um valor permitido')
     .max(100, 'Máximo de 100 valores permitidos')
@@ -352,6 +378,18 @@ export const ExtractionFieldSchema = z.object({
       },
       { message: 'Valores permitidos não podem ter duplicatas' }
     ),
+
+  // Suporte a "Outro (especificar)"
+  allow_other: z.boolean().default(false).optional(),
+  other_label: z.string()
+    .max(100, 'Label do "Outro" deve ter no máximo 100 caracteres')
+    .default('Outro (especificar)')
+    .optional()
+    .nullable(),
+  other_placeholder: z.string()
+    .max(200, 'Placeholder deve ter no máximo 200 caracteres')
+    .optional()
+    .nullable(),
   
   validation_schema: z.record(z.any())
     .optional()

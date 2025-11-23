@@ -6,23 +6,104 @@ alwaysApply: false
 - `snake_case`; `id uuid default gen_random_uuid()`.
 - `created_at timestamptz default now()`, `updated_at timestamptz` com trigger.
 - FKs com `on delete restrict` (ou `cascade` se justificado), índices nos FKs e colunas de busca.
-- **Multi-tenant**: todas as tabelas de domínio têm `org_id uuid not null`.
+- **Multi-tenant**: todas as tabelas de domínio têm `org_id uuid not null` (guidelines completas abaixo).
 
-* FLUXO DE COMO INTERAGIR COM SUPABASE BACKEND BANCO DE DADOS
-- Usar MCP do supabase para melhor integração e facilitar a comunicação com banco de dados.
+## MCP vs Client Supabase
 
+**Use MCP (Model Context Protocol) quando:**
+- Criando/migrando schema (DDL operations)
+- Aplicando migrações via `mcp_supabase_apply_migration`
+- Verificando RLS policies e estrutura do banco
+- Operações administrativas (listar tabelas, migrations, etc.)
+- Executando SQL exploratório/debug
 
-## RLS (sempre ON)
+**Use Client `@supabase/supabase-js` quando:**
+- Queries/operações em runtime (frontend, hooks, services)
+- Operações CRUD normais em componentes React
+- Subscriptions realtime
+- Autenticação e sessão do usuário
+
+**Exemplo:**
+```typescript
+// ❌ NÃO usar MCP no código de produção
+// ✅ Use no código de produção
+import { supabase } from '@/integrations/supabase/client';
+const { data } = await supabase.from('articles').select('*').eq('org_id', orgId);
+```
+
+## Multi-tenant (RLS)
+
+### Estrutura obrigatória
+- Todas as tabelas de domínio: `org_id uuid not null` com FK para `organizations(id)`.
+- Índice em `org_id` para performance: `create index idx_<table>_org_id on <table>(org_id)`.
+
+### RLS (sempre ON)
 - Política padrão: usuários só leem/escrevem linhas do seu `org_id` e, quando aplicável, do seu `auth.uid()`.
+- **Isolamento garantido**: RLS valida automaticamente; queries sem `org_id` falham por política.
 - Evite exceções; preferir RPC/Edge para ações elevadas.
 
+### Exemplo de política
+```sql
+-- SELECT: usuário só vê dados do seu org
+CREATE POLICY "users_select_own_org" ON articles
+  FOR SELECT USING (
+    org_id IN (
+      SELECT org_id FROM user_organizations 
+      WHERE user_id = auth.uid()
+    )
+  );
+
+-- INSERT/UPDATE: usuário só escreve no seu org
+CREATE POLICY "users_insert_own_org" ON articles
+  FOR INSERT WITH CHECK (
+    org_id IN (
+      SELECT org_id FROM user_organizations 
+      WHERE user_id = auth.uid()
+    )
+  );
+```
+
 ## Migrações
+
+### Template padrão
+```sql
+-- Migration: descrição_da_mudança
+-- Created: YYYY-MM-DD
+-- Author: nome
+
+-- UP: descrição do que faz
+CREATE TABLE example (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz
+);
+
+CREATE INDEX idx_example_org_id ON example(org_id);
+
+-- RLS
+ALTER TABLE example ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "users_select_own_org" ON example
+  FOR SELECT USING (
+    org_id IN (SELECT org_id FROM user_organizations WHERE user_id = auth.uid())
+  );
+
+-- DOWN (manual steps para reverter):
+-- 1. DROP POLICY "users_select_own_org" ON example;
+-- 2. ALTER TABLE example DISABLE ROW LEVEL SECURITY;
+-- 3. DROP INDEX idx_example_org_id;
+-- 4. DROP TABLE example;
+```
+
+### Regras
 - Cada mudança via **migration SQL** revisada; nunca editar `.sql` já aplicado.
-- Inclua *down comments* (como reverter manualmente).
+- Inclua *down comments* (como reverter manualmente) seguindo template acima.
 - Seeds mínimos e idempotentes somente em `dev`.
 
 ## Check do AI antes de propor schema
 - [ ] RLS ON e políticas cobrindo SELECT/INSERT/UPDATE/DELETE  
-- [ ] Índices necessários (incl. compostos)  
+- [ ] Índices necessários (incl. compostos, especialmente em `org_id`)  
 - [ ] Constraints (unique, check) documentadas  
+- [ ] `org_id` presente em tabelas de domínio com FK e índice
 - [ ] Plano de migração com passos e rollback

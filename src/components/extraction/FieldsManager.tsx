@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * Gerenciador de Campos de uma Seção
  * 
  * Permite visualizar e editar os campos de uma seção/entidade.
@@ -26,7 +32,7 @@ import { AddFieldDialog } from './dialogs/AddFieldDialog';
 import { DeleteFieldConfirm } from './dialogs/DeleteFieldConfirm';
 import { EditFieldDialog } from './dialogs/EditFieldDialog';
 import { useProject } from '@/contexts/ProjectContext';
-import type { ExtractionField, FieldValidationResult } from '@/types/extraction';
+import type { ExtractionField } from '@/types/extraction';
 
 interface FieldsManagerProps {
   entityTypeId: string;
@@ -48,6 +54,8 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
     updateField,
     deleteField,
     validateField,
+    createOtherSpecifyField,
+    removeOtherSpecifyField,
   } = useFieldManagement({ entityTypeId, projectId });
 
   // Estado local centralizado
@@ -142,10 +150,17 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
   // Memoizar valores computados
   const hasFields = useMemo(() => fields.length > 0, [fields.length]);
   
+  // Handlers de dialog - corrigido para não fechar inadvertidamente
   const dialogHandlers = useMemo(() => ({
-    addDialog: (open: boolean) => !open && actions.closeAddDialog(),
-    editDialog: (open: boolean) => !open && actions.closeEditDialog(),
-    deleteDialog: (open: boolean) => !open && actions.closeDeleteDialog(),
+    addDialog: (open: boolean) => {
+      if (!open) actions.closeAddDialog();
+    },
+    editDialog: (open: boolean) => {
+      if (!open) actions.closeEditDialog();
+    },
+    deleteDialog: (open: boolean) => {
+      if (!open) actions.closeDeleteDialog();
+    },
   }), [actions]);
 
   if (loading) {
@@ -183,6 +198,7 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
           canEdit={canEdit}
           canDelete={canDelete}
           onStartEdit={handleStartEdit}
+          onOpenEditDialog={handleOpenEditDialog}
           onUpdateEditData={actions.updateEditData}
           onSaveEdit={handleSaveEdit}
           onCancelEdit={handleCancelEdit}
@@ -197,6 +213,9 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
         onOpenChange={dialogHandlers.addDialog}
         onSave={addField}
         sectionName={sectionName}
+        entityTypeId={entityTypeId}
+        createOtherSpecifyField={createOtherSpecifyField}
+        removeOtherSpecifyField={removeOtherSpecifyField}
       />
 
       <EditFieldDialog
@@ -206,6 +225,9 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
         onSave={updateField}
         onValidate={validateField}
         sectionName={sectionName}
+        entityTypeId={entityTypeId}
+        createOtherSpecifyField={createOtherSpecifyField}
+        removeOtherSpecifyField={removeOtherSpecifyField}
       />
 
       <DeleteFieldConfirm

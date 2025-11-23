@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * Hook para gerenciar templates de extração
  * 
  * Gerencia templates globais e templates de projeto,
@@ -86,6 +92,35 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
     loadData();
   }, [projectId]); // Apenas projectId como dependência
 
+  // Função para recarregar templates
+  const refreshTemplates = useCallback(async (): Promise<ProjectExtractionTemplate[]> => {
+    if (!projectId) {
+      setTemplates([]);
+      return [];
+    }
+
+    try {
+      const { data: projectData, error: projectError } = await supabase
+        .from('project_extraction_templates')
+        .select('*')
+        .eq('project_id', projectId)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false });
+
+      if (projectError) {
+        console.error('Erro ao recarregar templates:', projectError);
+        throw projectError;
+      }
+
+      const templatesList = projectData || [];
+      setTemplates(templatesList);
+      return templatesList;
+    } catch (err: any) {
+      console.error('Erro ao recarregar templates:', err);
+      throw err;
+    }
+  }, [projectId]);
+
   // Clonar template global para o projeto
   const cloneTemplate = useCallback(async (
     globalTemplateId: string, 
@@ -143,31 +178,58 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
       if (templateError) throw templateError;
 
       // Criar entidades e campos para o template do projeto
-      for (const entityType of entityTypes || []) {
-        // Criar entidade
-        const { data: newEntityType, error: entityError } = await supabase
+      // Clonar entity_types (2 passadas para preservar hierarquia)
+      const entityTypeMapping: Record<string, string> = {};
+
+      // Passada 1: Criar todos os entity types sem parent (temporariamente)
+      for (const globalEntity of entityTypes || []) {
+        const { data: newEntity, error: insertError } = await supabase
           .from('extraction_entity_types')
           .insert({
-            template_id: projectTemplate.id,
-            name: entityType.name,
-            label: entityType.label,
-            description: entityType.description,
-            parent_entity_type_id: entityType.parent_entity_type_id,
-            cardinality: entityType.cardinality,
-            sort_order: entityType.sort_order,
-            is_required: entityType.is_required
+            project_template_id: projectTemplate.id,
+            name: globalEntity.name,
+            label: globalEntity.label,
+            description: globalEntity.description,
+            cardinality: globalEntity.cardinality,
+            sort_order: globalEntity.sort_order,
+            is_required: globalEntity.is_required
+            // parent_entity_type_id: null por enquanto (será atualizado na passada 2)
           })
           .select()
           .single();
 
-        if (entityError) throw entityError;
+        if (insertError) throw insertError;
 
-        // Criar campos da entidade
-        for (const field of entityType.extraction_fields || []) {
+        entityTypeMapping[globalEntity.id] = newEntity.id;
+      }
+
+      // Passada 2: Atualizar parent references com IDs mapeados
+      for (const globalEntity of entityTypes || []) {
+        if (globalEntity.parent_entity_type_id) {
+          const newEntityId = entityTypeMapping[globalEntity.id];
+          const newParentId = entityTypeMapping[globalEntity.parent_entity_type_id];
+          
+          if (newEntityId && newParentId) {
+            const { error: updateError } = await supabase
+              .from('extraction_entity_types')
+              .update({ parent_entity_type_id: newParentId })
+              .eq('id', newEntityId);
+
+            if (updateError) throw updateError;
+          }
+        }
+      }
+
+      // Passada 3: Clonar fields
+      for (const globalEntity of entityTypes || []) {
+        const newEntityTypeId = entityTypeMapping[globalEntity.id];
+        if (!newEntityTypeId) continue;
+
+        for (const field of globalEntity.extraction_fields || []) {
           const { error: fieldError } = await supabase
             .from('extraction_fields')
             .insert({
-              entity_type_id: newEntityType.id,
+              entity_type_id: newEntityTypeId,
               name: field.name,
               label: field.label,
               description: field.description,
@@ -176,7 +238,12 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
               validation_schema: field.validation_schema,
               allowed_values: field.allowed_values,
               unit: field.unit,
-              sort_order: field.sort_order
+              allowed_units: field.allowed_units,
+              sort_order: field.sort_order,
+              llm_description: field.llm_description,
+              allow_other: field.allow_other ?? false,
+              other_label: field.other_label ?? 'Outro (especificar)',
+              other_placeholder: field.other_placeholder
             });
 
           if (fieldError) throw fieldError;
@@ -184,18 +251,7 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
       }
 
       // Recarregar templates do projeto
-      const { data: updatedTemplates, error: reloadError } = await supabase
-        .from('project_extraction_templates')
-        .select('*')
-        .eq('project_id', projectId)
-        .eq('is_active', true)
-        .order('created_at', { ascending: false });
-
-      if (reloadError) {
-        console.error('Erro ao recarregar templates:', reloadError);
-      } else {
-        setTemplates(updatedTemplates || []);
-      }
+      await refreshTemplates();
 
       toast.success(`Template "${templateName}" clonado com sucesso!`);
       return projectTemplate;
@@ -205,7 +261,7 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
       toast.error(`Erro ao clonar template: ${err.message}`);
       return null;
     }
-  }, [projectId, user]);
+  }, [projectId, user, refreshTemplates]);
 
   // Criar template customizado
   const createCustomTemplate = useCallback(async (
@@ -237,7 +293,7 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
       if (error) throw error;
 
       // Recarregar templates
-      await projectId();
+      await refreshTemplates();
 
       toast.success(`Template "${name}" criado com sucesso!`);
       return template;
@@ -247,7 +303,7 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
       toast.error(`Erro ao criar template: ${err.message}`);
       return null;
     }
-  }, [projectId]);
+  }, [projectId, refreshTemplates]);
 
   // Ativar/desativar template
   const toggleTemplateActive = useCallback(async (templateId: string, isActive: boolean) => {
@@ -260,7 +316,7 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
       if (error) throw error;
 
       // Recarregar templates
-      await projectId();
+      await refreshTemplates();
 
       toast.success(`Template ${isActive ? 'ativado' : 'desativado'} com sucesso!`);
 
@@ -268,7 +324,7 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
       console.error('Erro ao alterar status do template:', err);
       toast.error(`Erro ao alterar status: ${err.message}`);
     }
-  }, [projectId]);
+  }, [refreshTemplates]);
 
   // Obter opções de templates globais para clonagem
   const getGlobalTemplateOptions = useCallback((): ExtractionTemplateOption[] => {
@@ -297,7 +353,7 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
     cloneTemplate,
     createCustomTemplate,
     toggleTemplateActive,
-    refreshTemplates: projectId,
+    refreshTemplates,
 
     // Utilitários
     getGlobalTemplateOptions,

@@ -24,13 +24,15 @@ export function usePDFPerformance({ numPages, currentPage, scale }: UsePDFPerfor
       }
     }
 
-    // Limpar canvas não utilizados
+    // Limpar canvas não utilizados (otimizado para scroll contínuo)
     const canvases = document.querySelectorAll('canvas[data-page-number]');
     canvases.forEach((canvas) => {
       const pageNum = parseInt((canvas as HTMLCanvasElement).dataset.pageNumber || '0');
       const distance = Math.abs(pageNum - currentPage);
       
-      if (distance > PERFORMANCE_CONFIG.unloadDistance) {
+      // Aumentado unloadDistance para scroll contínuo
+      const unloadThreshold = PERFORMANCE_CONFIG.unloadDistance + 2;
+      if (distance > unloadThreshold) {
         const ctx = (canvas as HTMLCanvasElement).getContext('2d');
         if (ctx) {
           ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -72,7 +74,7 @@ export function usePDFPerformance({ numPages, currentPage, scale }: UsePDFPerfor
     };
   }, [scale]);
 
-  // Calcular páginas para pré-carregamento
+  // Calcular páginas para pré-carregamento (otimizado para scroll contínuo)
   const getPagesToPreload = useCallback(() => {
     const { preloadPages } = PERFORMANCE_CONFIG;
     const pages: number[] = [];
@@ -80,8 +82,9 @@ export function usePDFPerformance({ numPages, currentPage, scale }: UsePDFPerfor
     // Página atual sempre incluída
     pages.push(currentPage);
     
-    // Páginas anteriores e posteriores
-    for (let i = 1; i <= preloadPages; i++) {
+    // Páginas anteriores e posteriores (aumentado para scroll contínuo)
+    const buffer = isLargePDF ? preloadPages + 1 : preloadPages;
+    for (let i = 1; i <= buffer; i++) {
       if (currentPage - i >= 1) {
         pages.push(currentPage - i);
       }
@@ -91,14 +94,16 @@ export function usePDFPerformance({ numPages, currentPage, scale }: UsePDFPerfor
     }
     
     return pages.sort((a, b) => a - b);
-  }, [currentPage, numPages]);
+  }, [currentPage, numPages, isLargePDF]);
 
   // Verificar se uma página deve ser renderizada
+  // Nota: Para scroll contínuo, use usePDFVirtualization ao invés desta função
   const shouldRenderPage = useCallback((pageNumber: number) => {
     if (!isLargePDF) return true;
     
     const distance = Math.abs(pageNumber - currentPage);
-    return distance <= PERFORMANCE_CONFIG.preloadPages;
+    // Aumentado para scroll contínuo (usar virtualização para melhor performance)
+    return distance <= PERFORMANCE_CONFIG.preloadPages + 1;
   }, [currentPage, isLargePDF]);
 
   // Obter configurações de renderização otimizadas

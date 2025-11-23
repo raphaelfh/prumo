@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * Dialog para editar campo de extração existente
  * 
  * Features:
@@ -6,7 +12,6 @@
  * - Validação de mudança de tipo (não permitir se houver dados)
  * - Editor de unit com sugestões
  * - Editor de allowed_values com drag-drop
- * - Preview do campo
  * - Validação em tempo real
  * 
  * @component
@@ -25,9 +30,9 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -35,7 +40,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, Info, AlertTriangle, Eye } from 'lucide-react';
+import { Loader2, Info, AlertTriangle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Form,
@@ -75,7 +80,6 @@ export function EditFieldDialog({
   const [loading, setLoading] = useState(false);
   const [validation, setValidation] = useState<FieldValidationResult | null>(null);
   const [validatingType, setValidatingType] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
 
   const form = useForm<ExtractionFieldUpdate>({
     resolver: zodResolver(ExtractionFieldSchema.partial()),
@@ -87,6 +91,7 @@ export function EditFieldDialog({
       unit: null,
       allowed_units: null,
       allowed_values: null,
+      llm_description: null,
       validation_schema: {},
     },
   });
@@ -104,7 +109,11 @@ export function EditFieldDialog({
         unit: field.unit,
         allowed_units: field.allowed_units,
         allowed_values: field.allowed_values,
+        llm_description: field.llm_description || '',
         validation_schema: field.validation_schema || {},
+        allow_other: field.allow_other || false,
+        other_label: field.other_label || null,
+        other_placeholder: field.other_placeholder || null,
       });
       
       // Buscar validação do campo
@@ -140,7 +149,7 @@ export function EditFieldDialog({
       }
     }
 
-    form.setValue('field_type', newType);
+    form.setValue('field_type', newType as any);
     
     // Limpar allowed_values se não for select/multiselect
     if (newType !== 'select' && newType !== 'multiselect') {
@@ -288,6 +297,30 @@ export function EditFieldDialog({
                   )}
                 />
 
+                {/* Instrução para IA */}
+                <FormField
+                  control={form.control}
+                  name="llm_description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Instrução para IA (opcional)</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          {...field}
+                          value={field.value || ''}
+                          placeholder="Exemplo: Extraia o número total de participantes no baseline, antes de exclusões..."
+                          rows={4}
+                          disabled={loading}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Instrução específica para extração automática com IA. Descreva O QUE extrair e ONDE encontrar no artigo.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
                 {/* Campo Obrigatório */}
                 <FormField
                   control={form.control}
@@ -355,6 +388,7 @@ export function EditFieldDialog({
 
                   {/* Valores Permitidos (condicional - para select) */}
                   {(fieldType === 'select' || fieldType === 'multiselect') && (
+                    <>
                     <FormField
                       control={form.control}
                       name="allowed_values"
@@ -375,44 +409,75 @@ export function EditFieldDialog({
                         </FormItem>
                       )}
                     />
-                  )}
 
-                  {/* Preview Toggle */}
-                  <div className="flex items-center space-x-2 pt-4">
-                    <Switch
-                      id="show-preview"
-                      checked={showPreview}
-                      onCheckedChange={setShowPreview}
-                    />
-                    <Label htmlFor="show-preview" className="cursor-pointer">
-                      Mostrar preview do campo
-                    </Label>
-                  </div>
+                      {/* Opção: Permitir "Outro (especificar)" */}
+                      <div className="space-y-3 rounded-lg border p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <Label className="font-medium">Permitir "Outro (especificar)"</Label>
+                            <p className="text-xs text-muted-foreground mt-1">Mostra opção inline e input contextual</p>
+                          </div>
+                          <FormField
+                            control={form.control}
+                            name="allow_other"
+                            render={({ field }) => (
+                              <FormControl>
+                                <Switch
+                                  checked={field.value || false}
+                                  onCheckedChange={field.onChange}
+                                  disabled={loading}
+                                />
+                              </FormControl>
+                            )}
+                          />
+                        </div>
+
+                        {form.watch('allow_other') && (
+                          <div className="grid grid-cols-2 gap-3">
+                            <FormField
+                              control={form.control}
+                              name="other_label"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Label do "Outro"</FormLabel>
+                                  <FormControl>
+                                    <Input 
+                                      {...field} 
+                                      value={field.value || ''}
+                                      placeholder="Outro (especificar)" 
+                                      disabled={loading} 
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                            <FormField
+                              control={form.control}
+                              name="other_placeholder"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Placeholder</FormLabel>
+                                  <FormControl>
+                                    <Input 
+                                      {...field} 
+                                      value={field.value || ''}
+                                      placeholder="Digite aqui" 
+                                      disabled={loading} 
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
-
-            {/* Preview do Campo (condicional) */}
-            {showPreview && (
-              <div className="border-t pt-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <Eye className="h-5 w-5 text-muted-foreground" />
-                  <h3 className="text-lg font-medium">Preview</h3>
-                  <p className="text-sm text-muted-foreground">Como aparecerá para o revisor</p>
-                </div>
-                
-                <div className="rounded-lg border bg-muted/30 p-4">
-                  {/* TODO: FieldPreview component será implementado depois */}
-                  <div className="text-center text-muted-foreground py-8">
-                    <Eye className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                    <p>Preview do campo será implementado no Sprint 3</p>
-                    <p className="text-xs mt-1">
-                      Mostrará como este campo aparecerá na interface de extração
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* Info sobre impacto (se houver dados extraídos) */}
             {validation && validation.extractedValuesCount > 0 && (

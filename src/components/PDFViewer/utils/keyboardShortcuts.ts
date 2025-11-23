@@ -1,4 +1,10 @@
 /**
+ * Copyright (c) 2025 Raphael Federicci Haddad.
+ * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
+ * Commercial licenses are available upon request.
+ */
+
+/**
  * Keyboard Shortcuts - Gerenciador de atalhos de teclado
  * 
  * Features:
@@ -181,55 +187,12 @@ export const defaultShortcuts: Shortcut[] = [
     context: 'viewer',
   },
   {
-    key: 'V',
-    handler: () => console.log('Select tool'),
-    description: 'Ferramenta de seleção',
-    context: 'viewer',
-  },
-  {
-    key: 'H',
-    handler: () => console.log('Highlight tool'),
-    description: 'Ferramenta de destaque',
-    context: 'viewer',
-  },
-  {
-    key: 'R',
-    handler: () => console.log('Rectangle tool'),
-    description: 'Ferramenta de área',
-    context: 'viewer',
-  },
-  // Edição
-  {
-    key: 'Ctrl+Z',
-    handler: () => console.log('Undo'),
-    description: 'Desfazer',
-    context: 'edit',
-  },
-  {
-    key: 'Ctrl+Shift+Z',
-    handler: () => console.log('Redo'),
-    description: 'Refazer',
-    context: 'edit',
-  },
-  {
-    key: 'Delete',
-    handler: () => console.log('Delete selected'),
-    description: 'Deletar selecionado',
-    context: 'edit',
-  },
-  {
     key: 'Escape',
     handler: () => console.log('Cancel'),
     description: 'Cancelar ação atual',
     context: 'global',
   },
   // Visualização
-  {
-    key: 'Ctrl+B',
-    handler: () => console.log('Toggle sidebar'),
-    description: 'Alternar sidebar',
-    context: 'viewer',
-  },
   {
     key: 'F11',
     handler: () => console.log('Presentation mode'),
