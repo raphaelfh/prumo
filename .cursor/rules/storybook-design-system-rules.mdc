@@ -1,7 +1,40 @@
 ---
 description: Storybook e documentação visual focada na experiência do pesquisador acadêmico.
 alwaysApply: false
+priority: medium
+globs:
+  - "src/**/*.stories.{tsx,ts}"
+  - "**/*.stories.{tsx,ts}"
 ---
+
+## Persona
+
+Atue como um **Senior Software Engineer** com foco em:
+- Documentação visual clara e útil
+- Experiência do pesquisador acadêmico
+- Minimalismo e clareza cognitiva
+- Acessibilidade e consistência visual
+
+## Quando Aplicar Esta Regra
+
+Esta regra se aplica quando trabalhar com:
+- **Stories do Storybook** (`.stories.tsx`)
+- **Documentação visual** de componentes
+- **Demonstração de estados** (loading, error, empty, ready)
+- **Padrões de UI** e fluxos de usuário
+
+## Prioridade
+
+**Média** - Aplicar quando criar ou atualizar stories do Storybook.
+
+## Princípios Fundamentais
+
+### Minimalismo Acadêmico
+
+- **Clareza cognitiva**: Reduzir carga mental do pesquisador
+- **Hierarquia visual**: Informação mais importante sempre em destaque
+- **Consistência**: Padrões previsíveis em todo o sistema
+- **Acessibilidade**: WCAG 2.1 AA como padrão mínimo
 
 ## Filosofia: Minimalismo Acadêmico
 
@@ -31,7 +64,7 @@ alwaysApply: false
 
 ### 1. Componentes Base (UI Primitivos)
 ```tsx
-// Foco: demonstrar variações essenciais apenas
+// ✅ CORRETO: Foco em variações essenciais apenas
 export default {
   title: 'Base/Button',
   component: Button,
@@ -48,7 +81,7 @@ export const Destructive: Story = { args: { variant: 'destructive', children: 'E
 
 ### 2. Componentes de Contexto (Features)
 ```tsx
-// Foco: fluxos reais do pesquisador
+// ✅ CORRETO: Foco em fluxos reais do pesquisador
 export default {
   title: 'Pesquisa/AssessmentCard',
   component: AssessmentCard,
@@ -87,7 +120,7 @@ export const InProgress: Story = {
 
 ### 3. Patterns de Pesquisa
 ```tsx
-// Layouts específicos para fluxos acadêmicos
+// ✅ CORRETO: Layouts específicos para fluxos acadêmicos
 export default { title: 'Patterns/ResearchWorkflow' };
 
 export const ArticleReview: Story = {
@@ -200,6 +233,190 @@ export const InterfaceStates: Story = {
 };
 ```
 
+## Quando Criar Nova Story
+
+### Árvore de Decisão
+
+```
+Novo componente criado?
+├─ É componente UI primitivo (Button, Input, Card)?
+│  └─ → Criar story em Base/
+│
+├─ É componente de feature (ArticleCard, AssessmentForm)?
+│  └─ → Criar story em Pesquisa/
+│
+├─ É padrão de layout/fluxo completo?
+│  └─ → Criar story em Patterns/
+│
+└─ É documentação de tokens (cores, tipografia)?
+   └─ → Criar story em Tokens/
+
+Story já existe?
+├─ Componente mudou significativamente?
+│  └─ → Atualizar story existente
+│
+└─ Novo estado/caso de uso importante?
+   └─ → Adicionar nova variação à story existente
+```
+
+### Quando NÃO Criar Story
+
+- Componente interno/privado (não usado diretamente)
+- Componente muito simples sem variações relevantes
+- Duplicação de story existente (atualizar ao invés de criar nova)
+
+## Exemplos Positivos ✅
+
+### Story Completa e Bem Estruturada
+
+```tsx
+// ✅ CORRETO: Story completa com todos os estados
+export default {
+  title: 'Pesquisa/ArticleCard',
+  component: ArticleCard,
+  parameters: {
+    layout: 'padded',
+    docs: {
+      description: {
+        component: 'Card para exibir informações de artigo. Usado em listagens e grids.'
+      }
+    }
+  }
+};
+
+export const Default: Story = {
+  args: {
+    article: {
+      id: '1',
+      title: 'Machine Learning in Healthcare',
+      description: 'A comprehensive review of ML applications...',
+      createdAt: '2024-01-15',
+    }
+  }
+};
+
+export const Loading: Story = {
+  render: () => <ArticleCardSkeleton />
+};
+
+export const Empty: Story = {
+  render: () => (
+    <ArticleCard>
+      <EmptyState title="Nenhum artigo" />
+    </ArticleCard>
+  )
+};
+
+export const WithLongTitle: Story = {
+  args: {
+    article: {
+      id: '2',
+      title: 'A Very Long Article Title That Should Be Truncated Properly With Line Clamp',
+      description: 'Description...',
+    }
+  }
+};
+```
+
+## Exemplos Negativos ❌
+
+### Story Sem Estados
+
+```tsx
+// ❌ ERRADO: Apenas estado padrão, sem loading/error/empty
+export default {
+  title: 'Pesquisa/ArticleCard',
+  component: ArticleCard,
+};
+
+export const Default: Story = {
+  args: {
+    article: mockArticle
+  }
+};
+// Falta: Loading, Empty, Error states
+
+// ✅ CORRETO: Todos os estados (ver exemplo positivo acima)
+```
+
+### Story Com Dados Irreais
+
+```tsx
+// ❌ ERRADO: Dados que não representam uso real
+export const Example: Story = {
+  args: {
+    article: {
+      title: 'Test',
+      description: 'Test description',
+      // Dados genéricos que não ajudam a entender o componente
+    }
+  }
+};
+
+// ✅ CORRETO: Dados realistas que mostram uso real
+export const Example: Story = {
+  args: {
+    article: {
+      title: 'Machine Learning in Healthcare: A Systematic Review',
+      description: 'This systematic review examines the application of machine learning algorithms in healthcare settings...',
+      // Dados que representam uso real pelo pesquisador
+    }
+  }
+};
+```
+
+### Story Sem Descrição
+
+```tsx
+// ❌ ERRADO: Sem documentação
+export default {
+  title: 'Base/Button',
+  component: Button,
+  // Falta: parameters.docs.description
+};
+
+// ✅ CORRETO: Com documentação
+export default {
+  title: 'Base/Button',
+  component: Button,
+  parameters: {
+    docs: {
+      description: {
+        component: 'Botão principal - use com parcimônia para ações críticas.'
+      }
+    }
+  }
+};
+```
+
+### Story Sem Dark Mode
+
+```tsx
+// ❌ ERRADO: Não testa dark mode
+export const Default: Story = {
+  args: { /* ... */ }
+};
+// Falta: Toggle dark/light mode
+
+// ✅ CORRETO: Inclui toggle dark/light
+export default {
+  title: 'Base/Button',
+  component: Button,
+  parameters: {
+    backgrounds: {
+      default: 'light',
+    },
+  },
+  decorators: [
+    (Story) => (
+      <ThemeProvider>
+        <Story />
+      </ThemeProvider>
+    ),
+  ],
+};
+```
+
 ## Regras de Implementação
 
 ### Para o AI ao criar componentes:
@@ -211,7 +428,7 @@ export const InterfaceStates: Story = {
 
 ### Estrutura de Stories:
 ```tsx
-// Template padrão para novos componentes
+// ✅ Template padrão para novos componentes
 export default {
   title: 'Categoria/ComponentName',
   component: Component,
@@ -243,3 +460,36 @@ export const Empty: Story = { /* estado vazio */ };
 - **Progresso visível** - em tarefas longas como avaliação
 - **Recuperação de erro** - sempre oferecer próximo passo
 - **Consistência** - mesmo padrão em situações similares
+
+## Checklist de Validação
+
+Antes de considerar story completa, verificar:
+
+### Estrutura
+- [ ] **Título correto**: Segue padrão `Categoria/ComponentName`
+- [ ] **Descrição presente**: `parameters.docs.description` preenchido
+- [ ] **Categoria correta**: Base/Pesquisa/Patterns/Tokens
+
+### Estados
+- [ ] **Estado padrão**: `Default` com dados realistas
+- [ ] **Loading state**: Se componente carrega dados
+- [ ] **Empty state**: Se componente pode estar vazio
+- [ ] **Error state**: Se componente pode ter erro
+- [ ] **Variações relevantes**: Estados que o pesquisador realmente encontra
+
+### Visual
+- [ ] **Dark mode**: Toggle dark/light funciona
+- [ ] **Contraste**: Texto legível (4.5:1 mínimo)
+- [ ] **Responsividade**: Testado em diferentes tamanhos
+- [ ] **Acessibilidade**: ARIA labels, foco visível
+
+### Documentação
+- [ ] **Descrição clara**: Explica uso pelo pesquisador
+- [ ] **Args documentados**: Props importantes documentadas
+- [ ] **Exemplos realistas**: Dados que representam uso real
+
+## Referências
+
+- `design-system.mdc` - Regras de UI/UX e acessibilidade
+- `frontend-react-rule.mdc` - Regras específicas para React
+- `core-rules-saas-app.mdc` - Princípios gerais
