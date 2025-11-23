@@ -14,7 +14,7 @@ Obrigado por considerar contribuir para o **Review Hub**! Este documento fornece
 
 ## 📜 Código de Conduta
 
-Este projeto segue um [Código de Conduta](CODE_OF_CONDUCT.md). Ao participar, você concorda em manter este código.
+Este projeto segue um [Código de Conduta](../docs/legal/CODE_OF_CONDUCT.md). Ao participar, você concorda em manter este código.
 
 ## 🤝 Como Posso Contribuir?
 
@@ -199,7 +199,7 @@ chore: atualiza dependências
 
 ### CLA (Contributor License Agreement)
 
-**OBRIGATÓRIO**: Antes de seu PR ser mesclado, você deve assinar o [CLA](CLA.md).
+**OBRIGATÓRIO**: Antes de seu PR ser mesclado, você deve assinar o [CLA](../docs/legal/CLA.md).
 
 - O bot CLA Assistant irá solicitar automaticamente
 - Seu PR ficará bloqueado até a assinatura
@@ -245,10 +245,10 @@ Use o [template de feature request](.github/ISSUE_TEMPLATE/feature_request.md) e
 
 ## 📚 Recursos Adicionais
 
-- [Documentação do Projeto](./docs/)
-- [Licenciamento](README.md#-licenciamento)
-- [Código de Conduta](CODE_OF_CONDUCT.md)
-- [CLA](CLA.md)
+- [Documentação do Projeto](../docs/)
+- [Licenciamento](../README.md#-licenciamento)
+- [Código de Conduta](../docs/legal/CODE_OF_CONDUCT.md)
+- [CLA](../docs/legal/CLA.md)
 
 ---
 

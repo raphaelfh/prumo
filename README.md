@@ -43,7 +43,7 @@ Para mais informações sobre licenciamento comercial, entre em contato através
 
 Contribuições são bem-vindas! Por favor, leia nosso [Guia de Contribuição](.github/CONTRIBUTING.md) para detalhes sobre nosso código de conduta e o processo para submeter pull requests.
 
-**Importante**: Antes de contribuir, você precisará assinar nosso [Contributor License Agreement (CLA)](CLA.md).
+**Importante**: Antes de contribuir, você precisará assinar nosso [Contributor License Agreement (CLA)](docs/legal/CLA.md).
 
 ### Primeiros Passos
 
@@ -58,9 +58,9 @@ Para mais detalhes, consulte [CONTRIBUTING.md](.github/CONTRIBUTING.md).
 ## 📚 Documentação
 
 - [Guia de Contribuição](.github/CONTRIBUTING.md)
-- [Código de Conduta](CODE_OF_CONDUCT.md)
-- [Política de Segurança](SECURITY.md)
-- [Integração com Zotero](./docs/ZOTERO_INTEGRATION.md)
+- [Código de Conduta](docs/legal/CODE_OF_CONDUCT.md)
+- [Política de Segurança](docs/legal/SECURITY.md)
+- [Integração com Zotero](./docs/tecnicas/ZOTERO_ARCHITECTURE.md)
 
 ## Project info
 

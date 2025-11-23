@@ -281,10 +281,8 @@ Data: 09 de Outubro de 2025
 
 ### Documentação
 
-- ✅ `docs/ZOTERO_INTEGRATION.md` - Guia do usuário
-- ✅ `docs/ZOTERO_ARCHITECTURE.md` - Arquitetura técnica
-- ✅ `docs/DEPLOYMENT.md` - Instruções de deploy
-- ✅ `docs/ZOTERO_IMPLEMENTATION_SUMMARY.md` - Este documento
+- ✅ `docs/tecnicas/ZOTERO_ARCHITECTURE.md` - Arquitetura técnica
+- ✅ `docs/tecnicas/ZOTERO_IMPLEMENTATION_SUMMARY.md` - Este documento
 
 ---
 

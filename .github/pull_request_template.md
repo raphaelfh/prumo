@@ -35,7 +35,7 @@ Antes de submeter, certifique-se de que:
 - [ ] Testes novos e existentes passam localmente com minhas mudanças
 - [ ] Atualizei a documentação conforme necessário
 - [ ] Minhas mudanças não quebram funcionalidades existentes
-- [ ] Assinei o [CLA](CLA.md) (o bot CLA Assistant irá verificar isso)
+- [ ] Assinei o [CLA](../docs/legal/CLA.md) (o bot CLA Assistant irá verificar isso)
 
 ## 🧪 Como Testar
 
