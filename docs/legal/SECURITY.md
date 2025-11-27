@@ -20,9 +20,8 @@ Se você descobriu uma vulnerabilidade de segurança, por favor:
 1. **NÃO** abra uma issue pública
 2. **NÃO** discuta a vulnerabilidade publicamente
 3. Entre em contato diretamente através de uma das seguintes formas:
-   - **Email**: [seu-email-de-seguranca@exemplo.com] (adicione seu email aqui)
-   - **GitHub Security Advisories**: Use a funcionalidade [Security Advisories](https://github.com/seu-usuario/review-hub/security/advisories) do GitHub
-   - **Formulário de Contato**: [Link para formulário, se houver]
+   - **GitHub Security Advisories**: Use a funcionalidade [Security Advisories](https://github.com/raphaelfh/review-hub/security/advisories) do GitHub (recomendado)
+   - **Email**: Abra uma issue privada ou use o GitHub Security Advisories
 
 ### O que Incluir no Reporte
 
@@ -92,8 +91,8 @@ Estamos especialmente interessados em vulnerabilidades relacionadas a:
 
 Para questões de segurança, entre em contato:
 
-- **Email**: [seu-email-de-seguranca@exemplo.com]
-- **GitHub Security Advisories**: [Link para advisories]
+- **GitHub Security Advisories**: [https://github.com/raphaelfh/review-hub/security/advisories](https://github.com/raphaelfh/review-hub/security/advisories) (recomendado)
+- **Issues Privadas**: Use o GitHub para reportar vulnerabilidades de forma segura
 
 ---
 

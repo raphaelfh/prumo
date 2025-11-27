@@ -16,9 +16,10 @@ Sistema completo para gerenciamento de revisões sistemáticas e meta-análises.
 - **Colaboração**: Trabalhe em equipe com controle de acesso e permissões
 - **Visualização de PDFs**: Leitor de PDF integrado com anotações
 
-Este projeto é Open Source sob a licença **GNU Affero General Public License v3.0 (AGPL-3.0)**.
 
+## 🚀 Início Rápido
 
+### Pré-requisitos
 
 - Node.js 18+ e npm (recomendado usar [nvm](https://github.com/nvm-sh/nvm#installing-and-updating))
 - Supabase CLI (para desenvolvimento local)
@@ -28,7 +29,7 @@ Este projeto é Open Source sob a licença **GNU Affero General Public License v
 
 ```sh
 # 1. Clone o repositório
-git clone <YOUR_GIT_URL>
+git clone https://github.com/raphaelfh/review-hub.git
 cd review_hub
 
 # 2. Instale as dependências
