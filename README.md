@@ -16,32 +16,9 @@ Sistema completo para gerenciamento de revisões sistemáticas e meta-análises.
 - **Colaboração**: Trabalhe em equipe com controle de acesso e permissões
 - **Visualização de PDFs**: Leitor de PDF integrado com anotações
 
-## ⚖️ Licenciamento
-
 Este projeto é Open Source sob a licença **GNU Affero General Public License v3.0 (AGPL-3.0)**.
 
-### O que isso significa?
 
-✅ **Você pode usar, estudar e modificar este software gratuitamente.**
-
-✅ **Se você usar este software em uma aplicação que roda em rede (SaaS, Web)**, você deve disponibilizar o código-fonte da sua aplicação completa sob a mesma licença (AGPL-3.0).
-
-### Licença Comercial (Enterprise)
-
-Se você deseja usar este software em produtos proprietários, aplicações comerciais fechadas, ou sem a obrigação de abrir seu próprio código-fonte, você deve adquirir uma **Licença Comercial**.
-
-**Benefícios da Licença Comercial:**
-- 🛡️ **Isenção das obrigações de Copyleft** (não precisa abrir seu código)
-- 🤝 **Suporte prioritário e garantias legais**
-- 📧 **Entre em contato conosco para adquirir uma licença comercial**
-
-Para mais informações sobre licenciamento comercial, entre em contato através do repositório, via issues ou por email.
-
-**Contato para Licenças Comerciais**: [Adicione seu email aqui]
-
-## 🚀 Início Rápido
-
-### Pré-requisitos
 
 - Node.js 18+ e npm (recomendado usar [nvm](https://github.com/nvm-sh/nvm#installing-and-updating))
 - Supabase CLI (para desenvolvimento local)
