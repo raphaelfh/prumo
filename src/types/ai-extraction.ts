@@ -95,7 +95,7 @@ export interface AISuggestion {
 /**
  * Item do histórico de sugestões
  * Type alias para AISuggestion mantendo compatibilidade
- * (Pode ser convertido para interface no futuro se campos específicos forem adicionados)
+ * (Pode ser convertido para interface no futuro se campos específicos forem adicionados) 
  */
 export type AISuggestionHistoryItem = AISuggestion;
 
