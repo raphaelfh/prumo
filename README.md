@@ -178,7 +178,7 @@ Os arquivos serão gerados em `dist/` e podem ser servidos por qualquer servidor
 
 - **Vercel**: Conecte seu repositório GitHub e configure as variáveis de ambiente
 - **Netlify**: Similar ao Vercel, com suporte a Edge Functions
-- **Supabase**: Use o Supabase Hosting para frontend + backend integrado
+- **Supabase**: Use o Supabase Hosting para backend 
 - **Docker**: Containerize a aplicação para deploy em qualquer plataforma
 
 ### Variáveis de Ambiente Necessárias
@@ -193,8 +193,6 @@ VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 ## 📝 Licença
 
 Este projeto está licenciado sob a **GNU Affero General Public License v3.0 (AGPL-3.0)**. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
-
-Para licenças comerciais, entre em contato através do repositório.
 
 ## 🙏 Agradecimentos
 
