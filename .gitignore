@@ -28,9 +28,6 @@ supabase/functions/.env.*
 #remover review-hub.code-workspace
 review-hub.code-workspace
 
-# Guia com informações sensíveis (não commitar)
-docs/guias/REVOGAR_CHAVES_EXPOSTAS.md
-
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -42,7 +39,15 @@ docs/guias/REVOGAR_CHAVES_EXPOSTAS.md
 *.sln
 *.sw?
 .cursor
-.github
+# .github - permitir workflows e documentação, mas ignorar outros arquivos
+.github/*
+!.github/workflows/
+!.github/workflows/**
+!.github/CLA_CONFIG.md
+!.github/CONTRIBUTING.md
+!.github/ISSUE_TEMPLATE/
+!.github/ISSUE_TEMPLATE/**
+!.github/pull_request_template.md
 .cursorignore
 .cursor/
 .cursor/rules/
