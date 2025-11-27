@@ -20,6 +20,11 @@ dist-ssr
 .env.*
 !.env.example
 
+# Supabase Edge Functions - variáveis de ambiente
+supabase/functions/.env
+supabase/functions/.env.*
+!supabase/functions/.env.example
+
 #remover review-hub.code-workspace
 review-hub.code-workspace
 
