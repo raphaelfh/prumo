@@ -10,17 +10,13 @@
  * @module useGlobalTemplates
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { GlobalExtractionTemplate } from '@/types/extraction';
 
 // =================== INTERFACES ===================
 
-export interface GlobalTemplate {
-  id: string;
-  name: string;
-  framework: 'CHARMS' | 'PICOS' | 'CUSTOM';
-  description: string | null;
-  version: string;
+export interface GlobalTemplate extends GlobalExtractionTemplate {
   entityTypesCount: number;
 }
 
@@ -37,8 +33,10 @@ export function useGlobalTemplates(): UseGlobalTemplatesReturn {
   const [templates, setTemplates] = useState<GlobalTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const isMountedRef = useRef(true);
 
   const loadTemplates = async () => {
+    if (!isMountedRef.current) return;
     setLoading(true);
     setError(null);
 
@@ -77,6 +75,10 @@ export function useGlobalTemplates(): UseGlobalTemplatesReturn {
             framework: template.framework as 'CHARMS' | 'PICOS' | 'CUSTOM',
             description: template.description,
             version: template.version,
+            is_global: template.is_global,
+            schema: template.schema,
+            created_at: template.created_at,
+            updated_at: template.updated_at,
             entityTypesCount: count || 0
           };
         })
@@ -95,7 +97,12 @@ export function useGlobalTemplates(): UseGlobalTemplatesReturn {
   };
 
   useEffect(() => {
+    isMountedRef.current = true;
     loadTemplates();
+
+    return () => {
+      isMountedRef.current = false;
+    };
   }, []);
 
   return {

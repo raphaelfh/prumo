@@ -19,9 +19,9 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { 
-  ProjectExtractionTemplate, 
-  ExtractionTemplateOption 
+  ProjectExtractionTemplate
 } from '@/types/extraction';
+import { useGlobalTemplates } from '@/hooks/extraction/useGlobalTemplates';
 
 interface TemplateManagerProps {
   projectId: string;
@@ -44,23 +44,20 @@ export function TemplateManager({
 }: TemplateManagerProps) {
   const [showCloneDialog, setShowCloneDialog] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
-
-  // Templates globais disponíveis (hardcoded por enquanto)
-  const globalTemplates: ExtractionTemplateOption[] = [
-    {
-      id: '03a08505-8857-4d3a-8db5-2808c7dfb528', // ID real do template CHARMS
-      name: 'CHARMS',
-      description: 'Checklist for critical Appraisal and data extraction for systematic Reviews of prediction Modelling Studies',
-      framework: 'CHARMS',
-      version: '1.0.0'
-    }
-  ];
+  const {
+    templates: globalTemplates,
+    loading: loadingGlobalTemplates,
+    error: globalTemplatesError,
+    refresh: refreshGlobalTemplates
+  } = useGlobalTemplates();
 
   const handleCloneTemplate = async (globalTemplateId: string, customName?: string) => {
     const result = await onTemplateClone(globalTemplateId, customName);
     if (result) {
       setShowCloneDialog(false);
       onTemplateSelect(result);
+    } else {
+      toast.error('Não foi possível clonar o template selecionado.');
     }
   };
 
@@ -196,34 +193,78 @@ export function TemplateManager({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            {globalTemplates.map((template) => (
-              <div
-                key={template.id}
-                className="p-4 border rounded-lg"
+          {loadingGlobalTemplates ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="text-center">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent mx-auto mb-2"></div>
+                <p className="text-sm text-muted-foreground">
+                  Carregando templates globais...
+                </p>
+              </div>
+            </div>
+          ) : globalTemplatesError ? (
+            <div className="text-center py-8">
+              <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h4 className="font-medium mb-2">Erro ao carregar templates</h4>
+              <p className="text-sm text-muted-foreground mb-4">
+                {globalTemplatesError}
+              </p>
+              <Button
+                onClick={refreshGlobalTemplates}
+                variant="outline"
+                size="sm"
               >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="font-medium">{template.name}</h4>
-                    <p className="text-sm text-muted-foreground">
-                      {template.description}
-                    </p>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Badge variant="outline">{template.framework}</Badge>
-                    <Button
-                      onClick={() => handleCloneTemplate(template.id)}
-                      size="sm"
-                      variant="outline"
-                    >
-                      <Copy className="h-4 w-4 mr-2" />
-                      Clonar
-                    </Button>
+                Tentar novamente
+              </Button>
+            </div>
+          ) : globalTemplates.length === 0 ? (
+            <div className="text-center py-8">
+              <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h4 className="font-medium mb-2">Nenhum template global disponível</h4>
+              <p className="text-sm text-muted-foreground mb-2">
+                Rode as migrações Supabase para popular a base (CHARMS, PICOS, etc.)
+              </p>
+              <Button
+                onClick={refreshGlobalTemplates}
+                variant="outline"
+                size="sm"
+              >
+                Atualizar lista
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {globalTemplates.map((template) => (
+                <div
+                  key={template.id}
+                  className="p-4 border rounded-lg"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-medium">{template.name}</h4>
+                      <p className="text-sm text-muted-foreground">
+                        {template.description || 'Sem descrição'}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {template.entityTypesCount} seções configuradas · v{template.version}
+                      </p>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Badge variant="outline">{template.framework}</Badge>
+                      <Button
+                        onClick={() => handleCloneTemplate(template.id)}
+                        size="sm"
+                        variant="outline"
+                      >
+                        <Copy className="h-4 w-4 mr-2" />
+                        Clonar
+                      </Button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 
