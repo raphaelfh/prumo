@@ -28,6 +28,9 @@ supabase/functions/.env.*
 #remover review-hub.code-workspace
 review-hub.code-workspace
 
+# Guia com informações sensíveis (não commitar)
+docs/guias/REVOGAR_CHAVES_EXPOSTAS.md
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
