@@ -1,6 +1,12 @@
 import { supabase } from '@/integrations/supabase/client';
-import { callEdgeFunction } from '@/lib/supabase/baseRepository';
+import { aiAssessmentClient, ApiError } from '@/integrations/api/client';
 import { AssessmentItem } from '@/hooks/assessment/useAssessmentInstruments';
+
+/**
+ * Feature flag para usar FastAPI ou Edge Functions.
+ * Quando true, usa FastAPI. Quando false, usa Edge Functions legadas.
+ */
+const USE_FASTAPI = import.meta.env.VITE_USE_FASTAPI === 'true';
 
 export interface BatchAssessmentConfig {
   parallelMode: boolean;
@@ -114,25 +120,37 @@ export class BatchAssessmentService {
         instrumentId,
         pdf_storage_key: pdfStorageKey,
         force_file_search: config.forceFileSearch,
-        // Configurações adicionais podem ser passadas aqui
         model: config.model,
         temperature: config.temperature,
         max_tokens: config.maxTokens,
       };
 
-      // Usar callEdgeFunction do baseRepository com headers customizados
-      const result = await callEdgeFunction(
-        'ai-assessment',
-        payload,
-        {
-          headers: {
-            'x-client-trace-id': clientTraceId,
-          },
-        }
-      );
+      let result: any;
+
+      if (USE_FASTAPI) {
+        // Usar FastAPI
+        console.log(`[Batch Assessment] Usando FastAPI para avaliação`);
+        const response = await aiAssessmentClient<{
+          assessment: any;
+          trace_id: string;
+        }>(payload);
+        result = response;
+      } else {
+        // Usar Edge Functions legadas
+        const { callEdgeFunction } = await import('@/lib/supabase/baseRepository');
+        result = await callEdgeFunction(
+          'ai-assessment',
+          payload,
+          {
+            headers: {
+              'x-client-trace-id': clientTraceId,
+            },
+          }
+        );
+      }
 
       // Extrair assessment da resposta (pode estar em result.assessment ou result diretamente)
-      const assessment = (result as any)?.assessment ?? result;
+      const assessment = result?.assessment ?? result;
       if (!assessment) {
         throw new Error('Resposta da função sem assessment.');
       }

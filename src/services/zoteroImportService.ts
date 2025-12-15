@@ -10,7 +10,7 @@
  */
 
 import { supabase } from '@/integrations/supabase/client';
-import { callEdgeFunction } from '@/lib/supabase/baseRepository';
+import { zoteroClient, type ZoteroAction } from '@/integrations/api/client';
 import type {
   ZoteroCredentialsInput,
   ZoteroTestConnectionResult,
@@ -31,8 +31,11 @@ import {
   normalizeContentType,
 } from './zoteroMapper';
 
-// URL da Edge Function
-const EDGE_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/zotero-import`;
+/**
+ * Feature flag para usar FastAPI ou Edge Functions.
+ * Quando true, usa FastAPI. Quando false, usa Edge Functions legadas.
+ */
+const USE_FASTAPI = import.meta.env.VITE_USE_FASTAPI === 'true';
 
 /**
  * Classe principal para gerenciar importação do Zotero
@@ -41,25 +44,30 @@ export class ZoteroImportService {
   private abortController: AbortController | null = null;
 
   /**
-   * Faz chamada à Edge Function do Zotero usando baseRepository
+   * Faz chamada à API (FastAPI ou Edge Function baseado em feature flag).
    */
-  private async callEdgeFunction<T = unknown>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
-    // Usar callEdgeFunction do baseRepository
-    // O nome da função é 'zotero-import' (extraído da constante EDGE_FUNCTION_URL)
-    return await callEdgeFunction<T>(
-      'zotero-import',
-      { action, ...payload },
-      {
-        signal: this.abortController?.signal,
-      }
-    );
+  private async callZoteroApi<T = unknown>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
+    if (USE_FASTAPI) {
+      // Usar novo cliente FastAPI
+      return await zoteroClient<T>(action as ZoteroAction, payload);
+    } else {
+      // Fallback para Edge Functions legadas
+      const { callEdgeFunction } = await import('@/lib/supabase/baseRepository');
+      return await callEdgeFunction<T>(
+        'zotero-import',
+        { action, ...payload },
+        {
+          signal: this.abortController?.signal,
+        }
+      );
+    }
   }
 
   /**
    * Salva credenciais do Zotero no Vault
    */
   async saveCredentials(credentials: ZoteroCredentialsInput): Promise<void> {
-    await this.callEdgeFunction('save-credentials', credentials);
+    await this.callZoteroApi('save-credentials', credentials);
   }
 
   /**
@@ -67,10 +75,15 @@ export class ZoteroImportService {
    */
   async testConnection(): Promise<ZoteroTestConnectionResult> {
     try {
-      const result = await this.callEdgeFunction('test-connection');
+      const result = await this.callZoteroApi<{
+        success: boolean;
+        user_name?: string;
+        userName?: string;
+        error?: string;
+      }>('test-connection');
       return {
         success: result.success,
-        userName: result.userName,
+        userName: result.user_name || result.userName,
         error: result.error,
       };
     } catch (error: unknown) {
@@ -86,7 +99,7 @@ export class ZoteroImportService {
    * Lista collections disponíveis na biblioteca do Zotero
    */
   async listCollections(): Promise<ZoteroCollection[]> {
-    const result = await this.callEdgeFunction('list-collections');
+    const result = await this.callZoteroApi<{ collections: ZoteroCollection[] }>('list-collections');
     return result.collections || [];
   }
 
@@ -98,7 +111,13 @@ export class ZoteroImportService {
     totalResults: number;
     hasMore: boolean;
   }> {
-    const result = await this.callEdgeFunction('fetch-items', {
+    const result = await this.callZoteroApi<{
+      items: ZoteroItem[];
+      total_results?: number;
+      totalResults?: number;
+      has_more?: boolean;
+      hasMore?: boolean;
+    }>('fetch-items', {
       collectionKey,
       limit,
       start,
@@ -106,8 +125,8 @@ export class ZoteroImportService {
 
     return {
       items: result.items || [],
-      totalResults: result.totalResults || 0,
-      hasMore: result.hasMore || false,
+      totalResults: result.total_results || result.totalResults || 0,
+      hasMore: result.has_more || result.hasMore || false,
     };
   }
 
@@ -115,7 +134,7 @@ export class ZoteroImportService {
    * Busca attachments de um item
    */
   private async fetchAttachments(itemKey: string): Promise<any[]> {
-    const result = await this.callEdgeFunction('fetch-attachments', { itemKey });
+    const result = await this.callZoteroApi<{ attachments: any[] }>('fetch-attachments', { itemKey });
     return result.attachments || [];
   }
 
@@ -129,12 +148,19 @@ export class ZoteroImportService {
     fileRole: 'MAIN' | 'SUPPLEMENT'
   ): Promise<void> {
     try {
-      // 1. Baixar attachment via Edge Function
-      const downloadResult = await this.callEdgeFunction('download-attachment', {
+      // 1. Baixar attachment via API
+      const downloadResult = await this.callZoteroApi<{
+        base64: string;
+        filename: string;
+        content_type?: string;
+        contentType?: string;
+        size: number;
+      }>('download-attachment', {
         attachmentKey: attachment.key,
       });
 
-      const { base64, filename, contentType, size } = downloadResult;
+      const { base64, filename, size } = downloadResult;
+      const contentType = downloadResult.content_type || downloadResult.contentType || 'application/pdf';
 
       // 2. Converter base64 para Blob
       const binaryString = atob(base64);

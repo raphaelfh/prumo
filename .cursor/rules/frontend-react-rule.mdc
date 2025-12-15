@@ -66,7 +66,10 @@ Esta regra se aplica quando trabalhar com:
 src/
 ├── components/  → Por tipo (ui/, patterns/, domain/)
 ├── hooks/       → Por domínio (assessment/, extraction/)
-└── services/    → Por domínio
+├── services/    → Por domínio
+└── integrations/
+    ├── supabase/ → Cliente Supabase (Auth, Realtime)
+    └── api/      → Cliente FastAPI
 ```
 
 **Estrutura ideal (futuro - migrar gradualmente):**
@@ -78,11 +81,16 @@ src/
 │   │   ├── hooks/    → useAssessment, useBatchAssessment
 │   │   └── services/ → assessmentService
 │   └── extraction/
-└── shared/      → Componentes/hooks compartilhados
+├── shared/      → Componentes/hooks compartilhados
+└── integrations/
+    ├── supabase/ → Auth, Realtime, Storage
+    └── api/      → Cliente HTTP para FastAPI
 ```
 
-- Dados remotos com **TanStack Query** (chaves estáveis, `staleTime` racional).
-- Formulários com **react-hook-form** + **zod** para validação.
+- **Supabase Client**: Auth, Realtime subscriptions, Storage.
+- **API Client**: Operações de negócio via FastAPI (extração, assessment, etc).
+- **TanStack Query**: Dados remotos (chaves estáveis, `staleTime` racional).
+- **react-hook-form + zod**: Formulários com validação.
 
 ### Modularidade de Componentes
 
@@ -437,10 +445,76 @@ function ArticleCard({ article }: { article: Article }) {
 }
 ```
 
-## Segurança no front
+## Integração com FastAPI
+
+### Cliente API
+
+Use o cliente centralizado em `src/integrations/api/client.ts`:
+
+```typescript
+import { apiClient } from '@/integrations/api/client';
+
+// Em hooks/services
+async function extractSection(request: ExtractionRequest) {
+  return apiClient<ExtractionResponse>(
+    '/api/v1/extraction/sections',
+    {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }
+  );
+}
+```
+
+### TanStack Query com FastAPI
+
+```typescript
+// ✅ Hook que usa FastAPI
+function useAIAssessment() {
+  return useMutation({
+    mutationFn: async (request: AssessmentRequest) => {
+      return apiClient<ApiResponse<AssessmentResult>>(
+        '/api/v1/assessment/ai',
+        {
+          method: 'POST',
+          body: JSON.stringify(request),
+        }
+      );
+    },
+    onError: (error) => {
+      toast.error('Erro ao executar avaliação');
+    },
+  });
+}
+```
+
+### Supabase vs FastAPI
+
+| Operação | Usar |
+|----------|------|
+| Auth (login, signup, logout) | Supabase Client |
+| Realtime subscriptions | Supabase Client |
+| Storage (upload/download) | Supabase Client |
+| CRUD simples | Pode usar qualquer um |
+| AI/LLM operations | FastAPI |
+| Extração de dados | FastAPI |
+| Operações complexas | FastAPI |
+
+```typescript
+// ✅ Auth: Supabase
+import { supabase } from '@/integrations/supabase/client';
+await supabase.auth.signInWithPassword({ email, password });
+
+// ✅ AI Assessment: FastAPI
+import { apiClient } from '@/integrations/api/client';
+await apiClient('/api/v1/assessment/ai', { method: 'POST', body });
+```
+
+## Segurança no Front
 
 - Nunca expor **service role**; use **anon key** no cliente.
-- Validação dupla: front (zod) e back (zod no Edge).
+- **Validação dupla**: front (zod) + back (Pydantic).
+- **Token JWT**: Automaticamente incluído nas requisições via `apiClient`.
 
 ## Checklist de Validação
 
@@ -463,8 +537,8 @@ Antes de considerar código React completo, verificar:
 
 - `core-rules-saas-app.mdc` - Princípios gerais, fluxo de trabalho
 - `design-system.mdc` - UI/UX, acessibilidade, tokens
-- `database-supabase-rules.mdc` - Integração com Supabase
-- `prompt-engineering-rules.mdc` - Como interpretar prompts
+- `fastapi-backend-rules.mdc` - Endpoints e formato de resposta do backend
+- `database-sqlalchemy-rules.mdc` - Estrutura de dados
 
 ## Entregáveis do AI
 

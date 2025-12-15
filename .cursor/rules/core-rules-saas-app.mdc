@@ -1,5 +1,5 @@
 ---
-description: Princípios nucleares para um SaaS com React + Supabase (qualidade, segurança e DX).
+description: Princípios nucleares para um SaaS com React + FastAPI + Supabase (qualidade, segurança e DX).
 alwaysApply: true
 priority: critical
 ---
@@ -79,15 +79,17 @@ function processData(data: Article[]): ProcessedArticle[] {
 
 2. **Alta** (aplicar por contexto):
    - `frontend-react-rule.mdc` (componentes React, hooks, estado)
-   - `database-supabase-rules.mdc` (schema, RLS, migrações)
+   - `fastapi-backend-rules.mdc` (endpoints FastAPI, services Python)
+   - `database-sqlalchemy-rules.mdc` (SQLAlchemy, queries async)
    - `design-system.mdc` (UI, acessibilidade, tokens)
 
 3. **Média** (aplicar quando relevante):
-   - `supabase-edge-function-rules.mdc` (Edge Functions, Deno)
+   - `python-rules.mdc` (padrões Python, typing, uv, ruff)
    - `storybook-design-system-rules.mdc` (documentação visual)
 
 4. **Baixa** (aplicar sob demanda):
    - Regras específicas de domínio ou features
+   - `supabase-edge-function-rules.mdc` (LEGADO - apenas referência)
 
 ## Fluxo de Trabalho Padrão
 
@@ -208,13 +210,16 @@ Nova feature?
 │  ├─ Lógica de estado/hooks? → frontend-react-rule.mdc
 │  └─ Ambos? → design-system.mdc + frontend-react-rule.mdc
 │
-├─ Backend/Database?
-│  ├─ Schema/migração? → database-supabase-rules.mdc
-│  ├─ RLS/segurança? → database-supabase-rules.mdc
-│  └─ Query/CRUD? → database-supabase-rules.mdc
+├─ Backend (FastAPI/Python)?
+│  ├─ Endpoint API? → fastapi-backend-rules.mdc
+│  ├─ Service/lógica? → fastapi-backend-rules.mdc + python-rules.mdc
+│  ├─ Model SQLAlchemy? → database-sqlalchemy-rules.mdc
+│  └─ Query/CRUD? → database-sqlalchemy-rules.mdc
 │
-├─ Edge Function?
-│  └─ → supabase-edge-function-rules.mdc
+├─ Database?
+│  ├─ Schema/migração SQL? → database-sqlalchemy-rules.mdc
+│  ├─ RLS/segurança? → database-sqlalchemy-rules.mdc (RLS no Postgres)
+│  └─ Model SQLAlchemy? → database-sqlalchemy-rules.mdc
 │
 └─ Documentação visual?
    └─ → storybook-design-system-rules.mdc
@@ -223,39 +228,62 @@ Refatoração?
 ├─ Código duplicado? → Aplicar DRY (core-rules)
 ├─ Complexidade alta? → Aplicar KISS (core-rules)
 ├─ Estrutura de pastas? → Verificar modularidade (core-rules)
-└─ Performance? → frontend-react-rule.mdc (otimizações)
+├─ Performance Frontend? → frontend-react-rule.mdc (otimizações)
+└─ Performance Backend? → fastapi-backend-rules.mdc (async, queries)
 
 Bug fix?
 ├─ Frontend? → frontend-react-rule.mdc + design-system.mdc
-├─ Backend? → database-supabase-rules.mdc ou supabase-edge-function-rules.mdc
+├─ Backend Python? → fastapi-backend-rules.mdc + python-rules.mdc
+├─ Database? → database-sqlalchemy-rules.mdc
 └─ Segurança? → core-rules (validação, RLS, sanitização)
 
 Novo arquivo de código?
+├─ Python (.py)? → licensing.mdc + python-rules.mdc
+├─ TypeScript (.ts/.tsx)? → licensing.mdc + frontend-react-rule.mdc
 └─ → licensing.mdc (cabeçalho de copyright obrigatório)
 ```
 
 ## Padrões Gerais
 
-- **TypeScript estrito** em todo o repo (sem `any` desnecessário).
+### Frontend (TypeScript/React)
+- **TypeScript estrito** em todo o frontend (sem `any` desnecessário).
+- Componentes modulares e testáveis.
+- TanStack Query para dados remotos.
+
+### Backend (Python/FastAPI)
+- **Python 3.11+** com type hints em todo o código.
+- **uv** como package manager, **ruff** para lint/format, **mypy** para tipos.
+- **Async por padrão** (AsyncSession, httpx.AsyncClient).
+- **Pydantic v2** para validação de requests/responses.
+- Services separados de endpoints para testabilidade.
+
+### Geral
 - Sem introdução de libs grandes sem justificar (tamanho, manutenção, licença).
-- **Observabilidade desde o início** (logs, traces, métricas).
-- **Segurança por padrão**: RLS obrigatória, segregação de segredos, *least privilege*.
-- **Multi-tenant**: todas as tabelas de domínio possuem `org_id` e políticas RLS coerentes (ver `database-supabase-rules.mdc`).
-- **Infra como código**: esquema versionado em `supabase/migrations/`.
+- **Observabilidade desde o início** (logs estruturados, traces, métricas).
+- **Segurança por padrão**: RLS no Postgres, validação dupla (front+back), least privilege.
+- **Multi-tenant**: todas as tabelas de domínio possuem `org_id` e políticas RLS.
+- **Infra como código**: migrations em `supabase/migrations/`.
 
 ## Testes
 
-- **Cobertura mínima**: 70% em lógica de negócio crítica (services, hooks, Edge Functions).
-- **Estratégia por camada**:
-  - **Unit**: lib, services, utils (Vitest + Testing Library)
-  - **Integration**: hooks com TanStack Query (MSW para mocks)
-  - **E2E**: fluxos principais (ex: criar projeto → avaliar artigo)
-- **Obrigatório testar**: RLS policies, Edge Functions, services críticos, validações zod.
-- **MSW** para mockar chamadas Supabase/API em testes.
+- **Cobertura mínima**: 70% em lógica de negócio crítica.
+
+### Frontend (Vitest + Testing Library)
+- **Unit**: lib, services, utils
+- **Integration**: hooks com TanStack Query (MSW para mocks)
+- **E2E**: fluxos principais (ex: criar projeto → avaliar artigo)
+- **MSW** para mockar chamadas API em testes.
+
+### Backend (pytest + pytest-asyncio)
+- **Unit**: services, utils
+- **Integration**: endpoints com TestClient
+- **Fixtures**: db_session, mock_user, sample_data
+- **Obrigatório testar**: endpoints, services críticos, validações Pydantic.
 
 ## Observabilidade
 
-- **Error Tracking**: use `errorTracker.captureError()` para erros de UI (ErrorBoundary, catch blocks).
+### Frontend
+- **Error Tracking**: use `errorTracker.captureError()` para erros de UI.
   ```tsx
   import { useErrorTracking } from '@/services/errorTracking';
   
@@ -266,13 +294,18 @@ Novo arquivo de código?
     captureError(error, { component: 'ArticleList', action: 'fetch' });
   }
   ```
-- **Logging**: use `logger` apenas em desenvolvimento; produção via `errorTracker`.
 - **Métricas**: capture AI usage, PDF load times, query latências.
-  ```tsx
-  const { captureMetric, captureAIUsage } = useErrorTracking();
-  captureAIUsage('gpt-4', tokens, duration, { articleId });
+
+### Backend (FastAPI)
+- **Logging estruturado**: use structlog com JSON em produção.
+  ```python
+  from app.core.logging import get_logger
+  
+  logger = get_logger(__name__)
+  logger.info("operation_completed", trace_id=trace_id, duration_ms=100)
   ```
-- **Edge Functions**: sempre incluir `traceId` em logs (ver `supabase-edge-function-rules.mdc`).
+- **TraceId**: sempre gerar e propagar em todas as operações.
+- **Métricas**: log de duração, tokens usados, tamanho de payloads.
 
 ## Checklist de Validação Final
 
@@ -294,10 +327,19 @@ Antes de considerar uma tarefa completa, verificar:
 
 ## Referências
 
+### Frontend
 - `frontend-react-rule.mdc` - Regras específicas para React
-- `database-supabase-rules.mdc` - Regras de banco de dados e RLS
 - `design-system.mdc` - Regras de UI/UX e acessibilidade
-- `supabase-edge-function-rules.mdc` - Regras para Edge Functions
 - `storybook-design-system-rules.mdc` - Regras para Storybook
+
+### Backend
+- `fastapi-backend-rules.mdc` - Regras para FastAPI
+- `python-rules.mdc` - Padrões Python (uv, ruff, mypy)
+- `database-sqlalchemy-rules.mdc` - SQLAlchemy e queries async
+
+### Geral
 - `licensing.mdc` - Diretrizes de licenciamento e copyright
-- `prompt-engineering-rules.mdc` - Como interpretar e estruturar respostas
+
+### Legado (apenas referência)
+- `supabase-edge-function-rules.mdc` - Edge Functions Deno (DEPRECADO)
+- `database-supabase-rules.mdc` - Regras antigas de Supabase (substituído por database-sqlalchemy-rules.mdc)

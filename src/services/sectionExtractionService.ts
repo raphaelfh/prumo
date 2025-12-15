@@ -29,7 +29,7 @@
  */
 
 import { supabase } from "@/integrations/supabase/client";
-import { callEdgeFunction, AuthenticationError as BaseAuthError } from '@/lib/supabase/baseRepository';
+import { sectionExtractionClient, modelExtractionClient, ApiError } from '@/integrations/api/client';
 import type {
   SectionExtractionRequest,
   SectionExtractionResponse,
@@ -42,6 +42,12 @@ import {
   AuthenticationError,
   APIError,
 } from "@/lib/ai-extraction/errors";
+
+/**
+ * Feature flag para usar FastAPI ou Edge Functions.
+ * Quando true, usa FastAPI. Quando false, usa Edge Functions legadas.
+ */
+const USE_FASTAPI = import.meta.env.VITE_USE_FASTAPI === 'true';
 
 // Re-exportar tipos para compatibilidade
 export type { 
@@ -93,7 +99,7 @@ export class SectionExtractionService {
    * FLUXO:
    * 1. Verificar autenticação do usuário
    * 2. Gerar trace ID para rastreabilidade
-   * 3. Enviar POST para edge function com timeout
+   * 3. Enviar POST para edge function ou FastAPI com timeout
    * 4. Parsear response com tratamento de erro robusto
    * 5. Lançar erro se falhar
    * 
@@ -102,6 +108,11 @@ export class SectionExtractionService {
    * @throws Error se falhar a extração
    */
   static async extractSection(request: SectionExtractionRequest): Promise<SectionExtractionResponse> {
+    // Se usar FastAPI, delegar para o novo cliente
+    if (USE_FASTAPI) {
+      return this.extractSectionViaFastAPI(request);
+    }
+    
     // Gerar trace ID para rastreabilidade (usado nos logs do backend)
     const traceId = crypto.randomUUID();
     // Extrair nome da função da URL (ex: 'section-extraction' de URL completa)
@@ -279,7 +290,7 @@ export class SectionExtractionService {
    * FLUXO:
    * 1. Verificar autenticação do usuário
    * 2. Gerar trace ID para rastreabilidade
-   * 3. Enviar POST para edge function model-extraction com timeout
+   * 3. Enviar POST para edge function ou FastAPI model-extraction com timeout
    * 4. Parsear response com tratamento de erro robusto
    * 5. Retornar lista de modelos criados
    * 
@@ -288,6 +299,11 @@ export class SectionExtractionService {
    * @throws Error se falhar a extração
    */
   static async extractModels(request: ModelExtractionRequest): Promise<ModelExtractionResponse> {
+    // Se usar FastAPI, delegar para o novo cliente
+    if (USE_FASTAPI) {
+      return this.extractModelsViaFastAPI(request);
+    }
+    
     // Gerar trace ID para rastreabilidade
     const traceId = crypto.randomUUID();
     // Extrair nome da função da URL (ex: 'model-extraction' de URL completa)
@@ -446,7 +462,7 @@ export class SectionExtractionService {
    * FLUXO:
    * 1. Verificar autenticação do usuário
    * 2. Gerar trace ID para rastreabilidade
-   * 3. Enviar POST para edge function com extractAllSections=true
+   * 3. Enviar POST para edge function ou FastAPI com extractAllSections=true
    * 4. Parsear response com tratamento de erro robusto
    * 5. Retornar resultado agregado
    * 
@@ -455,6 +471,11 @@ export class SectionExtractionService {
    * @throws Error se falhar a extração
    */
   static async extractAllSections(request: BatchSectionExtractionRequest): Promise<BatchSectionExtractionResponse> {
+    // Se usar FastAPI, delegar para o novo cliente
+    if (USE_FASTAPI) {
+      return this.extractAllSectionsViaFastAPI(request);
+    }
+    
     // Gerar trace ID para rastreabilidade
     const traceId = crypto.randomUUID();
     const functionUrl = this.getFunctionUrl();
@@ -602,6 +623,135 @@ export class SectionExtractionService {
 
       throw new APIError(
         error instanceof Error ? error.message : "Erro desconhecido ao realizar extração de todas as seções",
+        undefined,
+        { originalError: String(error) },
+      );
+    }
+  }
+
+  // =================== MÉTODOS FASTAPI ===================
+
+  /**
+   * Extrai seção via FastAPI
+   */
+  private static async extractSectionViaFastAPI(request: SectionExtractionRequest): Promise<SectionExtractionResponse> {
+    const traceId = crypto.randomUUID();
+    
+    console.log('[SectionExtractionService] Iniciando extração via FastAPI', {
+      traceId,
+      request: { ...request, options: request.options || {} },
+    });
+
+    try {
+      const result = await sectionExtractionClient<SectionExtractionResponse>({
+        projectId: request.projectId,
+        articleId: request.articleId,
+        templateId: request.templateId,
+        entityTypeId: request.entityTypeId,
+        parentInstanceId: request.parentInstanceId,
+        model: request.options?.model,
+      });
+
+      console.log('[SectionExtractionService] Extração via FastAPI concluída', {
+        runId: result.data?.runId,
+        suggestionsCreated: result.data?.suggestionsCreated,
+      });
+
+      return result;
+    } catch (error) {
+      if (error instanceof ApiError) {
+        throw new APIError(error.message, error.status, {
+          code: error.code,
+          traceId: error.traceId,
+        });
+      }
+      throw new APIError(
+        error instanceof Error ? error.message : "Erro desconhecido",
+        undefined,
+        { originalError: String(error) },
+      );
+    }
+  }
+
+  /**
+   * Extrai modelos via FastAPI
+   */
+  private static async extractModelsViaFastAPI(request: ModelExtractionRequest): Promise<ModelExtractionResponse> {
+    const traceId = crypto.randomUUID();
+    
+    console.log('[SectionExtractionService] Iniciando extração de modelos via FastAPI', {
+      traceId,
+      request: { ...request, options: request.options || {} },
+    });
+
+    try {
+      const result = await modelExtractionClient<ModelExtractionResponse>({
+        projectId: request.projectId,
+        articleId: request.articleId,
+        templateId: request.templateId,
+        model: request.options?.model,
+      });
+
+      console.log('[SectionExtractionService] Extração de modelos via FastAPI concluída', {
+        runId: result.data?.runId,
+        modelsCreated: result.data?.modelsCreated?.length || 0,
+      });
+
+      return result;
+    } catch (error) {
+      if (error instanceof ApiError) {
+        throw new APIError(error.message, error.status, {
+          code: error.code,
+          traceId: error.traceId,
+        });
+      }
+      throw new APIError(
+        error instanceof Error ? error.message : "Erro desconhecido",
+        undefined,
+        { originalError: String(error) },
+      );
+    }
+  }
+
+  /**
+   * Extrai todas as seções via FastAPI
+   */
+  private static async extractAllSectionsViaFastAPI(request: BatchSectionExtractionRequest): Promise<BatchSectionExtractionResponse> {
+    const traceId = crypto.randomUUID();
+    
+    console.log('[SectionExtractionService] Iniciando extração de todas as seções via FastAPI', {
+      traceId,
+      request: { ...request, options: request.options || {} },
+    });
+
+    try {
+      const result = await sectionExtractionClient<BatchSectionExtractionResponse>({
+        projectId: request.projectId,
+        articleId: request.articleId,
+        templateId: request.templateId,
+        parentInstanceId: request.parentInstanceId,
+        extractAllSections: true,
+        sectionIds: request.sectionIds,
+        pdfText: request.pdfText,
+        model: request.options?.model,
+      });
+
+      console.log('[SectionExtractionService] Extração de todas as seções via FastAPI concluída', {
+        totalSections: result.data?.totalSections,
+        successfulSections: result.data?.successfulSections,
+        failedSections: result.data?.failedSections,
+      });
+
+      return result;
+    } catch (error) {
+      if (error instanceof ApiError) {
+        throw new APIError(error.message, error.status, {
+          code: error.code,
+          traceId: error.traceId,
+        });
+      }
+      throw new APIError(
+        error instanceof Error ? error.message : "Erro desconhecido",
         undefined,
         { originalError: String(error) },
       );

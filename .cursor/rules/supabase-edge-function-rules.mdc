@@ -2,8 +2,20 @@
 rule_type: auto
 globs:
   - "supabase/functions/**/*.{ts,tsx,tsc,js}"
-description: Padrões para Edge Functions (Deno) seguras e observáveis.
-priority: medium
+description: "[LEGADO] Padrões para Edge Functions (Deno). Usar FastAPI para novos endpoints."
+priority: low
+---
+
+> ⚠️ **ATENÇÃO: REGRA LEGADA**
+>
+> **Esta regra é mantida apenas como referência para o código existente.**
+>
+> Para **novos endpoints**, use FastAPI em vez de Edge Functions.
+> Consulte: `fastapi-backend-rules.mdc`
+>
+> As Edge Functions existentes serão gradualmente migradas para FastAPI.
+> Veja o plano de migração em `docs/planos/migrar_para_fastapi.plan.md`.
+
 ---
 
 ## Persona
