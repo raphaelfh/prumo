@@ -20,7 +20,7 @@ Se você descobriu uma vulnerabilidade de segurança, por favor:
 1. **NÃO** abra uma issue pública
 2. **NÃO** discuta a vulnerabilidade publicamente
 3. Entre em contato diretamente através de uma das seguintes formas:
-   - **GitHub Security Advisories**: Use a funcionalidade [Security Advisories](https://github.com/raphaelfh/review-hub/security/advisories) do GitHub (recomendado)
+   - **GitHub Security Advisories**: Use a funcionalidade [Security Advisories](https://github.com/raphaelfh/review-hub-fastapi/security/advisories) do GitHub (recomendado)
    - **Email**: Abra uma issue privada ou use o GitHub Security Advisories
 
 ### O que Incluir no Reporte
@@ -91,7 +91,7 @@ Estamos especialmente interessados em vulnerabilidades relacionadas a:
 
 Para questões de segurança, entre em contato:
 
-- **GitHub Security Advisories**: [https://github.com/raphaelfh/review-hub/security/advisories](https://github.com/raphaelfh/review-hub/security/advisories) (recomendado)
+- **GitHub Security Advisories**: [https://github.com/raphaelfh/review-hub-fastapi/security/advisories](https://github.com/raphaelfh/review-hub-fastapi/security/advisories) (recomendado)
 - **Issues Privadas**: Use o GitHub para reportar vulnerabilidades de forma segura
 
 ---

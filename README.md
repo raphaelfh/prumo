@@ -29,7 +29,7 @@ Sistema completo para gerenciamento de revisões sistemáticas e meta-análises.
 
 ```sh
 # 1. Clone o repositório
-git clone https://github.com/raphaelfh/review-hub.git
+git clone https://github.com/raphaelfh/review-hub-fastapi.git
 cd review_hub
 
 # 2. Instale as dependências
