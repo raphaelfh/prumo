@@ -1,0 +1,108 @@
+# Docker Compose para desenvolvimento do Review Hub
+# 
+# Uso:
+#   docker compose up -d        # Inicia todos os serviços
+#   docker compose logs -f      # Acompanha logs
+#   docker compose down         # Para todos os serviços
+
+services:
+  # =================== BACKEND FASTAPI ===================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: review-hub-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=true
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/postgres
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-review_hub_dev_key_change_in_prod}
+      - CORS_ORIGINS=http://localhost:5173,http://localhost:3000
+    volumes:
+      - ./backend:/app
+      - /app/.venv  # Não montar o venv
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - review-hub-network
+    restart: unless-stopped
+
+  # =================== POSTGRESQL (DEV) ===================
+  db:
+    image: supabase/postgres:15.6.1.143
+    container_name: review-hub-db
+    ports:
+      - "54322:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Aplicar migrations na inicialização
+      - ./supabase/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - review-hub-network
+    restart: unless-stopped
+
+  # =================== FRONTEND (OPCIONAL) ===================
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: review-hub-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_SUPABASE_URL=${SUPABASE_URL}
+      - VITE_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - VITE_USE_FASTAPI=true
+      - VITE_API_URL=http://localhost:8000
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: npm run dev -- --host
+    depends_on:
+      - backend
+    networks:
+      - review-hub-network
+    profiles:
+      - frontend  # Só inicia com: docker compose --profile frontend up
+
+  # =================== SUPABASE STUDIO (OPCIONAL) ===================
+  studio:
+    image: supabase/studio:20240422-5cf8f30
+    container_name: review-hub-studio
+    ports:
+      - "54323:3000"
+    environment:
+      STUDIO_PG_META_URL: http://meta:8080
+      SUPABASE_URL: http://localhost:54321
+      SUPABASE_REST_URL: http://localhost:54321/rest/v1
+    depends_on:
+      - db
+    networks:
+      - review-hub-network
+    profiles:
+      - studio  # Só inicia com: docker compose --profile studio up
+
+networks:
+  review-hub-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+

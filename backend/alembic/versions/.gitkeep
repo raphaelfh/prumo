@@ -1,0 +1,2 @@
+# Pasta para migrations do Alembic
+# As migrations serão geradas com: alembic revision --autogenerate -m "description"

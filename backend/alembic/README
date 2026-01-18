@@ -1,0 +1,36 @@
+# Alembic Migrations - Review Hub
+
+## Comandos Úteis
+
+### Gerar nova migration (autogenerate)
+```bash
+cd backend
+source .venv/bin/activate
+alembic revision --autogenerate -m "description"
+```
+
+### Aplicar migrations
+```bash
+alembic upgrade head
+```
+
+### Reverter última migration
+```bash
+alembic downgrade -1
+```
+
+### Ver histórico
+```bash
+alembic history
+```
+
+### Ver status atual
+```bash
+alembic current
+```
+
+## Notas
+
+- O banco PostgreSQL deve estar rodando (Supabase local ou Docker)
+- As migrations usam async com asyncpg
+- Os modelos são detectados automaticamente via `app.models`

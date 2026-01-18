@@ -7,51 +7,145 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# node_modules
-# dist
-# dist-ssr
-# *.local
+# Dependencies
+node_modules/
 
-# # retirar cursorignore
-# .cursorignore
+# Build outputs
+dist/
+dist-ssr/
+build/
 
-# Arquivos de ambiente (não versionar)
+# Local env files
+*.local
 .env
 .env.*
 !.env.example
 !.env.template
 
-# # Supabase Edge Functions - variáveis de ambiente
+# Supabase Edge Functions - variáveis de ambiente
 supabase/functions/.env
 supabase/functions/.env.*
-# !supabase/functions/.env.example
+!supabase/functions/.env.example
 
-#remover review-hub.code-workspace
+# Test files (PDFs and large test data)
+*.pdf
+!docs/**/*.pdf
+supabase/functions/*/tests/*.pdf
+
+# Workspace files
 review-hub.code-workspace
+*.code-workspace
 
-# # Editor directories and files
+# Editor directories and files
 .vscode/*
 !.vscode/extensions.json
-.idea
+!.vscode/settings.json
+.idea/
 .DS_Store
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
-# .cursor
-# # .github - permitir workflows e documentação, mas ignorar outros arquivos
-# .github/*
-# !.github/workflows/
-# !.github/workflows/**
-# !.github/CLA_CONFIG.md
-# !.github/CONTRIBUTING.md
-# !.github/ISSUE_TEMPLATE/
-# !.github/ISSUE_TEMPLATE/**
-# !.github/pull_request_template.md
-# .cursorignore
-# .cursor/
-# .cursor/rules/
-# .cursor/rules/licensing.mdc
-# .cursor/rules/licensing.mdc
-node_modules
+.cursor/
+
+# Python virtual environments
+.venv
+venv/
+ENV/
+env/
+backend/.venv/
+backend/venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+local_settings.py
+db.sqlite3
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# celery beat schedule file
+celerybeat-schedule
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# uv
+uv.lock
