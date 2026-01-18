@@ -1,13 +1,13 @@
 /**
- * Service para Extração de Seção Específica
- * 
- * Service layer para chamar a edge function section-extraction.
+ * Service para Extração de Seção Específica via FastAPI
+ *
+ * Service layer para chamar o backend FastAPI (Render) para extração de dados.
  * Encapsula a lógica de comunicação com a API e tratamento de erros.
- * 
+ *
  * FOCO: Section extraction pipeline - extração granular por seção (entity type).
- * 
- * USO: Chamado pelo hook useSectionExtraction para extrair uma seção específica.
- * 
+ *
+ * USO: Chamado pelos hooks de extração para processar artigos com IA.
+ *
  * @example
  * ```typescript
  * const result = await SectionExtractionService.extractSection({
@@ -17,12 +17,11 @@
  *   entityTypeId: '...',
  *   options: { model: 'gpt-4o' }
  * });
- * 
+ *
  * console.log(`Criadas ${result.data?.suggestionsCreated} sugestões`);
  * ```
  */
 
-import { supabase } from "@/integrations/supabase/client";
 import { sectionExtractionClient, modelExtractionClient, ApiError } from '@/integrations/api/client';
 import type {
   SectionExtractionRequest,
@@ -32,605 +31,41 @@ import type {
   BatchSectionExtractionRequest,
   BatchSectionExtractionResponse,
 } from "@/types/ai-extraction";
-import {
-  AuthenticationError,
-  APIError,
-} from "@/lib/ai-extraction/errors";
-
-/**
- * Feature flag para usar FastAPI ou Edge Functions.
- * Quando true, usa FastAPI. Quando false, usa Edge Functions legadas.
- */
-const USE_FASTAPI = import.meta.env.VITE_USE_FASTAPI === 'true';
+import { APIError } from "@/lib/ai-extraction/errors";
 
 // Re-exportar tipos para compatibilidade
-export type { 
-  SectionExtractionRequest, 
+export type {
+  SectionExtractionRequest,
   SectionExtractionResponse,
   ModelExtractionRequest,
   ModelExtractionResponse,
 };
 
 /**
- * Classe service para extração de seção
- * 
+ * Classe service para extração de seção via FastAPI
+ *
  * RESPONSABILIDADES:
- * - Construir URL da edge function
- * - Autenticar requisição com token do usuário
- * - Enviar request e parsear response
+ * - Chamar endpoints do FastAPI (Render)
+ * - Parsear responses e converter para formato esperado
  * - Tratar erros de forma consistente
  */
 export class SectionExtractionService {
   /**
-   * Obtém URL da edge function
-   * 
-   * @returns URL completa da edge function section-extraction
-   */
-  private static getFunctionUrl(): string {
-    const url = import.meta.env.VITE_SUPABASE_URL;
-    if (!url) {
-      throw new Error("VITE_SUPABASE_URL not configured");
-    }
-    return `${url}/functions/v1/section-extraction`;
-  }
-
-  /**
-   * Obtém URL da edge function model-extraction
-   * 
-   * @returns URL completa da edge function model-extraction
-   */
-  private static getModelExtractionFunctionUrl(): string {
-    const url = import.meta.env.VITE_SUPABASE_URL;
-    if (!url) {
-      throw new Error("VITE_SUPABASE_URL not configured");
-    }
-    return `${url}/functions/v1/model-extraction`;
-  }
-
-  /**
-   * Extrai dados de uma seção específica
-   * 
+   * Extrai dados de uma seção específica via FastAPI
+   *
    * FLUXO:
-   * 1. Verificar autenticação do usuário
-   * 2. Gerar trace ID para rastreabilidade
-   * 3. Enviar POST para edge function ou FastAPI com timeout
-   * 4. Parsear response com tratamento de erro robusto
-   * 5. Lançar erro se falhar
-   * 
+   * 1. Gerar trace ID para rastreabilidade
+   * 2. Enviar POST para FastAPI backend
+   * 3. Parsear response com tratamento de erro robusto
+   * 4. Retornar dados no formato esperado
+   *
    * @param request - Parâmetros da extração (projectId, articleId, templateId, entityTypeId)
    * @returns Response com runId e metadata
-   * @throws Error se falhar a extração
+   * @throws APIError se falhar a extração
    */
   static async extractSection(request: SectionExtractionRequest): Promise<SectionExtractionResponse> {
-    // Se usar FastAPI, delegar para o novo cliente
-    if (USE_FASTAPI) {
-      return this.extractSectionViaFastAPI(request);
-    }
-    
-    // Gerar trace ID para rastreabilidade (usado nos logs do backend)
     const traceId = crypto.randomUUID();
-    // Extrair nome da função da URL (ex: 'section-extraction' de URL completa)
-    const functionUrl = this.getFunctionUrl();
-    const functionName = functionUrl.split('/functions/v1/')[1]?.split('?')[0] || 'section-extraction';
 
-    console.log('[SectionExtractionService] Iniciando extração', {
-      functionName,
-      traceId,
-      request: { ...request, options: request.options || {} },
-    });
-
-    // CRÍTICO: Timeout do frontend deve ser MENOR que o timeout do Supabase (150s)
-    // Edge Functions têm timeout rigoroso de 150s
-    // Usar 145s para garantir que detectamos timeout antes do Supabase matar a função
-    const TIMEOUT_MS = 145 * 1000;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => {
-      controller.abort();
-    }, TIMEOUT_MS);
-
-    try {
-      // Usar callEdgeFunction do baseRepository com headers customizados
-      const result = await callEdgeFunction<SectionExtractionResponse>(
-        functionName,
-        request,
-        {
-          timeout: TIMEOUT_MS,
-          signal: controller.signal,
-          headers: {
-            'x-client-trace-id': traceId,
-          },
-        }
-      );
-
-      clearTimeout(timeoutId);
-
-      // Verificar se a resposta indica erro
-      if (!result.ok) {
-        const errorMessage = result.error?.message || "Section extraction failed";
-        const errorCode = result.error?.code || 'UNKNOWN_ERROR';
-        console.error('[SectionExtractionService] Erro na extração', {
-          errorCode,
-          errorMessage,
-          details: result.error?.details,
-        });
-        throw new APIError(errorMessage, undefined, {
-          code: errorCode,
-          details: result.error?.details,
-        });
-      }
-
-      console.log('[SectionExtractionService] Extração concluída com sucesso', {
-        runId: result.data?.runId,
-        suggestionsCreated: result.data?.suggestionsCreated,
-      });
-
-      return result;
-    } catch (error) {
-      clearTimeout(timeoutId);
-
-      // Se já é um APIError ou AuthenticationError, re-throw
-      if (error instanceof AuthenticationError) {
-        throw error;
-      }
-
-      if (error instanceof APIError) {
-        throw error;
-      }
-
-      // Se é SupabaseRepositoryError, extrair contexto e converter para APIError
-      if (error instanceof Error && error.name === 'SupabaseRepositoryError') {
-        const context = (error as any).context || {};
-        const errorType = context.errorType;
-        const errorCode = context.errorCode || 'UNKNOWN_ERROR';
-        const errorDetails = context.errorDetails || {};
-        
-        // Erro de serviço indisponível (503)
-        if (errorType === 'SERVICE_UNAVAILABLE' || context.status === 503) {
-          console.error('[SectionExtractionService] Serviço indisponível', {
-            error: error.message,
-            context,
-          });
-          throw new APIError(
-            error.message || "A função não está disponível. Verifique se o Supabase local está rodando (supabase start).",
-            undefined,
-            {
-              code: 'SERVICE_UNAVAILABLE',
-              originalError: error.message,
-              suggestion: context.suggestion,
-            },
-          );
-        }
-
-        // Erro de rede (DNS, conexão)
-        if (errorType === 'NETWORK_ERROR' ||
-          error.message.includes('Não foi possível conectar ao servidor') ||
-          error.message.includes('name resolution failed') ||
-          error.message.includes('Failed to fetch') ||
-          error.message.includes('NetworkError')) {
-          console.error('[SectionExtractionService] Erro de rede na requisição', {
-            error: error.message,
-            context,
-          });
-          throw new APIError(
-            "Não foi possível conectar ao servidor. Verifique se o Supabase local está rodando (supabase start) e se a URL está configurada corretamente.",
-            undefined,
-            {
-              code: 'NETWORK_ERROR',
-              originalError: error.message,
-              suggestion: context.suggestion || 'Execute "supabase start" para iniciar o servidor local',
-            },
-          );
-        }
-        
-        // Mensagem mais específica baseada no código de erro
-        let message = error.message;
-        if (errorCode === 'PDF_PROCESSING_ERROR') {
-          message = errorDetails.suggestion || "Erro ao processar PDF. Verifique se o arquivo está válido e não está corrompido.";
-        } else if (errorCode === 'LLM_ERROR') {
-          message = "Erro ao processar com IA. Tente novamente ou contate o suporte.";
-        } else if (errorCode === 'TIMEOUT') {
-          message = "A extração demorou muito tempo e foi cancelada. Tente novamente.";
-        }
-        
-        throw new APIError(
-          message,
-          context.status || undefined,
-          { 
-            code: errorCode,
-            details: errorDetails,
-            originalError: error.message,
-          },
-        );
-      }
-      
-      // Verificar outros tipos de erro
-      if (error instanceof Error) {
-        // Timeout específico
-        if (error.name === 'AbortError' || error.message.includes('Timeout')) {
-          console.error('[SectionExtractionService] Timeout na requisição', {
-            timeout: TIMEOUT_MS,
-            functionName,
-          });
-          throw new APIError(
-            "A extração demorou muito tempo e foi cancelada. Tente novamente com um PDF menor ou verifique os logs do servidor.",
-            408,
-            { timeout: TIMEOUT_MS },
-          );
-        }
-      }
-
-      // Erro genérico
-      console.error('[SectionExtractionService] Erro na requisição', {
-        error: error instanceof Error ? error.message : String(error),
-        name: error instanceof Error ? error.name : 'Unknown',
-        stack: error instanceof Error ? error.stack : undefined,
-        context: (error as any)?.context,
-      });
-
-      throw new APIError(
-        error instanceof Error ? error.message : "Erro desconhecido ao realizar extração",
-        undefined,
-        { 
-          originalError: error instanceof Error ? error.message : String(error),
-          errorName: error instanceof Error ? error.name : 'Unknown',
-        },
-      );
-    }
-  }
-
-  /**
-   * Extrai modelos de predição do artigo automaticamente
-   * 
-   * FLUXO:
-   * 1. Verificar autenticação do usuário
-   * 2. Gerar trace ID para rastreabilidade
-   * 3. Enviar POST para edge function ou FastAPI model-extraction com timeout
-   * 4. Parsear response com tratamento de erro robusto
-   * 5. Retornar lista de modelos criados
-   * 
-   * @param request - Parâmetros da extração (projectId, articleId, templateId)
-   * @returns Response com runId, modelos criados e metadata
-   * @throws Error se falhar a extração
-   */
-  static async extractModels(request: ModelExtractionRequest): Promise<ModelExtractionResponse> {
-    // Se usar FastAPI, delegar para o novo cliente
-    if (USE_FASTAPI) {
-      return this.extractModelsViaFastAPI(request);
-    }
-    
-    // Gerar trace ID para rastreabilidade
-    const traceId = crypto.randomUUID();
-    // Extrair nome da função da URL (ex: 'model-extraction' de URL completa)
-    const functionUrl = this.getModelExtractionFunctionUrl();
-    const functionName = functionUrl.split('/functions/v1/')[1]?.split('?')[0] || 'model-extraction';
-
-    console.log('[SectionExtractionService] Iniciando extração de modelos', {
-      functionName,
-      traceId,
-      request: { ...request, options: request.options || {} },
-    });
-
-    // Timeout: 145s (menor que Supabase 150s)
-    const TIMEOUT_MS = 145 * 1000;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => {
-      controller.abort();
-    }, TIMEOUT_MS);
-
-    try {
-      // Usar callEdgeFunction do baseRepository com headers customizados
-      const result = await callEdgeFunction<ModelExtractionResponse>(
-        functionName,
-        request,
-        {
-          timeout: TIMEOUT_MS,
-          signal: controller.signal,
-          headers: {
-            'x-client-trace-id': traceId,
-          },
-        }
-      );
-
-      clearTimeout(timeoutId);
-
-      // Verificar se a resposta indica erro
-      if (!result.ok) {
-        const errorMessage = result.error?.message || "Model extraction failed";
-        const errorCode = result.error?.code || 'UNKNOWN_ERROR';
-        console.error('[SectionExtractionService] Erro na extração de modelos', {
-          errorCode,
-          errorMessage,
-          details: result.error?.details,
-        });
-        throw new APIError(errorMessage, undefined, {
-          code: errorCode,
-          details: result.error?.details,
-        });
-      }
-
-      console.log('[SectionExtractionService] Extração de modelos concluída', {
-        runId: result.data?.runId,
-        modelsCreated: result.data?.modelsCreated?.length || 0,
-      });
-
-      return result;
-    } catch (error) {
-      clearTimeout(timeoutId);
-
-      // Tratamento específico para timeout
-      if (error instanceof Error && error.name === 'AbortError') {
-        console.error('[SectionExtractionService] Timeout na requisição (modelos)', {
-          timeout: TIMEOUT_MS,
-          functionName,
-        });
-        throw new APIError(
-          "A extração de modelos demorou muito tempo e foi cancelada. Tente novamente com um PDF menor ou verifique os logs do servidor.",
-          408,
-          { timeout: TIMEOUT_MS },
-        );
-      }
-
-      // Se já é um APIError ou AuthenticationError, re-throw
-      if (error instanceof AuthenticationError) {
-        throw error;
-      }
-
-      if (error instanceof APIError) {
-        throw error;
-      }
-
-      // Se é SupabaseRepositoryError, verificar tipo de erro
-      if (error instanceof Error && error.name === 'SupabaseRepositoryError') {
-        const errorContext = (error as any)?.context || {};
-        const errorType = errorContext.errorType;
-
-        // Erro de serviço indisponível (503)
-        if (errorType === 'SERVICE_UNAVAILABLE' || errorContext.status === 503) {
-          console.error('[SectionExtractionService] Serviço indisponível (modelos)', {
-            error: error.message,
-            context: errorContext,
-          });
-          throw new APIError(
-            error.message || "A função não está disponível. Verifique se o Supabase local está rodando (supabase start).",
-            undefined,
-            {
-              code: 'SERVICE_UNAVAILABLE',
-              originalError: error.message,
-              suggestion: errorContext.suggestion,
-            },
-          );
-        }
-
-        // Erro de rede (DNS, conexão)
-        if (errorType === 'NETWORK_ERROR' ||
-          error.message.includes('Não foi possível conectar ao servidor') ||
-          error.message.includes('name resolution failed') ||
-          error.message.includes('Failed to fetch') ||
-          error.message.includes('NetworkError')) {
-          console.error('[SectionExtractionService] Erro de rede na requisição (modelos)', {
-            error: error.message,
-            context: errorContext,
-          });
-          throw new APIError(
-            "Não foi possível conectar ao servidor. Verifique se o Supabase local está rodando (supabase start) e se a URL está configurada corretamente.",
-            undefined,
-            {
-              code: 'NETWORK_ERROR',
-              originalError: error.message,
-              suggestion: errorContext.suggestion || 'Execute "supabase start" para iniciar o servidor local',
-            },
-          );
-        }
-      }
-
-      // Verificar outros tipos de erro
-      if (error instanceof Error) {
-        // Timeout específico
-        if (error.message.includes('Timeout') || error.name === 'AbortError') {
-          throw new APIError(
-            "A extração de modelos demorou muito tempo e foi cancelada.",
-            408,
-            { timeout: TIMEOUT_MS },
-          );
-        }
-      }
-
-      // Erro de rede ou outro erro
-      console.error('[SectionExtractionService] Erro na requisição (modelos)', {
-        error: error instanceof Error ? error.message : String(error),
-        name: error instanceof Error ? error.name : 'Unknown',
-        context: (error as any)?.context,
-      });
-
-      throw new APIError(
-        error instanceof Error ? error.message : "Erro desconhecido ao realizar extração de modelos",
-        undefined,
-        { originalError: String(error) },
-      );
-    }
-  }
-
-  /**
-   * Extrai todas as seções de um modelo de uma vez com memória resumida
-   * 
-   * FLUXO:
-   * 1. Verificar autenticação do usuário
-   * 2. Gerar trace ID para rastreabilidade
-   * 3. Enviar POST para edge function ou FastAPI com extractAllSections=true
-   * 4. Parsear response com tratamento de erro robusto
-   * 5. Retornar resultado agregado
-   * 
-   * @param request - Parâmetros da extração (projectId, articleId, templateId, parentInstanceId)
-   * @returns Response com resultados agregados de todas as seções
-   * @throws Error se falhar a extração
-   */
-  static async extractAllSections(request: BatchSectionExtractionRequest): Promise<BatchSectionExtractionResponse> {
-    // Se usar FastAPI, delegar para o novo cliente
-    if (USE_FASTAPI) {
-      return this.extractAllSectionsViaFastAPI(request);
-    }
-    
-    // Gerar trace ID para rastreabilidade
-    const traceId = crypto.randomUUID();
-    const functionUrl = this.getFunctionUrl();
-    const functionName = functionUrl.split('/functions/v1/')[1]?.split('?')[0] || 'section-extraction';
-
-    console.log('[SectionExtractionService] Iniciando extração de todas as seções', {
-      functionName,
-      traceId,
-      request: { ...request, options: request.options || {} },
-    });
-
-    // Timeout: 145s (menor que Supabase 150s)
-    const TIMEOUT_MS = 145 * 1000;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => {
-      controller.abort();
-    }, TIMEOUT_MS);
-
-    try {
-      // Usar callEdgeFunction do baseRepository com headers customizados
-      const result = await callEdgeFunction<BatchSectionExtractionResponse>(
-        functionName,
-        request,
-        {
-          timeout: TIMEOUT_MS,
-          signal: controller.signal,
-          headers: {
-            'x-client-trace-id': traceId,
-          },
-        }
-      );
-
-      clearTimeout(timeoutId);
-
-      // Verificar se a resposta indica erro
-      if (!result.ok) {
-        const errorMessage = result.error?.message || "Batch section extraction failed";
-        const errorCode = result.error?.code || 'UNKNOWN_ERROR';
-        console.error('[SectionExtractionService] Erro na extração de todas as seções', {
-          errorCode,
-          errorMessage,
-          details: result.error?.details,
-        });
-        throw new APIError(errorMessage, undefined, {
-          code: errorCode,
-          details: result.error?.details,
-        });
-      }
-
-      console.log('[SectionExtractionService] Extração de todas as seções concluída', {
-        totalSections: result.data?.totalSections,
-        successfulSections: result.data?.successfulSections,
-        failedSections: result.data?.failedSections,
-        totalSuggestionsCreated: result.data?.totalSuggestionsCreated,
-      });
-
-      return result;
-    } catch (error) {
-      clearTimeout(timeoutId);
-
-      // Tratamento específico para timeout
-      if (error instanceof Error && error.name === 'AbortError') {
-        console.error('[SectionExtractionService] Timeout na requisição (todas as seções)', {
-          timeout: TIMEOUT_MS,
-          functionName,
-        });
-        throw new APIError(
-          "A extração de todas as seções demorou muito tempo e foi cancelada. Tente novamente com um PDF menor ou verifique os logs do servidor.",
-          408,
-          { timeout: TIMEOUT_MS },
-        );
-      }
-
-      // Se já é um APIError ou AuthenticationError, re-throw
-      if (error instanceof AuthenticationError) {
-        throw error;
-      }
-
-      if (error instanceof APIError) {
-        throw error;
-      }
-
-      // Se é SupabaseRepositoryError, verificar tipo de erro
-      if (error instanceof Error && error.name === 'SupabaseRepositoryError') {
-        const errorContext = (error as any)?.context || {};
-        const errorType = errorContext.errorType;
-
-        // Erro de serviço indisponível (503)
-        if (errorType === 'SERVICE_UNAVAILABLE' || errorContext.status === 503) {
-          console.error('[SectionExtractionService] Serviço indisponível (todas as seções)', {
-            error: error.message,
-            context: errorContext,
-          });
-          throw new APIError(
-            error.message || "A função não está disponível. Verifique se o Supabase local está rodando (supabase start).",
-            undefined,
-            {
-              code: 'SERVICE_UNAVAILABLE',
-              originalError: error.message,
-              suggestion: errorContext.suggestion,
-            },
-          );
-        }
-
-        // Erro de rede (DNS, conexão)
-        if (errorType === 'NETWORK_ERROR' ||
-          error.message.includes('Não foi possível conectar ao servidor') ||
-          error.message.includes('name resolution failed') ||
-          error.message.includes('Failed to fetch') ||
-          error.message.includes('NetworkError')) {
-          console.error('[SectionExtractionService] Erro de rede na requisição (todas as seções)', {
-            error: error.message,
-            context: errorContext,
-          });
-          throw new APIError(
-            "Não foi possível conectar ao servidor. Verifique se o Supabase local está rodando (supabase start) e se a URL está configurada corretamente.",
-            undefined,
-            {
-              code: 'NETWORK_ERROR',
-              originalError: error.message,
-              suggestion: errorContext.suggestion || 'Execute "supabase start" para iniciar o servidor local',
-            },
-          );
-        }
-      }
-
-      // Verificar outros tipos de erro
-      if (error instanceof Error) {
-        // Timeout específico
-        if (error.message.includes('Timeout') || error.name === 'AbortError') {
-          throw new APIError(
-            "A extração de todas as seções demorou muito tempo e foi cancelada.",
-            408,
-            { timeout: TIMEOUT_MS },
-          );
-        }
-      }
-
-      // Erro de rede ou outro erro
-      console.error('[SectionExtractionService] Erro na requisição (todas as seções)', {
-        error: error instanceof Error ? error.message : String(error),
-        name: error instanceof Error ? error.name : 'Unknown',
-        context: (error as any)?.context,
-      });
-
-      throw new APIError(
-        error instanceof Error ? error.message : "Erro desconhecido ao realizar extração de todas as seções",
-        undefined,
-        { originalError: String(error) },
-      );
-    }
-  }
-
-  // =================== MÉTODOS FASTAPI ===================
-
-  /**
-   * Extrai seção via FastAPI
-   */
-  private static async extractSectionViaFastAPI(request: SectionExtractionRequest): Promise<SectionExtractionResponse> {
-    const traceId = crypto.randomUUID();
-    
     console.log('[SectionExtractionService] Iniciando extração via FastAPI', {
       traceId,
       request: { ...request, options: request.options || {} },
@@ -640,7 +75,7 @@ export class SectionExtractionService {
       // NOTA: apiClient retorna responseData.data diretamente, não {ok, data}
       // Portanto, o tipo aqui é o conteúdo interno de SectionExtractionResponse['data']
       type SectionExtractionData = NonNullable<SectionExtractionResponse['data']>;
-      
+
       const data = await sectionExtractionClient<SectionExtractionData>({
         projectId: request.projectId,
         articleId: request.articleId,
@@ -651,8 +86,8 @@ export class SectionExtractionService {
       });
 
       console.log('[SectionExtractionService] Extração via FastAPI concluída', {
-        runId: data?.run_id,
-        suggestionsCreated: data?.suggestions_created,
+        runId: data?.runId,
+        suggestionsCreated: data?.suggestionsCreated,
       });
 
       // Construir resposta no formato esperado pelo hook
@@ -677,11 +112,21 @@ export class SectionExtractionService {
   }
 
   /**
-   * Extrai modelos via FastAPI
+   * Extrai modelos de predição do artigo automaticamente via FastAPI
+   *
+   * FLUXO:
+   * 1. Gerar trace ID para rastreabilidade
+   * 2. Enviar POST para FastAPI backend (model-extraction)
+   * 3. Parsear response com tratamento de erro robusto
+   * 4. Retornar lista de modelos criados
+   *
+   * @param request - Parâmetros da extração (projectId, articleId, templateId)
+   * @returns Response com runId, modelos criados e metadata
+   * @throws APIError se falhar a extração
    */
-  private static async extractModelsViaFastAPI(request: ModelExtractionRequest): Promise<ModelExtractionResponse> {
+  static async extractModels(request: ModelExtractionRequest): Promise<ModelExtractionResponse> {
     const traceId = crypto.randomUUID();
-    
+
     console.log('[SectionExtractionService] Iniciando extração de modelos via FastAPI', {
       traceId,
       request: { ...request, options: request.options || {} },
@@ -691,7 +136,7 @@ export class SectionExtractionService {
       // NOTA: apiClient retorna responseData.data diretamente, não {ok, data}
       // Portanto, o tipo aqui é o conteúdo interno de ModelExtractionResponse['data']
       type ModelExtractionData = NonNullable<ModelExtractionResponse['data']>;
-      
+
       const data = await modelExtractionClient<ModelExtractionData>({
         projectId: request.projectId,
         articleId: request.articleId,
@@ -726,11 +171,21 @@ export class SectionExtractionService {
   }
 
   /**
-   * Extrai todas as seções via FastAPI
+   * Extrai todas as seções de um modelo de uma vez via FastAPI
+   *
+   * FLUXO:
+   * 1. Gerar trace ID para rastreabilidade
+   * 2. Enviar POST para FastAPI backend com extractAllSections=true
+   * 3. Parsear response com tratamento de erro robusto
+   * 4. Retornar resultado agregado
+   *
+   * @param request - Parâmetros da extração (projectId, articleId, templateId, parentInstanceId)
+   * @returns Response com resultados agregados de todas as seções
+   * @throws APIError se falhar a extração
    */
-  private static async extractAllSectionsViaFastAPI(request: BatchSectionExtractionRequest): Promise<BatchSectionExtractionResponse> {
+  static async extractAllSections(request: BatchSectionExtractionRequest): Promise<BatchSectionExtractionResponse> {
     const traceId = crypto.randomUUID();
-    
+
     console.log('[SectionExtractionService] Iniciando extração de todas as seções via FastAPI', {
       traceId,
       request: { ...request, options: request.options || {} },
@@ -740,7 +195,7 @@ export class SectionExtractionService {
       // NOTA: apiClient retorna responseData.data diretamente, não {ok, data}
       // Portanto, o tipo aqui é o conteúdo interno de BatchSectionExtractionResponse['data']
       type BatchSectionExtractionData = NonNullable<BatchSectionExtractionResponse['data']>;
-      
+
       const data = await sectionExtractionClient<BatchSectionExtractionData>({
         projectId: request.projectId,
         articleId: request.articleId,
@@ -753,9 +208,9 @@ export class SectionExtractionService {
       });
 
       console.log('[SectionExtractionService] Extração de todas as seções via FastAPI concluída', {
-        totalSections: data?.total_sections,
-        successfulSections: data?.successful_sections,
-        failedSections: data?.failed_sections,
+        totalSections: data?.totalSections,
+        successfulSections: data?.successfulSections,
+        failedSections: data?.failedSections,
       });
 
       // Construir resposta no formato esperado pelo hook
@@ -779,4 +234,3 @@ export class SectionExtractionService {
     }
   }
 }
-
