@@ -11,6 +11,16 @@
 
 ---
 
+## 🔧 Pré-requisitos
+
+Antes de começar, certifique-se de ter:
+- [ ] Conta no [GitHub](https://github.com) (repositório já configurado)
+- [ ] Conta no [Supabase](https://supabase.com) (projeto já criado com database online)
+- [ ] Conta no [Vercel](https://vercel.com)
+- [ ] Conta no [Render](https://render.com)
+
+---
+
 ## 📦 Setup em 15 minutos
 
 ### 1️⃣ Supabase (Database + Auth + Storage)
@@ -86,11 +96,21 @@ Sua API estará em: `https://review-hub-api.onrender.com`
 
 4. Environment Variables:
    ```bash
+   # Supabase (obter no dashboard Supabase → Settings → API)
    VITE_SUPABASE_URL=https://xxxxx.supabase.co
    VITE_SUPABASE_PUBLISHABLE_KEY=eyJhbGc... (mesmo que SUPABASE_ANON_KEY)
+   
+   # Backend API (URL do Render após deploy)
    VITE_API_URL=https://review-hub-api.onrender.com
    VITE_USE_FASTAPI=true
    ```
+   
+   > **Nota:** O frontend suporta múltiplos nomes de env vars para compatibilidade:
+   > - URL: `VITE_SUPABASE_URL`, `SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`
+   > - KEY: `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_ANON_KEY`
+   > 
+   > Se usar a [Supabase Integration do Vercel](https://vercel.com/integrations/supabase), 
+   > as variáveis são injetadas automaticamente!
 
 5. Deploy!
 
@@ -287,4 +307,4 @@ review-hub/
 
 ---
 
-**Última atualização:** 2025-01-27
+**Última atualização:** 2026-01-18

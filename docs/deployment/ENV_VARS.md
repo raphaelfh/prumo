@@ -40,6 +40,18 @@ VITE_API_URL=https://review-hub-api.onrender.com
 VITE_USE_FASTAPI=true
 ```
 
+### Variáveis Alternativas Suportadas
+
+O frontend suporta fallback chain para compatibilidade com diferentes ambientes:
+
+| Variável | Alternativas suportadas |
+|----------|-------------------------|
+| URL | `VITE_SUPABASE_URL` → `SUPABASE_URL` → `NEXT_PUBLIC_SUPABASE_URL` |
+| KEY | `VITE_SUPABASE_PUBLISHABLE_KEY` → `VITE_SUPABASE_ANON_KEY` → `SUPABASE_ANON_KEY` → `NEXT_PUBLIC_SUPABASE_ANON_KEY` |
+
+> **Tip:** Se usar a [Supabase Integration do Vercel](https://vercel.com/integrations/supabase), 
+> as variáveis são injetadas automaticamente para preview branches!
+
 ## 🔑 Como obter as credenciais
 
 ### Supabase

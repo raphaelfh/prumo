@@ -72,6 +72,17 @@ backend/
 pytest
 ```
 
+### Banco para testes de integração
+
+Os testes de integração esperam um Postgres com o schema do Supabase aplicado.
+
+Para aplicar as migrations SQL localmente em um Postgres apontado por `DATABASE_URL`:
+
+```bash
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres_test \
+  bash scripts/apply_supabase_migrations.sh
+```
+
 ## Docker
 
 ```bash

@@ -644,12 +644,17 @@ class SectionExtractionService(LoggerMixin):
             elif field_type in ("array", "list", "multiselect"):
                 json_type = "array"
             
-            # Usar llm_description se disponível, senão usar description
-            description = ""
-            if hasattr(field, 'llm_description') and field.llm_description:
-                description = field.llm_description
-            elif hasattr(field, 'description') and field.description:
-                description = field.description
+            # Usar llm_description se disponível, senão usar description.
+            # IMPORTANTE: garantir que description seja sempre JSON-serializável.
+            # Em testes (ou em runtime), alguns objetos podem expor atributos como MagicMock
+            # ou outros tipos não serializáveis, o que quebraria json.dumps(schema).
+            raw_description: Any = ""
+            if hasattr(field, "llm_description") and field.llm_description:
+                raw_description = field.llm_description
+            elif hasattr(field, "description") and field.description:
+                raw_description = field.description
+
+            description = "" if raw_description is None else str(raw_description)
             
             field_schema: dict[str, Any] = {
                 "type": json_type,

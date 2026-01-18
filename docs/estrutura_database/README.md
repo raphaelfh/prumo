@@ -93,10 +93,16 @@ Informações sobre como rodar o projeto localmente (Supabase, Backend, Frontend
 
 ## 🔗 Links Úteis
 
+### Código
 - **Código dos Modelos**: `backend/app/models/`
 - **Repositories**: `backend/app/repositories/`
 - **Migrations**: `supabase/migrations/`
 - **Schemas Pydantic**: `backend/app/schemas/`
+
+### Guias de Desenvolvimento
+- **[Fluxo de Alteração de Database](../guias/FLUXO_ALTERACAO_DATABASE.md)** - Como alterar o schema do banco
+- **[Arquitetura do Backend](../guias/ARQUITETURA_BACKEND.md)** - Entenda a estrutura do backend
+- **[Todos os Guias](../guias/README.md)** - Índice completo de guias
 
 ---
 

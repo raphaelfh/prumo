@@ -89,6 +89,12 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev
 
+      - name: Install Postgres client (psql)
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Apply Supabase SQL migrations
+        run: bash scripts/apply_supabase_migrations.sh
+
       - name: Run tests with coverage
         run: |
           uv run pytest tests/ \

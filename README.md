@@ -113,11 +113,24 @@ O aplicativo estará disponível em:
 
 ## 📚 Documentação
 
+### Guias de Desenvolvimento
+- **[Índice de Guias](docs/guias/README.md)** - Todos os guias práticos
+- [Fluxo de Alteração de Database](docs/guias/FLUXO_ALTERACAO_DATABASE.md)
+- [Fluxo para Adicionar Endpoint](docs/guias/FLUXO_ADICIONAR_ENDPOINT.md)
+- [Fluxo para Adicionar Feature](docs/guias/FLUXO_ADICIONAR_FEATURE.md)
+- [Arquitetura do Backend](docs/guias/ARQUITETURA_BACKEND.md)
+
+### Documentação do Banco de Dados
+- [Database Schema Completo](docs/estrutura_database/DATABASE_SCHEMA.md)
+- [Guia Rápido do Schema](docs/estrutura_database/GUIA_RAPIDO.md)
+
+### Documentação Técnica
+- [Integração com Zotero](docs/tecnicas/ZOTERO_ARCHITECTURE.md)
+
+### Documentação Legal
 - [Guia de Contribuição](.github/CONTRIBUTING.md)
 - [Código de Conduta](docs/legal/CODE_OF_CONDUCT.md)
 - [Política de Segurança](docs/legal/SECURITY.md)
-- [Integração com Zotero](./docs/tecnicas/ZOTERO_ARCHITECTURE.md)
-- [Análise Crítica da Codebase](./docs/analises/ANALISE_CRITICA_CODEBASE.md)
 
 ## 🤝 Contribuindo
 

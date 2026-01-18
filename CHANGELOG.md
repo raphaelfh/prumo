@@ -8,32 +8,15 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 ## [Não Publicado]
 
 ### Adicionado
-- Sistema completo de licenciamento dual (AGPL-3.0 + comercial)
-- Contributor License Agreement (CLA)
-- Guia de contribuição completo
-- Templates de issues e pull requests
-- GitHub Actions para CI/CD
-- Verificação automática de CLA
-- Código de conduta
-- Política de segurança
+
 
 ### Mudado
-- README atualizado com badges e seção de contribuição
-- Licenciamento centralizado no arquivo LICENSE na raiz (práticas modernas 2024-2025)
 
 ---
 
 ## [1.0.0] - 2025-01-XX
 
 ### Adicionado
-- Sistema de gerenciamento de revisões sistemáticas
-- Integração com Zotero para importação de artigos
-- Sistema de extração de dados com formulários customizados
-- Avaliação de qualidade com instrumentos padronizados
-- Sistema de colaboração com controle de acesso
-- Visualizador de PDF integrado com anotações
-- Edge Functions para processamento de IA
-- Sistema de templates (CHARMS, PROBAST, etc.)
 
 ---
 

@@ -149,3 +149,5 @@ dmypy.json
 
 # uv
 uv.lock
+.vercel
+/supabase/.temp/*
