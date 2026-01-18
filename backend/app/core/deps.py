@@ -34,6 +34,7 @@ engine = create_async_engine(
     pool_size=10,
     max_overflow=20,
     connect_args={
+        "statement_cache_size": 0,  # ✅ Desabilita prepared statements (compatível com pgbouncer)
         "server_settings": {
             "jit": "off",  # Desabilita JIT para melhor performance em queries complexas
         },
