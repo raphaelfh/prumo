@@ -130,10 +130,19 @@ async def list_api_keys(
     
     Retorna metadados das keys (provedor, status, etc.) sem expor as keys.
     """
+    logger.info(
+        "api_keys_list_start",
+        user_id=user.sub,
+        user_email=user.email,
+        active_only=active_only,
+    )
+    
     service = APIKeyService(db=db, user_id=user.sub)
     
     try:
+        logger.debug("api_keys_list_calling_service", user_id=user.sub)
         keys = await service.list_keys(active_only=active_only)
+        logger.debug("api_keys_list_service_returned", user_id=user.sub, count=len(keys))
         
         result = [
             APIKeyResponse(
@@ -159,15 +168,19 @@ async def list_api_keys(
         return ApiResponse(ok=True, data={"keys": result})
         
     except Exception as e:
+        import traceback
+        error_traceback = traceback.format_exc()
         logger.error(
             "api_keys_list_error",
             user_id=user.sub,
             error=str(e),
+            error_type=type(e).__name__,
+            error_traceback=error_traceback,
             exc_info=True,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erro ao listar API keys: {str(e)}",
+            detail=f"Erro ao listar API keys: {type(e).__name__}: {str(e)}",
         ) from e
 
 

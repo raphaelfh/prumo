@@ -2,7 +2,7 @@
  * API Keys Service
  * 
  * Gerencia API keys de provedores externos (OpenAI, Anthropic, Gemini, Grok).
- * As keys são criptografadas via pgsodium TCE no Supabase.
+ * As keys são criptografadas via Fernet no backend FastAPI.
  */
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
