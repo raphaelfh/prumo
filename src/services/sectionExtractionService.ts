@@ -168,9 +168,9 @@ export class SectionExtractionService {
     } catch (error) {
       clearTimeout(timeoutId);
 
-      // Se já é um APIError ou BaseAuthError, converter para APIError ou re-throw
-      if (error instanceof BaseAuthError) {
-        throw new AuthenticationError();
+      // Se já é um APIError ou AuthenticationError, re-throw
+      if (error instanceof AuthenticationError) {
+        throw error;
       }
 
       if (error instanceof APIError) {
@@ -370,9 +370,9 @@ export class SectionExtractionService {
         );
       }
 
-      // Se já é um APIError ou BaseAuthError, converter para APIError ou re-throw
-      if (error instanceof BaseAuthError) {
-        throw new AuthenticationError();
+      // Se já é um APIError ou AuthenticationError, re-throw
+      if (error instanceof AuthenticationError) {
+        throw error;
       }
 
       if (error instanceof APIError) {
@@ -543,9 +543,9 @@ export class SectionExtractionService {
         );
       }
 
-      // Se já é um APIError ou BaseAuthError, converter para APIError ou re-throw
-      if (error instanceof BaseAuthError) {
-        throw new AuthenticationError();
+      // Se já é um APIError ou AuthenticationError, re-throw
+      if (error instanceof AuthenticationError) {
+        throw error;
       }
 
       if (error instanceof APIError) {
