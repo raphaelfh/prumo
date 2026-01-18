@@ -1,7 +1,3 @@
-# Copyright (c) 2025 Raphael Federicci Haddad.
-# Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
-# Commercial licenses are available upon request.
-
 """
 Model Extraction Endpoint.
 
@@ -11,14 +7,17 @@ Endpoint para extração automática de modelos de predição de artigos.
 Identifica e cria instâncias de modelos com suas hierarquias completas.
 """
 
-from uuid import UUID
+import uuid
+from typing import Any
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
+from app.core.factories import create_storage_adapter
 from app.core.logging import get_logger
 from app.schemas.common import ApiResponse
+from app.services.api_key_service import APIKeyService
 from app.services.model_extraction_service import ModelExtractionService
 from app.utils.rate_limiter import limiter
 
@@ -29,9 +28,9 @@ logger = get_logger(__name__)
 class ModelExtractionRequest(BaseModel):
     """Request para extração de modelos."""
     
-    project_id: UUID = Field(..., alias="projectId")
-    article_id: UUID = Field(..., alias="articleId")
-    template_id: UUID = Field(..., alias="templateId")
+    project_id: uuid.UUID = Field(..., alias="projectId")
+    article_id: uuid.UUID = Field(..., alias="articleId")
+    template_id: uuid.UUID = Field(..., alias="templateId")
     
     # Opções de extração
     model: str | None = Field(
@@ -42,18 +41,14 @@ class ModelExtractionRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class ModelExtractionOptions(BaseModel):
-    """Opções de extração."""
+class ModelExtractionResponse(BaseModel):
+    """Resposta da extração de modelos."""
     
-    model: str = Field(default="gpt-4o-mini")
-
-
-class ModelExtractionResult(BaseModel):
-    """Resultado da extração de modelos."""
-    
-    run_id: str
-    models_created: list[dict]
-    total_models: int
+    runId: str
+    modelsCreated: list[dict[str, Any]]
+    totalModels: int
+    childInstancesCreated: int
+    metadata: dict[str, Any]
 
 
 @router.post(
@@ -64,7 +59,8 @@ class ModelExtractionResult(BaseModel):
 )
 @limiter.limit("5/minute")
 async def extract_models(
-    request: ModelExtractionRequest,
+    request: Request,  # Necessário para o rate limiter
+    payload: ModelExtractionRequest,
     db: DbSession,
     user: CurrentUser,
     supabase: SupabaseClient,
@@ -81,51 +77,79 @@ async def extract_models(
     4. Cria instâncias com hierarquias
     
     Args:
-        request: Dados do artigo e template.
+        request: Request HTTP (usado pelo rate limiter).
+        payload: Dados do artigo e template.
         
     Returns:
         ApiResponse com modelos criados.
     """
-    import uuid
-    
     trace_id = str(uuid.uuid4())
     
     logger.info(
         "model_extraction_request",
         trace_id=trace_id,
         user_id=user.sub,
-        project_id=str(request.project_id),
-        article_id=str(request.article_id),
-        template_id=str(request.template_id),
-        model=request.model,
+        project_id=str(payload.project_id),
+        article_id=str(payload.article_id),
+        template_id=str(payload.template_id),
+        model=payload.model,
     )
     
     try:
+        # Cria storage adapter via factory
+        storage = create_storage_adapter(supabase)
+        
+        # Buscar API key do usuário (BYOK) com fallback para global
+        api_key_service = APIKeyService(db=db, user_id=user.sub)
+        user_openai_key = await api_key_service.get_key_for_provider("openai")
+        
         service = ModelExtractionService(
             db=db,
             user_id=user.sub,
-            supabase=supabase,
+            storage=storage,
             trace_id=trace_id,
+            openai_api_key=user_openai_key,
         )
         
         result = await service.extract(
-            project_id=request.project_id,
-            article_id=request.article_id,
-            template_id=request.template_id,
-            model=request.model or "gpt-4o-mini",
+            project_id=payload.project_id,
+            article_id=payload.article_id,
+            template_id=payload.template_id,
+            model=payload.model or "gpt-4o-mini",
         )
+        
+        # Commit explícito para persistir as instâncias criadas
+        await db.commit()
         
         logger.info(
             "model_extraction_success",
             trace_id=trace_id,
             user_id=user.sub,
-            run_id=result.get("run_id"),
-            models_count=len(result.get("models_created", [])),
+            run_id=result.run_id,
+            models_count=result.total_models,
+            children_count=result.child_instances_created,
+            tokens_total=result.tokens_total,
         )
         
-        return ApiResponse(ok=True, data=result)
+        # Formatar resposta no formato camelCase para o frontend
+        response_data = ModelExtractionResponse(
+            runId=result.run_id,
+            modelsCreated=result.models_created,
+            totalModels=result.total_models,
+            childInstancesCreated=result.child_instances_created,
+            metadata={
+                "duration": int(result.duration_ms),
+                "modelsFound": result.total_models,
+                "tokensPrompt": result.tokens_prompt,
+                "tokensCompletion": result.tokens_completion,
+                "tokensTotal": result.tokens_total,
+            },
+        ).model_dump()
+        
+        return ApiResponse(ok=True, data=response_data, trace_id=trace_id)
         
     except ValueError as e:
+        await db.rollback()
         logger.warning(
             "model_extraction_validation_error",
             trace_id=trace_id,
@@ -136,6 +160,7 @@ async def extract_models(
             detail=str(e),
         ) from e
     except FileNotFoundError as e:
+        await db.rollback()
         logger.warning(
             "model_extraction_pdf_not_found",
             trace_id=trace_id,
@@ -146,6 +171,7 @@ async def extract_models(
             detail="PDF not found. Upload a PDF first.",
         ) from e
     except Exception as e:
+        await db.rollback()
         logger.error(
             "model_extraction_error",
             trace_id=trace_id,
@@ -156,4 +182,3 @@ async def extract_models(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Model extraction failed: {str(e)}",
         ) from e
-

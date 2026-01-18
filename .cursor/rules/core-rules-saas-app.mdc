@@ -75,7 +75,7 @@ function processData(data: Article[]): ProcessedArticle[] {
 
 1. **Crítica** (sempre aplicar):
    - `core-rules-saas-app.mdc` (esta regra)
-   - `licensing.mdc` (cabeçalhos de copyright)
+   - `licensing.mdc` (diretrizes de licenciamento)
 
 2. **Alta** (aplicar por contexto):
    - `frontend-react-rule.mdc` (componentes React, hooks, estado)
@@ -240,7 +240,7 @@ Bug fix?
 Novo arquivo de código?
 ├─ Python (.py)? → licensing.mdc + python-rules.mdc
 ├─ TypeScript (.ts/.tsx)? → licensing.mdc + frontend-react-rule.mdc
-└─ → licensing.mdc (cabeçalho de copyright obrigatório)
+└─ → licensing.mdc (diretrizes de licenciamento)
 ```
 
 ## Padrões Gerais

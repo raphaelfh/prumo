@@ -1,11 +1,11 @@
-# # Logs
-# logs
-# *.log
-# npm-debug.log*
-# yarn-debug.log*
-# yarn-error.log*
-# pnpm-debug.log*
-# lerna-debug.log*
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
 # node_modules
 # dist
@@ -15,29 +15,30 @@
 # # retirar cursorignore
 # .cursorignore
 
-# # retirar .env
-# .env
-# .env.*
-# !.env.example
+# Arquivos de ambiente (não versionar)
+.env
+.env.*
+!.env.example
+!.env.template
 
 # # Supabase Edge Functions - variáveis de ambiente
-# supabase/functions/.env
-# supabase/functions/.env.*
+supabase/functions/.env
+supabase/functions/.env.*
 # !supabase/functions/.env.example
 
-# #remover review-hub.code-workspace
-# review-hub.code-workspace
+#remover review-hub.code-workspace
+review-hub.code-workspace
 
 # # Editor directories and files
-# .vscode/*
-# !.vscode/extensions.json
-# .idea
-# .DS_Store
-# *.suo
-# *.ntvs*
-# *.njsproj
-# *.sln
-# *.sw?
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 # .cursor
 # # .github - permitir workflows e documentação, mas ignorar outros arquivos
 # .github/*
@@ -53,3 +54,4 @@
 # .cursor/rules/
 # .cursor/rules/licensing.mdc
 # .cursor/rules/licensing.mdc
+node_modules

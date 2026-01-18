@@ -12,41 +12,20 @@ Este projeto utiliza um modelo de **licenciamento duplo**:
 
 ## Diretrizes para o AI
 
-### Cabeçalhos de Copyright
+### Licenciamento
 
-**SEMPRE** adicionar cabeçalho de copyright em novos arquivos de código fonte (excluindo testes e arquivos gerados):
+Este projeto utiliza **licenciamento duplo** (AGPL-3.0 + comercial). A informação de licenciamento está centralizada no arquivo `LICENSE` na raiz do repositório.
 
-```typescript
-/**
- * Copyright (c) 2025 Raphael Federicci Haddad.
- * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
- * Commercial licenses are available upon request.
- */
-```
-
-**Arquivos que DEVEM ter cabeçalho:**
-- Arquivos TypeScript/TSX em `src/` (exceto `src/test/`)
-- Edge Functions em `supabase/functions/`
-- Arquivos de configuração principais (`vite.config.ts`, etc.)
-
-**Arquivos que NÃO precisam:**
-- Arquivos de teste (`src/test/`, `*.test.ts`, `*.spec.ts`)
-- Arquivos gerados (`dist/`, `node_modules/`)
-- Arquivos de configuração JSON (não suportam comentários)
-- Migrações SQL (já possuem comentários próprios)
-
-### Código Novo
-
-Ao criar novos arquivos de código fonte:
-1. Adicionar o cabeçalho de copyright no topo do arquivo
-2. Manter o formato exato especificado acima
-3. Não modificar o cabeçalho em arquivos existentes sem necessidade
+**Não é necessário** adicionar headers de copyright em arquivos individuais. Esta prática foi removida para:
+- Reduzir overhead de manutenção
+- Manter o código mais limpo
+- Seguir práticas modernas de projetos open-source (2024-2025)
+- O arquivo `LICENSE` na raiz é legalmente suficiente para proteger o projeto
 
 ### Contribuições e CLA
 
 - Contribuições externas devem ser gerenciadas via **CLA Assistant** (configurado externamente)
-- O AI não deve modificar ou remover cabeçalhos de copyright existentes
-- Ao refatorar código, manter os cabeçalhos originais quando possível
+- O AI não deve adicionar headers de copyright em novos arquivos
 
 ## Informações sobre AGPL-3.0
 

@@ -1,10 +1,4 @@
 /**
- * Copyright (c) 2025 Raphael Federicci Haddad.
- * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
- * Commercial licenses are available upon request.
- */
-
-/**
  * Service para Extração de Seção Específica
  * 
  * Service layer para chamar a edge function section-extraction.
@@ -643,7 +637,11 @@ export class SectionExtractionService {
     });
 
     try {
-      const result = await sectionExtractionClient<SectionExtractionResponse>({
+      // NOTA: apiClient retorna responseData.data diretamente, não {ok, data}
+      // Portanto, o tipo aqui é o conteúdo interno de SectionExtractionResponse['data']
+      type SectionExtractionData = NonNullable<SectionExtractionResponse['data']>;
+      
+      const data = await sectionExtractionClient<SectionExtractionData>({
         projectId: request.projectId,
         articleId: request.articleId,
         templateId: request.templateId,
@@ -653,11 +651,16 @@ export class SectionExtractionService {
       });
 
       console.log('[SectionExtractionService] Extração via FastAPI concluída', {
-        runId: result.data?.runId,
-        suggestionsCreated: result.data?.suggestionsCreated,
+        runId: data?.run_id,
+        suggestionsCreated: data?.suggestions_created,
       });
 
-      return result;
+      // Construir resposta no formato esperado pelo hook
+      return {
+        ok: true,
+        data: data,
+        traceId,
+      };
     } catch (error) {
       if (error instanceof ApiError) {
         throw new APIError(error.message, error.status, {
@@ -685,7 +688,11 @@ export class SectionExtractionService {
     });
 
     try {
-      const result = await modelExtractionClient<ModelExtractionResponse>({
+      // NOTA: apiClient retorna responseData.data diretamente, não {ok, data}
+      // Portanto, o tipo aqui é o conteúdo interno de ModelExtractionResponse['data']
+      type ModelExtractionData = NonNullable<ModelExtractionResponse['data']>;
+      
+      const data = await modelExtractionClient<ModelExtractionData>({
         projectId: request.projectId,
         articleId: request.articleId,
         templateId: request.templateId,
@@ -693,11 +700,16 @@ export class SectionExtractionService {
       });
 
       console.log('[SectionExtractionService] Extração de modelos via FastAPI concluída', {
-        runId: result.data?.runId,
-        modelsCreated: result.data?.modelsCreated?.length || 0,
+        runId: data?.runId,
+        modelsCreated: data?.modelsCreated?.length || 0,
       });
 
-      return result;
+      // Construir resposta no formato esperado pelo hook
+      return {
+        ok: true,
+        data: data,
+        traceId,
+      };
     } catch (error) {
       if (error instanceof ApiError) {
         throw new APIError(error.message, error.status, {
@@ -725,7 +737,11 @@ export class SectionExtractionService {
     });
 
     try {
-      const result = await sectionExtractionClient<BatchSectionExtractionResponse>({
+      // NOTA: apiClient retorna responseData.data diretamente, não {ok, data}
+      // Portanto, o tipo aqui é o conteúdo interno de BatchSectionExtractionResponse['data']
+      type BatchSectionExtractionData = NonNullable<BatchSectionExtractionResponse['data']>;
+      
+      const data = await sectionExtractionClient<BatchSectionExtractionData>({
         projectId: request.projectId,
         articleId: request.articleId,
         templateId: request.templateId,
@@ -737,12 +753,17 @@ export class SectionExtractionService {
       });
 
       console.log('[SectionExtractionService] Extração de todas as seções via FastAPI concluída', {
-        totalSections: result.data?.totalSections,
-        successfulSections: result.data?.successfulSections,
-        failedSections: result.data?.failedSections,
+        totalSections: data?.total_sections,
+        successfulSections: data?.successful_sections,
+        failedSections: data?.failed_sections,
       });
 
-      return result;
+      // Construir resposta no formato esperado pelo hook
+      return {
+        ok: true,
+        data: data,
+        traceId,
+      };
     } catch (error) {
       if (error instanceof ApiError) {
         throw new APIError(error.message, error.status, {

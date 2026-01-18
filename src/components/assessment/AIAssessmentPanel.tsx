@@ -17,6 +17,7 @@ import { useToast } from '@/hooks/use-toast';
 import { AIAssessmentPreview } from './AIAssessmentPreview';
 import { AIAssessmentHistory } from './AIAssessmentHistory';
 import { AIConfigurationPanel } from './AIConfigurationPanel';
+import { aiAssessmentClient } from '@/integrations/api/client';
 
 interface AIConfiguration {
   model: string;
@@ -34,6 +35,14 @@ interface AIAssessmentPanelProps {
   instrumentId: string;
   itemQuestion: string;
   onAccept: (level: string, comment: string) => void;
+}
+
+interface EvidencePassage {
+  text: string;
+  start_char?: number;
+  end_char?: number;
+  page_number?: number;
+  relevance_score?: number;
 }
 
 interface AiAssessment {
@@ -124,55 +133,61 @@ export const AIAssessmentPanel = ({
   const handleRunAIAssessment = async () => {
     setIsProcessing(true);
     const t0 = performance.now();
-    const clientTraceId = crypto.randomUUID();
 
     try {
       const pdfStorageKey = await getPdfStorageKey();
 
-      // Prepara o payload com as configurações
-      const payload: any = {
+      // Prepara o payload com as configurações (camelCase para FastAPI)
+      const payload: Record<string, unknown> = {
         projectId,
         articleId,
         assessmentItemId,
         instrumentId,
-        pdf_storage_key: pdfStorageKey,
+        pdfStorageKey: pdfStorageKey,
       };
 
       // Adiciona configurações personalizadas se disponíveis
       if (configuration) {
         if (configuration.forceFileSearch) {
-          payload.force_file_search = true;
+          payload.forceFileSearch = true;
         }
-        // Nota: model, temperature, maxTokens seriam configurados na edge function
-        // Para implementação completa, seria necessário modificar a edge function
       }
 
-      const { data, error } = await supabase.functions.invoke('ai-assessment', {
-        body: payload,
-        headers: {
-          'x-client-trace-id': clientTraceId,
-        },
-      });
+      // Usa o cliente FastAPI ao invés de Edge Function
+      // O apiClient retorna data diretamente se a request for bem-sucedida
+      // e lança ApiError se falhar
+      const data = await aiAssessmentClient<{
+        id: string;
+        selectedLevel: string;
+        confidenceScore: number;
+        justification: string;
+        evidencePassages: EvidencePassage[];
+        status: string;
+        metadata?: {
+          processingTimeMs?: number;
+        };
+      }>(payload);
 
-      if (error) {
-        let traceFromBody: string | undefined;
-        try {
-          const parsed = JSON.parse(error.message);
-          traceFromBody = parsed?.traceId;
-        } catch {
-          /* ignore */
-        }
-        throw new Error(
-          `Falha ao invocar a avaliação de IA. ${error.message}${
-            traceFromBody ? ` | traceId: ${traceFromBody}` : ''
-          }`
-        );
+      if (!data) {
+        throw new Error('Resposta da API sem assessment.');
       }
 
-      const assessment: AiAssessment | undefined = data?.assessment ?? data;
-      if (!assessment) {
-        throw new Error('Resposta da função sem assessment.');
-      }
+      // Mapeia para o formato esperado pelo componente (snake_case)
+      const assessment: AiAssessment = {
+        id: data.id,
+        project_id: projectId,
+        article_id: articleId,
+        assessment_item_id: assessmentItemId,
+        instrument_id: instrumentId,
+        user_id: '', // Será preenchido pelo banco
+        selected_level: data.selectedLevel,
+        confidence_score: data.confidenceScore,
+        justification: data.justification,
+        evidence_passages: data.evidencePassages,
+        ai_model_used: 'gpt-4o-mini',
+        processing_time_ms: data.metadata?.processingTimeMs,
+        status: data.status as 'pending_review' | 'accepted' | 'rejected',
+      };
 
       setCurrentAssessment(assessment);
       setActiveTab('new'); // Mostra a nova avaliação
@@ -186,13 +201,13 @@ export const AIAssessmentPanel = ({
       }, 1000);
 
       const took =
-        data?.processingTime != null
-          ? (data.processingTime / 1000).toFixed(1)
+        data.metadata?.processingTimeMs != null
+          ? (data.metadata.processingTimeMs / 1000).toFixed(1)
           : ((performance.now() - t0) / 1000).toFixed(1);
 
       toast({
         title: 'Avaliação IA concluída',
-        description: `Processado em ${took}s • traceId: ${data?.traceId ?? clientTraceId}`,
+        description: `Processado em ${took}s`,
       });
     } catch (err: any) {
       console.error('[AI Assessment] Erro:', err);

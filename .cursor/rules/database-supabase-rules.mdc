@@ -45,6 +45,7 @@ Esta regra se aplica quando trabalhar com:
 - **Índices estratégicos**: Em `org_id`, FKs, colunas de busca
 - **Queries otimizadas**: Evitar N+1, usar joins quando apropriado
 - **Índices compostos**: Para queries frequentes com múltiplas condições
+- **Índices GIN**: Para campos JSONB e ARRAY (ver seção abaixo)
 
 ### Migrações Seguras
 
@@ -262,6 +263,52 @@ const { data } = await supabase
   .select('*')
   .eq('org_id', orgId); // Explícito e claro
 ```
+
+## Índices para JSONB e Arrays
+
+### Índices GIN
+
+Use índices GIN para campos JSONB e ARRAY que são consultados frequentemente:
+
+```sql
+-- Índice GIN padrão para JSONB (suporta todos os operadores)
+CREATE INDEX idx_articles_source_payload_gin 
+    ON articles USING gin (source_payload);
+
+-- Índice GIN otimizado para operador @> (containment)
+CREATE INDEX idx_articles_settings_gin 
+    ON articles USING gin (settings jsonb_path_ops);
+
+-- Índice GIN para ARRAY
+CREATE INDEX idx_articles_keywords_gin 
+    ON articles USING gin (keywords);
+```
+
+### Índices Trigram para Busca Textual
+
+```sql
+-- Requer extensão pg_trgm
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+-- Índice para busca por similaridade (LIKE, ILIKE, %)
+CREATE INDEX idx_articles_title_trgm 
+    ON articles USING gin (title gin_trgm_ops);
+```
+
+### Sincronização com SQLAlchemy
+
+Índices criados em migrations SQL DEVEM ser espelhados nos models:
+
+```python
+# backend/app/models/article.py
+__table_args__ = (
+    Index("idx_articles_source_payload_gin", "source_payload", postgresql_using="gin"),
+    Index("idx_articles_title_trgm", "title", postgresql_using="gin", postgresql_ops={"title": "gin_trgm_ops"}),
+    {"schema": "public"},
+)
+```
+
+Isso permite que o Alembic detecte drift entre models e banco real.
 
 ## Migrações
 

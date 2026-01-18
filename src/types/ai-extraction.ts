@@ -1,10 +1,4 @@
 /**
- * Copyright (c) 2025 Raphael Federicci Haddad.
- * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
- * Commercial licenses are available upon request.
- */
-
-/**
  * Tipos TypeScript centralizados para AI Extraction
  * 
  * Este arquivo consolida todos os tipos relacionados à extração com IA,
@@ -144,7 +138,8 @@ export interface ExtractionRun {
   status: ExtractionRunStatus;
   metadata: {
     suggestionsCreated?: number;
-    tokensUsed?: number;
+    tokensTotal?: number;  // Backend usa tokensTotal
+    tokensUsed?: number;   // Legado/fallback
     pdfPages?: number;
     duration?: number;
     errorMessage?: string;
@@ -178,12 +173,19 @@ export interface SectionExtractionResponse {
   ok: boolean;
   data?: {
     runId: string;
-    status: 'completed' | 'partial' | 'failed';
+    entityTypeId?: string;
     suggestionsCreated: number;
-    metadata: {
-      pdfPages: number;
-      tokensUsed: number;
-      duration: number;
+    // Campos de tokens diretos (não em metadata)
+    tokensPrompt?: number;
+    tokensCompletion?: number;
+    tokensTotal?: number;
+    durationMs?: number;
+    // Legado: metadata pode existir em alguns casos
+    status?: 'completed' | 'partial' | 'failed';
+    metadata?: {
+      pdfPages?: number;
+      tokensTotal?: number;
+      duration?: number;
     };
   };
   error?: {
@@ -249,16 +251,14 @@ export interface BatchSectionResult {
 export interface BatchSectionExtractionResponse {
   ok: boolean;
   data?: {
+    runId: string;
     totalSections: number;
     successfulSections: number;
     failedSections: number;
     totalSuggestionsCreated: number;
+    totalTokensUsed: number;  // Direto na resposta (não em metadata)
+    durationMs: number;       // Direto na resposta (não em metadata)
     sections: BatchSectionResult[];
-    metadata: {
-      pdfPages: number;
-      totalTokensUsed: number;
-      totalDuration: number;
-    };
   };
   error?: {
     code: string;
@@ -284,7 +284,7 @@ export interface ModelExtractionResponse {
     metadata?: {
       tokensPrompt?: number;
       tokensCompletion?: number;
-      tokensUsed?: number;
+      tokensTotal?: number;  // Backend retorna tokensTotal (não tokensUsed)
       duration?: number;
       modelsFound?: number;
       [key: string]: any;

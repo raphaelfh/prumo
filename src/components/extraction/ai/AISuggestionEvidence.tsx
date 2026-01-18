@@ -1,10 +1,4 @@
 /**
- * Copyright (c) 2025 Raphael Federicci Haddad.
- * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
- * Commercial licenses are available upon request.
- */
-
-/**
  * Componente para Exibir Evidence de Sugestão de IA
  * 
  * Mostra o trecho do texto citado pelo LLM como evidência para a extração,

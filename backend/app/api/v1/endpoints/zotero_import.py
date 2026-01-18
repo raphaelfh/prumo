@@ -1,7 +1,3 @@
-# Copyright (c) 2025 Raphael Federicci Haddad.
-# Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
-# Commercial licenses are available upon request.
-
 """
 Zotero Import Endpoint.
 
@@ -100,7 +96,7 @@ async def zotero_action(
     Returns:
         ApiResponse com resultado da ação.
     """
-    service = ZoteroService(db=db, user_id=user.sub, supabase=supabase)
+    service = ZoteroService(db=db, user_id=user.sub)
     body = body or {}
     
     logger.info(

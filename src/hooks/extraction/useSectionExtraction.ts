@@ -1,10 +1,4 @@
 /**
- * Copyright (c) 2025 Raphael Federicci Haddad.
- * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
- * Commercial licenses are available upon request.
- */
-
-/**
  * Hook para Extração de Seção Específica
  * 
  * Hook React para gerenciar extração de IA de uma seção (entity type) específica.
@@ -104,10 +98,12 @@ export function useSectionExtraction(options?: {
           });
         } else {
         // Toast de sucesso com informações úteis
+        // Backend FastAPI envia tokensTotal direto, não em metadata
+        const tokensUsed = result.data.tokensTotal || result.data.metadata?.tokensTotal || 0;
         toast.success(
             `Extração concluída! ${result.data.suggestionsCreated} sugestão(ões) criada(s) para esta seção.`,
           {
-            description: `${result.data.metadata.tokensUsed} tokens usados`,
+            description: `${tokensUsed} tokens usados`,
           },
         );
         }

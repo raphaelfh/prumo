@@ -1,7 +1,3 @@
-# Copyright (c) 2025 Raphael Federicci Haddad.
-# Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
-# Commercial licenses are available upon request.
-
 """
 Application Configuration.
 
@@ -36,14 +32,12 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
     
     # =================== CORS ===================
-    CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000,http://localhost:8080,http://127.0.0.1:8080"
     
-    @field_validator("CORS_ORIGINS", mode="before")
-    @classmethod
-    def parse_cors_origins(cls, v: Any) -> list[str]:
-        if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",")]
-        return v
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Retorna lista de origens CORS."""
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
     
     # =================== SUPABASE ===================
     SUPABASE_URL: str
@@ -61,7 +55,8 @@ class Settings(BaseSettings):
         return url.replace("postgresql://", "postgresql+asyncpg://")
     
     # =================== OPENAI ===================
-    OPENAI_API_KEY: str
+    # Opcional: fallback global para quando usuário não tem BYOK configurado
+    OPENAI_API_KEY: str | None = None
     OPENAI_DEFAULT_MODEL: str = "gpt-4o-mini"
     
     # =================== RATE LIMITING ===================

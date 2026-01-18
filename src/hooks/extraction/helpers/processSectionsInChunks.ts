@@ -1,10 +1,4 @@
 /**
- * Copyright (c) 2025 Raphael Federicci Haddad.
- * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
- * Commercial licenses are available upon request.
- */
-
-/**
  * Helper para processar seções em chunks
  * 
  * Encapsula a lógica de processar seções divididas em chunks,
@@ -32,6 +26,8 @@ export interface ProcessChunksResult {
   successfulSections: number;
   failedSections: number;
   completedSections: number;
+  totalTokensUsed: number;
+  totalDurationMs: number;
 }
 
 /**
@@ -51,6 +47,8 @@ export async function processSectionsInChunks(
       successfulSections: 0,
       failedSections: 0,
       completedSections: 0,
+      totalTokensUsed: 0,
+      totalDurationMs: 0,
     };
   }
 
@@ -63,6 +61,8 @@ export async function processSectionsInChunks(
   let successfulSections = 0;
   let failedSections = 0;
   let completedSections = 0;
+  let totalTokensUsed = 0;
+  let totalDurationMs = 0;
 
   for (let chunkIndex = 0; chunkIndex < sectionIdChunks.length; chunkIndex++) {
     const chunk = sectionIdChunks[chunkIndex];
@@ -102,6 +102,8 @@ export async function processSectionsInChunks(
       successfulSections += chunkSuccessful;
       failedSections += chunkFailed;
       totalSuggestionsCreated += result.data.totalSuggestionsCreated;
+      totalTokensUsed += result.data.totalTokensUsed || 0;
+      totalDurationMs += result.data.durationMs || 0;
       completedSections += chunk.length;
 
       // Atualizar progresso após chunk
@@ -140,6 +142,8 @@ export async function processSectionsInChunks(
     successfulSections,
     failedSections,
     completedSections,
+    totalTokensUsed,
+    totalDurationMs,
   };
 }
 

@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Loader2, Zap, CheckCircle, AlertCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { aiAssessmentClient } from '@/integrations/api/client';
 
 interface AIQuickButtonProps {
   projectId: string;
@@ -52,67 +53,60 @@ export const AIQuickButton = ({
     
     setIsProcessing(true);
     const t0 = performance.now();
-    const clientTraceId = crypto.randomUUID();
 
     try {
       const pdfStorageKey = await getPdfStorageKey();
 
-      // Payload com configurações padrão otimizadas
+      // Payload com configurações padrão otimizadas (camelCase para FastAPI)
       const payload = {
         projectId,
         articleId,
         assessmentItemId,
         instrumentId,
-        pdf_storage_key: pdfStorageKey,
+        pdfStorageKey: pdfStorageKey,
         // Configurações padrão para avaliação rápida
-        force_file_search: false, // Automático baseado no tamanho
+        forceFileSearch: false, // Automático baseado no tamanho
       };
 
-      const { data, error } = await supabase.functions.invoke('ai-assessment', {
-        body: payload,
-        headers: {
-          'x-client-trace-id': clientTraceId,
-        },
-      });
+      // Usa o cliente FastAPI ao invés de Edge Function
+      // O apiClient retorna data diretamente se a request for bem-sucedida
+      // e lança ApiError se falhar
+      const data = await aiAssessmentClient<{
+        id: string;
+        selectedLevel: string;
+        confidenceScore: number;
+        justification: string;
+        evidencePassages: Array<{
+          text: string;
+          page_number?: number;
+        }>;
+        metadata?: {
+          processingTimeMs?: number;
+        };
+      }>(payload);
 
-      if (error) {
-        let traceFromBody: string | undefined;
-        try {
-          const parsed = JSON.parse(error.message);
-          traceFromBody = parsed?.traceId;
-        } catch {
-          /* ignore */
-        }
-        throw new Error(
-          `Falha ao invocar a avaliação de IA. ${error.message}${
-            traceFromBody ? ` | traceId: ${traceFromBody}` : ''
-          }`
-        );
-      }
-
-      const assessment = data?.assessment ?? data;
-      if (!assessment) {
-        throw new Error('Resposta da função sem assessment.');
+      if (!data) {
+        throw new Error('Resposta da API sem assessment.');
       }
 
       // Aplica resultado automaticamente
       const evidenceBlock =
-        assessment.evidence_passages?.map((e: any) => {
+        data.evidencePassages?.map((e) => {
           const page = e.page_number != null ? ` (p.${e.page_number})` : '';
           return `• ${e.text}${page}`;
         }).join('\n') ?? '';
 
-      const comment = `${assessment.justification}\n\n--- Evidências ---\n${evidenceBlock}`;
-      onAccept(assessment.selected_level, comment);
+      const comment = `${data.justification}\n\n--- Evidências ---\n${evidenceBlock}`;
+      onAccept(data.selectedLevel, comment);
 
       const took =
-        data?.processingTime != null
-          ? (data.processingTime / 1000).toFixed(1)
+        data.metadata?.processingTimeMs != null
+          ? (data.metadata.processingTimeMs / 1000).toFixed(1)
           : ((performance.now() - t0) / 1000).toFixed(1);
 
       toast({
         title: 'Avaliação IA concluída',
-        description: `Processado em ${took}s • Nível: ${assessment.selected_level}`,
+        description: `Processado em ${took}s • Nível: ${data.selectedLevel}`,
       });
 
     } catch (err: any) {

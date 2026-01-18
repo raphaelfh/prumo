@@ -48,20 +48,64 @@ flowchart LR
 
 ## Models SQLAlchemy
 
-### Base Model
+### Base Model e PostgreSQLEnumType
+
+O projeto usa um `TypeDecorator` centralizado para ENUMs PostgreSQL nativos:
 
 ```python
 from datetime import datetime
 from uuid import UUID, uuid4
+from typing import Any
 
-from sqlalchemy import DateTime, func
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy import DateTime, String, TypeDecorator, func
+from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM, UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
     """Base para todos os models."""
     pass
+
+
+# Mapeamento de ENUMs PostgreSQL (definidos em supabase/migrations/)
+POSTGRESQL_ENUM_VALUES: dict[str, list[str]] = {
+    "review_type": ["interventional", "predictive_model", "diagnostic", "prognostic", "qualitative", "other"],
+    "project_member_role": ["manager", "reviewer", "viewer", "consensus"],
+    "file_role": ["MAIN", "SUPPLEMENT", "PROTOCOL", "DATASET", "APPENDIX", "FIGURE", "OTHER"],
+    "extraction_framework": ["CHARMS", "PICOS", "CUSTOM"],
+    # ... outros ENUMs
+}
+
+
+class PostgreSQLEnumType(TypeDecorator):
+    """
+    TypeDecorator para ENUMs PostgreSQL nativos.
+    
+    Resolve o problema de ::VARCHAR casting com asyncpg.
+    Permite usar ENUMs nativos do PostgreSQL de forma transparente.
+    
+    Uso:
+        file_role: Mapped[str] = mapped_column(PostgreSQLEnumType("file_role"), default="MAIN")
+    """
+    
+    impl = String
+    cache_ok = True
+
+    def __init__(self, enum_name: str, *args: Any, **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        self.enum_name = enum_name
+        enum_values = POSTGRESQL_ENUM_VALUES.get(enum_name)
+        if enum_values is None:
+            raise ValueError(f"ENUM '{enum_name}' não registrado em POSTGRESQL_ENUM_VALUES.")
+        self._enum_type = PG_ENUM(*enum_values, name=enum_name, create_type=False, native_enum=True)
+
+    def process_bind_param(self, value: Any, dialect: Any) -> str | None:
+        if value is None:
+            return None
+        return str(value)  # Converte Enum Python para string
+
+    def process_result_value(self, value: Any, dialect: Any) -> str | None:
+        return value  # Retorna string do banco
 
 
 class BaseModel(Base):
@@ -89,13 +133,33 @@ class BaseModel(Base):
     )
 ```
 
-### Exemplo de Model
+### Python ENUMs (para validação)
 
 ```python
-from sqlalchemy import ForeignKey, String, Text
+from enum import Enum as PyEnum
+
+class FileRole(str, PyEnum):
+    """
+    Papel do arquivo no artigo.
+    
+    IMPORTANTE: Valores devem corresponder exatamente ao ENUM PostgreSQL 'file_role'.
+    Ver: supabase/migrations/0002_enums.sql
+    """
+    MAIN = "MAIN"
+    SUPPLEMENT = "SUPPLEMENT"
+    # ...
+```
+
+### Exemplo de Model com Índices
+
+**Infrastructure as Code**: Índices devem ser declarados no Model via `__table_args__`:
+
+```python
+from sqlalchemy import ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import BaseModel
+from app.models.base import BaseModel, PostgreSQLEnumType
 
 
 class Article(BaseModel):
@@ -112,7 +176,7 @@ class Article(BaseModel):
         PG_UUID(as_uuid=True),
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,  # Índice para queries frequentes
+        index=True,  # Índice simples para FK
     )
     
     title: Mapped[str] = mapped_column(Text, nullable=False)
@@ -121,12 +185,92 @@ class Article(BaseModel):
     abstract: Mapped[str | None] = mapped_column(Text, nullable=True)
     doi: Mapped[str | None] = mapped_column(String(255), nullable=True)
     
+    # JSONB para dados flexíveis
+    source_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    
+    # ARRAY para listas
+    keywords: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
+    
     # Relationships
     project: Mapped["Project"] = relationship(back_populates="articles")
     files: Mapped[list["ArticleFile"]] = relationship(
         back_populates="article",
         cascade="all, delete-orphan",
     )
+    
+    # ✅ ÍNDICES DECLARADOS NO MODEL (Infrastructure as Code)
+    __table_args__ = (
+        # Índice composto
+        Index("idx_articles_year_journal", "publication_year", "journal_title"),
+        
+        # Índice GIN para busca textual (trigram)
+        Index(
+            "idx_articles_title_trgm", 
+            "title", 
+            postgresql_using="gin",
+            postgresql_ops={"title": "gin_trgm_ops"}
+        ),
+        
+        # Índices GIN para JSONB e ARRAY
+        Index("idx_articles_keywords_gin", "keywords", postgresql_using="gin"),
+        Index("idx_articles_source_payload_gin", "source_payload", postgresql_using="gin"),
+        
+        # Unique constraint parcial
+        UniqueConstraint("project_id", "zotero_item_key", name="uq_articles_project_zotero_key"),
+        
+        {"schema": "public"},
+    )
+
+
+class ArticleFile(BaseModel):
+    """Arquivo associado a um artigo."""
+    
+    __tablename__ = "article_files"
+    
+    article_id: Mapped[UUID] = mapped_column(
+        ForeignKey("articles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,  # Sempre indexar FKs frequentes
+    )
+    
+    # ✅ ENUM PostgreSQL nativo via PostgreSQLEnumType
+    file_role: Mapped[str] = mapped_column(
+        PostgreSQLEnumType("file_role"),
+        default="MAIN",
+        nullable=True,
+    )
+    
+    __table_args__ = (
+        Index("idx_article_files_article_role", "article_id", "file_role"),
+        {"schema": "public"},
+    )
+```
+
+### Tipos de Índices Suportados
+
+```python
+from sqlalchemy import Index
+
+# 1. Índice B-tree simples (padrão)
+Index("idx_name", "column")
+
+# 2. Índice composto
+Index("idx_name", "col1", "col2")
+
+# 3. Índice GIN para JSONB
+Index("idx_name", "jsonb_col", postgresql_using="gin")
+
+# 4. Índice GIN com jsonb_path_ops (otimizado para @> operador)
+Index("idx_name", "jsonb_col", postgresql_using="gin", postgresql_ops={"jsonb_col": "jsonb_path_ops"})
+
+# 5. Índice GIN para ARRAY
+Index("idx_name", "array_col", postgresql_using="gin")
+
+# 6. Índice trigram para busca textual (requer extensão pg_trgm)
+Index("idx_name", "text_col", postgresql_using="gin", postgresql_ops={"text_col": "gin_trgm_ops"})
+
+# 7. Índice parcial
+Index("idx_name", "col", postgresql_where="(deleted_at IS NULL)")
 ```
 
 ### Convenções de Naming
@@ -288,6 +432,138 @@ async def transfer_article(
         # Commit automático ao sair do context manager
 ```
 
+## Repository Pattern e Unit of Work
+
+### Filosofia: flush() vs commit()
+
+O projeto usa o padrão Repository com Unit of Work para gerenciar transações:
+
+- **`flush()`**: Sincroniza objetos pendentes com o banco (INSERT/UPDATE/DELETE), 
+  mas NÃO finaliza a transação. Permite obter IDs gerados.
+- **`commit()`**: Finaliza a transação de forma PERMANENTE. Só o UnitOfWork faz commit.
+
+### BaseRepository
+
+```python
+# backend/app/repositories/base.py
+
+class BaseRepository(Generic[ModelType]):
+    """
+    Repositório genérico com operações CRUD.
+    
+    IMPORTANTE: Métodos usam flush(), NÃO commit().
+    O commit() é responsabilidade do UnitOfWork.
+    """
+    
+    async def create(self, obj_in: dict[str, Any] | BaseModel) -> ModelType:
+        """
+        Cria nova entidade.
+        
+        NOTA: Usa flush() para sincronizar com banco e obter ID.
+        A transação só é commitada quando UnitOfWork.__aexit__ é chamado.
+        """
+        db_obj = self.model(**obj_data)
+        self.session.add(db_obj)
+        await self.session.flush()  # Sincroniza, não commita
+        await self.session.refresh(db_obj)  # Carrega campos gerados
+        return db_obj
+    
+    async def update(self, db_obj: ModelType, obj_in: dict[str, Any]) -> ModelType:
+        """
+        Atualiza entidade existente.
+        
+        NOTA: Usa flush() para sincronizar mudanças.
+        """
+        for field, value in obj_in.items():
+            setattr(db_obj, field, value)
+        await self.session.flush()
+        await self.session.refresh(db_obj)
+        return db_obj
+    
+    async def delete(self, db_obj: ModelType) -> None:
+        """
+        Remove entidade.
+        
+        NOTA: Usa flush() para marcar como deletado.
+        Remoção real só ocorre após commit do UnitOfWork.
+        """
+        await self.session.delete(db_obj)
+        await self.session.flush()
+```
+
+### UnitOfWork
+
+```python
+# backend/app/repositories/unit_of_work.py
+
+class UnitOfWork:
+    """
+    Gerencia transações atômicas com múltiplos repositories.
+    
+    Benefícios:
+        - Atomicidade: Todas as operações commitam juntas ou fazem rollback
+        - Consistência: Estado do banco sempre válido
+        - Organização: Agrupa repositories relacionados
+        - Segurança: Rollback automático em caso de exceção
+    
+    Uso:
+        async with UnitOfWork() as uow:
+            project = await uow.projects.create({"name": "Novo"})
+            member = await uow.project_members.create({
+                "project_id": project.id,
+                "user_id": user_id,
+            })
+            await uow.commit()  # Ambas operações commitam juntas
+    """
+    
+    async def __aenter__(self) -> "UnitOfWork":
+        self.session = async_session_factory()
+        self.projects = ProjectRepository(self.session)
+        self.articles = ArticleRepository(self.session)
+        # ... outros repositories
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        if exc_type is not None:
+            await self.rollback()  # Rollback automático em erro
+        await self.session.close()
+    
+    async def commit(self) -> None:
+        """Finaliza a transação de forma PERMANENTE."""
+        await self.session.commit()
+    
+    async def rollback(self) -> None:
+        """Desfaz todas as mudanças pendentes."""
+        await self.session.rollback()
+```
+
+### Uso Correto
+
+```python
+# ✅ CORRETO: Usar UnitOfWork para operações que modificam dados
+async def create_project_with_member(
+    user_id: UUID,
+    project_data: dict,
+) -> Project:
+    async with UnitOfWork() as uow:
+        project = await uow.projects.create(project_data)
+        await uow.project_members.create({
+            "project_id": project.id,
+            "user_id": user_id,
+            "role": "manager",
+        })
+        await uow.commit()  # Ambos são salvos atomicamente
+        return project
+
+# ❌ ERRADO: Usar repository diretamente sem UnitOfWork
+async def create_project_wrong(data: dict) -> Project:
+    async with get_session() as session:
+        repo = ProjectRepository(session)
+        project = await repo.create(data)
+        # BUG: Sem commit(), nada é salvo!
+        return project
+```
+
 ## Evitar N+1
 
 ### Problema
@@ -423,30 +699,62 @@ supabase = create_client(url, anon_key)
 supabase.auth.set_session(user_access_token)
 ```
 
-## Migrations
+## Migrations (Estratégia Híbrida)
 
-### Manter Migrations SQL no Supabase
+### Supabase como Fonte da Verdade
 
-As migrations continuam em `supabase/migrations/` para:
-- Compatibilidade com Supabase CLI
-- RLS policies
-- Funções PostgreSQL
-- Triggers
+O projeto usa **estratégia híbrida**:
+
+1. **Supabase migrations** (`supabase/migrations/`) = **Fonte da verdade** para schema
+2. **SQLAlchemy models** = Espelho do schema para ORM
+3. **Alembic** = Validação de sincronização (não para aplicar migrations)
+
+```
+supabase/migrations/*.sql  ──►  PostgreSQL  ◄──  SQLAlchemy models
+         (DDL real)              (banco)           (validação)
+                                    │
+                                    ▼
+                              Alembic autogenerate
+                            (detecta drift entre
+                             models e banco real)
+```
+
+### Workflow de Alterações
+
+```bash
+# 1. Criar migration SQL no Supabase
+# supabase/migrations/0025_add_summary_field.sql
+
+# 2. Atualizar model SQLAlchemy correspondente
+# backend/app/models/article.py
+
+# 3. Validar sincronização com Alembic
+cd backend
+alembic revision --autogenerate -m "validate_sync"
+
+# Se detectar mudanças → models e SQL não estão sincronizados
+# Migration gerada deve estar VAZIA se tudo estiver correto
+```
+
+### Template de Migration SQL
 
 ```sql
--- supabase/migrations/0022_add_new_field.sql
+-- supabase/migrations/0025_add_summary_field.sql
 
 -- UP: Adicionar campo
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS 
     summary text;
 
+-- Índice se necessário
+CREATE INDEX IF NOT EXISTS idx_articles_summary_trgm 
+    ON articles USING gin (summary gin_trgm_ops);
+
 -- DOWN (comentário):
+-- DROP INDEX IF EXISTS idx_articles_summary_trgm;
 -- ALTER TABLE articles DROP COLUMN IF EXISTS summary;
 ```
 
 ### Sincronizar Models SQLAlchemy
-
-Quando criar nova migration, atualizar model correspondente:
 
 ```python
 # backend/app/models/article.py
@@ -456,6 +764,19 @@ class Article(BaseModel):
     
     # Novo campo adicionado na migration
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    
+    __table_args__ = (
+        # ... índices existentes ...
+        
+        # Novo índice correspondente à migration
+        Index(
+            "idx_articles_summary_trgm", 
+            "summary", 
+            postgresql_using="gin", 
+            postgresql_ops={"summary": "gin_trgm_ops"}
+        ),
+        {"schema": "public"},
+    )
 ```
 
 ## Checklist
@@ -466,22 +787,35 @@ Antes de considerar código de banco completo:
 - [ ] **Herda BaseModel**: id, created_at, updated_at
 - [ ] **Tablename**: snake_case, plural
 - [ ] **Tipos corretos**: Mapped[T], nullable explícito
-- [ ] **Índices**: Em FKs e colunas de busca frequente
-- [ ] **Relationships**: Definidas quando necessário
+- [ ] **ENUMs**: Usar `PostgreSQLEnumType("nome_enum")` para ENUMs nativos
+- [ ] **Python Enums**: Subclasse de `str, Enum` com valores correspondentes
+- [ ] **__table_args__**: Declarar índices compostos, GIN, trigram
+
+### Índices (Infrastructure as Code)
+- [ ] **ForeignKeys**: `index=True` em FKs frequentemente consultadas
+- [ ] **Índices compostos**: Via `Index()` em `__table_args__`
+- [ ] **Índices GIN**: Para campos JSONB e ARRAY
+- [ ] **Índices trigram**: Para busca textual (`gin_trgm_ops`)
+- [ ] **Sincronizado**: Índices nos models correspondem às migrations SQL
+
+### Repository Pattern
+- [ ] **UnitOfWork**: Operações que modificam dados usam UnitOfWork
+- [ ] **flush() vs commit()**: Repositories usam flush(), UnitOfWork faz commit()
+- [ ] **Atomicidade**: Múltiplas operações dentro do mesmo UnitOfWork
 
 ### Queries
 - [ ] **Async**: Usa AsyncSession e await
 - [ ] **Select com options**: Evita N+1
-- [ ] **Commit explícito**: Quando modificando dados
-- [ ] **Transações**: Para operações múltiplas
+- [ ] **Transações**: Via UnitOfWork para operações múltiplas
 
 ### Migrations
-- [ ] **SQL no Supabase**: Migrations em `supabase/migrations/`
+- [ ] **SQL no Supabase**: Migrations em `supabase/migrations/` (fonte da verdade)
 - [ ] **Models sincronizados**: Atualizar SQLAlchemy models
 - [ ] **Rollback documentado**: Comentários DOWN
+- [ ] **Validação Alembic**: `alembic revision --autogenerate` não detecta mudanças
 
 ### Performance
-- [ ] **Índices**: Criados para queries frequentes
+- [ ] **Índices**: Declarados no model e criados via migration
 - [ ] **Joins otimizados**: Evitar N+1
 - [ ] **Limites**: Paginação em listagens
 - [ ] **Profiling**: Verificar queries geradas em DEBUG

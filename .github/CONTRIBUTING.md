@@ -165,18 +165,6 @@ test: adiciona testes para novo hook
 chore: atualiza dependências
 ```
 
-### Cabeçalhos de Copyright
-
-**IMPORTANTE**: Todos os novos arquivos de código fonte devem incluir o cabeçalho de copyright:
-
-```typescript
-/**
- * Copyright (c) 2025 Raphael Federicci Haddad.
- * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
- * Commercial licenses are available upon request.
- */
-```
-
 ## 🔀 Processo de Pull Request
 
 ### Antes de Abrir um PR

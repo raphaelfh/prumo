@@ -1,7 +1,3 @@
-# Copyright (c) 2025 Raphael Federicci Haddad.
-# Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
-# Commercial licenses are available upon request.
-
 """
 API v1 Router.
 
@@ -14,6 +10,7 @@ from app.api.v1.endpoints import (
     ai_assessment,
     model_extraction,
     section_extraction,
+    user_api_keys,
     zotero_import,
 )
 
@@ -42,5 +39,11 @@ api_router.include_router(
     section_extraction.router,
     prefix="/extraction/sections",
     tags=["Section Extraction"],
+)
+
+api_router.include_router(
+    user_api_keys.router,
+    prefix="/user-api-keys",
+    tags=["User API Keys"],
 )
 

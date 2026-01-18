@@ -1,13 +1,8 @@
 project_id = "supabase_local"
 
-[functions.ai-assessment]
-verify_jwt = true
-
-[functions.section-extraction]
-verify_jwt = true
-
-[functions.model-extraction]
-verify_jwt = true
-
-[functions.zotero-import]
-verify_jwt = true
+# Edge Functions have been migrated to FastAPI.
+# See backend/app/api/v1/endpoints/ for the new implementations:
+#   - ai_assessment.py (replaces ai-assessment Edge Function)
+#   - section_extraction.py (replaces section-extraction Edge Function)
+#   - model_extraction.py (replaces model-extraction Edge Function)
+#   - zotero_import.py (replaces zotero-import Edge Function)

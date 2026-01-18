@@ -1,10 +1,4 @@
 /**
- * Copyright (c) 2025 Raphael Federicci Haddad.
- * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
- * Commercial licenses are available upon request.
- */
-
-/**
  * Hook para Extração de Modelos de Predição
  * 
  * Hook React para gerenciar extração automática de modelos de predição do artigo.
@@ -103,10 +97,11 @@ export function useModelExtraction(options?: {
           });
         } else {
           // Toast de sucesso com informações úteis
+          // Nota: Backend envia tokensTotal, não tokensUsed
           toast.success(
             `Extração concluída! ${modelsCreated} modelo(s) encontrado(s) e criado(s).`,
             {
-              description: `${result.data.metadata?.tokensUsed || 0} tokens usados`,
+              description: `${result.data.metadata?.tokensTotal || 0} tokens usados`,
             },
           );
         }

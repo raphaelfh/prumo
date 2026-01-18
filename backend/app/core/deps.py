@@ -1,7 +1,3 @@
-# Copyright (c) 2025 Raphael Federicci Haddad.
-# Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
-# Commercial licenses are available upon request.
-
 """
 Dependencies Module.
 
@@ -20,17 +16,28 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from supabase import Client, create_client
 
 from app.core.config import settings
+from app.core.logging import get_logger
 from app.core.security import TokenPayload, get_current_user
+
+logger = get_logger(__name__)
 
 # =================== DATABASE ===================
 
 # Engine async para PostgreSQL
+# NOTA: O workaround de ::VARCHAR para ENUMs foi REMOVIDO.
+# Agora usamos PostgreSQLEnumType (em app.models.base) que resolve o problema
+# de forma declarativa diretamente nos models SQLAlchemy.
 engine = create_async_engine(
     settings.async_database_url,
     echo=settings.DEBUG,
     pool_pre_ping=True,
     pool_size=10,
     max_overflow=20,
+    connect_args={
+        "server_settings": {
+            "jit": "off",  # Desabilita JIT para melhor performance em queries complexas
+        },
+    },
 )
 
 # Session factory

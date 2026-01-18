@@ -1,10 +1,4 @@
 /**
- * Copyright (c) 2025 Raphael Federicci Haddad.
- * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
- * Commercial licenses are available upon request.
- */
-
-/**
  * Hook para Extração de Todas as Seções de um Modelo com Chunking
  * 
  * Hook React para gerenciar extração de IA de todas as seções de um modelo
@@ -129,7 +123,7 @@ export function useBatchSectionExtractionChunked(options?: {
         });
 
         // 3. Consolidar resultados finais
-        const { totalSuggestionsCreated, successfulSections, failedSections } = result;
+        const { totalSuggestionsCreated, successfulSections, failedSections, totalTokensUsed, totalDurationMs } = result;
         const totalSections = sections.length;
 
         console.log('[useBatchSectionExtractionChunked] Extração concluída', {
@@ -137,14 +131,17 @@ export function useBatchSectionExtractionChunked(options?: {
           successfulSections,
           failedSections,
           totalSuggestionsCreated,
+          totalTokensUsed,
+          totalDurationMs,
         });
 
         // Toast de sucesso com informações agregadas
+        const durationSecs = (totalDurationMs / 1000).toFixed(1);
         if (failedSections === 0) {
           toast.success(
             `Extração concluída! ${successfulSections} seção(ões) extraída(s) com sucesso.`,
             {
-              description: `${totalSuggestionsCreated} sugestão(ões) criada(s).`,
+              description: `${totalSuggestionsCreated} sugestão(ões) criada(s). ${totalTokensUsed} tokens usados em ${durationSecs}s`,
               duration: 8000,
             },
           );
@@ -152,7 +149,7 @@ export function useBatchSectionExtractionChunked(options?: {
           toast.warning(
             `Extração parcialmente concluída: ${successfulSections}/${totalSections} seção(ões) extraída(s) com sucesso.`,
             {
-              description: `${totalSuggestionsCreated} sugestão(ões) criada(s). ${failedSections} seção(ões) falharam.`,
+              description: `${totalSuggestionsCreated} sugestão(ões) criada(s). ${failedSections} seção(ões) falharam. ${totalTokensUsed} tokens usados.`,
               duration: 10000,
             },
           );

@@ -1,13 +1,10 @@
-# Copyright (c) 2025 Raphael Federicci Haddad.
-# Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
-# Commercial licenses are available upon request.
-
 """
 FastAPI Application Entry Point.
 
 Este módulo configura a aplicação FastAPI principal com:
-- Middleware de CORS
+- Middleware de CORS, Logging e Request ID
 - Rate limiting
+- Error handling centralizado
 - Logging estruturado
 - Rotas da API v1
 """
@@ -22,8 +19,13 @@ from slowapi.errors import RateLimitExceeded
 
 from app.api.v1.router import api_router
 from app.core.config import settings
-from app.core.logging import configure_logging
+from app.core.error_handler import register_exception_handlers
+from app.core.logging import configure_logging, get_logger
+from app.core.middleware import register_middlewares
+from app.models import Base  # Importa todos os modelos para garantir que sejam registrados
 from app.utils.rate_limiter import limiter
+
+logger = get_logger(__name__)
 
 
 @asynccontextmanager
@@ -36,11 +38,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     # Startup
     configure_logging()
+    logger.info(
+        "application_startup",
+        project_name=settings.PROJECT_NAME,
+        debug=settings.DEBUG,
+    )
     
     yield
     
     # Shutdown
-    # Cleanup de recursos se necessário
+    logger.info("application_shutdown")
 
 
 def create_app() -> FastAPI:
@@ -64,14 +71,21 @@ def create_app() -> FastAPI:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     
-    # CORS Middleware
+    # Registrar exception handlers customizados
+    register_exception_handlers(app)
+    
+    # CORS Middleware (deve vir antes dos outros middlewares)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.CORS_ORIGINS,
+        allow_origins=settings.cors_origins_list,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["X-Trace-Id", "X-Response-Time"],
     )
+    
+    # Registrar middlewares customizados (RequestId, Logging, Timing)
+    register_middlewares(app)
     
     # API Routes
     app.include_router(api_router, prefix=settings.API_V1_PREFIX)
@@ -79,7 +93,16 @@ def create_app() -> FastAPI:
     @app.get("/health", tags=["Health"])
     async def health_check() -> dict[str, str]:
         """Health check endpoint."""
-        return {"status": "healthy"}
+        return {"status": "healthy", "version": "0.1.0"}
+    
+    @app.get("/", tags=["Root"])
+    async def root() -> dict[str, str]:
+        """Root endpoint com informações da API."""
+        return {
+            "name": settings.PROJECT_NAME,
+            "version": "0.1.0",
+            "docs": f"{settings.API_V1_PREFIX}/docs",
+        }
     
     return app
 

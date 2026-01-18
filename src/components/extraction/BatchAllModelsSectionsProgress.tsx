@@ -1,10 +1,4 @@
 /**
- * Copyright (c) 2025 Raphael Federicci Haddad.
- * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
- * Commercial licenses are available upon request.
- */
-
-/**
  * Componente de Progresso para Extração de Seções de Todos os Modelos
  * 
  * Mostra progresso visual da extração de seções de todos os modelos,

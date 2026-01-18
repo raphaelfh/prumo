@@ -1,7 +1,3 @@
-# Copyright (c) 2025 Raphael Federicci Haddad.
-# Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
-# Commercial licenses are available upon request.
-
 """
 Zotero Service.
 
@@ -18,13 +14,11 @@ from typing import Any
 
 import httpx
 from cryptography.fernet import Fernet
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from supabase import Client
 
-from app.core.config import settings
 from app.core.logging import LoggerMixin
 from app.core.security import derive_encryption_key
+from app.repositories.integration_repository import ZoteroIntegrationRepository
 
 ZOTERO_API_BASE = "https://api.zotero.org"
 ZOTERO_API_VERSION = "3"
@@ -35,18 +29,25 @@ class ZoteroService(LoggerMixin):
     Service para integração com Zotero.
     
     Gerencia credenciais criptografadas e comunicação com API.
+    Migrado para usar SQLAlchemy via Repository Pattern.
     """
     
     def __init__(
         self,
         db: AsyncSession,
         user_id: str,
-        supabase: Client,
     ):
+        """
+        Inicializa o service.
+        
+        Args:
+            db: Sessão async do SQLAlchemy.
+            user_id: ID do usuário autenticado.
+        """
         self.db = db
         self.user_id = user_id
-        self.supabase = supabase
         self._fernet: Fernet | None = None
+        self._repo = ZoteroIntegrationRepository(db)
     
     @property
     def fernet(self) -> Fernet:
@@ -88,20 +89,13 @@ class ZoteroService(LoggerMixin):
         
         encrypted_api_key = self._encrypt(api_key)
         
-        # Upsert na tabela zotero_integrations
-        result = self.supabase.table("zotero_integrations").upsert(
-            {
-                "user_id": self.user_id,
-                "zotero_user_id": zotero_user_id,
-                "encrypted_api_key": encrypted_api_key,
-                "library_type": library_type,
-                "is_active": True,
-            },
-            on_conflict="user_id",
-        ).execute()
-        
-        if not result.data:
-            raise ValueError("Failed to save credentials")
+        # Upsert via repository
+        integration = await self._repo.upsert(
+            user_id=self.user_id,
+            zotero_user_id=zotero_user_id,
+            encrypted_api_key=encrypted_api_key,
+            library_type=library_type,
+        )
         
         self.logger.info(
             "zotero_credentials_saved",
@@ -109,29 +103,21 @@ class ZoteroService(LoggerMixin):
             zotero_user_id=zotero_user_id,
         )
         
-        return {"integration_id": result.data[0]["id"]}
+        return {"integration_id": str(integration.id)}
     
     async def _get_credentials(self) -> dict[str, Any]:
         """Busca e descriptografa credenciais do usuário."""
-        result = (
-            self.supabase.table("zotero_integrations")
-            .select("*")
-            .eq("user_id", self.user_id)
-            .eq("is_active", True)
-            .maybe_single()
-            .execute()
-        )
+        integration = await self._repo.get_by_user(self.user_id, active_only=True)
         
-        if not result.data:
+        if not integration:
             raise ValueError("Credenciais não encontradas. Configure a integração primeiro.")
         
-        integration = result.data
-        api_key = self._decrypt(integration["encrypted_api_key"])
+        api_key = self._decrypt(integration.encrypted_api_key)
         
         return {
-            "zotero_user_id": integration["zotero_user_id"],
+            "zotero_user_id": integration.zotero_user_id,
             "api_key": api_key,
-            "library_type": integration["library_type"],
+            "library_type": integration.library_type,
         }
     
     async def _make_zotero_request(
@@ -217,10 +203,8 @@ class ZoteroService(LoggerMixin):
                 
                 key_info = response.json()
                 
-                # Atualizar last_sync_at
-                self.supabase.table("zotero_integrations").update(
-                    {"last_sync_at": "now()"}
-                ).eq("user_id", self.user_id).execute()
+                # Atualizar last_sync_at via repository
+                await self._repo.update_last_sync(self.user_id)
                 
                 return {
                     "success": True,
@@ -380,4 +364,3 @@ class ZoteroService(LoggerMixin):
                 "content_type": content_type,
                 "size": len(content),
             }
-

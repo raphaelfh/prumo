@@ -1,7 +1,3 @@
-# Copyright (c) 2025 Raphael Federicci Haddad.
-# Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
-# Commercial licenses are available upon request.
-
 """
 AI Assessment Endpoint.
 
@@ -11,14 +7,14 @@ Endpoint para avaliação de artigos usando IA (OpenAI Responses API).
 Suporta leitura direta de PDF com fallback para File Search.
 """
 
-from uuid import UUID
+import uuid
+from typing import Any
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
+from app.core.factories import create_storage_adapter
 from app.core.logging import get_logger
 from app.schemas.common import ApiResponse
 from app.services.ai_assessment_service import AIAssessmentService
@@ -31,19 +27,34 @@ logger = get_logger(__name__)
 class AIAssessmentRequest(BaseModel):
     """Request para avaliação AI de um item de assessment."""
     
-    project_id: UUID = Field(..., alias="projectId")
-    article_id: UUID = Field(..., alias="articleId")
-    assessment_item_id: UUID = Field(..., alias="assessmentItemId")
-    instrument_id: UUID = Field(..., alias="instrumentId")
+    project_id: uuid.UUID = Field(..., alias="projectId")
+    article_id: uuid.UUID = Field(..., alias="articleId")
+    assessment_item_id: uuid.UUID = Field(..., alias="assessmentItemId")
+    instrument_id: uuid.UUID = Field(..., alias="instrumentId")
     
     # Opcionais para fonte do PDF
-    pdf_storage_key: str | None = Field(default=None, alias="pdf_storage_key")
-    pdf_base64: str | None = Field(default=None, alias="pdf_base64")
-    pdf_filename: str | None = Field(default=None, alias="pdf_filename")
-    pdf_file_id: str | None = Field(default=None, alias="pdf_file_id")
+    pdf_storage_key: str | None = Field(default=None, alias="pdfStorageKey")
+    pdf_base64: str | None = Field(default=None, alias="pdfBase64")
+    pdf_filename: str | None = Field(default=None, alias="pdfFilename")
+    pdf_file_id: str | None = Field(default=None, alias="pdfFileId")
     
     # Forçar uso de File Search (para PDFs > 32MB)
-    force_file_search: bool = Field(default=False, alias="force_file_search")
+    force_file_search: bool = Field(default=False, alias="forceFileSearch")
+    
+    # Modelo OpenAI
+    model: str | None = Field(default="gpt-4o-mini", alias="model")
+    
+    model_config = {"populate_by_name": True}
+
+
+class BatchAssessmentRequest(BaseModel):
+    """Request para avaliação AI em batch."""
+    
+    project_id: uuid.UUID = Field(..., alias="projectId")
+    article_id: uuid.UUID = Field(..., alias="articleId")
+    item_ids: list[uuid.UUID] = Field(..., alias="itemIds")
+    instrument_id: uuid.UUID = Field(..., alias="instrumentId")
+    model: str | None = Field(default="gpt-4o-mini", alias="model")
     
     model_config = {"populate_by_name": True}
 
@@ -51,8 +62,13 @@ class AIAssessmentRequest(BaseModel):
 class AIAssessmentResponse(BaseModel):
     """Response da avaliação AI."""
     
-    assessment: dict
-    trace_id: str
+    id: str
+    selectedLevel: str
+    confidenceScore: float
+    justification: str
+    evidencePassages: list[dict[str, Any]]
+    status: str
+    metadata: dict[str, Any]
 
 
 @router.post(
@@ -63,7 +79,8 @@ class AIAssessmentResponse(BaseModel):
 )
 @limiter.limit("10/minute")
 async def ai_assessment(
-    request: AIAssessmentRequest,
+    request: Request,  # Necessário para o rate limiter
+    payload: AIAssessmentRequest,
     db: DbSession,
     user: CurrentUser,
     supabase: SupabaseClient,
@@ -74,57 +91,79 @@ async def ai_assessment(
     Rate limit: 10 requisições por minuto por usuário.
     
     Args:
-        request: Dados do assessment a avaliar.
+        request: Request HTTP (usado pelo rate limiter).
+        payload: Dados do assessment a avaliar.
         
     Returns:
         ApiResponse com resultado da avaliação.
     """
-    import uuid
-    
     trace_id = str(uuid.uuid4())
     
     logger.info(
         "ai_assessment_request",
         trace_id=trace_id,
         user_id=user.sub,
-        project_id=str(request.project_id),
-        article_id=str(request.article_id),
-        assessment_item_id=str(request.assessment_item_id),
+        project_id=str(payload.project_id),
+        article_id=str(payload.article_id),
+        assessment_item_id=str(payload.assessment_item_id),
     )
     
     try:
+        # Cria storage adapter via factory
+        storage = create_storage_adapter(supabase)
+        
         service = AIAssessmentService(
             db=db,
             user_id=user.sub,
-            supabase=supabase,
+            storage=storage,
             trace_id=trace_id,
         )
         
         result = await service.assess(
-            project_id=request.project_id,
-            article_id=request.article_id,
-            assessment_item_id=request.assessment_item_id,
-            instrument_id=request.instrument_id,
-            pdf_storage_key=request.pdf_storage_key,
-            pdf_base64=request.pdf_base64,
-            pdf_filename=request.pdf_filename,
-            pdf_file_id=request.pdf_file_id,
-            force_file_search=request.force_file_search,
+            project_id=payload.project_id,
+            article_id=payload.article_id,
+            assessment_item_id=payload.assessment_item_id,
+            instrument_id=payload.instrument_id,
+            pdf_storage_key=payload.pdf_storage_key,
+            pdf_base64=payload.pdf_base64,
+            pdf_filename=payload.pdf_filename,
+            pdf_file_id=payload.pdf_file_id,
+            force_file_search=payload.force_file_search,
+            model=payload.model or "gpt-4o-mini",
         )
+        
+        # Commit explícito para persistir os resultados
+        await db.commit()
         
         logger.info(
             "ai_assessment_success",
             trace_id=trace_id,
             user_id=user.sub,
-            assessment_id=result.get("id"),
+            assessment_id=result.assessment_id,
+            tokens_total=result.tokens_prompt + result.tokens_completion,
+            method_used=result.method_used,
         )
         
-        return ApiResponse(
-            ok=True,
-            data={"assessment": result, "trace_id": trace_id},
-        )
+        # Formatar resposta no formato camelCase para o frontend
+        response_data = AIAssessmentResponse(
+            id=result.assessment_id,
+            selectedLevel=result.selected_level,
+            confidenceScore=result.confidence_score,
+            justification=result.justification,
+            evidencePassages=result.evidence_passages,
+            status="pending_review",
+            metadata={
+                "processingTimeMs": result.processing_time_ms,
+                "tokensPrompt": result.tokens_prompt,
+                "tokensCompletion": result.tokens_completion,
+                "methodUsed": result.method_used,
+            },
+        ).model_dump()
+        
+        return ApiResponse(ok=True, data=response_data, trace_id=trace_id)
         
     except ValueError as e:
+        await db.rollback()
         logger.warning(
             "ai_assessment_validation_error",
             trace_id=trace_id,
@@ -135,6 +174,7 @@ async def ai_assessment(
             detail=str(e),
         ) from e
     except Exception as e:
+        await db.rollback()
         logger.error(
             "ai_assessment_error",
             trace_id=trace_id,
@@ -146,3 +186,94 @@ async def ai_assessment(
             detail=f"Assessment failed: {str(e)}",
         ) from e
 
+
+@router.post(
+    "/ai/batch",
+    response_model=ApiResponse,
+    summary="Avaliar múltiplos itens com IA",
+    description="Usa OpenAI para avaliar múltiplos itens de assessment em batch.",
+)
+@limiter.limit("5/minute")
+async def ai_assessment_batch(
+    request: Request,
+    payload: BatchAssessmentRequest,
+    db: DbSession,
+    user: CurrentUser,
+    supabase: SupabaseClient,
+) -> ApiResponse:
+    """
+    Executa avaliação AI em batch para múltiplos itens.
+    
+    Rate limit: 5 requisições por minuto por usuário.
+    
+    Args:
+        request: Request HTTP (usado pelo rate limiter).
+        payload: Dados dos itens a avaliar.
+        
+    Returns:
+        ApiResponse com lista de resultados.
+    """
+    trace_id = str(uuid.uuid4())
+    
+    logger.info(
+        "ai_assessment_batch_request",
+        trace_id=trace_id,
+        user_id=user.sub,
+        project_id=str(payload.project_id),
+        article_id=str(payload.article_id),
+        items_count=len(payload.item_ids),
+    )
+    
+    try:
+        storage = create_storage_adapter(supabase)
+        
+        service = AIAssessmentService(
+            db=db,
+            user_id=user.sub,
+            storage=storage,
+            trace_id=trace_id,
+        )
+        
+        results = await service.assess_batch(
+            project_id=payload.project_id,
+            article_id=payload.article_id,
+            item_ids=payload.item_ids,
+            instrument_id=payload.instrument_id,
+            model=payload.model or "gpt-4o-mini",
+        )
+        
+        await db.commit()
+        
+        # Formatar respostas
+        formatted_results = [service.to_dict(r) for r in results]
+        
+        logger.info(
+            "ai_assessment_batch_success",
+            trace_id=trace_id,
+            user_id=user.sub,
+            total_items=len(payload.item_ids),
+            successful_items=len(results),
+        )
+        
+        return ApiResponse(
+            ok=True,
+            data={
+                "results": formatted_results,
+                "totalItems": len(payload.item_ids),
+                "successfulItems": len(results),
+            },
+            trace_id=trace_id,
+        )
+        
+    except Exception as e:
+        await db.rollback()
+        logger.error(
+            "ai_assessment_batch_error",
+            trace_id=trace_id,
+            error=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Batch assessment failed: {str(e)}",
+        ) from e

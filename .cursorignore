@@ -1,58 +1,58 @@
-# ============================================
-# .cursorignore - Arquivos ignorados pelo Cursor Agent
-# ============================================
-# 
-# IMPORTANTE: Este arquivo controla o que o Cursor agent pode ou não acessar.
-# 
-# O arquivo .env NÃO está listado aqui, então o agent PODE acessá-lo
-# mesmo que esteja no .gitignore (o .gitignore é apenas para Git).
-# ============================================
+# # ============================================
+# # .cursorignore - Arquivos ignorados pelo Cursor Agent
+# # ============================================
+# # 
+# # IMPORTANTE: Este arquivo controla o que o Cursor agent pode ou não acessar.
+# # 
+# # O arquivo .env NÃO está listado aqui, então o agent PODE acessá-lo
+# # mesmo que esteja no .gitignore (o .gitignore é apenas para Git).
+# # ============================================
 
-# Dependências e build artifacts (muito grandes)
-node_modules/
-dist/
-dist-ssr/
-build/
-.next/
-out/
+# # Dependências e build artifacts (muito grandes)
+# node_modules/
+# dist/
+# dist-ssr/
+# build/
+# .next/
+# out/
 
-# Logs (não relevantes para o agent)
-*.log
-logs/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+# # Logs (não relevantes para o agent)
+# *.log
+# logs/
+# npm-debug.log*
+# yarn-debug.log*
+# yarn-error.log*
+# pnpm-debug.log*
+# lerna-debug.log*
 
-# Arquivos temporários e de sistema
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+# # Arquivos temporários e de sistema
+# .DS_Store
+# *.suo
+# *.ntvs*
+# *.njsproj
+# *.sln
+# *.sw?
 
-# Arquivos de editor
-.vscode/*
-!.vscode/extensions.json
-.idea/
-
-
-# Lock files (geralmente muito grandes)
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
-bun.lockb
+# # Arquivos de editor
+# .vscode/*
+# !.vscode/extensions.json
+# .idea/
 
 
-# ============================================
-# PERMITIR EXPLICITAMENTE: .env e variações
-# ============================================
-# O arquivo .env pode ser acessado pelo Cursor agent
-# mesmo que esteja no .gitignore. Usamos ! para permitir explicitamente.
-!.env
-!.env.local
-!.env.*
-!.env.example
+# # Lock files (geralmente muito grandes)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+# bun.lockb
+
+
+# # ============================================
+# # PERMITIR EXPLICITAMENTE: .env e variações
+# # ============================================
+# # O arquivo .env pode ser acessado pelo Cursor agent
+# # mesmo que esteja no .gitignore. Usamos ! para permitir explicitamente.
+# !.env
+# !.env.local
+# !.env.*
+# !.env.example
 

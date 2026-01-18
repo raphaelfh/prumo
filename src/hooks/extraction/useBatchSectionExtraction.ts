@@ -1,10 +1,4 @@
 /**
- * Copyright (c) 2025 Raphael Federicci Haddad.
- * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
- * Commercial licenses are available upon request.
- */
-
-/**
  * Hook para Extração de Todas as Seções de um Modelo
  * 
  * Hook React para gerenciar extração de IA de todas as seções de um modelo de uma vez.
@@ -97,14 +91,14 @@ export function useBatchSectionExtraction(options?: {
           throw new Error("No data returned from batch extraction");
         }
 
-        const { totalSections, successfulSections, failedSections, totalSuggestionsCreated, metadata } = result.data;
+        const { totalSections, successfulSections, failedSections, totalSuggestionsCreated, totalTokensUsed, durationMs } = result.data;
 
         // Toast de sucesso com informações agregadas
         if (failedSections === 0) {
           toast.success(
             `Extração concluída! ${successfulSections} seção(ões) extraída(s) com sucesso.`,
             {
-              description: `${totalSuggestionsCreated} sugestão(ões) criada(s). ${metadata.totalTokensUsed} tokens usados em ${(metadata.totalDuration / 1000).toFixed(1)}s`,
+              description: `${totalSuggestionsCreated} sugestão(ões) criada(s). ${totalTokensUsed} tokens usados em ${(durationMs / 1000).toFixed(1)}s`,
               duration: 8000,
             },
           );

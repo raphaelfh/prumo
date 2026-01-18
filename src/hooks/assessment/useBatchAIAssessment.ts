@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { AssessmentItem } from './useAssessmentInstruments';
+import { aiAssessmentClient } from '@/integrations/api/client';
 
 interface BatchAIAssessmentProps {
   projectId: string;
@@ -64,8 +65,6 @@ export const useBatchAIAssessment = ({
   };
 
   const executeAIForItem = async (item: AssessmentItem) => {
-    const clientTraceId = crypto.randomUUID();
-    
     try {
       const pdfStorageKey = await getPdfStorageKey();
 
@@ -74,38 +73,35 @@ export const useBatchAIAssessment = ({
         articleId,
         assessmentItemId: item.id,
         instrumentId,
-        pdf_storage_key: pdfStorageKey,
-        force_file_search: false, // Configuração padrão otimizada
+        pdfStorageKey: pdfStorageKey,
+        forceFileSearch: false, // Configuração padrão otimizada
       };
 
-      const { data, error } = await supabase.functions.invoke('ai-assessment', {
-        body: payload,
-        headers: {
-          'x-client-trace-id': clientTraceId,
-        },
-      });
+      // Usa o cliente FastAPI ao invés de Edge Function
+      // O apiClient retorna data diretamente se a request for bem-sucedida
+      // e lança ApiError se falhar
+      const assessment = await aiAssessmentClient<{
+        id: string;
+        selectedLevel: string;
+        confidenceScore: number;
+        justification: string;
+        evidencePassages: Array<{
+          text: string;
+          page_number?: number;
+        }>;
+      }>(payload);
 
-      if (error) {
-        let traceFromBody: string | undefined;
-        try {
-          const parsed = JSON.parse(error.message);
-          traceFromBody = parsed?.traceId;
-        } catch {
-          /* ignore */
-        }
-        throw new Error(
-          `Falha ao invocar a avaliação de IA para item ${item.item_code}. ${error.message}${
-            traceFromBody ? ` | traceId: ${traceFromBody}` : ''
-          }`
-        );
-      }
-
-      const assessment = data?.assessment ?? data;
       if (!assessment) {
-        throw new Error('Resposta da função sem assessment.');
+        throw new Error('Resposta da API sem assessment.');
       }
 
-      return assessment;
+      // Mapeia para o formato esperado pelo hook (snake_case)
+      return {
+        selected_level: assessment.selectedLevel,
+        confidence_score: assessment.confidenceScore,
+        justification: assessment.justification,
+        evidence_passages: assessment.evidencePassages,
+      };
     } catch (error) {
       console.error(`[Batch AI Assessment] Erro para item ${item.item_code}:`, error);
       throw error;

@@ -1,10 +1,11 @@
 /**
  * Seção de Integrações
- * Gerenciar integrações com serviços externos (Zotero, etc.)
+ * Gerenciar integrações com serviços externos (Zotero, APIs de IA, etc.)
  */
 
 import { Plug } from 'lucide-react';
 import { ZoteroIntegrationSection } from '@/components/project/settings/ZoteroIntegrationSection';
+import { ApiKeysSection } from '@/components/user/ApiKeysSection';
 
 export function IntegrationsSection() {
   return (
@@ -19,10 +20,11 @@ export function IntegrationsSection() {
         </p>
       </div>
 
+      {/* API Keys de IA (BYOK) */}
+      <ApiKeysSection />
+
       {/* Integração Zotero */}
       <ZoteroIntegrationSection />
-
-      {/* Futuras integrações podem ser adicionadas aqui */}
     </div>
   );
 }

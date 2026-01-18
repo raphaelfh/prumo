@@ -1,10 +1,4 @@
 /**
- * Copyright (c) 2025 Raphael Federicci Haddad.
- * Licensed under the GNU Affero General Public License v3.0 (AGPLv3).
- * Commercial licenses are available upon request.
- */
-
-/**
  * Hook para Extração de Seções de Todos os Modelos Existentes
  * 
  * Hook React para gerenciar extração de IA de todas as seções de todos os modelos
@@ -116,6 +110,8 @@ export function useBatchAllModelsSectionsExtraction(options?: {
         let totalSuggestionsCreated = 0;
         let successfulModels = 0;
         let failedModels = 0;
+        let totalTokensUsed = 0;
+        let totalDurationMs = 0;
 
         // Processar cada modelo sequencialmente
         for (let i = 0; i < models.length; i++) {
@@ -176,12 +172,15 @@ export function useBatchAllModelsSectionsExtraction(options?: {
             });
 
             totalSuggestionsCreated += modelResult.totalSuggestionsCreated;
+            totalTokensUsed += modelResult.totalTokensUsed;
+            totalDurationMs += modelResult.totalDurationMs;
 
             // Se chegou aqui, extração foi bem-sucedida
             successfulModels++;
             console.log(`[useBatchAllModelsSectionsExtraction] Modelo ${i + 1} concluído com sucesso`, {
               modelName: model.modelName,
               suggestionsCreated: modelResult.totalSuggestionsCreated,
+              tokensUsed: modelResult.totalTokensUsed,
             });
           } catch (modelError: any) {
             console.error(`[useBatchAllModelsSectionsExtraction] Erro no modelo ${i + 1}:`, modelError);
@@ -199,14 +198,17 @@ export function useBatchAllModelsSectionsExtraction(options?: {
           totalModels: models.length,
           successfulModels,
           failedModels,
+          totalTokensUsed,
+          totalDurationMs,
         });
 
         // Toast de sucesso com informações agregadas
+        const durationSecs = (totalDurationMs / 1000).toFixed(1);
         if (failedModels === 0) {
           toast.success(
             `Extração concluída! Seções extraídas de ${successfulModels} modelo(s) com sucesso.`,
             {
-              description: `${totalSuggestionsCreated} sugestão(ões) criada(s) no total.`,
+              description: `${totalSuggestionsCreated} sugestão(ões) criada(s). ${totalTokensUsed} tokens usados em ${durationSecs}s`,
               duration: 8000,
             },
           );
@@ -214,7 +216,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
           toast.warning(
             `Extração parcialmente concluída: ${successfulModels}/${models.length} modelo(s) processado(s) com sucesso.`,
             {
-              description: `${totalSuggestionsCreated} sugestão(ões) criada(s). ${failedModels} modelo(s) falharam.`,
+              description: `${totalSuggestionsCreated} sugestão(ões) criada(s). ${failedModels} modelo(s) falharam. ${totalTokensUsed} tokens usados.`,
               duration: 10000,
             },
           );

@@ -13,13 +13,13 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - Guia de contribuição completo
 - Templates de issues e pull requests
 - GitHub Actions para CI/CD
-- Verificação automática de CLA e cabeçalhos de copyright
+- Verificação automática de CLA
 - Código de conduta
 - Política de segurança
 
 ### Mudado
 - README atualizado com badges e seção de contribuição
-- Cabeçalhos de copyright adicionados em arquivos principais
+- Licenciamento centralizado no arquivo LICENSE na raiz (práticas modernas 2024-2025)
 
 ---
 

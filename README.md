@@ -22,40 +22,83 @@ Sistema completo para gerenciamento de revisões sistemáticas e meta-análises.
 ### Pré-requisitos
 
 - Node.js 18+ e npm (recomendado usar [nvm](https://github.com/nvm-sh/nvm#installing-and-updating))
+- Python 3.11+ e [uv](https://github.com/astral-sh/uv) (para o backend)
 - Supabase CLI (para desenvolvimento local)
+- Docker Desktop (para Supabase local)
 - Git
+- Make (geralmente já instalado no macOS/Linux)
 
-### Instalação
+### 🎯 Início Rápido com Makefile (Recomendado)
+
+O projeto inclui um Makefile completo para facilitar o desenvolvimento:
 
 ```sh
 # 1. Clone o repositório
 git clone https://github.com/raphaelfh/review-hub-fastapi.git
-cd review_hub
+cd review-hub
 
-# 2. Instale as dependências
+# 2. Execute o setup completo (primeira vez)
+make setup
+# ou: ./scripts/setup.sh
+
+# 3. Configure as variáveis de ambiente (se necessário)
+# Edite .env.local e backend/.env com suas credenciais
+
+# 4. Inicie todos os serviços (Supabase + Backend + Frontend)
+make start
+
+# 5. Verifique o status
+make status
+
+# 6. Veja todas as URLs importantes
+make urls
+```
+
+**Nota**: O script de setup não depende de configurações pessoais (`.zshrc`, etc). Ele configura tudo automaticamente.
+
+**Comandos Makefile úteis:**
+- `make start` - Inicia todos os serviços
+- `make stop` - Para todos os serviços
+- `make restart` - Reinicia todos os serviços
+- `make status` - Verifica status de todos os serviços
+- `make health` - Health check de todos os serviços
+- `make urls` - Mostra todas as URLs importantes
+- `make help` - Lista todos os comandos disponíveis
+
+### Instalação Manual
+
+Se preferir iniciar os serviços manualmente:
+
+```sh
+# 1. Clone o repositório
+git clone https://github.com/raphaelfh/review-hub-fastapi.git
+cd review-ai-hub
+
+# 2. Instale as dependências do frontend
 npm install
 
-# 3. Configure as variáveis de ambiente
+# 3. Instale as dependências do backend
+cd backend && uv sync && cd ..
+
+# 4. Configure as variáveis de ambiente
 cp .env.example .env.local
 # Edite .env.local com suas credenciais do Supabase
 
-# 4. Inicie o servidor de desenvolvimento
+# 5. Inicie o Supabase localmente
+cd supabase && supabase start && cd ..
+
+# 6. Inicie o backend (em um terminal)
+cd backend && uv run uvicorn app.main:app --reload --port 8000
+
+# 7. Inicie o frontend (em outro terminal)
 npm run dev
 ```
 
-O aplicativo estará disponível em `http://localhost:5173`
-
-### Desenvolvimento Local com Supabase
-
-```sh
-# Inicie o Supabase localmente
-supabase start
-
-# Execute as migrações
-supabase db reset
-
-# As Edge Functions estarão disponíveis localmente
-```
+O aplicativo estará disponível em:
+- Frontend: `http://localhost:8080`
+- Backend API: `http://localhost:8000`
+- Backend Docs: `http://localhost:8000/api/v1/docs`
+- Supabase Studio: `http://127.0.0.1:54323`
 
 ## 🛠️ Scripts Disponíveis
 
@@ -170,7 +213,16 @@ VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 
 ## 📝 Licença
 
-Este projeto está licenciado sob a **GNU Affero General Public License v3.0 (AGPL-3.0)**. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
+Este projeto está licenciado sob a **GNU Affero General Public License v3.0 (AGPL-3.0)**. Veja o arquivo [LICENSE](LICENSE) na raiz do repositório para o texto completo da licença.
+
+### Modelo de Licenciamento Duplo
+
+Este projeto utiliza um modelo de **licenciamento duplo**:
+
+- **AGPL-3.0 (Padrão)**: Todo o código está disponível sob a GNU Affero General Public License v3.0
+- **Licença Comercial**: Disponível mediante pagamento para uso proprietário/comercial sem obrigações de copyleft
+
+Para mais informações sobre licenças comerciais, entre em contato através do repositório.
 
 ## 🙏 Agradecimentos
 
