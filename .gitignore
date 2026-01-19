@@ -150,4 +150,14 @@ dmypy.json
 # uv
 uv.lock
 .vercel
-/supabase/.temp/*
+
+# Supabase Edge Functions
+supabase/.temp/*
+supabase/.branches/*
+
+# Ensure all env file are ignored
+**/.env
+**/.env.*
+!**/.env.example
+
+
