@@ -86,7 +86,7 @@ class APIKeysService {
    */
   async createKey(
     token: string,
-    request: CreateAPIKeyRequest
+    request: CreateAPIKeyRequesthttps://render.com/
   ): Promise<CreateAPIKeyResponse> {
     const response = await fetch(`${API_BASE_URL}/api/v1/user-api-keys`, {
       method: 'POST',
