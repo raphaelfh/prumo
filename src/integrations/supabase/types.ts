@@ -1829,6 +1829,21 @@ export type Database = {
         }
         Returns: string | null
       }
+      get_project_members: {
+        Args: {
+          p_project_id: string
+        }
+        Returns: {
+          id: string
+          user_id: string
+          role: string
+          permissions: Record<string, boolean>
+          created_at: string
+          user_email: string | null
+          user_full_name: string | null
+          user_avatar_url: string | null
+        }[]
+      }
       is_project_manager: {
         Args: { p_project: string; p_user: string }
         Returns: boolean

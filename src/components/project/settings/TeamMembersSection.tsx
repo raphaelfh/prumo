@@ -21,10 +21,9 @@ interface ProjectMember {
   id: string;
   user_id: string;
   role: MemberRole;
-  profiles: {
-    full_name: string | null;
-    email: string | null;
-  } | null;
+  user_email: string | null;
+  user_full_name: string | null;
+  user_avatar_url: string | null;
 }
 
 interface TeamMembersSectionProps {
@@ -68,15 +67,14 @@ export function TeamMembersSection({ projectId }: TeamMembersSectionProps) {
 
   const loadMembers = async () => {
     try {
+      // Usa RPC para buscar membros com dados do perfil
+      // (necessário porque RLS restringe leitura de profiles de outros usuários)
       const { data, error } = await supabase
-        .from("project_members")
-        .select("id, user_id, role, profiles!project_members_user_id_fkey(full_name, email)")
-        .eq("project_id", projectId)
-        .order("created_at", { ascending: false });
+        .rpc('get_project_members', { p_project_id: projectId });
 
       if (error) throw error;
-      setMembers(data as ProjectMember[] || []);
-    } catch (error: any) {
+      setMembers((data as ProjectMember[]) || []);
+    } catch (error: unknown) {
       console.error("Error loading members:", error);
       toast.error("Erro ao carregar membros");
     }
@@ -272,20 +270,28 @@ export function TeamMembersSection({ projectId }: TeamMembersSectionProps) {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
                       {/* Avatar */}
-                      <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                        <span className="text-base font-semibold text-primary">
-                          {member.profiles?.full_name?.charAt(0)?.toUpperCase() || 
-                           member.profiles?.email?.charAt(0)?.toUpperCase() || "?"}
-                        </span>
+                      <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                        {member.user_avatar_url ? (
+                          <img
+                            src={member.user_avatar_url}
+                            alt={member.user_full_name || "Avatar"}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-base font-semibold text-primary">
+                            {member.user_full_name?.charAt(0)?.toUpperCase() ||
+                             member.user_email?.charAt(0)?.toUpperCase() || "?"}
+                          </span>
+                        )}
                       </div>
 
                       {/* Info */}
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium leading-none mb-1">
-                          {member.profiles?.full_name || "Usuário"}
+                          {member.user_full_name || "Usuário"}
                         </p>
                         <p className="text-sm text-muted-foreground truncate">
-                          {member.profiles?.email}
+                          {member.user_email}
                         </p>
                       </div>
                     </div>
