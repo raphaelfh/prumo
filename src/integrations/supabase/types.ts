@@ -1823,6 +1823,12 @@ export type Database = {
         }
         Returns: string
       }
+      find_user_id_by_email: {
+        Args: {
+          search_email: string
+        }
+        Returns: string | null
+      }
       is_project_manager: {
         Args: { p_project: string; p_user: string }
         Returns: boolean

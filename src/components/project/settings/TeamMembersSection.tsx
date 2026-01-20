@@ -84,18 +84,23 @@ export function TeamMembersSection({ projectId }: TeamMembersSectionProps) {
 
   const handleInviteMember = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inviteEmail.trim()) return;
+    const email = inviteEmail.trim();
+    if (!email) return;
 
     setLoading(true);
     try {
-      // Verificar se o usuário existe
-      const { data: profileData, error: profileError } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("email", inviteEmail.trim())
-        .single();
+      // Buscar ID do usuário por email usando função RPC segura
+      // (necessário porque RLS restringe leitura de profiles de outros usuários)
+      const { data: userId, error: rpcError } = await supabase
+        .rpc('find_user_id_by_email', { search_email: email });
 
-      if (profileError || !profileData) {
+      if (rpcError) {
+        console.error("Error finding user:", rpcError);
+        toast.error("Erro ao buscar usuário");
+        return;
+      }
+
+      if (!userId) {
         toast.error("Usuário não encontrado com este email");
         return;
       }
@@ -103,7 +108,7 @@ export function TeamMembersSection({ projectId }: TeamMembersSectionProps) {
       // Adicionar membro com role selecionado
       const { error } = await supabase.from("project_members").insert([{
         project_id: projectId,
-        user_id: profileData.id,
+        user_id: userId,
         role: selectedRole,
       }]);
 
@@ -118,9 +123,9 @@ export function TeamMembersSection({ projectId }: TeamMembersSectionProps) {
 
       toast.success(`Membro adicionado como ${MEMBER_ROLES[selectedRole].label}!`);
       setInviteEmail("");
-      setSelectedRole('reviewer'); // Reset para padrão
+      setSelectedRole('reviewer');
       loadMembers();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error inviting member:", error);
       toast.error("Erro ao adicionar membro");
     } finally {
