@@ -4,10 +4,10 @@ Backend FastAPI para Review Hub - Plataforma de Revisão Sistemática.
 
 ## Stack
 
-- **FastAPI** - Framework web async
-- **SQLAlchemy 2.0** - ORM com suporte async
+- **FastAPI** - Framework web async para endpoints de compute/ML
+- **SQLAlchemy 2.0** - ORM com suporte async (type-safe queries)
 - **Pydantic v2** - Validação e serialização
-- **PostgreSQL** - Banco de dados (via Supabase)
+- **Supabase** - Database + Auth + Storage (source of truth)
 - **OpenAI** - Integração com LLMs
 
 ## Requisitos
@@ -82,6 +82,47 @@ Para aplicar as migrations SQL localmente em um Postgres apontado por `DATABASE_
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres_test \
   bash scripts/apply_supabase_migrations.sh
 ```
+
+## Architecture: Supabase-First
+
+Este projeto usa uma arquitetura **Supabase-First**:
+
+### Schema Management
+- **Source of Truth**: Supabase migrations (`supabase/migrations/*.sql`)
+- **Schema Changes**: Use `supabase db diff` e `supabase db push`
+- **No Alembic**: Migrations são gerenciadas pelo Supabase CLI
+
+### Data Access Patterns
+| Layer | Tool | Use Case |
+|-------|------|----------|
+| Frontend | Supabase JS SDK | CRUD simples, real-time, autenticação |
+| Backend | SQLAlchemy (async) | Queries complexas, ML pipelines, computação pesada |
+
+### Workflow para Mudanças no Schema
+
+```bash
+# 1. Fazer mudança no Supabase Dashboard ou escrever migration SQL
+supabase db diff -f add_new_feature
+
+# 2. Revisar migration gerada
+cat supabase/migrations/[timestamp]_add_new_feature.sql
+
+# 3. Aplicar localmente
+supabase db push
+
+# 4. Atualizar SQLAlchemy models manualmente
+# Editar backend/app/models/*.py para refletir mudanças
+
+# 5. Deploy para produção
+supabase db push --linked
+```
+
+### Por que Supabase-First?
+
+- **Frontend Velocity**: React acessa diretamente via Supabase SDK (RLS nativo)
+- **Backend Focus**: FastAPI dedicado a ML/compute (PyTorch, LLMs), não CRUD
+- **Database Branching**: Supabase oferece branching estilo git (2026 feature)
+- **Type Safety**: SQLAlchemy models servem como type hints, não como schema source
 
 ## Docker
 

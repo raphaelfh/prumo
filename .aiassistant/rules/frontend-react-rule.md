@@ -1,12 +1,5 @@
 ---
-description: Boas práticas para React (Vite ou Next) em SaaS.
-alwaysApply: false
-priority: high
-globs:
-  - "src/**/*.{tsx,ts}"
-  - "src/components/**/*"
-  - "src/hooks/**/*"
-  - "src/pages/**/*"
+apply: always
 ---
 
 ## Persona
