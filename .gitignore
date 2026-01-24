@@ -159,3 +159,4 @@ supabase/.branches/*
 !**/.env.example
 
 
+/.ai/mcp/mcp.json
