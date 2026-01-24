@@ -1,0 +1,563 @@
+---
+description: Padrões para backend FastAPI com SQLAlchemy, segurança e observabilidade.
+alwaysApply: false
+priority: high
+globs:
+  - "backend/**/*.py"
+  - "backend/app/**/*"
+---
+
+## Persona
+
+Atue como um **Senior Backend Engineer** com foco em:
+- APIs REST bem estruturadas e documentadas
+- Segurança (autenticação JWT, validação, sanitização)
+- Observabilidade completa (logs, traces, métricas)
+- Performance e escalabilidade
+- Código limpo e testável
+
+## Quando Aplicar Esta Regra
+
+Esta regra se aplica quando trabalhar com:
+- **Endpoints FastAPI** (`backend/app/api/`)
+- **Services** (`backend/app/services/`)
+- **Models SQLAlchemy** (`backend/app/models/`)
+- **Schemas Pydantic** (`backend/app/schemas/`)
+- **Configuração e Dependencies** (`backend/app/core/`)
+- **Testes Python** (`backend/tests/`)
+
+## Prioridade
+
+**Alta** - Aplicar sempre que trabalhar com código Python do backend.
+
+## Princípios Fundamentais
+
+### Async por Padrão
+
+- Use `async def` para todos os endpoints e operações I/O
+- Use `AsyncSession` do SQLAlchemy para queries
+- Use `httpx.AsyncClient` para requisições HTTP externas
+
+```python
+# ✅ CORRETO: Async por padrão
+@router.post("/extract")
+async def extract_data(
+    request: ExtractionRequest,
+    db: AsyncSession = Depends(get_db),
+    user: TokenPayload = Depends(get_current_user),
+) -> ApiResponse:
+    result = await service.process(request)
+    return ApiResponse(ok=True, data=result)
+
+# ❌ ERRADO: Síncrono bloqueante
+@router.post("/extract")
+def extract_data(request: ExtractionRequest):
+    result = service.process(request)  # Bloqueia event loop
+    return {"data": result}
+```
+
+### Dependency Injection
+
+Use o sistema de dependencies do FastAPI para:
+- Database sessions
+- Autenticação/Autorização
+- Services
+- Configuração
+
+```python
+# ✅ CORRETO: Dependencies bem definidas
+from app.core.deps import DbSession, CurrentUser, SupabaseClient
+
+@router.post("/items")
+async def create_item(
+    request: CreateItemRequest,
+    db: DbSession,
+    user: CurrentUser,
+    supabase: SupabaseClient,
+) -> ApiResponse:
+    # Dependencies injetadas automaticamente
+    ...
+
+# ❌ ERRADO: Criando recursos manualmente
+@router.post("/items")
+async def create_item(request: CreateItemRequest):
+    db = create_session()  # Vazamento de recursos
+    supabase = create_client(...)  # Não reutiliza conexões
+    ...
+```
+
+## Estrutura de Endpoints
+
+### Template de Endpoint
+
+```python
+from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel, Field
+from uuid import UUID
+
+from app.core.deps import DbSession, CurrentUser
+from app.core.logging import get_logger
+from app.schemas.common import ApiResponse
+from app.utils.rate_limiter import limiter
+
+router = APIRouter()
+logger = get_logger(__name__)
+
+
+class MyRequest(BaseModel):
+    """Request schema com validação."""
+    
+    project_id: UUID = Field(..., alias="projectId")
+    data: str = Field(..., min_length=1, max_length=1000)
+    
+    model_config = {"populate_by_name": True}
+
+
+@router.post(
+    "",
+    response_model=ApiResponse,
+    summary="Descrição curta",
+    description="Descrição detalhada do endpoint.",
+)
+@limiter.limit("10/minute")
+async def my_endpoint(
+    request: MyRequest,
+    db: DbSession,
+    user: CurrentUser,
+) -> ApiResponse:
+    """
+    Docstring com detalhes da operação.
+    
+    Args:
+        request: Dados da requisição.
+        
+    Returns:
+        ApiResponse com resultado.
+    """
+    import uuid
+    trace_id = str(uuid.uuid4())
+    
+    logger.info(
+        "my_endpoint_start",
+        trace_id=trace_id,
+        user_id=user.sub,
+    )
+    
+    try:
+        # Lógica de negócio delegada para service
+        service = MyService(db=db, user_id=user.sub)
+        result = await service.process(request)
+        
+        logger.info(
+            "my_endpoint_success",
+            trace_id=trace_id,
+        )
+        
+        return ApiResponse(ok=True, data=result)
+        
+    except ValueError as e:
+        logger.warning("my_endpoint_validation_error", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
+    except Exception as e:
+        logger.error("my_endpoint_error", error=str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal error",
+        ) from e
+```
+
+### Padrão de Resposta
+
+Manter compatibilidade com formato das Edge Functions anteriores:
+
+```python
+# ✅ CORRETO: Formato padronizado
+class ApiResponse(BaseModel, Generic[T]):
+    ok: bool
+    data: T | None = None
+    error: ErrorDetail | None = None
+    trace_id: str | None = None
+
+# Sucesso
+return ApiResponse(ok=True, data={"id": "123"})
+
+# Erro
+return ApiResponse(
+    ok=False,
+    error=ErrorDetail(code="VALIDATION_ERROR", message="Invalid input"),
+)
+```
+
+## Schemas Pydantic
+
+### Boas Práticas
+
+```python
+from pydantic import BaseModel, Field, model_validator
+from uuid import UUID
+
+class CreateProjectRequest(BaseModel):
+    """Schema de request com validação."""
+    
+    # Alias para compatibilidade com frontend (camelCase)
+    project_name: str = Field(..., alias="projectName", min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=5000)
+    template_id: UUID = Field(..., alias="templateId")
+    
+    # Permitir usar tanto snake_case quanto camelCase
+    model_config = {"populate_by_name": True}
+    
+    @model_validator(mode="after")
+    def validate_project(self) -> "CreateProjectRequest":
+        """Validação customizada."""
+        if self.project_name.lower() == "test":
+            raise ValueError("Project name cannot be 'test'")
+        return self
+
+
+class ProjectResponse(BaseModel):
+    """Schema de response."""
+    
+    id: UUID
+    name: str
+    description: str | None
+    created_at: datetime
+    
+    model_config = {"from_attributes": True}  # Permite criar de ORM models
+```
+
+## Services
+
+### Padrão de Service com UnitOfWork
+
+Para operações que modificam dados, use o padrão **Unit of Work**:
+
+```python
+from app.repositories.unit_of_work import UnitOfWork
+from app.core.logging import LoggerMixin
+
+
+class ProjectService(LoggerMixin):
+    """
+    Service para operações de projeto.
+    
+    Usa UnitOfWork para garantir atomicidade de transações.
+    """
+    
+    def __init__(self, user_id: str, trace_id: str | None = None):
+        self.user_id = user_id
+        self.trace_id = trace_id
+    
+    async def create_project_with_member(
+        self,
+        project_data: dict,
+    ) -> Project:
+        """
+        Cria projeto e adiciona criador como manager.
+        
+        Usa UnitOfWork para garantir que ambas operações
+        são commitadas juntas ou nenhuma é.
+        """
+        async with UnitOfWork() as uow:
+            # Criar projeto
+            project = await uow.projects.create(project_data)
+            
+            # Adicionar criador como manager
+            await uow.project_members.create({
+                "project_id": project.id,
+                "user_id": self.user_id,
+                "role": "manager",
+            })
+            
+            # Commit atômico
+            await uow.commit()
+            
+            self.logger.info(
+                "project_created",
+                trace_id=self.trace_id,
+                project_id=str(project.id),
+            )
+            
+            return project
+```
+
+### Padrão de Service (Read-Only)
+
+Para operações somente leitura, pode usar session diretamente:
+
+```python
+from sqlalchemy.ext.asyncio import AsyncSession
+from supabase import Client
+
+from app.core.logging import LoggerMixin
+
+
+class ExtractionService(LoggerMixin):
+    """
+    Service para extração de dados.
+    
+    Encapsula lógica de negócio separada dos endpoints.
+    """
+    
+    def __init__(
+        self,
+        db: AsyncSession,
+        user_id: str,
+        supabase: Client,
+        trace_id: str | None = None,
+    ):
+        self.db = db
+        self.user_id = user_id
+        self.supabase = supabase
+        self.trace_id = trace_id
+    
+    async def extract(
+        self,
+        project_id: UUID,
+        article_id: UUID,
+    ) -> dict[str, Any]:
+        """
+        Executa extração.
+        
+        Args:
+            project_id: ID do projeto.
+            article_id: ID do artigo.
+            
+        Returns:
+            Dict com resultado.
+            
+        Raises:
+            ValueError: Se dados inválidos.
+            FileNotFoundError: Se PDF não encontrado.
+        """
+        self.logger.info(
+            "extraction_start",
+            trace_id=self.trace_id,
+            project_id=str(project_id),
+        )
+        
+        # Lógica de negócio aqui
+        ...
+```
+
+### Quando Usar Cada Padrão
+
+```python
+# ✅ UnitOfWork: Operações que MODIFICAM dados (create, update, delete)
+async with UnitOfWork() as uow:
+    await uow.projects.create(data)
+    await uow.commit()
+
+# ✅ Session direta: Operações READ-ONLY
+async def get_project(db: AsyncSession, project_id: UUID):
+    result = await db.execute(select(Project).where(Project.id == project_id))
+    return result.scalar_one_or_none()
+
+# ❌ ERRADO: Repository sem UnitOfWork para modificações
+async with get_session() as session:
+    repo = ProjectRepository(session)
+    await repo.create(data)  # BUG: Sem commit, nada é salvo!
+```
+
+## Autenticação
+
+### Validação de JWT Supabase
+
+```python
+from app.core.security import get_current_user, TokenPayload
+
+# Em endpoints que requerem autenticação
+@router.get("/protected")
+async def protected_endpoint(
+    user: TokenPayload = Depends(get_current_user),
+) -> dict:
+    return {"user_id": user.sub, "email": user.email}
+
+# Para endpoints que requerem MFA
+from app.core.security import require_aal2
+
+@router.post("/sensitive")
+async def sensitive_endpoint(
+    user: TokenPayload = Depends(require_aal2),
+) -> dict:
+    # Só executa se usuário passou por MFA
+    ...
+```
+
+## Observabilidade
+
+### Logging Estruturado
+
+```python
+from app.core.logging import get_logger, log_context
+
+logger = get_logger(__name__)
+
+# Log com contexto
+logger.info(
+    "operation_completed",
+    trace_id=trace_id,
+    user_id=user_id,
+    duration_ms=duration,
+    items_processed=count,
+)
+
+# Adicionar contexto para toda a request
+log_context(trace_id=trace_id, user_id=user_id)
+```
+
+### Métricas
+
+```python
+import time
+
+start_time = time.time()
+# ... operação ...
+duration_ms = (time.time() - start_time) * 1000
+
+logger.info(
+    "ai_call_complete",
+    trace_id=trace_id,
+    duration_ms=duration_ms,
+    tokens_used=result.usage.total_tokens,
+    model=model,
+)
+```
+
+## Tratamento de Erros
+
+### Hierarquia de Exceções
+
+```python
+# Erros de validação -> 400
+raise HTTPException(
+    status_code=status.HTTP_400_BAD_REQUEST,
+    detail="Invalid input: field X is required",
+)
+
+# Não autenticado -> 401
+raise HTTPException(
+    status_code=status.HTTP_401_UNAUTHORIZED,
+    detail="Invalid or expired token",
+    headers={"WWW-Authenticate": "Bearer"},
+)
+
+# Não autorizado -> 403
+raise HTTPException(
+    status_code=status.HTTP_403_FORBIDDEN,
+    detail="Insufficient permissions",
+)
+
+# Não encontrado -> 404
+raise HTTPException(
+    status_code=status.HTTP_404_NOT_FOUND,
+    detail="Resource not found",
+)
+
+# Rate limit -> 429
+raise HTTPException(
+    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+    detail="Rate limit exceeded",
+)
+
+# Erro interno -> 500 (nunca expor detalhes)
+logger.error("internal_error", error=str(e), exc_info=True)
+raise HTTPException(
+    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    detail="Internal server error",  # Nunca expor stack trace
+)
+```
+
+## Rate Limiting
+
+```python
+from app.utils.rate_limiter import limiter
+
+# Por endpoint
+@router.post("/ai")
+@limiter.limit("10/minute")  # 10 req/min por IP
+async def ai_endpoint(...):
+    ...
+
+# Limites sugeridos por tipo de operação
+# - AI/LLM calls: 10/minute
+# - Upload de arquivos: 20/minute
+# - CRUD normal: 60/minute
+# - Queries pesadas: 30/minute
+```
+
+## Testes
+
+### Estrutura de Teste
+
+```python
+import pytest
+from httpx import AsyncClient
+
+
+@pytest.mark.asyncio
+async def test_create_project(client: AsyncClient) -> None:
+    """Test creating a new project."""
+    response = await client.post(
+        "/api/v1/projects",
+        json={
+            "projectName": "Test Project",
+            "description": "A test project",
+        },
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ok"] is True
+    assert "id" in data["data"]
+
+
+@pytest.mark.asyncio
+async def test_create_project_validation_error(client: AsyncClient) -> None:
+    """Test validation error on invalid input."""
+    response = await client.post(
+        "/api/v1/projects",
+        json={"projectName": ""},  # Nome vazio
+    )
+    
+    assert response.status_code == 400
+```
+
+## Checklist de Validação
+
+Antes de considerar endpoint/service completo:
+
+### Endpoint
+- [ ] **Async**: Usa `async def` e operações async
+- [ ] **Dependencies**: Usa DI para db, user, supabase
+- [ ] **Validação**: Schema Pydantic com validação
+- [ ] **Rate limiting**: `@limiter.limit()` aplicado
+- [ ] **Logging**: Log de início, sucesso e erro
+- [ ] **Trace ID**: Gerado e propagado
+- [ ] **Erros tratados**: try/except com HTTPException apropriada
+- [ ] **Response padronizada**: `ApiResponse(ok=True, data=...)`
+- [ ] **Documentação**: summary, description, docstring
+
+### Service
+- [ ] **UnitOfWork**: Operações de escrita usam `async with UnitOfWork() as uow`
+- [ ] **flush vs commit**: Repositories usam flush(), UnitOfWork faz commit()
+- [ ] **Logging estruturado**: Usa LoggerMixin
+- [ ] **Erros específicos**: ValueError, FileNotFoundError, etc
+- [ ] **Transações atômicas**: Múltiplas operações no mesmo UnitOfWork
+- [ ] **Testável**: Pode ser instanciado com mocks
+
+### Schema
+- [ ] **Alias**: Para compatibilidade camelCase/snake_case
+- [ ] **Validação**: Field com constraints
+- [ ] **Validators**: model_validator quando necessário
+- [ ] **Docs**: Descrição nos Fields
+
+## Referências
+
+- `core-rules-saas-app.mdc` - Princípios gerais
+- `database-sqlalchemy-rules.mdc` - Regras de banco de dados
+- `python-rules.mdc` - Padrões Python
+- `frontend-react-rule.mdc` - Integração com frontend

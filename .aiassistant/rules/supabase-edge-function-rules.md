@@ -1,0 +1,548 @@
+---
+rule_type: auto
+globs:
+  - "supabase/functions/**/*.{ts,tsx,tsc,js}"
+description: "[LEGADO] Padrões para Edge Functions (Deno). Usar FastAPI para novos endpoints."
+priority: low
+---
+
+> ⚠️ **ATENÇÃO: REGRA LEGADA**
+>
+> **Esta regra é mantida apenas como referência para o código existente.**
+>
+> Para **novos endpoints**, use FastAPI em vez de Edge Functions.
+> Consulte: `fastapi-backend-rules.mdc`
+>
+> As Edge Functions existentes serão gradualmente migradas para FastAPI.
+> Veja o plano de migração em `docs/planos/migrar_para_fastapi.plan.md`.
+
+---
+
+## Persona
+
+Atue como um **Senior Software Engineer** com foco em:
+- Segurança de APIs (validação, rate limiting, sanitização)
+- Observabilidade completa (logs, traces, métricas)
+- Tratamento robusto de erros
+- Performance e escalabilidade
+
+## Quando Aplicar Esta Regra
+
+Esta regra se aplica quando trabalhar com:
+- **Edge Functions** (Deno) em `supabase/functions/`
+- **APIs backend** que processam requisições
+- **Integrações externas** (AI APIs, webhooks, etc.)
+- **Processamento assíncrono** (background jobs)
+
+## Prioridade
+
+**Média** - Aplicar quando trabalhar com Edge Functions ou APIs backend.
+
+## Princípios Fundamentais
+
+### Segurança Primeiro
+
+- **Validação obrigatória**: Zod schemas para entrada e saída
+- **Rate limiting**: Proteção contra abuso
+- **Sanitização**: Limpar inputs antes de processar
+- **Least privilege**: Service role apenas quando necessário
+
+### Observabilidade Obrigatória
+
+- **TraceId único**: Em todos os logs de erro
+- **Logs estruturados**: JSON para fácil parsing
+- **Métricas**: Latências, contagem de tokens, tamanho de payloads
+- **Contexto rico**: userId, orgId, action em todos os logs
+
+### Tratamento de Erros Robusto
+
+- **Formato padronizado**: `{ ok: boolean, data?: T, error?: { code, message } }`
+- **Status HTTP preciso**: 400, 401, 403, 429, 500, etc.
+- **Não vazar informações**: Mensagens internas apenas em logs
+
+## Padrões
+
+- **Valide input** no início com zod; rejeite payloads fora do contrato.
+- Use cliente Supabase com **service role** apenas na Edge; nunca no front.
+- **RLS permanece ON**; se precisar bypass (service role), justifique e minimize escopo.
+
+## Respostas e erros
+
+- Padrão JSON `{ ok: boolean, data?: T, error?: { code, message } }`; status HTTP preciso.
+- Não vaze mensagens internas; logue detalhes sensíveis apenas no servidor.
+
+## Observabilidade (OBRIGATÓRIO)
+
+### Logging Padronizado
+
+**SEMPRE incluir:**
+- `traceId` único em logs de erro
+- Formato JSON estruturado
+- Contexto rico (userId, orgId, action, etc.)
+- Timestamp e duração
+
+```typescript
+// ✅ CORRETO: Logging completo e estruturado
+const traceId = crypto.randomUUID();
+const startTime = performance.now();
+
+try {
+  // ... lógica ...
+  const duration = performance.now() - startTime;
+  
+  console.log(JSON.stringify({
+    traceId,
+    timestamp: new Date().toISOString(),
+    level: 'info',
+    action: 'assess_article',
+    duration: `${duration.toFixed(2)}ms`,
+    context: { userId, articleId, orgId },
+  }));
+} catch (error) {
+  const duration = performance.now() - startTime;
+  
+  console.error(JSON.stringify({
+    traceId,
+    timestamp: new Date().toISOString(),
+    level: 'error',
+    message: error.message,
+    duration: `${duration.toFixed(2)}ms`,
+    context: { userId, articleId, action: 'assess_article' },
+    stack: error.stack, // Apenas em logs, nunca na resposta
+  }));
+  
+  // Em produção, integrar com Supabase Logs ou serviço externo (Sentry, Datadog)
+}
+```
+
+### Métricas
+
+**Registrar:**
+- Latências de operações críticas (AI calls, queries pesadas)
+- Contagem de tokens (AI usage)
+- Duração de processamento
+- Tamanho de payloads
+
+```typescript
+// ✅ CORRETO: Capturar métricas
+const aiStartTime = performance.now();
+const result = await callAI(prompt);
+const aiDuration = performance.now() - aiStartTime;
+
+console.log(JSON.stringify({
+  traceId,
+  level: 'metric',
+  metric: 'ai_usage',
+  value: {
+    duration: `${aiDuration.toFixed(2)}ms`,
+    tokens: result.usage.total_tokens,
+    model: 'gpt-4',
+  },
+  context: { userId, articleId },
+}));
+```
+
+### Exemplos Negativos ❌
+
+```typescript
+// ❌ ERRADO: Sem observabilidade
+try {
+  const result = await processArticle(data);
+  return new Response(JSON.stringify({ ok: true, data: result }));
+} catch (error) {
+  return new Response(JSON.stringify({ ok: false, error: error.message }));
+  // Sem traceId, sem contexto, sem logs estruturados
+}
+
+// ❌ ERRADO: Logs não estruturados
+console.log('Error:', error);
+console.log('User:', userId);
+// Difícil de parsear e analisar
+
+// ❌ ERRADO: Vazar stack trace na resposta
+catch (error) {
+  return new Response(JSON.stringify({
+    ok: false,
+    error: error.message,
+    stack: error.stack, // ❌ NUNCA vazar stack em produção
+  }));
+}
+```
+
+### CORS e Timeouts
+
+- Inclua **CORS** explícito para todas as rotas.
+- *Timeouts* razoáveis para I/O externo (AI APIs: 60s, Supabase queries: 10s).
+
+```typescript
+// ✅ CORRETO: CORS e timeout configurados
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+const controller = new AbortController();
+const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
+
+try {
+  const result = await fetch(aiApiUrl, {
+    signal: controller.signal,
+    // ...
+  });
+  clearTimeout(timeoutId);
+} catch (error) {
+  clearTimeout(timeoutId);
+  if (error.name === 'AbortError') {
+    return new Response(
+      JSON.stringify({ ok: false, error: { code: 'TIMEOUT', message: 'Request timeout' } }),
+      { status: 408, headers: corsHeaders }
+    );
+  }
+}
+```
+
+## Segurança
+
+### Validação de Input (OBRIGATÓRIO)
+
+```typescript
+// ✅ CORRETO: Validação com Zod no início
+import { z } from 'https://deno.land/x/zod/mod.ts';
+
+const RequestSchema = z.object({
+  articleId: z.string().uuid(),
+  templateId: z.string().uuid(),
+  orgId: z.string().uuid(),
+});
+
+Deno.serve(async (req) => {
+  try {
+    const body = await req.json();
+    const validated = RequestSchema.parse(body); // Valida e lança erro se inválido
+    
+    // Processar apenas dados validados
+    const result = await processArticle(validated);
+    
+    return new Response(
+      JSON.stringify({ ok: true, data: result }),
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return new Response(
+        JSON.stringify({ 
+          ok: false, 
+          error: { code: 'VALIDATION_ERROR', message: error.errors } 
+        }),
+        { status: 400 }
+      );
+    }
+    // ... tratamento de outros erros
+  }
+});
+```
+
+```typescript
+// ❌ ERRADO: Sem validação
+Deno.serve(async (req) => {
+  const body = await req.json();
+  // Processar sem validar - perigoso!
+  const result = await processArticle(body);
+  return new Response(JSON.stringify({ ok: true, data: result }));
+});
+```
+
+### Rate Limiting
+
+Estratégia por tipo de rota (implementar com Supabase KV ou tabela simples):
+
+```typescript
+// ✅ CORRETO: Rate limiting implementado
+async function checkRateLimit(
+  key: string, 
+  limit: number, 
+  windowSeconds: number
+): Promise<{ allowed: boolean; remaining: number }> {
+  const { data } = await supabase
+    .from('rate_limits')
+    .select('count, reset_at')
+    .eq('key', key)
+    .single();
+  
+  const now = new Date();
+  const resetAt = data?.reset_at ? new Date(data.reset_at) : null;
+  
+  // Reset se window expirou
+  if (!resetAt || now > resetAt) {
+    await supabase.from('rate_limits').upsert({
+      key,
+      count: 1,
+      reset_at: new Date(now.getTime() + windowSeconds * 1000),
+    });
+    return { allowed: true, remaining: limit - 1 };
+  }
+  
+  // Verificar limite
+  if (data.count >= limit) {
+    return { allowed: false, remaining: 0 };
+  }
+  
+  // Incrementar
+  await supabase.from('rate_limits')
+    .update({ count: data.count + 1 })
+    .eq('key', key);
+  
+  return { allowed: true, remaining: limit - data.count - 1 };
+}
+
+// Uso por rota:
+// - AI assessment: 10/min por user_id
+// - Import: 5/min por org_id
+// - Upload: 20/min por IP
+```
+
+**Limites sugeridos:**
+- AI assessment: `10/min` por `user_id`
+- Import (Zotero): `5/min` por `org_id`
+- Upload: `20/min` por `IP`
+- Queries pesadas: `30/min` por `user_id`
+
+```typescript
+// ❌ ERRADO: Sem rate limiting
+Deno.serve(async (req) => {
+  // Processar sem verificar rate limit - vulnerável a abuso
+  const result = await expensiveOperation();
+  return new Response(JSON.stringify({ ok: true, data: result }));
+});
+```
+
+### Validação de Webhooks
+
+- Assinaturas Webhook verificadas; sempre valide `signature` antes de processar.
+- Use HMAC SHA256 para verificar payloads.
+
+```typescript
+// ✅ CORRETO: Validação de webhook
+async function verifyWebhookSignature(
+  payload: string,
+  signature: string,
+  secret: string
+): Promise<boolean> {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  
+  const signatureBytes = encoder.encode(payload);
+  const expectedSignature = await crypto.subtle.sign('HMAC', key, signatureBytes);
+  const expectedHex = Array.from(new Uint8Array(expectedSignature))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+  
+  return signature === expectedHex;
+}
+```
+
+## Exemplos Positivos ✅
+
+### Edge Function Completa
+
+```typescript
+// ✅ CORRETO: Edge function completa com todas as boas práticas
+import { z } from 'https://deno.land/x/zod/mod.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const RequestSchema = z.object({
+  articleId: z.string().uuid(),
+  templateId: z.string().uuid(),
+});
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+Deno.serve(async (req) => {
+  const traceId = crypto.randomUUID();
+  const startTime = performance.now();
+  
+  try {
+    // 1. Validação
+    const body = await req.json();
+    const validated = RequestSchema.parse(body);
+    
+    // 2. Autenticação
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ ok: false, error: { code: 'UNAUTHORIZED', message: 'Missing authorization' } }),
+        { status: 401, headers: corsHeaders }
+      );
+    }
+    
+    // 3. Rate limiting
+    const userId = extractUserId(authHeader);
+    const rateLimit = await checkRateLimit(`ai_assess:${userId}`, 10, 60);
+    if (!rateLimit.allowed) {
+      return new Response(
+        JSON.stringify({ ok: false, error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Too many requests' } }),
+        { status: 429, headers: corsHeaders }
+      );
+    }
+    
+    // 4. Processamento
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
+    
+    const result = await processAssessment(validated, supabase);
+    
+    const duration = performance.now() - startTime;
+    console.log(JSON.stringify({
+      traceId,
+      level: 'info',
+      action: 'assess_article',
+      duration: `${duration.toFixed(2)}ms`,
+      context: { userId, articleId: validated.articleId },
+    }));
+    
+    return new Response(
+      JSON.stringify({ ok: true, data: result }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  } catch (error) {
+    const duration = performance.now() - startTime;
+    
+    if (error instanceof z.ZodError) {
+      console.error(JSON.stringify({
+        traceId,
+        level: 'error',
+        error: 'VALIDATION_ERROR',
+        message: error.errors,
+        duration: `${duration.toFixed(2)}ms`,
+      }));
+      
+      return new Response(
+        JSON.stringify({ ok: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid input' } }),
+        { status: 400, headers: corsHeaders }
+      );
+    }
+    
+    console.error(JSON.stringify({
+      traceId,
+      level: 'error',
+      message: error.message,
+      stack: error.stack,
+      duration: `${duration.toFixed(2)}ms`,
+    }));
+    
+    return new Response(
+      JSON.stringify({ ok: false, error: { code: 'INTERNAL_ERROR', message: 'An error occurred' } }),
+      { status: 500, headers: corsHeaders }
+    );
+  }
+});
+```
+
+## Testes Edge Functions
+
+### Estrutura com Deno Test
+
+```typescript
+import { assertEquals } from "https://deno.land/std/testing/asserts.ts";
+import { handler } from "./ai-assessment/index.ts";
+
+Deno.test("assessArticle - valida input com zod", async () => {
+  const request = new Request("http://localhost", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ invalid: "data" }),
+  });
+  
+  const result = await handler({ request });
+  assertEquals(result.status, 400);
+  
+  const body = await result.json();
+  assertEquals(body.ok, false);
+  assertEquals(body.error?.code, "VALIDATION_ERROR");
+});
+
+Deno.test("assessArticle - retorna erro em caso de rate limit", async () => {
+  // Mock rate limit exceeded
+  const request = new Request("http://localhost", {
+    method: "POST",
+    headers: { 
+      "Content-Type": "application/json",
+      "Authorization": "Bearer valid_token"
+    },
+    body: JSON.stringify({ articleId: "123" }),
+  });
+  
+  // Simular rate limit
+  // ...
+  
+  const result = await handler({ request });
+  assertEquals(result.status, 429);
+});
+```
+
+### Quando testar
+
+- Validação de input (zod schemas)
+- Rate limiting
+- Tratamento de erros
+- Formato de resposta padronizado
+- CORS headers
+
+## Checklist de Validação Antes de Deploy
+
+Antes de considerar Edge Function pronta para deploy, verificar:
+
+### Segurança
+- [ ] **Validação de input**: Zod schema para entrada
+- [ ] **Rate limiting**: Implementado e testado
+- [ ] **Autenticação**: Verificação de token/autorização
+- [ ] **Sanitização**: Inputs limpos antes de processar
+- [ ] **Service role**: Usado apenas quando necessário, nunca exposto
+
+### Observabilidade
+- [ ] **TraceId**: Incluído em todos os logs de erro
+- [ ] **Logs estruturados**: Formato JSON
+- [ ] **Contexto rico**: userId, orgId, action em logs
+- [ ] **Métricas**: Latências, tokens, tamanho de payloads
+- [ ] **Duração**: Tempo de processamento registrado
+
+### Tratamento de Erros
+- [ ] **Formato padronizado**: `{ ok: boolean, data?: T, error?: { code, message } }`
+- [ ] **Status HTTP preciso**: 400, 401, 403, 429, 500, etc.
+- [ ] **Não vazar informações**: Stack trace apenas em logs
+- [ ] **Mensagens de erro claras**: Para usuário (sem detalhes internos)
+
+### Performance
+- [ ] **Timeouts configurados**: Para I/O externo (AI: 60s, DB: 10s)
+- [ ] **CORS configurado**: Headers corretos para todas as rotas
+- [ ] **Queries otimizadas**: Evitar N+1, usar joins quando apropriado
+
+### Testes
+- [ ] **Testes de validação**: Input inválido retorna 400
+- [ ] **Testes de rate limit**: Limite excedido retorna 429
+- [ ] **Testes de erro**: Erros tratados corretamente
+- [ ] **Testes de sucesso**: Resposta correta em caso de sucesso
+
+## Referências
+
+- `core-rules-saas-app.mdc` - Princípios gerais, observabilidade
+- `database-supabase-rules.mdc` - Como usar Supabase client, RLS
+- `frontend-react-rule.mdc` - Como chamar Edge Functions do frontend
+
+## Entregáveis do AI
+
+- **Sempre** colocar código da edge function em `supabase/functions/` (não apenas deploy).
+- Funções com zod de entrada/saída, tratamento de erro uniforme e testes `deno test`.
+- Incluir exemplos de uso na documentação.
+- Sempre incluir observabilidade completa (traceId, logs estruturados, métricas).

@@ -53,7 +53,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 def create_app() -> FastAPI:
     """
     Factory function para criar a aplicação FastAPI.
-    
+
     Returns:
         FastAPI: Instância configurada da aplicação.
     """
@@ -97,7 +97,10 @@ def create_app() -> FastAPI:
     
     @app.get("/", tags=["Root"])
     async def root() -> dict[str, str]:
-        """Root endpoint com informações da API."""
+        """
+        Root endpoint com informações da API.
+        Para conseguir acessar o doc, visite {settings.API_V1_PREFIX}/docs, como por exemplo http://localhost:8000/api/v1/docs
+        """
         return {
             "name": settings.PROJECT_NAME,
             "version": "0.1.0",
