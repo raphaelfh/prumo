@@ -38,61 +38,62 @@ def import_zotero_collection_task(
     Returns:
         Dict com resultado da importação.
     """
-    from app.core.database import async_session_maker
-    from app.infrastructure.storage import SupabaseStorageAdapter
+    from app.core.deps import AsyncSessionLocal, get_supabase_client
+    from app.core.factories import create_storage_adapter
     from app.repositories import UnitOfWork
     from app.services.zotero_service import ZoteroService
     from app.use_cases import ImportZoteroRequest, ImportZoteroUseCase
     
     async def run():
-        async with async_session_maker() as session:
-            from supabase import create_client
-            from app.core.config import settings
-            
-            supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
-            storage = SupabaseStorageAdapter(supabase)
-            uow = UnitOfWork(session)
-            
-            # ZoteroService precisa da sessão
-            zotero = ZoteroService(
-                db=session,
-                user_id=user_id,
-            )
-            
-            use_case = ImportZoteroUseCase(
-                uow=uow,
-                zotero=zotero,
-                storage=storage,
-            )
-            
-            request = ImportZoteroRequest(
-                project_id=UUID(project_id),
-                collection_key=collection_key,
-                user_id=user_id,
-                trace_id=self.request.id,
-                import_pdfs=import_pdfs,
-                max_items=max_items,
-            )
-            
-            result = await use_case.execute(request)
-            
-            return {
-                "total_items": result.total_items,
-                "imported": result.imported,
-                "failed": result.failed,
-                "skipped": result.skipped,
-                "results": [
-                    {
-                        "zotero_key": r.zotero_key,
-                        "title": r.title,
-                        "success": r.success,
-                        "article_id": r.article_id,
-                        "has_pdf": r.has_pdf,
-                        "error": r.error,
-                    }
-                    for r in result.results
-                ],
-            }
+        async with AsyncSessionLocal() as session:
+            try:
+                supabase = get_supabase_client()
+                storage = create_storage_adapter(supabase)
+                uow = UnitOfWork(session)
+                
+                # ZoteroService precisa da sessão
+                zotero = ZoteroService(
+                    db=session,
+                    user_id=user_id,
+                )
+                
+                use_case = ImportZoteroUseCase(
+                    uow=uow,
+                    zotero=zotero,
+                    storage=storage,
+                )
+                
+                request = ImportZoteroRequest(
+                    project_id=UUID(project_id),
+                    collection_key=collection_key,
+                    user_id=user_id,
+                    trace_id=self.request.id,
+                    import_pdfs=import_pdfs,
+                    max_items=max_items,
+                )
+                
+                result = await use_case.execute(request)
+                
+                return {
+                    "total_items": result.total_items,
+                    "imported": result.imported,
+                    "failed": result.failed,
+                    "skipped": result.skipped,
+                    "results": [
+                        {
+                            "zotero_key": r.zotero_key,
+                            "title": r.title,
+                            "success": r.success,
+                            "article_id": r.article_id,
+                            "has_pdf": r.has_pdf,
+                            "error": r.error,
+                        }
+                        for r in result.results
+                    ],
+                }
+            except Exception:
+                await session.rollback()
+                raise
     
     try:
         return asyncio.run(run())
@@ -118,40 +119,44 @@ def sync_zotero_library_task(
     Returns:
         Dict com resultado da sincronização.
     """
-    from app.core.database import async_session_maker
+    from app.core.deps import AsyncSessionLocal
     from app.services.zotero_service import ZoteroService
     
     async def run():
-        async with async_session_maker() as session:
-            zotero = ZoteroService(
-                db=session,
-                user_id=user_id,
-            )
-            
-            # Testar conexão
-            connection_result = await zotero.test_connection()
-            
-            if not connection_result.get("success"):
-                return {
-                    "success": False,
-                    "error": connection_result.get("error"),
-                }
-            
-            # Listar collections
-            collections_result = await zotero.list_collections()
-            
-            return {
-                "success": True,
-                "user_name": connection_result.get("user_name"),
-                "collections_count": len(collections_result.get("collections", [])),
-                "collections": [
-                    {
-                        "key": c.get("key"),
-                        "name": c.get("data", {}).get("name"),
+        async with AsyncSessionLocal() as session:
+            try:
+                zotero = ZoteroService(
+                    db=session,
+                    user_id=user_id,
+                )
+                
+                # Testar conexão
+                connection_result = await zotero.test_connection()
+                
+                if not connection_result.get("success"):
+                    return {
+                        "success": False,
+                        "error": connection_result.get("error"),
                     }
-                    for c in collections_result.get("collections", [])[:20]  # Limitar
-                ],
-            }
+                
+                # Listar collections
+                collections_result = await zotero.list_collections()
+                
+                return {
+                    "success": True,
+                    "user_name": connection_result.get("user_name"),
+                    "collections_count": len(collections_result.get("collections", [])),
+                    "collections": [
+                        {
+                            "key": c.get("key"),
+                            "name": c.get("data", {}).get("name"),
+                        }
+                        for c in collections_result.get("collections", [])[:20]  # Limitar
+                    ],
+                }
+            except Exception:
+                await session.rollback()
+                raise
     
     try:
         return asyncio.run(run())

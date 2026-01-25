@@ -38,47 +38,41 @@ def assess_article_task(
     Returns:
         Dict com resultado do assessment.
     """
-    from app.core.database import async_session_maker
-    from app.infrastructure.storage import SupabaseStorageAdapter
-    from app.repositories import UnitOfWork
-    from app.services.openai_service import OpenAIService
-    from app.use_cases import AssessArticleRequest, AssessArticleUseCase
+    from app.core.deps import AsyncSessionLocal, get_supabase_client
+    from app.core.factories import create_storage_adapter
+    from app.services.ai_assessment_service import AIAssessmentService
     
     async def run():
-        async with async_session_maker() as session:
-            # Criar dependências
-            # Note: Supabase client precisa ser criado aqui
-            from supabase import create_client
-            from app.core.config import settings
-            
-            supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
-            storage = SupabaseStorageAdapter(supabase)
-            openai = OpenAIService(trace_id=self.request.id)
-            uow = UnitOfWork(session)
-            
-            use_case = AssessArticleUseCase(
-                uow=uow,
-                storage=storage,
-                openai=openai,
-            )
-            
-            request = AssessArticleRequest(
-                project_id=UUID(project_id),
-                article_id=UUID(article_id),
-                assessment_item_id=UUID(assessment_item_id),
-                instrument_id=UUID(instrument_id),
-                user_id=user_id,
-                trace_id=self.request.id,
-            )
-            
-            result = await use_case.execute(request)
-            
-            return {
-                "assessment_id": result.assessment_id,
-                "selected_level": result.selected_level,
-                "confidence_score": result.confidence_score,
-                "status": result.status,
-            }
+        async with AsyncSessionLocal() as session:
+            try:
+                supabase = get_supabase_client()
+                storage = create_storage_adapter(supabase)
+                
+                service = AIAssessmentService(
+                    db=session,
+                    user_id=user_id,
+                    storage=storage,
+                    trace_id=self.request.id,
+                )
+                
+                result = await service.assess(
+                    project_id=UUID(project_id),
+                    article_id=UUID(article_id),
+                    assessment_item_id=UUID(assessment_item_id),
+                    instrument_id=UUID(instrument_id),
+                )
+                
+                await session.commit()
+                
+                return {
+                    "assessment_id": result.assessment_id,
+                    "selected_level": result.selected_level,
+                    "confidence_score": result.confidence_score,
+                    "status": "pending_review",
+                }
+            except Exception:
+                await session.rollback()
+                raise
     
     try:
         return asyncio.run(run())
