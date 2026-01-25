@@ -33,6 +33,8 @@ security = HTTPBearer(
 # JWT Secret para Supabase local (HS256)
 # Em produção, JWKS é usado (RS256)
 SUPABASE_LOCAL_JWT_SECRET = "super-secret-jwt-token-with-at-least-32-characters-long"
+LOCAL_JWT_ALGS = {"HS256"}
+JWKS_JWT_ALGS = {"RS256", "ES256"}
 
 
 class TokenPayload(BaseModel):
@@ -115,9 +117,47 @@ async def get_jwks() -> dict[str, Any]:
     return await _jwks_cache.get_jwks(jwks_url)
 
 
-def _is_local_supabase() -> bool:
-    """Verifica se está usando Supabase local."""
-    return "127.0.0.1" in settings.SUPABASE_URL or "localhost" in settings.SUPABASE_URL
+def _expected_issuer() -> str:
+    """Retorna o issuer esperado com base no SUPABASE_URL."""
+    return f"{settings.SUPABASE_URL.rstrip('/')}/auth/v1"
+
+
+async def _decode_with_jwks(
+    token: str,
+    alg: str,
+    kid: str | None,
+    expected_issuer: str,
+) -> dict[str, Any]:
+    """Decodifica JWT usando JWKS do Supabase."""
+    jwks = await get_jwks()
+
+    rsa_key: dict[str, Any] | None = None
+    for key in jwks.get("keys", []):
+        if kid and key.get("kid") == kid:
+            rsa_key = key
+            break
+
+    if not rsa_key:
+        if not jwks.get("keys"):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token signing keys not available for Supabase JWKS",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token signing key not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return jwt.decode(
+        token,
+        rsa_key,
+        algorithms=[alg],
+        audience="authenticated",
+        issuer=expected_issuer,
+    )
 
 
 async def verify_supabase_jwt(
@@ -125,88 +165,148 @@ async def verify_supabase_jwt(
 ) -> TokenPayload:
     """
     Valida JWT do Supabase Auth.
-    
+
     Suporta dois modos:
     - Supabase Cloud: Validação via JWKS (RS256)
     - Supabase Local: Validação via JWT_SECRET (HS256)
-    
+
     Args:
         credentials: Credenciais extraídas do header Authorization.
-        
+
     Returns:
         TokenPayload com dados do usuário.
-        
+
     Raises:
         HTTPException 401: Token inválido ou expirado.
     """
     token = credentials.credentials
-    
+
+    logger.debug(
+        "jwt_validation_start",
+        token_prefix=token[:20] if len(token) > 20 else token,
+    )
+
     try:
         # Decodificar header sem verificar para pegar algoritmo
         unverified_header = jwt.get_unverified_header(token)
         kid = unverified_header.get("kid")
         alg = unverified_header.get("alg", "HS256")
+        expected_issuer = _expected_issuer()
+        supabase_env = settings.supabase_env
+        
+        # Segredo para validação local (HS256)
+        jwt_secret = settings.SUPABASE_JWT_SECRET or SUPABASE_LOCAL_JWT_SECRET
         
         # Supabase Local usa HS256 com JWT_SECRET
-        if alg == "HS256" or _is_local_supabase():
-            logger.debug("jwt_validation_mode", mode="HS256", is_local=True)
-            payload = jwt.decode(
-                token,
-                SUPABASE_LOCAL_JWT_SECRET,
-                algorithms=["HS256"],
-                audience="authenticated",
-                issuer=f"{settings.SUPABASE_URL}/auth/v1",
-            )
-            return TokenPayload(**payload)
-        
-        # Supabase Cloud usa RS256 com JWKS
-        logger.debug("jwt_validation_mode", mode="RS256", kid=kid)
-        
-        # Buscar JWKS
-        jwks = await get_jwks()
-        
-        # Encontrar chave correspondente
-        rsa_key: dict[str, Any] | None = None
-        for key in jwks.get("keys", []):
-            if key.get("kid") == kid:
-                rsa_key = key
-                break
-        
-        if not rsa_key:
-            # Fallback para HS256 se JWKS estiver vazio (desenvolvimento)
-            if not jwks.get("keys"):
-                logger.warning("jwks_empty_fallback_hs256")
-                payload = jwt.decode(
-                    token,
-                    SUPABASE_LOCAL_JWT_SECRET,
-                    algorithms=["HS256"],
-                    audience="authenticated",
-                    issuer=f"{settings.SUPABASE_URL}/auth/v1",
+        if supabase_env == "local":
+            if alg in LOCAL_JWT_ALGS:
+                logger.debug(
+                    "jwt_validation_mode",
+                    mode="HS256",
+                    supabase_env=supabase_env,
                 )
-                return TokenPayload(**payload)
-            
+
+                # Em local, se falhar a primeira vez, tentamos ser mais flexíveis
+                try:
+                    payload = jwt.decode(
+                        token,
+                        jwt_secret,
+                        algorithms=["HS256"],
+                        audience="authenticated",
+                        issuer=expected_issuer,
+                    )
+                except JWTError as e:
+                    logger.warning(
+                        "jwt_validation_local_strict_failed_retrying_flexible",
+                        error=str(e),
+                    )
+                    # Tenta sem verificar issuer e audience se for local
+                    payload = jwt.decode(
+                        token,
+                        jwt_secret,
+                        algorithms=["HS256"],
+                        options={"verify_aud": False, "verify_iss": False}
+                    )
+            elif alg in JWKS_JWT_ALGS:
+                logger.debug(
+                    "jwt_validation_mode",
+                    mode=alg,
+                    supabase_env=supabase_env,
+                    kid=kid,
+                )
+                payload = await _decode_with_jwks(
+                    token=token,
+                    alg=alg,
+                    kid=kid,
+                    expected_issuer=expected_issuer,
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token: expected HS256/RS256/ES256 for SUPABASE_ENV=local",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            if payload.get("iss") != expected_issuer:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token: issuer mismatch for SUPABASE_ENV=local",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            return TokenPayload(**payload)
+
+        if alg not in JWKS_JWT_ALGS:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token signing key not found",
+                detail="Invalid token: expected RS256/ES256 for SUPABASE_ENV=production",
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
-        # Verificar e decodificar token com RS256
-        payload = jwt.decode(
-            token,
-            rsa_key,
-            algorithms=[alg],
-            audience="authenticated",
-            issuer=f"{settings.SUPABASE_URL}/auth/v1",
+        # Supabase Cloud usa RS256 com JWKS
+        logger.debug(
+            "jwt_validation_mode",
+            mode=alg,
+            supabase_env=supabase_env,
+            kid=kid,
         )
-        
+        payload = await _decode_with_jwks(
+            token=token,
+            alg=alg,
+            kid=kid,
+            expected_issuer=expected_issuer,
+        )
+
+        logger.debug(
+            "jwt_validation_success",
+            user_id=payload.get("sub"),
+            email=payload.get("email"),
+        )
+
         return TokenPayload(**payload)
-        
+
     except JWTError as e:
-        logger.warning("jwt_validation_error", error=str(e))
+        logger.warning(
+            "jwt_validation_error",
+            error=str(e),
+            error_type=type(e).__name__,
+            token_prefix=token[:20] if len(token) > 20 else token,
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid token: {str(e)}",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from e
+    except Exception as e:
+        logger.error(
+            "jwt_validation_unexpected_error",
+            error=str(e),
+            error_type=type(e).__name__,
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token validation failed",
             headers={"WWW-Authenticate": "Bearer"},
         ) from e
 
@@ -272,4 +372,3 @@ def derive_encryption_key(user_id: str) -> bytes:
         100000,
         dklen=32,
     )
-

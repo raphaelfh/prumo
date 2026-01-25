@@ -1,9 +1,64 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  IS_LOCAL_SUPABASE,
+  SUPABASE_ENV,
+  SUPABASE_EXPECTED_ISSUER,
+  SUPABASE_STORAGE_KEY,
+} from "@/config/supabase-env";
 import { useNavigate } from "react-router-dom";
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const ALLOWED_ALGS = IS_LOCAL_SUPABASE
+  ? new Set(["HS256", "RS256", "ES256"])
+  : new Set(["RS256", "ES256"]);
+
+const decodeBase64Url = (value: string): string => {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+  return atob(padded);
+};
+
+const parseJwt = (token: string) => {
+  const [headerPart, payloadPart] = token.split(".");
+  if (!headerPart || !payloadPart) {
+    throw new Error("Invalid JWT structure");
+  }
+  const header = JSON.parse(decodeBase64Url(headerPart));
+  const payload = JSON.parse(decodeBase64Url(payloadPart));
+  return { header, payload };
+};
+
+type EnvCheckResult = {
+  valid: boolean;
+  header?: { alg?: string };
+  payload?: { iss?: string };
+  error?: unknown;
+};
+
+const validateSessionForEnv = (session: Session | null): EnvCheckResult => {
+  if (!session?.access_token) {
+    return { valid: true };
+  }
+
+  try {
+    const { header, payload } = parseJwt(session.access_token);
+    const algOk = typeof header?.alg === "string" && ALLOWED_ALGS.has(header.alg);
+    const issuerOk = SUPABASE_EXPECTED_ISSUER
+      ? payload?.iss === SUPABASE_EXPECTED_ISSUER
+      : true;
+
+    return { valid: algOk && issuerOk, header, payload };
+  } catch (error) {
+    return { valid: false, error };
+  }
+};
+
+const clearStoredSession = () => {
+  if (SUPABASE_STORAGE_KEY) {
+    localStorage.removeItem(SUPABASE_STORAGE_KEY);
+  }
+};
 
 interface AuthContextType {
   user: User | null;
@@ -26,8 +81,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       (event, session) => {
         // Se a sessão é inválida (erro 403), limpar localStorage e fazer logout
         if (event === 'SIGNED_OUT' || (event === 'TOKEN_REFRESHED' && !session)) {
-          localStorage.removeItem('sb-' + SUPABASE_URL.split('//')[1].split('.')[0] + '-auth-token');
+          clearStoredSession();
         }
+
+        const envCheck = validateSessionForEnv(session);
+        if (!envCheck.valid) {
+          console.warn("[Supabase] Session does not match environment", {
+            supabaseEnv: SUPABASE_ENV,
+            expectedIssuer: SUPABASE_EXPECTED_ISSUER,
+            alg: envCheck.header?.alg,
+            iss: envCheck.payload?.iss,
+            event,
+          });
+          clearStoredSession();
+          void supabase.auth.signOut();
+          setSession(null);
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
@@ -36,12 +109,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Check for existing session
     supabase.auth.getSession().then(({ data: { session }, error }) => {
+      const envCheck = validateSessionForEnv(session);
       // Se houver erro ao obter sessão (ex: usuário não existe mais), limpar
-      if (error || !session) {
+      if (error || !session || !envCheck.valid) {
+        if (!envCheck.valid) {
+          console.warn("[Supabase] Session does not match environment", {
+            supabaseEnv: SUPABASE_ENV,
+            expectedIssuer: SUPABASE_EXPECTED_ISSUER,
+            alg: envCheck.header?.alg,
+            iss: envCheck.payload?.iss,
+            event: "getSession",
+          });
+        }
+        clearStoredSession();
         supabase.auth.signOut();
       }
-      setSession(session);
-      setUser(session?.user ?? null);
+      setSession(envCheck.valid ? session : null);
+      setUser(envCheck.valid ? session?.user ?? null : null);
       setLoading(false);
     });
 

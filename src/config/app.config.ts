@@ -1,4 +1,5 @@
 import { PDF_OPTIONS, PERFORMANCE_CONFIG, LARGE_PDF_THRESHOLD } from '@/lib/pdf-config';
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from '@/config/supabase-env';
 
 /**
  * Configurações centralizadas da aplicação
@@ -73,8 +74,7 @@ export const APP_CONFIG = {
     retryAttempts: 3,
     retryDelay: 1000, // 1 segundo
     endpoints: {
-      supabase: import.meta.env.VITE_SUPABASE_URL,
-      functions: import.meta.env.VITE_SUPABASE_FUNCTIONS_URL,
+      supabase: SUPABASE_URL,
     },
   },
 
@@ -105,19 +105,22 @@ export type UIConfig = typeof APP_CONFIG.ui;
 
 // Validação das configurações obrigatórias
 export const validateConfig = (): void => {
-  const requiredEnvVars = [
-    'VITE_SUPABASE_URL',
-    'VITE_SUPABASE_ANON_KEY',
-  ];
+  const missing: string[] = [];
 
-  const missingVars = requiredEnvVars.filter(
-    (varName) => !import.meta.env[varName]
-  );
-
-  if (missingVars.length > 0) {
-    throw new Error(
-      `Missing required environment variables: ${missingVars.join(', ')}`
+  if (!SUPABASE_URL) {
+    missing.push(
+      'VITE_SUPABASE_URL (or SUPABASE_URL / NEXT_PUBLIC_SUPABASE_URL)'
     );
+  }
+
+  if (!SUPABASE_PUBLISHABLE_KEY) {
+    missing.push(
+      'VITE_SUPABASE_PUBLISHABLE_KEY (or VITE_SUPABASE_ANON_KEY / SUPABASE_ANON_KEY / NEXT_PUBLIC_SUPABASE_ANON_KEY)'
+    );
+  }
+
+  if (missing.length > 0) {
+    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
   }
 };
 

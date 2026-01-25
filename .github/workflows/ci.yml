@@ -177,5 +177,4 @@ jobs:
         env:
           VITE_SUPABASE_URL: https://placeholder.supabase.co
           VITE_SUPABASE_ANON_KEY: placeholder_key
-          VITE_USE_FASTAPI: "true"
           VITE_API_URL: http://localhost:8000

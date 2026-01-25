@@ -7,14 +7,16 @@
 
 Sistema completo para gerenciamento de revisões sistemáticas e meta-análises.
 
-## Funcionalidades Principais
+## ✨ Funcionalidades Principais
 
 - **Gerenciamento de Artigos**: Importe, organize e gerencie artigos de pesquisa
 - **Integração com Zotero**: Importe artigos diretamente das suas collections do Zotero
+- **Avaliação com IA**: Avaliação automatizada de qualidade usando GPT-4o e Claude
+- **Batch Processing**: Processe múltiplos artigos e itens de avaliação em paralelo
 - **Extração de Dados**: Crie formulários customizados para extração de dados
-- **Avaliação de Qualidade**: Avalie o risco de viés usando instrumentos padronizados
+- **Avaliação de Qualidade**: Avalie o risco de viés usando instrumentos padronizados (CHARMS, RoB 2, etc.)
 - **Colaboração**: Trabalhe em equipe com controle de acesso e permissões
-- **Visualização de PDFs**: Leitor de PDF integrado com anotações
+- **Visualização de PDFs**: Leitor de PDF integrado com anotações e busca semântica
 
 
 ## 🚀 Início Rápido
@@ -42,7 +44,7 @@ make setup
 # ou: ./scripts/setup.sh
 
 # 3. Configure as variáveis de ambiente (se necessário)
-# Edite .env.local e backend/.env com suas credenciais
+# Edite .env e backend/.env com suas credenciais
 
 # 4. Inicie todos os serviços (Supabase + Backend + Frontend)
 make start
@@ -81,8 +83,8 @@ npm install
 cd backend && uv sync && cd ..
 
 # 4. Configure as variáveis de ambiente
-cp .env.example .env.local
-# Edite .env.local com suas credenciais do Supabase
+cp .env.example .env
+# Edite .env com suas credenciais do Supabase
 
 # 5. Inicie o Supabase localmente
 cd supabase && supabase start && cd ..
@@ -162,11 +164,13 @@ Este projeto é construído com:
   - [React Router](https://reactrouter.com/) - Roteamento
 
 - **Backend:**
+  - [FastAPI](https://fastapi.tiangolo.com/) - Framework Python moderno e rápido
   - [Supabase](https://supabase.com/) - Backend as a Service
     - PostgreSQL - Banco de dados
-    - Edge Functions (Deno) - Funções serverless
     - Row Level Security (RLS) - Segurança de dados
     - Realtime - Subscriptions em tempo real
+  - [OpenAI API](https://openai.com/) - GPT-4o para avaliações de IA
+  - [Anthropic API](https://anthropic.com/) - Claude para avaliações de IA
 
 - **Ferramentas:**
   - [Vitest](https://vitest.dev/) - Framework de testes
@@ -177,25 +181,33 @@ Este projeto é construído com:
 ## 📦 Estrutura do Projeto
 
 ```
-review_hub/
+review-ai-hub/
 ├── src/                    # Código fonte do frontend
 │   ├── components/         # Componentes React
 │   ├── hooks/              # Custom hooks
 │   ├── services/           # Serviços e APIs
 │   ├── pages/              # Páginas/rotas
-│   ├── types/              # Definições TypeScript
-│   └── lib/                # Utilitários
+│   ├── contexts/           # React contexts (Auth, etc.)
+│   ├── config/             # Configurações da aplicação
+│   ├── lib/                # Utilitários e helpers
+│   └── integrations/       # Integrações com APIs externas
+├── backend/                # Backend FastAPI
+│   ├── app/                # Código da aplicação
+│   │   ├── api/            # Endpoints REST
+│   │   ├── core/           # Configuração e segurança
+│   │   ├── services/       # Lógica de negócio
+│   │   └── models/         # Modelos de dados
+│   └── tests/              # Testes do backend
 ├── supabase/
-│   ├── functions/          # Edge Functions (Deno)
 │   └── migrations/         # Migrações do banco de dados
 ├── docs/                   # Documentação
+│   ├── deployment/         # Guias de deploy
 │   ├── legal/              # Documentos legais
 │   ├── tecnicas/           # Documentação técnica
-│   ├── guias/              # Guias de setup
-│   ├── planos/             # Planos de refatoração
-│   ├── analises/           # Análises da codebase
-│   └── templates/          # Templates CHARMS
-└── .cursor/rules/          # Regras do Cursor AI Agent
+│   ├── guias/              # Guias de desenvolvimento
+│   ├── estrutura_database/ # Schema do banco de dados
+│   └── templates/          # Templates de instrumentos
+└── scripts/                # Scripts de automação
 ```
 
 ## 🚢 Deploy
@@ -217,11 +229,22 @@ Os arquivos serão gerados em `dist/` e podem ser servidos por qualquer servidor
 
 ### Variáveis de Ambiente Necessárias
 
-Certifique-se de configurar as seguintes variáveis de ambiente:
+Consulte a [Documentação de Variáveis de Ambiente](docs/deployment/ENV_VARS.md) para lista completa.
 
+**Frontend (`.env`):**
 ```env
+VITE_SUPABASE_ENV=local|production
 VITE_SUPABASE_URL=your_supabase_url
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+VITE_SUPABASE_PUBLISHABLE_KEY=your_supabase_anon_key
+VITE_FASTAPI_BASE_URL=http://localhost:8000
+```
+
+**Backend (`backend/.env`):**
+```env
+SUPABASE_URL=your_supabase_url
+SUPABASE_KEY=your_supabase_service_role_key
+OPENAI_API_KEY=your_openai_api_key
+ANTHROPIC_API_KEY=your_anthropic_api_key
 ```
 
 ## 📝 Licença

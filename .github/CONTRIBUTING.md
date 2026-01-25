@@ -119,8 +119,8 @@ review-hub/
    npm install
    
    # Configure variáveis de ambiente
-   cp .env.example .env.local
-   # Edite .env.local com suas credenciais
+   cp .env.example .env
+   # Edite .env com suas credenciais
    
    # Inicie o servidor de desenvolvimento
    npm run dev
@@ -241,4 +241,3 @@ Use o [template de feature request](.github/ISSUE_TEMPLATE/feature_request.md) e
 ---
 
 **Obrigado por contribuir para o Review Hub!** 🚀
-

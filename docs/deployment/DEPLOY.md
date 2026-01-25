@@ -102,7 +102,6 @@ Sua API estará em: `https://review-hub-api.onrender.com`
    
    # Backend API (URL do Render após deploy)
    VITE_API_URL=https://review-hub-api.onrender.com
-   VITE_USE_FASTAPI=true
    ```
    
    > **Nota:** O frontend suporta múltiplos nomes de env vars para compatibilidade:

@@ -16,7 +16,15 @@ import type { PostgrestError } from '@supabase/supabase-js';
 
 // =================== TIPOS ===================
 
-export interface QueryOptions<T> {
+/**
+ * Type helper para contornar tipagem estrita do Supabase em queries dinâmicas.
+ * O Supabase client espera nomes literais de tabelas, mas este repository trabalha com strings dinâmicas.
+ * Usamos 'as any' apenas na chamada .from() para permitir nomes dinâmicos de tabelas.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type DynamicSupabaseTable = any;
+
+export interface QueryOptions {
   select?: string;
   filters?: Record<string, unknown>;
   orderBy?: { column: string; ascending?: boolean };
@@ -103,12 +111,13 @@ export function handleSupabaseError(
  */
 export async function queryBuilder<T>(
   table: string,
-  options: QueryOptions<T> = {}
+  options: QueryOptions = {}
 ): Promise<RepositoryResult<T[]>> {
   const { select = '*', filters = {}, orderBy, limit, single = false } = options;
 
-  // Type assertion necessário devido à tipagem estrita do Supabase
-  let query = (supabase.from(table as any) as any).select(select);
+  // Type assertion necessário: Supabase espera literais de tabela, mas recebemos strings dinâmicas
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let query = (supabase.from(table as any) as DynamicSupabaseTable).select(select);
 
   // Aplicar filtros
   Object.entries(filters).forEach(([key, value]) => {
@@ -149,7 +158,7 @@ export async function queryBuilder<T>(
  */
 export async function queryBuilderSingle<T>(
   table: string,
-  options: Omit<QueryOptions<T>, 'single'> = {}
+  options: Omit<QueryOptions, 'single'> = {}
 ): Promise<RepositoryResult<T>> {
   const result = await queryBuilder<T>(table, { ...options, single: true });
   return { 
@@ -168,8 +177,9 @@ export async function insertOne<T>(
   data: Partial<T>,
   context = 'insert'
 ): Promise<T> {
-  const { data: result, error } = await (supabase.from(table as any) as any)
-    .insert(data as any)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: result, error } = await (supabase.from(table as any) as DynamicSupabaseTable)
+    .insert(data)
     .select()
     .single();
 
@@ -194,8 +204,9 @@ export async function insertMany<T>(
   data: Partial<T>[],
   context = 'insertMany'
 ): Promise<T[]> {
-  const { data: result, error } = await (supabase.from(table as any) as any)
-    .insert(data as any)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: result, error } = await (supabase.from(table as any) as DynamicSupabaseTable)
+    .insert(data)
     .select();
 
   if (error) {
@@ -216,8 +227,9 @@ export async function updateOne<T>(
   updates: Partial<T>,
   context = 'update'
 ): Promise<T> {
-  const { data: result, error } = await (supabase.from(table as any) as any)
-    .update(updates as any)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: result, error } = await (supabase.from(table as any) as DynamicSupabaseTable)
+    .update(updates)
     .eq('id', id)
     .select()
     .single();
@@ -243,7 +255,8 @@ export async function deleteOne(
   id: string,
   context = 'delete'
 ): Promise<void> {
-  const { error } = await (supabase.from(table as any) as any)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase.from(table as any) as DynamicSupabaseTable)
     .delete()
     .eq('id', id);
 
@@ -251,179 +264,3 @@ export async function deleteOne(
     handleSupabaseError(error, context);
   }
 }
-
-/**
- * Helper para chamadas de Edge Functions padronizadas
- * 
- * @param functionName - Nome da edge function (sem /functions/v1/)
- * @param payload - Payload JSON para enviar
- * @param options - Opções de chamada (timeout, signal, headers customizados)
- * @returns Resposta da função parseada como T
- */
-export async function callEdgeFunction<T = unknown>(
-  functionName: string,
-  payload: Record<string, unknown> = {},
-  options: {
-    timeout?: number;
-    signal?: AbortSignal;
-    headers?: Record<string, string>;
-  } = {}
-): Promise<T> {
-  const { timeout = 150000, signal, headers: customHeaders = {} } = options; // 150s default (menor que Supabase 150s)
-  
-  const { data: { session }, error: authError } = await supabase.auth.getSession();
-  
-  if (authError || !session) {
-    throw new AuthenticationError();
-  }
-
-  // Validar URL antes de fazer requisição
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  if (!supabaseUrl) {
-    throw new SupabaseRepositoryError(
-      'VITE_SUPABASE_URL não está configurado. Verifique as variáveis de ambiente.',
-      undefined,
-      { functionName }
-    );
-  }
-
-  // Validar formato básico da URL
-  try {
-    new URL(supabaseUrl);
-  } catch {
-    throw new SupabaseRepositoryError(
-      `URL do Supabase inválida: ${supabaseUrl}. Verifique a configuração.`,
-      undefined,
-      { functionName, url: supabaseUrl }
-    );
-  }
-
-  const url = `${supabaseUrl}/functions/v1/${functionName}`;
-  
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
-  
-  // Se já tem signal externo, usar ele
-  if (signal) {
-    signal.addEventListener('abort', () => controller.abort());
-  }
-
-  try {
-    // Headers padrão + customizados (customHeaders sobrescrevem padrões)
-    const headers = {
-      'Authorization': `Bearer ${session.access_token}`,
-      'Content-Type': 'application/json',
-      ...customHeaders,
-    };
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      // Tratamento especial para 503 (Service Temporarily Unavailable)
-      // Geralmente indica que a edge function não está disponível ou não está rodando
-      if (response.status === 503) {
-        throw new SupabaseRepositoryError(
-          `A função ${functionName} não está disponível. Verifique se o Supabase local está rodando (supabase start) e se a edge function foi deployada.`,
-          undefined,
-          { 
-            status: 503,
-            functionName,
-            errorType: 'SERVICE_UNAVAILABLE',
-            suggestion: 'Execute "supabase start" para iniciar o servidor local ou "supabase functions deploy" para deployar a função'
-          }
-        );
-      }
-
-      let errorData: any;
-      try {
-        errorData = await response.json();
-      } catch {
-        errorData = { error: `Erro desconhecido (status ${response.status})` };
-      }
-      
-      // Extrair mensagem de erro de forma robusta
-      let errorMessage: string;
-      if (errorData?.error) {
-        // Se error é objeto, extrair message
-        if (typeof errorData.error === 'object' && errorData.error.message) {
-          errorMessage = errorData.error.message;
-        } else if (typeof errorData.error === 'string') {
-          errorMessage = errorData.error;
-        } else {
-          errorMessage = JSON.stringify(errorData.error);
-        }
-      } else if (errorData?.message) {
-        errorMessage = errorData.message;
-      } else {
-        errorMessage = `Erro ao chamar ${functionName}: ${response.statusText}`;
-      }
-      
-      throw new SupabaseRepositoryError(
-        errorMessage,
-        undefined,
-        { 
-          status: response.status, 
-          functionName,
-          errorDetails: errorData?.error?.details || errorData?.details,
-          errorCode: errorData?.error?.code || errorData?.code,
-        }
-      );
-    }
-
-    return await response.json() as T;
-  } catch (err: unknown) {
-    clearTimeout(timeoutId);
-    
-    if (err instanceof SupabaseRepositoryError || err instanceof AuthenticationError) {
-      throw err;
-    }
-    
-    if (err instanceof Error && err.name === 'AbortError') {
-      throw new SupabaseRepositoryError(
-        `Timeout ao chamar ${functionName}`,
-        err,
-        { functionName, timeout }
-      );
-    }
-    
-    // Detectar erros de rede (DNS, conexão)
-    if (err instanceof Error) {
-      const errorMessage = err.message.toLowerCase();
-      const isNetworkError = 
-        errorMessage.includes('name resolution failed') ||
-        errorMessage.includes('failed to fetch') ||
-        errorMessage.includes('networkerror') ||
-        errorMessage.includes('err_name_not_resolved') ||
-        errorMessage.includes('getaddrinfo enotfound') ||
-        errorMessage.includes('econnrefused') ||
-        errorMessage.includes('connection refused');
-      
-      if (isNetworkError) {
-        throw new SupabaseRepositoryError(
-          `Não foi possível conectar ao servidor. Verifique se o Supabase local está rodando (supabase start) e se a URL está configurada corretamente.`,
-          err,
-          { 
-            functionName,
-            url,
-            errorType: 'NETWORK_ERROR',
-            suggestion: 'Execute "supabase start" para iniciar o servidor local'
-          }
-        );
-      }
-    }
-    
-    throw new SupabaseRepositoryError(
-      `Erro ao chamar ${functionName}: ${err instanceof Error ? err.message : 'Erro desconhecido'}`,
-      err instanceof Error ? err : undefined,
-      { functionName }
-    );
-  }
-}
-

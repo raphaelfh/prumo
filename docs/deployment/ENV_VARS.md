@@ -11,6 +11,7 @@ Configure no [Render Dashboard](https://dashboard.render.com) → Environment:
 DATABASE_URL=postgresql://postgres:[PASSWORD]@[HOST]:5432/postgres
 
 # Supabase (obter no Supabase: Settings > API)
+SUPABASE_ENV=production
 SUPABASE_URL=https://xxxxx.supabase.co
 SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
@@ -32,12 +33,12 @@ Configure no [Vercel Dashboard](https://vercel.com/dashboard) → Settings → E
 
 ```bash
 # Supabase (mesmos valores do backend)
+VITE_SUPABASE_ENV=production
 VITE_SUPABASE_URL=https://xxxxx.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 # API URL (URL do backend no Render)
 VITE_API_URL=https://review-hub-api.onrender.com
-VITE_USE_FASTAPI=true
 ```
 
 ### Variáveis Alternativas Suportadas

@@ -167,12 +167,12 @@ echo -e "${BLUE}⚙️  Configurando variáveis de ambiente...${NC}"
 
 # Frontend .env
 cd "$PROJECT_ROOT"
-if [ ! -f ".env.local" ] && [ -f ".env.example" ]; then
-    cp .env.example .env.local
-    echo -e "${GREEN}✓ .env.local criado a partir de .env.example${NC}"
-    echo -e "${YELLOW}⚠️  Edite .env.local com suas credenciais do Supabase${NC}"
-elif [ -f ".env.local" ]; then
-    echo -e "${GREEN}✓ .env.local já existe${NC}"
+if [ ! -f ".env" ] && [ -f ".env.example" ]; then
+    cp .env.example .env
+    echo -e "${GREEN}✓ .env criado a partir de .env.example${NC}"
+    echo -e "${YELLOW}⚠️  Edite .env com suas credenciais do Supabase${NC}"
+elif [ -f ".env" ]; then
+    echo -e "${GREEN}✓ .env já existe${NC}"
 fi
 
 # Backend .env
@@ -214,7 +214,7 @@ echo ""
 echo -e "${BLUE}Próximos passos:${NC}"
 echo ""
 echo -e "  1. ${YELLOW}Configure as variáveis de ambiente:${NC}"
-echo -e "     - Edite ${YELLOW}.env.local${NC} (frontend)"
+echo -e "     - Edite ${YELLOW}.env${NC} (frontend)"
 echo -e "     - Edite ${YELLOW}backend/.env${NC} (backend)"
 echo ""
 echo -e "  2. ${YELLOW}Inicie os serviços:${NC}"

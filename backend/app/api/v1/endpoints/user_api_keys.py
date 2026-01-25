@@ -315,6 +315,49 @@ async def update_api_key(
         ) from e
 
 
+@router.get(
+    "/providers",
+    response_model=ApiResponse,
+    summary="Listar provedores suportados",
+    description="Lista os provedores de IA suportados.",
+)
+async def list_providers() -> ApiResponse:
+    """
+    Lista os provedores de IA suportados.
+
+    Retorna informações sobre cada provedor.
+    Endpoint público - não requer autenticação.
+    """
+    providers = [
+        {
+            "id": "openai",
+            "name": "OpenAI",
+            "description": "GPT-4, GPT-4o, etc.",
+            "docsUrl": "https://platform.openai.com/api-keys",
+        },
+        {
+            "id": "anthropic",
+            "name": "Anthropic",
+            "description": "Claude 3, Claude 3.5, etc.",
+            "docsUrl": "https://console.anthropic.com/settings/keys",
+        },
+        {
+            "id": "gemini",
+            "name": "Google Gemini",
+            "description": "Gemini Pro, Gemini Ultra, etc.",
+            "docsUrl": "https://aistudio.google.com/app/apikey",
+        },
+        {
+            "id": "grok",
+            "name": "xAI Grok",
+            "description": "Grok-1, Grok-2, etc.",
+            "docsUrl": "https://console.x.ai/",
+        },
+    ]
+
+    return ApiResponse(ok=True, data={"providers": providers})
+
+
 @router.delete(
     "/{key_id}",
     response_model=ApiResponse,
@@ -328,31 +371,31 @@ async def delete_api_key(
 ) -> ApiResponse:
     """
     Remove permanentemente uma API key.
-    
+
     Esta operação não pode ser desfeita.
     """
     service = APIKeyService(db=db, user_id=user.sub)
-    
+
     try:
         success = await service.delete_key(key_id)
-        
+
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="API key não encontrada",
             )
-        
+
         # Commit explícito para persistir deleção
         await db.commit()
-        
+
         logger.info(
             "api_key_deleted",
             user_id=user.sub,
             key_id=str(key_id),
         )
-        
+
         return ApiResponse(ok=True, data={"id": str(key_id), "deleted": True})
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -382,26 +425,26 @@ async def validate_api_key(
 ) -> ApiResponse:
     """
     Revalida uma API key existente.
-    
+
     Faz uma chamada de teste ao provedor para verificar se a key é válida.
     """
     service = APIKeyService(db=db, user_id=user.sub)
-    
+
     try:
         result = await service.revalidate_key(key_id)
-        
+
         # Commit explícito para persistir status de validação
         await db.commit()
-        
+
         logger.info(
             "api_key_validated",
             user_id=user.sub,
             key_id=str(key_id),
             status=result["status"],
         )
-        
+
         return ApiResponse(ok=True, data=result)
-        
+
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -419,47 +462,3 @@ async def validate_api_key(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Erro ao validar API key: {str(e)}",
         ) from e
-
-
-@router.get(
-    "/providers",
-    response_model=ApiResponse,
-    summary="Listar provedores suportados",
-    description="Lista os provedores de IA suportados.",
-)
-async def list_providers(
-    user: CurrentUser,
-) -> ApiResponse:
-    """
-    Lista os provedores de IA suportados.
-    
-    Retorna informações sobre cada provedor.
-    """
-    providers = [
-        {
-            "id": "openai",
-            "name": "OpenAI",
-            "description": "GPT-4, GPT-4o, etc.",
-            "docsUrl": "https://platform.openai.com/api-keys",
-        },
-        {
-            "id": "anthropic",
-            "name": "Anthropic",
-            "description": "Claude 3, Claude 3.5, etc.",
-            "docsUrl": "https://console.anthropic.com/settings/keys",
-        },
-        {
-            "id": "gemini",
-            "name": "Google Gemini",
-            "description": "Gemini Pro, Gemini Ultra, etc.",
-            "docsUrl": "https://aistudio.google.com/app/apikey",
-        },
-        {
-            "id": "grok",
-            "name": "xAI Grok",
-            "description": "Grok-1, Grok-2, etc.",
-            "docsUrl": "https://console.x.ai/",
-        },
-    ]
-    
-    return ApiResponse(ok=True, data={"providers": providers})

@@ -68,7 +68,6 @@ services:
     environment:
       - VITE_SUPABASE_URL=${SUPABASE_URL}
       - VITE_SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
-      - VITE_USE_FASTAPI=true
       - VITE_API_URL=http://localhost:8000
     volumes:
       - .:/app
@@ -105,4 +104,3 @@ networks:
 volumes:
   postgres_data:
     driver: local
-

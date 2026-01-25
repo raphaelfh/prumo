@@ -96,6 +96,7 @@ Documentação técnica detalhada de componentes específicos.
 |-----------|-----------|
 | [Arquitetura Zotero](./tecnicas/ZOTERO_ARCHITECTURE.md) | Integração com Zotero |
 | [Implementação Zotero](./tecnicas/ZOTERO_IMPLEMENTATION_SUMMARY.md) | Detalhes de implementação |
+| [Batch Assessment Service](../src/services/batchAssessmentService.ts) | Serviço de avaliação em lote com IA |
 
 ---
 
@@ -253,18 +254,19 @@ A documentação é um documento vivo! Se você:
 ### Tecnologias Principais
 
 - [FastAPI Documentation](https://fastapi.tiangolo.com/)
-- [SQLAlchemy 2.0 Documentation](https://docs.sqlalchemy.org/en/20/)
 - [Supabase Documentation](https://supabase.com/docs)
-- [Pydantic V2 Documentation](https://docs.pydantic.dev/latest/)
 - [React Documentation](https://react.dev/)
 - [TypeScript Documentation](https://www.typescriptlang.org/docs/)
+- [OpenAI API Reference](https://platform.openai.com/docs/api-reference)
+- [Anthropic API Reference](https://docs.anthropic.com/)
 
 ### Ferramentas
 
-- [Alembic Tutorial](https://alembic.sqlalchemy.org/en/latest/tutorial.html)
 - [PostgreSQL Documentation](https://www.postgresql.org/docs/)
 - [Vite Documentation](https://vitejs.dev/)
 - [TanStack Query](https://tanstack.com/query/latest)
+- [Tailwind CSS](https://tailwindcss.com/docs)
+- [shadcn/ui](https://ui.shadcn.com/)
 
 ---
 

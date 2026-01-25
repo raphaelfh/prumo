@@ -26,35 +26,16 @@ import {
 } from './zoteroMapper';
 
 /**
- * Feature flag para usar FastAPI ou Edge Functions.
- * Quando true, usa FastAPI. Quando false, usa Edge Functions legadas.
- */
-const USE_FASTAPI = import.meta.env.VITE_USE_FASTAPI === 'true';
-
-/**
  * Classe principal para gerenciar importação do Zotero
  */
 export class ZoteroImportService {
   private abortController: AbortController | null = null;
 
   /**
-   * Faz chamada à API (FastAPI ou Edge Function baseado em feature flag).
+   * Faz chamada à API FastAPI.
    */
   private async callZoteroApi<T = unknown>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
-    if (USE_FASTAPI) {
-      // Usar novo cliente FastAPI
-      return await zoteroClient<T>(action as ZoteroAction, payload);
-    } else {
-      // Fallback para Edge Functions legadas
-      const { callEdgeFunction } = await import('@/lib/supabase/baseRepository');
-      return await callEdgeFunction<T>(
-        'zotero-import',
-        { action, ...payload },
-        {
-          signal: this.abortController?.signal,
-        }
-      );
-    }
+    return await zoteroClient<T>(action as ZoteroAction, payload);
   }
 
   /**
@@ -582,4 +563,3 @@ export class ZoteroImportService {
 
 // Exportar instância singleton
 export const zoteroService = new ZoteroImportService();
-

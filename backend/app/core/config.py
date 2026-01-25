@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     SUPABASE_URL: str
     SUPABASE_SERVICE_ROLE_KEY: str
     SUPABASE_ANON_KEY: str
+    SUPABASE_JWT_SECRET: str | None = None
+    # local | production (default: production)
+    SUPABASE_ENV: str | None = None
     
     # =================== DATABASE ===================
     # Connection string do Postgres (Supabase ou local)
@@ -71,6 +74,12 @@ class Settings(BaseSettings):
     LANGCHAIN_API_KEY: str | None = None
     LANGCHAIN_PROJECT: str = "review-hub"
 
+    @property
+    def supabase_env(self) -> str:
+        """Retorna o ambiente do Supabase (local | production)."""
+        value = (self.SUPABASE_ENV or "").strip().lower()
+        return "local" if value == "local" else "production"
+
 
 @lru_cache
 def get_settings() -> Settings:
@@ -83,4 +92,3 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
-

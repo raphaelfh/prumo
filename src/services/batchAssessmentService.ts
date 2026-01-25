@@ -1,12 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
-import { aiAssessmentClient, ApiError } from '@/integrations/api/client';
+import { aiAssessmentClient } from '@/integrations/api/client';
 import { AssessmentItem } from '@/hooks/assessment/useAssessmentInstruments';
-
-/**
- * Feature flag para usar FastAPI ou Edge Functions.
- * Quando true, usa FastAPI. Quando false, usa Edge Functions legadas.
- */
-const USE_FASTAPI = import.meta.env.VITE_USE_FASTAPI === 'true';
 
 export interface BatchAssessmentConfig {
   parallelMode: boolean;
@@ -52,7 +46,7 @@ export interface BatchAssessmentProgress {
 
 export class BatchAssessmentService {
   private cancelled = false;
-  private onProgressCallback?: (progress: BatchAssessmentProgress) => void;
+  private readonly onProgressCallback?: (progress: BatchAssessmentProgress) => void;
 
   constructor(onProgress?: (progress: BatchAssessmentProgress) => void) {
     this.onProgressCallback = onProgress;
@@ -107,9 +101,14 @@ export class BatchAssessmentService {
     item: AssessmentItem,
     instrumentId: string,
     config: BatchAssessmentConfig
-  ): Promise<any> {
-    const clientTraceId = crypto.randomUUID();
-    
+  ): Promise<{
+    selected_level: string;
+    justification: string;
+    evidence_passages?: Array<{
+      text: string;
+      page_number?: number;
+    }>;
+  }> {
     try {
       const pdfStorageKey = await this.getPdfStorageKey(articleId);
 
@@ -125,37 +124,32 @@ export class BatchAssessmentService {
         max_tokens: config.maxTokens,
       };
 
-      let result: any;
-
-      if (USE_FASTAPI) {
-        // Usar FastAPI
-        console.log(`[Batch Assessment] Usando FastAPI para avaliação`);
-        const response = await aiAssessmentClient<{
-          assessment: any;
-          trace_id: string;
-        }>(payload);
-        result = response;
-      } else {
-        // Usar Edge Functions legadas
-        const { callEdgeFunction } = await import('@/lib/supabase/baseRepository');
-        result = await callEdgeFunction(
-          'ai-assessment',
-          payload,
-          {
-            headers: {
-              'x-client-trace-id': clientTraceId,
-            },
-          }
-        );
-      }
+      const result = await aiAssessmentClient<{
+        assessment: {
+          selected_level: string;
+          justification: string;
+          evidence_passages?: Array<{
+            text: string;
+            page_number?: number;
+          }>;
+        };
+        trace_id: string;
+      }>(payload);
 
       // Extrair assessment da resposta (pode estar em result.assessment ou result diretamente)
       const assessment = result?.assessment ?? result;
-      if (!assessment) {
+      if (!assessment || typeof assessment !== 'object') {
         throw new Error('Resposta da função sem assessment.');
       }
 
-      return assessment;
+      return assessment as {
+        selected_level: string;
+        justification: string;
+        evidence_passages?: Array<{
+          text: string;
+          page_number?: number;
+        }>;
+      };
     } catch (error) {
       console.error(`[Batch Assessment] Erro ao processar item ${item.item_code}:`, error);
       throw error;
@@ -170,7 +164,14 @@ export class BatchAssessmentService {
     articleId: string,
     instrumentId: string,
     itemCode: string,
-    result: any
+    result: {
+      selected_level: string;
+      justification: string;
+      evidence_passages?: Array<{
+        text: string;
+        page_number?: number;
+      }>;
+    }
   ): Promise<void> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -192,7 +193,7 @@ export class BatchAssessmentService {
 
       // Prepara a evidência formatada
       const evidenceBlock =
-        result.evidence_passages?.map((e: any) => {
+        result.evidence_passages?.map((e) => {
           const page = e.page_number != null ? ` (p.${e.page_number})` : '';
           return `• ${e.text}${page}`;
         }).join('\n') ?? '';
@@ -200,7 +201,7 @@ export class BatchAssessmentService {
       const comment = `${result.justification}\n\n--- Evidências ---\n${evidenceBlock}`;
 
       // Atualiza as respostas
-      const responses = existingAssessment?.responses || {};
+      const responses = (existingAssessment?.responses as Record<string, { level?: string; comment?: string }>) || {};
       responses[itemCode] = {
         level: result.selected_level,
         comment,
@@ -208,7 +209,7 @@ export class BatchAssessmentService {
 
       // Calcula percentual de conclusão
       const totalItems = Object.keys(responses).length;
-      const completedItems = Object.values(responses).filter((r: any) => r.level).length;
+      const completedItems = Object.values(responses).filter((r) => r.level).length;
       const completionPercentage = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
 
       if (existingAssessment?.id) {
@@ -312,7 +313,7 @@ export class BatchAssessmentService {
           success: true,
           result,
         };
-      } catch (error: any) {
+      } catch (error) {
         // Atualiza progresso
         progress.completed++;
         progress.failed++;
@@ -324,7 +325,7 @@ export class BatchAssessmentService {
         return {
           task,
           success: false,
-          error: error.message || 'Erro desconhecido',
+          error: error instanceof Error ? error.message : 'Erro desconhecido',
         };
       }
     });
@@ -464,4 +465,3 @@ export class BatchAssessmentService {
     return allResults;
   }
 }
-
