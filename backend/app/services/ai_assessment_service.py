@@ -157,71 +157,69 @@ class AIAssessmentService(LoggerMixin):
 
         try:
             # === Continue with existing logic ===
-            start_time = time.time()
-        
-        # 1. Buscar metadados via repositories
-        item = await self._assessment_items.get_by_id(assessment_item_id)
-        if not item:
-            raise ValueError(f"Assessment item not found: {assessment_item_id}")
-        
-        article = await self._articles.get_by_id(article_id)
-        if not article:
-            raise ValueError(f"Article not found: {article_id}")
-        
-        project_summary = await self._projects.get_summary(project_id)
-        
-        # 2. Descobrir storage_key se não fornecido
-        storage_key = pdf_storage_key
-        if not storage_key:
-            pdf_file = await self._article_files.get_latest_pdf(article_id)
-            if pdf_file:
-                storage_key = pdf_file.storage_key
-        
-        # 3. Preparar arquivo para OpenAI
-        input_file_node, approx_size = await self._prepare_pdf_file(
-            pdf_file_id=pdf_file_id,
-            pdf_base64=pdf_base64,
-            pdf_filename=pdf_filename,
-            storage_key=storage_key,
-        )
-        
-        # 4. Construir prompts customizados por instrumento
-        allowed_levels = self._parse_allowed_levels(item.allowed_levels)
-        
-        system_prompt = self._build_system_prompt(item, project_summary)
-        user_prompt = self._build_user_prompt(item, project_summary, allowed_levels)
-        response_format = self._build_response_schema(allowed_levels)
-        
-        # 5. Escolher método: input_file direto ou File Search
-        use_file_search = force_file_search or (
-            approx_size and approx_size > self.DIRECT_FILE_SIZE_LIMIT
-        )
-        
-        self.logger.info(
-            "ai_assessment_path",
-            trace_id=self.trace_id,
-            model=model,
-            use_file_search=use_file_search,
-            approx_size=approx_size,
-            assessment_item_id=str(assessment_item_id),
-        )
-        
-        # 6. Chamar OpenAI
-        ai_start = time.time()
-        
-        if use_file_search:
-            ai_result = await self._call_with_file_search(
-                input_file_node, system_prompt, user_prompt, response_format, model
+            # 1. Buscar metadados via repositories
+            item = await self._assessment_items.get_by_id(assessment_item_id)
+            if not item:
+                raise ValueError(f"Assessment item not found: {assessment_item_id}")
+
+            article = await self._articles.get_by_id(article_id)
+            if not article:
+                raise ValueError(f"Article not found: {article_id}")
+
+            project_summary = await self._projects.get_summary(project_id)
+
+            # 2. Descobrir storage_key se não fornecido
+            storage_key = pdf_storage_key
+            if not storage_key:
+                pdf_file = await self._article_files.get_latest_pdf(article_id)
+                if pdf_file:
+                    storage_key = pdf_file.storage_key
+
+            # 3. Preparar arquivo para OpenAI
+            input_file_node, approx_size = await self._prepare_pdf_file(
+                pdf_file_id=pdf_file_id,
+                pdf_base64=pdf_base64,
+                pdf_filename=pdf_filename,
+                storage_key=storage_key,
             )
-            method_used = "file_search"
-        else:
-            ai_result = await self._call_direct(
-                input_file_node, system_prompt, user_prompt, response_format, model
+
+            # 4. Construir prompts customizados por instrumento
+            allowed_levels = self._parse_allowed_levels(item.allowed_levels)
+
+            system_prompt = self._build_system_prompt(item, project_summary)
+            user_prompt = self._build_user_prompt(item, project_summary, allowed_levels)
+            response_format = self._build_response_schema(allowed_levels)
+
+            # 5. Escolher método: input_file direto ou File Search
+            use_file_search = force_file_search or (
+                approx_size and approx_size > self.DIRECT_FILE_SIZE_LIMIT
             )
-            method_used = "direct"
-        
-        ai_duration = int((time.time() - ai_start) * 1000)
-        
+
+            self.logger.info(
+                "ai_assessment_path",
+                trace_id=self.trace_id,
+                model=model,
+                use_file_search=use_file_search,
+                approx_size=approx_size,
+                assessment_item_id=str(assessment_item_id),
+            )
+
+            # 6. Chamar OpenAI
+            ai_start = time.time()
+
+            if use_file_search:
+                ai_result = await self._call_with_file_search(
+                    input_file_node, system_prompt, user_prompt, response_format, model
+                )
+                method_used = "file_search"
+            else:
+                ai_result = await self._call_direct(
+                    input_file_node, system_prompt, user_prompt, response_format, model
+                )
+                method_used = "direct"
+
+            ai_duration = int((time.time() - ai_start) * 1000)
+
             # 7. Processar resposta
             assessment_result = json.loads(ai_result["output_text"])
 

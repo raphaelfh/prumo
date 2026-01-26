@@ -1,213 +1,228 @@
-import { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
-import { useAssessmentItems, AssessmentInstrument } from "@/hooks/assessment/useAssessmentInstruments";
-import { DomainAccordion } from "@/components/assessment/DomainAccordion";
-import { AssessmentHeader } from "@/components/assessment/AssessmentHeader";
-import { BatchAssessmentBar } from "@/components/assessment/BatchAssessmentBar";
-import { useAutoSave } from "@/hooks/assessment/useAutoSave";
-import { useUndoRedo } from "@/hooks/assessment/useUndoRedo";
-import { useBlindReview } from "@/hooks/assessment/useBlindReview";
-import { useOtherAssessments } from "@/hooks/assessment/useOtherAssessments";
-import { OtherAssessmentsCard } from "@/components/assessment/OtherAssessmentsCard";
-import { AssessmentComparisonCard } from "@/components/assessment/AssessmentComparisonCard";
-import { AssessmentComparisonView } from "@/components/assessment/AssessmentComparisonView";
-import { PDFViewer } from "@/components/PDFViewer";
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
-import { CheckCircle, Loader2 } from "lucide-react";
+/**
+ * Interface Full Screen para Avaliação de Qualidade (Assessment)
+ *
+ * Página principal onde o usuário avalia a qualidade/risco de viés de um artigo específico.
+ * Similar ao ExtractionFullScreen, com PDF viewer ao lado e formulário de avaliação.
+ *
+ * REFATORADO para usar novos hooks e componentes (DRY + KISS)
+ * Baseado em ExtractionFullScreen.tsx
+ *
+ * Features:
+ * - PDF viewer com toggle
+ * - Formulário de avaliação por domínios
+ * - Auto-save automático
+ * - Sugestões de IA (prefill + badge)
+ * - Progress tracking
+ * - Navegação entre artigos
+ *
+ * @page
+ */
+
+import { useState, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import { ResizablePanelGroup, ResizablePanel } from '@/components/ui/resizable';
+import { Button } from '@/components/ui/button';
+import { Loader2, CheckCircle } from 'lucide-react';
+
+// Hooks
+import { useAssessmentData } from '@/hooks/assessment/useAssessmentData';
+import { useAssessmentResponses } from '@/hooks/assessment/useAssessmentResponses';
+import { useAssessmentProgress } from '@/hooks/assessment/useAssessmentProgress';
+import { useAssessmentAutoSave } from '@/hooks/assessment/useAssessmentAutoSave';
+import { useAIAssessmentSuggestions } from '@/hooks/assessment/ai/useAIAssessmentSuggestions';
+import { useSingleAssessment } from '@/hooks/assessment/ai/useSingleAssessment';
+
+// Components
+import { AssessmentHeader } from '@/components/assessment/AssessmentHeader';
+import { AssessmentPDFPanel } from '@/components/assessment/AssessmentPDFPanel';
+import { AssessmentFormPanel } from '@/components/assessment/AssessmentFormPanel';
+
+// Types
+import type { AssessmentResponse } from '@/types/assessment';
+
+// =================== COMPONENT ===================
 
 export default function AssessmentFullScreen() {
   const { projectId, articleId, instrumentId } = useParams();
   const navigate = useNavigate();
-  
-  const [instrument, setInstrument] = useState<AssessmentInstrument | null>(null);
-  const [article, setArticle] = useState<any>(null);
-  const [project, setProject] = useState<any>(null);
-  const [articles, setArticles] = useState<any[]>([]);
-  const [existingAssessment, setExistingAssessment] = useState<any>(null);
-  const [assessmentId, setAssessmentId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+
+  // UI state
   const [showPDF, setShowPDF] = useState(true);
-  const [showComparison, setShowComparison] = useState(false);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string>('');
 
-  const { items, loading: itemsLoading } = useAssessmentItems(instrument?.id || "");
+  // Hook para carregar dados usando hook dedicado (SRP: separação de responsabilidades)
+  const {
+    article,
+    project,
+    instrument,
+    items,
+    domains,
+    assessment,
+    articles,
+    loading,
+    error: dataError,
+    refresh,
+    refreshAssessment,
+  } = useAssessmentData({
+    projectId: projectId || '',
+    articleId: articleId || '',
+    instrumentId: instrumentId || '',
+    enabled: !!projectId && !!articleId && !!instrumentId,
+  });
 
-  // Blind mode e outros assessments
-  const { isBlindMode, isLoading: blindLoading } = useBlindReview(projectId || "", currentUserId || "");
-  const { 
-    otherAssessments, 
-    getOtherAssessmentsForArticle 
-  } = useOtherAssessments(
-    projectId || "", 
-    currentUserId || "", 
-    !isBlindMode && !blindLoading
+  // Hook para gerenciar respostas de assessment
+  const {
+    responses,
+    updateResponse,
+    save: saveResponses,
+    loading: responsesLoading,
+    initialized: responsesInitialized,
+  } = useAssessmentResponses({
+    projectId: projectId || '',
+    articleId: articleId || '',
+    instrumentId: instrumentId || '',
+    extractionInstanceId: undefined, // Não é hierárquico (não por modelo)
+    enabled: !!projectId && !!articleId && !!instrumentId,
+  });
+
+  // Hook para calcular progresso
+  const { completedItems, totalItems, completionPercentage, isComplete } =
+    useAssessmentProgress(responses, items);
+
+  // Hook para auto-save (só habilitar após valores inicializados)
+  const { isSaving, lastSaved } = useAssessmentAutoSave({
+    responses,
+    save: saveResponses,
+    enabled: !!projectId && !!articleId && !!instrumentId && !loading && responsesInitialized,
+  });
+
+  // Callbacks para sugestões de IA
+  const handleAISuggestionAccepted = useCallback(
+    async (itemId: string, suggestionValue: any) => {
+      console.log('🤖 Aceitando sugestão de IA:', { itemId, suggestionValue });
+
+      // Preencher o campo automaticamente quando sugestão é aceita
+      updateResponse(itemId, {
+        selected_level: suggestionValue.level,
+        comment: suggestionValue.reasoning || '',
+        evidence_passages: suggestionValue.evidence_passages || [],
+      } as AssessmentResponse);
+    },
+    [updateResponse]
   );
 
+  const handleAISuggestionRejected = useCallback(
+    async (itemId: string) => {
+      console.log('🤖 Rejeitando sugestão de IA - limpando campo:', { itemId });
+      // Não limpar o campo - apenas marcar como rejeitada
+    },
+    []
+  );
+
+  // Hook para sugestões de IA
   const {
-    state: responses,
-    setState: setResponses,
-    undo,
-    redo,
-    canUndo,
-    canRedo,
-  } = useUndoRedo<Record<string, { level: string; comment?: string }>>({
-    initialState: {},
-    maxHistorySize: 50,
+    suggestions: aiSuggestions,
+    acceptSuggestion,
+    rejectSuggestion,
+    refresh: refreshSuggestions,
+    isActionLoading,
+  } = useAIAssessmentSuggestions({
+    articleId: articleId || '',
+    projectId: projectId || '',
+    instrumentId: instrumentId || '',
+    extractionInstanceId: undefined,
+    enabled: !!articleId && !!projectId && !!instrumentId,
+    onSuggestionAccepted: handleAISuggestionAccepted,
+    onSuggestionRejected: handleAISuggestionRejected,
   });
 
-  // Only initialize auto-save when all required data is available
-  const { isSaving, lastSaved } = useAutoSave({
-    projectId: projectId || "",
-    articleId: articleId || "",
-    instrumentId: instrument?.id || "",
-    toolType: instrument?.tool_type || "",
-    responses,
-    assessmentId,
-    onAssessmentIdChange: setAssessmentId,
-    enabled: !!(projectId && articleId && instrument?.id && instrument?.tool_type),
+  // Hook para avaliar item individual
+  const [triggeringItemId, setTriggeringItemId] = useState<string | null>(null);
+  const { assessItem, loading: assessingItem } = useSingleAssessment({
+    onSuccess: async (runId, suggestionId) => {
+      console.log('✅ Item avaliado com sucesso:', { runId, suggestionId });
+      // Refresh sugestões após avaliação
+      await refreshSuggestions();
+      setTriggeringItemId(null);
+    },
   });
 
-  useEffect(() => {
-  const loadData = async () => {
-    if (!projectId || !articleId || !instrumentId) return;
-
-    try {
-      // Load project
-      const { data: projectData, error: projectError } = await supabase
-        .from("projects")
-        .select("id, name")
-        .eq("id", projectId)
-        .single();
-
-      if (projectError) throw projectError;
-      setProject(projectData);
-
-      // Load article
-      const { data: articleData, error: articleError } = await supabase
-        .from("articles")
-        .select("*")
-        .eq("id", articleId)
-        .single();
-
-      if (articleError) throw articleError;
-      setArticle(articleData);
-
-      // Load articles list for navigation
-      const { data: articlesData, error: articlesError } = await supabase
-        .from("articles")
-        .select("id, title")
-        .eq("project_id", projectId)
-        .order("created_at", { ascending: false });
-
-      if (articlesError) throw articlesError;
-      setArticles(articlesData || []);
-
-      // Load instrument directly from URL parameter
-      const { data: instrumentData, error: instrumentError } = await supabase
-        .from("assessment_instruments")
-        .select("*")
-        .eq("id", instrumentId)
-        .single();
-
-      if (instrumentError) throw instrumentError;
-      
-      if (!instrumentData) {
-        toast.error("Instrumento de avaliação não encontrado");
-        setLoading(false);
+  // Handler para trigger de avaliação de item
+  const handleTriggerAI = useCallback(
+    async (itemId: string) => {
+      if (!article?.pdf_storage_key) {
+        toast.error('PDF não encontrado para este artigo');
         return;
       }
-      
-      setInstrument(instrumentData);
 
-      // Load existing assessment
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setCurrentUserId(user.id);
-        
-        const { data: assessmentData } = await supabase
-          .from("assessments")
-          .select("*")
-          .eq("article_id", articleId)
-          .eq("instrument_id", instrumentId)
-          .eq("user_id", user.id)
-          .eq("is_current_version", true)
-          .maybeSingle();
-
-        if (assessmentData) {
-          setExistingAssessment(assessmentData);
-          setAssessmentId(assessmentData.id);
-          setResponses(assessmentData.responses as Record<string, { level: string; comment?: string }> || {});
-        }
+      setTriggeringItemId(itemId);
+      try {
+        await assessItem({
+          projectId: projectId || '',
+          articleId: articleId || '',
+          instrumentId: instrumentId || '',
+          assessmentItemId: itemId,
+          pdfStorageKey: article.pdf_storage_key,
+          model: 'gpt-4o-mini',
+        });
+      } catch (error) {
+        console.error('❌ Erro ao avaliar item:', error);
+        setTriggeringItemId(null);
       }
-    } catch (error: any) {
-      console.error("Error loading data:", error);
-      toast.error("Erro ao carregar dados");
-    } finally {
-      setLoading(false);
-    }
-  };
+    },
+    [article, projectId, articleId, instrumentId, assessItem]
+  );
 
-    loadData();
-  }, [projectId, articleId, instrumentId]);
+  // Get current user ID
+  useState(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) setCurrentUserId(user.id);
+    });
+  });
 
-  const handleResponseChange = (itemCode: string, level: string) => {
-    setResponses((prev) => ({
-      ...prev,
-      [itemCode]: { ...prev[itemCode], level },
-    }));
-  };
-
-  const handleCommentChange = (itemCode: string, comment: string) => {
-    setResponses((prev) => ({
-      ...prev,
-      [itemCode]: { ...prev[itemCode], comment },
-    }));
-  };
-
+  // Navegação entre artigos
   const handleNavigateToArticle = (newArticleId: string) => {
     navigate(`/projects/${projectId}/assessment/${newArticleId}/${instrumentId}`);
   };
 
-  const calculateCompletion = () => {
-    const totalItems = items.length;
-    const completedItems = Object.values(responses).filter((r) => r.level).length;
-    return totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
-  };
-
-  const isComplete = () => {
-    return items.every((item) => responses[item.item_code]?.level);
-  };
-
+  // Finalizar avaliação
   const handleSubmit = async () => {
-    if (!isComplete()) {
-      toast.error("Complete todas as perguntas antes de finalizar");
+    if (!isComplete) {
+      toast.error('Complete todas as perguntas obrigatórias antes de finalizar');
       return;
     }
 
     setSubmitting(true);
     try {
+      // Salvar respostas finais
+      await saveResponses();
+
+      // Atualizar status para submitted
       const { error } = await supabase
-        .from("assessments")
-        .update({ status: "submitted" })
-        .eq("id", assessmentId);
+        .from('assessments')
+        .update({ status: 'submitted' })
+        .eq('article_id', articleId)
+        .eq('instrument_id', instrumentId)
+        .eq('user_id', currentUserId)
+        .eq('is_current_version', true);
 
       if (error) throw error;
 
-      toast.success("Avaliação concluída com sucesso!");
+      toast.success('Avaliação concluída com sucesso!');
       navigate(`/projects/${projectId}`);
     } catch (error: any) {
-      console.error("Error submitting assessment:", error);
-      toast.error("Erro ao finalizar avaliação");
+      console.error('❌ Erro ao finalizar avaliação:', error);
+      toast.error('Erro ao finalizar avaliação');
     } finally {
       setSubmitting(false);
     }
   };
 
-  if (loading || itemsLoading) {
+  // Loading state
+  if (loading || responsesLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -215,37 +230,29 @@ export default function AssessmentFullScreen() {
     );
   }
 
-  if (!instrument) {
+  // Error state
+  if (dataError) {
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-4">
-        <p className="text-muted-foreground">Nenhum instrumento configurado</p>
-        <Button onClick={() => navigate(`/projects/${projectId}`)}>
-          Voltar ao Projeto
-        </Button>
+        <p className="text-destructive">Erro ao carregar dados</p>
+        <Button onClick={() => navigate(`/projects/${projectId}`)}>Voltar ao Projeto</Button>
       </div>
     );
   }
 
-  const schema = typeof instrument.schema === 'string' 
-    ? JSON.parse(instrument.schema) 
-    : instrument.schema;
-  const domains = schema?.domains || [];
-  
-  // Default fallback levels if items don't have them defined
-  const defaultAllowedLevels = ["low", "high", "unclear"];
-    
-  const completion = calculateCompletion();
-  const canComplete = isComplete();
-
-  // Obter assessments de outros usuários para o artigo atual
-  const otherAssessmentsForArticle = getOtherAssessmentsForArticle(articleId || "", instrumentId || "");
-  const hasOtherAssessments = !isBlindMode && !blindLoading && otherAssessmentsForArticle.length > 0;
-  const showOtherAssessments = hasOtherAssessments && showComparison;
-
+  // No instrument state
+  if (!instrument) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen gap-4">
+        <p className="text-muted-foreground">Nenhum instrumento configurado</p>
+        <Button onClick={() => navigate(`/projects/${projectId}`)}>Voltar ao Projeto</Button>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col">
-      {/* Header unificado */}
+      {/* Header */}
       <AssessmentHeader
         projectId={projectId || ''}
         projectName={project?.name || 'Projeto'}
@@ -255,115 +262,78 @@ export default function AssessmentFullScreen() {
         articles={articles}
         currentArticleId={articleId || ''}
         onNavigateToArticle={handleNavigateToArticle}
-        completedItems={Object.values(responses).filter((r) => r.level).length}
-        totalItems={items.length}
-        completionPercentage={completion}
+        completedItems={completedItems}
+        totalItems={totalItems}
+        completionPercentage={completionPercentage}
         showPDF={showPDF}
         onTogglePDF={() => setShowPDF(!showPDF)}
-        showComparison={showComparison}
-        onToggleComparison={() => setShowComparison(!showComparison)}
-        hasOtherAssessments={hasOtherAssessments}
-        canUndo={canUndo}
-        canRedo={canRedo}
-        onUndo={undo}
-        onRedo={redo}
+        showComparison={false}
+        onToggleComparison={() => {}}
+        hasOtherAssessments={false}
+        canUndo={false}
+        canRedo={false}
+        onUndo={() => {}}
+        onRedo={() => {}}
         isSaving={isSaving}
         lastSaved={lastSaved}
-        isComplete={canComplete}
+        isComplete={isComplete}
         onFinalize={handleSubmit}
         submitting={submitting}
       />
 
+      {/* Main Content */}
       <div className="flex-1 overflow-hidden">
         <ResizablePanelGroup direction="horizontal" className="h-full">
-        {/* Comparison Panel - lado esquerdo */}
-        <ResizablePanel 
-          defaultSize={showOtherAssessments ? 30 : 0} 
-          minSize={showOtherAssessments ? 25 : 0} 
-          maxSize={showOtherAssessments ? 40 : 0}
-          className={showOtherAssessments ? "" : "hidden"}
-        >
-          <div className="h-full p-4">
-            <AssessmentComparisonView
-              items={items}
-              currentResponses={responses}
-              otherAssessments={otherAssessmentsForArticle}
-              instrumentAllowedLevels={defaultAllowedLevels}
-              schema={schema}
-              className="h-full"
+          {/* PDF Panel */}
+          {showPDF && (
+            <AssessmentPDFPanel
+              articleId={articleId || ''}
+              projectId={projectId || ''}
+              showPDF={showPDF}
             />
-          </div>
-        </ResizablePanel>
-        
-        {/* Resizable Handle entre Comparison e Assessment */}
-        <ResizableHandle withHandle className="w-1 bg-border hover:bg-primary/20 transition-colors" />
+          )}
 
-        {/* Assessment Form Panel */}
-        <ResizablePanel 
-          defaultSize={showOtherAssessments ? (showPDF ? 40 : 70) : (showPDF ? 60 : 100)} 
-          minSize={30}
-        >
-          <div className="h-full overflow-y-auto">
-            <div className="container max-w-5xl py-6 space-y-6">
+          {/* Assessment Form Panel */}
+          <ResizablePanel defaultSize={showPDF ? 50 : 100} minSize={30}>
+            <AssessmentFormPanel
+              showPDF={showPDF}
+              formViewProps={{
+                domains,
+                responses,
+                onResponseChange: (itemId, response) => updateResponse(itemId, response),
+                aiSuggestions,
+                onAcceptAI: acceptSuggestion,
+                onRejectAI: rejectSuggestion,
+                onTriggerAI: handleTriggerAI,
+                isActionLoading: (itemId) => !!isActionLoading(itemId),
+                isTriggerLoading: (itemId) => assessingItem && triggeringItemId === itemId,
+                disabled: false,
+              }}
+            />
 
-              {/* Barra de Avaliação em Lote */}
-              <BatchAssessmentBar
-                projectId={projectId || ""}
-                articleId={articleId || ""}
-                instrumentId={instrumentId || ""}
-                items={items}
-                responses={responses}
-                onResponseChange={handleResponseChange}
-                onCommentChange={handleCommentChange}
-              />
-
-              <div className="space-y-4">
-                {domains.map((domain: any) => (
-                  <DomainAccordion
-                    key={domain.code}
-                    domain={domain.code}
-                    domainName={domain.name}
-                    items={items}
-                    responses={responses}
-                    instrumentAllowedLevels={defaultAllowedLevels}
-                    onResponseChange={handleResponseChange}
-                    onCommentChange={handleCommentChange}
-                    projectId={projectId}
-                    articleId={articleId}
-                    instrumentId={instrumentId}
-                  />
-                ))}
-              </div>
-
-              <div className="flex justify-end pb-6">
+            {/* Submit Button */}
+            <div className="p-8 border-t bg-white">
+              <div className="flex justify-end">
                 <Button
                   size="lg"
                   onClick={handleSubmit}
-                  disabled={submitting || !canComplete || isSaving}
+                  disabled={submitting || !isComplete || isSaving}
                 >
                   {submitting ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Finalizando...
+                    </>
                   ) : (
-                    <CheckCircle className="mr-2 h-4 w-4" />
+                    <>
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                      Concluir Avaliação
+                    </>
                   )}
-                  Concluir Avaliação
                 </Button>
               </div>
             </div>
-          </div>
-        </ResizablePanel>
-
-        {/* Resizable Handle entre Assessment e PDF */}
-        <ResizableHandle withHandle className="w-1 bg-border hover:bg-primary/20 transition-colors" />
-
-        {/* PDF Viewer Panel */}
-        <ResizablePanel 
-          defaultSize={showPDF ? (showOtherAssessments ? 30 : 40) : 0} 
-          minSize={showPDF ? 30 : 0}
-          className={showPDF ? "" : "hidden"}
-        >
-          <PDFViewer articleId={articleId || ""} projectId={projectId || ""} />
-        </ResizablePanel>
+          </ResizablePanel>
         </ResizablePanelGroup>
       </div>
     </div>

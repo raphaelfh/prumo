@@ -1,170 +1,169 @@
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { AssessmentItem } from "@/hooks/assessment/useAssessmentInstruments";
-import { Badge } from "@/components/ui/badge";
-import { AIAssessmentButton } from "./AIAssessmentButton";
-import { AIQuickButton } from "./AIQuickButton";
+/**
+ * Accordion de Domínio de Assessment
+ *
+ * Componente que renderiza um domínio do instrumento de avaliação com seus items.
+ * Calcula progresso do domínio e exibe items de forma organizada.
+ *
+ * Atualizado para usar os novos hooks e tipos (DRY + KISS)
+ * Baseado em SectionAccordion.tsx do módulo de extração
+ *
+ * @component
+ */
 
-interface DomainAccordionProps {
-  domain: string;
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+} from '@/components/ui/accordion';
+import * as AccordionPrimitive from '@radix-ui/react-accordion';
+import { Badge } from '@/components/ui/badge';
+import { ChevronDown } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { useRef } from 'react';
+import MemoizedAssessmentItemInput from './AssessmentItemInput';
+import type {
+  AssessmentItem,
+  AssessmentResponse,
+  AIAssessmentSuggestion,
+} from '@/types/assessment';
+
+// =================== INTERFACES ===================
+
+export interface DomainAccordionProps {
   domainName: string;
   items: AssessmentItem[];
-  responses: Record<string, { level: string; comment?: string }>;
-  instrumentAllowedLevels: string[];
-  onResponseChange: (itemCode: string, level: string) => void;
-  onCommentChange: (itemCode: string, comment: string) => void;
+  responses: Record<string, AssessmentResponse>;
+  onResponseChange: (itemId: string, response: AssessmentResponse) => void;
+  aiSuggestions?: Record<string, AIAssessmentSuggestion>;
+  onAcceptAI?: (itemId: string) => Promise<void>;
+  onRejectAI?: (itemId: string) => Promise<void>;
+  onTriggerAI?: (itemId: string) => Promise<void>;
+  isActionLoading?: (itemId: string) => boolean;
+  isTriggerLoading?: (itemId: string) => boolean;
   disabled?: boolean;
-  projectId?: string;
-  articleId?: string;
-  instrumentId?: string;
 }
 
-export const DomainAccordion = ({
-  domain,
-  domainName,
-  items,
-  responses,
-  instrumentAllowedLevels,
-  onResponseChange,
-  onCommentChange,
-  disabled = false,
-  projectId,
-  articleId,
-  instrumentId,
-}: DomainAccordionProps) => {
-  const domainItems = items.filter((item) => item.domain === domain);
-  const completedItems = domainItems.filter((item) => responses[item.item_code]?.level);
-  const progress = domainItems.length > 0 ? (completedItems.length / domainItems.length) * 100 : 0;
-  
-  const getItemAllowedLevels = (item: AssessmentItem) => {
-    // Use item's allowed_levels if available, otherwise fall back to instrument's
-    const levels = item.allowed_levels || instrumentAllowedLevels;
-    return typeof levels === 'string' ? JSON.parse(levels) : Array.isArray(levels) ? levels : [];
+// =================== COMPONENT ===================
+
+export function DomainAccordion(props: DomainAccordionProps) {
+  const {
+    domainName,
+    items,
+    responses,
+    onResponseChange,
+    aiSuggestions,
+    onAcceptAI,
+    onRejectAI,
+    onTriggerAI,
+    isActionLoading,
+    isTriggerLoading,
+    disabled,
+  } = props;
+
+  // Ref para o trigger do accordion
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  const handleChevronClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    triggerRef.current?.click();
   };
 
-  const getLevelLabel = (level: string) => {
-    const labels: Record<string, string> = {
-      low: "Baixo",
-      high: "Alto",
-      unclear: "Incerto",
-      no_information: "Sem Informação",
-    };
-    return labels[level] || level;
-  };
+  // Calcular progresso deste domínio
+  const requiredItems = items.filter((i) => i.is_required);
+  const totalRequired = requiredItems.length;
 
-  const getLevelColor = (level: string) => {
-    const colors: Record<string, string> = {
-      low: "bg-success",
-      high: "bg-destructive",
-      unclear: "bg-warning",
-      no_information: "bg-muted",
-    };
-    return colors[level] || "bg-muted";
-  };
+  const completedRequired = requiredItems.filter((item) => {
+    const response = responses[item.id];
+    return response && response.selected_level && response.selected_level.trim() !== '';
+  }).length;
+
+  const isComplete = totalRequired > 0 && completedRequired === totalRequired;
+  const progressPercentage =
+    totalRequired > 0 ? Math.round((completedRequired / totalRequired) * 100) : 0;
+
+  // Determinar cor da borda esquerda baseada no status
+  const borderColor = isComplete
+    ? 'border-l-green-500'
+    : completedRequired > 0
+    ? 'border-l-blue-500'
+    : 'border-l-slate-300';
+
+  // Gerar ID único para o accordion
+  const accordionId = `domain-${domainName.toLowerCase().replace(/\s+/g, '-')}`;
 
   return (
-    <Accordion type="single" collapsible className="w-full">
-      <AccordionItem value={domain}>
-        <AccordionTrigger className="hover:no-underline">
-          <div className="flex items-center justify-between w-full pr-4">
-            <span className="font-semibold">{domainName}</span>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="text-xs">
-                {completedItems.length}/{domainItems.length}
-              </Badge>
-              <span className="text-xs text-muted-foreground">{Math.round(progress)}%</span>
-            </div>
+    <Accordion
+      type="single"
+      collapsible
+      defaultValue={accordionId}
+      className={cn('bg-white border-l-4 rounded-lg shadow-sm', borderColor)}
+    >
+      <AccordionItem value={accordionId} className="border-none group/accordion-item">
+        <div className="px-6 py-4 hover:bg-slate-50/50">
+          <div className="flex items-center gap-3">
+            <AccordionPrimitive.Header className="flex flex-1">
+              <AccordionPrimitive.Trigger
+                ref={triggerRef}
+                className={cn(
+                  'flex flex-1 items-center justify-between py-4 font-medium transition-all hover:no-underline'
+                )}
+              >
+                {/* Título à esquerda */}
+                <div className="flex items-center gap-3">
+                  <h3 className="font-semibold text-base">{domainName}</h3>
+                  <Badge variant="outline" className="text-xs">
+                    {items.length} {items.length === 1 ? 'item' : 'items'}
+                  </Badge>
+                </div>
+
+                {/* Progresso à direita */}
+                <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                  <span className="font-medium">
+                    {completedRequired}/{totalRequired}
+                  </span>
+                  <span>{progressPercentage}%</span>
+                </div>
+              </AccordionPrimitive.Trigger>
+            </AccordionPrimitive.Header>
+
+            {/* Chevron manualmente posicionado */}
+            <button
+              type="button"
+              onClick={handleChevronClick}
+              className="flex items-center justify-center h-8 w-8 shrink-0 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
+              aria-label="Toggle accordion"
+            >
+              <ChevronDown className="h-4 w-4 transition-transform duration-200 group-data-[state=open]/accordion-item:rotate-180" />
+            </button>
           </div>
-        </AccordionTrigger>
-        <AccordionContent>
-          <div className="space-y-6 pt-4">
-            {domainItems.map((item) => (
-              <div key={item.id} className="space-y-3 p-4 rounded-lg border bg-card">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <Label className="text-sm font-medium leading-relaxed">
-                      {item.item_code}. {item.question}
-                    </Label>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {projectId && articleId && instrumentId && (
-                      <>
-                        <AIQuickButton
-                          projectId={projectId}
-                          articleId={articleId}
-                          assessmentItemId={item.id}
-                          instrumentId={instrumentId}
-                          itemQuestion={item.question}
-                          hasResponse={!!responses[item.item_code]?.level}
-                          onAccept={(level, comment) => {
-                            onResponseChange(item.item_code, level);
-                            onCommentChange(item.item_code, comment);
-                          }}
-                        />
-                        <AIAssessmentButton
-                          projectId={projectId}
-                          articleId={articleId}
-                          assessmentItemId={item.id}
-                          instrumentId={instrumentId}
-                          itemQuestion={item.question}
-                          onAccept={(level, comment) => {
-                            onResponseChange(item.item_code, level);
-                            onCommentChange(item.item_code, comment);
-                          }}
-                        />
-                      </>
-                    )}
-                    {responses[item.item_code]?.level && (
-                      <Badge className={getLevelColor(responses[item.item_code].level)}>
-                        {getLevelLabel(responses[item.item_code].level)}
-                      </Badge>
-                    )}
-                  </div>
-                </div>
+        </div>
 
-                <RadioGroup
-                  value={responses[item.item_code]?.level || ""}
-                  onValueChange={(value) => {
-                    // Toggle: if clicking the same option, deselect it
-                    if (responses[item.item_code]?.level === value) {
-                      onResponseChange(item.item_code, "");
-                    } else {
-                      onResponseChange(item.item_code, value);
-                    }
-                  }}
-                  disabled={disabled}
-                  className="grid grid-cols-2 gap-2 mt-3"
-                >
-                  {getItemAllowedLevels(item).map((level: string) => (
-                    <div key={level} className="flex items-center space-x-2 border rounded-md p-3 hover:bg-accent">
-                      <RadioGroupItem value={level} id={`${item.item_code}-${level}`} />
-                      <Label htmlFor={`${item.item_code}-${level}`} className="cursor-pointer flex-1 font-normal">
-                        {getLevelLabel(level)}
-                      </Label>
-                    </div>
-                  ))}
-                </RadioGroup>
-
-                <div className="space-y-2 mt-3">
-                  <Label htmlFor={`comment-${item.item_code}`} className="text-xs text-muted-foreground">
-                    Comentários/Justificativa (opcional)
-                  </Label>
-                  <Textarea
-                    id={`comment-${item.item_code}`}
-                    placeholder="Adicione comentários ou justificativa para sua avaliação..."
-                    value={responses[item.item_code]?.comment || ""}
-                    onChange={(e) => onCommentChange(item.item_code, e.target.value)}
-                    disabled={disabled}
-                    className="min-h-[80px] resize-none"
-                  />
-                </div>
+        <AccordionContent className="px-8 pb-8">
+          <div className="divide-y divide-slate-100">
+            {items.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground">Nenhum item neste domínio</p>
               </div>
-            ))}
+            ) : (
+              items.map((item) => (
+                <MemoizedAssessmentItemInput
+                  key={item.id}
+                  item={item}
+                  value={responses[item.id] || null}
+                  onChange={(response) => onResponseChange(item.id, response)}
+                  aiSuggestion={aiSuggestions?.[item.id]}
+                  onAcceptAI={onAcceptAI ? () => onAcceptAI(item.id) : undefined}
+                  onRejectAI={onRejectAI ? () => onRejectAI(item.id) : undefined}
+                  onTriggerAI={onTriggerAI ? () => onTriggerAI(item.id) : undefined}
+                  isActionLoading={isActionLoading ? isActionLoading(item.id) : false}
+                  isTriggerLoading={isTriggerLoading ? isTriggerLoading(item.id) : false}
+                  disabled={disabled}
+                />
+              ))
+            )}
           </div>
         </AccordionContent>
       </AccordionItem>
     </Accordion>
   );
-};
+}
