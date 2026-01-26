@@ -94,7 +94,7 @@ CREATE POLICY ai_assessment_runs_update_policy
         AND project_members.user_id = auth.uid()
         AND (
           ai_assessment_runs.created_by = auth.uid() OR
-          project_members.role IN ('owner', 'manager')
+          project_members.role = 'manager'
         )
     )
   );
