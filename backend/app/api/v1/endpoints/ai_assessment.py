@@ -17,8 +17,12 @@ from app.core.logging import get_logger
 from app.schemas.assessment import (
     AIAssessmentRequest,
     AIAssessmentResponseData,
+    AISuggestionSchema,
     BatchAIAssessmentRequest,
     BatchAIAssessmentResponseData,
+    ListSuggestionsResponse,
+    ReviewAISuggestionRequest,
+    ReviewAISuggestionResponse,
 )
 from app.schemas.common import ApiResponse
 from app.services.ai_assessment_service import AIAssessmentService
@@ -68,14 +72,15 @@ async def ai_assessment(
     try:
         # Cria storage adapter via factory
         storage = create_storage_adapter(supabase)
-        
+
         service = AIAssessmentService(
             db=db,
             user_id=user.sub,
             storage=storage,
             trace_id=trace_id,
+            openai_api_key=payload.openai_api_key,  # BYOK support
         )
-        
+
         result = await service.assess(
             project_id=payload.project_id,
             article_id=payload.article_id,
@@ -87,6 +92,7 @@ async def ai_assessment(
             pdf_file_id=payload.pdf_file_id,
             force_file_search=payload.force_file_search,
             model=payload.model or "gpt-4o-mini",
+            extraction_instance_id=payload.extraction_instance_id,  # For PROBAST by model
         )
         
         # Commit explícito para persistir os resultados
@@ -183,20 +189,22 @@ async def ai_assessment_batch(
     
     try:
         storage = create_storage_adapter(supabase)
-        
+
         service = AIAssessmentService(
             db=db,
             user_id=user.sub,
             storage=storage,
             trace_id=trace_id,
+            openai_api_key=payload.openai_api_key,  # BYOK support
         )
-        
+
         results = await service.assess_batch(
             project_id=payload.project_id,
             article_id=payload.article_id,
             item_ids=payload.item_ids,
             instrument_id=payload.instrument_id,
             model=payload.model or "gpt-4o-mini",
+            extraction_instance_id=payload.extraction_instance_id,  # For PROBAST by model
         )
         
         await db.commit()
@@ -231,4 +239,270 @@ async def ai_assessment_batch(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Batch assessment failed: {str(e)}",
+        ) from e
+
+
+@router.get(
+    "/ai/suggestions",
+    response_model=ApiResponse,
+    summary="Listar sugestões de AI pendentes",
+    description="Lista sugestões de AI que aguardam revisão humana.",
+)
+@limiter.limit("30/minute")
+async def list_ai_suggestions(
+    request: Request,
+    project_id: str,
+    article_id: str,
+    instrument_id: str | None = None,
+    extraction_instance_id: str | None = None,
+    status_filter: str | None = None,
+    db: DbSession = None,
+    user: CurrentUser = None,
+) -> ApiResponse:
+    """
+    Lista sugestões de AI pendentes de revisão.
+
+    Args:
+        project_id: ID do projeto.
+        article_id: ID do artigo.
+        instrument_id: Filtrar por instrumento (opcional).
+        extraction_instance_id: Filtrar por extraction instance (opcional).
+        status_filter: Filtrar por status: 'pending', 'accepted', 'rejected' (opcional).
+
+    Returns:
+        ApiResponse com lista de sugestões.
+    """
+    trace_id = str(uuid.uuid4())
+
+    try:
+        from app.repositories.extraction_repository import AISuggestionRepository
+        from sqlalchemy import and_, select
+        from app.models.extraction import AISuggestion
+        from app.models.assessment import AIAssessmentRun
+
+        # Build query
+        query = select(AISuggestion).where(
+            AISuggestion.assessment_item_id.isnot(None)  # Only assessment suggestions
+        )
+
+        # Join with runs to filter by project/article
+        query = query.join(
+            AIAssessmentRun,
+            AISuggestion.run_id == AIAssessmentRun.id
+        ).where(
+            and_(
+                AIAssessmentRun.project_id == uuid.UUID(project_id),
+                AIAssessmentRun.article_id == uuid.UUID(article_id),
+            )
+        )
+
+        # Apply filters
+        if instrument_id:
+            query = query.where(AIAssessmentRun.instrument_id == uuid.UUID(instrument_id))
+
+        if extraction_instance_id:
+            query = query.where(
+                AIAssessmentRun.extraction_instance_id == uuid.UUID(extraction_instance_id)
+            )
+
+        if status_filter:
+            query = query.where(AISuggestion.status == status_filter)
+
+        # Execute query
+        result = await db.execute(query.order_by(AISuggestion.created_at.desc()))
+        suggestions = result.scalars().all()
+
+        # Format response
+        suggestions_data = [
+            AISuggestionSchema.model_validate(s).model_dump(by_alias=True)
+            for s in suggestions
+        ]
+
+        response_data = ListSuggestionsResponse(
+            suggestions=suggestions_data,
+            total=len(suggestions_data),
+        ).model_dump(by_alias=True)
+
+        return ApiResponse(ok=True, data=response_data, trace_id=trace_id)
+
+    except Exception as e:
+        logger.error(
+            "list_ai_suggestions_error",
+            trace_id=trace_id,
+            error=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list suggestions: {str(e)}",
+        ) from e
+
+
+@router.post(
+    "/ai/suggestions/{suggestion_id}/review",
+    response_model=ApiResponse,
+    summary="Revisar sugestão de AI",
+    description="Aceita, rejeita ou modifica uma sugestão de AI.",
+)
+@limiter.limit("20/minute")
+async def review_ai_suggestion(
+    request: Request,
+    suggestion_id: str,
+    payload: ReviewAISuggestionRequest,
+    db: DbSession,
+    user: CurrentUser,
+) -> ApiResponse:
+    """
+    Revisa uma sugestão de AI (accept/reject/modify).
+
+    Workflow:
+    - accept: Marca sugestão como aceita e cria AIAssessment final
+    - reject: Marca sugestão como rejeitada (não cria assessment)
+    - modify: Marca sugestão como aceita com valor modificado e cria AIAssessment
+
+    Args:
+        suggestion_id: ID da sugestão.
+        payload: Ação de revisão e dados opcionais.
+
+    Returns:
+        ApiResponse com resultado da revisão.
+    """
+    trace_id = str(uuid.uuid4())
+
+    logger.info(
+        "review_ai_suggestion_request",
+        trace_id=trace_id,
+        user_id=user.sub,
+        suggestion_id=suggestion_id,
+        action=payload.action,
+    )
+
+    try:
+        from app.repositories.extraction_repository import AISuggestionRepository
+        from app.repositories.assessment_repository import AIAssessmentRepository
+        from app.models.assessment import AIAssessment
+
+        suggestion_repo = AISuggestionRepository(db)
+        assessment_repo = AIAssessmentRepository(db)
+
+        # 1. Fetch suggestion
+        suggestion = await suggestion_repo.get_by_id(uuid.UUID(suggestion_id))
+        if not suggestion:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Suggestion {suggestion_id} not found",
+            )
+
+        # 2. Validate status
+        if suggestion.status != "pending":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Suggestion already reviewed: {suggestion.status}",
+            )
+
+        assessment_created = False
+        assessment_id = None
+
+        # 3. Process action
+        if payload.action == "accept":
+            # Accept suggestion and create final assessment
+            suggestion.status = "accepted"
+            await suggestion_repo.update(suggestion)
+
+            # Create AIAssessment from suggestion
+            assessment = AIAssessment(
+                id=uuid.uuid4(),
+                run_id=suggestion.run_id,
+                assessment_item_id=suggestion.assessment_item_id,
+                selected_level=suggestion.suggested_value.get("level", ""),
+                confidence_score=suggestion.confidence_score,
+                justification=suggestion.reasoning or "",
+                evidence_passages=suggestion.suggested_value.get("evidence_passages", []),
+                status="completed",
+                reviewed_by=uuid.UUID(user.sub),
+                metadata_=suggestion.metadata_,
+            )
+            saved_assessment = await assessment_repo.create(assessment)
+            assessment_created = True
+            assessment_id = saved_assessment.id
+
+        elif payload.action == "modify":
+            # Accept with modifications
+            if not payload.modified_value:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="modified_value is required for modify action",
+                )
+
+            suggestion.status = "accepted"
+            await suggestion_repo.update(suggestion)
+
+            # Create AIAssessment with modified values
+            assessment = AIAssessment(
+                id=uuid.uuid4(),
+                run_id=suggestion.run_id,
+                assessment_item_id=suggestion.assessment_item_id,
+                selected_level=payload.modified_value.get("level", ""),
+                confidence_score=payload.modified_value.get("confidence_score"),
+                justification=payload.review_notes or suggestion.reasoning or "",
+                evidence_passages=payload.modified_value.get("evidence_passages", []),
+                status="completed",
+                reviewed_by=uuid.UUID(user.sub),
+                metadata_={
+                    **suggestion.metadata_,
+                    "modified": True,
+                    "original_suggestion": suggestion.suggested_value,
+                },
+            )
+            saved_assessment = await assessment_repo.create(assessment)
+            assessment_created = True
+            assessment_id = saved_assessment.id
+
+        elif payload.action == "reject":
+            # Reject suggestion (no assessment created)
+            suggestion.status = "rejected"
+            suggestion.metadata_["rejection_notes"] = payload.review_notes
+            await suggestion_repo.update(suggestion)
+
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid action: {payload.action}",
+            )
+
+        await db.commit()
+
+        logger.info(
+            "review_ai_suggestion_success",
+            trace_id=trace_id,
+            user_id=user.sub,
+            suggestion_id=suggestion_id,
+            action=payload.action,
+            assessment_created=assessment_created,
+            assessment_id=str(assessment_id) if assessment_id else None,
+        )
+
+        response_data = ReviewAISuggestionResponse(
+            suggestion_id=uuid.UUID(suggestion_id),
+            action=payload.action,
+            assessment_created=assessment_created,
+            assessment_id=assessment_id,
+        ).model_dump(by_alias=True)
+
+        return ApiResponse(ok=True, data=response_data, trace_id=trace_id)
+
+    except HTTPException:
+        await db.rollback()
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(
+            "review_ai_suggestion_error",
+            trace_id=trace_id,
+            error=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Review failed: {str(e)}",
         ) from e

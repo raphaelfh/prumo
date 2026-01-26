@@ -28,25 +28,31 @@ class EvidencePassage(BaseModel):
 
 class AIAssessmentRequest(BaseModel):
     """Request para avaliação AI de um item de assessment."""
-    
+
     project_id: UUID = Field(..., alias="projectId")
     article_id: UUID = Field(..., alias="articleId")
     assessment_item_id: UUID = Field(..., alias="assessmentItemId")
     instrument_id: UUID = Field(..., alias="instrumentId")
-    
+
     # Opcionais para fonte do PDF
     pdf_storage_key: str | None = Field(default=None, alias="pdfStorageKey")
     pdf_base64: str | None = Field(default=None, alias="pdfBase64")
     pdf_filename: str | None = Field(default=None, alias="pdfFilename")
     pdf_file_id: str | None = Field(default=None, alias="pdfFileId")
-    
+
     # Forçar uso de File Search (para PDFs > 32MB)
     force_file_search: bool = Field(default=False, alias="forceFileSearch")
-    
+
+    # BYOK: Bring Your Own Key
+    openai_api_key: str | None = Field(default=None, alias="openaiApiKey")
+
+    # Para PROBAST por modelo (assessment hierárquico)
+    extraction_instance_id: UUID | None = Field(default=None, alias="extractionInstanceId")
+
     # Opções do modelo
     model: str = Field(default="gpt-4o-mini")
     temperature: float = Field(default=0.1, ge=0, le=1)
-    
+
     model_config = ConfigDict(populate_by_name=True)
 
 
@@ -103,21 +109,27 @@ class AIAssessmentResponse(BaseModel):
 
 class BatchAIAssessmentRequest(BaseModel):
     """Request para avaliação AI em batch."""
-    
+
     project_id: UUID = Field(..., alias="projectId")
     article_id: UUID = Field(..., alias="articleId")
     instrument_id: UUID = Field(..., alias="instrumentId")
-    
+
     # Avaliar todos os items ou específicos
     item_ids: list[UUID] = Field(..., alias="itemIds")
-    
+
     # Fonte do PDF
     pdf_storage_key: str | None = Field(default=None, alias="pdfStorageKey")
-    
+
+    # BYOK: Bring Your Own Key
+    openai_api_key: str | None = Field(default=None, alias="openaiApiKey")
+
+    # Para PROBAST por modelo (assessment hierárquico)
+    extraction_instance_id: UUID | None = Field(default=None, alias="extractionInstanceId")
+
     # Opções
     model: str = Field(default="gpt-4o-mini")
     force_file_search: bool = Field(default=False, alias="forceFileSearch")
-    
+
     model_config = ConfigDict(populate_by_name=True)
 
 
@@ -241,16 +253,77 @@ class AssessmentResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True, from_attributes=True)
 
 
+# =================== AI SUGGESTION SCHEMAS ===================
+
+
+class AISuggestionSchema(BaseModel):
+    """Schema para AI Suggestion (pending review)."""
+
+    id: UUID
+    run_id: UUID = Field(..., alias="runId")
+    assessment_item_id: UUID = Field(..., alias="assessmentItemId")
+    suggested_value: dict[str, Any] = Field(..., alias="suggestedValue")
+    confidence_score: float | None = Field(default=None, alias="confidenceScore")
+    reasoning: str | None = None
+    status: str  # 'pending', 'accepted', 'rejected'
+    metadata_: dict[str, Any] = Field(default={}, alias="metadata")
+    created_at: datetime = Field(..., alias="createdAt")
+
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+
+
+class ListSuggestionsRequest(BaseModel):
+    """Request para listar sugestões de AI pendentes."""
+
+    project_id: UUID = Field(..., alias="projectId")
+    article_id: UUID = Field(..., alias="articleId")
+    instrument_id: UUID | None = Field(default=None, alias="instrumentId")
+    extraction_instance_id: UUID | None = Field(default=None, alias="extractionInstanceId")
+    status: Literal["pending", "accepted", "rejected"] | None = None
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ListSuggestionsResponse(BaseModel):
+    """Response com lista de sugestões."""
+
+    suggestions: list[AISuggestionSchema]
+    total: int
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 # =================== REVIEW SCHEMAS ===================
 
 
+class ReviewAISuggestionRequest(BaseModel):
+    """Request para revisar sugestão de AI."""
+
+    action: Literal["accept", "reject", "modify"]
+    modified_value: dict[str, Any] | None = Field(default=None, alias="modifiedValue")
+    review_notes: str | None = Field(default=None, alias="reviewNotes")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ReviewAISuggestionResponse(BaseModel):
+    """Response após revisão de sugestão."""
+
+    suggestion_id: UUID = Field(..., alias="suggestionId")
+    action: str
+    assessment_created: bool = Field(..., alias="assessmentCreated")
+    assessment_id: UUID | None = Field(default=None, alias="assessmentId")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class ReviewAIAssessmentRequest(BaseModel):
-    """Request para revisar avaliação de IA."""
-    
+    """Request para revisar avaliação de IA (DEPRECATED - use ReviewAISuggestionRequest)."""
+
     status: Literal["accepted", "rejected", "modified"]
     human_response: str | None = Field(default=None, alias="humanResponse")
     notes: str | None = None
-    
+
     model_config = ConfigDict(populate_by_name=True)
 
 
