@@ -15,11 +15,16 @@ from enum import Enum
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, Field
 
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
 from app.core.logging import get_logger
 from app.schemas.common import ApiResponse
+from app.schemas.zotero import (
+    DownloadAttachmentRequest,
+    FetchAttachmentsRequest,
+    FetchItemsRequest,
+    SaveCredentialsRequest,
+)
 from app.services.zotero_service import ZoteroService
 
 router = APIRouter()
@@ -35,42 +40,6 @@ class ZoteroAction(str, Enum):
     FETCH_ITEMS = "fetch-items"
     FETCH_ATTACHMENTS = "fetch-attachments"
     DOWNLOAD_ATTACHMENT = "download-attachment"
-
-
-class SaveCredentialsRequest(BaseModel):
-    """Request para salvar credenciais do Zotero."""
-    
-    zotero_user_id: str = Field(..., alias="zoteroUserId")
-    api_key: str = Field(..., alias="apiKey")
-    library_type: str = Field(..., alias="libraryType", pattern="^(user|group)$")
-    
-    model_config = {"populate_by_name": True}
-
-
-class FetchItemsRequest(BaseModel):
-    """Request para buscar items de uma collection."""
-    
-    collection_key: str = Field(..., alias="collectionKey")
-    limit: int = Field(default=100, ge=1, le=100)
-    start: int = Field(default=0, ge=0)
-    
-    model_config = {"populate_by_name": True}
-
-
-class FetchAttachmentsRequest(BaseModel):
-    """Request para buscar attachments de um item."""
-    
-    item_key: str = Field(..., alias="itemKey")
-    
-    model_config = {"populate_by_name": True}
-
-
-class DownloadAttachmentRequest(BaseModel):
-    """Request para download de attachment."""
-    
-    attachment_key: str = Field(..., alias="attachmentKey")
-    
-    model_config = {"populate_by_name": True}
 
 
 @router.post(
@@ -114,7 +83,9 @@ async def zotero_action(
                     api_key=request.api_key,
                     library_type=request.library_type,
                 )
-                
+                # Commit explícito para persistir credenciais
+                await db.commit()
+
             case ZoteroAction.TEST_CONNECTION:
                 result = await service.test_connection()
                 
@@ -174,4 +145,3 @@ async def zotero_action(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Zotero operation failed: {str(e)}",
         ) from e
-

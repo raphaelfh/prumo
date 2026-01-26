@@ -76,6 +76,32 @@ class ArticleRepository(BaseRepository[Article]):
             .where(Article.id == article_id)
         )
         return result.scalar_one_or_none()
+
+    async def get_by_zotero_item_key(
+        self,
+        project_id: UUID | str,
+        zotero_item_key: str,
+    ) -> Article | None:
+        """
+        Busca artigo por zotero_item_key dentro de um projeto.
+
+        Args:
+            project_id: ID do projeto.
+            zotero_item_key: Key do item no Zotero.
+
+        Returns:
+            Artigo encontrado ou None.
+        """
+        if isinstance(project_id, str):
+            project_id = UUID(project_id)
+
+        result = await self.db.execute(
+            select(Article)
+            .where(Article.project_id == project_id)
+            .where(Article.zotero_item_key == zotero_item_key)
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
     
     async def count_by_project(self, project_id: UUID | str) -> int:
         """

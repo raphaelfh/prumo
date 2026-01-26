@@ -41,6 +41,7 @@ from app.models.assessment import (
     AIAssessment,
     AIAssessmentConfig,
     AIAssessmentPrompt,
+    AIAssessmentRun,
     Assessment,
     AssessmentInstrument,
     AssessmentItem,
@@ -123,6 +124,7 @@ __all__ = [
     "Assessment",
     "AIAssessmentConfig",
     "AIAssessmentPrompt",
+    "AIAssessmentRun",
     "AIAssessment",
     "AssessmentStatus",
     # Integration

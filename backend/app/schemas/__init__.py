@@ -22,12 +22,14 @@ from app.schemas.article import (
 from app.schemas.assessment import (
     AIAssessmentRequest,
     AIAssessmentResponse,
+    AIAssessmentResponseData,
     AIAssessmentResult,
     ArticleAssessmentSummary,
     AssessmentInstrumentSchema,
     AssessmentItemSchema,
     AssessmentResponse,
     BatchAIAssessmentRequest,
+    BatchAIAssessmentResponseData,
     BatchAIAssessmentResult,
     BatchItemResult,
     DomainSummary,
@@ -94,6 +96,12 @@ from app.schemas.zotero import (
     ZoteroItem,
     ZoteroItemData,
 )
+from app.schemas.user_api_key import (
+    APIKeyResponse,
+    CreateAPIKeyRequest,
+    CreateAPIKeyResponse,
+    UpdateAPIKeyRequest,
+)
 
 __all__ = [
     # Common
@@ -141,8 +149,10 @@ __all__ = [
     # Assessment
     "AIAssessmentRequest",
     "AIAssessmentResponse",
+    "AIAssessmentResponseData",
     "AIAssessmentResult",
     "BatchAIAssessmentRequest",
+    "BatchAIAssessmentResponseData",
     "BatchAIAssessmentResult",
     "BatchItemResult",
     "EvidencePassage",
@@ -154,6 +164,11 @@ __all__ = [
     "DomainSummary",
     "ArticleAssessmentSummary",
     "ItemResponse",
+    # User API Keys
+    "CreateAPIKeyRequest",
+    "UpdateAPIKeyRequest",
+    "APIKeyResponse",
+    "CreateAPIKeyResponse",
     # Project
     "ProjectCreate",
     "ProjectUpdate",

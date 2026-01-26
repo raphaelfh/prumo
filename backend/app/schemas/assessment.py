@@ -50,6 +50,20 @@ class AIAssessmentRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class AIAssessmentResponseData(BaseModel):
+    """Response do endpoint de avaliacao AI."""
+
+    id: str
+    selected_level: str = Field(..., alias="selectedLevel")
+    confidence_score: float | None = Field(default=None, alias="confidenceScore")
+    justification: str
+    evidence_passages: list[dict[str, Any]] = Field(default=[], alias="evidencePassages")
+    status: str
+    metadata: dict[str, Any]
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class AIAssessmentResult(BaseModel):
     """Resultado da avaliação AI."""
     
@@ -95,7 +109,7 @@ class BatchAIAssessmentRequest(BaseModel):
     instrument_id: UUID = Field(..., alias="instrumentId")
     
     # Avaliar todos os items ou específicos
-    item_ids: list[UUID] | None = Field(default=None, alias="itemIds")
+    item_ids: list[UUID] = Field(..., alias="itemIds")
     
     # Fonte do PDF
     pdf_storage_key: str | None = Field(default=None, alias="pdfStorageKey")
@@ -115,6 +129,16 @@ class BatchItemResult(BaseModel):
     assessment_id: UUID | None = Field(default=None, alias="assessmentId")
     error: str | None = None
     
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class BatchAIAssessmentResponseData(BaseModel):
+    """Response do endpoint de batch AI."""
+
+    results: list[dict[str, Any]]
+    total_items: int = Field(..., alias="totalItems")
+    successful_items: int = Field(..., alias="successfulItems")
+
     model_config = ConfigDict(populate_by_name=True)
 
 
@@ -255,4 +279,3 @@ class ArticleAssessmentSummary(BaseModel):
     consensus_reached: bool = Field(default=False, alias="consensusReached")
     
     model_config = ConfigDict(populate_by_name=True)
-

@@ -8,47 +8,20 @@ Identifica e cria instâncias de modelos com suas hierarquias completas.
 """
 
 import uuid
-from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
-from pydantic import BaseModel, Field
 
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
 from app.core.factories import create_storage_adapter
 from app.core.logging import get_logger
 from app.schemas.common import ApiResponse
+from app.schemas.extraction import ModelExtractionRequest, ModelExtractionResult
 from app.services.api_key_service import APIKeyService
 from app.services.model_extraction_service import ModelExtractionService
 from app.utils.rate_limiter import limiter
 
 router = APIRouter()
 logger = get_logger(__name__)
-
-
-class ModelExtractionRequest(BaseModel):
-    """Request para extração de modelos."""
-    
-    project_id: uuid.UUID = Field(..., alias="projectId")
-    article_id: uuid.UUID = Field(..., alias="articleId")
-    template_id: uuid.UUID = Field(..., alias="templateId")
-    
-    # Opções de extração
-    model: str | None = Field(
-        default="gpt-4o-mini",
-        description="Modelo OpenAI a usar (gpt-4o-mini, gpt-4o, gpt-5)",
-    )
-    
-    model_config = {"populate_by_name": True}
-
-
-class ModelExtractionResponse(BaseModel):
-    """Resposta da extração de modelos."""
-    
-    runId: str
-    modelsCreated: list[dict[str, Any]]
-    totalModels: int
-    childInstancesCreated: int
-    metadata: dict[str, Any]
 
 
 @router.post(
@@ -132,11 +105,11 @@ async def extract_models(
         )
         
         # Formatar resposta no formato camelCase para o frontend
-        response_data = ModelExtractionResponse(
-            runId=result.run_id,
-            modelsCreated=result.models_created,
-            totalModels=result.total_models,
-            childInstancesCreated=result.child_instances_created,
+        response_data = ModelExtractionResult(
+            run_id=result.run_id,
+            models_created=result.models_created,
+            total_models=result.total_models,
+            child_instances_created=result.child_instances_created,
             metadata={
                 "duration": int(result.duration_ms),
                 "modelsFound": result.total_models,
@@ -144,7 +117,7 @@ async def extract_models(
                 "tokensCompletion": result.tokens_completion,
                 "tokensTotal": result.tokens_total,
             },
-        ).model_dump()
+        ).model_dump(by_alias=True)
         
         return ApiResponse(ok=True, data=response_data, trace_id=trace_id)
         

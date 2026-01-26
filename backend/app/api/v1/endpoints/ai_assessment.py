@@ -8,67 +8,24 @@ Suporta leitura direta de PDF com fallback para File Search.
 """
 
 import uuid
-from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
-from pydantic import BaseModel, Field
 
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
 from app.core.factories import create_storage_adapter
 from app.core.logging import get_logger
+from app.schemas.assessment import (
+    AIAssessmentRequest,
+    AIAssessmentResponseData,
+    BatchAIAssessmentRequest,
+    BatchAIAssessmentResponseData,
+)
 from app.schemas.common import ApiResponse
 from app.services.ai_assessment_service import AIAssessmentService
 from app.utils.rate_limiter import limiter
 
 router = APIRouter()
 logger = get_logger(__name__)
-
-
-class AIAssessmentRequest(BaseModel):
-    """Request para avaliação AI de um item de assessment."""
-    
-    project_id: uuid.UUID = Field(..., alias="projectId")
-    article_id: uuid.UUID = Field(..., alias="articleId")
-    assessment_item_id: uuid.UUID = Field(..., alias="assessmentItemId")
-    instrument_id: uuid.UUID = Field(..., alias="instrumentId")
-    
-    # Opcionais para fonte do PDF
-    pdf_storage_key: str | None = Field(default=None, alias="pdfStorageKey")
-    pdf_base64: str | None = Field(default=None, alias="pdfBase64")
-    pdf_filename: str | None = Field(default=None, alias="pdfFilename")
-    pdf_file_id: str | None = Field(default=None, alias="pdfFileId")
-    
-    # Forçar uso de File Search (para PDFs > 32MB)
-    force_file_search: bool = Field(default=False, alias="forceFileSearch")
-    
-    # Modelo OpenAI
-    model: str | None = Field(default="gpt-4o-mini", alias="model")
-    
-    model_config = {"populate_by_name": True}
-
-
-class BatchAssessmentRequest(BaseModel):
-    """Request para avaliação AI em batch."""
-    
-    project_id: uuid.UUID = Field(..., alias="projectId")
-    article_id: uuid.UUID = Field(..., alias="articleId")
-    item_ids: list[uuid.UUID] = Field(..., alias="itemIds")
-    instrument_id: uuid.UUID = Field(..., alias="instrumentId")
-    model: str | None = Field(default="gpt-4o-mini", alias="model")
-    
-    model_config = {"populate_by_name": True}
-
-
-class AIAssessmentResponse(BaseModel):
-    """Response da avaliação AI."""
-    
-    id: str
-    selectedLevel: str
-    confidenceScore: float
-    justification: str
-    evidencePassages: list[dict[str, Any]]
-    status: str
-    metadata: dict[str, Any]
 
 
 @router.post(
@@ -145,12 +102,12 @@ async def ai_assessment(
         )
         
         # Formatar resposta no formato camelCase para o frontend
-        response_data = AIAssessmentResponse(
+        response_data = AIAssessmentResponseData(
             id=result.assessment_id,
-            selectedLevel=result.selected_level,
-            confidenceScore=result.confidence_score,
+            selected_level=result.selected_level,
+            confidence_score=result.confidence_score,
             justification=result.justification,
-            evidencePassages=result.evidence_passages,
+            evidence_passages=result.evidence_passages,
             status="pending_review",
             metadata={
                 "processingTimeMs": result.processing_time_ms,
@@ -158,7 +115,7 @@ async def ai_assessment(
                 "tokensCompletion": result.tokens_completion,
                 "methodUsed": result.method_used,
             },
-        ).model_dump()
+        ).model_dump(by_alias=True)
         
         return ApiResponse(ok=True, data=response_data, trace_id=trace_id)
         
@@ -196,7 +153,7 @@ async def ai_assessment(
 @limiter.limit("5/minute")
 async def ai_assessment_batch(
     request: Request,
-    payload: BatchAssessmentRequest,
+    payload: BatchAIAssessmentRequest,
     db: DbSession,
     user: CurrentUser,
     supabase: SupabaseClient,
@@ -255,15 +212,13 @@ async def ai_assessment_batch(
             successful_items=len(results),
         )
         
-        return ApiResponse(
-            ok=True,
-            data={
-                "results": formatted_results,
-                "totalItems": len(payload.item_ids),
-                "successfulItems": len(results),
-            },
-            trace_id=trace_id,
-        )
+        response_data = BatchAIAssessmentResponseData(
+            results=formatted_results,
+            total_items=len(payload.item_ids),
+            successful_items=len(results),
+        ).model_dump(by_alias=True)
+
+        return ApiResponse(ok=True, data=response_data, trace_id=trace_id)
         
     except Exception as e:
         await db.rollback()

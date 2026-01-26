@@ -40,40 +40,29 @@ def import_zotero_collection_task(
     """
     from app.core.deps import AsyncSessionLocal, get_supabase_client
     from app.core.factories import create_storage_adapter
-    from app.repositories import UnitOfWork
-    from app.services.zotero_service import ZoteroService
-    from app.use_cases import ImportZoteroRequest, ImportZoteroUseCase
+    from app.services.zotero_import_service import ZoteroImportService
     
     async def run():
         async with AsyncSessionLocal() as session:
             try:
                 supabase = get_supabase_client()
                 storage = create_storage_adapter(supabase)
-                uow = UnitOfWork(session)
-                
-                # ZoteroService precisa da sessão
-                zotero = ZoteroService(
+                service = ZoteroImportService(
                     db=session,
                     user_id=user_id,
-                )
-                
-                use_case = ImportZoteroUseCase(
-                    uow=uow,
-                    zotero=zotero,
                     storage=storage,
+                    trace_id=self.request.id,
                 )
-                
-                request = ImportZoteroRequest(
+
+                result = await service.import_collection(
                     project_id=UUID(project_id),
                     collection_key=collection_key,
-                    user_id=user_id,
-                    trace_id=self.request.id,
-                    import_pdfs=import_pdfs,
                     max_items=max_items,
+                    import_pdfs=import_pdfs,
                 )
-                
-                result = await use_case.execute(request)
-                
+
+                await session.commit()
+
                 return {
                     "total_items": result.total_items,
                     "imported": result.imported,
@@ -85,7 +74,7 @@ def import_zotero_collection_task(
                             "title": r.title,
                             "success": r.success,
                             "article_id": r.article_id,
-                            "has_pdf": r.has_pdf,
+                            "has_pdf": r.pdf_imported,
                             "error": r.error,
                         }
                         for r in result.results

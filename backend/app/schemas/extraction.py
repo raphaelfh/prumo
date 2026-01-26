@@ -101,8 +101,10 @@ class SingleSectionResult(BaseModel):
     run_id: str = Field(..., alias="runId")
     suggestions_created: int = Field(..., alias="suggestionsCreated")
     entity_type_id: str = Field(..., alias="entityTypeId")
-    suggestions: list[FieldSuggestion] = []
-    processing_time_ms: int | None = Field(default=None, alias="processingTimeMs")
+    tokens_prompt: int = Field(..., alias="tokensPrompt")
+    tokens_completion: int = Field(..., alias="tokensCompletion")
+    tokens_total: int = Field(..., alias="tokensTotal")
+    duration_ms: float = Field(..., alias="durationMs")
     
     model_config = ConfigDict(populate_by_name=True)
 
@@ -115,8 +117,9 @@ class BatchSectionResult(BaseModel):
     successful_sections: int = Field(..., alias="successfulSections")
     failed_sections: int = Field(..., alias="failedSections")
     total_suggestions_created: int = Field(..., alias="totalSuggestionsCreated")
-    section_results: list[dict[str, Any]] = Field(default=[], alias="sectionResults")
-    processing_time_ms: int | None = Field(default=None, alias="processingTimeMs")
+    total_tokens_used: int = Field(..., alias="totalTokensUsed")
+    duration_ms: float = Field(..., alias="durationMs")
+    sections: list[dict[str, Any]] = Field(default=[], alias="sections")
     
     model_config = ConfigDict(populate_by_name=True)
 
@@ -163,8 +166,8 @@ class ModelExtractionResult(BaseModel):
     run_id: str = Field(..., alias="runId")
     models_created: list[dict[str, Any]] = Field(..., alias="modelsCreated")
     total_models: int = Field(..., alias="totalModels")
-    identified_models: list[IdentifiedModel] = Field(default=[], alias="identifiedModels")
-    processing_time_ms: int | None = Field(default=None, alias="processingTimeMs")
+    child_instances_created: int = Field(..., alias="childInstancesCreated")
+    metadata: dict[str, Any]
     
     model_config = ConfigDict(populate_by_name=True)
 
@@ -314,4 +317,3 @@ class ReviewSuggestionRequest(BaseModel):
     modified_value: Any | None = Field(default=None, alias="modifiedValue")
     
     model_config = ConfigDict(populate_by_name=True)
-

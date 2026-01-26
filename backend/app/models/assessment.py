@@ -295,15 +295,97 @@ Provide your assessment with clear justification and cite specific passages from
         return f"<AIAssessmentPrompt item={self.assessment_item_id}>"
 
 
+class AIAssessmentRun(BaseModel):
+    """
+    Rastreamento de execuções de avaliação por IA.
+
+    Similar a extraction_runs, rastreia o ciclo de vida completo
+    de uma execução de assessment por IA, incluindo parâmetros,
+    resultados e métricas de performance.
+
+    Índices:
+    - project_id, article_id, instrument_id: FKs indexadas
+    - extraction_instance_id: FK indexada (para PROBAST por modelo)
+    - status, stage: Para queries de estado
+    - parameters, results: GIN para busca em JSONB
+    """
+
+    __tablename__ = "ai_assessment_runs"
+
+    project_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    article_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.articles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    instrument_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.assessment_instruments.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+
+    extraction_instance_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.extraction_instances.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+
+    stage: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, default="pending", nullable=False)
+
+    parameters: Mapped[dict] = mapped_column(JSONB, default={}, nullable=False)
+    results: Mapped[dict] = mapped_column(JSONB, default={}, nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    created_by: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.profiles.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+
+    # Índices definidos via __table_args__
+    __table_args__ = (
+        # Índice composto para queries de status
+        Index("idx_ai_assessment_runs_status", "status", "stage"),
+        # Índices GIN para JSONB
+        Index("idx_ai_assessment_runs_parameters_gin", "parameters", postgresql_using="gin"),
+        Index("idx_ai_assessment_runs_results_gin", "results", postgresql_using="gin"),
+        {"schema": "public"},
+    )
+
+    def __repr__(self) -> str:
+        return f"<AIAssessmentRun {self.id} {self.stage} {self.status}>"
+
+
 class AIAssessment(BaseModel):
     """
     Avaliação de qualidade gerada por IA.
-    
+
     Índices:
     - project_id, article_id: FKs indexadas
     - evidence_passages: GIN para busca em JSONB
     """
-    
+
     __tablename__ = "ai_assessments"
     
     project_id: Mapped[UUID] = mapped_column(

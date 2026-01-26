@@ -7,7 +7,10 @@ Facilita testes, manutenção e migração de queries.
 
 from app.repositories.article_repository import ArticleFileRepository, ArticleRepository
 from app.repositories.assessment_repository import (
+    AIAssessmentConfigRepository,
+    AIAssessmentPromptRepository,
     AIAssessmentRepository,
+    AIAssessmentRunRepository,
     AssessmentInstrumentRepository,
     AssessmentItemRepository,
     AssessmentRepository,
@@ -41,6 +44,9 @@ __all__ = [
     "AssessmentInstrumentRepository",
     "AssessmentItemRepository",
     "AIAssessmentRepository",
+    "AIAssessmentRunRepository",
+    "AIAssessmentConfigRepository",
+    "AIAssessmentPromptRepository",
     # Extraction
     "ExtractionTemplateRepository",
     "GlobalTemplateRepository",
