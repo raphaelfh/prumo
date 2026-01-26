@@ -321,15 +321,15 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
 
   return (
     <div className="space-y-6">
-        {/* Título da Seção */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-semibold">Avaliação de Qualidade</h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              Avalie a qualidade metodológica dos artigos usando instrumentos padronizados
-            </p>
-          </div>
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold">Avaliação de Qualidade</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Avalie a qualidade metodológica dos artigos usando instrumentos padronizados
+          </p>
         </div>
+      </div>
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(value) => handleTabChange(value as any)}>
