@@ -10,9 +10,9 @@ import { useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  FileText, 
-  Brain,
+import {
+  FileText,
+  Download,
   CheckCircle,
   AlertCircle,
   BarChart3,
@@ -21,8 +21,6 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useAssessmentInstruments } from "@/hooks/assessment/useAssessmentInstruments";
 import { ArticleAssessmentTable } from "./ArticleAssessmentTable";
-import { AIAssessmentConfigModal } from "./AIAssessmentConfigModal";
-import { useAssessmentItems } from "@/hooks/assessment/useAssessmentInstruments";
 import { toast } from "sonner";
 
 interface AssessmentInterfaceProps {
@@ -31,16 +29,16 @@ interface AssessmentInterfaceProps {
 
 export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => {
   const [searchParams, setSearchParams] = useSearchParams();
-  
+
   // Ler aba da URL ou usar padrão
-  const tabFromUrl = searchParams.get('assessmentTab') as 'dashboard' | 'assessment' | 'ai' | 'configuration' | null;
-  const initialTab = (tabFromUrl && ['dashboard', 'assessment', 'ai', 'configuration'].includes(tabFromUrl)) 
-    ? tabFromUrl 
-    : 'dashboard';
-  
+  const tabFromUrl = searchParams.get('assessmentTab') as 'assessment' | 'dashboard' | 'configuration' | null;
+  const initialTab = (tabFromUrl && ['assessment', 'dashboard', 'configuration'].includes(tabFromUrl))
+    ? tabFromUrl
+    : 'assessment';
+
   const [activeInstrument, setActiveInstrument] = useState<any | null>(null);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'assessment' | 'ai' | 'configuration'>(initialTab);
-  const [aiConfigModalOpen, setAiConfigModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'assessment' | 'dashboard' | 'configuration'>(initialTab);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const [articles, setArticles] = useState<any[]>([]);
   const [assessments, setAssessments] = useState<any[]>([]);
   const [stats, setStats] = useState({
@@ -51,13 +49,11 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
   });
 
   // Hook para gerenciar instrumentos
-  const { 
-    instruments, 
+  const {
+    instruments,
     loading: instrumentsLoading,
     error: instrumentsError
   } = useAssessmentInstruments();
-
-  const { items: assessmentItems } = useAssessmentItems(activeInstrument?.id || "");
 
   // Carregar instrumento ativo quando instrumentos são carregados
   useEffect(() => {
@@ -75,7 +71,7 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
   }, [activeTab, searchParams, setSearchParams]);
 
   // Função para mudar aba e atualizar URL
-  const handleTabChange = (tab: 'dashboard' | 'assessment' | 'ai' | 'configuration') => {
+  const handleTabChange = (tab: 'assessment' | 'dashboard' | 'configuration') => {
     setActiveTab(tab);
   };
 
@@ -226,72 +222,43 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
     </div>
   );
 
-  // Renderizar aba IA
-  const renderAI = () => (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Brain className="h-5 w-5" />
-          Avaliação com IA
-        </CardTitle>
-        <CardDescription>
-          Configure e execute avaliações automáticas usando inteligência artificial
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          <div className="text-center py-12 border-2 border-dashed rounded-lg">
-            <Brain className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <h4 className="font-medium mb-2">Configure a avaliação com IA</h4>
-            <p className="text-sm text-muted-foreground mb-6">
-              Selecione artigos e questões para avaliação automática
-            </p>
-            <Button 
-              onClick={() => setAiConfigModalOpen(true)}
-              disabled={!activeInstrument || articles.length === 0}
-            >
-              <Brain className="h-4 w-4 mr-2" />
-              Abrir Configuração IA
-            </Button>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-
   // Renderizar conteúdo das abas
   const renderTabContent = () => {
     switch (activeTab) {
-      case 'dashboard':
-        return renderDashboard();
-      
       case 'assessment':
         return activeInstrument ? (
-          <ArticleAssessmentTable 
-            projectId={projectId} 
+          <ArticleAssessmentTable
+            projectId={projectId}
             instrumentId={activeInstrument.id}
           />
         ) : (
           <Card>
             <CardHeader>
-              <CardTitle>Nenhum Instrumento Ativo</CardTitle>
+              <CardTitle>Configure o instrumento primeiro</CardTitle>
               <CardDescription>
-                Configure um instrumento de avaliação para começar.
+                Você precisa configurar o instrumento de avaliação que será usado.
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Vá para as configurações do projeto para adicionar instrumentos de avaliação.
+                Vá para a aba <strong>Configuração</strong> e escolha um instrumento de avaliação padronizado.
               </p>
+              <Button
+                onClick={() => setActiveTab('configuration')}
+                className="w-full"
+              >
+                <Settings className="h-4 w-4 mr-2" />
+                Ir para Configuração
+              </Button>
             </CardContent>
           </Card>
         );
-      
-      case 'ai':
-        return renderAI();
-      
+
+      case 'dashboard':
+        return renderDashboard();
+
       case 'configuration':
-        return (
+        return activeInstrument ? (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -305,17 +272,101 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
             <CardContent>
               <div className="text-center py-12">
                 <Settings className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h4 className="font-medium mb-2">Funcionalidade em desenvolvimento</h4>
+                <h4 className="font-medium mb-2">Instrumento Ativo</h4>
+                <p className="text-sm text-muted-foreground mb-4">
+                  {activeInstrument.name} - {activeInstrument.tool_type}
+                </p>
                 <p className="text-sm text-muted-foreground">
                   A configuração de instrumentos será implementada em breve
                 </p>
               </div>
             </CardContent>
           </Card>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>Configure seu instrumento de avaliação</CardTitle>
+              <CardDescription>
+                Escolha qual instrumento padronizado usar para avaliar a qualidade dos estudos
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Opção 1: Importar Instrumento Global */}
+              <div className="border rounded-lg p-4 hover:bg-muted/50 transition-colors">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-2 flex-1">
+                    <div className="flex items-center space-x-2">
+                      <Download className="h-5 w-5 text-primary" />
+                      <h3 className="font-semibold">Importar Instrumento PROBAST</h3>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Use o instrumento oficial para avaliar risco de viés em modelos de predição.
+                      Inclui 4 domínios e 20 itens pré-configurados seguindo as diretrizes PROBAST.
+                    </p>
+                  </div>
+                  <Button onClick={() => setShowImportDialog(true)} className="ml-4">
+                    <Download className="h-4 w-4 mr-2" />
+                    Importar
+                  </Button>
+                </div>
+              </div>
+
+              {/* Nota informativa */}
+              <div className="bg-blue-50 border-blue-200 rounded-lg p-4">
+                <div className="flex items-start space-x-3">
+                  <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5" />
+                  <div className="text-sm text-blue-800">
+                    <p className="font-medium mb-1">Managers podem configurar instrumentos</p>
+                    <p className="text-blue-700">
+                      Se você não é manager do projeto, solicite que um manager configure
+                      o instrumento de avaliação antes de começar.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         );
-      
+
       default:
-        return renderDashboard();
+        return activeInstrument ? (
+          <ArticleAssessmentTable
+            projectId={projectId}
+            instrumentId={activeInstrument.id}
+          />
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>Configure o instrumento primeiro</CardTitle>
+              <CardDescription>
+                Você precisa configurar o instrumento de avaliação que será usado.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Vá para a aba <strong>Configuração</strong> e escolha:
+              </p>
+              <div className="bg-muted/50 rounded-lg p-4 space-y-3">
+                <div className="flex items-start space-x-3">
+                  <Download className="h-5 w-5 text-muted-foreground mt-0.5" />
+                  <div>
+                    <p className="font-medium text-sm">Importar instrumento PROBAST</p>
+                    <p className="text-sm text-muted-foreground">
+                      Use o instrumento oficial para avaliação de modelos preditivos
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <Button
+                onClick={() => setActiveTab('configuration')}
+                className="w-full"
+              >
+                <Settings className="h-4 w-4 mr-2" />
+                Ir para Configuração
+              </Button>
+            </CardContent>
+          </Card>
+        );
     }
   };
 
@@ -333,15 +384,12 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(value) => handleTabChange(value as any)}>
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="assessment" disabled={!activeInstrument}>
             Avaliação
           </TabsTrigger>
-          <TabsTrigger value="ai" disabled={!activeInstrument}>
-            IA
-          </TabsTrigger>
-          <TabsTrigger value="configuration" disabled>
+          <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+          <TabsTrigger value="configuration">
             Configuração
           </TabsTrigger>
         </TabsList>
@@ -376,22 +424,8 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
         </Card>
       )}
 
-      {/* Modal de Configuração de IA */}
-      {activeInstrument && (
-        <AIAssessmentConfigModal
-          open={aiConfigModalOpen}
-          onOpenChange={setAiConfigModalOpen}
-          projectId={projectId}
-          instrumentId={activeInstrument.id}
-          articles={articles}
-          assessmentItems={assessmentItems}
-          onStartBatchProcessing={async () => {
-            // Recarregar assessments após processamento
-            await loadAssessments();
-            setAiConfigModalOpen(false);
-          }}
-        />
-      )}
+      {/* TODO: Implementar Import Dialog para instrumentos globais */}
+      {/* Similar ao ImportTemplateDialog do módulo de extração */}
     </div>
   );
 };
