@@ -22,9 +22,28 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAssessmentInstruments } from "@/hooks/assessment/useAssessmentInstruments";
 import { ArticleAssessmentTable } from "./ArticleAssessmentTable";
 import { toast } from "sonner";
+import type { AssessmentInstrument } from "@/types/assessment";
+
+// =================== INTERFACES ===================
 
 interface AssessmentInterfaceProps {
   projectId: string;
+}
+
+/** Artigo simplificado para listagem */
+interface Article {
+  id: string;
+  title: string;
+  doi: string | null;
+  created_at: string;
+}
+
+/** Registro de assessment do banco */
+interface AssessmentRecord {
+  id: string;
+  instrument_id: string;
+  status: string;
+  completion_percentage: number;
 }
 
 export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => {
@@ -36,11 +55,10 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
     ? tabFromUrl
     : 'assessment';
 
-  const [activeInstrument, setActiveInstrument] = useState<any | null>(null);
+  const [activeInstrument, setActiveInstrument] = useState<AssessmentInstrument | null>(null);
   const [activeTab, setActiveTab] = useState<'assessment' | 'dashboard' | 'configuration'>(initialTab);
-  const [showImportDialog, setShowImportDialog] = useState(false);
-  const [articles, setArticles] = useState<any[]>([]);
-  const [assessments, setAssessments] = useState<any[]>([]);
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [assessments, setAssessments] = useState<AssessmentRecord[]>([]);
   const [stats, setStats] = useState({
     totalArticles: 0,
     completedAssessments: 0,
@@ -304,7 +322,12 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
                       Inclui 4 domínios e 20 itens pré-configurados seguindo as diretrizes PROBAST.
                     </p>
                   </div>
-                  <Button onClick={() => setShowImportDialog(true)} className="ml-4">
+                  <Button
+                    onClick={() => toast.info('Funcionalidade em desenvolvimento', {
+                      description: 'A importação de instrumentos será implementada em breve.'
+                    })}
+                    className="ml-4"
+                  >
                     <Download className="h-4 w-4 mr-2" />
                     Importar
                   </Button>
@@ -329,44 +352,8 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
         );
 
       default:
-        return activeInstrument ? (
-          <ArticleAssessmentTable
-            projectId={projectId}
-            instrumentId={activeInstrument.id}
-          />
-        ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle>Configure o instrumento primeiro</CardTitle>
-              <CardDescription>
-                Você precisa configurar o instrumento de avaliação que será usado.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Vá para a aba <strong>Configuração</strong> e escolha:
-              </p>
-              <div className="bg-muted/50 rounded-lg p-4 space-y-3">
-                <div className="flex items-start space-x-3">
-                  <Download className="h-5 w-5 text-muted-foreground mt-0.5" />
-                  <div>
-                    <p className="font-medium text-sm">Importar instrumento PROBAST</p>
-                    <p className="text-sm text-muted-foreground">
-                      Use o instrumento oficial para avaliação de modelos preditivos
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <Button
-                onClick={() => setActiveTab('configuration')}
-                className="w-full"
-              >
-                <Settings className="h-4 w-4 mr-2" />
-                Ir para Configuração
-              </Button>
-            </CardContent>
-          </Card>
-        );
+        // Fallback para tab assessment
+        return null;
     }
   };
 

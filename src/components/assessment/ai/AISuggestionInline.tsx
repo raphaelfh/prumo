@@ -18,10 +18,13 @@ import { isAssessmentSuggestionAccepted } from '@/types/assessment';
 // =================== INTERFACES ===================
 
 interface AISuggestionInlineProps {
-  itemId: string;
+  /** Sugestão de IA para exibir */
   suggestion: AIAssessmentSuggestion;
+  /** Callback ao aceitar sugestão */
   onAccept?: () => void;
+  /** Callback ao rejeitar sugestão */
   onReject?: () => void;
+  /** Estado de carregamento */
   loading?: boolean;
 }
 

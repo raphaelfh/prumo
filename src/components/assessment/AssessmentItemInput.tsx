@@ -184,7 +184,6 @@ export function AssessmentItemInput(props: AssessmentItemInputProps) {
 
                   {/* Inline suggestion component */}
                   <AISuggestionInline
-                    itemId={item.id}
                     suggestion={aiSuggestion}
                     onAccept={onAcceptAI}
                     onReject={onRejectAI}

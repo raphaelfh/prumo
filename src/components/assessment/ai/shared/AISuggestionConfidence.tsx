@@ -21,8 +21,12 @@ interface AISuggestionConfidenceProps {
 
 /**
  * Calcula porcentagem de confiança (0-1 → 0-100%)
+ * Retorna 0 se o valor for undefined ou inválido
  */
-function calculateConfidencePercent(confidence: number): number {
+function calculateConfidencePercent(confidence: number | undefined | null): number {
+  if (confidence === undefined || confidence === null || isNaN(confidence)) {
+    return 0;
+  }
   return Math.round(confidence * 100);
 }
 
@@ -33,7 +37,7 @@ export function AISuggestionConfidence({
   showDetailsOnClick = true,
   className = "",
 }: AISuggestionConfidenceProps) {
-  const confidencePercent = calculateConfidencePercent(suggestion.confidence_score);
+  const confidencePercent = calculateConfidencePercent(suggestion.confidence_score ?? 0);
   const hasReasoning = suggestion.reasoning && suggestion.reasoning.trim().length > 0;
   const hasEvidence = suggestion.suggested_value.evidence_passages?.length > 0;
   const hasDetails = hasReasoning || hasEvidence;
