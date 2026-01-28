@@ -43,8 +43,12 @@ from app.models.assessment import (
     AIAssessmentPrompt,
     AIAssessmentRun,
     Assessment,
+    AssessmentEvidence,
+    AssessmentInstance,
     AssessmentInstrument,
     AssessmentItem,
+    AssessmentResponse,
+    AssessmentSource,
     AssessmentStatus,
 )
 from app.models.integration import ZoteroIntegration

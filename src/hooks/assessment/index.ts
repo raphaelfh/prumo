@@ -4,17 +4,23 @@
  * Baseado em hooks/extraction/index.ts (DRY + KISS)
  */
 
-// Hooks principais
+// Hooks principais (legacy)
 export { useAssessmentData } from './useAssessmentData';
 export { useAssessmentResponses } from './useAssessmentResponses';
 export { useAssessmentAutoSave } from './useAssessmentAutoSave';
 export { useAssessmentProgress } from './useAssessmentProgress';
 
+// Hooks principais (Assessment 2.0 - Extraction Pattern)
+export { useAssessmentInstances } from './useAssessmentInstances';
+export { useAssessmentResponsesNew } from './useAssessmentResponsesNew';
+export { useAssessmentInstanceProgress } from './useAssessmentInstanceProgress';
+export { useAssessmentInstanceHierarchy } from './useAssessmentInstanceHierarchy';
+
 // Hooks de IA
 export { useAIAssessmentSuggestions } from './ai/useAIAssessmentSuggestions';
 export { useSingleAssessment } from './ai/useSingleAssessment';
 
-// Tipos exportados
+// Tipos exportados (legacy)
 export type {
   UseAssessmentDataReturn,
   UseAssessmentDataProps,

@@ -387,74 +387,330 @@ class AIAssessment(BaseModel):
     """
 
     __tablename__ = "ai_assessments"
-    
+
     project_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("public.projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    
+
     article_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("public.articles.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    
+
     assessment_item_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("public.assessment_items.id", ondelete="RESTRICT"),
         nullable=False,
     )
-    
+
     instrument_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("public.assessment_instruments.id", ondelete="RESTRICT"),
         nullable=False,
     )
-    
+
     user_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("public.profiles.id", ondelete="RESTRICT"),
         nullable=False,
     )
-    
+
     selected_level: Mapped[str] = mapped_column(String, nullable=False)
     confidence_score: Mapped[float | None] = mapped_column(Numeric, nullable=True)
     justification: Mapped[str] = mapped_column(Text, nullable=False)
     evidence_passages: Mapped[dict] = mapped_column(JSONB, default=[], nullable=False)
-    
+
     ai_model_used: Mapped[str] = mapped_column(String, nullable=False)
     processing_time_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    
+
     status: Mapped[str] = mapped_column(
         String,
         default="pending_review",
         nullable=False,
     )
-    
+
     reviewed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
     human_response: Mapped[str | None] = mapped_column(String, nullable=True)
-    
+
     article_file_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("public.article_files.id", ondelete="SET NULL"),
         nullable=True,
     )
-    
+
     # Índices definidos via __table_args__
     __table_args__ = (
         # Índice GIN para JSONB
         Index("idx_ai_assessments_evidence_passages_gin", "evidence_passages", postgresql_using="gin"),
         {"schema": "public"},
     )
-    
+
     def __repr__(self) -> str:
         return f"<AIAssessment article={self.article_id} item={self.assessment_item_id}>"
+
+
+# =================== NEW MODELS (Assessment 2.0 - Extraction Pattern) ===================
+
+
+class AssessmentSource(str, PyEnum):
+    """
+    Origem da resposta de assessment.
+
+    Valores alinhados com o enum 'assessment_source' no PostgreSQL.
+    """
+
+    HUMAN = "human"
+    AI = "ai"
+    CONSENSUS = "consensus"
+
+
+class AssessmentInstance(BaseModel):
+    """
+    Instância de avaliação (PROBAST por artigo ou por modelo).
+
+    Análogo a ExtractionInstance. Permite hierarquia e vinculação
+    a extraction_instances para suporte a PROBAST por modelo.
+
+    Índices:
+    - project_id, article_id, instrument_id: FKs indexadas
+    - extraction_instance_id: FK indexada (para PROBAST por modelo)
+    - parent_instance_id: FK indexada (hierarquia)
+    - reviewer_id, status: Para queries de estado
+    """
+
+    __tablename__ = "assessment_instances"
+
+    project_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    article_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.articles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    instrument_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.assessment_instruments.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+
+    extraction_instance_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.extraction_instances.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    parent_instance_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.assessment_instances.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+
+    label: Mapped[str] = mapped_column(String, nullable=False)
+
+    status: Mapped[str] = mapped_column(
+        PostgreSQLEnumType("assessment_status"),
+        default="in_progress",
+        nullable=False,
+    )
+
+    reviewer_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.profiles.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+
+    # Modo cego
+    is_blind: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    can_see_others: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    # Metadados flexíveis (overall_risk, applicability_concerns, etc.)
+    # Renamed from 'metadata' to 'meta' to avoid SQLAlchemy reserved attribute
+    meta: Mapped[dict] = mapped_column("metadata", JSONB, default={}, nullable=False)
+
+    # Relationships
+    responses: Mapped[list["AssessmentResponse"]] = relationship(
+        "AssessmentResponse",
+        back_populates="assessment_instance",
+        cascade="all, delete-orphan",
+    )
+
+    evidence: Mapped[list["AssessmentEvidence"]] = relationship(
+        "AssessmentEvidence",
+        foreign_keys="[AssessmentEvidence.target_id]",
+        primaryjoin="and_(AssessmentInstance.id == foreign(AssessmentEvidence.target_id), AssessmentEvidence.target_type == 'instance')",
+        cascade="all, delete-orphan",
+        viewonly=True,
+    )
+
+    def __repr__(self) -> str:
+        return f"<AssessmentInstance {self.label} article={self.article_id}>"
+
+
+class AssessmentResponse(BaseModel):
+    """
+    Resposta individual a um item de avaliação.
+
+    Análogo a ExtractedValue. Granularidade total: 1 linha = 1 resposta.
+
+    Índices:
+    - project_id, article_id: FKs indexadas (denormalização para performance)
+    - assessment_instance_id, assessment_item_id: FKs indexadas
+    - reviewer_id, source, selected_level: Para queries de filtro
+    - uq_assessment_instance_item: UNIQUE (instance + item)
+    """
+
+    __tablename__ = "assessment_responses"
+
+    # Denormalização intencional (performance + RLS)
+    project_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    article_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.articles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    assessment_instance_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.assessment_instances.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    assessment_item_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.assessment_items.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+
+    # Resposta
+    selected_level: Mapped[str] = mapped_column(String, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)
+
+    # Origem e rastreabilidade
+    source: Mapped[str] = mapped_column(
+        PostgreSQLEnumType("assessment_source"),
+        default="human",
+        nullable=False,
+    )
+
+    confidence_score: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)
+
+    ai_suggestion_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.ai_assessments.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    reviewer_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.profiles.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+
+    is_consensus: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Relationships
+    assessment_instance: Mapped["AssessmentInstance"] = relationship(
+        "AssessmentInstance",
+        back_populates="responses",
+    )
+
+    evidence: Mapped[list["AssessmentEvidence"]] = relationship(
+        "AssessmentEvidence",
+        foreign_keys="[AssessmentEvidence.target_id]",
+        primaryjoin="and_(AssessmentResponse.id == foreign(AssessmentEvidence.target_id), AssessmentEvidence.target_type == 'response')",
+        cascade="all, delete-orphan",
+        viewonly=True,
+    )
+
+    def __repr__(self) -> str:
+        return f"<AssessmentResponse {self.selected_level} item={self.assessment_item_id}>"
+
+
+class AssessmentEvidence(BaseModel):
+    """
+    Evidências que suportam respostas de avaliação ou instances.
+
+    Análogo a ExtractionEvidence. Armazena citações do PDF que
+    justificam respostas ou avaliações completas.
+
+    Índices:
+    - project_id, article_id: FKs indexadas
+    - target_type, target_id: Índice composto para queries polimórficas
+    """
+
+    __tablename__ = "assessment_evidence"
+
+    project_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    article_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.articles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # Alvo polimórfico (response ou instance)
+    target_type: Mapped[str] = mapped_column(String, nullable=False)
+    target_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+
+    # Evidência do PDF
+    article_file_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.article_files.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    position: Mapped[dict | None] = mapped_column(JSONB, default={}, nullable=True)
+    text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_by: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.profiles.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+
+    # Índice composto definido via __table_args__
+    __table_args__ = (
+        Index("idx_assessment_evidence_target", "target_type", "target_id"),
+        {"schema": "public"},
+    )
+
+    def __repr__(self) -> str:
+        return f"<AssessmentEvidence {self.target_type} target={self.target_id}>"
 

@@ -532,3 +532,316 @@ export const SaveAssessmentRequestSchema = z.object({
   privateNotes: z.string().optional(),
   extractionInstanceId: z.string().uuid().optional(),
 });
+
+// =================== NEW TYPES (Assessment 2.0 - Extraction Pattern) ===================
+
+/**
+ * Origem da resposta de assessment
+ * Alinhado com enum 'assessment_source' do PostgreSQL
+ */
+export type AssessmentSource = 'human' | 'ai' | 'consensus';
+
+/**
+ * Instância de avaliação (PROBAST por artigo ou por modelo)
+ * Análogo a ExtractionInstance
+ */
+export interface AssessmentInstance {
+  id: string;
+  project_id: string;
+  article_id: string;
+  instrument_id: string;
+  extraction_instance_id: string | null;  // Vincula ao modelo (PROBAST por modelo)
+  parent_instance_id: string | null;      // Hierarquia (opcional)
+
+  label: string;  // "PROBAST - Model A", "Domain 1: Participants", etc.
+  status: AssessmentStatus;
+  reviewer_id: string;
+
+  // Modo cego
+  is_blind: boolean;
+  can_see_others: boolean;
+
+  // Metadados flexíveis (overall_risk, applicability_concerns, custom fields)
+  metadata: Record<string, unknown>;
+
+  created_at: string;
+  updated_at: string;
+
+  // Relationships (quando carregadas)
+  responses?: AssessmentResponseNew[];
+  evidence?: AssessmentEvidenceNew[];
+}
+
+/**
+ * Resposta individual a um item de avaliação
+ * Análogo a ExtractedValue
+ *
+ * Granularidade total: 1 linha = 1 resposta
+ */
+export interface AssessmentResponseNew {
+  id: string;
+
+  // Denormalização intencional (performance + RLS)
+  project_id: string;
+  article_id: string;
+
+  // Vinculação
+  assessment_instance_id: string;
+  assessment_item_id: string;
+
+  // Resposta
+  selected_level: string;  // "Low", "High", "Unclear", etc.
+  notes: string | null;
+  confidence: number | null;  // 0.0-1.0
+
+  // Origem e rastreabilidade
+  source: AssessmentSource;
+  confidence_score: number | null;  // Score de IA
+  ai_suggestion_id: string | null;  // FK para ai_assessments
+
+  reviewer_id: string;
+  is_consensus: boolean;
+
+  created_at: string;
+  updated_at: string;
+
+  // Relationships (quando carregadas)
+  assessment_instance?: AssessmentInstance;
+  evidence?: AssessmentEvidenceNew[];
+}
+
+/**
+ * Evidência que suporta resposta ou instance
+ * Análogo a ExtractionEvidence
+ */
+export interface AssessmentEvidenceNew {
+  id: string;
+
+  project_id: string;
+  article_id: string;
+
+  // Alvo polimórfico
+  target_type: 'response' | 'instance';
+  target_id: string;
+
+  // Evidência do PDF
+  article_file_id: string | null;
+  page_number: number | null;
+  position: {
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+  } | null;
+  text_content: string | null;
+
+  created_by: string;
+  created_at: string;
+}
+
+// =================== CREATE/UPDATE REQUESTS (NEW API) ===================
+
+/**
+ * Request para criar assessment instance
+ */
+export interface CreateAssessmentInstanceRequest {
+  project_id: string;
+  article_id: string;
+  instrument_id: string;
+  extraction_instance_id?: string | null;
+  parent_instance_id?: string | null;
+  label: string;
+  is_blind?: boolean;
+  can_see_others?: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Request para criar assessment response
+ */
+export interface CreateAssessmentResponseRequest {
+  project_id: string;
+  article_id: string;
+  assessment_instance_id: string;
+  assessment_item_id: string;
+  selected_level: string;
+  notes?: string | null;
+  confidence?: number | null;
+  source?: AssessmentSource;
+  ai_suggestion_id?: string | null;
+}
+
+/**
+ * Request para criar múltiplas responses em batch
+ */
+export interface BulkCreateAssessmentResponsesRequest {
+  project_id: string;
+  article_id: string;
+  assessment_instance_id: string;
+  responses: Array<{
+    assessment_item_id: string;
+    selected_level: string;
+    notes?: string | null;
+    confidence?: number | null;
+    source?: AssessmentSource;
+    ai_suggestion_id?: string | null;
+  }>;
+}
+
+/**
+ * Request para atualizar assessment instance
+ */
+export interface UpdateAssessmentInstanceRequest {
+  label?: string;
+  status?: AssessmentStatus;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Request para atualizar assessment response
+ */
+export interface UpdateAssessmentResponseRequest {
+  selected_level?: string;
+  notes?: string | null;
+  confidence?: number | null;
+  is_consensus?: boolean;
+}
+
+/**
+ * Request para criar evidência
+ */
+export interface CreateAssessmentEvidenceRequest {
+  project_id: string;
+  article_id: string;
+  target_type: 'response' | 'instance';
+  target_id: string;
+  article_file_id?: string | null;
+  page_number?: number | null;
+  position?: {
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+  } | null;
+  text_content?: string | null;
+}
+
+// =================== QUERY FILTERS ===================
+
+/**
+ * Filtros para buscar assessment instances
+ */
+export interface AssessmentInstanceFilters {
+  project_id?: string;
+  article_id?: string;
+  instrument_id?: string;
+  extraction_instance_id?: string;
+  parent_instance_id?: string;
+  reviewer_id?: string;
+  status?: AssessmentStatus;
+}
+
+/**
+ * Filtros para buscar assessment responses
+ */
+export interface AssessmentResponseFilters {
+  project_id?: string;
+  article_id?: string;
+  assessment_instance_id?: string;
+  assessment_item_id?: string;
+  reviewer_id?: string;
+  source?: AssessmentSource;
+  selected_level?: string;
+}
+
+/**
+ * Filtros para buscar evidências
+ */
+export interface AssessmentEvidenceFilters {
+  project_id?: string;
+  article_id?: string;
+  target_type?: 'response' | 'instance';
+  target_id?: string;
+}
+
+// =================== COMPUTED/DERIVED TYPES ===================
+
+/**
+ * Progresso de uma assessment instance
+ * Retornado pela função calculate_assessment_instance_progress()
+ */
+export interface AssessmentInstanceProgress {
+  total_items: number;
+  answered_items: number;
+  completion_percentage: number;  // 0-100
+}
+
+/**
+ * Assessment instance com responses e progresso carregados
+ * Útil para UI
+ */
+export interface AssessmentInstanceWithProgress extends AssessmentInstance {
+  responses: AssessmentResponseNew[];
+  progress: AssessmentInstanceProgress;
+}
+
+/**
+ * Hierarquia de assessment instances
+ * Para renderização em árvore (ex: PROBAST root → Domains)
+ */
+export interface AssessmentInstanceHierarchy {
+  instance: AssessmentInstance;
+  children: AssessmentInstanceHierarchy[];
+  progress: AssessmentInstanceProgress;
+}
+
+// =================== ZOD SCHEMAS (NEW API) ===================
+
+/**
+ * Schema Zod para criar assessment instance
+ */
+export const CreateAssessmentInstanceSchema = z.object({
+  project_id: z.string().uuid(),
+  article_id: z.string().uuid(),
+  instrument_id: z.string().uuid(),
+  extraction_instance_id: z.string().uuid().nullable().optional(),
+  parent_instance_id: z.string().uuid().nullable().optional(),
+  label: z.string().min(1).max(255),
+  is_blind: z.boolean().optional(),
+  can_see_others: z.boolean().optional(),
+  metadata: z.record(z.unknown()).optional(),
+});
+
+/**
+ * Schema Zod para criar assessment response
+ */
+export const CreateAssessmentResponseSchema = z.object({
+  project_id: z.string().uuid(),
+  article_id: z.string().uuid(),
+  assessment_instance_id: z.string().uuid(),
+  assessment_item_id: z.string().uuid(),
+  selected_level: z.string().min(1),
+  notes: z.string().nullable().optional(),
+  confidence: z.number().min(0).max(1).nullable().optional(),
+  source: z.enum(['human', 'ai', 'consensus']).optional(),
+  ai_suggestion_id: z.string().uuid().nullable().optional(),
+});
+
+/**
+ * Schema Zod para bulk create responses
+ */
+export const BulkCreateAssessmentResponsesSchema = z.object({
+  project_id: z.string().uuid(),
+  article_id: z.string().uuid(),
+  assessment_instance_id: z.string().uuid(),
+  responses: z.array(
+    z.object({
+      assessment_item_id: z.string().uuid(),
+      selected_level: z.string().min(1),
+      notes: z.string().nullable().optional(),
+      confidence: z.number().min(0).max(1).nullable().optional(),
+      source: z.enum(['human', 'ai', 'consensus']).optional(),
+      ai_suggestion_id: z.string().uuid().nullable().optional(),
+    })
+  ).min(1),
+});

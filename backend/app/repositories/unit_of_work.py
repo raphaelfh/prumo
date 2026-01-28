@@ -72,9 +72,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.article_repository import ArticleFileRepository, ArticleRepository
 from app.repositories.assessment_repository import (
     AIAssessmentRepository,
+    AssessmentEvidenceRepository,
     AssessmentInstrumentRepository,
+    AssessmentInstanceRepository,
     AssessmentItemRepository,
     AssessmentRepository,
+    AssessmentResponseRepository,
 )
 from app.repositories.extraction_repository import (
     AISuggestionRepository,
@@ -143,11 +146,16 @@ class UnitOfWork:
         self.projects = ProjectRepository(self.session)
         self.project_members = ProjectMemberRepository(self.session)
         
-        # Assessments
+        # Assessments (legacy)
         self.assessment_instruments = AssessmentInstrumentRepository(self.session)
         self.assessment_items = AssessmentItemRepository(self.session)
         self.assessments = AssessmentRepository(self.session)
         self.ai_assessments = AIAssessmentRepository(self.session)
+
+        # Assessments 2.0 (extraction pattern)
+        self.assessment_instances = AssessmentInstanceRepository(self.session)
+        self.assessment_responses = AssessmentResponseRepository(self.session)
+        self.assessment_evidence = AssessmentEvidenceRepository(self.session)
         
         # Extractions
         self.extraction_templates = ExtractionTemplateRepository(self.session)

@@ -16,8 +16,11 @@ from app.models.assessment import (
     AIAssessmentPrompt,
     AIAssessmentRun,
     Assessment,
+    AssessmentEvidence,
+    AssessmentInstance,
     AssessmentInstrument,
     AssessmentItem,
+    AssessmentResponse,
 )
 from app.repositories.base import BaseRepository
 
@@ -511,3 +514,406 @@ class AIAssessmentPromptRepository(BaseRepository[AIAssessmentPrompt]):
             await self.db.refresh(prompt)
 
         return prompt
+
+
+# =================== NEW REPOSITORIES (Assessment 2.0 - Extraction Pattern) ===================
+
+
+class AssessmentInstanceRepository(BaseRepository[AssessmentInstance]):
+    """
+    Repository para assessment instances.
+
+    Análogo a ExtractionInstanceRepository. Gerencia instances de avaliação
+    (PROBAST por artigo ou por modelo).
+    """
+
+    def __init__(self, db: AsyncSession):
+        super().__init__(db, AssessmentInstance)
+
+    async def get_by_article(
+        self,
+        article_id: UUID | str,
+        instrument_id: UUID | str | None = None,
+    ) -> list[AssessmentInstance]:
+        """
+        Lista instances de um artigo.
+
+        Args:
+            article_id: ID do artigo.
+            instrument_id: Filtro por instrumento (opcional).
+
+        Returns:
+            Lista de assessment instances.
+        """
+        if isinstance(article_id, str):
+            article_id = UUID(article_id)
+
+        query = select(AssessmentInstance).where(
+            AssessmentInstance.article_id == article_id
+        )
+
+        if instrument_id:
+            if isinstance(instrument_id, str):
+                instrument_id = UUID(instrument_id)
+            query = query.where(AssessmentInstance.instrument_id == instrument_id)
+
+        query = query.order_by(AssessmentInstance.created_at.desc())
+
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
+
+    async def get_by_extraction_instance(
+        self,
+        extraction_instance_id: UUID | str,
+    ) -> list[AssessmentInstance]:
+        """
+        Lista assessment instances vinculadas a uma extraction instance.
+
+        Útil para buscar PROBAST de um modelo específico.
+
+        Args:
+            extraction_instance_id: ID da extraction instance (modelo).
+
+        Returns:
+            Lista de assessment instances (ex: PROBAST do modelo).
+        """
+        if isinstance(extraction_instance_id, str):
+            extraction_instance_id = UUID(extraction_instance_id)
+
+        result = await self.db.execute(
+            select(AssessmentInstance)
+            .where(
+                AssessmentInstance.extraction_instance_id == extraction_instance_id
+            )
+            .order_by(AssessmentInstance.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def get_with_responses(
+        self,
+        instance_id: UUID | str,
+    ) -> AssessmentInstance | None:
+        """
+        Busca instance com suas responses carregadas.
+
+        Args:
+            instance_id: ID da instance.
+
+        Returns:
+            AssessmentInstance com responses ou None.
+        """
+        if isinstance(instance_id, str):
+            instance_id = UUID(instance_id)
+
+        result = await self.db.execute(
+            select(AssessmentInstance)
+            .options(selectinload(AssessmentInstance.responses))
+            .where(AssessmentInstance.id == instance_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_children(
+        self,
+        parent_instance_id: UUID | str,
+    ) -> list[AssessmentInstance]:
+        """
+        Lista child instances de uma instance.
+
+        Útil para hierarquias (ex: PROBAST root → Domain instances).
+
+        Args:
+            parent_instance_id: ID da parent instance.
+
+        Returns:
+            Lista de child instances.
+        """
+        if isinstance(parent_instance_id, str):
+            parent_instance_id = UUID(parent_instance_id)
+
+        result = await self.db.execute(
+            select(AssessmentInstance)
+            .where(AssessmentInstance.parent_instance_id == parent_instance_id)
+            .order_by(AssessmentInstance.created_at)
+        )
+        return list(result.scalars().all())
+
+    async def get_by_project_and_reviewer(
+        self,
+        project_id: UUID | str,
+        reviewer_id: UUID | str,
+        status: str | None = None,
+    ) -> list[AssessmentInstance]:
+        """
+        Lista instances de um revisor em um projeto.
+
+        Args:
+            project_id: ID do projeto.
+            reviewer_id: ID do revisor.
+            status: Filtro por status (opcional).
+
+        Returns:
+            Lista de assessment instances.
+        """
+        if isinstance(project_id, str):
+            project_id = UUID(project_id)
+        if isinstance(reviewer_id, str):
+            reviewer_id = UUID(reviewer_id)
+
+        query = (
+            select(AssessmentInstance)
+            .where(AssessmentInstance.project_id == project_id)
+            .where(AssessmentInstance.reviewer_id == reviewer_id)
+        )
+
+        if status:
+            query = query.where(AssessmentInstance.status == status)
+
+        query = query.order_by(AssessmentInstance.updated_at.desc())
+
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
+
+
+class AssessmentResponseRepository(BaseRepository[AssessmentResponse]):
+    """
+    Repository para assessment responses.
+
+    Análogo a ExtractedValueRepository. Gerencia respostas individuais
+    a assessment items (granularidade total: 1 linha = 1 resposta).
+    """
+
+    def __init__(self, db: AsyncSession):
+        super().__init__(db, AssessmentResponse)
+
+    async def get_by_instance(
+        self,
+        assessment_instance_id: UUID | str,
+    ) -> list[AssessmentResponse]:
+        """
+        Lista responses de uma assessment instance.
+
+        Args:
+            assessment_instance_id: ID da instance.
+
+        Returns:
+            Lista de responses.
+        """
+        if isinstance(assessment_instance_id, str):
+            assessment_instance_id = UUID(assessment_instance_id)
+
+        result = await self.db.execute(
+            select(AssessmentResponse)
+            .where(
+                AssessmentResponse.assessment_instance_id == assessment_instance_id
+            )
+            .order_by(AssessmentResponse.created_at)
+        )
+        return list(result.scalars().all())
+
+    async def get_by_instance_and_item(
+        self,
+        assessment_instance_id: UUID | str,
+        assessment_item_id: UUID | str,
+    ) -> AssessmentResponse | None:
+        """
+        Busca response específica de uma instance para um item.
+
+        Args:
+            assessment_instance_id: ID da instance.
+            assessment_item_id: ID do item.
+
+        Returns:
+            Response ou None.
+        """
+        if isinstance(assessment_instance_id, str):
+            assessment_instance_id = UUID(assessment_instance_id)
+        if isinstance(assessment_item_id, str):
+            assessment_item_id = UUID(assessment_item_id)
+
+        result = await self.db.execute(
+            select(AssessmentResponse).where(
+                AssessmentResponse.assessment_instance_id == assessment_instance_id,
+                AssessmentResponse.assessment_item_id == assessment_item_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def get_by_article(
+        self,
+        article_id: UUID | str,
+        reviewer_id: UUID | str | None = None,
+    ) -> list[AssessmentResponse]:
+        """
+        Lista responses de um artigo.
+
+        Args:
+            article_id: ID do artigo.
+            reviewer_id: Filtro por revisor (opcional).
+
+        Returns:
+            Lista de responses.
+        """
+        if isinstance(article_id, str):
+            article_id = UUID(article_id)
+
+        query = select(AssessmentResponse).where(
+            AssessmentResponse.article_id == article_id
+        )
+
+        if reviewer_id:
+            if isinstance(reviewer_id, str):
+                reviewer_id = UUID(reviewer_id)
+            query = query.where(AssessmentResponse.reviewer_id == reviewer_id)
+
+        query = query.order_by(AssessmentResponse.created_at.desc())
+
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
+
+    async def get_by_level(
+        self,
+        project_id: UUID | str,
+        selected_level: str,
+        instrument_id: UUID | str | None = None,
+    ) -> list[AssessmentResponse]:
+        """
+        Lista responses de um projeto com nível específico.
+
+        Útil para queries como "todos os High risk" ou "todos os Low risk".
+
+        Args:
+            project_id: ID do projeto.
+            selected_level: Nível selecionado (ex: "Low", "High", "Unclear").
+            instrument_id: Filtro por instrumento (opcional).
+
+        Returns:
+            Lista de responses.
+        """
+        if isinstance(project_id, str):
+            project_id = UUID(project_id)
+
+        query = (
+            select(AssessmentResponse)
+            .where(AssessmentResponse.project_id == project_id)
+            .where(AssessmentResponse.selected_level == selected_level)
+        )
+
+        if instrument_id:
+            if isinstance(instrument_id, str):
+                instrument_id = UUID(instrument_id)
+            # Join com assessment_instances para filtrar por instrumento
+            query = query.join(AssessmentInstance).where(
+                AssessmentInstance.instrument_id == instrument_id
+            )
+
+        query = query.order_by(AssessmentResponse.created_at.desc())
+
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
+
+    async def bulk_create(
+        self,
+        responses: list[AssessmentResponse],
+    ) -> list[AssessmentResponse]:
+        """
+        Cria múltiplas responses em batch.
+
+        Útil para aceitar múltiplas sugestões de IA de uma vez.
+
+        Args:
+            responses: Lista de responses a criar.
+
+        Returns:
+            Lista de responses criadas.
+        """
+        self.db.add_all(responses)
+        await self.db.flush()
+
+        # Refresh para carregar IDs e timestamps
+        for response in responses:
+            await self.db.refresh(response)
+
+        return responses
+
+
+class AssessmentEvidenceRepository(BaseRepository[AssessmentEvidence]):
+    """
+    Repository para assessment evidence.
+
+    Análogo a ExtractionEvidenceRepository. Gerencia evidências
+    que suportam responses ou instances.
+    """
+
+    def __init__(self, db: AsyncSession):
+        super().__init__(db, AssessmentEvidence)
+
+    async def get_by_response(
+        self,
+        response_id: UUID | str,
+    ) -> list[AssessmentEvidence]:
+        """
+        Lista evidências de uma response.
+
+        Args:
+            response_id: ID da response.
+
+        Returns:
+            Lista de evidências.
+        """
+        if isinstance(response_id, str):
+            response_id = UUID(response_id)
+
+        result = await self.db.execute(
+            select(AssessmentEvidence).where(
+                AssessmentEvidence.target_type == "response",
+                AssessmentEvidence.target_id == response_id,
+            )
+        )
+        return list(result.scalars().all())
+
+    async def get_by_instance(
+        self,
+        instance_id: UUID | str,
+    ) -> list[AssessmentEvidence]:
+        """
+        Lista evidências de uma instance.
+
+        Args:
+            instance_id: ID da instance.
+
+        Returns:
+            Lista de evidências.
+        """
+        if isinstance(instance_id, str):
+            instance_id = UUID(instance_id)
+
+        result = await self.db.execute(
+            select(AssessmentEvidence).where(
+                AssessmentEvidence.target_type == "instance",
+                AssessmentEvidence.target_id == instance_id,
+            )
+        )
+        return list(result.scalars().all())
+
+    async def get_by_article(
+        self,
+        article_id: UUID | str,
+    ) -> list[AssessmentEvidence]:
+        """
+        Lista todas evidências de um artigo.
+
+        Args:
+            article_id: ID do artigo.
+
+        Returns:
+            Lista de evidências.
+        """
+        if isinstance(article_id, str):
+            article_id = UUID(article_id)
+
+        result = await self.db.execute(
+            select(AssessmentEvidence)
+            .where(AssessmentEvidence.article_id == article_id)
+            .order_by(AssessmentEvidence.created_at.desc())
+        )
+        return list(result.scalars().all())
