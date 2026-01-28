@@ -304,33 +304,4 @@ export class AssessmentService {
     }
   }
 
-  /**
-   * Helper para converter camelCase para snake_case (backend)
-   * Usado internamente pelo service
-   */
-  private static toSnakeCase(obj: Record<string, any>): Record<string, any> {
-    const result: Record<string, any> = {};
-
-    for (const [key, value] of Object.entries(obj)) {
-      const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
-      result[snakeKey] = value;
-    }
-
-    return result;
-  }
-
-  /**
-   * Helper para converter snake_case para camelCase (frontend)
-   * Usado internamente pelo service
-   */
-  private static toCamelCase(obj: Record<string, any>): Record<string, any> {
-    const result: Record<string, any> = {};
-
-    for (const [key, value] of Object.entries(obj)) {
-      const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-      result[camelKey] = value;
-    }
-
-    return result;
-  }
 }

@@ -52,9 +52,10 @@ export const BlindModeToggle = ({
           ? 'Modo blind ativado - reviewers não podem ver outras avaliações'
           : 'Modo blind desativado - reviewers podem ver outras avaliações'
       );
-    } catch (error: any) {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erro ao alterar modo blind';
       console.error('Error toggling blind mode:', error);
-      toast.error(error.message || 'Erro ao alterar modo blind');
+      toast.error(message);
     } finally {
       setIsToggling(false);
     }

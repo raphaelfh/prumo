@@ -15,8 +15,8 @@ import type {
   AssessmentItem,
   AssessmentResponse,
   AIAssessmentSuggestion,
-  DomainWithItems,
 } from '@/types/assessment';
+import type { DomainWithItems } from '@/hooks/assessment';
 
 // =================== INTERFACES ===================
 
@@ -64,7 +64,7 @@ function AssessmentFormViewComponent(props: AssessmentFormViewProps) {
       {domains.map((domain) => (
         <DomainAccordion
           key={domain.name}
-          domainName={domain.displayName}
+          domainName={domain.label}
           items={domain.items}
           responses={responses}
           onResponseChange={onResponseChange}

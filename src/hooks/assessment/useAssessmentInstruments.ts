@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Tables } from "@/integrations/supabase/types";
-
-export type AssessmentInstrument = Tables<"assessment_instruments">;
-export type AssessmentItem = Tables<"assessment_items">;
+import type { AssessmentInstrument, AssessmentItem } from "@/types/assessment";
+export type { AssessmentInstrument, AssessmentItem } from "@/types/assessment";
+import { normalizeAssessmentItem, parseInstrumentSchema } from "@/lib/assessment-utils";
 
 export const useAssessmentInstruments = () => {
   const [instruments, setInstruments] = useState<AssessmentInstrument[]>([]);
@@ -19,15 +18,20 @@ export const useAssessmentInstruments = () => {
       setError(null);
       const { data, error } = await supabase
         .from("assessment_instruments")
-        .select("id, name, tool_type, version, mode, aggregation_rules")
+        .select("id, name, tool_type, version, mode, is_active, aggregation_rules, schema, created_at")
         .eq("is_active", true)
         .order("name");
 
       if (error) throw error;
-      setInstruments((data || []) as AssessmentInstrument[]);
-    } catch (error: any) {
+      const normalized = (data || []).map((instrument) => ({
+        ...instrument,
+        schema: parseInstrumentSchema(instrument.schema),
+      })) as AssessmentInstrument[];
+      setInstruments(normalized);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Erro ao carregar instrumentos";
       console.error("Error loading instruments:", error);
-      setError(error.message || "Erro ao carregar instrumentos");
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -53,12 +57,12 @@ export const useAssessmentItems = (instrumentId: string | null) => {
     try {
       const { data, error } = await supabase
         .from("assessment_items")
-        .select("id, item_code, domain, question, sort_order, required, allowed_levels")
+        .select("id, instrument_id, item_code, domain, question, sort_order, required, allowed_levels, created_at")
         .eq("instrument_id", instrumentId)
         .order("sort_order");
 
       if (error) throw error;
-      setItems((data || []) as AssessmentItem[]);
+      setItems((data || []).map(normalizeAssessmentItem));
     } catch (error) {
       console.error("Error loading items:", error);
     } finally {

@@ -13,7 +13,7 @@ import type { AIAssessmentSuggestion } from '@/types/assessment';
 import { AISuggestionActions } from './shared/AISuggestionActions';
 import { AISuggestionConfidence } from './shared/AISuggestionConfidence';
 import { AISuggestionValue } from './shared/AISuggestionValue';
-import { isAssessmentSuggestionAccepted } from '@/types/assessment';
+import { isAssessmentSuggestionAccepted } from '@/lib/assessment-utils';
 
 // =================== INTERFACES ===================
 

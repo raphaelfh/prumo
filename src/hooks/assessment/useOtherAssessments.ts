@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import type { AssessmentResponseValue } from '@/types/assessment';
 
 export interface OtherAssessment {
   id: string;
   article_id: string;
   user_id: string;
   instrument_id: string;
-  responses: Record<string, any>;
+  responses: Record<string, AssessmentResponseValue>;
   status: string;
   completion_percentage: number;
   user_name?: string;
@@ -58,7 +59,7 @@ export const useOtherAssessments = (
         article_id: assessment.article_id,
         user_id: assessment.user_id,
         instrument_id: assessment.instrument_id,
-        responses: assessment.responses,
+        responses: assessment.responses as Record<string, AssessmentResponseValue>,
         status: assessment.status,
         completion_percentage: assessment.completion_percentage,
         extraction_instance_id: assessment.extraction_instance_id,
@@ -67,9 +68,9 @@ export const useOtherAssessments = (
       }));
 
       setOtherAssessments(transformedData);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading other assessments:', error);
-      setError(error.message);
+      setError(error instanceof Error ? error.message : 'Erro desconhecido');
     } finally {
       setLoading(false);
     }
@@ -98,7 +99,7 @@ export const useOtherAssessments = (
     articleId: string,
     instrumentId: string,
     itemId: string
-  ): Array<{ user_name: string; response: any }> => {
+  ): Array<{ user_name: string; response: AssessmentResponseValue }> => {
     const articleAssessments = getOtherAssessmentsForArticle(articleId, instrumentId);
     
     return articleAssessments
@@ -130,7 +131,7 @@ export const useOtherAssessments = (
     extractionInstanceId: string,
     instrumentId: string,
     itemId: string
-  ): Array<{ user_name: string; response: any }> => {
+  ): Array<{ user_name: string; response: AssessmentResponseValue }> => {
     const instanceAssessments = getOtherAssessmentsForInstance(extractionInstanceId, instrumentId);
     
     return instanceAssessments

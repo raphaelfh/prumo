@@ -14,11 +14,13 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
+import type { AssessmentResponse } from '@/types/assessment';
+import { countValidResponses } from '@/lib/assessment-utils';
 
 // =================== INTERFACES ===================
 
 interface UseAssessmentAutoSaveProps {
-  responses: Record<string, any>; // { itemId: response }
+  responses: Record<string, AssessmentResponse>; // { itemId: response }
   save: () => Promise<void>; // Função save do useAssessmentResponses
   enabled?: boolean;
 }
@@ -103,30 +105,25 @@ export function useAssessmentAutoSave(
 
     try {
       // Verificar se há respostas para salvar
-      const responsesToSave = Object.entries(responses).filter(([, response]) => {
-        return (
-          response &&
-          response.selected_level &&
-          response.selected_level.trim() !== ''
-        );
-      });
+      const responsesToSave = countValidResponses(responses);
 
-      if (responsesToSave.length === 0) {
+      if (responsesToSave === 0) {
         console.log('⚠️ [useAssessmentAutoSave] Nenhuma resposta para salvar (todas vazias)');
         setIsSaving(false);
         return;
       }
 
-      console.log(`💾 [useAssessmentAutoSave] Auto-saving ${responsesToSave.length} resposta(s)...`);
+      console.log(`💾 [useAssessmentAutoSave] Auto-saving ${responsesToSave} resposta(s)...`);
 
       // Chamar função save fornecida (do useAssessmentResponses)
       await save();
 
       setLastSaved(new Date());
-      console.log(`✅ [useAssessmentAutoSave] Auto-save concluído: ${responsesToSave.length} resposta(s) salva(s)`);
-    } catch (err: any) {
+      console.log(`✅ [useAssessmentAutoSave] Auto-save concluído: ${responsesToSave} resposta(s) salva(s)`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao salvar';
       console.error('❌ [useAssessmentAutoSave] Erro no auto-save:', err);
-      setError(err.message || 'Erro ao salvar');
+      setError(message);
       toast.error('Erro ao salvar dados automaticamente');
     } finally {
       setIsSaving(false);

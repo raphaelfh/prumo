@@ -43,9 +43,8 @@ import type {
 import {
   getAssessmentSuggestionKey,
   normalizeAIAssessmentSuggestion,
-} from '@/types/assessment';
+} from '@/lib/assessment-utils';
 import {
-  AuthenticationError,
   APIError,
   SuggestionNotFoundError,
 } from '@/lib/ai-extraction/errors';
@@ -86,7 +85,24 @@ export interface RejectAssessmentSuggestionParams {
   itemId?: string;
   projectId?: string;
   articleId?: string;
+  instrumentId?: string;
+  extractionInstanceId?: string;
 }
+
+type AIAssessmentSuggestionRow = AIAssessmentSuggestionRaw & {
+  ai_assessment_runs?: {
+    project_id: string;
+    article_id: string;
+    instrument_id: string;
+    extraction_instance_id: string | null;
+  } | null;
+};
+
+const normalizeId = (value?: string | null): string | null => {
+  if (!value) return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
 
 /**
  * Service para operações com sugestões de IA para assessment
@@ -164,7 +180,9 @@ export class AIAssessmentSuggestionService {
 
     console.log(`📊 [loadSuggestions] Processando ${(data || []).length} sugestão(ões) do banco`);
 
-    (data || []).forEach((item: any) => {
+    const rows = (data || []) as AIAssessmentSuggestionRow[];
+
+    rows.forEach((item) => {
       if (!item.assessment_item_id) {
         console.warn('⚠️ [loadSuggestions] Sugestão sem assessment_item_id ignorada:', {
           suggestionId: item.id,
@@ -177,7 +195,7 @@ export class AIAssessmentSuggestionService {
 
       // Só adiciona se ainda não existe (mantém a mais recente)
       if (!suggestionsMap[key]) {
-        suggestionsMap[key] = normalizeAIAssessmentSuggestion(item as AIAssessmentSuggestionRaw);
+        suggestionsMap[key] = normalizeAIAssessmentSuggestion(item);
         console.log(`✅ [loadSuggestions] Sugestão adicionada: ${key}`, {
           status: item.status,
           itemId: item.assessment_item_id,
@@ -271,13 +289,47 @@ export class AIAssessmentSuggestionService {
       throw new SuggestionNotFoundError(`Sugestão ${suggestionId} não encontrada`);
     }
 
+    let resolvedInstrumentId = normalizeId(instrumentId);
+    let resolvedExtractionInstanceId =
+      extractionInstanceId === undefined ? null : normalizeId(extractionInstanceId);
+
+    if (!resolvedInstrumentId || extractionInstanceId === undefined) {
+      const { data: runData, error: runError } = await supabase
+        .from('ai_assessment_runs')
+        .select('instrument_id, extraction_instance_id')
+        .eq('id', suggestion.run_id)
+        .maybeSingle();
+
+      if (runError) {
+        console.warn('⚠️ [acceptSuggestion] Erro ao carregar run context:', runError);
+      } else if (runData) {
+        resolvedInstrumentId = resolvedInstrumentId ?? normalizeId(runData.instrument_id);
+        if (extractionInstanceId === undefined) {
+          resolvedExtractionInstanceId = normalizeId(runData.extraction_instance_id);
+        }
+      }
+    }
+
     // 2. Buscar assessment existente do usuário
-    const { data: existingAssessment, error: assessmentFetchError } = await supabase
+    let assessmentQuery = supabase
       .from('assessments')
       .select('id, responses')
       .eq('project_id', projectId)
       .eq('article_id', articleId)
       .eq('user_id', reviewerId)
+      .eq('is_current_version', true);
+
+    if (resolvedInstrumentId) {
+      assessmentQuery = assessmentQuery.eq('instrument_id', resolvedInstrumentId);
+    }
+
+    if (resolvedExtractionInstanceId) {
+      assessmentQuery = assessmentQuery.eq('extraction_instance_id', resolvedExtractionInstanceId);
+    } else {
+      assessmentQuery = assessmentQuery.is('extraction_instance_id', null);
+    }
+
+    const { data: existingAssessment, error: assessmentFetchError } = await assessmentQuery
       .maybeSingle();
 
     if (assessmentFetchError) {
@@ -310,6 +362,20 @@ export class AIAssessmentSuggestionService {
         throw new APIError(`Erro ao atualizar assessment: ${updateError.message}`);
       }
     } else {
+      const resolvedToolType = await (async () => {
+        if (!resolvedInstrumentId) return 'CUSTOM';
+        const { data: instrumentData, error: instrumentError } = await supabase
+          .from('assessment_instruments')
+          .select('tool_type')
+          .eq('id', resolvedInstrumentId)
+          .maybeSingle();
+        if (instrumentError) {
+          console.warn('⚠️ [acceptSuggestion] Erro ao buscar instrumento:', instrumentError);
+          return 'CUSTOM';
+        }
+        return instrumentData?.tool_type ?? 'CUSTOM';
+      })();
+
       // Criar novo assessment
       const { error: insertError } = await supabase
         .from('assessments')
@@ -317,13 +383,14 @@ export class AIAssessmentSuggestionService {
           project_id: projectId,
           article_id: articleId,
           user_id: reviewerId,
-          instrument_id: instrumentId,
-          tool_type: 'PROBAST',  // TODO: Detectar do instrumento
+          instrument_id: resolvedInstrumentId,
+          tool_type: resolvedToolType,
           responses,
           status: 'in_progress',
           completion_percentage: 0,
-          extraction_instance_id: extractionInstanceId,
+          extraction_instance_id: resolvedExtractionInstanceId,
           is_blind: false,
+          is_current_version: true,
         });
 
       if (insertError) {
@@ -363,7 +430,16 @@ export class AIAssessmentSuggestionService {
    * @throws {APIError} Se houver erro na operação
    */
   static async rejectSuggestion(params: RejectAssessmentSuggestionParams): Promise<void> {
-    const { suggestionId, reviewerId, wasAccepted, itemId, projectId, articleId } = params;
+    const {
+      suggestionId,
+      reviewerId,
+      wasAccepted,
+      itemId,
+      projectId,
+      articleId,
+      instrumentId,
+      extractionInstanceId,
+    } = params;
 
     console.log('❌ [rejectSuggestion] Iniciando rejeição:', {
       suggestionId,
@@ -374,12 +450,28 @@ export class AIAssessmentSuggestionService {
 
     // 1. Se foi aceita, remover resposta do assessment
     if (wasAccepted && itemId && projectId && articleId) {
-      const { data: existingAssessment, error: fetchError } = await supabase
+      const resolvedInstrumentId = normalizeId(instrumentId);
+      const resolvedExtractionInstanceId = normalizeId(extractionInstanceId);
+
+      let assessmentQuery = supabase
         .from('assessments')
         .select('id, responses')
         .eq('project_id', projectId)
         .eq('article_id', articleId)
         .eq('user_id', reviewerId)
+        .eq('is_current_version', true);
+
+      if (resolvedInstrumentId) {
+        assessmentQuery = assessmentQuery.eq('instrument_id', resolvedInstrumentId);
+      }
+
+      if (resolvedExtractionInstanceId) {
+        assessmentQuery = assessmentQuery.eq('extraction_instance_id', resolvedExtractionInstanceId);
+      } else {
+        assessmentQuery = assessmentQuery.is('extraction_instance_id', null);
+      }
+
+      const { data: existingAssessment, error: fetchError } = await assessmentQuery
         .maybeSingle();
 
       if (fetchError) {

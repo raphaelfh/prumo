@@ -16,7 +16,7 @@ import {
   createInstanceTarget 
 } from '@/types/assessment-target';
 import { ProjectAssessmentConfig } from '@/types/assessment-config';
-import { ExtractionInstance } from '@/types/extraction';
+import type { ExtractionInstanceRef } from '@/types/assessment-target';
 
 interface UseAssessmentTargetsOptions {
   page?: number;
@@ -62,9 +62,9 @@ export function useAssessmentTargets(
       } else if (config?.scope === 'extraction_instance') {
         await loadInstanceTargets();
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading assessment targets:', err);
-      setError(err.message);
+      setError(err instanceof Error ? err.message : 'Erro desconhecido');
     } finally {
       setLoading(false);
     }
@@ -133,20 +133,26 @@ export function useAssessmentTargets(
 
     if (queryError) throw queryError;
 
-    const instanceTargets: AssessmentTarget[] = (data || []).map((item: any) => {
-      const instance: ExtractionInstance = {
+    type InstanceRow = {
+      id: string;
+      label: string;
+      article_id: string;
+      entity_type_id: string;
+      parent_instance_id: string | null;
+      sort_order: number;
+      metadata: ExtractionInstanceRef['metadata'];
+      articles: { title: string };
+    };
+
+    const instanceTargets: AssessmentTarget[] = (data || []).map((item: InstanceRow) => {
+      const instance: ExtractionInstanceRef = {
         id: item.id,
         label: item.label,
         article_id: item.article_id,
-        project_id: projectId,
-        template_id: '', // não usado aqui
         entity_type_id: item.entity_type_id,
         parent_instance_id: item.parent_instance_id,
         sort_order: item.sort_order,
         metadata: item.metadata,
-        created_by: '',
-        created_at: '',
-        updated_at: ''
       };
 
       return createInstanceTarget(instance, item.articles.title);
@@ -175,5 +181,4 @@ export function useAssessmentTargets(
     refresh
   };
 }
-
 

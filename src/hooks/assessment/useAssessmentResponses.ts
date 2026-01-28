@@ -24,12 +24,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import type {
-  AssessmentResponse,
-  Assessment,
-  AssessmentLevel,
-  EvidencePassage,
-} from '@/types/assessment';
+import type { AssessmentResponse, AssessmentItem, AssessmentInstrumentType } from '@/types/assessment';
+import { calculateAssessmentProgress, normalizeAssessmentResponses } from '@/lib/assessment-utils';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 /**
  * Retorno do hook
@@ -60,6 +57,8 @@ export interface UseAssessmentResponsesProps {
   articleId: string | undefined;
   instrumentId: string | undefined;
   extractionInstanceId?: string;  // Para PROBAST por modelo
+  toolType?: AssessmentInstrumentType;
+  items?: AssessmentItem[];
   enabled?: boolean;
 }
 
@@ -71,6 +70,8 @@ export function useAssessmentResponses({
   articleId,
   instrumentId,
   extractionInstanceId,
+  toolType,
+  items,
   enabled = true,
 }: UseAssessmentResponsesProps): UseAssessmentResponsesReturn {
   // Estados
@@ -80,12 +81,13 @@ export function useAssessmentResponses({
   const [initialized, setInitialized] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { user, loading: authLoading, requireUser } = useCurrentUser();
 
   /**
    * Carrega assessment existente do usuário
    */
   const loadResponses = useCallback(async () => {
-    if (!enabled || !projectId || !articleId || !instrumentId) {
+    if (!enabled || !projectId || !articleId || !instrumentId || authLoading) {
       setResponses({});
       setAssessmentId(null);
       setLoading(false);
@@ -97,7 +99,6 @@ export function useAssessmentResponses({
     setError(null);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         throw new Error('Usuário não autenticado');
       }
@@ -109,7 +110,8 @@ export function useAssessmentResponses({
         .eq('project_id', projectId)
         .eq('article_id', articleId)
         .eq('user_id', user.id)
-        .eq('instrument_id', instrumentId);
+        .eq('instrument_id', instrumentId)
+        .eq('is_current_version', true);
 
       // Filtrar por extraction_instance_id se fornecido (PROBAST por modelo)
       if (extractionInstanceId) {
@@ -129,7 +131,8 @@ export function useAssessmentResponses({
       }
 
       if (data) {
-        setResponses(data.responses || {});
+        const normalizedResponses = normalizeAssessmentResponses(data.responses || {});
+        setResponses(normalizedResponses);
         setAssessmentId(data.id);
 
         console.log('✅ [useAssessmentResponses] Respostas carregadas:', {
@@ -154,7 +157,7 @@ export function useAssessmentResponses({
     } finally {
       setLoading(false);
     }
-  }, [enabled, projectId, articleId, instrumentId, extractionInstanceId]);
+  }, [enabled, projectId, articleId, instrumentId, extractionInstanceId, authLoading, user]);
 
   /**
    * Atualiza resposta localmente (não persiste imediatamente)
@@ -194,14 +197,13 @@ export function useAssessmentResponses({
     setSaving(true);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        throw new Error('Usuário não autenticado');
-      }
+      const currentUser = requireUser();
 
       // Calcular completion_percentage
       const totalResponses = Object.keys(responses).length;
-      const completionPercentage = totalResponses; // TODO: Calcular baseado em total de items
+      const completionPercentage = items
+        ? calculateAssessmentProgress(items, responses).progressPercentage
+        : totalResponses;
 
       if (assessmentId) {
         // Atualizar assessment existente
@@ -229,14 +231,15 @@ export function useAssessmentResponses({
           .insert({
             project_id: projectId,
             article_id: articleId,
-            user_id: user.id,
+            user_id: currentUser.id,
             instrument_id: instrumentId,
-            tool_type: 'PROBAST', // TODO: Detectar do instrumento
+            tool_type: toolType ?? 'CUSTOM',
             responses,
             status: 'in_progress',
             completion_percentage: completionPercentage,
             extraction_instance_id: extractionInstanceId || null,
             is_blind: false,
+            is_current_version: true,
           })
           .select()
           .single();
@@ -262,7 +265,7 @@ export function useAssessmentResponses({
     } finally {
       setSaving(false);
     }
-  }, [projectId, articleId, instrumentId, extractionInstanceId, responses, assessmentId]);
+  }, [projectId, articleId, instrumentId, extractionInstanceId, toolType, responses, assessmentId, items, requireUser]);
 
   /**
    * Refresh (recarrega do banco)

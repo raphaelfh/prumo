@@ -33,14 +33,13 @@ export type AssessmentMode =
   | 'hybrid'; // Híbrido (IA + revisão humana)
 
 /**
- * Status da avaliação
+ * Status da avaliação (alinhado com enum do banco)
  */
 export type AssessmentStatus =
-  | 'not_started'    // Não iniciada
   | 'in_progress'    // Em progresso
   | 'submitted'      // Submetida (finalizada)
-  | 'consensus'      // Em consenso
-  | 'completed';     // Completada (consenso alcançado)
+  | 'locked'         // Travada (read-only)
+  | 'archived';      // Arquivada
 
 /**
  * Status de sugestão de IA para assessment
@@ -72,22 +71,31 @@ export type AssessmentRunStatus = 'pending' | 'running' | 'completed' | 'failed'
 
 // =================== INSTRUMENTOS ===================
 
+export interface AssessmentInstrumentSchemaDomain {
+  code: string;
+  name: string;
+  description?: string | null;
+  sort_order?: number;
+}
+
+export interface AssessmentInstrumentSchema {
+  domains?: AssessmentInstrumentSchemaDomain[];
+}
+
 /**
  * Instrumento de avaliação (PROBAST, QUADAS-2, etc.)
- * Similar a ProjectExtractionTemplate
+ * Representa a linha do banco para assessment_instruments.
  */
 export interface AssessmentInstrument {
   id: string;
   tool_type: AssessmentInstrumentType;
   name: string;
   version: string;
-  description: string | null;
   mode: AssessmentMode;
   is_active: boolean;
-  is_global: boolean;
-  domains: AssessmentDomain[];
+  aggregation_rules: Record<string, unknown> | null;
+  schema: AssessmentInstrumentSchema | null;
   created_at: string;
-  updated_at: string;
 }
 
 /**
@@ -116,7 +124,7 @@ export interface AssessmentItem {
   item_code: string;         // Ex: "D1.1", "D1.2", "D2.1"
   question: string;
   guidance: string | null;
-  allowed_levels: string[];  // Ex: ["Low", "High", "Unclear"]
+  allowed_levels: AssessmentLevel[];  // Ex: ["Low", "High", "Unclear"]
   sort_order: number;
   is_required: boolean;
   llm_description: string | null;
@@ -134,11 +142,11 @@ export interface Assessment {
   project_id: string;
   article_id: string;
   user_id: string;
-  instrument_id: string;
+  instrument_id: string | null;
   tool_type: AssessmentInstrumentType;
 
   // Respostas estruturadas por item
-  responses: Record<string, AssessmentResponse>;  // key: item_id
+  responses: Record<string, AssessmentResponseValue>;  // key: item_id
 
   // Avaliação geral agregada
   overall_assessment: {
@@ -148,7 +156,7 @@ export interface Assessment {
   } | null;
 
   status: AssessmentStatus;
-  completion_percentage: number;
+  completion_percentage: number | null;
 
   // Para PROBAST: pode ser por modelo de predição
   extraction_instance_id: string | null;
@@ -172,6 +180,16 @@ export interface AssessmentResponse {
   notes: string | null;
   evidence: EvidencePassage[];
 }
+
+/**
+ * Formato legado de respostas (level/comment)
+ */
+export interface LegacyAssessmentResponse {
+  level: AssessmentLevel;
+  comment?: string | null;
+}
+
+export type AssessmentResponseValue = AssessmentResponse | LegacyAssessmentResponse;
 
 /**
  * Passagem de evidência citada
@@ -228,13 +246,13 @@ export interface AIAssessmentSuggestionRaw {
   instance_id: string | null;
   field_id: string | null;
   assessment_item_id: string;
-  suggested_value: any;
+  suggested_value: unknown;
   confidence_score: number | null;
   reasoning: string | null;
   status: AssessmentSuggestionStatus;
   reviewed_by: string | null;
   reviewed_at: string | null;
-  metadata_: any;
+  metadata_: unknown;
   created_at: string;
 }
 
@@ -480,7 +498,7 @@ export interface AssessmentComparison {
 export interface OtherAssessment {
   userId: string;
   userName: string;
-  responses: Record<string, AssessmentResponse>;
+  responses: Record<string, AssessmentResponseValue>;
   completionPercentage: number;
   isBlind: boolean;
 }
@@ -510,122 +528,7 @@ export const SaveAssessmentRequestSchema = z.object({
   articleId: z.string().uuid(),
   instrumentId: z.string().uuid(),
   responses: z.record(AssessmentResponseSchema),
-  status: z.enum(['not_started', 'in_progress', 'submitted', 'consensus', 'completed']).optional(),
+  status: z.enum(['in_progress', 'submitted']).optional(),
   privateNotes: z.string().optional(),
   extractionInstanceId: z.string().uuid().optional(),
 });
-
-// =================== UTILITÁRIOS ===================
-
-/**
- * Gera chave única para sugestão
- * Similar a getSuggestionKey de extraction
- */
-export function getAssessmentSuggestionKey(itemId: string): string {
-  return `ai_suggestion_${itemId}`;
-}
-
-/**
- * Normaliza sugestão raw do backend
- */
-export function normalizeAIAssessmentSuggestion(
-  raw: AIAssessmentSuggestionRaw
-): AIAssessmentSuggestion {
-  return {
-    id: raw.id,
-    run_id: raw.run_id,
-    assessment_item_id: raw.assessment_item_id,
-    suggested_value: typeof raw.suggested_value === 'object' && 'level' in raw.suggested_value
-      ? raw.suggested_value
-      : { level: String(raw.suggested_value), evidence_passages: [] },
-    confidence_score: raw.confidence_score ?? 0,
-    reasoning: raw.reasoning ?? '',
-    status: raw.status,
-    metadata_: raw.metadata_ ?? {},
-    reviewed_by: raw.reviewed_by,
-    reviewed_at: raw.reviewed_at,
-    created_at: raw.created_at,
-  };
-}
-
-/**
- * Verifica se sugestão está aceita
- */
-export function isAssessmentSuggestionAccepted(
-  suggestion: AIAssessmentSuggestion | undefined
-): boolean {
-  return suggestion?.status === 'accepted';
-}
-
-/**
- * Verifica se sugestão está rejeitada
- */
-export function isAssessmentSuggestionRejected(
-  suggestion: AIAssessmentSuggestion | undefined
-): boolean {
-  return suggestion?.status === 'rejected';
-}
-
-/**
- * Verifica se sugestão está pendente
- */
-export function isAssessmentSuggestionPending(
-  suggestion: AIAssessmentSuggestion | undefined
-): boolean {
-  return suggestion?.status === 'pending';
-}
-
-/**
- * Formata nível de assessment para exibição
- */
-export function formatAssessmentLevel(level: AssessmentLevel): string {
-  const levelMap: Record<string, string> = {
-    'Low': 'Baixo risco',
-    'High': 'Alto risco',
-    'Unclear': 'Não claro',
-    'Some concerns': 'Algumas preocupações',
-    'Yes': 'Sim',
-    'Partially': 'Parcialmente',
-    'No': 'Não',
-  };
-
-  return levelMap[level] || level;
-}
-
-/**
- * Calcula progresso de assessment
- */
-export function calculateAssessmentProgress(
-  responses: Record<string, AssessmentResponse>,
-  totalItems: number
-): {
-  completedItems: number;
-  totalItems: number;
-  percentage: number;
-  isComplete: boolean;
-} {
-  const completedItems = Object.keys(responses).length;
-  const percentage = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
-
-  return {
-    completedItems,
-    totalItems,
-    percentage,
-    isComplete: completedItems === totalItems,
-  };
-}
-
-/**
- * Agrupa items por domínio
- */
-export function groupItemsByDomain(
-  items: AssessmentItem[]
-): Record<string, AssessmentItem[]> {
-  return items.reduce((acc, item) => {
-    if (!acc[item.domain]) {
-      acc[item.domain] = [];
-    }
-    acc[item.domain].push(item);
-    return acc;
-  }, {} as Record<string, AssessmentItem[]>);
-}

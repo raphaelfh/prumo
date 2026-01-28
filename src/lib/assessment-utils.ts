@@ -8,7 +8,23 @@
  * @module lib/assessment-utils
  */
 
-import type { AssessmentItem, AssessmentResponse, AssessmentLevel } from '@/types/assessment';
+import type { Tables } from '@/integrations/supabase/types';
+import type {
+  AIAssessmentSuggestion,
+  AIAssessmentSuggestionRaw,
+  AssessmentItem,
+  AssessmentLevel,
+  AssessmentInstrumentSchema,
+  AssessmentResponse,
+  AssessmentResponseValue,
+  AssessmentSuggestionStatus,
+  LegacyAssessmentResponse,
+} from '@/types/assessment';
+
+type AssessmentItemRow = Tables<'assessment_items'> & {
+  guidance?: string | null;
+  llm_description?: string | null;
+};
 
 // =================== PROGRESS CALCULATION ===================
 
@@ -44,14 +60,22 @@ export function calculateAssessmentProgress(
     return response?.selected_level?.trim();
   }).length;
 
-  const progressPercentage =
-    totalRequired > 0 ? Math.round((completedRequired / totalRequired) * 100) : 0;
+  if (totalRequired === 0) {
+    return {
+      totalRequired: 0,
+      completedRequired: 0,
+      progressPercentage: 100,
+      isComplete: true,
+    };
+  }
+
+  const progressPercentage = Math.round((completedRequired / totalRequired) * 100);
 
   return {
     totalRequired,
     completedRequired,
     progressPercentage,
-    isComplete: completedRequired === totalRequired && totalRequired > 0,
+    isComplete: completedRequired === totalRequired,
   };
 }
 
@@ -143,7 +167,7 @@ export function getAssessmentStatus(
   status: string | undefined | null,
   progressPercentage: number
 ): AssessmentStatusType {
-  if (status === 'submitted' || status === 'complete' || progressPercentage >= 100) {
+  if (status === 'submitted' || status === 'locked' || status === 'archived' || progressPercentage >= 100) {
     return 'complete';
   }
   if (progressPercentage > 0 || status === 'in_progress') {
@@ -174,6 +198,77 @@ export function getStatusColor(status: AssessmentStatusType): string {
     not_started: 'bg-gray-400',
   };
   return colors[status];
+}
+
+// =================== AI SUGGESTION HELPERS ===================
+
+/**
+ * Gera chave única para sugestão
+ */
+export function getAssessmentSuggestionKey(itemId: string): string {
+  return `ai_suggestion_${itemId}`;
+}
+
+/**
+ * Normaliza sugestão raw do backend
+ */
+export function normalizeAIAssessmentSuggestion(
+  raw: AIAssessmentSuggestionRaw
+): AIAssessmentSuggestion {
+  const suggestedValueRaw =
+    typeof raw.suggested_value === 'object' && raw.suggested_value
+      ? (raw.suggested_value as Record<string, unknown>)
+      : null;
+  const suggestedValue =
+    suggestedValueRaw && typeof suggestedValueRaw.level === 'string'
+      ? (raw.suggested_value as AIAssessmentSuggestion['suggested_value'])
+      : { level: String(raw.suggested_value), evidence_passages: [] };
+
+  const metadata =
+    raw.metadata_ && typeof raw.metadata_ === 'object'
+      ? (raw.metadata_ as AIAssessmentSuggestion['metadata_'])
+      : {};
+
+  return {
+    id: raw.id,
+    run_id: raw.run_id,
+    assessment_item_id: raw.assessment_item_id,
+    suggested_value: suggestedValue,
+    confidence_score: raw.confidence_score ?? 0,
+    reasoning: raw.reasoning ?? '',
+    status: raw.status,
+    metadata_: metadata,
+    reviewed_by: raw.reviewed_by,
+    reviewed_at: raw.reviewed_at,
+    created_at: raw.created_at,
+  };
+}
+
+/**
+ * Verifica status da sugestão
+ */
+export function isAssessmentSuggestionAccepted(
+  suggestion: AIAssessmentSuggestion | undefined
+): boolean {
+  return suggestion?.status === 'accepted';
+}
+
+export function isAssessmentSuggestionRejected(
+  suggestion: AIAssessmentSuggestion | undefined
+): boolean {
+  return suggestion?.status === 'rejected';
+}
+
+export function isAssessmentSuggestionPending(
+  suggestion: AIAssessmentSuggestion | undefined
+): boolean {
+  return suggestion?.status === 'pending';
+}
+
+export function isAssessmentSuggestionStatus(
+  status: string | undefined | null
+): status is AssessmentSuggestionStatus {
+  return status === 'pending' || status === 'accepted' || status === 'rejected';
 }
 
 // =================== DOMAIN HELPERS ===================
@@ -229,4 +324,111 @@ export function countValidResponses(
   responses: Record<string, AssessmentResponse>
 ): number {
   return Object.values(responses).filter(isValidResponse).length;
+}
+
+// =================== RESPONSE NORMALIZATION ===================
+
+export function getResponseLevel(
+  response: AssessmentResponseValue | null | undefined
+): AssessmentLevel | null {
+  if (!response) return null;
+  if ('selected_level' in response) {
+    return response.selected_level ?? null;
+  }
+  if ('level' in response) {
+    return response.level ?? null;
+  }
+  return null;
+}
+
+export function getResponseNotes(
+  response: AssessmentResponseValue | null | undefined
+): string | null {
+  if (!response) return null;
+  if ('notes' in response) {
+    return response.notes ?? null;
+  }
+  if ('comment' in response) {
+    return response.comment ?? null;
+  }
+  return null;
+}
+
+export function normalizeAssessmentResponse(
+  itemId: string,
+  response: AssessmentResponseValue
+): AssessmentResponse {
+  if ('selected_level' in response) {
+    return {
+      item_id: response.item_id || itemId,
+      selected_level: response.selected_level,
+      confidence: response.confidence ?? null,
+      notes: response.notes ?? null,
+      evidence: response.evidence ?? [],
+    };
+  }
+
+  const legacy = response as LegacyAssessmentResponse;
+  return {
+    item_id: itemId,
+    selected_level: legacy.level,
+    confidence: null,
+    notes: legacy.comment ?? null,
+    evidence: [],
+  };
+}
+
+export function normalizeAssessmentResponses(
+  responses: Record<string, AssessmentResponseValue>
+): Record<string, AssessmentResponse> {
+  return Object.entries(responses).reduce<Record<string, AssessmentResponse>>(
+    (acc, [itemId, response]) => {
+      acc[itemId] = normalizeAssessmentResponse(itemId, response);
+      return acc;
+    },
+    {}
+  );
+}
+
+// =================== ITEM NORMALIZATION ===================
+
+export function normalizeAssessmentItem(item: AssessmentItemRow): AssessmentItem {
+  const allowedLevels = Array.isArray(item.allowed_levels)
+    ? item.allowed_levels.map((level) => String(level))
+    : [];
+
+  return {
+    id: item.id,
+    instrument_id: item.instrument_id,
+    domain: item.domain,
+    item_code: item.item_code,
+    question: item.question,
+    guidance: item.guidance ?? null,
+    allowed_levels: allowedLevels,
+    sort_order: item.sort_order,
+    is_required: item.required ?? false,
+    llm_description: item.llm_description ?? null,
+    created_at: item.created_at,
+  };
+}
+
+// =================== SCHEMA PARSING ===================
+
+export function parseInstrumentSchema(
+  schema: unknown
+): AssessmentInstrumentSchema | null {
+  if (!schema) return null;
+  if (typeof schema === 'string') {
+    try {
+      const parsed = JSON.parse(schema);
+      return parsed && typeof parsed === 'object' ? (parsed as AssessmentInstrumentSchema) : null;
+    } catch (error) {
+      console.warn('[assessment-utils] Invalid instrument schema JSON', error);
+      return null;
+    }
+  }
+  if (typeof schema === 'object') {
+    return schema as AssessmentInstrumentSchema;
+  }
+  return null;
 }

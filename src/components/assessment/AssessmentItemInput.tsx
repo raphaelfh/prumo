@@ -25,7 +25,7 @@ import type { AssessmentItem, AIAssessmentSuggestion, AssessmentResponse } from 
 import { Card } from '@/components/ui/card';
 import { AISuggestionInline } from './ai/AISuggestionInline';
 import { AISuggestionEvidence } from './ai/AISuggestionEvidence';
-import { formatAssessmentLevel } from '@/types/assessment';
+import { formatAssessmentLevel } from '@/lib/assessment-utils';
 
 // =================== INTERFACES ===================
 
@@ -61,35 +61,42 @@ export function AssessmentItemInput(props: AssessmentItemInputProps) {
   const [showGuidance, setShowGuidance] = useState(false);
 
   // Estado local para edição
-  const selectedLevel = value?.selected_level || '';
-  const notes = value?.notes || '';
+  const selectedLevel = value?.selected_level ?? '';
+  const notes = value?.notes ?? '';
 
   // Determinar se há sugestão pendente
   const hasPendingSuggestion = aiSuggestion?.status === 'pending';
   const hasAcceptedSuggestion = aiSuggestion?.status === 'accepted';
 
   // Handler para mudança de nível
+  const buildResponse = (
+    overrides: Partial<AssessmentResponse>
+  ): AssessmentResponse => ({
+    item_id: item.id,
+    selected_level: value?.selected_level ?? '',
+    notes: value?.notes ?? null,
+    confidence: value?.confidence ?? null,
+    evidence: value?.evidence ?? [],
+    ...overrides,
+  });
+
   const handleLevelChange = (level: string) => {
-    onChange({
-      ...value,
-      item_id: item.id,
-      selected_level: level,
-      notes: notes,
-      confidence: null,
-      evidence: [],
-    } as AssessmentResponse);
+    onChange(
+      buildResponse({
+        selected_level: level,
+        notes,
+      })
+    );
   };
 
   // Handler para mudança de notas
   const handleNotesChange = (newNotes: string) => {
-    onChange({
-      ...value,
-      item_id: item.id,
-      selected_level: selectedLevel,
-      notes: newNotes,
-      confidence: null,
-      evidence: [],
-    } as AssessmentResponse);
+    onChange(
+      buildResponse({
+        selected_level: selectedLevel,
+        notes: newNotes,
+      })
+    );
   };
 
   // Validação

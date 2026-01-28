@@ -19,13 +19,14 @@ import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import { Badge } from '@/components/ui/badge';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useRef } from 'react';
+import { useRef, type MouseEvent } from 'react';
 import MemoizedAssessmentItemInput from './AssessmentItemInput';
 import type {
   AssessmentItem,
   AssessmentResponse,
   AIAssessmentSuggestion,
 } from '@/types/assessment';
+import { calculateAssessmentProgress } from '@/lib/assessment-utils';
 
 // =================== INTERFACES ===================
 
@@ -63,23 +64,17 @@ export function DomainAccordion(props: DomainAccordionProps) {
   // Ref para o trigger do accordion
   const triggerRef = useRef<HTMLButtonElement>(null);
 
-  const handleChevronClick = (e: React.MouseEvent) => {
+  const handleChevronClick = (e: MouseEvent) => {
     e.stopPropagation();
     triggerRef.current?.click();
   };
 
   // Calcular progresso deste domínio
-  const requiredItems = items.filter((i) => i.is_required);
-  const totalRequired = requiredItems.length;
-
-  const completedRequired = requiredItems.filter((item) => {
-    const response = responses[item.id];
-    return response && response.selected_level && response.selected_level.trim() !== '';
-  }).length;
-
-  const isComplete = totalRequired > 0 && completedRequired === totalRequired;
-  const progressPercentage =
-    totalRequired > 0 ? Math.round((completedRequired / totalRequired) * 100) : 0;
+  const progress = calculateAssessmentProgress(items, responses);
+  const totalRequired = progress.totalRequired;
+  const completedRequired = progress.completedRequired;
+  const isComplete = progress.isComplete;
+  const progressPercentage = progress.progressPercentage;
 
   // Determinar cor da borda esquerda baseada no status
   const borderColor = isComplete

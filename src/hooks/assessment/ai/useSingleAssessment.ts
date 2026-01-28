@@ -51,12 +51,12 @@ export interface UseSingleAssessmentReturn {
  * Hook para avaliação de item específico
  *
  * USO:
- * ```tsx
- * const { assessItem, loading, error } = useSingleAssessment({
- *   onSuccess: (runId, suggestionCreated) => {
- *     // Refresh sugestões
- *   }
- * });
+* ```tsx
+* const { assessItem, loading, error } = useSingleAssessment({
+*   onSuccess: (suggestionId) => {
+*     // Refresh sugestões
+*   }
+* });
  *
  * await assessItem({
  *   projectId,
@@ -73,7 +73,7 @@ export interface UseSingleAssessmentReturn {
  * @returns Função de avaliação, estado de loading e error
  */
 export function useSingleAssessment(options?: {
-  onSuccess?: (runId: string, suggestionId: string) => void;
+  onSuccess?: (suggestionId: string) => void;
 }): UseSingleAssessmentReturn {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -128,13 +128,11 @@ export function useSingleAssessment(options?: {
 
         // Chamar callback de sucesso se fornecido
         if (options?.onSuccess) {
-          Promise.resolve(
-            options.onSuccess(result.data.runId, result.data.id)
-          ).catch(err => {
+          Promise.resolve(options.onSuccess(result.data.id)).catch(err => {
             console.error('❌ [useSingleAssessment] Erro no callback onSuccess:', err);
           });
         }
-      } catch (err: any) {
+      } catch (err) {
         console.error('❌ [useSingleAssessment] Erro capturado', {
           error: err instanceof Error ? err.message : String(err),
           name: err instanceof Error ? err.name : 'Unknown',

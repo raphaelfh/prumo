@@ -22,7 +22,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAssessmentInstruments } from "@/hooks/assessment/useAssessmentInstruments";
 import { ArticleAssessmentTable } from "./ArticleAssessmentTable";
 import { toast } from "sonner";
-import type { AssessmentInstrument } from "@/types/assessment";
+import type { AssessmentInstrument, Assessment } from "@/types/assessment";
+import type { Article as ArticleRow } from "@/types/article";
+import { getAssessmentStatus } from "@/lib/assessment-utils";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 // =================== INTERFACES ===================
 
@@ -31,40 +34,31 @@ interface AssessmentInterfaceProps {
 }
 
 /** Artigo simplificado para listagem */
-interface Article {
-  id: string;
-  title: string;
-  doi: string | null;
-  created_at: string;
-}
+type ArticleSummary = Pick<ArticleRow, 'id' | 'title' | 'doi' | 'created_at'>;
 
-/** Registro de assessment do banco */
-interface AssessmentRecord {
-  id: string;
-  instrument_id: string;
-  status: string;
-  completion_percentage: number;
-}
+type AssessmentTab = 'assessment' | 'dashboard' | 'configuration';
+const ASSESSMENT_TABS = ['assessment', 'dashboard', 'configuration'] as const;
 
 export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => {
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Ler aba da URL ou usar padrão
-  const tabFromUrl = searchParams.get('assessmentTab') as 'assessment' | 'dashboard' | 'configuration' | null;
-  const initialTab = (tabFromUrl && ['assessment', 'dashboard', 'configuration'].includes(tabFromUrl))
-    ? tabFromUrl
+  const tabFromUrl = searchParams.get('assessmentTab');
+  const initialTab: AssessmentTab = ASSESSMENT_TABS.includes(tabFromUrl as AssessmentTab)
+    ? (tabFromUrl as AssessmentTab)
     : 'assessment';
 
   const [activeInstrument, setActiveInstrument] = useState<AssessmentInstrument | null>(null);
-  const [activeTab, setActiveTab] = useState<'assessment' | 'dashboard' | 'configuration'>(initialTab);
-  const [articles, setArticles] = useState<Article[]>([]);
-  const [assessments, setAssessments] = useState<AssessmentRecord[]>([]);
+  const [activeTab, setActiveTab] = useState<AssessmentTab>(initialTab);
+  const [articles, setArticles] = useState<ArticleSummary[]>([]);
+  const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [stats, setStats] = useState({
     totalArticles: 0,
     completedAssessments: 0,
     inProgressAssessments: 0,
     progressPercentage: 0,
   });
+  const { user, loading: authLoading } = useCurrentUser();
 
   // Hook para gerenciar instrumentos
   const {
@@ -89,7 +83,7 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
   }, [activeTab, searchParams, setSearchParams]);
 
   // Função para mudar aba e atualizar URL
-  const handleTabChange = (tab: 'assessment' | 'dashboard' | 'configuration') => {
+  const handleTabChange = (tab: AssessmentTab) => {
     setActiveTab(tab);
   };
 
@@ -99,7 +93,7 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
       loadArticles();
       loadAssessments();
     }
-  }, [projectId, activeInstrument]);
+  }, [projectId, activeInstrument, user, authLoading]);
 
   // Calcular estatísticas quando dados mudam
   useEffect(() => {
@@ -118,16 +112,16 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
 
       if (error) throw error;
       setArticles(data || []);
-    } catch (error: any) {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Erro ao carregar artigos";
       console.error("Error loading articles:", error);
-      toast.error("Erro ao carregar artigos");
+      toast.error(message);
     }
   };
 
   const loadAssessments = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (authLoading || !user) return;
 
       const { data, error } = await supabase
         .from("assessments")
@@ -138,7 +132,7 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
 
       if (error) throw error;
       setAssessments(data || []);
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error loading assessments:", error);
     }
   };
@@ -148,13 +142,15 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
       a => a.instrument_id === activeInstrument?.id
     );
     
-    const completed = assessmentsForInstrument.filter(
-      a => a.status === 'submitted' || a.completion_percentage === 100
-    ).length;
-    
-    const inProgress = assessmentsForInstrument.filter(
-      a => a.status === 'in_progress' && a.completion_percentage > 0 && a.completion_percentage < 100
-    ).length;
+    const completed = assessmentsForInstrument.filter((assessment) => {
+      const progress = assessment.completion_percentage ?? 0;
+      return getAssessmentStatus(assessment.status, progress) === 'complete';
+    }).length;
+
+    const inProgress = assessmentsForInstrument.filter((assessment) => {
+      const progress = assessment.completion_percentage ?? 0;
+      return getAssessmentStatus(assessment.status, progress) === 'in_progress';
+    }).length;
     
     const total = articles.length;
     const progressPercentage = total > 0 
@@ -370,7 +366,14 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
       </div>
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={(value) => handleTabChange(value as any)}>
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => {
+          if (ASSESSMENT_TABS.includes(value as AssessmentTab)) {
+            handleTabChange(value as AssessmentTab);
+          }
+        }}
+      >
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="assessment" disabled={!activeInstrument}>
             Avaliação

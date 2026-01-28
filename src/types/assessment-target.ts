@@ -6,7 +6,12 @@
  * - AssessmentInstanceTarget: assessment de uma instância específica (ex: um modelo)
  */
 
-import { ExtractionInstance } from './extraction';
+import type { ExtractionInstance } from './extraction';
+
+export type ExtractionInstanceRef = Pick<
+  ExtractionInstance,
+  'id' | 'article_id' | 'entity_type_id' | 'parent_instance_id' | 'label' | 'sort_order' | 'metadata'
+>;
 
 // Interface base compartilhada
 interface BaseAssessmentTarget {
@@ -26,7 +31,7 @@ export interface AssessmentArticleTarget extends BaseAssessmentTarget {
 export interface AssessmentInstanceTarget extends BaseAssessmentTarget {
   type: 'extraction_instance';
   extraction_instance_id: string;
-  instance: ExtractionInstance;
+  instance: ExtractionInstanceRef;
   instance_label: string;
 }
 
@@ -64,7 +69,7 @@ export function createArticleTarget(
 }
 
 export function createInstanceTarget(
-  instance: ExtractionInstance,
+  instance: ExtractionInstanceRef,
   articleTitle: string
 ): AssessmentInstanceTarget {
   return {
@@ -78,5 +83,4 @@ export function createInstanceTarget(
     instance_label: instance.label
   };
 }
-
 

@@ -16,7 +16,6 @@ import type { AssessmentFormViewProps } from './AssessmentFormView';
 // =================== INTERFACES ===================
 
 export interface AssessmentFormPanelProps {
-  showPDF: boolean;
   formViewProps: AssessmentFormViewProps;
 }
 
@@ -26,7 +25,7 @@ export interface AssessmentFormPanelProps {
  * Painel de formulário de assessment
  * Simplifica o AssessmentFullScreen ao extrair lógica de renderização
  */
-export function AssessmentFormPanel({ showPDF, formViewProps }: AssessmentFormPanelProps) {
+export function AssessmentFormPanel({ formViewProps }: AssessmentFormPanelProps) {
   if (!formViewProps) {
     return null;
   }

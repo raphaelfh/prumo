@@ -11,6 +11,7 @@
 
 import { useMemo } from 'react';
 import type { AssessmentItem, AssessmentResponse } from '@/types/assessment';
+import { calculateAssessmentProgress } from '@/lib/assessment-utils';
 
 // =================== INTERFACES ===================
 
@@ -43,45 +44,12 @@ export function useAssessmentProgress(
   items: AssessmentItem[]
 ): UseAssessmentProgressReturn {
   return useMemo(() => {
-    // Filtrar apenas itens obrigatórios
-    const requiredItems = items.filter(item => item.is_required);
-    const totalRequired = requiredItems.length;
-
-    // Se não há itens obrigatórios, retornar 100% completo
-    if (totalRequired === 0) {
-      return {
-        completedItems: 0,
-        totalItems: 0,
-        completionPercentage: 100,
-        isComplete: true,
-      };
-    }
-
-    // Contar itens obrigatórios que foram respondidos
-    const completedRequired = requiredItems.filter(item => {
-      const response = responses[item.id];
-
-      // Considera completo se:
-      // 1. Response existe
-      // 2. Tem um level selecionado
-      // 3. Level não é vazio
-      return (
-        response &&
-        response.selected_level &&
-        response.selected_level.trim() !== ''
-      );
-    }).length;
-
-    const percentage =
-      totalRequired > 0
-        ? Math.round((completedRequired / totalRequired) * 100)
-        : 0;
-
+    const progress = calculateAssessmentProgress(items, responses);
     return {
-      completedItems: completedRequired,
-      totalItems: totalRequired,
-      completionPercentage: percentage,
-      isComplete: percentage === 100,
+      completedItems: progress.completedRequired,
+      totalItems: progress.totalRequired,
+      completionPercentage: progress.progressPercentage,
+      isComplete: progress.isComplete,
     };
   }, [responses, items]);
 }

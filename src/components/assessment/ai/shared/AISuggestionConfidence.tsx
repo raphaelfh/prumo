@@ -8,6 +8,7 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { AISuggestionDetailsPopover } from './AISuggestionDetailsPopover';
 import type { AIAssessmentSuggestion } from '@/types/assessment';
+import { calculateConfidencePercent } from '@/lib/assessment-utils';
 
 // =================== INTERFACES ===================
 
@@ -15,19 +16,6 @@ interface AISuggestionConfidenceProps {
   suggestion: AIAssessmentSuggestion;
   showDetailsOnClick?: boolean;
   className?: string;
-}
-
-// =================== HELPERS ===================
-
-/**
- * Calcula porcentagem de confiança (0-1 → 0-100%)
- * Retorna 0 se o valor for undefined ou inválido
- */
-function calculateConfidencePercent(confidence: number | undefined | null): number {
-  if (confidence === undefined || confidence === null || isNaN(confidence)) {
-    return 0;
-  }
-  return Math.round(confidence * 100);
 }
 
 // =================== COMPONENT ===================

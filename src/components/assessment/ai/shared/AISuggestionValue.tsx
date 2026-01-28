@@ -6,7 +6,8 @@
  */
 
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { formatAssessmentLevel, type AIAssessmentSuggestion } from '@/types/assessment';
+import type { AIAssessmentSuggestion } from '@/types/assessment';
+import { formatAssessmentLevel } from '@/lib/assessment-utils';
 
 // =================== INTERFACES ===================
 

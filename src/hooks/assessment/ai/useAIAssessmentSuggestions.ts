@@ -14,7 +14,6 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import type {
   AIAssessmentSuggestion,
@@ -23,7 +22,7 @@ import type {
   AssessmentLevel,
   EvidencePassage,
 } from '@/types/assessment';
-import { getAssessmentSuggestionKey } from '@/types/assessment';
+import { getAssessmentSuggestionKey } from '@/lib/assessment-utils';
 import {
   AIAssessmentSuggestionService,
   type LoadAssessmentSuggestionsResult,
@@ -32,6 +31,7 @@ import {
   getErrorMessage,
   AuthenticationError,
 } from '@/lib/ai-extraction/errors';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 /**
  * Props do hook
@@ -88,6 +88,7 @@ export function useAIAssessmentSuggestions(
   const [suggestions, setSuggestions] = useState<Record<string, AIAssessmentSuggestion>>({});
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<Record<string, 'accept' | 'reject' | null>>({});
+  const { user, loading: authLoading } = useCurrentUser();
 
   /**
    * Carrega sugestões do backend
@@ -130,7 +131,7 @@ export function useAIAssessmentSuggestions(
       });
 
       return result;
-    } catch (err: any) {
+    } catch (err) {
       console.error('❌ [useAIAssessmentSuggestions] Erro ao carregar sugestões:', err);
       const message = getErrorMessage(err);
       toast.error(`Erro ao carregar sugestões: ${message}`);
@@ -166,8 +167,7 @@ export function useAIAssessmentSuggestions(
 
     try {
       // Obter usuário autenticado
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new AuthenticationError();
+      if (authLoading || !user) throw new AuthenticationError();
 
       console.log('✅ [acceptSuggestion] Aceitando sugestão:', {
         itemId,
@@ -217,7 +217,7 @@ export function useAIAssessmentSuggestions(
       }
 
       toast.success('Sugestão aceita com sucesso');
-    } catch (err: any) {
+    } catch (err) {
       console.error('❌ [acceptSuggestion] Erro:', err);
       const message = getErrorMessage(err);
       toast.error(`Erro ao aceitar sugestão: ${message}`);
@@ -225,7 +225,7 @@ export function useAIAssessmentSuggestions(
     } finally {
       setActionLoading(prev => ({ ...prev, [key]: null }));
     }
-  }, [suggestions, projectId, articleId, instrumentId, extractionInstanceId, onSuggestionAccepted]);
+  }, [suggestions, projectId, articleId, instrumentId, extractionInstanceId, onSuggestionAccepted, user, authLoading]);
 
   /**
    * Rejeita uma sugestão
@@ -243,8 +243,7 @@ export function useAIAssessmentSuggestions(
     setActionLoading(prev => ({ ...prev, [key]: 'reject' }));
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new AuthenticationError();
+      if (authLoading || !user) throw new AuthenticationError();
 
       const wasAccepted = suggestion.status === 'accepted';
 
@@ -262,6 +261,8 @@ export function useAIAssessmentSuggestions(
         itemId,
         projectId,
         articleId,
+        instrumentId,
+        extractionInstanceId,
       });
 
       // Atualizar status no estado local para 'rejected'
@@ -291,7 +292,7 @@ export function useAIAssessmentSuggestions(
       }
 
       toast.success('Sugestão rejeitada');
-    } catch (err: any) {
+    } catch (err) {
       console.error('❌ [rejectSuggestion] Erro:', err);
       const message = getErrorMessage(err);
       toast.error(`Erro ao rejeitar sugestão: ${message}`);
@@ -299,15 +300,14 @@ export function useAIAssessmentSuggestions(
     } finally {
       setActionLoading(prev => ({ ...prev, [key]: null }));
     }
-  }, [suggestions, projectId, articleId, onSuggestionRejected]);
+  }, [suggestions, projectId, articleId, instrumentId, extractionInstanceId, onSuggestionRejected, user, authLoading]);
 
   /**
    * Aceita múltiplas sugestões em batch (acima de threshold)
    */
   const batchAccept = useCallback(async (threshold: number = 0.8): Promise<number> => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new AuthenticationError();
+      if (authLoading || !user) throw new AuthenticationError();
 
       console.log('📦 [batchAccept] Iniciando batch accept:', { threshold });
 
@@ -330,13 +330,13 @@ export function useAIAssessmentSuggestions(
       }
 
       return accepted;
-    } catch (err: any) {
+    } catch (err) {
       console.error('❌ [batchAccept] Erro:', err);
       const message = getErrorMessage(err);
       toast.error(`Erro no batch accept: ${message}`);
       return 0;
     }
-  }, [suggestions, projectId, articleId, instrumentId, extractionInstanceId, loadSuggestions]);
+  }, [suggestions, projectId, articleId, instrumentId, extractionInstanceId, loadSuggestions, user, authLoading]);
 
   /**
    * Busca histórico de sugestões para um item
@@ -347,7 +347,7 @@ export function useAIAssessmentSuggestions(
   ): Promise<AIAssessmentSuggestionHistoryItem[]> => {
     try {
       return await AIAssessmentSuggestionService.getHistory(itemId, limit);
-    } catch (err: any) {
+    } catch (err) {
       console.error('❌ [getSuggestionsHistory] Erro:', err);
       return [];
     }

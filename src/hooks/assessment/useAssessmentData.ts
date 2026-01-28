@@ -33,10 +33,12 @@ import type { Article } from '@/types/article';
 import type { Project } from '@/types/project';
 import type {
   AssessmentInstrument,
+  AssessmentInstrumentSchemaDomain,
   AssessmentItem,
   Assessment,
-  AssessmentDomain,
 } from '@/types/assessment';
+import { normalizeAssessmentItem, parseInstrumentSchema } from '@/lib/assessment-utils';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 /**
  * Domínio com seus items
@@ -47,6 +49,11 @@ export interface DomainWithItems {
   description: string | null;
   sort_order: number;
   items: AssessmentItem[];
+}
+
+export interface AssessmentArticleRef {
+  id: string;
+  title: string;
 }
 
 /**
@@ -60,7 +67,7 @@ export interface UseAssessmentDataReturn {
   items: AssessmentItem[];
   domains: DomainWithItems[];
   assessment: Assessment | null;
-  articles: Article[];
+  articles: AssessmentArticleRef[];
 
   // Estados
   loading: boolean;
@@ -98,10 +105,11 @@ export function useAssessmentData({
   const [items, setItems] = useState<AssessmentItem[]>([]);
   const [domains, setDomains] = useState<DomainWithItems[]>([]);
   const [assessment, setAssessment] = useState<Assessment | null>(null);
-  const [articles, setArticles] = useState<Article[]>([]);
+  const [articles, setArticles] = useState<AssessmentArticleRef[]>([]);
   const [loading, setLoading] = useState(true);
   const [initialized, setInitialized] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { user, loading: authLoading } = useCurrentUser();
 
   /**
    * Carrega artigo
@@ -172,7 +180,11 @@ export function useAssessmentData({
       throw new Error(`Erro ao carregar instrumento: ${instrumentError.message}`);
     }
 
-    setInstrument(instrumentData as AssessmentInstrument);
+    const instrumentSchema = parseInstrumentSchema(instrumentData.schema);
+    setInstrument({
+      ...instrumentData,
+      schema: instrumentSchema,
+    } as AssessmentInstrument);
 
     // Carregar items do instrumento
     const { data: itemsData, error: itemsError } = await supabase
@@ -186,18 +198,25 @@ export function useAssessmentData({
       throw new Error(`Erro ao carregar items: ${itemsError.message}`);
     }
 
-    setItems(itemsData as AssessmentItem[]);
+    const normalizedItems = (itemsData || []).map(normalizeAssessmentItem);
+    setItems(normalizedItems);
 
     // Agrupar por domínio
     const domainMap = new Map<string, DomainWithItems>();
+    const domainMetadata = new Map<string, AssessmentInstrumentSchemaDomain>();
 
-    itemsData.forEach((item: AssessmentItem) => {
+    instrumentSchema?.domains?.forEach((domain) => {
+      domainMetadata.set(domain.code, domain);
+    });
+
+    normalizedItems.forEach((item) => {
       if (!domainMap.has(item.domain)) {
+        const meta = domainMetadata.get(item.domain);
         domainMap.set(item.domain, {
           domain: item.domain,
-          label: item.domain, // TODO: Buscar label do assessment_domains se existir
-          description: null,
-          sort_order: 0,
+          label: meta?.name || item.domain,
+          description: meta?.description ?? null,
+          sort_order: meta?.sort_order ?? 0,
           items: [],
         });
       }
@@ -206,7 +225,9 @@ export function useAssessmentData({
     });
 
     const domainsArray = Array.from(domainMap.values()).sort((a, b) => {
-      // Ordenar por número do domínio (Domain 1, Domain 2, etc.)
+      if (a.sort_order !== b.sort_order) {
+        return a.sort_order - b.sort_order;
+      }
       const numA = parseInt(a.domain.match(/\d+/)?.[0] || '0');
       const numB = parseInt(b.domain.match(/\d+/)?.[0] || '0');
       return numA - numB;
@@ -217,7 +238,7 @@ export function useAssessmentData({
     console.log(`📊 [useAssessmentData] Instrumento carregado:`, {
       instrumentId,
       name: instrumentData.name,
-      itemsCount: itemsData.length,
+      itemsCount: normalizedItems.length,
       domainsCount: domainsArray.length,
     });
   }, [instrumentId]);
@@ -231,7 +252,9 @@ export function useAssessmentData({
       return;
     }
 
-    const { data: { user } } = await supabase.auth.getUser();
+    if (authLoading) {
+      return;
+    }
     if (!user) {
       console.warn('⚠️ [useAssessmentData] Usuário não autenticado');
       setAssessment(null);
@@ -245,6 +268,7 @@ export function useAssessmentData({
       .eq('article_id', articleId)
       .eq('user_id', user.id)
       .eq('instrument_id', instrumentId)
+      .eq('is_current_version', true)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -266,7 +290,7 @@ export function useAssessmentData({
     }
 
     setAssessment(data as Assessment);
-  }, [projectId, articleId, instrumentId]);
+  }, [projectId, articleId, instrumentId, authLoading, user]);
 
   /**
    * Carrega lista de artigos do projeto (para navegação)
@@ -279,7 +303,7 @@ export function useAssessmentData({
 
     const { data, error } = await supabase
       .from('articles')
-      .select('id, title, authors, year, status')
+      .select('id, title')
       .eq('project_id', projectId)
       .order('created_at', { ascending: true });
 
@@ -289,7 +313,7 @@ export function useAssessmentData({
       return;
     }
 
-    setArticles(data as Article[]);
+    setArticles((data || []) as AssessmentArticleRef[]);
   }, [projectId]);
 
   /**

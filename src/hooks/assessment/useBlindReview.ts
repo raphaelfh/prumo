@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { getResponseLevel } from '@/lib/assessment-utils';
 
 export interface DiscordanceData {
   articleId: string;
@@ -71,13 +72,14 @@ export const useBlindReview = (projectId: string, userId: string) => {
         setDiscordanceData([]);
       }
 
-    } catch (error: any) {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erro ao carregar modo blind';
       console.error('Error loading blind review state:', error);
       setBlindState({
         isBlindMode: false,
         canManageBlindMode: false,
         isLoading: false,
-        error: error.message
+        error: message
       });
     }
   };
@@ -152,7 +154,7 @@ export const useBlindReview = (projectId: string, userId: string) => {
         // Para cada item, verifica se há discordância
         allItemIds.forEach(itemId => {
           const responses = groupAssessments
-            .map(a => a.responses?.[itemId]?.level)
+            .map(a => getResponseLevel(a.responses?.[itemId]))
             .filter(Boolean);
 
           if (responses.length > 1) {
@@ -216,7 +218,7 @@ export const useBlindReview = (projectId: string, userId: string) => {
       }
 
       return newBlindMode;
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error toggling blind mode:', error);
       throw error;
     }

@@ -9,15 +9,10 @@ ___
 https://bmcmedresmethodol.biomedcentral.com/articles/10.1186/s12874-023-01849-0
 
 
-
-
-
-
 ---
 
 ## 📐 ESTRUTURA HIERÁRQUICA COMPLETA
 
-**CORREÇÃO CRÍTICA**: TODOS os campos são específicos por modelo preditivo, não compartilhados.
 
 ```
 CHARMS v2.0

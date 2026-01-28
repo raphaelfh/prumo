@@ -12,7 +12,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -49,14 +48,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import type { Article as ArticleRow } from '@/types/article';
+import { getAssessmentStatus, getStatusColor, getStatusLabel } from '@/lib/assessment-utils';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 
-interface Article {
-  id: string;
-  title: string;
-  authors: string[] | null;
-  publication_year: number | null;
-  created_at: string;
-}
+type Article = Pick<ArticleRow, 'id' | 'title' | 'authors' | 'publication_year' | 'created_at'>;
 
 interface Assessment {
   id: string;
@@ -93,7 +89,8 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
   const [articles, setArticles] = useState<ArticleWithAssessment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const { user, loading: authLoading } = useCurrentUser();
+  const currentUserId = user?.id ?? null;
   
   // Estados para filtros e ordenação
   const [globalFilter, setGlobalFilter] = useState('');
@@ -108,28 +105,12 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [activeFilterColumn, setActiveFilterColumn] = useState<keyof ColumnFilter | null>(null);
 
-  // Carregar ID do usuário atual
-  useEffect(() => {
-    loadCurrentUser();
-  }, []);
-
   // Carregar artigos do projeto
   useEffect(() => {
-    if (projectId && instrumentId && currentUserId) {
+    if (projectId && instrumentId && currentUserId && !authLoading) {
       loadArticles();
     }
-  }, [projectId, instrumentId, currentUserId]);
-
-  const loadCurrentUser = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setCurrentUserId(user.id);
-      }
-    } catch (error: any) {
-      console.error('Erro ao carregar usuário:', error);
-    }
-  };
+  }, [projectId, instrumentId, currentUserId, authLoading]);
 
   const loadArticles = async () => {
     setLoading(true);
@@ -178,10 +159,11 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
       });
 
       setArticles(articlesWithAssessment);
-    } catch (err: any) {
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao carregar artigos';
       console.error('Erro ao carregar artigos:', err);
-      setError(err.message);
-      toast.error(`Erro ao carregar artigos: ${err.message}`);
+      setError(message);
+      toast.error(`Erro ao carregar artigos: ${message}`);
     } finally {
       setLoading(false);
     }
@@ -227,17 +209,14 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
 
       // Filtro por status
       if (columnFilters.status && columnFilters.status !== 'all') {
-        const hasAssessment = !!article.assessment;
         const progress = article.assessment?.completion_percentage || 0;
-        const isComplete = article.assessment?.status === 'submitted' || progress >= 100;
-        const isInProgress = hasAssessment && progress > 0 && progress < 100;
-        const isNotStarted = !hasAssessment;
+        const statusType = getAssessmentStatus(article.assessment?.status, progress);
         
         const filterValue = columnFilters.status.toLowerCase();
         
-        if (filterValue === 'completo' && !isComplete) return false;
-        if (filterValue === 'em andamento' && !isInProgress) return false;
-        if (filterValue === 'não iniciado' && !isNotStarted) return false;
+        if (filterValue === 'completo' && statusType !== 'complete') return false;
+        if (filterValue === 'em andamento' && statusType !== 'in_progress') return false;
+        if (filterValue === 'não iniciado' && statusType !== 'not_started') return false;
       }
 
       // Filtro por autores
@@ -253,8 +232,8 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
 
     // Ordenação
     filtered.sort((a, b) => {
-      let aValue: any;
-      let bValue: any;
+      let aValue: string | number;
+      let bValue: string | number;
 
       switch (sortField) {
         case 'title':
@@ -273,11 +252,17 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
           // Ordenar por status: não iniciado (0), em andamento (1), completo (2)
           const aProgress = a.assessment?.completion_percentage || 0;
           const bProgress = b.assessment?.completion_percentage || 0;
-          const aHasAssessment = !!a.assessment;
-          const bHasAssessment = !!b.assessment;
-          
-          aValue = !aHasAssessment ? 0 : (aProgress >= 100 ? 2 : 1);
-          bValue = !bHasAssessment ? 0 : (bProgress >= 100 ? 2 : 1);
+          const aStatus = getAssessmentStatus(a.assessment?.status, aProgress);
+          const bStatus = getAssessmentStatus(b.assessment?.status, bProgress);
+
+          const toOrder = (status: string) => {
+            if (status === 'complete') return 2;
+            if (status === 'in_progress') return 1;
+            return 0;
+          };
+
+          aValue = toOrder(aStatus);
+          bValue = toOrder(bStatus);
           break;
         }
         case 'created_at':
@@ -330,30 +315,25 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
   };
 
   const getStatusBadge = (article: ArticleWithAssessment) => {
-    if (!article.assessment) {
+    const progress = article.assessment?.completion_percentage || 0;
+    const statusType = getAssessmentStatus(article.assessment?.status, progress);
+    const color = getStatusColor(statusType);
+    const label = getStatusLabel(statusType);
+
+    if (statusType === 'not_started') {
       return (
         <Badge variant="secondary" className="gap-1 text-xs">
           <Clock className="h-3 w-3" />
-          Não iniciada
+          {label}
         </Badge>
       );
     }
 
-    const progress = article.assessment.completion_percentage || 0;
-
-    if (article.assessment.status === 'submitted' || progress >= 100) {
-      return (
-        <Badge variant="default" className="gap-1 bg-green-500 text-xs">
-          <CheckCircle className="h-3 w-3" />
-          Completa
-        </Badge>
-      );
-    }
-
+    const Icon = statusType === 'complete' ? CheckCircle : Edit;
     return (
-      <Badge variant="default" className="gap-1 bg-blue-500 text-xs">
-        <Edit className="h-3 w-3" />
-        Em andamento
+      <Badge variant="default" className={`gap-1 ${color} text-xs`}>
+        <Icon className="h-3 w-3" />
+        {label}
       </Badge>
     );
   };
@@ -583,7 +563,7 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
           <TableBody>
             {filteredAndSortedArticles.map((article) => {
               const progress = article.assessment?.completion_percentage || 0;
-              const isComplete = article.assessment?.status === 'submitted' || progress >= 100;
+              const isComplete = getAssessmentStatus(article.assessment?.status, progress) === 'complete';
 
               return (
                 <TableRow key={article.id} className="hover:bg-muted/50">

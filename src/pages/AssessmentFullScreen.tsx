@@ -33,6 +33,7 @@ import { useAssessmentProgress } from '@/hooks/assessment/useAssessmentProgress'
 import { useAssessmentAutoSave } from '@/hooks/assessment/useAssessmentAutoSave';
 import { useAIAssessmentSuggestions } from '@/hooks/assessment/ai/useAIAssessmentSuggestions';
 import { useSingleAssessment } from '@/hooks/assessment/ai/useSingleAssessment';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 // Components
 import { AssessmentHeader } from '@/components/assessment/AssessmentHeader';
@@ -40,7 +41,7 @@ import { AssessmentPDFPanel } from '@/components/assessment/AssessmentPDFPanel';
 import { AssessmentFormPanel } from '@/components/assessment/AssessmentFormPanel';
 
 // Types
-import type { AssessmentResponse } from '@/types/assessment';
+import type { AssessmentLevel, EvidencePassage } from '@/types/assessment';
 
 // =================== COMPONENT ===================
 
@@ -51,7 +52,7 @@ export default function AssessmentFullScreen() {
   // UI state
   const [showPDF, setShowPDF] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [currentUserId, setCurrentUserId] = useState<string>('');
+  const { userId } = useCurrentUser();
 
   // Hook para carregar dados usando hook dedicado (SRP: separação de responsabilidades)
   const {
@@ -85,6 +86,8 @@ export default function AssessmentFullScreen() {
     articleId: articleId || '',
     instrumentId: instrumentId || '',
     extractionInstanceId: undefined, // Não é hierárquico (não por modelo)
+    toolType: instrument?.tool_type,
+    items,
     enabled: !!projectId && !!articleId && !!instrumentId,
   });
 
@@ -101,15 +104,18 @@ export default function AssessmentFullScreen() {
 
   // Callbacks para sugestões de IA
   const handleAISuggestionAccepted = useCallback(
-    async (itemId: string, suggestionValue: any) => {
+    async (
+      itemId: string,
+      suggestionValue: { level: AssessmentLevel; evidence_passages: EvidencePassage[] }
+    ) => {
       console.log('🤖 Aceitando sugestão de IA:', { itemId, suggestionValue });
 
       // Preencher o campo automaticamente quando sugestão é aceita
       updateResponse(itemId, {
         selected_level: suggestionValue.level,
-        comment: suggestionValue.reasoning || '',
-        evidence_passages: suggestionValue.evidence_passages || [],
-      } as AssessmentResponse);
+        notes: null,
+        evidence: suggestionValue.evidence_passages || [],
+      });
     },
     [updateResponse]
   );
@@ -132,7 +138,7 @@ export default function AssessmentFullScreen() {
   } = useAIAssessmentSuggestions({
     articleId: articleId || '',
     projectId: projectId || '',
-    instrumentId: instrumentId || '',
+    instrumentId,
     extractionInstanceId: undefined,
     enabled: !!articleId && !!projectId && !!instrumentId,
     onSuggestionAccepted: handleAISuggestionAccepted,
@@ -142,8 +148,8 @@ export default function AssessmentFullScreen() {
   // Hook para avaliar item individual
   const [triggeringItemId, setTriggeringItemId] = useState<string | null>(null);
   const { assessItem, loading: assessingItem } = useSingleAssessment({
-    onSuccess: async (runId, suggestionId) => {
-      console.log('✅ Item avaliado com sucesso:', { runId, suggestionId });
+    onSuccess: async (suggestionId) => {
+      console.log('✅ Item avaliado com sucesso:', { suggestionId });
       // Refresh sugestões após avaliação
       await refreshSuggestions();
       setTriggeringItemId(null);
@@ -176,13 +182,6 @@ export default function AssessmentFullScreen() {
     [article, projectId, articleId, instrumentId, assessItem]
   );
 
-  // Get current user ID
-  useState(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) setCurrentUserId(user.id);
-    });
-  });
-
   // Navegação entre artigos
   const handleNavigateToArticle = (newArticleId: string) => {
     navigate(`/projects/${projectId}/assessment/${newArticleId}/${instrumentId}`);
@@ -201,21 +200,26 @@ export default function AssessmentFullScreen() {
       await saveResponses();
 
       // Atualizar status para submitted
+      if (!userId) {
+        throw new Error('Usuário não autenticado');
+      }
+
       const { error } = await supabase
         .from('assessments')
         .update({ status: 'submitted' })
         .eq('article_id', articleId)
         .eq('instrument_id', instrumentId)
-        .eq('user_id', currentUserId)
+        .eq('user_id', userId)
         .eq('is_current_version', true);
 
       if (error) throw error;
 
       toast.success('Avaliação concluída com sucesso!');
       navigate(`/projects/${projectId}`);
-    } catch (error: any) {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erro ao finalizar avaliação';
       console.error('❌ Erro ao finalizar avaliação:', error);
-      toast.error('Erro ao finalizar avaliação');
+      toast.error(message);
     } finally {
       setSubmitting(false);
     }
@@ -254,7 +258,6 @@ export default function AssessmentFullScreen() {
     <div className="h-screen flex flex-col">
       {/* Header */}
       <AssessmentHeader
-        projectId={projectId || ''}
         projectName={project?.name || 'Projeto'}
         instrumentName={instrument?.name || ''}
         articleTitle={article?.title || ''}
@@ -296,7 +299,6 @@ export default function AssessmentFullScreen() {
           {/* Assessment Form Panel */}
           <ResizablePanel defaultSize={showPDF ? 50 : 100} minSize={30}>
             <AssessmentFormPanel
-              showPDF={showPDF}
               formViewProps={{
                 domains,
                 responses,

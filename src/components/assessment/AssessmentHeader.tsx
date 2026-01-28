@@ -32,7 +32,6 @@ interface Article {
 
 export interface AssessmentHeaderProps {
   // Navegação
-  projectId: string;
   projectName: string;
   instrumentName: string;
   articleTitle: string;
