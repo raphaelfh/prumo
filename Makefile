@@ -7,6 +7,12 @@ SUPABASE_DIR := supabase
 BACKEND_PORT := 8000
 FRONTEND_PORT := 8080
 
+# Carrega variáveis do .env (se existir) e exporta para os comandos do Make
+ifneq (,$(wildcard .env))
+include .env
+export
+endif
+
 # Cores para output (opcional, funciona em terminais modernos)
 GREEN := \033[0;32m
 YELLOW := \033[0;33m
@@ -146,6 +152,20 @@ clean: ## Limpa arquivos temporários e caches
 	@cd $(BACKEND_DIR) && find . -type d -name __pycache__ -exec rm -r {} + 2>/dev/null || true
 	@cd $(BACKEND_DIR) && find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	@echo "$(GREEN)✅ Limpeza concluída$(NC)"
+
+migrate: ## Aplica migrations LOCALMENTE (Supabase CLI)
+	@echo "$(GREEN)🧬 Aplicando migrations (local)...$(NC)"
+	@bash scripts/apply_and_test_migration.sh
+
+migrate-remote: ## Aplica migrations no Supabase REMOTO via DATABASE_URL (sem link; usa Docker se precisar)
+	@echo "$(GREEN)🧬 Aplicando migrations (remoto)...$(NC)"
+	@if [ -z "$$DATABASE_URL" ]; then \
+		echo "$(RED)❌ DATABASE_URL não definido.$(NC)"; \
+		echo "$(YELLOW)Exemplo: DATABASE_URL='postgresql://<USER>:<PASSWORD>@<HOST>:5432/<DB>?sslmode=require' make migrate-remote$(NC)"; \
+		exit 1; \
+	fi
+	@bash scripts/apply_and_test_migration.sh
+
 
 ##@ Desenvolvimento
 
