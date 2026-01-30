@@ -288,7 +288,7 @@ async def list_ai_suggestions(
         # Join with runs to filter by project/article
         query = query.join(
             AIAssessmentRun,
-            AISuggestion.run_id == AIAssessmentRun.id
+            AISuggestion.assessment_run_id == AIAssessmentRun.id
         ).where(
             and_(
                 AIAssessmentRun.project_id == uuid.UUID(project_id),
@@ -412,7 +412,7 @@ async def review_ai_suggestion(
             # Create AIAssessment from suggestion
             assessment = AIAssessment(
                 id=uuid.uuid4(),
-                run_id=suggestion.run_id,
+                run_id=suggestion.assessment_run_id,
                 assessment_item_id=suggestion.assessment_item_id,
                 selected_level=suggestion.suggested_value.get("level", ""),
                 confidence_score=suggestion.confidence_score,
@@ -440,7 +440,7 @@ async def review_ai_suggestion(
             # Create AIAssessment with modified values
             assessment = AIAssessment(
                 id=uuid.uuid4(),
-                run_id=suggestion.run_id,
+                run_id=suggestion.assessment_run_id,
                 assessment_item_id=suggestion.assessment_item_id,
                 selected_level=payload.modified_value.get("level", ""),
                 confidence_score=payload.modified_value.get("confidence_score"),

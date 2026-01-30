@@ -43,8 +43,8 @@ from app.utils.json_parser import parse_json_safe
 @dataclass
 class SectionExtractionResult:
     """Resultado de extração de uma seção."""
-    
-    run_id: str
+
+    extraction_run_id: str
     entity_type_id: str
     suggestions_created: int
     tokens_prompt: int
@@ -56,8 +56,8 @@ class SectionExtractionResult:
 @dataclass
 class BatchExtractionResult:
     """Resultado de extração em batch."""
-    
-    run_id: str
+
+    extraction_run_id: str
     total_sections: int
     successful_sections: int
     failed_sections: int
@@ -127,9 +127,9 @@ class SectionExtractionService(LoggerMixin):
             entity_type_id: ID do entity type a extrair.
             parent_instance_id: ID da instância pai (opcional).
             model: Modelo OpenAI.
-            
+
         Returns:
-            SectionExtractionResult com run_id, sugestões e tokens.
+            SectionExtractionResult com extraction_run_id, sugestões e tokens.
         """
         start_time = time.time()
         
@@ -213,7 +213,7 @@ class SectionExtractionService(LoggerMixin):
             )
             
             return SectionExtractionResult(
-                run_id=str(run.id),
+                extraction_run_id=str(run.id),
                 entity_type_id=str(entity_type_id),
                 suggestions_created=suggestions_created,
                 tokens_prompt=llm_response.usage.prompt_tokens,
@@ -387,7 +387,7 @@ class SectionExtractionService(LoggerMixin):
             )
             
             return BatchExtractionResult(
-                run_id=str(run.id),
+                extraction_run_id=str(run.id),
                 total_sections=total_sections,
                 successful_sections=successful,
                 failed_sections=failed,
@@ -791,9 +791,9 @@ Example response format:
     ) -> int:
         """
         Cria sugestões de extração no banco via repository.
-        
+
         Cria automaticamente uma instância se não existir.
-        Vincula sugestões ao run_id para rastreabilidade.
+        Vincula sugestões ao extraction_run_id para rastreabilidade.
         
         Args:
             project_id: ID do projeto.
@@ -920,7 +920,8 @@ Example response format:
                 suggested_value = {"value": value}
             
             suggestion = AISuggestion(
-                run_id=run.id,
+                extraction_run_id=run.id,  # For extraction suggestions
+                assessment_run_id=None,  # Not used for extractions
                 instance_id=instance.id,
                 field_id=field_id,
                 suggested_value=suggested_value,

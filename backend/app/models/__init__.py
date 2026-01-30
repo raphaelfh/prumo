@@ -42,7 +42,6 @@ from app.models.assessment import (
     AIAssessmentConfig,
     AIAssessmentPrompt,
     AIAssessmentRun,
-    Assessment,
     AssessmentEvidence,
     AssessmentInstance,
     AssessmentInstrument,
@@ -122,15 +121,18 @@ __all__ = [
     "ExtractionRunStage",
     "ExtractionRunStatus",
     "SuggestionStatus",
-    # Assessment
+    # Assessment (new structure)
     "AssessmentInstrument",
     "AssessmentItem",
-    "Assessment",
+    "AssessmentInstance",
+    "AssessmentResponse",
+    "AssessmentEvidence",
+    "AssessmentSource",
+    "AssessmentStatus",
     "AIAssessmentConfig",
     "AIAssessmentPrompt",
     "AIAssessmentRun",
     "AIAssessment",
-    "AssessmentStatus",
     # Integration
     "ZoteroIntegration",
     # User API Keys

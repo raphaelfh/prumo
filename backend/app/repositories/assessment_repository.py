@@ -15,7 +15,6 @@ from app.models.assessment import (
     AIAssessmentConfig,
     AIAssessmentPrompt,
     AIAssessmentRun,
-    Assessment,
     AssessmentEvidence,
     AssessmentInstance,
     AssessmentInstrument,
@@ -136,70 +135,15 @@ class AssessmentItemRepository(BaseRepository[AssessmentItem]):
         return result.scalar_one_or_none()
 
 
-class AssessmentRepository(BaseRepository[Assessment]):
-    """
-    Repository para assessments.
-    
-    Gerencia avaliações manuais de artigos.
-    """
-    
-    def __init__(self, db: AsyncSession):
-        super().__init__(db, Assessment)
-    
-    async def get_by_article(
-        self,
-        article_id: UUID | str,
-        instrument_id: UUID | str | None = None,
-    ) -> list[Assessment]:
-        """
-        Lista assessments de um artigo.
-        
-        Args:
-            article_id: ID do artigo.
-            instrument_id: Filtro por instrumento (opcional).
-            
-        Returns:
-            Lista de assessments.
-        """
-        if isinstance(article_id, str):
-            article_id = UUID(article_id)
-        
-        query = select(Assessment).where(Assessment.article_id == article_id)
-        
-        if instrument_id:
-            if isinstance(instrument_id, str):
-                instrument_id = UUID(instrument_id)
-            query = query.where(Assessment.instrument_id == instrument_id)
-        
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
-    
-    async def get_by_project_and_user(
-        self,
-        project_id: UUID | str,
-        user_id: UUID | str,
-    ) -> list[Assessment]:
-        """
-        Lista assessments de um usuário em um projeto.
-        
-        Args:
-            project_id: ID do projeto.
-            user_id: ID do usuário.
-            
-        Returns:
-            Lista de assessments.
-        """
-        if isinstance(project_id, str):
-            project_id = UUID(project_id)
-        if isinstance(user_id, str):
-            user_id = UUID(user_id)
-        
-        result = await self.db.execute(
-            select(Assessment)
-            .where(Assessment.project_id == project_id)
-            .where(Assessment.user_id == user_id)
-        )
-        return list(result.scalars().all())
+# =================== REMOVED: LEGACY AssessmentRepository ===================
+# A tabela "assessments" foi removida na migração 0032 (2026-01-28).
+# Use:
+# - AssessmentInstanceRepository (para instances)
+# - AssessmentResponseRepository (para respostas individuais)
+# - AssessmentEvidenceRepository (para evidências)
+#
+# Veja abaixo as novas repositories (linha ~520)
+# =============================================================================
 
 
 class AIAssessmentRepository(BaseRepository[AIAssessment]):

@@ -208,7 +208,7 @@ export interface EvidencePassage {
  */
 export interface AIAssessmentSuggestion {
   id: string;
-  run_id: string;
+  assessment_run_id: string;  // FK para ai_assessment_runs
   assessment_item_id: string;  // FK para assessment_items
 
   // Valor sugerido estruturado
@@ -242,7 +242,8 @@ export interface AIAssessmentSuggestion {
  */
 export interface AIAssessmentSuggestionRaw {
   id: string;
-  run_id: string;
+  assessment_run_id: string;        // FK para ai_assessment_runs
+  extraction_run_id: string | null; // FK para extraction_runs (não usado para assessment)
   instance_id: string | null;
   field_id: string | null;
   assessment_item_id: string;

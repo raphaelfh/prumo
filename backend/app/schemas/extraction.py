@@ -97,22 +97,22 @@ class SectionExtractionRequest(BaseModel):
 
 class SingleSectionResult(BaseModel):
     """Resultado de extração de seção única."""
-    
-    run_id: str = Field(..., alias="runId")
+
+    extraction_run_id: str = Field(..., alias="extractionRunId")
     suggestions_created: int = Field(..., alias="suggestionsCreated")
     entity_type_id: str = Field(..., alias="entityTypeId")
     tokens_prompt: int = Field(..., alias="tokensPrompt")
     tokens_completion: int = Field(..., alias="tokensCompletion")
     tokens_total: int = Field(..., alias="tokensTotal")
     duration_ms: float = Field(..., alias="durationMs")
-    
+
     model_config = ConfigDict(populate_by_name=True)
 
 
 class BatchSectionResult(BaseModel):
     """Resultado de extração em batch."""
-    
-    run_id: str = Field(..., alias="runId")
+
+    extraction_run_id: str = Field(..., alias="extractionRunId")
     total_sections: int = Field(..., alias="totalSections")
     successful_sections: int = Field(..., alias="successfulSections")
     failed_sections: int = Field(..., alias="failedSections")
@@ -120,7 +120,7 @@ class BatchSectionResult(BaseModel):
     total_tokens_used: int = Field(..., alias="totalTokensUsed")
     duration_ms: float = Field(..., alias="durationMs")
     sections: list[dict[str, Any]] = Field(default=[], alias="sections")
-    
+
     model_config = ConfigDict(populate_by_name=True)
 
 
@@ -162,13 +162,13 @@ class IdentifiedModel(BaseModel):
 
 class ModelExtractionResult(BaseModel):
     """Resultado da extração de modelos."""
-    
-    run_id: str = Field(..., alias="runId")
+
+    extraction_run_id: str = Field(..., alias="extractionRunId")
     models_created: list[dict[str, Any]] = Field(..., alias="modelsCreated")
     total_models: int = Field(..., alias="totalModels")
     child_instances_created: int = Field(..., alias="childInstancesCreated")
     metadata: dict[str, Any]
-    
+
     model_config = ConfigDict(populate_by_name=True)
 
 
@@ -295,10 +295,10 @@ class ValueResponse(BaseModel):
 
 
 class SuggestionResponse(BaseModel):
-    """Response de sugestão de IA."""
-    
+    """Response de sugestão de IA para extraction."""
+
     id: UUID
-    run_id: UUID = Field(..., alias="runId")
+    extraction_run_id: UUID = Field(..., alias="extractionRunId")
     instance_id: UUID | None = Field(default=None, alias="instanceId")
     field_id: UUID = Field(..., alias="fieldId")
     suggested_value: Any = Field(..., alias="suggestedValue")
@@ -306,7 +306,7 @@ class SuggestionResponse(BaseModel):
     reasoning: str | None = None
     status: Literal["pending", "accepted", "rejected"]
     created_at: datetime = Field(..., alias="createdAt")
-    
+
     model_config = ConfigDict(populate_by_name=True, from_attributes=True)
 
 

@@ -76,9 +76,9 @@ def extract_section_task(
                 )
                 
                 await session.commit()
-                
+
                 return {
-                    "run_id": result.run_id,
+                    "extraction_run_id": result.extraction_run_id,
                     "suggestions_created": result.suggestions_created,
                     "entity_type_id": result.entity_type_id,
                     "duration_ms": int(result.duration_ms),
@@ -152,9 +152,9 @@ def extract_models_task(
                 )
                 
                 await session.commit()
-                
+
                 return {
-                    "run_id": result.run_id,
+                    "extraction_run_id": result.extraction_run_id,
                     "total_models": result.total_models,
                     "child_instances_created": result.child_instances_created,
                     "duration_ms": int(result.duration_ms),

@@ -42,8 +42,8 @@ from app.utils.json_parser import extract_models_from_response
 @dataclass
 class ModelExtractionResult:
     """Resultado de extração de modelos."""
-    
-    run_id: str
+
+    extraction_run_id: str
     models_created: list[dict[str, Any]]
     total_models: int
     child_instances_created: int
@@ -110,9 +110,9 @@ class ModelExtractionService(LoggerMixin):
             article_id: ID do artigo.
             template_id: ID do template.
             model: Modelo OpenAI a usar.
-            
+
         Returns:
-            ModelExtractionResult com run_id, modelos e tokens.
+            ModelExtractionResult com extraction_run_id, modelos e tokens.
         """
         start_time = time.time()
         
@@ -197,7 +197,7 @@ class ModelExtractionService(LoggerMixin):
             ]
             
             return ModelExtractionResult(
-                run_id=str(run.id),
+                extraction_run_id=str(run.id),
                 models_created=formatted_models,
                 total_models=len(formatted_models),
                 child_instances_created=total_children,
@@ -536,7 +536,7 @@ If no models are found, return: {{"models": []}}
         Mantém formato compatível com a Edge Function original.
         """
         return {
-            "runId": result.run_id,
+            "extractionRunId": result.extraction_run_id,
             "modelsCreated": result.models_created,
             "totalModels": result.total_models,
             "childInstancesCreated": result.child_instances_created,

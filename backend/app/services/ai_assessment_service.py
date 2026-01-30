@@ -226,7 +226,8 @@ class AIAssessmentService(LoggerMixin):
             # === PHASE 2: Create Suggestion (not final assessment) ===
             # 8. Create AI suggestion for review
             suggestion = AISuggestion(
-                run_id=run.id,
+                assessment_run_id=run.id,  # For assessment suggestions
+                extraction_run_id=None,  # Not used for assessments
                 instance_id=None,  # Not used for assessments
                 field_id=None,  # Not used for assessments
                 assessment_item_id=assessment_item_id,  # NEW: For assessments
@@ -464,7 +465,8 @@ class AIAssessmentService(LoggerMixin):
 
                     # Create suggestion
                     suggestion = AISuggestion(
-                        run_id=run.id,
+                        assessment_run_id=run.id,  # For assessment suggestions
+                        extraction_run_id=None,  # Not used for assessments
                         instance_id=None,
                         field_id=None,
                         assessment_item_id=item_id,

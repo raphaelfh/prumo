@@ -138,7 +138,7 @@ export class AIAssessmentSuggestionService {
       .from('ai_suggestions')
       .select(`
         *,
-        ai_assessment_runs!inner (
+        ai_assessment_runs!ai_suggestions_assessment_run_id_fkey!inner (
           project_id,
           article_id,
           instrument_id,
@@ -297,7 +297,7 @@ export class AIAssessmentSuggestionService {
       const { data: runData, error: runError } = await supabase
         .from('ai_assessment_runs')
         .select('instrument_id, extraction_instance_id')
-        .eq('id', suggestion.run_id)
+        .eq('id', suggestion.assessment_run_id)
         .maybeSingle();
 
       if (runError) {

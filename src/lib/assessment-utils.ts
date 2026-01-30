@@ -231,7 +231,7 @@ export function normalizeAIAssessmentSuggestion(
 
   return {
     id: raw.id,
-    run_id: raw.run_id,
+    assessment_run_id: raw.assessment_run_id,
     assessment_item_id: raw.assessment_item_id,
     suggested_value: suggestedValue,
     confidence_score: raw.confidence_score ?? 0,

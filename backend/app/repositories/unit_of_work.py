@@ -76,7 +76,6 @@ from app.repositories.assessment_repository import (
     AssessmentInstrumentRepository,
     AssessmentInstanceRepository,
     AssessmentItemRepository,
-    AssessmentRepository,
     AssessmentResponseRepository,
 )
 from app.repositories.extraction_repository import (
@@ -103,7 +102,8 @@ class UnitOfWork:
         article_files: Repository de arquivos de artigos
         projects: Repository de projetos
         project_members: Repository de membros de projetos
-        assessments: Repository de avaliações
+        assessment_instances: Repository de assessment instances (nova estrutura)
+        assessment_responses: Repository de assessment responses (nova estrutura)
         ... (outros repositories)
     
     Example:
@@ -146,16 +146,13 @@ class UnitOfWork:
         self.projects = ProjectRepository(self.session)
         self.project_members = ProjectMemberRepository(self.session)
         
-        # Assessments (legacy)
+        # Assessments (new structure)
         self.assessment_instruments = AssessmentInstrumentRepository(self.session)
         self.assessment_items = AssessmentItemRepository(self.session)
-        self.assessments = AssessmentRepository(self.session)
-        self.ai_assessments = AIAssessmentRepository(self.session)
-
-        # Assessments 2.0 (extraction pattern)
         self.assessment_instances = AssessmentInstanceRepository(self.session)
         self.assessment_responses = AssessmentResponseRepository(self.session)
         self.assessment_evidence = AssessmentEvidenceRepository(self.session)
+        self.ai_assessments = AIAssessmentRepository(self.session)
         
         # Extractions
         self.extraction_templates = ExtractionTemplateRepository(self.session)

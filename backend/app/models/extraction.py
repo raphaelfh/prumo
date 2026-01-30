@@ -637,22 +637,33 @@ class AISuggestion(Base, UUIDMixin):
     Sugestão específica gerada pela IA.
 
     Suporta dois tipos de sugestões (mutualmente exclusivos):
-    1. Extraction suggestions: instance_id + field_id (extraction data)
-    2. Assessment suggestions: assessment_item_id (quality assessment)
+    1. Extraction suggestions: extraction_run_id + instance_id + field_id
+    2. Assessment suggestions: assessment_run_id + assessment_item_id
 
-    Constraint: Exatamente um tipo deve ser preenchido (XOR).
+    Constraint: Exatamente UM tipo de run_id deve ser preenchido (XOR):
+    - (extraction_run_id NOT NULL AND assessment_run_id IS NULL) OR
+    - (extraction_run_id IS NULL AND assessment_run_id NOT NULL)
 
     Índices:
-    - run_id, instance_id, field_id, assessment_item_id: FKs indexadas
+    - extraction_run_id, assessment_run_id: FKs indexadas
+    - instance_id, field_id, assessment_item_id: FKs indexadas
     - suggested_value, metadata: GIN para busca em JSONB
     """
 
     __tablename__ = "ai_suggestions"
 
-    run_id: Mapped[UUID] = mapped_column(
+    # === Run FKs (mutually exclusive) ===
+    extraction_run_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("public.extraction_runs.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
+        index=True,
+    )
+
+    assessment_run_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.ai_assessment_runs.id", ondelete="CASCADE"),
+        nullable=True,
         index=True,
     )
 
@@ -708,10 +719,17 @@ class AISuggestion(Base, UUIDMixin):
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default={}, nullable=False)
     
     # Relationships
-    run: Mapped["ExtractionRun"] = relationship(
+    extraction_run: Mapped["ExtractionRun | None"] = relationship(
         "ExtractionRun",
+        foreign_keys=[extraction_run_id],
         back_populates="suggestions",
     )
+
+    # Note: assessment_run relationship pode ser adicionado quando necessário
+    # assessment_run: Mapped["AIAssessmentRun | None"] = relationship(
+    #     "AIAssessmentRun",
+    #     foreign_keys=[assessment_run_id],
+    # )
     
     # Índices definidos via __table_args__
     __table_args__ = (

@@ -551,6 +551,9 @@ class MyService:
 - [Architecture Guide](fleet-file://fcrd10ohldn5524f0egu/Users/raphaelhaddad/PycharmProjects/review-ai-hub/docs/guias/ARQUITETURA_BACKEND.md?type=file&root=%252F)
 - [Database Schema](fleet-file://fcrd10ohldn5524f0egu/Users/raphaelhaddad/PycharmProjects/review-ai-hub/docs/estrutura_database/DATABASE_SCHEMA.md?type=file&root=%252F)
 - [Database Quick Guide](fleet-file://fcrd10ohldn5524f0egu/Users/raphaelhaddad/PycharmProjects/review-ai-hub/docs/estrutura_database/GUIA_RAPIDO.md?type=file&root=%252F)
+- [Assessment Schema Refactoring](fleet-file://fcrd10ohldn5524f0egu/Users/raphaelhaddad/PycharmProjects/review-ai-hub/docs/ASSESSMENT_SCHEMA_REFACTORING.md?type=file&root=%252F) - Clean architecture for assessment schemas
+- [Backend Run ID Migration](fleet-file://fcrd10ohldn5524f0egu/Users/raphaelhaddad/PycharmProjects/review-ai-hub/docs/BACKEND_RUN_ID_MIGRATION.md?type=file&root=%252F) - Database migration guide
+- [Frontend Run ID Fix](fleet-file://fcrd10ohldn5524f0egu/Users/raphaelhaddad/PycharmProjects/review-ai-hub/docs/FRONTEND_RUN_ID_FIX.md?type=file&root=%252F) - Frontend migration fixes
 - [Contributing Guide](fleet-file://fcrd10ohldn5524f0egu/Users/raphaelhaddad/PycharmProjects/review-ai-hub/.github/CONTRIBUTING.md?type=file&root=%252F)
 
 ### External Docs

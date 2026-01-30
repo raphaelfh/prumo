@@ -124,100 +124,15 @@ class AssessmentItem(Base, UUIDMixin):
         return f"<AssessmentItem {self.item_code}>"
 
 
-class Assessment(BaseModel):
-    """
-    Avaliação de qualidade realizada por usuário.
-    
-    Índices:
-    - article_id, user_id: FKs indexadas
-    - responses, comments: GIN para busca em JSONB
-    """
-    
-    __tablename__ = "assessments"
-    
-    article_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.articles.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    
-    user_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.profiles.id", ondelete="RESTRICT"),
-        nullable=False,
-        index=True,
-    )
-    
-    tool_type: Mapped[str] = mapped_column(String, nullable=False)
-    
-    instrument_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.assessment_instruments.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    
-    responses: Mapped[dict] = mapped_column(JSONB, default={}, nullable=False)
-    overall_assessment: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    confidence_level: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    
-    status: Mapped[str] = mapped_column(
-        PostgreSQLEnumType("assessment_status"),
-        default="in_progress",
-        nullable=False,
-    )
-    
-    completion_percentage: Mapped[float | None] = mapped_column(Numeric, nullable=True)
-    
-    # Versionamento
-    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    is_current_version: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    
-    parent_assessment_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.assessments.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    
-    # Modo cego
-    is_blind: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    can_see_others: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    
-    # Comentários e notas
-    comments: Mapped[dict] = mapped_column(JSONB, default=[], nullable=False)
-    private_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    
-    project_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.projects.id", ondelete="CASCADE"),
-        nullable=True,
-    )
-    
-    assessed_by_type: Mapped[str] = mapped_column(
-        String,
-        default="human",
-        nullable=False,
-    )
-    
-    run_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
-    row_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    
-    extraction_instance_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.extraction_instances.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    
-    # Índices definidos via __table_args__
-    __table_args__ = (
-        # Índices GIN para JSONB
-        Index("idx_assessments_responses_gin", "responses", postgresql_using="gin"),
-        Index("idx_assessments_comments_gin", "comments", postgresql_using="gin"),
-        {"schema": "public"},
-    )
-    
-    def __repr__(self) -> str:
-        return f"<Assessment article={self.article_id} user={self.user_id}>"
+# =================== REMOVED: LEGACY Assessment Model ===================
+# A tabela "assessments" foi removida na migração 0032 (2026-01-28).
+# Use a nova estrutura:
+# - AssessmentInstance (análogo a ExtractionInstance)
+# - AssessmentResponse (análogo a ExtractedValue)
+# - AssessmentEvidence (análogo a ExtractionEvidence)
+#
+# Veja: AssessmentInstance, AssessmentResponse, AssessmentEvidence abaixo
+# ========================================================================
 
 
 class AIAssessmentConfig(BaseModel):

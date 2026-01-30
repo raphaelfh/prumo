@@ -11,9 +11,11 @@ from app.repositories.assessment_repository import (
     AIAssessmentPromptRepository,
     AIAssessmentRepository,
     AIAssessmentRunRepository,
+    AssessmentEvidenceRepository,
+    AssessmentInstanceRepository,
     AssessmentInstrumentRepository,
     AssessmentItemRepository,
-    AssessmentRepository,
+    AssessmentResponseRepository,
 )
 from app.repositories.base import BaseRepository
 from app.repositories.extraction_repository import (
@@ -39,8 +41,10 @@ __all__ = [
     # Project
     "ProjectRepository",
     "ProjectMemberRepository",
-    # Assessment
-    "AssessmentRepository",
+    # Assessment (new structure)
+    "AssessmentInstanceRepository",
+    "AssessmentResponseRepository",
+    "AssessmentEvidenceRepository",
     "AssessmentInstrumentRepository",
     "AssessmentItemRepository",
     "AIAssessmentRepository",

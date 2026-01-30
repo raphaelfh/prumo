@@ -51,6 +51,7 @@ POSTGRESQL_ENUM_VALUES: dict[str, list[str]] = {
     
     # Assessment enums
     "assessment_status": ["in_progress", "submitted", "locked", "archived"],
+    "assessment_source": ["human", "ai", "consensus"],
 }
 
 

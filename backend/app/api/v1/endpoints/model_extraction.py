@@ -98,15 +98,15 @@ async def extract_models(
             "model_extraction_success",
             trace_id=trace_id,
             user_id=user.sub,
-            run_id=result.run_id,
+            run_id=result.extraction_run_id,
             models_count=result.total_models,
             children_count=result.child_instances_created,
             tokens_total=result.tokens_total,
         )
-        
+
         # Formatar resposta no formato camelCase para o frontend
         response_data = ModelExtractionResult(
-            run_id=result.run_id,
+            extraction_run_id=result.extraction_run_id,
             models_created=result.models_created,
             total_models=result.total_models,
             child_instances_created=result.child_instances_created,

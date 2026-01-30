@@ -106,16 +106,16 @@ async def extract_section(
             logger.info(
                 "batch_section_extraction_success",
                 trace_id=trace_id,
-                run_id=result.run_id,
+                run_id=result.extraction_run_id,
                 total_sections=result.total_sections,
                 successful=result.successful_sections,
                 failed=result.failed_sections,
                 tokens_total=result.total_tokens_used,
             )
-            
+
             # Formatar resposta no formato camelCase para o frontend
             response_data = BatchSectionResult(
-                run_id=result.run_id,
+                extraction_run_id=result.extraction_run_id,
                 total_sections=result.total_sections,
                 successful_sections=result.successful_sections,
                 failed_sections=result.failed_sections,
@@ -141,14 +141,14 @@ async def extract_section(
             logger.info(
                 "section_extraction_success",
                 trace_id=trace_id,
-                run_id=result.run_id,
+                run_id=result.extraction_run_id,
                 suggestions_created=result.suggestions_created,
                 tokens_total=result.tokens_total,
             )
-            
+
             # Formatar resposta no formato camelCase para o frontend
             response_data = SingleSectionResult(
-                run_id=result.run_id,
+                extraction_run_id=result.extraction_run_id,
                 entity_type_id=result.entity_type_id,
                 suggestions_created=result.suggestions_created,
                 tokens_prompt=result.tokens_prompt,

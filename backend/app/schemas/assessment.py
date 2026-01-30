@@ -1,7 +1,16 @@
 """
 Assessment Schemas.
 
-Schemas Pydantic para avaliação de qualidade de artigos.
+Clean, DRY schema architecture for quality assessment:
+- AI Assessment: Automated quality assessment via OpenAI
+- Human Assessment: Manual quality assessment (to be implemented)
+- Instruments: Assessment tools (PROBAST, ROBIS, etc.)
+- Suggestions: AI-generated suggestions pending review
+
+Architecture:
+- Base schemas for shared concerns (Evidence, Response)
+- Specialized schemas for AI vs Human flows
+- Request/Response pairs following API conventions
 """
 
 from datetime import datetime
@@ -11,53 +20,116 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 
-# =================== EVIDENCE SCHEMAS ===================
+# =================== BASE SCHEMAS (SHARED) ===================
 
 
 class EvidencePassage(BaseModel):
-    """Passagem de texto citada como evidência."""
-    
-    text: str = Field(..., description="Texto extraído do documento")
+    """Text passage cited as evidence for an assessment."""
+
+    text: str = Field(..., description="Text extracted from document")
     page_number: int | None = Field(default=None, alias="pageNumber")
-    
+
     model_config = ConfigDict(populate_by_name=True)
+
+
+class AssessmentItemSchema(BaseModel):
+    """Assessment item (question) from an instrument."""
+
+    id: UUID
+    domain: str
+    item_code: str = Field(..., alias="itemCode")
+    question: str
+    sort_order: int = Field(..., alias="sortOrder")
+    required: bool = True
+    allowed_levels: list[str] = Field(..., alias="allowedLevels")
+
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+
+
+class AssessmentInstrumentSchema(BaseModel):
+    """Assessment instrument (PROBAST, ROBIS, etc.)."""
+
+    id: UUID
+    tool_type: str = Field(..., alias="toolType")
+    name: str
+    version: str
+    mode: Literal["human", "ai", "hybrid"] = "human"
+    is_active: bool = Field(default=True, alias="isActive")
+    items: list[AssessmentItemSchema] = []
+
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
 
 
 # =================== AI ASSESSMENT SCHEMAS ===================
 
 
 class AIAssessmentRequest(BaseModel):
-    """Request para avaliação AI de um item de assessment."""
+    """Request for AI assessment of a single item."""
 
     project_id: UUID = Field(..., alias="projectId")
     article_id: UUID = Field(..., alias="articleId")
     assessment_item_id: UUID = Field(..., alias="assessmentItemId")
     instrument_id: UUID = Field(..., alias="instrumentId")
 
-    # Opcionais para fonte do PDF
+    # PDF source (one of these must be provided)
     pdf_storage_key: str | None = Field(default=None, alias="pdfStorageKey")
     pdf_base64: str | None = Field(default=None, alias="pdfBase64")
     pdf_filename: str | None = Field(default=None, alias="pdfFilename")
     pdf_file_id: str | None = Field(default=None, alias="pdfFileId")
 
-    # Forçar uso de File Search (para PDFs > 32MB)
+    # Force File Search for large PDFs (> 32MB)
     force_file_search: bool = Field(default=False, alias="forceFileSearch")
 
     # BYOK: Bring Your Own Key
     openai_api_key: str | None = Field(default=None, alias="openaiApiKey")
 
-    # Para PROBAST por modelo (assessment hierárquico)
+    # Hierarchical assessment (PROBAST by model)
     extraction_instance_id: UUID | None = Field(default=None, alias="extractionInstanceId")
 
-    # Opções do modelo
+    # Model options
     model: str = Field(default="gpt-4o-mini")
     temperature: float = Field(default=0.1, ge=0, le=1)
 
     model_config = ConfigDict(populate_by_name=True)
 
 
+class AIAssessmentResult(BaseModel):
+    """Result of a single AI assessment."""
+
+    id: UUID
+    project_id: UUID = Field(..., alias="projectId")
+    article_id: UUID = Field(..., alias="articleId")
+    assessment_item_id: UUID = Field(..., alias="assessmentItemId")
+    instrument_id: UUID = Field(..., alias="instrumentId")
+
+    selected_level: str = Field(..., alias="selectedLevel")
+    confidence_score: float | None = Field(default=None, alias="confidenceScore")
+    justification: str
+    evidence_passages: list[EvidencePassage] = Field(default=[], alias="evidencePassages")
+
+    ai_model_used: str = Field(..., alias="aiModelUsed")
+    processing_time_ms: int | None = Field(default=None, alias="processingTimeMs")
+    prompt_tokens: int | None = Field(default=None, alias="promptTokens")
+    completion_tokens: int | None = Field(default=None, alias="completionTokens")
+
+    status: str
+    created_at: datetime = Field(..., alias="createdAt")
+
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+
+
+class AIAssessmentResponse(BaseModel):
+    """Response from AI assessment endpoint."""
+
+    assessment: AIAssessmentResult
+    trace_id: str = Field(..., alias="traceId")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+# Legacy response format (used by some endpoints)
 class AIAssessmentResponseData(BaseModel):
-    """Response do endpoint de avaliacao AI."""
+    """Legacy response format for AI assessment."""
 
     id: str
     selected_level: str = Field(..., alias="selectedLevel")
@@ -70,63 +142,29 @@ class AIAssessmentResponseData(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
-class AIAssessmentResult(BaseModel):
-    """Resultado da avaliação AI."""
-    
-    id: UUID
-    project_id: UUID = Field(..., alias="projectId")
-    article_id: UUID = Field(..., alias="articleId")
-    assessment_item_id: UUID = Field(..., alias="assessmentItemId")
-    instrument_id: UUID = Field(..., alias="instrumentId")
-    
-    selected_level: str = Field(..., alias="selectedLevel")
-    confidence_score: float | None = Field(default=None, alias="confidenceScore")
-    justification: str
-    evidence_passages: list[EvidencePassage] = Field(default=[], alias="evidencePassages")
-    
-    ai_model_used: str = Field(..., alias="aiModelUsed")
-    processing_time_ms: int | None = Field(default=None, alias="processingTimeMs")
-    prompt_tokens: int | None = Field(default=None, alias="promptTokens")
-    completion_tokens: int | None = Field(default=None, alias="completionTokens")
-    
-    status: str
-    created_at: datetime = Field(..., alias="createdAt")
-    
-    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
-
-
-class AIAssessmentResponse(BaseModel):
-    """Response completa da avaliação AI."""
-    
-    assessment: AIAssessmentResult
-    trace_id: str = Field(..., alias="traceId")
-    
-    model_config = ConfigDict(populate_by_name=True)
-
-
-# =================== BATCH ASSESSMENT SCHEMAS ===================
+# =================== BATCH AI ASSESSMENT SCHEMAS ===================
 
 
 class BatchAIAssessmentRequest(BaseModel):
-    """Request para avaliação AI em batch."""
+    """Request for batch AI assessment."""
 
     project_id: UUID = Field(..., alias="projectId")
     article_id: UUID = Field(..., alias="articleId")
     instrument_id: UUID = Field(..., alias="instrumentId")
 
-    # Avaliar todos os items ou específicos
+    # Specific items or all items
     item_ids: list[UUID] = Field(..., alias="itemIds")
 
-    # Fonte do PDF
+    # PDF source
     pdf_storage_key: str | None = Field(default=None, alias="pdfStorageKey")
 
     # BYOK: Bring Your Own Key
     openai_api_key: str | None = Field(default=None, alias="openaiApiKey")
 
-    # Para PROBAST por modelo (assessment hierárquico)
+    # Hierarchical assessment (PROBAST by model)
     extraction_instance_id: UUID | None = Field(default=None, alias="extractionInstanceId")
 
-    # Opções
+    # Options
     model: str = Field(default="gpt-4o-mini")
     force_file_search: bool = Field(default=False, alias="forceFileSearch")
 
@@ -134,18 +172,32 @@ class BatchAIAssessmentRequest(BaseModel):
 
 
 class BatchItemResult(BaseModel):
-    """Resultado de um item no batch."""
-    
+    """Result of a single item in batch assessment."""
+
     item_id: UUID = Field(..., alias="itemId")
     success: bool
     assessment_id: UUID | None = Field(default=None, alias="assessmentId")
     error: str | None = None
-    
+
     model_config = ConfigDict(populate_by_name=True)
 
 
+class BatchAIAssessmentResult(BaseModel):
+    """Result of batch AI assessment."""
+
+    trace_id: str = Field(..., alias="traceId")
+    total_items: int = Field(..., alias="totalItems")
+    successful: int
+    failed: int
+    results: list[BatchItemResult]
+    processing_time_ms: int = Field(..., alias="processingTimeMs")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+# Legacy batch response format
 class BatchAIAssessmentResponseData(BaseModel):
-    """Response do endpoint de batch AI."""
+    """Legacy response format for batch AI assessment."""
 
     results: list[dict[str, Any]]
     total_items: int = Field(..., alias="totalItems")
@@ -154,113 +206,14 @@ class BatchAIAssessmentResponseData(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
-class BatchAIAssessmentResult(BaseModel):
-    """Resultado do batch de avaliações."""
-    
-    trace_id: str = Field(..., alias="traceId")
-    total_items: int = Field(..., alias="totalItems")
-    successful: int
-    failed: int
-    results: list[BatchItemResult]
-    processing_time_ms: int = Field(..., alias="processingTimeMs")
-    
-    model_config = ConfigDict(populate_by_name=True)
-
-
-# =================== INSTRUMENT SCHEMAS ===================
-
-
-class AssessmentItemSchema(BaseModel):
-    """Schema de item de assessment."""
-    
-    id: UUID
-    domain: str
-    item_code: str = Field(..., alias="itemCode")
-    question: str
-    sort_order: int = Field(..., alias="sortOrder")
-    required: bool = True
-    allowed_levels: list[str] = Field(..., alias="allowedLevels")
-    
-    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
-
-
-class AssessmentInstrumentSchema(BaseModel):
-    """Schema de instrumento de assessment."""
-    
-    id: UUID
-    tool_type: str = Field(..., alias="toolType")
-    name: str
-    version: str
-    mode: Literal["human", "ai", "hybrid"] = "human"
-    is_active: bool = Field(default=True, alias="isActive")
-    items: list[AssessmentItemSchema] = []
-    
-    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
-
-
-# =================== HUMAN ASSESSMENT SCHEMAS ===================
-
-
-class ItemResponse(BaseModel):
-    """Resposta a um item de assessment."""
-    
-    item_id: str = Field(..., alias="itemId")
-    selected_level: str = Field(..., alias="selectedLevel")
-    confidence: int | None = Field(default=None, ge=1, le=5)
-    notes: str | None = None
-    evidence: list[EvidencePassage] = []
-    
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class SaveAssessmentRequest(BaseModel):
-    """Request para salvar assessment humano."""
-    
-    project_id: UUID = Field(..., alias="projectId")
-    article_id: UUID = Field(..., alias="articleId")
-    instrument_id: UUID = Field(..., alias="instrumentId")
-    responses: dict[str, ItemResponse]
-    status: Literal["in_progress", "submitted"] = "in_progress"
-    private_notes: str | None = Field(default=None, alias="privateNotes")
-    
-    # Para assessment por instância
-    extraction_instance_id: UUID | None = Field(default=None, alias="extractionInstanceId")
-    
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class AssessmentResponse(BaseModel):
-    """Response de assessment humano."""
-    
-    id: UUID
-    project_id: UUID = Field(..., alias="projectId")
-    article_id: UUID = Field(..., alias="articleId")
-    user_id: UUID = Field(..., alias="userId")
-    instrument_id: UUID | None = Field(default=None, alias="instrumentId")
-    tool_type: str = Field(..., alias="toolType")
-    
-    responses: dict[str, Any]
-    overall_assessment: dict[str, Any] | None = Field(default=None, alias="overallAssessment")
-    status: str
-    completion_percentage: float | None = Field(default=None, alias="completionPercentage")
-    
-    is_blind: bool = Field(default=False, alias="isBlind")
-    version: int = 1
-    
-    created_at: datetime = Field(..., alias="createdAt")
-    updated_at: datetime = Field(..., alias="updatedAt")
-    
-    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
-
-
 # =================== AI SUGGESTION SCHEMAS ===================
 
 
 class AISuggestionSchema(BaseModel):
-    """Schema para AI Suggestion (pending review)."""
+    """AI-generated suggestion pending review."""
 
     id: UUID
-    run_id: UUID = Field(..., alias="runId")
+    assessment_run_id: UUID = Field(..., alias="assessmentRunId")
     assessment_item_id: UUID = Field(..., alias="assessmentItemId")
     suggested_value: dict[str, Any] = Field(..., alias="suggestedValue")
     confidence_score: float | None = Field(default=None, alias="confidenceScore")
@@ -273,7 +226,7 @@ class AISuggestionSchema(BaseModel):
 
 
 class ListSuggestionsRequest(BaseModel):
-    """Request para listar sugestões de AI pendentes."""
+    """Request to list AI suggestions."""
 
     project_id: UUID = Field(..., alias="projectId")
     article_id: UUID = Field(..., alias="articleId")
@@ -285,7 +238,7 @@ class ListSuggestionsRequest(BaseModel):
 
 
 class ListSuggestionsResponse(BaseModel):
-    """Response com lista de sugestões."""
+    """Response with list of AI suggestions."""
 
     suggestions: list[AISuggestionSchema]
     total: int
@@ -293,11 +246,8 @@ class ListSuggestionsResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
-# =================== REVIEW SCHEMAS ===================
-
-
 class ReviewAISuggestionRequest(BaseModel):
-    """Request para revisar sugestão de AI."""
+    """Request to review an AI suggestion."""
 
     action: Literal["accept", "reject", "modify"]
     modified_value: dict[str, Any] | None = Field(default=None, alias="modifiedValue")
@@ -307,7 +257,7 @@ class ReviewAISuggestionRequest(BaseModel):
 
 
 class ReviewAISuggestionResponse(BaseModel):
-    """Response após revisão de sugestão."""
+    """Response after reviewing an AI suggestion."""
 
     suggestion_id: UUID = Field(..., alias="suggestionId")
     action: str
@@ -317,8 +267,13 @@ class ReviewAISuggestionResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+# Deprecated - use ReviewAISuggestionRequest
 class ReviewAIAssessmentRequest(BaseModel):
-    """Request para revisar avaliação de IA (DEPRECATED - use ReviewAISuggestionRequest)."""
+    """
+    DEPRECATED: Use ReviewAISuggestionRequest instead.
+
+    Request to review AI assessment (old format).
+    """
 
     status: Literal["accepted", "rejected", "modified"]
     human_response: str | None = Field(default=None, alias="humanResponse")
@@ -327,28 +282,172 @@ class ReviewAIAssessmentRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+# =================== HUMAN ASSESSMENT SCHEMAS (NEW - EXTRACTION PATTERN) ===================
+# These schemas follow the extraction pattern: Instance → Response → Evidence
+# Aligned with AssessmentInstance, AssessmentResponse, AssessmentEvidence models
+
+
+class AssessmentResponseCreate(BaseModel):
+    """Create a new assessment response (single item answer)."""
+
+    assessment_item_id: UUID = Field(..., alias="assessmentItemId")
+    selected_level: str = Field(..., alias="selectedLevel")
+    notes: str | None = None
+    confidence: float | None = Field(default=None, ge=0, le=1)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class AssessmentResponseSchema(BaseModel):
+    """Assessment response (single item answer)."""
+
+    id: UUID
+    project_id: UUID = Field(..., alias="projectId")
+    article_id: UUID = Field(..., alias="articleId")
+    assessment_instance_id: UUID = Field(..., alias="assessmentInstanceId")
+    assessment_item_id: UUID = Field(..., alias="assessmentItemId")
+
+    selected_level: str = Field(..., alias="selectedLevel")
+    notes: str | None = None
+    confidence: float | None = None
+
+    source: Literal["human", "ai", "consensus"]
+    confidence_score: float | None = Field(default=None, alias="confidenceScore")
+    ai_suggestion_id: UUID | None = Field(default=None, alias="aiSuggestionId")
+
+    reviewer_id: UUID = Field(..., alias="reviewerId")
+    is_consensus: bool = Field(default=False, alias="isConsensus")
+
+    created_at: datetime = Field(..., alias="createdAt")
+    updated_at: datetime = Field(..., alias="updatedAt")
+
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+
+
+class AssessmentEvidenceCreate(BaseModel):
+    """Create evidence for an assessment response or instance."""
+
+    target_type: Literal["response", "instance"]
+    target_id: UUID = Field(..., alias="targetId")
+
+    article_file_id: UUID | None = Field(default=None, alias="articleFileId")
+    page_number: int | None = Field(default=None, alias="pageNumber")
+    position: dict[str, Any] | None = None
+    text_content: str | None = Field(default=None, alias="textContent")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class AssessmentEvidenceSchema(BaseModel):
+    """Evidence supporting an assessment response or instance."""
+
+    id: UUID
+    project_id: UUID = Field(..., alias="projectId")
+    article_id: UUID = Field(..., alias="articleId")
+
+    target_type: Literal["response", "instance"]
+    target_id: UUID = Field(..., alias="targetId")
+
+    article_file_id: UUID | None = Field(default=None, alias="articleFileId")
+    page_number: int | None = Field(default=None, alias="pageNumber")
+    position: dict[str, Any] | None = None
+    text_content: str | None = Field(default=None, alias="textContent")
+
+    created_by: UUID = Field(..., alias="createdBy")
+    created_at: datetime = Field(..., alias="createdAt")
+    updated_at: datetime = Field(..., alias="updatedAt")
+
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+
+
+class AssessmentInstanceCreate(BaseModel):
+    """Create a new assessment instance (container for responses)."""
+
+    project_id: UUID = Field(..., alias="projectId")
+    article_id: UUID = Field(..., alias="articleId")
+    instrument_id: UUID = Field(..., alias="instrumentId")
+
+    label: str  # e.g., "PROBAST Assessment - John Doe"
+
+    # Hierarchical assessment (PROBAST by model)
+    extraction_instance_id: UUID | None = Field(default=None, alias="extractionInstanceId")
+    parent_instance_id: UUID | None = Field(default=None, alias="parentInstanceId")
+
+    # Blind mode
+    is_blind: bool = Field(default=False, alias="isBlind")
+    can_see_others: bool = Field(default=True, alias="canSeeOthers")
+
+    # Flexible metadata (overall_risk, applicability_concerns, etc.)
+    metadata: dict[str, Any] = {}
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class AssessmentInstanceUpdate(BaseModel):
+    """Update an existing assessment instance."""
+
+    label: str | None = None
+    status: Literal["in_progress", "submitted", "locked", "archived"] | None = None
+    is_blind: bool | None = Field(default=None, alias="isBlind")
+    can_see_others: bool | None = Field(default=None, alias="canSeeOthers")
+    metadata: dict[str, Any] | None = None
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class AssessmentInstanceSchema(BaseModel):
+    """Assessment instance (container for responses)."""
+
+    id: UUID
+    project_id: UUID = Field(..., alias="projectId")
+    article_id: UUID = Field(..., alias="articleId")
+    instrument_id: UUID = Field(..., alias="instrumentId")
+
+    extraction_instance_id: UUID | None = Field(default=None, alias="extractionInstanceId")
+    parent_instance_id: UUID | None = Field(default=None, alias="parentInstanceId")
+
+    label: str
+    status: Literal["in_progress", "submitted", "locked", "archived"]
+
+    reviewer_id: UUID = Field(..., alias="reviewerId")
+
+    is_blind: bool = Field(..., alias="isBlind")
+    can_see_others: bool = Field(..., alias="canSeeOthers")
+
+    metadata: dict[str, Any]
+
+    created_at: datetime = Field(..., alias="createdAt")
+    updated_at: datetime = Field(..., alias="updatedAt")
+
+    # Optional nested data
+    responses: list[AssessmentResponseSchema] = []
+    evidence: list[AssessmentEvidenceSchema] = []
+
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+
+
 # =================== AGGREGATE SCHEMAS ===================
 
 
 class DomainSummary(BaseModel):
-    """Sumário de um domínio de avaliação."""
-    
+    """Summary of an assessment domain."""
+
     domain: str
     items_count: int = Field(..., alias="itemsCount")
     completed_count: int = Field(..., alias="completedCount")
     overall_level: str | None = Field(default=None, alias="overallLevel")
-    
+
     model_config = ConfigDict(populate_by_name=True)
 
 
 class ArticleAssessmentSummary(BaseModel):
-    """Sumário de todas as avaliações de um artigo."""
-    
+    """Summary of all assessments for an article."""
+
     article_id: UUID = Field(..., alias="articleId")
     human_assessments: int = Field(..., alias="humanAssessments")
     ai_assessments: int = Field(..., alias="aiAssessments")
     domains: list[DomainSummary]
     overall_risk_of_bias: str | None = Field(default=None, alias="overallRiskOfBias")
     consensus_reached: bool = Field(default=False, alias="consensusReached")
-    
+
     model_config = ConfigDict(populate_by_name=True)
