@@ -9,6 +9,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     ai_assessment,
     model_extraction,
+    project_assessment_instruments,
     section_extraction,
     user_api_keys,
     zotero_import,
@@ -45,5 +46,11 @@ api_router.include_router(
     user_api_keys.router,
     prefix="/user-api-keys",
     tags=["User API Keys"],
+)
+
+api_router.include_router(
+    project_assessment_instruments.router,
+    prefix="/assessment-instruments",
+    tags=["Project Assessment Instruments"],
 )
 

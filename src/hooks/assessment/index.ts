@@ -16,6 +16,20 @@ export { useAssessmentResponsesNew } from './useAssessmentResponsesNew';
 export { useAssessmentInstanceProgress } from './useAssessmentInstanceProgress';
 export { useAssessmentInstanceHierarchy } from './useAssessmentInstanceHierarchy';
 
+// Hooks de instrumentos de projeto
+export {
+  useGlobalInstruments,
+  useProjectInstruments,
+  useProjectInstrument,
+  useHasConfiguredInstrument,
+  useCloneInstrument,
+  useCreateInstrument,
+  useUpdateInstrument,
+  useDeleteInstrument,
+  useProjectAssessmentInstrumentManager,
+  projectInstrumentKeys,
+} from './useProjectAssessmentInstruments';
+
 // Hooks de IA
 export { useAIAssessmentSuggestions } from './ai/useAIAssessmentSuggestions';
 export { useSingleAssessment } from './ai/useSingleAssessment';

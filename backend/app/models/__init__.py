@@ -49,6 +49,8 @@ from app.models.assessment import (
     AssessmentResponse,
     AssessmentSource,
     AssessmentStatus,
+    ProjectAssessmentInstrument,
+    ProjectAssessmentItem,
 )
 from app.models.integration import ZoteroIntegration
 from app.models.user_api_key import UserAPIKey, SUPPORTED_PROVIDERS
@@ -133,6 +135,8 @@ __all__ = [
     "AIAssessmentPrompt",
     "AIAssessmentRun",
     "AIAssessment",
+    "ProjectAssessmentInstrument",
+    "ProjectAssessmentItem",
     # Integration
     "ZoteroIntegration",
     # User API Keys

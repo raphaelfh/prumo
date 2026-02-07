@@ -12,17 +12,18 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   FileText,
-  Download,
   CheckCircle,
   AlertCircle,
   BarChart3,
   Settings
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { useAssessmentInstruments } from "@/hooks/assessment/useAssessmentInstruments";
+import { useHasConfiguredInstrument } from "@/hooks/assessment";
 import { ArticleAssessmentTable } from "./ArticleAssessmentTable";
+import { ConfigureInstrumentFirst } from "./config/ConfigureInstrumentFirst";
+import { InstrumentManager } from "./config/InstrumentManager";
 import { toast } from "sonner";
-import type { AssessmentInstrument, Assessment } from "@/types/assessment";
+import type { AssessmentInstrument, Assessment, ProjectAssessmentInstrument } from "@/types/assessment";
 import type { Article as ArticleRow } from "@/types/article";
 import { getAssessmentStatus } from "@/lib/assessment-utils";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -60,20 +61,31 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
   });
   const { user, loading: authLoading } = useCurrentUser();
 
-  // Hook para gerenciar instrumentos
+  // Hook para gerenciar instrumentos de projeto
   const {
-    instruments,
-    loading: instrumentsLoading,
-    error: instrumentsError
-  } = useAssessmentInstruments();
+    hasInstrument,
+    isLoading: instrumentsLoading,
+    instruments: projectInstruments,
+  } = useHasConfiguredInstrument(projectId);
 
-  // Carregar instrumento ativo quando instrumentos são carregados
+  // Carregar instrumento ativo quando instrumentos de projeto sao carregados
   useEffect(() => {
-    if (instruments.length > 0 && !activeInstrument) {
-      const defaultInstrument = instruments[0];
-      setActiveInstrument(defaultInstrument);
+    if (projectInstruments && projectInstruments.length > 0 && !activeInstrument) {
+      // Converter ProjectAssessmentInstrument para o formato esperado
+      const defaultInstrument = projectInstruments[0];
+      setActiveInstrument({
+        id: defaultInstrument.id,
+        tool_type: defaultInstrument.toolType as AssessmentInstrument['tool_type'],
+        name: defaultInstrument.name,
+        version: defaultInstrument.version,
+        mode: defaultInstrument.mode,
+        is_active: defaultInstrument.isActive,
+        aggregation_rules: defaultInstrument.aggregationRules,
+        schema: defaultInstrument.schema as AssessmentInstrument['schema'],
+        created_at: defaultInstrument.createdAt,
+      });
     }
-  }, [instruments]);
+  }, [projectInstruments, activeInstrument]);
 
   // Sincronizar aba ativa com URL
   useEffect(() => {
@@ -246,103 +258,29 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
             instrumentId={activeInstrument.id}
           />
         ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle>Configure o instrumento primeiro</CardTitle>
-              <CardDescription>
-                Você precisa configurar o instrumento de avaliação que será usado.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Vá para a aba <strong>Configuração</strong> e escolha um instrumento de avaliação padronizado.
-              </p>
-              <Button
-                onClick={() => setActiveTab('configuration')}
-                className="w-full"
-              >
-                <Settings className="h-4 w-4 mr-2" />
-                Ir para Configuração
-              </Button>
-            </CardContent>
-          </Card>
+          <ConfigureInstrumentFirst
+            projectId={projectId}
+            onConfigureClick={() => setActiveTab('configuration')}
+          />
         );
 
       case 'dashboard':
         return renderDashboard();
 
       case 'configuration':
-        return activeInstrument ? (
+        return (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Settings className="h-5 w-5" />
-                Configuração de Instrumentos
+                Configuracao de Instrumentos
               </CardTitle>
               <CardDescription>
-                Gerencie instrumentos de avaliação do projeto
+                Gerencie instrumentos de avaliacao do projeto
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-center py-12">
-                <Settings className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h4 className="font-medium mb-2">Instrumento Ativo</h4>
-                <p className="text-sm text-muted-foreground mb-4">
-                  {activeInstrument.name} - {activeInstrument.tool_type}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  A configuração de instrumentos será implementada em breve
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle>Configure seu instrumento de avaliação</CardTitle>
-              <CardDescription>
-                Escolha qual instrumento padronizado usar para avaliar a qualidade dos estudos
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Opção 1: Importar Instrumento Global */}
-              <div className="border rounded-lg p-4 hover:bg-muted/50 transition-colors">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-2 flex-1">
-                    <div className="flex items-center space-x-2">
-                      <Download className="h-5 w-5 text-primary" />
-                      <h3 className="font-semibold">Importar Instrumento PROBAST</h3>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      Use o instrumento oficial para avaliar risco de viés em modelos de predição.
-                      Inclui 4 domínios e 20 itens pré-configurados seguindo as diretrizes PROBAST.
-                    </p>
-                  </div>
-                  <Button
-                    onClick={() => toast.info('Funcionalidade em desenvolvimento', {
-                      description: 'A importação de instrumentos será implementada em breve.'
-                    })}
-                    className="ml-4"
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    Importar
-                  </Button>
-                </div>
-              </div>
-
-              {/* Nota informativa */}
-              <div className="bg-blue-50 border-blue-200 rounded-lg p-4">
-                <div className="flex items-start space-x-3">
-                  <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5" />
-                  <div className="text-sm text-blue-800">
-                    <p className="font-medium mb-1">Managers podem configurar instrumentos</p>
-                    <p className="text-blue-700">
-                      Se você não é manager do projeto, solicite que um manager configure
-                      o instrumento de avaliação antes de começar.
-                    </p>
-                  </div>
-                </div>
-              </div>
+              <InstrumentManager projectId={projectId} />
             </CardContent>
           </Card>
         );
@@ -375,12 +313,14 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
         }}
       >
         <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="assessment" disabled={!activeInstrument}>
-            Avaliação
+          <TabsTrigger value="assessment">
+            Avaliacao
           </TabsTrigger>
-          <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+          <TabsTrigger value="dashboard" disabled={!hasInstrument}>
+            Dashboard
+          </TabsTrigger>
           <TabsTrigger value="configuration">
-            Configuração
+            Configuracao
           </TabsTrigger>
         </TabsList>
 
@@ -399,23 +339,7 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
         </div>
       )}
 
-      {/* Error state */}
-      {instrumentsError && (
-        <Card className="border-destructive">
-          <CardContent className="pt-6">
-            <div className="flex items-center space-x-2 text-destructive">
-              <AlertCircle className="h-5 w-5" />
-              <div>
-                <p className="font-medium">Erro ao carregar instrumentos</p>
-                <p className="text-sm">{instrumentsError}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* TODO: Implementar Import Dialog para instrumentos globais */}
-      {/* Similar ao ImportTemplateDialog do módulo de extração */}
+      {/* Note: Error handling is done within InstrumentManager component */}
     </div>
   );
 };

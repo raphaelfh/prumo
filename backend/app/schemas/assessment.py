@@ -39,9 +39,11 @@ class AssessmentItemSchema(BaseModel):
     domain: str
     item_code: str = Field(..., alias="itemCode")
     question: str
+    description: str | None = None
     sort_order: int = Field(..., alias="sortOrder")
     required: bool = True
     allowed_levels: list[str] = Field(..., alias="allowedLevels")
+    llm_prompt: str | None = Field(default=None, alias="llmPrompt")
 
     model_config = ConfigDict(populate_by_name=True, from_attributes=True)
 
@@ -451,3 +453,151 @@ class ArticleAssessmentSummary(BaseModel):
     consensus_reached: bool = Field(default=False, alias="consensusReached")
 
     model_config = ConfigDict(populate_by_name=True)
+
+
+# =================== PROJECT INSTRUMENT SCHEMAS ===================
+
+
+class ProjectAssessmentItemBase(BaseModel):
+    """Base fields for project assessment item."""
+
+    domain: str
+    item_code: str = Field(..., alias="itemCode")
+    question: str
+    description: str | None = None
+    sort_order: int = Field(default=0, alias="sortOrder")
+    required: bool = True
+    allowed_levels: list[str] = Field(..., alias="allowedLevels")
+    llm_prompt: str | None = Field(default=None, alias="llmPrompt")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ProjectAssessmentItemCreate(ProjectAssessmentItemBase):
+    """Create a project assessment item."""
+
+    global_item_id: UUID | None = Field(default=None, alias="globalItemId")
+
+
+class ProjectAssessmentItemUpdate(BaseModel):
+    """Update a project assessment item."""
+
+    domain: str | None = None
+    item_code: str | None = Field(default=None, alias="itemCode")
+    question: str | None = None
+    description: str | None = None
+    sort_order: int | None = Field(default=None, alias="sortOrder")
+    required: bool | None = None
+    allowed_levels: list[str] | None = Field(default=None, alias="allowedLevels")
+    llm_prompt: str | None = Field(default=None, alias="llmPrompt")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ProjectAssessmentItemSchema(ProjectAssessmentItemBase):
+    """Project assessment item full schema."""
+
+    id: UUID
+    project_instrument_id: UUID = Field(..., alias="projectInstrumentId")
+    global_item_id: UUID | None = Field(default=None, alias="globalItemId")
+    created_at: datetime = Field(..., alias="createdAt")
+    updated_at: datetime = Field(..., alias="updatedAt")
+
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+
+
+class ProjectAssessmentInstrumentBase(BaseModel):
+    """Base fields for project assessment instrument."""
+
+    name: str
+    description: str | None = None
+    tool_type: str = Field(..., alias="toolType")  # PROBAST, ROBIS, CUSTOM
+    version: str = "1.0.0"
+    mode: Literal["human", "ai", "hybrid"] = "human"
+    target_mode: Literal["per_article", "per_model"] = Field(
+        default="per_article",
+        alias="targetMode",
+        description="Assessment target: per_article (whole article) or per_model (each extracted model)"
+    )
+    is_active: bool = Field(default=True, alias="isActive")
+    aggregation_rules: dict[str, Any] | None = Field(default=None, alias="aggregationRules")
+    schema_config: dict[str, Any] | None = Field(default=None, alias="schema")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ProjectAssessmentInstrumentCreate(ProjectAssessmentInstrumentBase):
+    """Create a project assessment instrument."""
+
+    project_id: UUID = Field(..., alias="projectId")
+    global_instrument_id: UUID | None = Field(default=None, alias="globalInstrumentId")
+    items: list[ProjectAssessmentItemCreate] = []
+
+
+class ProjectAssessmentInstrumentUpdate(BaseModel):
+    """Update a project assessment instrument."""
+
+    name: str | None = None
+    description: str | None = None
+    version: str | None = None
+    mode: Literal["human", "ai", "hybrid"] | None = None
+    target_mode: Literal["per_article", "per_model"] | None = Field(
+        default=None, alias="targetMode"
+    )
+    is_active: bool | None = Field(default=None, alias="isActive")
+    aggregation_rules: dict[str, Any] | None = Field(default=None, alias="aggregationRules")
+    schema_config: dict[str, Any] | None = Field(default=None, alias="schema")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ProjectAssessmentInstrumentSchema(ProjectAssessmentInstrumentBase):
+    """Project assessment instrument full schema."""
+
+    id: UUID
+    project_id: UUID = Field(..., alias="projectId")
+    global_instrument_id: UUID | None = Field(default=None, alias="globalInstrumentId")
+    created_by: UUID = Field(..., alias="createdBy")
+    created_at: datetime = Field(..., alias="createdAt")
+    updated_at: datetime = Field(..., alias="updatedAt")
+    items: list[ProjectAssessmentItemSchema] = []
+
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
+
+
+class CloneInstrumentRequest(BaseModel):
+    """Request to clone a global instrument to a project."""
+
+    project_id: UUID = Field(..., alias="projectId")
+    global_instrument_id: UUID = Field(..., alias="globalInstrumentId")
+    custom_name: str | None = Field(default=None, alias="customName")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class CloneInstrumentResponse(BaseModel):
+    """Response after cloning an instrument."""
+
+    project_instrument_id: UUID = Field(..., alias="projectInstrumentId")
+    message: str
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class GlobalInstrumentSummary(BaseModel):
+    """Summary of a global instrument for selection."""
+
+    id: UUID
+    tool_type: str = Field(..., alias="toolType")
+    name: str
+    version: str
+    mode: Literal["human", "ai", "hybrid"]
+    target_mode: Literal["per_article", "per_model"] = Field(
+        default="per_article",
+        alias="targetMode",
+        description="Default assessment target for this instrument"
+    )
+    items_count: int = Field(..., alias="itemsCount")
+    domains: list[str]
+
+    model_config = ConfigDict(populate_by_name=True, from_attributes=True)

@@ -33,6 +33,14 @@ export type AssessmentMode =
   | 'hybrid'; // Híbrido (IA + revisão humana)
 
 /**
+ * Modo de alvo do assessment (por artigo ou por modelo)
+ * Similar ao CHARMS que extrai por modelo
+ */
+export type AssessmentTargetMode =
+  | 'per_article'  // Avalia o artigo como um todo
+  | 'per_model';   // Avalia cada modelo extraído separadamente (PROBAST style)
+
+/**
  * Status da avaliação (alinhado com enum do banco)
  */
 export type AssessmentStatus =
@@ -845,4 +853,177 @@ export const BulkCreateAssessmentResponsesSchema = z.object({
       ai_suggestion_id: z.string().uuid().nullable().optional(),
     })
   ).min(1),
+});
+
+// =================== PROJECT ASSESSMENT INSTRUMENTS ===================
+
+/**
+ * Item de instrumento de avaliação de projeto
+ * Clonado de global ou customizado
+ */
+export interface ProjectAssessmentItem {
+  id: string;
+  projectInstrumentId: string;
+  globalItemId: string | null;
+  domain: string;
+  itemCode: string;
+  question: string;
+  description: string | null;
+  sortOrder: number;
+  required: boolean;
+  allowedLevels: string[];
+  llmPrompt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Instrumento de avaliação de projeto
+ * Clonado de global (PROBAST, ROBIS) ou customizado
+ */
+export interface ProjectAssessmentInstrument {
+  id: string;
+  projectId: string;
+  globalInstrumentId: string | null;
+  name: string;
+  description: string | null;
+  toolType: string;  // PROBAST, ROBIS, CUSTOM
+  version: string;
+  mode: AssessmentMode;
+  targetMode: AssessmentTargetMode;  // per_article or per_model
+  isActive: boolean;
+  aggregationRules: Record<string, unknown> | null;
+  schema: Record<string, unknown> | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  items: ProjectAssessmentItem[];
+}
+
+/**
+ * Resumo de instrumento global para seleção
+ */
+export interface GlobalInstrumentSummary {
+  id: string;
+  toolType: string;
+  name: string;
+  version: string;
+  mode: AssessmentMode;
+  targetMode: AssessmentTargetMode;  // per_article or per_model
+  itemsCount: number;
+  domains: string[];
+}
+
+/**
+ * Request para clonar instrumento global
+ */
+export interface CloneInstrumentRequest {
+  projectId: string;
+  globalInstrumentId: string;
+  customName?: string | null;
+}
+
+/**
+ * Response de clone de instrumento
+ */
+export interface CloneInstrumentResponse {
+  projectInstrumentId: string;
+  message: string;
+}
+
+/**
+ * Request para criar instrumento customizado
+ */
+export interface CreateProjectInstrumentRequest {
+  projectId: string;
+  globalInstrumentId?: string | null;
+  name: string;
+  description?: string | null;
+  toolType: string;
+  version?: string;
+  mode?: AssessmentMode;
+  targetMode?: AssessmentTargetMode;  // per_article or per_model
+  isActive?: boolean;
+  aggregationRules?: Record<string, unknown> | null;
+  schema?: Record<string, unknown> | null;
+  items?: CreateProjectItemRequest[];
+}
+
+/**
+ * Request para criar item de instrumento
+ */
+export interface CreateProjectItemRequest {
+  globalItemId?: string | null;
+  domain: string;
+  itemCode: string;
+  question: string;
+  description?: string | null;
+  sortOrder?: number;
+  required?: boolean;
+  allowedLevels: string[];
+  llmPrompt?: string | null;
+}
+
+/**
+ * Request para atualizar instrumento
+ */
+export interface UpdateProjectInstrumentRequest {
+  name?: string;
+  description?: string | null;
+  version?: string;
+  mode?: AssessmentMode;
+  targetMode?: AssessmentTargetMode;  // per_article or per_model
+  isActive?: boolean;
+  aggregationRules?: Record<string, unknown> | null;
+  schema?: Record<string, unknown> | null;
+}
+
+/**
+ * Request para atualizar item
+ */
+export interface UpdateProjectItemRequest {
+  domain?: string;
+  itemCode?: string;
+  question?: string;
+  description?: string | null;
+  sortOrder?: number;
+  required?: boolean;
+  allowedLevels?: string[];
+  llmPrompt?: string | null;
+}
+
+/**
+ * Schema Zod para clone instrument request
+ */
+export const CloneInstrumentRequestSchema = z.object({
+  projectId: z.string().uuid(),
+  globalInstrumentId: z.string().uuid(),
+  customName: z.string().min(1).max(255).nullable().optional(),
+});
+
+/**
+ * Schema Zod para create project instrument
+ */
+export const CreateProjectInstrumentRequestSchema = z.object({
+  projectId: z.string().uuid(),
+  globalInstrumentId: z.string().uuid().nullable().optional(),
+  name: z.string().min(1).max(255),
+  description: z.string().nullable().optional(),
+  toolType: z.string().min(1),
+  version: z.string().optional().default('1.0.0'),
+  mode: z.enum(['human', 'ai', 'hybrid']).optional().default('human'),
+  isActive: z.boolean().optional().default(true),
+  aggregationRules: z.record(z.unknown()).nullable().optional(),
+  schema: z.record(z.unknown()).nullable().optional(),
+  items: z.array(z.object({
+    globalItemId: z.string().uuid().nullable().optional(),
+    domain: z.string().min(1),
+    itemCode: z.string().min(1),
+    question: z.string().min(1),
+    description: z.string().nullable().optional(),
+    sortOrder: z.number().optional(),
+    required: z.boolean().optional().default(true),
+    allowedLevels: z.array(z.string().min(1)),
+    llmPrompt: z.string().nullable().optional(),
+  })).optional(),
 });

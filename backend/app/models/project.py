@@ -17,6 +17,7 @@ from app.models.base import Base, BaseModel, PostgreSQLEnumType, TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.article import Article
+    from app.models.assessment import ProjectAssessmentInstrument
     from app.models.user import Profile
 
 
@@ -137,7 +138,12 @@ class Project(BaseModel):
         back_populates="project",
         cascade="all, delete-orphan",
     )
-    
+    assessment_instruments: Mapped[list["ProjectAssessmentInstrument"]] = relationship(
+        "ProjectAssessmentInstrument",
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+
     # Índices definidos via __table_args__
     __table_args__ = (
         # Índices GIN para campos JSONB (busca eficiente com @>, ?, etc.)

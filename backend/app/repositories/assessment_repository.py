@@ -20,6 +20,8 @@ from app.models.assessment import (
     AssessmentInstrument,
     AssessmentItem,
     AssessmentResponse,
+    ProjectAssessmentInstrument,
+    ProjectAssessmentItem,
 )
 from app.repositories.base import BaseRepository
 
@@ -861,3 +863,239 @@ class AssessmentEvidenceRepository(BaseRepository[AssessmentEvidence]):
             .order_by(AssessmentEvidence.created_at.desc())
         )
         return list(result.scalars().all())
+
+
+# =================== PROJECT INSTRUMENT REPOSITORIES ===================
+
+
+class ProjectAssessmentInstrumentRepository(BaseRepository[ProjectAssessmentInstrument]):
+    """
+    Repository para project assessment instruments.
+
+    Gerencia instrumentos customizados por projeto (clonados ou criados).
+    """
+
+    def __init__(self, db: AsyncSession):
+        super().__init__(db, ProjectAssessmentInstrument)
+
+    async def get_by_project(
+        self,
+        project_id: UUID | str,
+        active_only: bool = True,
+    ) -> list[ProjectAssessmentInstrument]:
+        """
+        Lista instrumentos de um projeto.
+
+        Args:
+            project_id: ID do projeto.
+            active_only: Se True, retorna apenas instrumentos ativos.
+
+        Returns:
+            Lista de instrumentos do projeto.
+        """
+        if isinstance(project_id, str):
+            project_id = UUID(project_id)
+
+        query = select(ProjectAssessmentInstrument).where(
+            ProjectAssessmentInstrument.project_id == project_id
+        )
+
+        if active_only:
+            query = query.where(ProjectAssessmentInstrument.is_active == True)  # noqa: E712
+
+        query = query.order_by(ProjectAssessmentInstrument.created_at.desc())
+
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
+
+    async def get_with_items(
+        self,
+        instrument_id: UUID | str,
+    ) -> ProjectAssessmentInstrument | None:
+        """
+        Busca instrumento com seus items carregados.
+
+        Args:
+            instrument_id: ID do instrumento.
+
+        Returns:
+            Instrumento com items ou None.
+        """
+        if isinstance(instrument_id, str):
+            instrument_id = UUID(instrument_id)
+
+        result = await self.db.execute(
+            select(ProjectAssessmentInstrument)
+            .options(selectinload(ProjectAssessmentInstrument.items))
+            .where(ProjectAssessmentInstrument.id == instrument_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_by_tool_type(
+        self,
+        project_id: UUID | str,
+        tool_type: str,
+    ) -> ProjectAssessmentInstrument | None:
+        """
+        Busca instrumento por tipo em um projeto.
+
+        Args:
+            project_id: ID do projeto.
+            tool_type: Tipo do instrumento (PROBAST, ROBIS, etc.).
+
+        Returns:
+            Instrumento ou None.
+        """
+        if isinstance(project_id, str):
+            project_id = UUID(project_id)
+
+        result = await self.db.execute(
+            select(ProjectAssessmentInstrument)
+            .where(
+                ProjectAssessmentInstrument.project_id == project_id,
+                ProjectAssessmentInstrument.tool_type == tool_type,
+                ProjectAssessmentInstrument.is_active == True,  # noqa: E712
+            )
+            .order_by(ProjectAssessmentInstrument.created_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_by_global_instrument(
+        self,
+        project_id: UUID | str,
+        global_instrument_id: UUID | str,
+    ) -> ProjectAssessmentInstrument | None:
+        """
+        Busca instrumento clonado de um global em um projeto.
+
+        Args:
+            project_id: ID do projeto.
+            global_instrument_id: ID do instrumento global.
+
+        Returns:
+            Instrumento do projeto ou None.
+        """
+        if isinstance(project_id, str):
+            project_id = UUID(project_id)
+        if isinstance(global_instrument_id, str):
+            global_instrument_id = UUID(global_instrument_id)
+
+        result = await self.db.execute(
+            select(ProjectAssessmentInstrument).where(
+                ProjectAssessmentInstrument.project_id == project_id,
+                ProjectAssessmentInstrument.global_instrument_id == global_instrument_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+
+class ProjectAssessmentItemRepository(BaseRepository[ProjectAssessmentItem]):
+    """
+    Repository para project assessment items.
+
+    Gerencia items de instrumentos customizados.
+    """
+
+    def __init__(self, db: AsyncSession):
+        super().__init__(db, ProjectAssessmentItem)
+
+    async def get_by_instrument(
+        self,
+        project_instrument_id: UUID | str,
+    ) -> list[ProjectAssessmentItem]:
+        """
+        Lista items de um instrumento.
+
+        Args:
+            project_instrument_id: ID do instrumento do projeto.
+
+        Returns:
+            Lista de items ordenados por sort_order.
+        """
+        if isinstance(project_instrument_id, str):
+            project_instrument_id = UUID(project_instrument_id)
+
+        result = await self.db.execute(
+            select(ProjectAssessmentItem)
+            .where(ProjectAssessmentItem.project_instrument_id == project_instrument_id)
+            .order_by(ProjectAssessmentItem.sort_order)
+        )
+        return list(result.scalars().all())
+
+    async def get_by_domain(
+        self,
+        project_instrument_id: UUID | str,
+        domain: str,
+    ) -> list[ProjectAssessmentItem]:
+        """
+        Lista items de um domínio específico.
+
+        Args:
+            project_instrument_id: ID do instrumento do projeto.
+            domain: Nome do domínio (ex: "participants", "predictors").
+
+        Returns:
+            Lista de items do domínio ordenados.
+        """
+        if isinstance(project_instrument_id, str):
+            project_instrument_id = UUID(project_instrument_id)
+
+        result = await self.db.execute(
+            select(ProjectAssessmentItem)
+            .where(
+                ProjectAssessmentItem.project_instrument_id == project_instrument_id,
+                ProjectAssessmentItem.domain == domain,
+            )
+            .order_by(ProjectAssessmentItem.sort_order)
+        )
+        return list(result.scalars().all())
+
+    async def get_by_item_code(
+        self,
+        project_instrument_id: UUID | str,
+        item_code: str,
+    ) -> ProjectAssessmentItem | None:
+        """
+        Busca item por código único dentro do instrumento.
+
+        Args:
+            project_instrument_id: ID do instrumento do projeto.
+            item_code: Código do item (ex: "1.1", "2.3").
+
+        Returns:
+            Item ou None.
+        """
+        if isinstance(project_instrument_id, str):
+            project_instrument_id = UUID(project_instrument_id)
+
+        result = await self.db.execute(
+            select(ProjectAssessmentItem).where(
+                ProjectAssessmentItem.project_instrument_id == project_instrument_id,
+                ProjectAssessmentItem.item_code == item_code,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def bulk_create(
+        self,
+        items: list[ProjectAssessmentItem],
+    ) -> list[ProjectAssessmentItem]:
+        """
+        Cria múltiplos items em batch.
+
+        Útil para clonar todos os items de um instrumento global.
+
+        Args:
+            items: Lista de items a criar.
+
+        Returns:
+            Lista de items criados.
+        """
+        self.db.add_all(items)
+        await self.db.flush()
+
+        for item in items:
+            await self.db.refresh(item)
+
+        return items

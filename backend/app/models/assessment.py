@@ -50,16 +50,19 @@ class AssessmentInstrument(Base, UUIDMixin):
     """
     Instrumento de avaliação de qualidade (PROBAST, ROBIS, etc.).
     """
-    
+
     __tablename__ = "assessment_instruments"
-    
+
     tool_type: Mapped[str] = mapped_column(String, nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False)
     version: Mapped[str] = mapped_column(String, nullable=False)
     mode: Mapped[str] = mapped_column(String, default="human", nullable=False)
-    
+    target_mode: Mapped[str] = mapped_column(
+        String, default="per_article", nullable=False
+    )  # per_article or per_model
+
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    
+
     aggregation_rules: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     schema_: Mapped[dict | None] = mapped_column("schema", JSONB, nullable=True)
     
@@ -84,31 +87,35 @@ class AssessmentItem(Base, UUIDMixin):
     """
     Item/pergunta individual de cada instrumento de avaliação.
     """
-    
+
     __tablename__ = "assessment_items"
-    
+
     instrument_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("public.assessment_instruments.id", ondelete="CASCADE"),
         nullable=False,
     )
-    
+
     domain: Mapped[str] = mapped_column(String, nullable=False)
     item_code: Mapped[str] = mapped_column(String, nullable=False)
     question: Mapped[str] = mapped_column(Text, nullable=False)
-    
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
     required: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    
+
     allowed_levels: Mapped[dict] = mapped_column(JSONB, nullable=False)
     allowed_levels_override: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    
+
+    # LLM prompt for AI assessment
+    llm_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
     )
-    
+
     # Relationships
     instrument: Mapped["AssessmentInstrument"] = relationship(
         "AssessmentInstrument",
@@ -119,7 +126,7 @@ class AssessmentItem(Base, UUIDMixin):
         back_populates="assessment_item",
         uselist=False,
     )
-    
+
     def __repr__(self) -> str:
         return f"<AssessmentItem {self.item_code}>"
 
@@ -419,10 +426,18 @@ class AssessmentInstance(BaseModel):
         index=True,
     )
 
-    instrument_id: Mapped[UUID] = mapped_column(
+    # XOR: must have exactly one instrument reference (global OR project)
+    instrument_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("public.assessment_instruments.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
+        index=True,
+    )
+
+    project_instrument_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.project_assessment_instruments.id", ondelete="RESTRICT"),
+        nullable=True,
         index=True,
     )
 
@@ -628,4 +643,139 @@ class AssessmentEvidence(BaseModel):
 
     def __repr__(self) -> str:
         return f"<AssessmentEvidence {self.target_type} target={self.target_id}>"
+
+
+# =================== PROJECT-LEVEL INSTRUMENTS (2.1) ===================
+
+
+class ProjectAssessmentInstrument(BaseModel):
+    """
+    Project-specific assessment instrument.
+
+    Allows per-project customization of global instruments (PROBAST, ROBIS, etc.)
+    or creation of custom instruments. Follows the same pattern as
+    project_extraction_templates.
+
+    Indices:
+    - project_id: FK indexed
+    - global_instrument_id: FK indexed
+    - created_by: FK indexed
+    """
+
+    __tablename__ = "project_assessment_instruments"
+
+    project_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # Reference to global instrument (if cloned)
+    global_instrument_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.assessment_instruments.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    # Instrument metadata
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tool_type: Mapped[str] = mapped_column(String, nullable=False)  # PROBAST, ROBIS, CUSTOM
+    version: Mapped[str] = mapped_column(String, default="1.0.0", nullable=False)
+    mode: Mapped[str] = mapped_column(String, default="human", nullable=False)  # human, ai, hybrid
+    target_mode: Mapped[str] = mapped_column(
+        String, default="per_article", nullable=False
+    )  # per_article or per_model
+
+    # Configuration
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    aggregation_rules: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    schema_: Mapped[dict | None] = mapped_column("schema", JSONB, nullable=True)
+
+    # Audit
+    created_by: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.profiles.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+
+    # Relationships
+    items: Mapped[list["ProjectAssessmentItem"]] = relationship(
+        "ProjectAssessmentItem",
+        back_populates="project_instrument",
+        cascade="all, delete-orphan",
+    )
+
+    project: Mapped["Project"] = relationship(
+        "Project",
+        back_populates="assessment_instruments",
+    )
+
+    global_instrument: Mapped["AssessmentInstrument | None"] = relationship(
+        "AssessmentInstrument",
+    )
+
+    def __repr__(self) -> str:
+        return f"<ProjectAssessmentInstrument {self.name} project={self.project_id}>"
+
+
+class ProjectAssessmentItem(BaseModel):
+    """
+    Project-specific assessment item.
+
+    Items within a project instrument. Can be cloned from global items
+    or created as custom items. Includes description and LLM prompt
+    for AI assessment.
+
+    Indices:
+    - project_instrument_id: FK indexed
+    - global_item_id: FK indexed
+    """
+
+    __tablename__ = "project_assessment_items"
+
+    project_instrument_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.project_assessment_instruments.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # Reference to global item (if cloned)
+    global_item_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.assessment_items.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    # Item definition
+    domain: Mapped[str] = mapped_column(String, nullable=False)
+    item_code: Mapped[str] = mapped_column(String, nullable=False)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Ordering and requirements
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    required: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    # Response levels
+    allowed_levels: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    allowed_levels_override: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # AI configuration
+    llm_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Relationships
+    project_instrument: Mapped["ProjectAssessmentInstrument"] = relationship(
+        "ProjectAssessmentInstrument",
+        back_populates="items",
+    )
+
+    global_item: Mapped["AssessmentItem | None"] = relationship(
+        "AssessmentItem",
+    )
+
+    def __repr__(self) -> str:
+        return f"<ProjectAssessmentItem {self.item_code} instrument={self.project_instrument_id}>"
 
