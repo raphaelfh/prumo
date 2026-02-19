@@ -3,8 +3,14 @@
  *
  * Gerencia instrumentos de avaliacao por projeto.
  * Permite clonar instrumentos globais (PROBAST, ROBIS) ou criar customizados.
+ *
+ * Usa apiClient centralizado para:
+ * - Autenticacao automatica via JWT do Supabase
+ * - Tratamento de erros consistente
+ * - Timeout e retry padronizados
  */
 
+import { apiClient } from '@/integrations/api/client';
 import type {
   CloneInstrumentRequest,
   CloneInstrumentResponse,
@@ -17,311 +23,178 @@ import type {
   UpdateProjectItemRequest,
 } from '@/types/assessment';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const INSTRUMENTS_BASE = '/api/v1/assessment-instruments';
 
-interface ApiResponse<T> {
-  ok: boolean;
-  data?: T;
-  error?: {
-    code: string;
-    message: string;
-  };
-  traceId?: string;
+/**
+ * Lista instrumentos globais disponiveis para clonagem.
+ */
+export async function listGlobalInstruments(): Promise<GlobalInstrumentSummary[]> {
+  const result = await apiClient<{ instruments: GlobalInstrumentSummary[] }>(
+    `${INSTRUMENTS_BASE}/global`,
+  );
+  return result.instruments;
 }
 
-class ProjectAssessmentInstrumentService {
-  private getAuthHeaders(token: string): HeadersInit {
-    return {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    };
+/**
+ * Lista instrumentos de um projeto.
+ */
+export async function listProjectInstruments(
+  projectId: string,
+  activeOnly = true,
+): Promise<ProjectAssessmentInstrument[]> {
+  const params = new URLSearchParams();
+  if (!activeOnly) {
+    params.append('active_only', 'false');
   }
+  const queryString = params.toString();
+  const url = `${INSTRUMENTS_BASE}/project/${projectId}${queryString ? `?${queryString}` : ''}`;
 
-  /**
-   * Lista instrumentos globais disponiveis para clonagem.
-   */
-  async listGlobalInstruments(
-    token: string
-  ): Promise<GlobalInstrumentSummary[]> {
-    const url = `${API_BASE_URL}/api/v1/assessment-instruments/global`;
+  const result = await apiClient<{ instruments: ProjectAssessmentInstrument[] }>(url);
+  return result.instruments;
+}
 
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: this.getAuthHeaders(token),
-    });
+/**
+ * Busca um instrumento por ID com items.
+ */
+export async function getInstrument(
+  instrumentId: string,
+): Promise<ProjectAssessmentInstrument> {
+  return apiClient<ProjectAssessmentInstrument>(
+    `${INSTRUMENTS_BASE}/${instrumentId}`,
+  );
+}
 
-    // Handle HTTP errors before parsing JSON
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('[listGlobalInstruments] HTTP error:', response.status, errorText);
-      throw new Error(`HTTP ${response.status}: ${errorText}`);
-    }
+/**
+ * Clona um instrumento global para um projeto.
+ */
+export async function cloneGlobalInstrument(
+  request: CloneInstrumentRequest,
+): Promise<CloneInstrumentResponse> {
+  return apiClient<CloneInstrumentResponse>(`${INSTRUMENTS_BASE}/clone`, {
+    method: 'POST',
+    body: request,
+  });
+}
 
-    const result: ApiResponse<{ instruments: GlobalInstrumentSummary[] }> =
-      await response.json();
+/**
+ * Cria um instrumento customizado.
+ */
+export async function createInstrument(
+  request: CreateProjectInstrumentRequest,
+): Promise<ProjectAssessmentInstrument> {
+  return apiClient<ProjectAssessmentInstrument>(INSTRUMENTS_BASE, {
+    method: 'POST',
+    body: request,
+  });
+}
 
-    if (!result.ok || !result.data) {
-      console.error('[listGlobalInstruments] API error:', result.error);
-      throw new Error(result.error?.message || 'Failed to list global instruments');
-    }
+/**
+ * Atualiza um instrumento.
+ */
+export async function updateInstrument(
+  instrumentId: string,
+  request: UpdateProjectInstrumentRequest,
+): Promise<ProjectAssessmentInstrument> {
+  return apiClient<ProjectAssessmentInstrument>(
+    `${INSTRUMENTS_BASE}/${instrumentId}`,
+    {
+      method: 'PATCH',
+      body: request,
+    },
+  );
+}
 
-    return result.data.instruments;
-  }
+/**
+ * Deleta um instrumento.
+ */
+export async function deleteInstrument(instrumentId: string): Promise<void> {
+  await apiClient<{ message: string }>(
+    `${INSTRUMENTS_BASE}/${instrumentId}`,
+    { method: 'DELETE' },
+  );
+}
 
-  /**
-   * Lista instrumentos de um projeto.
-   */
-  async listProjectInstruments(
-    token: string,
-    projectId: string,
-    activeOnly = true
-  ): Promise<ProjectAssessmentInstrument[]> {
-    const params = new URLSearchParams();
-    if (!activeOnly) {
-      params.append('active_only', 'false');
-    }
+/**
+ * Adiciona um item a um instrumento.
+ */
+export async function addItem(
+  instrumentId: string,
+  request: CreateProjectItemRequest,
+): Promise<ProjectAssessmentItem> {
+  return apiClient<ProjectAssessmentItem>(
+    `${INSTRUMENTS_BASE}/${instrumentId}/items`,
+    {
+      method: 'POST',
+      body: request,
+    },
+  );
+}
 
-    const queryString = params.toString();
-    const url = `${API_BASE_URL}/api/v1/assessment-instruments/project/${projectId}${queryString ? `?${queryString}` : ''}`;
+/**
+ * Atualiza um item.
+ */
+export async function updateItem(
+  itemId: string,
+  request: UpdateProjectItemRequest,
+): Promise<ProjectAssessmentItem> {
+  return apiClient<ProjectAssessmentItem>(
+    `${INSTRUMENTS_BASE}/items/${itemId}`,
+    {
+      method: 'PATCH',
+      body: request,
+    },
+  );
+}
 
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: this.getAuthHeaders(token),
-    });
+/**
+ * Deleta um item.
+ */
+export async function deleteItem(itemId: string): Promise<void> {
+  await apiClient<{ message: string }>(
+    `${INSTRUMENTS_BASE}/items/${itemId}`,
+    { method: 'DELETE' },
+  );
+}
 
-    const result: ApiResponse<{ instruments: ProjectAssessmentInstrument[] }> =
-      await response.json();
-
-    if (!result.ok || !result.data) {
-      throw new Error(result.error?.message || 'Failed to list project instruments');
-    }
-
-    return result.data.instruments;
-  }
-
-  /**
-   * Busca um instrumento por ID.
-   */
-  async getInstrument(
-    token: string,
-    instrumentId: string
-  ): Promise<ProjectAssessmentInstrument> {
-    const response = await fetch(
-      `${API_BASE_URL}/api/v1/assessment-instruments/${instrumentId}`,
-      {
-        method: 'GET',
-        headers: this.getAuthHeaders(token),
-      }
-    );
-
-    const result: ApiResponse<ProjectAssessmentInstrument> = await response.json();
-
-    if (!result.ok || !result.data) {
-      throw new Error(result.error?.message || 'Failed to get instrument');
-    }
-
-    return result.data;
-  }
-
-  /**
-   * Clona um instrumento global para um projeto.
-   */
-  async cloneGlobalInstrument(
-    token: string,
-    request: CloneInstrumentRequest
-  ): Promise<CloneInstrumentResponse> {
-    const response = await fetch(
-      `${API_BASE_URL}/api/v1/assessment-instruments/clone`,
-      {
-        method: 'POST',
-        headers: this.getAuthHeaders(token),
-        body: JSON.stringify(request),
-      }
-    );
-
-    const result: ApiResponse<CloneInstrumentResponse> = await response.json();
-
-    if (!result.ok || !result.data) {
-      throw new Error(result.error?.message || 'Failed to clone instrument');
-    }
-
-    return result.data;
-  }
-
-  /**
-   * Cria um instrumento customizado.
-   */
-  async createInstrument(
-    token: string,
-    request: CreateProjectInstrumentRequest
-  ): Promise<ProjectAssessmentInstrument> {
-    const response = await fetch(
-      `${API_BASE_URL}/api/v1/assessment-instruments`,
-      {
-        method: 'POST',
-        headers: this.getAuthHeaders(token),
-        body: JSON.stringify(request),
-      }
-    );
-
-    const result: ApiResponse<ProjectAssessmentInstrument> = await response.json();
-
-    if (!result.ok || !result.data) {
-      throw new Error(result.error?.message || 'Failed to create instrument');
-    }
-
-    return result.data;
-  }
-
-  /**
-   * Atualiza um instrumento.
-   */
-  async updateInstrument(
-    token: string,
-    instrumentId: string,
-    request: UpdateProjectInstrumentRequest
-  ): Promise<ProjectAssessmentInstrument> {
-    const response = await fetch(
-      `${API_BASE_URL}/api/v1/assessment-instruments/${instrumentId}`,
-      {
-        method: 'PATCH',
-        headers: this.getAuthHeaders(token),
-        body: JSON.stringify(request),
-      }
-    );
-
-    const result: ApiResponse<ProjectAssessmentInstrument> = await response.json();
-
-    if (!result.ok || !result.data) {
-      throw new Error(result.error?.message || 'Failed to update instrument');
-    }
-
-    return result.data;
-  }
-
-  /**
-   * Deleta um instrumento.
-   */
-  async deleteInstrument(token: string, instrumentId: string): Promise<void> {
-    const response = await fetch(
-      `${API_BASE_URL}/api/v1/assessment-instruments/${instrumentId}`,
-      {
-        method: 'DELETE',
-        headers: this.getAuthHeaders(token),
-      }
-    );
-
-    const result: ApiResponse<{ message: string }> = await response.json();
-
-    if (!result.ok) {
-      throw new Error(result.error?.message || 'Failed to delete instrument');
-    }
-  }
-
-  /**
-   * Adiciona um item a um instrumento.
-   */
-  async addItem(
-    token: string,
-    instrumentId: string,
-    request: CreateProjectItemRequest
-  ): Promise<ProjectAssessmentItem> {
-    const response = await fetch(
-      `${API_BASE_URL}/api/v1/assessment-instruments/${instrumentId}/items`,
-      {
-        method: 'POST',
-        headers: this.getAuthHeaders(token),
-        body: JSON.stringify(request),
-      }
-    );
-
-    const result: ApiResponse<ProjectAssessmentItem> = await response.json();
-
-    if (!result.ok || !result.data) {
-      throw new Error(result.error?.message || 'Failed to add item');
-    }
-
-    return result.data;
-  }
-
-  /**
-   * Atualiza um item.
-   */
-  async updateItem(
-    token: string,
-    itemId: string,
-    request: UpdateProjectItemRequest
-  ): Promise<ProjectAssessmentItem> {
-    const response = await fetch(
-      `${API_BASE_URL}/api/v1/assessment-instruments/items/${itemId}`,
-      {
-        method: 'PATCH',
-        headers: this.getAuthHeaders(token),
-        body: JSON.stringify(request),
-      }
-    );
-
-    const result: ApiResponse<ProjectAssessmentItem> = await response.json();
-
-    if (!result.ok || !result.data) {
-      throw new Error(result.error?.message || 'Failed to update item');
-    }
-
-    return result.data;
-  }
-
-  /**
-   * Deleta um item.
-   */
-  async deleteItem(token: string, itemId: string): Promise<void> {
-    const response = await fetch(
-      `${API_BASE_URL}/api/v1/assessment-instruments/items/${itemId}`,
-      {
-        method: 'DELETE',
-        headers: this.getAuthHeaders(token),
-      }
-    );
-
-    const result: ApiResponse<{ message: string }> = await response.json();
-
-    if (!result.ok) {
-      throw new Error(result.error?.message || 'Failed to delete item');
-    }
-  }
-
-  /**
-   * Verifica se um projeto tem um instrumento configurado.
-   */
-  async hasConfiguredInstrument(
-    token: string,
-    projectId: string
-  ): Promise<boolean> {
-    try {
-      const instruments = await this.listProjectInstruments(
-        token,
-        projectId,
-        true
-      );
-      return instruments.length > 0;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Busca instrumento por tipo em um projeto.
-   */
-  async getInstrumentByType(
-    token: string,
-    projectId: string,
-    toolType: string
-  ): Promise<ProjectAssessmentInstrument | null> {
-    const instruments = await this.listProjectInstruments(token, projectId, true);
-    return instruments.find((i) => i.toolType === toolType) || null;
+/**
+ * Verifica se um projeto tem instrumento configurado.
+ */
+export async function hasConfiguredInstrument(
+  projectId: string,
+): Promise<boolean> {
+  try {
+    const instruments = await listProjectInstruments(projectId, true);
+    return instruments.length > 0;
+  } catch {
+    return false;
   }
 }
 
-export const projectAssessmentInstrumentService =
-  new ProjectAssessmentInstrumentService();
+/**
+ * Busca instrumento por tipo em um projeto.
+ */
+export async function getInstrumentByType(
+  projectId: string,
+  toolType: string,
+): Promise<ProjectAssessmentInstrument | null> {
+  const instruments = await listProjectInstruments(projectId, true);
+  return instruments.find((i) => i.toolType === toolType) || null;
+}
+
+// Re-exportar como namespace para compatibilidade
+export const projectAssessmentInstrumentService = {
+  listGlobalInstruments,
+  listProjectInstruments,
+  getInstrument,
+  cloneGlobalInstrument,
+  createInstrument,
+  updateInstrument,
+  deleteInstrument,
+  addItem,
+  updateItem,
+  deleteItem,
+  hasConfiguredInstrument,
+  getInstrumentByType,
+};
 
 export default projectAssessmentInstrumentService;

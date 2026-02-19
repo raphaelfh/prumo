@@ -66,6 +66,9 @@ export interface AssessmentHeaderProps {
   isComplete: boolean;
   onFinalize: () => void;
   submitting?: boolean;
+
+  // AI Actions slot (rendered in header right section)
+  aiActions?: React.ReactNode;
 }
 
 // =================== COMPONENT ===================
@@ -96,6 +99,7 @@ export function AssessmentHeader(props: AssessmentHeaderProps) {
     isComplete,
     onFinalize,
     submitting,
+    aiActions,
   } = props;
 
   return (
@@ -137,6 +141,12 @@ export function AssessmentHeader(props: AssessmentHeaderProps) {
                 currentArticleId={currentArticleId}
                 onNavigateToArticle={onNavigateToArticle}
               />
+              {aiActions && (
+                <>
+                  <div className="h-6 w-px bg-border" />
+                  {aiActions}
+                </>
+              )}
               <div className="h-6 w-px bg-border" />
               <HeaderFinalizeButton
                 isComplete={isComplete}
@@ -195,11 +205,14 @@ export function AssessmentHeader(props: AssessmentHeaderProps) {
                   onNavigateToArticle={onNavigateToArticle}
                 />
               </div>
-              <HeaderFinalizeButton
-                isComplete={isComplete}
-                onFinalize={onFinalize}
-                submitting={submitting}
-              />
+              <div className="flex items-center gap-2">
+                {aiActions}
+                <HeaderFinalizeButton
+                  isComplete={isComplete}
+                  onFinalize={onFinalize}
+                  submitting={submitting}
+                />
+              </div>
             </div>
           </div>
 
@@ -234,7 +247,14 @@ export function AssessmentHeader(props: AssessmentHeaderProps) {
               isComplete={isComplete}
             />
 
-            {/* Row 3: Controls + Finalize */}
+            {/* Row 3: AI Actions (if available) */}
+            {aiActions && (
+              <div className="flex items-center gap-2">
+                {aiActions}
+              </div>
+            )}
+
+            {/* Row 4: Controls + Finalize */}
             <div className="flex items-center justify-between gap-2">
               <HeaderPDFControls
                 showPDF={showPDF}

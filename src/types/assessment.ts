@@ -217,7 +217,7 @@ export interface EvidencePassage {
 export interface AIAssessmentSuggestion {
   id: string;
   assessment_run_id: string;  // FK para ai_assessment_runs
-  assessment_item_id: string;  // FK para assessment_items
+  assessment_item_id: string;  // Effective item ID (global or project-scoped)
 
   // Valor sugerido estruturado
   suggested_value: {
@@ -254,7 +254,8 @@ export interface AIAssessmentSuggestionRaw {
   extraction_run_id: string | null; // FK para extraction_runs (não usado para assessment)
   instance_id: string | null;
   field_id: string | null;
-  assessment_item_id: string;
+  assessment_item_id: string | null;       // FK para assessment_items (global)
+  project_assessment_item_id: string | null; // FK para project_assessment_items (project-scoped)
   suggested_value: unknown;
   confidence_score: number | null;
   reasoning: string | null;

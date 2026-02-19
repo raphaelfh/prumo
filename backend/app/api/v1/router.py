@@ -26,7 +26,7 @@ api_router.include_router(
 
 api_router.include_router(
     ai_assessment.router,
-    prefix="/assessment",
+    prefix="/ai-assessment",
     tags=["AI Assessment"],
 )
 

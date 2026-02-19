@@ -614,7 +614,7 @@ class ExtractionRun(Base, UUIDMixin):
     # Relationships
     suggestions: Mapped[list["AISuggestion"]] = relationship(
         "AISuggestion",
-        back_populates="run",
+        back_populates="extraction_run",
         cascade="all, delete-orphan",
     )
     
@@ -682,10 +682,18 @@ class AISuggestion(Base, UUIDMixin):
         index=True,
     )
 
-    # === Assessment suggestion field (mutually exclusive with extraction fields) ===
+    # === Assessment suggestion fields (mutually exclusive with extraction fields) ===
+    # Global instrument items
     assessment_item_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("public.assessment_items.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+    # Project-scoped instrument items (XOR with assessment_item_id)
+    project_assessment_item_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.project_assessment_items.id", ondelete="RESTRICT"),
         nullable=True,
         index=True,
     )

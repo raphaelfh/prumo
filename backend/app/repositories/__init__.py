@@ -16,6 +16,7 @@ from app.repositories.assessment_repository import (
     AssessmentInstrumentRepository,
     AssessmentItemRepository,
     AssessmentResponseRepository,
+    ProjectAssessmentItemRepository,
 )
 from app.repositories.base import BaseRepository
 from app.repositories.extraction_repository import (
@@ -47,6 +48,7 @@ __all__ = [
     "AssessmentEvidenceRepository",
     "AssessmentInstrumentRepository",
     "AssessmentItemRepository",
+    "ProjectAssessmentItemRepository",
     "AIAssessmentRepository",
     "AIAssessmentRunRepository",
     "AIAssessmentConfigRepository",

@@ -26,6 +26,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
+  ArrowLeft,
   ClipboardList,
   Copy,
   Plus,
@@ -40,9 +41,9 @@ import type {
   ProjectAssessmentInstrument,
 } from '@/types/assessment';
 import {
-  useGlobalInstruments,
   useProjectAssessmentInstrumentManager,
 } from '@/hooks/assessment';
+import { InstrumentConfigEditor } from './InstrumentConfigEditor';
 
 interface InstrumentManagerProps {
   projectId: string;
@@ -53,6 +54,7 @@ export function InstrumentManager({ projectId }: InstrumentManagerProps) {
   const [selectedGlobalInstrument, setSelectedGlobalInstrument] =
     useState<GlobalInstrumentSummary | null>(null);
   const [customName, setCustomName] = useState('');
+  const [editingInstrumentId, setEditingInstrumentId] = useState<string | null>(null);
 
   const {
     globalInstruments,
@@ -89,6 +91,26 @@ export function InstrumentManager({ projectId }: InstrumentManagerProps) {
   };
 
   const isLoading = isLoadingGlobal || isLoadingProject;
+
+  // Show editor when an instrument is selected for configuration
+  if (editingInstrumentId) {
+    return (
+      <div className="space-y-4">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setEditingInstrumentId(null)}
+        >
+          <ArrowLeft className="h-4 w-4 mr-1" />
+          Voltar
+        </Button>
+        <InstrumentConfigEditor
+          instrumentId={editingInstrumentId}
+          projectId={projectId}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -167,7 +189,11 @@ export function InstrumentManager({ projectId }: InstrumentManagerProps) {
                           : 'Por artigo'}
                       </Badge>
                     </div>
-                    <Button variant="ghost" size="sm">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setEditingInstrumentId(instrument.id)}
+                    >
                       <Settings className="h-4 w-4 mr-1" />
                       Configurar
                     </Button>

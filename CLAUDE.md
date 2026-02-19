@@ -647,3 +647,14 @@ When asked to add/modify features, files typically go in:
 **Project Version**: 0.1.0
 **Python Version**: 3.11+
 **Node Version**: 18+
+
+## Active Technologies
+- TypeScript 5.8 (frontend), Python 3.11+ (backend — no changes needed) + React 18, TanStack Query v5, shadcn/ui (Radix), Vite (001-fix-assessment-instrument)
+- Supabase (PostgreSQL) via FastAPI backend API (001-fix-assessment-instrument)
+- SQL (PostgreSQL 15 via Supabase) + Supabase migrations, existing compatibility VIEW triggers (001-fix-assessment-instrument)
+- PostgreSQL — `assessment_instances` table with XOR FK columns (001-fix-assessment-instrument)
+- Python 3.11+ (backend, no changes needed), TypeScript 5.8 (frontend) + React 18, TanStack Query v5, Zustand, shadcn/ui, FastAPI (backend, existing) (002-ai-assessment-flow)
+- PostgreSQL via Supabase (existing tables: `ai_assessment_runs`, `ai_suggestions`, `ai_assessments`) (002-ai-assessment-flow)
+
+## Recent Changes
+- 001-fix-assessment-instrument: Added TypeScript 5.8 (frontend), Python 3.11+ (backend — no changes needed) + React 18, TanStack Query v5, shadcn/ui (Radix), Vite

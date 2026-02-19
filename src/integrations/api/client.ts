@@ -12,7 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 // URL base da API (configurável via env)
 const API_BASE_URL =
-  import.meta.env.VITE_API_URL || "http://localhost:8000";
+  import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 /**
  * Resposta padrão da API (compatível com formato do backend).

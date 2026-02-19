@@ -111,7 +111,7 @@ class AssessmentItemRepository(BaseRepository[AssessmentItem]):
         result = await self.db.execute(
             select(AssessmentItem)
             .where(AssessmentItem.instrument_id == instrument_id)
-            .order_by(AssessmentItem.order_index)
+            .order_by(AssessmentItem.sort_order)
         )
         return list(result.scalars().all())
     
@@ -254,6 +254,7 @@ class AIAssessmentRunRepository(BaseRepository[AIAssessmentRun]):
         stage: str,
         parameters: dict,
         extraction_instance_id: UUID | None = None,
+        is_project_instrument: bool = False,
     ) -> AIAssessmentRun:
         """
         Cria um novo assessment run com status 'pending'.
@@ -261,25 +262,40 @@ class AIAssessmentRunRepository(BaseRepository[AIAssessmentRun]):
         Args:
             project_id: ID do projeto.
             article_id: ID do artigo.
-            instrument_id: ID do instrumento.
+            instrument_id: ID do instrumento (global or project).
             created_by: ID do usuário que criou.
             stage: Estágio da execução ('assess_single', 'assess_batch', 'assess_hierarchical').
             parameters: Parâmetros de entrada (model, temperature, item_ids, etc.).
             extraction_instance_id: ID da extraction instance (para PROBAST por modelo).
+            is_project_instrument: True if instrument_id is from project_assessment_instruments.
 
         Returns:
             Run criado.
         """
-        run = AIAssessmentRun(
-            project_id=project_id,
-            article_id=article_id,
-            instrument_id=instrument_id,
-            extraction_instance_id=extraction_instance_id,
-            stage=stage,
-            status="pending",
-            parameters=parameters,
-            created_by=created_by,
-        )
+        if is_project_instrument:
+            run = AIAssessmentRun(
+                project_id=project_id,
+                article_id=article_id,
+                instrument_id=None,
+                project_instrument_id=instrument_id,
+                extraction_instance_id=extraction_instance_id,
+                stage=stage,
+                status="pending",
+                parameters=parameters,
+                created_by=created_by,
+            )
+        else:
+            run = AIAssessmentRun(
+                project_id=project_id,
+                article_id=article_id,
+                instrument_id=instrument_id,
+                project_instrument_id=None,
+                extraction_instance_id=extraction_instance_id,
+                stage=stage,
+                status="pending",
+                parameters=parameters,
+                created_by=created_by,
+            )
 
         self.db.add(run)
         await self.db.flush()
@@ -896,8 +912,10 @@ class ProjectAssessmentInstrumentRepository(BaseRepository[ProjectAssessmentInst
         if isinstance(project_id, str):
             project_id = UUID(project_id)
 
-        query = select(ProjectAssessmentInstrument).where(
-            ProjectAssessmentInstrument.project_id == project_id
+        query = (
+            select(ProjectAssessmentInstrument)
+            .options(selectinload(ProjectAssessmentInstrument.items))
+            .where(ProjectAssessmentInstrument.project_id == project_id)
         )
 
         if active_only:

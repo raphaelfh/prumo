@@ -3,14 +3,16 @@
  *
  * Mostra sugestão ao lado do campo de input de forma minimalista
  * Layout responsivo: [%] [✓] [✗] [Valor truncado]
+ * Quando aceita, mostra history popover (mirrors extraction)
  *
  * Adaptado de extraction/ai/AISuggestionInline.tsx
  *
  * @component
  */
 
-import type { AIAssessmentSuggestion } from '@/types/assessment';
-import { AISuggestionActions } from './shared/AISuggestionActions';
+import type { AIAssessmentSuggestion, AIAssessmentSuggestionHistoryItem } from '@/types/assessment';
+import { AISuggestionHistoryPopover } from './AISuggestionHistoryPopover';
+import { AISuggestionActions } from '@/components/shared/ai-suggestions';
 import { AISuggestionConfidence } from './shared/AISuggestionConfidence';
 import { AISuggestionValue } from './shared/AISuggestionValue';
 import { isAssessmentSuggestionAccepted } from '@/lib/assessment-utils';
@@ -20,10 +22,14 @@ import { isAssessmentSuggestionAccepted } from '@/lib/assessment-utils';
 interface AISuggestionInlineProps {
   /** Sugestão de IA para exibir */
   suggestion: AIAssessmentSuggestion;
+  /** Item ID for history lookup */
+  itemId?: string;
   /** Callback ao aceitar sugestão */
   onAccept?: () => void;
   /** Callback ao rejeitar sugestão */
   onReject?: () => void;
+  /** History fetcher (when provided, shows history popover on accepted suggestions) */
+  getHistory?: (itemId: string, limit?: number) => Promise<AIAssessmentSuggestionHistoryItem[]>;
   /** Estado de carregamento */
   loading?: boolean;
 }
@@ -32,8 +38,10 @@ interface AISuggestionInlineProps {
 
 export function AISuggestionInline({
   suggestion,
+  itemId,
   onAccept,
   onReject,
+  getHistory,
   loading = false,
 }: AISuggestionInlineProps) {
   const isAccepted = isAssessmentSuggestionAccepted(suggestion);
@@ -55,8 +63,24 @@ export function AISuggestionInline({
         </div>
       )}
 
-      {/* Badge quando aceita */}
-      {isAccepted && (
+      {/* History popover when accepted and getHistory available */}
+      {isAccepted && getHistory && itemId && (
+        <AISuggestionHistoryPopover
+          itemId={itemId}
+          currentSuggestionId={suggestion.id}
+          getHistory={getHistory}
+          onAccept={onAccept}
+          onReject={onReject}
+          trigger={
+            <span className="text-xs font-medium text-muted-foreground cursor-help px-1.5 py-0.5 rounded">
+              IA aceita
+            </span>
+          }
+        />
+      )}
+
+      {/* Simple badge when accepted but no history available */}
+      {isAccepted && (!getHistory || !itemId) && (
         <span className="text-xs font-medium text-muted-foreground px-1.5 py-0.5 rounded">
           IA aceita
         </span>
