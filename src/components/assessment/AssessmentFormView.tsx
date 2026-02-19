@@ -15,6 +15,7 @@ import type {
   AssessmentItem,
   AssessmentResponse,
   AIAssessmentSuggestion,
+  AIAssessmentSuggestionHistoryItem,
 } from '@/types/assessment';
 import type { DomainWithItems } from '@/hooks/assessment';
 
@@ -30,6 +31,9 @@ export interface AssessmentFormViewProps {
   onTriggerAI?: (itemId: string) => Promise<void>;
   isActionLoading?: (itemId: string) => boolean;
   isTriggerLoading?: (itemId: string) => boolean;
+  /** Primitive value for memo invalidation when AI trigger loading state changes */
+  triggeringItemId?: string | null;
+  getSuggestionsHistory?: (itemId: string, limit?: number) => Promise<AIAssessmentSuggestionHistoryItem[]>;
   disabled?: boolean;
 }
 
@@ -46,6 +50,7 @@ function AssessmentFormViewComponent(props: AssessmentFormViewProps) {
     onTriggerAI,
     isActionLoading,
     isTriggerLoading,
+    getSuggestionsHistory,
     disabled,
   } = props;
 
@@ -74,6 +79,7 @@ function AssessmentFormViewComponent(props: AssessmentFormViewProps) {
           onTriggerAI={onTriggerAI}
           isActionLoading={isActionLoading}
           isTriggerLoading={isTriggerLoading}
+          getSuggestionsHistory={getSuggestionsHistory}
           disabled={disabled}
         />
       ))}
@@ -90,12 +96,13 @@ export const AssessmentFormView = memo(AssessmentFormViewComponent, (prevProps, 
   // 1. Domínios mudaram (raro)
   // 2. Responses mudaram
   // 3. Sugestões de IA mudaram
-  // 4. Loading states mudaram
+  // 4. Loading states mudaram (triggeringItemId)
 
   const domainsChanged = prevProps.domains.length !== nextProps.domains.length;
   const responsesChanged = JSON.stringify(prevProps.responses) !== JSON.stringify(nextProps.responses);
   const suggestionsChanged = JSON.stringify(prevProps.aiSuggestions) !== JSON.stringify(nextProps.aiSuggestions);
   const disabledChanged = prevProps.disabled !== nextProps.disabled;
+  const triggerLoadingChanged = prevProps.triggeringItemId !== nextProps.triggeringItemId;
 
-  return !(domainsChanged || responsesChanged || suggestionsChanged || disabledChanged);
+  return !(domainsChanged || responsesChanged || suggestionsChanged || disabledChanged || triggerLoadingChanged);
 });

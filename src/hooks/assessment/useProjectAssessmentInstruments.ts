@@ -7,14 +7,23 @@
  * - Clonar instrumentos globais para o projeto
  * - Criar instrumentos customizados
  * - Atualizar e deletar instrumentos
+ *
+ * Usa apiClient centralizado (auth automatica via Supabase session).
  */
 
 import { useCallback, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
-import { projectAssessmentInstrumentService } from '@/services/projectAssessmentInstrumentService';
+import {
+  listGlobalInstruments,
+  listProjectInstruments,
+  getInstrument,
+  cloneGlobalInstrument as cloneGlobalInstrumentApi,
+  createInstrument as createInstrumentApi,
+  updateInstrument as updateInstrumentApi,
+  deleteInstrument as deleteInstrumentApi,
+} from '@/services/projectAssessmentInstrumentService';
 import type {
-  CloneInstrumentRequest,
   CreateProjectInstrumentRequest,
   GlobalInstrumentSummary,
   ProjectAssessmentInstrument,
@@ -36,23 +45,15 @@ export const projectInstrumentKeys = {
  */
 export function useGlobalInstruments() {
   const { session } = useAuth();
-  const token = session?.access_token;
 
   return useQuery({
     queryKey: projectInstrumentKeys.global(),
     queryFn: async (): Promise<GlobalInstrumentSummary[]> => {
-      if (!token) {
-        console.warn('[useGlobalInstruments] No authentication token available');
-        throw new Error('No authentication token');
-      }
-      console.log('[useGlobalInstruments] Fetching global instruments...');
-      const result = await projectAssessmentInstrumentService.listGlobalInstruments(token);
-      console.log('[useGlobalInstruments] Fetched', result.length, 'instruments');
-      return result;
+      return listGlobalInstruments();
     },
-    enabled: !!token,
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    retry: false, // Don't retry auth failures
+    enabled: !!session?.access_token,
+    staleTime: 5 * 60 * 1000, // 5 minutos
+    retry: 1,
   });
 }
 
@@ -61,22 +62,18 @@ export function useGlobalInstruments() {
  */
 export function useProjectInstruments(projectId: string | null) {
   const { session } = useAuth();
-  const token = session?.access_token;
 
   return useQuery({
     queryKey: projectId ? projectInstrumentKeys.byProject(projectId) : [],
     queryFn: async (): Promise<ProjectAssessmentInstrument[]> => {
-      if (!token || !projectId) {
-        throw new Error('Missing authentication or project ID');
+      if (!projectId) {
+        throw new Error('Missing project ID');
       }
-      return projectAssessmentInstrumentService.listProjectInstruments(
-        token,
-        projectId
-      );
+      return listProjectInstruments(projectId);
     },
-    enabled: !!token && !!projectId,
-    staleTime: 30 * 1000, // 30 seconds
-    retry: false, // Don't retry auth failures
+    enabled: !!session?.access_token && !!projectId,
+    staleTime: 30 * 1000, // 30 segundos
+    retry: 1,
   });
 }
 
@@ -85,22 +82,18 @@ export function useProjectInstruments(projectId: string | null) {
  */
 export function useProjectInstrument(instrumentId: string | null) {
   const { session } = useAuth();
-  const token = session?.access_token;
 
   return useQuery({
     queryKey: instrumentId ? projectInstrumentKeys.byId(instrumentId) : [],
     queryFn: async (): Promise<ProjectAssessmentInstrument> => {
-      if (!token || !instrumentId) {
-        throw new Error('Missing authentication or instrument ID');
+      if (!instrumentId) {
+        throw new Error('Missing instrument ID');
       }
-      return projectAssessmentInstrumentService.getInstrument(
-        token,
-        instrumentId
-      );
+      return getInstrument(instrumentId);
     },
-    enabled: !!token && !!instrumentId,
+    enabled: !!session?.access_token && !!instrumentId,
     staleTime: 30 * 1000,
-    retry: false, // Don't retry auth failures
+    retry: 1,
   });
 }
 
@@ -121,22 +114,13 @@ export function useHasConfiguredInstrument(projectId: string | null) {
  * Hook para clonar instrumento global.
  */
 export function useCloneInstrument() {
-  const { session } = useAuth();
   const queryClient = useQueryClient();
-  const token = session?.access_token;
 
   return useMutation({
-    mutationFn: async (request: CloneInstrumentRequest) => {
-      if (!token) {
-        throw new Error('No authentication token');
-      }
-      return projectAssessmentInstrumentService.cloneGlobalInstrument(
-        token,
-        request
-      );
+    mutationFn: async (request: { projectId: string; globalInstrumentId: string; customName?: string }) => {
+      return cloneGlobalInstrumentApi(request);
     },
     onSuccess: (_, variables) => {
-      // Invalidate project instruments
       queryClient.invalidateQueries({
         queryKey: projectInstrumentKeys.byProject(variables.projectId),
       });
@@ -148,19 +132,11 @@ export function useCloneInstrument() {
  * Hook para criar instrumento customizado.
  */
 export function useCreateInstrument() {
-  const { session } = useAuth();
   const queryClient = useQueryClient();
-  const token = session?.access_token;
 
   return useMutation({
     mutationFn: async (request: CreateProjectInstrumentRequest) => {
-      if (!token) {
-        throw new Error('No authentication token');
-      }
-      return projectAssessmentInstrumentService.createInstrument(
-        token,
-        request
-      );
+      return createInstrumentApi(request);
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
@@ -174,9 +150,7 @@ export function useCreateInstrument() {
  * Hook para atualizar instrumento.
  */
 export function useUpdateInstrument() {
-  const { session } = useAuth();
   const queryClient = useQueryClient();
-  const token = session?.access_token;
 
   return useMutation({
     mutationFn: async ({
@@ -188,14 +162,7 @@ export function useUpdateInstrument() {
       projectId: string;
       data: UpdateProjectInstrumentRequest;
     }) => {
-      if (!token) {
-        throw new Error('No authentication token');
-      }
-      return projectAssessmentInstrumentService.updateInstrument(
-        token,
-        instrumentId,
-        data
-      );
+      return updateInstrumentApi(instrumentId, data);
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
@@ -212,9 +179,7 @@ export function useUpdateInstrument() {
  * Hook para deletar instrumento.
  */
 export function useDeleteInstrument() {
-  const { session } = useAuth();
   const queryClient = useQueryClient();
-  const token = session?.access_token;
 
   return useMutation({
     mutationFn: async ({
@@ -224,13 +189,7 @@ export function useDeleteInstrument() {
       instrumentId: string;
       projectId: string;
     }) => {
-      if (!token) {
-        throw new Error('No authentication token');
-      }
-      return projectAssessmentInstrumentService.deleteInstrument(
-        token,
-        instrumentId
-      );
+      return deleteInstrumentApi(instrumentId);
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
@@ -271,7 +230,7 @@ export function useProjectAssessmentInstrumentManager(projectId: string | null) 
         customName,
       });
     },
-    [projectId, cloneMutation]
+    [projectId, cloneMutation],
   );
 
   const createCustomInstrument = useCallback(
@@ -284,7 +243,7 @@ export function useProjectAssessmentInstrumentManager(projectId: string | null) 
         projectId,
       });
     },
-    [projectId, createMutation]
+    [projectId, createMutation],
   );
 
   const updateInstrument = useCallback(
@@ -298,7 +257,7 @@ export function useProjectAssessmentInstrumentManager(projectId: string | null) 
         data,
       });
     },
-    [projectId, updateMutation]
+    [projectId, updateMutation],
   );
 
   const deleteInstrument = useCallback(
@@ -311,7 +270,7 @@ export function useProjectAssessmentInstrumentManager(projectId: string | null) 
         projectId,
       });
     },
-    [projectId, deleteMutation]
+    [projectId, deleteMutation],
   );
 
   return {

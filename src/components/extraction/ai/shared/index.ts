@@ -3,7 +3,7 @@
  * Exportações centralizadas para facilitar importações
  */
 
-export { AISuggestionActions } from './AISuggestionActions';
+export { AISuggestionActions } from '@/components/shared/ai-suggestions';
 export { AISuggestionConfidence } from './AISuggestionConfidence';
 export { AISuggestionDetailsPopover } from './AISuggestionDetailsPopover';
 export { AISuggestionValue } from './AISuggestionValue';

@@ -248,10 +248,17 @@ class AIAssessmentRun(BaseModel):
         index=True,
     )
 
-    instrument_id: Mapped[UUID] = mapped_column(
+    instrument_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("public.assessment_instruments.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
+        index=True,
+    )
+
+    project_instrument_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.project_assessment_instruments.id", ondelete="RESTRICT"),
+        nullable=True,
         index=True,
     )
 

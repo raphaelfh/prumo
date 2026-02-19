@@ -33,12 +33,15 @@ import { useAssessmentProgress } from '@/hooks/assessment/useAssessmentProgress'
 import { useAssessmentAutoSave } from '@/hooks/assessment/useAssessmentAutoSave';
 import { useAIAssessmentSuggestions } from '@/hooks/assessment/ai/useAIAssessmentSuggestions';
 import { useSingleAssessment } from '@/hooks/assessment/ai/useSingleAssessment';
+import { useBatchAssessment } from '@/hooks/assessment/ai/useBatchAssessment';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 // Components
 import { AssessmentHeader } from '@/components/assessment/AssessmentHeader';
 import { AssessmentPDFPanel } from '@/components/assessment/AssessmentPDFPanel';
 import { AssessmentFormPanel } from '@/components/assessment/AssessmentFormPanel';
+import { AssessmentHeaderAIActions } from '@/components/assessment/ai/AssessmentHeaderAIActions';
+import { BatchAssessmentProgress } from '@/components/assessment/ai/BatchAssessmentProgress';
 
 // Types
 import type { AssessmentLevel, EvidencePassage } from '@/types/assessment';
@@ -123,9 +126,14 @@ export default function AssessmentFullScreen() {
   const handleAISuggestionRejected = useCallback(
     async (itemId: string) => {
       console.log('🤖 Rejeitando sugestão de IA - limpando campo:', { itemId });
-      // Não limpar o campo - apenas marcar como rejeitada
+      // Clear the form field when suggestion is rejected (mirrors extraction pattern)
+      updateResponse(itemId, {
+        selected_level: '',
+        notes: null,
+        evidence: [],
+      });
     },
-    []
+    [updateResponse]
   );
 
   // Hook para sugestões de IA
@@ -133,6 +141,8 @@ export default function AssessmentFullScreen() {
     suggestions: aiSuggestions,
     acceptSuggestion,
     rejectSuggestion,
+    batchAccept,
+    getSuggestionsHistory,
     refresh: refreshSuggestions,
     isActionLoading,
   } = useAIAssessmentSuggestions({
@@ -150,20 +160,54 @@ export default function AssessmentFullScreen() {
   const { assessItem, loading: assessingItem } = useSingleAssessment({
     onSuccess: async (suggestionId) => {
       console.log('✅ Item avaliado com sucesso:', { suggestionId });
-      // Refresh sugestões após avaliação
-      await refreshSuggestions();
       setTriggeringItemId(null);
+
+      // Polling-based refresh (mirrors extraction's handleExtractionComplete pattern)
+      (async () => {
+        try {
+          // Wait for backend sync
+          await new Promise(resolve => setTimeout(resolve, 1500));
+
+          console.log('🔄 Recarregando sugestões de IA...');
+          let result = await refreshSuggestions();
+          let foundSuggestions = result.count > 0;
+
+          if (foundSuggestions) {
+            console.log(`✅ ${result.count} sugestão(ões) encontrada(s) imediatamente`);
+            return;
+          }
+
+          // Retry polling
+          const maxAttempts = 5;
+          const pollDelay = 1000;
+          let attempts = 0;
+
+          while (!foundSuggestions && attempts < maxAttempts) {
+            attempts++;
+            console.log(`🔄 Tentativa ${attempts + 1}/${maxAttempts + 1}: Recarregando sugestões...`);
+            await new Promise(resolve => setTimeout(resolve, pollDelay));
+            result = await refreshSuggestions();
+            foundSuggestions = result.count > 0;
+
+            if (foundSuggestions) {
+              console.log(`✅ ${result.count} sugestão(ões) encontrada(s) após ${attempts + 1} tentativa(s)`);
+              return;
+            }
+          }
+
+          if (!foundSuggestions) {
+            console.log('⚠️ Nenhuma sugestão encontrada após múltiplas tentativas');
+          }
+        } catch (error) {
+          console.error('❌ Erro ao recarregar sugestões:', error);
+        }
+      })();
     },
   });
 
   // Handler para trigger de avaliação de item
   const handleTriggerAI = useCallback(
     async (itemId: string) => {
-      if (!article?.pdf_storage_key) {
-        toast.error('PDF não encontrado para este artigo');
-        return;
-      }
-
       setTriggeringItemId(itemId);
       try {
         await assessItem({
@@ -171,7 +215,6 @@ export default function AssessmentFullScreen() {
           articleId: articleId || '',
           instrumentId: instrumentId || '',
           assessmentItemId: itemId,
-          pdfStorageKey: article.pdf_storage_key,
           model: 'gpt-4o-mini',
         });
       } catch (error) {
@@ -179,8 +222,44 @@ export default function AssessmentFullScreen() {
         setTriggeringItemId(null);
       }
     },
-    [article, projectId, articleId, instrumentId, assessItem]
+    [projectId, articleId, instrumentId, assessItem]
   );
+
+  // Hook para batch assessment
+  const {
+    assessBatch,
+    loading: batchLoading,
+    progress: batchProgress,
+  } = useBatchAssessment({
+    onComplete: async () => {
+      // Polling-based refresh after batch (same pattern as single)
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      let result = await refreshSuggestions();
+      if (result.count > 0) return;
+
+      let attempts = 0;
+      while (attempts < 5) {
+        attempts++;
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        result = await refreshSuggestions();
+        if (result.count > 0) return;
+      }
+    },
+  });
+
+  // Handler para batch assessment
+  const handleBatchAssess = useCallback(() => {
+    assessBatch({
+      projectId: projectId || '',
+      articleId: articleId || '',
+      instrumentId: instrumentId || '',
+      items,
+      existingResponses: responses,
+    });
+  }, [projectId, articleId, instrumentId, items, responses, assessBatch]);
+
+  // State for batch progress visibility
+  const [showBatchProgress, setShowBatchProgress] = useState(true);
 
   // Navegação entre artigos
   const handleNavigateToArticle = (newArticleId: string) => {
@@ -282,6 +361,15 @@ export default function AssessmentFullScreen() {
         isComplete={isComplete}
         onFinalize={handleSubmit}
         submitting={submitting}
+        aiActions={
+          <AssessmentHeaderAIActions
+            suggestions={aiSuggestions}
+            onBatchAssess={handleBatchAssess}
+            batchLoading={batchLoading}
+            batchProgress={batchProgress}
+            onBatchAccept={batchAccept}
+          />
+        }
       />
 
       {/* Main Content */}
@@ -309,6 +397,8 @@ export default function AssessmentFullScreen() {
                 onTriggerAI: handleTriggerAI,
                 isActionLoading: (itemId) => !!isActionLoading(itemId),
                 isTriggerLoading: (itemId) => assessingItem && triggeringItemId === itemId,
+                triggeringItemId: assessingItem ? triggeringItemId : null,
+                getSuggestionsHistory,
                 disabled: false,
               }}
             />
@@ -338,6 +428,14 @@ export default function AssessmentFullScreen() {
           </ResizablePanel>
         </ResizablePanelGroup>
       </div>
+
+      {/* Floating Batch Progress */}
+      {batchLoading && batchProgress && showBatchProgress && (
+        <BatchAssessmentProgress
+          progress={batchProgress}
+          onClose={() => setShowBatchProgress(false)}
+        />
+      )}
     </div>
   );
 }

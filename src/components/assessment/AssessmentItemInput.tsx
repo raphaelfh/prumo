@@ -21,7 +21,7 @@ import { AlertCircle, Info, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import type { AssessmentItem, AIAssessmentSuggestion, AssessmentResponse } from '@/types/assessment';
+import type { AssessmentItem, AIAssessmentSuggestion, AssessmentResponse, AIAssessmentSuggestionHistoryItem } from '@/types/assessment';
 import { Card } from '@/components/ui/card';
 import { AISuggestionInline } from './ai/AISuggestionInline';
 import { AISuggestionEvidence } from './ai/AISuggestionEvidence';
@@ -39,6 +39,7 @@ interface AssessmentItemInputProps {
   onTriggerAI?: () => Promise<void>;
   isActionLoading?: boolean;
   isTriggerLoading?: boolean;
+  getSuggestionsHistory?: (itemId: string, limit?: number) => Promise<AIAssessmentSuggestionHistoryItem[]>;
   disabled?: boolean;
 }
 
@@ -55,6 +56,7 @@ export function AssessmentItemInput(props: AssessmentItemInputProps) {
     onTriggerAI,
     isActionLoading,
     isTriggerLoading,
+    getSuggestionsHistory,
     disabled,
   } = props;
 
@@ -192,8 +194,10 @@ export function AssessmentItemInput(props: AssessmentItemInputProps) {
                   {/* Inline suggestion component */}
                   <AISuggestionInline
                     suggestion={aiSuggestion}
+                    itemId={item.id}
                     onAccept={onAcceptAI}
                     onReject={onRejectAI}
+                    getHistory={getSuggestionsHistory}
                     loading={isActionLoading}
                   />
                 </div>

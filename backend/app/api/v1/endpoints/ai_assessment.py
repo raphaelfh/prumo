@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
 from app.core.factories import create_storage_adapter
 from app.core.logging import get_logger
+from app.services.api_key_service import APIKeyService
 from app.schemas.assessment import (
     AIAssessmentRequest,
     AIAssessmentResponseData,
@@ -70,6 +71,10 @@ async def ai_assessment(
     )
     
     try:
+        # Resolve user's stored API key (BYOK) with env var fallback
+        api_key_service = APIKeyService(db=db, user_id=user.sub)
+        user_openai_key = await api_key_service.get_key_for_provider("openai")
+
         # Cria storage adapter via factory
         storage = create_storage_adapter(supabase)
 
@@ -78,7 +83,7 @@ async def ai_assessment(
             user_id=user.sub,
             storage=storage,
             trace_id=trace_id,
-            openai_api_key=payload.openai_api_key,  # BYOK support
+            openai_api_key=user_openai_key,
         )
 
         result = await service.assess(
@@ -188,6 +193,10 @@ async def ai_assessment_batch(
     )
     
     try:
+        # Resolve user's stored API key (BYOK) with env var fallback
+        api_key_service = APIKeyService(db=db, user_id=user.sub)
+        user_openai_key = await api_key_service.get_key_for_provider("openai")
+
         storage = create_storage_adapter(supabase)
 
         service = AIAssessmentService(
@@ -195,7 +204,7 @@ async def ai_assessment_batch(
             user_id=user.sub,
             storage=storage,
             trace_id=trace_id,
-            openai_api_key=payload.openai_api_key,  # BYOK support
+            openai_api_key=user_openai_key,
         )
 
         results = await service.assess_batch(
@@ -276,13 +285,16 @@ async def list_ai_suggestions(
 
     try:
         from app.repositories.extraction_repository import AISuggestionRepository
-        from sqlalchemy import and_, select
+        from sqlalchemy import and_, or_, select
         from app.models.extraction import AISuggestion
         from app.models.assessment import AIAssessmentRun
 
-        # Build query
+        # Build query - include both global and project-scoped assessment suggestions
         query = select(AISuggestion).where(
-            AISuggestion.assessment_item_id.isnot(None)  # Only assessment suggestions
+            or_(
+                AISuggestion.assessment_item_id.isnot(None),
+                AISuggestion.project_assessment_item_id.isnot(None),
+            )
         )
 
         # Join with runs to filter by project/article

@@ -33,7 +33,8 @@ CREATE TABLE ai_assessment_runs (
 
   -- Audit
   created_by uuid NOT NULL REFERENCES profiles(id) ON DELETE RESTRICT,
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
 -- Indexes for query performance

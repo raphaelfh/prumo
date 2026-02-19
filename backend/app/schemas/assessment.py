@@ -17,7 +17,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 
 # =================== BASE SCHEMAS (SHARED) ===================
@@ -216,13 +216,21 @@ class AISuggestionSchema(BaseModel):
 
     id: UUID
     assessment_run_id: UUID = Field(..., alias="assessmentRunId")
-    assessment_item_id: UUID = Field(..., alias="assessmentItemId")
+    # Both nullable at DB level (XOR), but frontend always gets one via assessmentItemId
+    assessment_item_id: UUID | None = Field(default=None, exclude=True)
+    project_assessment_item_id: UUID | None = Field(default=None, exclude=True)
     suggested_value: dict[str, Any] = Field(..., alias="suggestedValue")
     confidence_score: float | None = Field(default=None, alias="confidenceScore")
     reasoning: str | None = None
     status: str  # 'pending', 'accepted', 'rejected'
     metadata_: dict[str, Any] = Field(default={}, alias="metadata")
     created_at: datetime = Field(..., alias="createdAt")
+
+    @computed_field(alias="assessmentItemId")  # type: ignore[misc]
+    @property
+    def effective_assessment_item_id(self) -> UUID:
+        """Return whichever item ID is set (global or project-scoped)."""
+        return self.assessment_item_id or self.project_assessment_item_id  # type: ignore[return-value]
 
     model_config = ConfigDict(populate_by_name=True, from_attributes=True)
 
@@ -521,7 +529,11 @@ class ProjectAssessmentInstrumentBase(BaseModel):
     )
     is_active: bool = Field(default=True, alias="isActive")
     aggregation_rules: dict[str, Any] | None = Field(default=None, alias="aggregationRules")
-    schema_config: dict[str, Any] | None = Field(default=None, alias="schema")
+    schema_config: dict[str, Any] | None = Field(
+        default=None,
+        alias="schema",
+        validation_alias="schema_",
+    )
 
     model_config = ConfigDict(populate_by_name=True)
 

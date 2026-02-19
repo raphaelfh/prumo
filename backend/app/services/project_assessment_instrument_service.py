@@ -136,7 +136,7 @@ class ProjectAssessmentInstrumentService(LoggerMixin):
             project_id, global_instrument_id
         )
         if existing:
-            self.log_warning(
+            self.logger.warning(
                 "Instrument already cloned to project",
                 project_id=str(project_id),
                 global_instrument_id=str(global_instrument_id),
@@ -192,7 +192,7 @@ class ProjectAssessmentInstrumentService(LoggerMixin):
 
         await self.db.commit()
 
-        self.log_info(
+        self.logger.info(
             "Cloned global instrument to project",
             project_id=str(project_id),
             global_instrument_id=str(global_instrument_id),
@@ -258,7 +258,7 @@ class ProjectAssessmentInstrumentService(LoggerMixin):
 
         await self.db.commit()
 
-        self.log_info(
+        self.logger.info(
             "Created custom instrument",
             project_id=str(data.project_id),
             instrument_id=str(instrument.id),
@@ -319,7 +319,7 @@ class ProjectAssessmentInstrumentService(LoggerMixin):
         await self._project_instruments.delete(instrument)
         await self.db.commit()
 
-        self.log_info(
+        self.logger.info(
             "Deleted project instrument",
             instrument_id=str(instrument_id),
         )

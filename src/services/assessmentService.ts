@@ -4,7 +4,7 @@
  * Integração com backend FastAPI para assessment de qualidade.
  * Chama endpoints de AI assessment (/api/v1/ai-assessment).
  *
- * Baseado em sectionExtractionService.ts (DRY + KISS)
+ * Usa apiClient (Constitution Principle VI) para todas as chamadas.
  *
  * @example
  * ```typescript
@@ -36,53 +36,9 @@ import type {
   ReviewAISuggestionRequest,
   ReviewAISuggestionResponse,
 } from '@/types/assessment';
-import { APIError } from '@/lib/ai-extraction/errors';
-import { supabase } from '@/integrations/supabase/client';
+import { apiClient } from '@/integrations/api/client';
 
-/**
- * Configuração do cliente FastAPI
- */
-const FASTAPI_BASE_URL = import.meta.env.VITE_FASTAPI_BASE_URL || 'http://localhost:8000';
 const ASSESSMENT_ENDPOINT = '/api/v1/ai-assessment';
-
-/**
- * Helper para obter token de autenticação
- */
-async function getAuthToken(): Promise<string> {
-  const { data: { session }, error } = await supabase.auth.getSession();
-
-  if (error || !session) {
-    throw new APIError('Usuário não autenticado');
-  }
-
-  return session.access_token;
-}
-
-/**
- * Helper para fazer requisições ao backend
- */
-async function fetchBackend<T>(
-  endpoint: string,
-  options: RequestInit = {}
-): Promise<T> {
-  const token = await getAuthToken();
-
-  const response = await fetch(`${FASTAPI_BASE_URL}${endpoint}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-      ...options.headers,
-    },
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new APIError(`Backend error: ${response.status} - ${errorText}`);
-  }
-
-  return response.json();
-}
 
 /**
  * Service para operações de assessment com IA
@@ -95,7 +51,7 @@ export class AssessmentService {
    *
    * @param request - Parâmetros da avaliação
    * @returns Response com sugestão criada
-   * @throws {APIError} Se houver erro na requisição
+   * @throws {ApiError} Se houver erro na requisição
    */
   static async assessSingleItem(
     request: Omit<AIAssessmentRequest, 'projectId' | 'articleId' | 'assessmentItemId' | 'instrumentId'> & {
@@ -113,11 +69,11 @@ export class AssessmentService {
     });
 
     try {
-      const response = await fetchBackend<AIAssessmentResponse>(
+      const data = await apiClient<AIAssessmentResponse['data']>(
         `${ASSESSMENT_ENDPOINT}/ai`,
         {
           method: 'POST',
-          body: JSON.stringify({
+          body: {
             projectId: request.projectId,
             articleId: request.articleId,
             assessmentItemId: request.assessmentItemId,
@@ -131,20 +87,21 @@ export class AssessmentService {
             extractionInstanceId: request.extractionInstanceId,
             model: request.model || 'gpt-4o-mini',
             temperature: request.temperature || 0.1,
-          }),
+          },
+          timeout: 120000,
         }
       );
 
-      if (response.ok && response.data) {
+      if (data) {
         console.log('✅ [assessSingleItem] Avaliação concluída:', {
-          suggestionId: response.data.id,
-          level: response.data.selectedLevel,
-          confidence: response.data.confidenceScore,
-          tokensTotal: response.data.metadata.tokensPrompt + response.data.metadata.tokensCompletion,
+          suggestionId: data.id,
+          level: data.selectedLevel,
+          confidence: data.confidenceScore,
+          tokensTotal: data.metadata.tokensPrompt + data.metadata.tokensCompletion,
         });
       }
 
-      return response;
+      return { ok: true, data };
     } catch (error) {
       console.error('❌ [assessSingleItem] Erro ao avaliar item:', error);
       throw error;
@@ -158,7 +115,7 @@ export class AssessmentService {
    *
    * @param request - Parâmetros do batch
    * @returns Response com lista de sugestões criadas
-   * @throws {APIError} Se houver erro na requisição
+   * @throws {ApiError} Se houver erro na requisição
    */
   static async assessBatch(
     request: BatchAIAssessmentRequest
@@ -171,11 +128,11 @@ export class AssessmentService {
     });
 
     try {
-      const response = await fetchBackend<BatchAIAssessmentResponse>(
+      const data = await apiClient<BatchAIAssessmentResponse['data']>(
         `${ASSESSMENT_ENDPOINT}/ai/batch`,
         {
           method: 'POST',
-          body: JSON.stringify({
+          body: {
             projectId: request.projectId,
             articleId: request.articleId,
             instrumentId: request.instrumentId,
@@ -185,19 +142,20 @@ export class AssessmentService {
             extractionInstanceId: request.extractionInstanceId,
             model: request.model || 'gpt-4o-mini',
             forceFileSearch: request.forceFileSearch || false,
-          }),
+          },
+          timeout: 120000,
         }
       );
 
-      if (response.ok && response.data) {
+      if (data) {
         console.log('✅ [assessBatch] Batch concluído:', {
-          totalItems: response.data.totalItems,
-          successfulItems: response.data.successfulItems,
-          failedItems: response.data.totalItems - response.data.successfulItems,
+          totalItems: data.totalItems,
+          successfulItems: data.successfulItems,
+          failedItems: data.totalItems - data.successfulItems,
         });
       }
 
-      return response;
+      return { ok: true, data };
     } catch (error) {
       console.error('❌ [assessBatch] Erro ao avaliar batch:', error);
       throw error;
@@ -209,7 +167,7 @@ export class AssessmentService {
    *
    * @param request - Filtros de busca
    * @returns Lista de sugestões
-   * @throws {APIError} Se houver erro na requisição
+   * @throws {ApiError} Se houver erro na requisição
    */
   static async listSuggestions(
     request: ListSuggestionsRequest
@@ -239,20 +197,20 @@ export class AssessmentService {
         params.append('status_filter', request.status);
       }
 
-      const response = await fetchBackend<ListSuggestionsResponse>(
+      const data = await apiClient<ListSuggestionsResponse['data']>(
         `${ASSESSMENT_ENDPOINT}/ai/suggestions?${params.toString()}`,
         {
           method: 'GET',
         }
       );
 
-      if (response.ok && response.data) {
+      if (data) {
         console.log('✅ [listSuggestions] Sugestões carregadas:', {
-          total: response.data.total,
+          total: data.total,
         });
       }
 
-      return response;
+      return { ok: true, data };
     } catch (error) {
       console.error('❌ [listSuggestions] Erro ao listar sugestões:', error);
       throw error;
@@ -265,7 +223,7 @@ export class AssessmentService {
    * @param suggestionId - ID da sugestão
    * @param request - Ação de revisão
    * @returns Response com resultado da revisão
-   * @throws {APIError} Se houver erro na requisição
+   * @throws {ApiError} Se houver erro na requisição
    */
   static async reviewSuggestion(
     suggestionId: string,
@@ -277,27 +235,27 @@ export class AssessmentService {
     });
 
     try {
-      const response = await fetchBackend<ReviewAISuggestionResponse>(
+      const data = await apiClient<ReviewAISuggestionResponse['data']>(
         `${ASSESSMENT_ENDPOINT}/ai/suggestions/${suggestionId}/review`,
         {
           method: 'POST',
-          body: JSON.stringify({
+          body: {
             action: request.action,
             modifiedValue: request.modifiedValue,
             reviewNotes: request.reviewNotes,
-          }),
+          },
         }
       );
 
-      if (response.ok && response.data) {
+      if (data) {
         console.log('✅ [reviewSuggestion] Revisão concluída:', {
-          action: response.data.action,
-          assessmentCreated: response.data.assessmentCreated,
-          assessmentId: response.data.assessmentId,
+          action: data.action,
+          assessmentCreated: data.assessmentCreated,
+          assessmentId: data.assessmentId,
         });
       }
 
-      return response;
+      return { ok: true, data };
     } catch (error) {
       console.error('❌ [reviewSuggestion] Erro ao revisar sugestão:', error);
       throw error;

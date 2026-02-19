@@ -1,6 +1,6 @@
 /**
  * Botões de ação para sugestões de IA (Aceitar/Rejeitar)
- * Componente compartilhado reutilizável
+ * Componente compartilhado entre extraction e assessment
  */
 
 import { Button } from '@/components/ui/button';
@@ -81,4 +81,3 @@ export function AISuggestionActions({
     </div>
   );
 }
-

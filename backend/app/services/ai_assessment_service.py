@@ -35,6 +35,7 @@ from app.repositories import (
     ArticleFileRepository,
     ArticleRepository,
     AssessmentItemRepository,
+    ProjectAssessmentItemRepository,
     ProjectRepository,
 )
 
@@ -85,6 +86,7 @@ class AIAssessmentService(LoggerMixin):
         self._article_files = ArticleFileRepository(db)
         self._projects = ProjectRepository(db)
         self._assessment_items = AssessmentItemRepository(db)
+        self._project_assessment_items = ProjectAssessmentItemRepository(db)
         self._ai_assessments = AIAssessmentRepository(db)
 
         # NEW: Run tracking and config repositories
@@ -135,6 +137,11 @@ class AIAssessmentService(LoggerMixin):
         """
         start_time = time.time()
 
+        # Detect if instrument is project-scoped or global
+        is_project_instrument = await self._project_assessment_items.get_by_id(
+            assessment_item_id
+        ) is not None
+
         # === PHASE 2: Run Tracking ===
         # 1. Create assessment run
         run = await self._runs.create_run(
@@ -150,6 +157,7 @@ class AIAssessmentService(LoggerMixin):
                 "force_file_search": force_file_search,
                 "has_extraction_instance": extraction_instance_id is not None,
             },
+            is_project_instrument=is_project_instrument,
         )
 
         # 2. Start run
@@ -157,8 +165,10 @@ class AIAssessmentService(LoggerMixin):
 
         try:
             # === Continue with existing logic ===
-            # 1. Buscar metadados via repositories
-            item = await self._assessment_items.get_by_id(assessment_item_id)
+            # 1. Buscar metadados via repositories (project items first, then global)
+            item = await self._project_assessment_items.get_by_id(assessment_item_id)
+            if not item:
+                item = await self._assessment_items.get_by_id(assessment_item_id)
             if not item:
                 raise ValueError(f"Assessment item not found: {assessment_item_id}")
 
@@ -230,7 +240,9 @@ class AIAssessmentService(LoggerMixin):
                 extraction_run_id=None,  # Not used for assessments
                 instance_id=None,  # Not used for assessments
                 field_id=None,  # Not used for assessments
-                assessment_item_id=assessment_item_id,  # NEW: For assessments
+                # XOR: project-scoped vs global assessment item
+                assessment_item_id=assessment_item_id if not is_project_instrument else None,
+                project_assessment_item_id=assessment_item_id if is_project_instrument else None,
                 suggested_value={
                     "level": assessment_result.get("selected_level"),
                     "evidence_passages": assessment_result.get("evidence_passages"),
@@ -333,6 +345,13 @@ class AIAssessmentService(LoggerMixin):
         """
         start_time = time.time()
 
+        # Detect if instrument is project-scoped by checking first item
+        is_project_instrument = False
+        if item_ids:
+            is_project_instrument = await self._project_assessment_items.get_by_id(
+                item_ids[0]
+            ) is not None
+
         # === PHASE 2: Create batch run ===
         run = await self._runs.create_run(
             project_id=project_id,
@@ -346,6 +365,7 @@ class AIAssessmentService(LoggerMixin):
                 "model": model,
                 "items_count": len(item_ids),
             },
+            is_project_instrument=is_project_instrument,
         )
 
         await self._runs.start_run(run.id)
@@ -356,7 +376,7 @@ class AIAssessmentService(LoggerMixin):
             if not article:
                 raise ValueError(f"Article {article_id} not found")
 
-            article_file = await self._article_files.get_main_file(article_id)
+            article_file = await self._article_files.get_latest_pdf(article_id)
             if not article_file:
                 raise ValueError(f"No PDF file for article {article_id}")
 
@@ -375,10 +395,12 @@ class AIAssessmentService(LoggerMixin):
             # 3. Choose strategy based on size
             use_file_search = approx_size > 10 * 1024 * 1024  # > 10MB
 
-            # 4. Fetch all items ONCE
+            # 4. Fetch all items ONCE (project items first, then global)
             items_by_id = {}
             for item_id in item_ids:
-                item = await self._items.get_by_id(item_id)
+                item = await self._project_assessment_items.get_by_id(item_id)
+                if not item:
+                    item = await self._assessment_items.get_by_id(item_id)
                 if item:
                     items_by_id[item_id] = item
 
@@ -414,20 +436,29 @@ class AIAssessmentService(LoggerMixin):
 
                     response_format = {
                         "type": "json_schema",
-                        "json_schema": {
-                            "name": "assessment_response",
-                            "strict": True,
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "selected_level": {"type": "string"},
-                                    "confidence_score": {"type": "number"},
-                                    "justification": {"type": "string"},
-                                    "evidence_passages": {"type": "array", "items": {"type": "string"}},
+                        "name": "assessment_response",
+                        "strict": True,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "selected_level": {"type": "string"},
+                                "confidence_score": {"type": "number"},
+                                "justification": {"type": "string"},
+                                "evidence_passages": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "text": {"type": "string"},
+                                            "page_number": {"type": "integer"},
+                                        },
+                                        "required": ["text", "page_number"],
+                                        "additionalProperties": False,
+                                    },
                                 },
-                                "required": ["selected_level", "confidence_score", "justification", "evidence_passages"],
-                                "additionalProperties": False,
                             },
+                            "required": ["selected_level", "confidence_score", "justification", "evidence_passages"],
+                            "additionalProperties": False,
                         },
                     }
 
@@ -469,7 +500,9 @@ class AIAssessmentService(LoggerMixin):
                         extraction_run_id=None,  # Not used for assessments
                         instance_id=None,
                         field_id=None,
-                        assessment_item_id=item_id,
+                        # XOR: project-scoped vs global assessment item
+                        assessment_item_id=item_id if not is_project_instrument else None,
+                        project_assessment_item_id=item_id if is_project_instrument else None,
                         suggested_value={
                             "level": assessment_result.get("selected_level"),
                             "evidence_passages": assessment_result.get("evidence_passages"),
@@ -747,36 +780,34 @@ Return STRICT JSON with:
         
         return {
             "type": "json_schema",
-            "json_schema": {
-                "name": "assessment_result",
-                "strict": True,
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "selected_level": level_schema,
-                        "confidence_score": {"type": "number"},
-                        "justification": {"type": "string"},
-                        "evidence_passages": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "text": {"type": "string"},
-                                    "page_number": {"type": "integer"},
-                                },
-                                "required": ["text", "page_number"],
-                                "additionalProperties": False,
+            "name": "assessment_result",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "selected_level": level_schema,
+                    "confidence_score": {"type": "number"},
+                    "justification": {"type": "string"},
+                    "evidence_passages": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "text": {"type": "string"},
+                                "page_number": {"type": "integer"},
                             },
+                            "required": ["text", "page_number"],
+                            "additionalProperties": False,
                         },
                     },
-                    "required": [
-                        "selected_level",
-                        "confidence_score",
-                        "justification",
-                        "evidence_passages",
-                    ],
-                    "additionalProperties": False,
                 },
+                "required": [
+                    "selected_level",
+                    "confidence_score",
+                    "justification",
+                    "evidence_passages",
+                ],
+                "additionalProperties": False,
             },
         }
     

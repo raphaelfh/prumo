@@ -31,7 +31,6 @@
  */
 
 import { supabase } from '@/integrations/supabase/client';
-import { queryBuilder, handleSupabaseError } from '@/lib/supabase/baseRepository';
 import type {
   AIAssessmentSuggestion,
   AIAssessmentSuggestionRaw,
@@ -131,7 +130,7 @@ export class AIAssessmentSuggestionService {
   }): Promise<LoadAssessmentSuggestionsResult> {
     const { articleId, projectId, instrumentId, extractionInstanceId, statuses = ['pending', 'accepted', 'rejected'] } = params;
 
-    // Query ai_suggestions com assessment_item_id NOT NULL (filtra assessment suggestions)
+    // Query assessment suggestions (either global or project-scoped)
     // + JOIN com ai_assessment_runs para filtrar por projectId/articleId
 
     const query = supabase
@@ -145,7 +144,7 @@ export class AIAssessmentSuggestionService {
           extraction_instance_id
         )
       `)
-      .not('assessment_item_id', 'is', null)
+      .or('assessment_item_id.not.is.null,project_assessment_item_id.not.is.null')
       .in('status', statuses);
 
     // Filtros via JOIN
@@ -183,22 +182,25 @@ export class AIAssessmentSuggestionService {
     const rows = (data || []) as AIAssessmentSuggestionRow[];
 
     rows.forEach((item) => {
-      if (!item.assessment_item_id) {
-        console.warn('⚠️ [loadSuggestions] Sugestão sem assessment_item_id ignorada:', {
+      // Use whichever ID is set (XOR: global or project-scoped)
+      const effectiveItemId = item.assessment_item_id || item.project_assessment_item_id;
+
+      if (!effectiveItemId) {
+        console.warn('⚠️ [loadSuggestions] Sugestão sem item ID ignorada:', {
           suggestionId: item.id,
           status: item.status
         });
         return;
       }
 
-      const key = getAssessmentSuggestionKey(item.assessment_item_id);
+      const key = getAssessmentSuggestionKey(effectiveItemId);
 
       // Só adiciona se ainda não existe (mantém a mais recente)
       if (!suggestionsMap[key]) {
-        suggestionsMap[key] = normalizeAIAssessmentSuggestion(item);
+        suggestionsMap[key] = normalizeAIAssessmentSuggestion(item as AIAssessmentSuggestionRaw);
         console.log(`✅ [loadSuggestions] Sugestão adicionada: ${key}`, {
           status: item.status,
-          itemId: item.assessment_item_id,
+          itemId: effectiveItemId,
         });
       } else {
         console.log(`⏭️ [loadSuggestions] Sugestão mais recente já existe para ${key}, ignorando esta`);
@@ -225,17 +227,13 @@ export class AIAssessmentSuggestionService {
     itemId: string,
     limit: number = 10
   ): Promise<AIAssessmentSuggestionHistoryItem[]> {
-    const { data, error } = await queryBuilder<AIAssessmentSuggestionRaw>(
-      'ai_suggestions',
-      {
-        select: '*',
-        filters: {
-          assessment_item_id: itemId,
-        },
-        orderBy: { column: 'created_at', ascending: false },
-        limit,
-      }
-    );
+    // Query by either assessment_item_id (global) or project_assessment_item_id (project-scoped)
+    const { data, error } = await supabase
+      .from('ai_suggestions')
+      .select('*')
+      .or(`assessment_item_id.eq.${itemId},project_assessment_item_id.eq.${itemId}`)
+      .order('created_at', { ascending: false })
+      .limit(limit) as { data: AIAssessmentSuggestionRaw[] | null; error: { message: string } | null };
 
     if (error) {
       console.error('❌ [getHistory] Erro ao buscar histórico:', error);
@@ -364,16 +362,20 @@ export class AIAssessmentSuggestionService {
     } else {
       const resolvedToolType = await (async () => {
         if (!resolvedInstrumentId) return 'CUSTOM';
-        const { data: instrumentData, error: instrumentError } = await supabase
+        // Try global instruments first
+        const { data: globalData } = await supabase
           .from('assessment_instruments')
           .select('tool_type')
           .eq('id', resolvedInstrumentId)
           .maybeSingle();
-        if (instrumentError) {
-          console.warn('⚠️ [acceptSuggestion] Erro ao buscar instrumento:', instrumentError);
-          return 'CUSTOM';
-        }
-        return instrumentData?.tool_type ?? 'CUSTOM';
+        if (globalData?.tool_type) return globalData.tool_type;
+        // Fallback to project instruments
+        const { data: projectData } = await supabase
+          .from('project_assessment_instruments')
+          .select('tool_type')
+          .eq('id', resolvedInstrumentId)
+          .maybeSingle();
+        return projectData?.tool_type ?? 'CUSTOM';
       })();
 
       // Criar novo assessment

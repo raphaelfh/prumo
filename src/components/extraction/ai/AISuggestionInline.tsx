@@ -9,7 +9,7 @@
 
 import type { AISuggestion, AISuggestionHistoryItem } from '@/hooks/extraction/ai/useAISuggestions';
 import { AISuggestionHistoryPopover } from './AISuggestionHistoryPopover';
-import { AISuggestionActions } from './shared/AISuggestionActions';
+import { AISuggestionActions } from '@/components/shared/ai-suggestions';
 import { AISuggestionConfidence } from './shared/AISuggestionConfidence';
 import { AISuggestionValue } from './shared/AISuggestionValue';
 import { isSuggestionAccepted } from '@/lib/ai-extraction/suggestionUtils';

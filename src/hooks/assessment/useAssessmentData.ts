@@ -37,7 +37,8 @@ import type {
   AssessmentItem,
   Assessment,
 } from '@/types/assessment';
-import { normalizeAssessmentItem, parseInstrumentSchema } from '@/lib/assessment-utils';
+import { parseInstrumentSchema } from '@/lib/assessment-utils';
+import { getInstrument } from '@/services/projectAssessmentInstrumentService';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 /**
@@ -168,40 +169,38 @@ export function useAssessmentData({
       return;
     }
 
-    // Carregar instrumento
-    const { data: instrumentData, error: instrumentError } = await supabase
-      .from('assessment_instruments')
-      .select('*')
-      .eq('id', instrumentId)
-      .single();
+    // Carregar instrumento via API (project_assessment_instruments)
+    const projectInstrument = await getInstrument(instrumentId);
 
-    if (instrumentError) {
-      console.error('❌ [useAssessmentData] Erro ao carregar instrumento:', instrumentError);
-      throw new Error(`Erro ao carregar instrumento: ${instrumentError.message}`);
-    }
-
-    const instrumentSchema = parseInstrumentSchema(instrumentData.schema);
+    const instrumentSchema = parseInstrumentSchema(projectInstrument.schema);
     setInstrument({
-      ...instrumentData,
+      id: projectInstrument.id,
+      name: projectInstrument.name,
+      description: projectInstrument.description,
+      tool_type: projectInstrument.toolType,
+      version: projectInstrument.version,
       schema: instrumentSchema,
     } as AssessmentInstrument);
 
-    // Carregar items do instrumento
-    const { data: itemsData, error: itemsError } = await supabase
-      .from('assessment_items')
-      .select('*')
-      .eq('instrument_id', instrumentId)
-      .order('sort_order', { ascending: true });
-
-    if (itemsError) {
-      console.error('❌ [useAssessmentData] Erro ao carregar items:', itemsError);
-      throw new Error(`Erro ao carregar items: ${itemsError.message}`);
-    }
-
-    const normalizedItems = (itemsData || []).map(normalizeAssessmentItem);
+    // Mapear items do projeto para o formato AssessmentItem
+    const normalizedItems: AssessmentItem[] = (projectInstrument.items || [])
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((item) => ({
+        id: item.id,
+        instrument_id: projectInstrument.id,
+        domain: item.domain,
+        item_code: item.itemCode,
+        question: item.question,
+        guidance: item.description,
+        allowed_levels: item.allowedLevels,
+        sort_order: item.sortOrder,
+        is_required: item.required,
+        llm_description: item.llmPrompt,
+        created_at: item.createdAt,
+      }));
     setItems(normalizedItems);
 
-    // Agrupar por domínio
+    // Agrupar por dominio
     const domainMap = new Map<string, DomainWithItems>();
     const domainMetadata = new Map<string, AssessmentInstrumentSchemaDomain>();
 
@@ -237,7 +236,7 @@ export function useAssessmentData({
 
     console.log(`📊 [useAssessmentData] Instrumento carregado:`, {
       instrumentId,
-      name: instrumentData.name,
+      name: projectInstrument.name,
       itemsCount: normalizedItems.length,
       domainsCount: domainsArray.length,
     });

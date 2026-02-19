@@ -25,8 +25,9 @@ import type {
   AssessmentItem,
   AssessmentResponse,
   AIAssessmentSuggestion,
+  AIAssessmentSuggestionHistoryItem,
 } from '@/types/assessment';
-import { calculateAssessmentProgress } from '@/lib/assessment-utils';
+import { calculateAssessmentProgress, getAssessmentSuggestionKey } from '@/lib/assessment-utils';
 
 // =================== INTERFACES ===================
 
@@ -41,6 +42,7 @@ export interface DomainAccordionProps {
   onTriggerAI?: (itemId: string) => Promise<void>;
   isActionLoading?: (itemId: string) => boolean;
   isTriggerLoading?: (itemId: string) => boolean;
+  getSuggestionsHistory?: (itemId: string, limit?: number) => Promise<AIAssessmentSuggestionHistoryItem[]>;
   disabled?: boolean;
 }
 
@@ -58,6 +60,7 @@ export function DomainAccordion(props: DomainAccordionProps) {
     onTriggerAI,
     isActionLoading,
     isTriggerLoading,
+    getSuggestionsHistory,
     disabled,
   } = props;
 
@@ -146,12 +149,13 @@ export function DomainAccordion(props: DomainAccordionProps) {
                   item={item}
                   value={responses[item.id] || null}
                   onChange={(response) => onResponseChange(item.id, response)}
-                  aiSuggestion={aiSuggestions?.[item.id]}
+                  aiSuggestion={aiSuggestions?.[getAssessmentSuggestionKey(item.id)]}
                   onAcceptAI={onAcceptAI ? () => onAcceptAI(item.id) : undefined}
                   onRejectAI={onRejectAI ? () => onRejectAI(item.id) : undefined}
                   onTriggerAI={onTriggerAI ? () => onTriggerAI(item.id) : undefined}
                   isActionLoading={isActionLoading ? isActionLoading(item.id) : false}
                   isTriggerLoading={isTriggerLoading ? isTriggerLoading(item.id) : false}
+                  getSuggestionsHistory={getSuggestionsHistory}
                   disabled={disabled}
                 />
               ))
