@@ -7,7 +7,9 @@
  * - Exibe guidance (orientação) do item
  * - Mostra sugestões de IA quando disponíveis
  *
- * Baseado em FieldInput.tsx, mas simplificado para items de assessment (DRY + KISS)
+ * Baseado em FieldInput.tsx, mas simplificado para items de assessment (DRY + KISS).
+ * Padrão de callbacks: onAcceptAI/onRejectAI recebem (itemId) e são ligados a item.id
+ * aqui (como em Extraction: InstanceCard passa (instanceId, fieldId) ao FieldInput).
  *
  * @component
  */
@@ -34,10 +36,13 @@ interface AssessmentItemInputProps {
   value: AssessmentResponse | null;
   onChange: (value: AssessmentResponse) => void;
   aiSuggestion?: AIAssessmentSuggestion;
-  onAcceptAI?: () => Promise<void>;
-  onRejectAI?: () => Promise<void>;
-  onTriggerAI?: () => Promise<void>;
-  isActionLoading?: boolean;
+  /** Aceitar sugestão: pai deve passar callback que recebe itemId (mesmo padrão que Extraction/InstanceCard). */
+  onAcceptAI?: (itemId: string) => Promise<void>;
+  /** Rejeitar sugestão: pai deve passar callback que recebe itemId. */
+  onRejectAI?: (itemId: string) => Promise<void>;
+  onTriggerAI?: (itemId: string) => Promise<void>;
+  /** Loading por item: função (itemId) => boolean ou boolean (resolvido pelo pai). */
+  isActionLoading?: boolean | ((itemId: string) => boolean);
   isTriggerLoading?: boolean;
   getSuggestionsHistory?: (itemId: string, limit?: number) => Promise<AIAssessmentSuggestionHistoryItem[]>;
   disabled?: boolean;
@@ -152,7 +157,7 @@ export function AssessmentItemInput(props: AssessmentItemInputProps) {
             <Button
               size="sm"
               variant="outline"
-              onClick={onTriggerAI}
+              onClick={() => onTriggerAI(item.id)}
               disabled={isTriggerLoading || disabled}
               className="gap-2"
             >
@@ -191,14 +196,14 @@ export function AssessmentItemInput(props: AssessmentItemInputProps) {
                     </span>
                   </p>
 
-                  {/* Inline suggestion component */}
+                  {/* Inline suggestion component — binding item.id aqui (padrão DRY com Extraction/InstanceCard). */}
                   <AISuggestionInline
                     suggestion={aiSuggestion}
                     itemId={item.id}
-                    onAccept={onAcceptAI}
-                    onReject={onRejectAI}
+                    onAccept={onAcceptAI ? () => onAcceptAI(item.id) : undefined}
+                    onReject={onRejectAI ? () => onRejectAI(item.id) : undefined}
                     getHistory={getSuggestionsHistory}
-                    loading={isActionLoading}
+                    loading={typeof isActionLoading === 'function' ? isActionLoading(item.id) : Boolean(isActionLoading)}
                   />
                 </div>
               </div>

@@ -150,10 +150,10 @@ export function DomainAccordion(props: DomainAccordionProps) {
                   value={responses[item.id] || null}
                   onChange={(response) => onResponseChange(item.id, response)}
                   aiSuggestion={aiSuggestions?.[getAssessmentSuggestionKey(item.id)]}
-                  onAcceptAI={onAcceptAI ? () => onAcceptAI(item.id) : undefined}
-                  onRejectAI={onRejectAI ? () => onRejectAI(item.id) : undefined}
-                  onTriggerAI={onTriggerAI ? () => onTriggerAI(item.id) : undefined}
-                  isActionLoading={isActionLoading ? isActionLoading(item.id) : false}
+                  onAcceptAI={onAcceptAI}
+                  onRejectAI={onRejectAI}
+                  onTriggerAI={onTriggerAI}
+                  isActionLoading={isActionLoading}
                   isTriggerLoading={isTriggerLoading ? isTriggerLoading(item.id) : false}
                   getSuggestionsHistory={getSuggestionsHistory}
                   disabled={disabled}

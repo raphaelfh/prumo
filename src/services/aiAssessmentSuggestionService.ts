@@ -92,7 +92,8 @@ type AIAssessmentSuggestionRow = AIAssessmentSuggestionRaw & {
   ai_assessment_runs?: {
     project_id: string;
     article_id: string;
-    instrument_id: string;
+    instrument_id: string | null;
+    project_instrument_id: string | null;
     extraction_instance_id: string | null;
   } | null;
 };
@@ -141,6 +142,7 @@ export class AIAssessmentSuggestionService {
           project_id,
           article_id,
           instrument_id,
+          project_instrument_id,
           extraction_instance_id
         )
       `)
@@ -156,8 +158,12 @@ export class AIAssessmentSuggestionService {
       query.eq('ai_assessment_runs.article_id', articleId);
     }
 
+    // XOR: instrument_id (global) OR project_instrument_id (project-scoped)
     if (instrumentId) {
-      query.eq('ai_assessment_runs.instrument_id', instrumentId);
+      query.or(
+        `instrument_id.eq.${instrumentId},project_instrument_id.eq.${instrumentId}`,
+        { foreignTable: 'ai_assessment_runs' }
+      );
     }
 
     if (extractionInstanceId) {
@@ -294,14 +300,17 @@ export class AIAssessmentSuggestionService {
     if (!resolvedInstrumentId || extractionInstanceId === undefined) {
       const { data: runData, error: runError } = await supabase
         .from('ai_assessment_runs')
-        .select('instrument_id, extraction_instance_id')
+        .select('instrument_id, project_instrument_id, extraction_instance_id')
         .eq('id', suggestion.assessment_run_id)
         .maybeSingle();
 
       if (runError) {
         console.warn('⚠️ [acceptSuggestion] Erro ao carregar run context:', runError);
       } else if (runData) {
-        resolvedInstrumentId = resolvedInstrumentId ?? normalizeId(runData.instrument_id);
+        // XOR: use whichever instrument column is set (global or project-scoped)
+        resolvedInstrumentId = resolvedInstrumentId
+          ?? normalizeId(runData.instrument_id)
+          ?? normalizeId(runData.project_instrument_id);
         if (extractionInstanceId === undefined) {
           resolvedExtractionInstanceId = normalizeId(runData.extraction_instance_id);
         }
