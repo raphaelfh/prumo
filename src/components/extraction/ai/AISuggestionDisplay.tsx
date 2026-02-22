@@ -1,15 +1,17 @@
 /**
- * Componente de Exibição de Sugestão de IA
- * 
- * Mostra valor sugerido + botões aceitar/rejeitar abaixo do input
+ * Componente de Exibição de Sugestão de IA - Extraction
+ *
+ * Mostra valor sugerido + % + botões aceitar/rejeitar abaixo do input.
+ * Clique no valor ou no % abre o modal de justificativa/evidência (quando houver).
  * Layout responsivo: [Valor sugerido] [%] [✓] [↻] [✗]
- * 
+ *
  * @component
  */
 
 import type { AISuggestion, AISuggestionHistoryItem } from '@/hooks/extraction/ai/useAISuggestions';
 import { AISuggestionActions } from '@/components/shared/ai-suggestions';
 import { AISuggestionConfidence } from './shared/AISuggestionConfidence';
+import { AISuggestionDetailsPopover } from './shared/AISuggestionDetailsPopover';
 import { AISuggestionValue } from './shared/AISuggestionValue';
 import { isSuggestionAccepted } from '@/lib/ai-extraction/suggestionUtils';
 
@@ -21,8 +23,16 @@ interface AISuggestionDisplayProps {
   onReject?: () => void;
   loading?: boolean;
   getHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
-  // getHistory mantido para compatibilidade, mas o botão foi movido para FieldInput
 }
+
+function hasSuggestionDetails(suggestion: AISuggestion): boolean {
+  const hasReasoning = !!suggestion.reasoning?.trim();
+  const hasEvidence = !!suggestion.evidence?.text?.trim();
+  return hasReasoning || hasEvidence;
+}
+
+const triggerAreaClass =
+  'flex flex-1 min-w-0 items-center gap-2 rounded-md px-1 py-0.5 -mx-1 -my-0.5 cursor-pointer hover:bg-muted/50 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
 
 export function AISuggestionDisplay({
   suggestion,
@@ -35,19 +45,45 @@ export function AISuggestionDisplay({
 }: AISuggestionDisplayProps) {
   const isAccepted = isSuggestionAccepted(suggestion);
   const isRejected = suggestion.status === 'rejected';
+  const hasDetails = hasSuggestionDetails(suggestion);
 
   return (
     <div className="mt-2 animate-in fade-in slide-in-from-top-2 duration-200 w-full">
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-2 w-full">
-        {/* Valor Sugerido - ocupa espaço disponível */}
-        <div className="flex-1 min-w-0 w-full sm:w-auto">
-          <AISuggestionValue suggestion={suggestion} maxLength={150} />
+        {/* Valor + %: área clicável para abrir modal de detalhes (quando houver) */}
+        <div className="flex-1 min-w-0 w-full sm:w-auto flex items-center gap-2">
+          {hasDetails ? (
+            <AISuggestionDetailsPopover
+              suggestion={suggestion}
+              trigger={
+                <div
+                  className={triggerAreaClass}
+                  role="button"
+                  tabIndex={0}
+                  title="Clique para ver justificativa e evidência"
+                  aria-label="Ver justificativa e evidência da sugestão"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      (e.currentTarget as HTMLElement).click();
+                    }
+                  }}
+                >
+                  <AISuggestionValue suggestion={suggestion} maxLength={150} className="flex-1 min-w-0" />
+                  <AISuggestionConfidence suggestion={suggestion} asTriggerChild />
+                </div>
+              }
+            />
+          ) : (
+            <>
+              <AISuggestionValue suggestion={suggestion} maxLength={150} />
+              <AISuggestionConfidence suggestion={suggestion} showDetailsOnClick />
+            </>
+          )}
         </div>
 
-        {/* Porcentagem + Botões de ação - sempre mostrar (pendente, aceito ou rejeitado) */}
+        {/* Botões de ação - sempre mostrar */}
         <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end sm:justify-start pr-1">
-          <AISuggestionConfidence suggestion={suggestion} showDetailsOnClick />
-          
           <div className="overflow-visible">
             <AISuggestionActions
               onAccept={onAccept}

@@ -748,6 +748,7 @@ For EACH field in the schema below, return an object with:
 - "value": the extracted value (matching the field type and allowed values if specified)
 - "confidence": a number between 0 and 1 indicating your confidence in the extraction (1 = very confident, 0 = not found/uncertain)
 - "reasoning": a brief explanation (1-2 sentences) of why you extracted this value or why you're uncertain
+- "evidence": optional object with "text" (short quoted passage from the article supporting the value) and "page_number" (integer, if known)
 
 Schema:
 {json.dumps(schema, indent=2)}
@@ -757,7 +758,8 @@ Example response format:
   "field_name": {{
     "value": "extracted value",
     "confidence": 0.95,
-    "reasoning": "Found in methods section, explicitly stated."
+    "reasoning": "Found in methods section, explicitly stated.",
+    "evidence": {{ "text": "Exact quote from the article.", "page_number": 3 }}
   }}
 }}
 """
@@ -898,15 +900,22 @@ Example response format:
                 )
                 continue
             
-            # Extrair confidence e reasoning se o valor for um objeto enriquecido
+            # Extrair confidence, reasoning e evidence se o valor for um objeto enriquecido
             confidence_score = None
             reasoning = None
-            
+            evidence_meta = None
+
             if isinstance(value, dict):
-                # Formato enriquecido: {"value": ..., "confidence": ..., "reasoning": ...}
+                # Formato enriquecido: {"value": ..., "confidence": ..., "reasoning": ..., "evidence": ...}
                 confidence_score = value.get("confidence")
                 reasoning = value.get("reasoning")
-                
+                raw_evidence = value.get("evidence")
+                if isinstance(raw_evidence, dict) and raw_evidence.get("text"):
+                    evidence_meta = {
+                        "text": str(raw_evidence["text"]).strip(),
+                        "page_number": raw_evidence.get("page_number") if raw_evidence.get("page_number") is not None else None,
+                    }
+
                 # O suggested_value deve conter apenas o valor real
                 if "value" in value:
                     actual_value = value["value"]
@@ -918,7 +927,14 @@ Example response format:
                 suggested_value = value
             else:
                 suggested_value = {"value": value}
-            
+
+            metadata_: dict = {
+                "field_name": field_name,
+                "extraction_trace_id": self.trace_id,
+            }
+            if evidence_meta:
+                metadata_["evidence"] = evidence_meta
+
             suggestion = AISuggestion(
                 extraction_run_id=run.id,  # For extraction suggestions
                 assessment_run_id=None,  # Not used for extractions
@@ -928,10 +944,7 @@ Example response format:
                 confidence_score=confidence_score,
                 reasoning=reasoning,
                 status="pending",
-                metadata_={
-                    "field_name": field_name,
-                    "extraction_trace_id": self.trace_id,
-                },
+                metadata_=metadata_,
             )
             
             await self._suggestions.create(suggestion)

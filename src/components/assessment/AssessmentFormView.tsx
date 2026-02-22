@@ -68,7 +68,7 @@ function AssessmentFormViewComponent(props: AssessmentFormViewProps) {
     <div className="space-y-4">
       {domains.map((domain) => (
         <DomainAccordion
-          key={domain.name}
+          key={domain.domain}
           domainName={domain.label}
           items={domain.items}
           responses={responses}

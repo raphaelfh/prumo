@@ -229,8 +229,8 @@ export function normalizeAIAssessmentSuggestion(
       ? (raw.metadata_ as AIAssessmentSuggestion['metadata_'])
       : {};
 
-  // Use whichever ID is set (XOR: global or project-scoped)
-  const effectiveItemId = raw.assessment_item_id || raw.project_assessment_item_id || '';
+  // XOR: prioritize project-scoped (default) over global
+  const effectiveItemId = raw.project_assessment_item_id || raw.assessment_item_id || '';
 
   return {
     id: raw.id,

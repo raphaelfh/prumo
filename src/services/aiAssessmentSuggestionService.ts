@@ -183,42 +183,29 @@ export class AIAssessmentSuggestionService {
     // Manter apenas a mais recente por item
     const suggestionsMap: Record<string, AIAssessmentSuggestion> = {};
 
-    console.log(`📊 [loadSuggestions] Processando ${(data || []).length} sugestão(ões) do banco`);
-
     const rows = (data || []) as AIAssessmentSuggestionRow[];
 
     rows.forEach((item) => {
-      // Use whichever ID is set (XOR: global or project-scoped)
-      const effectiveItemId = item.assessment_item_id || item.project_assessment_item_id;
+      // XOR: prioritize project-scoped (default) over global
+      const effectiveItemId = item.project_assessment_item_id || item.assessment_item_id;
 
       if (!effectiveItemId) {
-        console.warn('⚠️ [loadSuggestions] Sugestão sem item ID ignorada:', {
-          suggestionId: item.id,
-          status: item.status
-        });
+        console.warn('[loadSuggestions] Sugestão sem item ID ignorada:', item.id);
         return;
       }
 
       const key = getAssessmentSuggestionKey(effectiveItemId);
 
-      // Só adiciona se ainda não existe (mantém a mais recente)
       if (!suggestionsMap[key]) {
         suggestionsMap[key] = normalizeAIAssessmentSuggestion(item as AIAssessmentSuggestionRaw);
-        console.log(`✅ [loadSuggestions] Sugestão adicionada: ${key}`, {
-          status: item.status,
-          itemId: effectiveItemId,
-        });
-      } else {
-        console.log(`⏭️ [loadSuggestions] Sugestão mais recente já existe para ${key}, ignorando esta`);
       }
     });
 
-    const finalCount = Object.keys(suggestionsMap).length;
-    console.log(`🎯 [loadSuggestions] Total de ${finalCount} sugestão(ões) únicas mapeadas`);
+    // suggestionsMap now contains the latest suggestion per item
 
     return {
       suggestions: suggestionsMap,
-      count: finalCount,
+      count: Object.keys(suggestionsMap).length,
     };
   }
 
@@ -275,12 +262,6 @@ export class AIAssessmentSuggestionService {
    */
   static async acceptSuggestion(params: AcceptAssessmentSuggestionParams): Promise<void> {
     const { suggestionId, projectId, articleId, itemId, value, confidence, reviewerId, instrumentId, extractionInstanceId } = params;
-
-    console.log('✅ [acceptSuggestion] Iniciando aceitação:', {
-      suggestionId,
-      itemId,
-      reviewerId,
-    });
 
     // 1. Buscar sugestão para verificar se existe
     const { data: suggestion, error: fetchError } = await supabase
@@ -425,7 +406,6 @@ export class AIAssessmentSuggestionService {
       throw new APIError(`Erro ao atualizar sugestão: ${updateSuggestionError.message}`);
     }
 
-    console.log('✅ [acceptSuggestion] Sugestão aceita com sucesso:', { suggestionId, itemId });
   }
 
   /**
@@ -451,13 +431,6 @@ export class AIAssessmentSuggestionService {
       instrumentId,
       extractionInstanceId,
     } = params;
-
-    console.log('❌ [rejectSuggestion] Iniciando rejeição:', {
-      suggestionId,
-      itemId,
-      reviewerId,
-      wasAccepted,
-    });
 
     // 1. Se foi aceita, remover resposta do assessment
     if (wasAccepted && itemId && projectId && articleId) {
@@ -507,7 +480,6 @@ export class AIAssessmentSuggestionService {
           throw new APIError(`Erro ao remover resposta: ${updateError.message}`);
         }
 
-        console.log('🗑️ [rejectSuggestion] Resposta removida do assessment:', { itemId });
       }
     }
 
@@ -526,7 +498,6 @@ export class AIAssessmentSuggestionService {
       throw new APIError(`Erro ao atualizar sugestão: ${updateError.message}`);
     }
 
-    console.log('❌ [rejectSuggestion] Sugestão rejeitada com sucesso:', { suggestionId, itemId });
   }
 
   /**
@@ -554,7 +525,7 @@ export class AIAssessmentSuggestionService {
 
     let accepted = 0;
 
-    for (const [key, suggestion] of Object.entries(suggestions)) {
+    for (const suggestion of Object.values(suggestions)) {
       if (
         suggestion.status === 'pending' &&
         suggestion.confidence_score >= threshold
@@ -579,7 +550,6 @@ export class AIAssessmentSuggestionService {
       }
     }
 
-    console.log(`✅ [batchAccept] ${accepted} sugestão(ões) aceita(s) com threshold ${threshold}`);
     return accepted;
   }
 }

@@ -15,6 +15,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 
+const COPY_FEEDBACK_MS = 2000;
+
 // =================== INTERFACES ===================
 
 interface AISuggestionEvidenceProps {
@@ -37,7 +39,7 @@ export function AISuggestionEvidence(props: AISuggestionEvidenceProps) {
     try {
       await navigator.clipboard.writeText(evidence.text);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => setCopied(false), COPY_FEEDBACK_MS);
     } catch (err) {
       console.error('Failed to copy evidence text:', err);
     }
