@@ -17,17 +17,13 @@
 import { useState, memo } from 'react';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { AlertCircle, Info, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import type { AssessmentItem, AIAssessmentSuggestion, AssessmentResponse, AIAssessmentSuggestionHistoryItem } from '@/types/assessment';
-import { Card } from '@/components/ui/card';
-import { AISuggestionInline } from './ai/AISuggestionInline';
-import { AISuggestionEvidence } from './ai/AISuggestionEvidence';
-import { formatAssessmentLevel } from '@/lib/assessment-utils';
+import { AISuggestionDisplay } from './ai/AISuggestionDisplay';
 
 // =================== INTERFACES ===================
 
@@ -61,7 +57,7 @@ export function AssessmentItemInput(props: AssessmentItemInputProps) {
     onTriggerAI,
     isActionLoading,
     isTriggerLoading,
-    getSuggestionsHistory,
+    getSuggestionsHistory: _getSuggestionsHistory,
     disabled,
   } = props;
 
@@ -71,9 +67,23 @@ export function AssessmentItemInput(props: AssessmentItemInputProps) {
   const selectedLevel = value?.selected_level ?? '';
   const notes = value?.notes ?? '';
 
-  // Determinar se há sugestão pendente
+  // Determinar estado da sugestão (espelha Extraction: FieldInput)
   const hasPendingSuggestion = aiSuggestion?.status === 'pending';
   const hasAcceptedSuggestion = aiSuggestion?.status === 'accepted';
+  const hasInvalidLevel = hasPendingSuggestion
+    && aiSuggestion?.suggested_value?.level
+    && !item.allowed_levels.includes(aiSuggestion.suggested_value.level);
+
+  // Edição manual: valor no campo diferente do aceito pela IA (permite esconder display quando usuário editou)
+  const aiAcceptedLevel = hasAcceptedSuggestion ? aiSuggestion?.suggested_value?.level : null;
+  const hasManualValue = !!selectedLevel && (!hasAcceptedSuggestion || selectedLevel !== aiAcceptedLevel);
+
+  // Mostrar sugestão para pending, accepted (se não editado manualmente) e rejected (permite reverter)
+  const shouldShowSuggestion = aiSuggestion && (
+    aiSuggestion.status === 'pending' ||
+    (aiSuggestion.status === 'accepted' && !hasManualValue) ||
+    aiSuggestion.status === 'rejected'
+  );
 
   // Handler para mudança de nível
   const buildResponse = (
@@ -176,72 +186,6 @@ export function AssessmentItemInput(props: AssessmentItemInputProps) {
           </div>
         )}
 
-        {/* AI Suggestion Display - apenas se pendente */}
-        {hasPendingSuggestion && aiSuggestion && (
-          <Card className="p-4 bg-purple-50/50 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800">
-            <div className="space-y-4">
-              {/* Header com badge e valor sugerido */}
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Badge variant="outline" className="bg-purple-100 dark:bg-purple-900">
-                      <Sparkles className="h-3 w-3 mr-1" />
-                      IA sugere
-                    </Badge>
-                  </div>
-
-                  <p className="text-sm font-medium mb-2">
-                    Nível: <span className="text-purple-700 dark:text-purple-300">
-                      {formatAssessmentLevel(aiSuggestion.suggested_value.level)}
-                    </span>
-                  </p>
-
-                  {/* Inline suggestion component — binding item.id aqui (padrão DRY com Extraction/InstanceCard). */}
-                  <AISuggestionInline
-                    suggestion={aiSuggestion}
-                    itemId={item.id}
-                    onAccept={onAcceptAI ? () => onAcceptAI(item.id) : undefined}
-                    onReject={onRejectAI ? () => onRejectAI(item.id) : undefined}
-                    getHistory={getSuggestionsHistory}
-                    loading={typeof isActionLoading === 'function' ? isActionLoading(item.id) : Boolean(isActionLoading)}
-                  />
-                </div>
-              </div>
-
-              {/* Evidence passages usando componente rico */}
-              {aiSuggestion.suggested_value.evidence_passages && aiSuggestion.suggested_value.evidence_passages.length > 0 && (
-                <div className="space-y-2">
-                  {aiSuggestion.suggested_value.evidence_passages.slice(0, 2).map((passage, idx) => (
-                    <AISuggestionEvidence
-                      key={idx}
-                      evidence={{
-                        text: passage.text,
-                        pageNumber: passage.page_number ?? null,
-                      }}
-                      showCopyButton
-                    />
-                  ))}
-                  {aiSuggestion.suggested_value.evidence_passages.length > 2 && (
-                    <p className="text-xs text-muted-foreground italic">
-                      + {aiSuggestion.suggested_value.evidence_passages.length - 2} evidências adicionais
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          </Card>
-        )}
-
-        {/* Accepted suggestion badge */}
-        {hasAcceptedSuggestion && !selectedLevel && (
-          <div className="flex items-center gap-2 text-xs text-green-700 dark:text-green-300">
-            <Badge variant="outline" className="bg-green-100 dark:bg-green-900">
-              <Sparkles className="h-3 w-3 mr-1" />
-              Sugestão aceita
-            </Badge>
-          </div>
-        )}
-
         {/* Radio buttons para níveis */}
         <div>
           <RadioGroup
@@ -266,6 +210,17 @@ export function AssessmentItemInput(props: AssessmentItemInputProps) {
             ))}
           </RadioGroup>
         </div>
+
+        {/* Sugestão de IA inline (espelha Extraction: valor + % + aceitar/rejeitar) */}
+        {shouldShowSuggestion && aiSuggestion && (
+          <AISuggestionDisplay
+            suggestion={aiSuggestion}
+            itemId={item.id}
+            onAccept={onAcceptAI && !hasInvalidLevel ? () => onAcceptAI(item.id) : undefined}
+            onReject={onRejectAI ? () => onRejectAI(item.id) : undefined}
+            loading={typeof isActionLoading === 'function' ? isActionLoading(item.id) : Boolean(isActionLoading)}
+          />
+        )}
 
         {/* Textarea para notas */}
         <div className="space-y-2">

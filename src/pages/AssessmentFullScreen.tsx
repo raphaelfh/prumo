@@ -18,7 +18,7 @@
  * @page
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
@@ -64,12 +64,9 @@ export default function AssessmentFullScreen() {
     instrument,
     items,
     domains,
-    assessment,
     articles,
     loading,
     error: dataError,
-    refresh,
-    refreshAssessment,
   } = useAssessmentData({
     projectId: projectId || '',
     articleId: articleId || '',
@@ -105,15 +102,26 @@ export default function AssessmentFullScreen() {
     enabled: !!projectId && !!articleId && !!instrumentId && !loading && responsesInitialized,
   });
 
+  // T016 / FR-006: Refs declared after `responses` is initialized.
+  // responsesRef keeps a live reference so handleTriggerAI can read the current
+  // value at call time without adding `responses` to its dependency array.
+  const responsesRef = useRef(responses);
+  // Stores the selected_level value per item at the moment AI is triggered.
+  // There is no auto-accept path, so FR-006 is also structurally guaranteed.
+  const preAISnapshotRef = useRef<Record<string, string | null>>({});
+
+  // T016: Keep responsesRef in sync so snapshot captures current value at trigger time
+  useEffect(() => {
+    responsesRef.current = responses;
+  }, [responses]);
+
   // Callbacks para sugestões de IA
   const handleAISuggestionAccepted = useCallback(
     async (
       itemId: string,
       suggestionValue: { level: AssessmentLevel; evidence_passages: EvidencePassage[] }
     ) => {
-      console.log('🤖 Aceitando sugestão de IA:', { itemId, suggestionValue });
-
-      // Preencher o campo automaticamente quando sugestão é aceita
+      // FR-001: On explicit Accept, update radio button regardless of pre-AI snapshot
       updateResponse(itemId, {
         selected_level: suggestionValue.level,
         notes: null,
@@ -125,7 +133,6 @@ export default function AssessmentFullScreen() {
 
   const handleAISuggestionRejected = useCallback(
     async (itemId: string) => {
-      console.log('🤖 Rejeitando sugestão de IA - limpando campo:', { itemId });
       // Clear the form field when suggestion is rejected (mirrors extraction pattern)
       updateResponse(itemId, {
         selected_level: '',
@@ -157,51 +164,28 @@ export default function AssessmentFullScreen() {
 
   // Hook para avaliar item individual
   const [triggeringItemId, setTriggeringItemId] = useState<string | null>(null);
-  const { assessItem, loading: assessingItem } = useSingleAssessment({
+  const { assessItem } = useSingleAssessment({
     onSuccess: async (suggestionId) => {
-      console.log('✅ Item avaliado com sucesso:', { suggestionId });
-      setTriggeringItemId(null);
-
-      // Polling-based refresh (mirrors extraction's handleExtractionComplete pattern)
-      (async () => {
-        try {
-          // Wait for backend sync
-          await new Promise(resolve => setTimeout(resolve, 1500));
-
-          console.log('🔄 Recarregando sugestões de IA...');
-          let result = await refreshSuggestions();
-          let foundSuggestions = result.count > 0;
-
-          if (foundSuggestions) {
-            console.log(`✅ ${result.count} sugestão(ões) encontrada(s) imediatamente`);
-            return;
-          }
-
-          // Retry polling
-          const maxAttempts = 5;
-          const pollDelay = 1000;
-          let attempts = 0;
-
-          while (!foundSuggestions && attempts < maxAttempts) {
-            attempts++;
-            console.log(`🔄 Tentativa ${attempts + 1}/${maxAttempts + 1}: Recarregando sugestões...`);
-            await new Promise(resolve => setTimeout(resolve, pollDelay));
-            result = await refreshSuggestions();
-            foundSuggestions = result.count > 0;
-
-            if (foundSuggestions) {
-              console.log(`✅ ${result.count} sugestão(ões) encontrada(s) após ${attempts + 1} tentativa(s)`);
-              return;
-            }
-          }
-
-          if (!foundSuggestions) {
-            console.log('⚠️ Nenhuma sugestão encontrada após múltiplas tentativas');
-          }
-        } catch (error) {
-          console.error('❌ Erro ao recarregar sugestões:', error);
+      try {
+        const result = await refreshSuggestions();
+        // T017: Check for the specific new suggestion rather than a generic count,
+        // so the retry fires correctly even when older suggestions already exist.
+        const hasNewSuggestion = Object.values(result.suggestions).some(
+          (s) => s.id === suggestionId
+        );
+        if (!hasNewSuggestion) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          await refreshSuggestions();
         }
-      })();
+      } catch (error) {
+        console.error('[AssessmentFullScreen] Erro ao recarregar sugestões:', error);
+      } finally {
+        // T016: Clear trigger AFTER refresh so spinner stays until card can render
+        setTriggeringItemId(null);
+        // Clean up snapshot for this item
+        const itemId = triggeringItemId;
+        if (itemId) delete preAISnapshotRef.current[itemId];
+      }
     },
   });
 
@@ -209,6 +193,11 @@ export default function AssessmentFullScreen() {
   const handleTriggerAI = useCallback(
     async (itemId: string) => {
       setTriggeringItemId(itemId);
+      // T016 / FR-006: Snapshot the current response before AI processing begins.
+      // If the user edits the field while AI is processing, the card will still appear
+      // but no automatic override occurs (there is no auto-accept path).
+      // Explicit Accept always applies FR-001 regardless of this snapshot.
+      preAISnapshotRef.current[itemId] = responsesRef.current[itemId]?.selected_level ?? null;
       try {
         await assessItem({
           projectId: projectId || '',
@@ -220,6 +209,7 @@ export default function AssessmentFullScreen() {
       } catch (error) {
         console.error('❌ Erro ao avaliar item:', error);
         setTriggeringItemId(null);
+        delete preAISnapshotRef.current[itemId];
       }
     },
     [projectId, articleId, instrumentId, assessItem]
@@ -232,17 +222,14 @@ export default function AssessmentFullScreen() {
     progress: batchProgress,
   } = useBatchAssessment({
     onComplete: async () => {
-      // Polling-based refresh after batch (same pattern as single)
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      let result = await refreshSuggestions();
-      if (result.count > 0) return;
-
-      let attempts = 0;
-      while (attempts < 5) {
-        attempts++;
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        result = await refreshSuggestions();
-        if (result.count > 0) return;
+      try {
+        const result = await refreshSuggestions();
+        if (result.count === 0) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          await refreshSuggestions();
+        }
+      } catch (error) {
+        console.error('❌ Erro ao recarregar sugestões após batch:', error);
       }
     },
   });
@@ -396,8 +383,8 @@ export default function AssessmentFullScreen() {
                 onRejectAI: rejectSuggestion,
                 onTriggerAI: handleTriggerAI,
                 isActionLoading: (itemId) => !!isActionLoading(itemId),
-                isTriggerLoading: (itemId) => assessingItem && triggeringItemId === itemId,
-                triggeringItemId: assessingItem ? triggeringItemId : null,
+                isTriggerLoading: (itemId) => triggeringItemId === itemId,
+                triggeringItemId,
                 getSuggestionsHistory,
                 disabled: false,
               }}

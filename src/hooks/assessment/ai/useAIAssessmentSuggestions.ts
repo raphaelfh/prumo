@@ -97,14 +97,6 @@ export function useAIAssessmentSuggestions(
     setLoading(true);
 
     try {
-      console.log('🤖 [useAIAssessmentSuggestions] Carregando sugestões...', {
-        articleId,
-        projectId,
-        instrumentId,
-        extractionInstanceId,
-      });
-
-      // Carregar sugestões usando o serviço
       const result = await AIAssessmentSuggestionService.loadSuggestions({
         articleId,
         projectId,
@@ -113,23 +105,7 @@ export function useAIAssessmentSuggestions(
         statuses: ['pending', 'accepted', 'rejected'],
       });
 
-      // Atualizar estado
-      setSuggestions(() => {
-        const newSuggestions = result.suggestions;
-        const count = Object.keys(newSuggestions).length;
-
-        console.log(`✅ [useAIAssessmentSuggestions] ${count} sugestão(ões) carregada(s)`);
-
-        // Log das primeiras sugestões para debug
-        const suggestionKeys = Object.keys(newSuggestions).slice(0, 5);
-        console.log(`📝 [useAIAssessmentSuggestions] Primeiras sugestões:`, {
-          keys: suggestionKeys,
-          total: count,
-        });
-
-        return newSuggestions;
-      });
-
+      setSuggestions(result.suggestions);
       return result;
     } catch (err) {
       console.error('❌ [useAIAssessmentSuggestions] Erro ao carregar sugestões:', err);

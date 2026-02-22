@@ -655,6 +655,8 @@ When asked to add/modify features, files typically go in:
 - PostgreSQL — `assessment_instances` table with XOR FK columns (001-fix-assessment-instrument)
 - Python 3.11+ (backend, no changes needed), TypeScript 5.8 (frontend) + React 18, TanStack Query v5, Zustand, shadcn/ui, FastAPI (backend, existing) (002-ai-assessment-flow)
 - PostgreSQL via Supabase (existing tables: `ai_assessment_runs`, `ai_suggestions`, `ai_assessments`) (002-ai-assessment-flow)
+- TypeScript 5.8 (frontend React 18) + React 18, TanStack Query v5, shadcn/ui (Radix), Zustand, react-hook-form, Zod (003-fix-assessment-sync)
+- Supabase (PostgreSQL) via FastAPI backend API (leitura/escrita de `ai_suggestions`, `assessment_responses`) (003-fix-assessment-sync)
 
 ## Recent Changes
 - 001-fix-assessment-instrument: Added TypeScript 5.8 (frontend), Python 3.11+ (backend — no changes needed) + React 18, TanStack Query v5, shadcn/ui (Radix), Vite

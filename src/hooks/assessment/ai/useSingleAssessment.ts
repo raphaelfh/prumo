@@ -90,25 +90,11 @@ export function useSingleAssessment(options?: {
       assessmentItemId: string;
       instrumentId: string;
     }) => {
-      console.log('🤖 [useSingleAssessment] Iniciando avaliação', {
-        itemId: request.assessmentItemId,
-        instrumentId: request.instrumentId,
-        model: request.model || 'gpt-4o-mini',
-      });
-
       setLoading(true);
       setError(null);
 
       try {
-        // Chamar service para executar avaliação
-        console.log('🤖 [useSingleAssessment] Chamando AssessmentService...');
         const result: AIAssessmentResponse = await AssessmentService.assessSingleItem(request);
-
-        console.log('🤖 [useSingleAssessment] Service retornou', {
-          ok: result.ok,
-          hasData: !!result.data,
-          suggestionId: result.data?.id,
-        });
 
         if (!result.ok || !result.data) {
           throw new APIError(result.error?.message || 'Erro ao avaliar item');
@@ -126,11 +112,12 @@ export function useSingleAssessment(options?: {
           }
         );
 
-        // Chamar callback de sucesso se fornecido
         if (options?.onSuccess) {
-          Promise.resolve(options.onSuccess(result.data.id)).catch(err => {
+          try {
+            await Promise.resolve(options.onSuccess(result.data.id));
+          } catch (err) {
             console.error('❌ [useSingleAssessment] Erro no callback onSuccess:', err);
-          });
+          }
         }
       } catch (err) {
         console.error('❌ [useSingleAssessment] Erro capturado', {
