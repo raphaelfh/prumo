@@ -182,7 +182,7 @@ Este projeto é construído com:
 
 ```
 review-ai-hub/
-├── src/                    # Código fonte do frontend
+├── frontend/               # Código fonte do frontend
 │   ├── components/         # Componentes React
 │   ├── hooks/              # Custom hooks
 │   ├── services/           # Serviços e APIs

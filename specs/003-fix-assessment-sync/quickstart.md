@@ -28,7 +28,7 @@
 
 ### Step 2: Fix onSuccess Flow (ISSUE 1 + ISSUE 3)
 
-**File**: `src/pages/AssessmentFullScreen.tsx`
+**File**: `frontend/pages/AssessmentFullScreen.tsx`
 
 Refatorar o callback `onSuccess` do `useSingleAssessment`:
 
@@ -72,7 +72,7 @@ onSuccess: async (suggestionId) => {
 
 ### Step 3: Fix Key Mapping (se Issue 2 confirmada)
 
-**File**: `src/services/aiAssessmentSuggestionService.ts`
+**File**: `frontend/services/aiAssessmentSuggestionService.ts`
 
 Se o key mismatch for confirmado, ajustar em `loadSuggestions`:
 
@@ -97,7 +97,7 @@ const effectiveItemId = (() => {
 
 ### Step 4: Verify AssessmentItemInput Rendering
 
-**File**: `src/components/assessment/AssessmentItemInput.tsx`
+**File**: `frontend/components/assessment/AssessmentItemInput.tsx`
 
 Confirmar que `hasPendingSuggestion` detecta sugestões recém-criadas:
 
@@ -110,7 +110,7 @@ Se a condição estiver correta, nenhuma mudança é necessária neste component
 
 ### Step 5: Verify MemoizedAssessmentItemInput
 
-**File**: `src/components/assessment/DomainAccordion.tsx` (ou onde o memo é definido)
+**File**: `frontend/components/assessment/DomainAccordion.tsx` (ou onde o memo é definido)
 
 Se `AssessmentItemInput` é memoizado com `React.memo`, verificar que a função de comparação inclui `aiSuggestion`:
 
@@ -134,7 +134,7 @@ Se `aiSuggestion` não estiver na comparação, o componente NÃO re-renderiza q
 
 ### Step 6: Fix Batch Assessment onComplete (Same Pattern)
 
-**File**: `src/pages/AssessmentFullScreen.tsx`
+**File**: `frontend/pages/AssessmentFullScreen.tsx`
 
 Aplicar o mesmo fix do Step 2 ao `onComplete` do `useBatchAssessment`:
 

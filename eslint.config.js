@@ -34,7 +34,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["**/*.test.{ts,tsx}", "**/*.spec.{ts,tsx}", "src/test/**/*.{ts,tsx}"],
+      files: ["**/*.test.{ts,tsx}", "**/*.spec.{ts,tsx}", "frontend/test/**/*.{ts,tsx}"],
     languageOptions: {
       globals: {
         ...globals.browser,

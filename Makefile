@@ -1,4 +1,4 @@
-.PHONY: help setup start stop restart status backend frontend supabase install install-backend install-frontend logs logs-backend logs-frontend clean reset-db health
+.PHONY: help setup start stop restart status backend frontend supabase install install-backend install-frontend logs logs-backend logs-frontend clean reset-db health db-migrate db-rollback db-history db-current db-generate db-setup
 
 # Variáveis
 BACKEND_DIR := backend
@@ -145,6 +145,39 @@ reset-db: ## Reseta o banco de dados do Supabase (CUIDADO: apaga todos os dados)
 	@echo "$(RED)⚠️  ATENÇÃO: Isso vai apagar todos os dados do banco!$(NC)"
 	@read -p "Tem certeza? (s/N): " confirm && [ "$$confirm" = "s" ] || exit 1
 	@cd $(SUPABASE_DIR) && supabase db reset
+
+##@ Migrations (Alembic)
+
+db-migrate: ## Aplica todas as migrações pendentes (alembic upgrade head)
+	@echo "$(GREEN)🧬 Aplicando migrações Alembic...$(NC)"
+	@cd $(BACKEND_DIR) && env -u DATABASE_URL -u SUPABASE_DATABASE_URL uv run alembic upgrade head
+
+db-rollback: ## Reverte a última migração (alembic downgrade -1)
+	@echo "$(YELLOW)⏪ Revertendo última migração...$(NC)"
+	@cd $(BACKEND_DIR) && env -u DATABASE_URL -u SUPABASE_DATABASE_URL uv run alembic downgrade -1
+
+db-history: ## Exibe o histórico de migrações (alembic history --verbose)
+	@cd $(BACKEND_DIR) && env -u DATABASE_URL -u SUPABASE_DATABASE_URL uv run alembic history --verbose
+
+db-current: ## Exibe a revisão atual do banco (alembic current)
+	@cd $(BACKEND_DIR) && env -u DATABASE_URL -u SUPABASE_DATABASE_URL uv run alembic current
+
+db-generate: ## Gera uma nova migração via autogenerate — uso: make db-generate MSG="add_users_table"
+	@if [ -z "$(MSG)" ]; then echo "$(RED)❌ Forneça uma mensagem: make db-generate MSG=\"sua_mensagem\"$(NC)"; exit 1; fi
+	@echo "$(GREEN)✨ Gerando migração: $(MSG)$(NC)"
+	@cd $(BACKEND_DIR) && env -u DATABASE_URL -u SUPABASE_DATABASE_URL uv run alembic revision --autogenerate -m "$(MSG)"
+
+db-setup: ## Setup completo do banco: supabase db reset + alembic upgrade head
+	@echo "$(GREEN)🔄 Resetando banco e aplicando todas as migrações...$(NC)"
+	@cd $(SUPABASE_DIR) && supabase db reset
+	@echo "$(YELLOW)⏳ Aguardando PostgreSQL estar pronto...$(NC)"
+	@for i in $$(seq 1 30); do \
+		pg_isready -h 127.0.0.1 -p 54322 -U postgres -q && break; \
+		echo "  Aguardando... ($$i/30)"; \
+		sleep 1; \
+	done
+	@$(MAKE) db-migrate
+	@echo "$(GREEN)✅ Banco de dados pronto$(NC)"
 
 clean: ## Limpa arquivos temporários e caches
 	@echo "$(YELLOW)🧹 Limpando arquivos temporários...$(NC)"
