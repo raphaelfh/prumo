@@ -1,5 +1,5 @@
 /// <reference types="vitest" />
-import { defineConfig } from 'vite';
+import {defineConfig} from 'vite';
 import react from '@vitejs/plugin-react-swc';
 import path from 'path';
 
@@ -9,8 +9,8 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: [
-      './src/test/mocks/localStorage.ts',
-      './src/test/setup.ts',
+        './frontend/test/mocks/localStorage.ts',
+        './frontend/test/setup.ts',
     ],
     css: true,
     exclude: [
@@ -31,7 +31,7 @@ export default defineConfig({
       reporter: ['text', 'json', 'html'],
       exclude: [
         'node_modules/',
-        'src/test/',
+          'frontend/test/',
         '**/*.d.ts',
         '**/*.config.*',
         'dist/',
@@ -52,7 +52,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+        '@': path.resolve(__dirname, './frontend'),
     },
   },
 });

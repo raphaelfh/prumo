@@ -11,10 +11,9 @@ from enum import Enum as PyEnum
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, String, TypeDecorator, func
+from sqlalchemy import DateTime, MetaData, String, TypeDecorator, func
 from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM, UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
-
 
 # =============================================================================
 # MAPEAMENTO DE ENUMS POSTGRESQL
@@ -127,16 +126,32 @@ class PostgreSQLEnumType(TypeDecorator):
         return value
 
 
+_naming_convention: dict[str, str] = {
+    # Use PostgreSQL's default naming scheme for FK/PK/UQ so that autogenerate
+    # comparisons against the existing database (which uses PG defaults) produce
+    # a clean diff.  New constraints created via Alembic will follow the same
+    # convention, keeping names consistent across the schema.
+    "ix": "ix_%(column_0_label)s",
+    "uq": "%(table_name)s_%(column_0_name)s_key",
+    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "fk": "%(table_name)s_%(column_0_name)s_fkey",
+    "pk": "%(table_name)s_pkey",
+}
+
+
 class Base(DeclarativeBase):
     """
     Classe base para modelos SQLAlchemy.
-    
+
     Configurações:
-    - Naming convention para constraints
+    - Naming convention para constraints (deterministic names for Alembic)
+    - Default schema: public
     - Type annotations nativas
     """
-    
-    # Naming convention para constraints (facilita migrations)
+
+    metadata = MetaData(naming_convention=_naming_convention)
+
+    # Default schema for all application tables
     __table_args__: dict[str, Any] = {
         "schema": "public",
     }

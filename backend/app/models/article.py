@@ -9,7 +9,7 @@ from enum import Enum as PyEnum
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -132,33 +132,28 @@ class Article(BaseModel):
     # Índices definidos via __table_args__ (Infrastructure as Code)
     __table_args__ = (
         # Índice composto para busca por ano/periódico
-        Index("idx_articles_year_journal", "publication_year", "journal_title"),
-        
+        Index("idx_articles_biblio", "publication_year", "journal_title"),
+
         # Índice trigram para busca por similaridade no título
         # Requer extensão pg_trgm habilitada
         Index(
-            "idx_articles_title_trgm",
+            "idx_articles_trgm_title",
             "title",
             postgresql_using="gin",
             postgresql_ops={"title": "gin_trgm_ops"},
         ),
-        
+
         # Índices GIN para arrays (busca eficiente com @> e &&)
-        Index("idx_articles_keywords_gin", "keywords", postgresql_using="gin"),
-        Index("idx_articles_mesh_terms_gin", "mesh_terms", postgresql_using="gin"),
-        
+        Index("idx_articles_keywords", "keywords", postgresql_using="gin"),
+        Index("idx_articles_mesh", "mesh_terms", postgresql_using="gin"),
+
         # Índice GIN para JSONB
         Index("idx_articles_source_payload_gin", "source_payload", postgresql_using="gin"),
-        
-        # Unique constraint parcial para Zotero
-        UniqueConstraint(
-            "project_id",
-            "zotero_item_key",
-            name="uq_articles_project_zotero_key",
-            # NOTA: postgresql_where não é suportado em UniqueConstraint
-            # A constraint parcial deve ser criada via migration SQL
-        ),
-        
+
+        # NOTA: o unique partial index uq_articles_project_zotero_item é gerenciado
+        # via SQL na migration inicial (CREATE UNIQUE INDEX ... WHERE zotero_item_key IS NOT NULL).
+        # Não definir UniqueConstraint aqui para evitar conflito com autogenerate.
+
         {"schema": "public"},
     )
     

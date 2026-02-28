@@ -8,11 +8,12 @@
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
 **Reference**: The extraction AI flow is the gold standard. All assessment AI patterns must mirror extraction equivalents:
-- `src/pages/ExtractionFullScreen.tsx` → page-level hook wiring
-- `src/hooks/extraction/ai/useAISuggestions.ts` → suggestion management
-- `src/hooks/extraction/useFullAIExtraction.ts` → batch orchestration
-- `src/components/extraction/header/HeaderAIActions.tsx` → badge + header actions
-- `src/components/extraction/ai/AISuggestionInline.tsx` → inline display with history
+
+- `frontend/pages/ExtractionFullScreen.tsx` → page-level hook wiring
+- `frontend/hooks/extraction/ai/useAISuggestions.ts` → suggestion management
+- `frontend/hooks/extraction/useFullAIExtraction.ts` → batch orchestration
+- `frontend/components/extraction/header/HeaderAIActions.tsx` → badge + header actions
+- `frontend/components/extraction/ai/AISuggestionInline.tsx` → inline display with history
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -34,13 +35,32 @@
 
 **CRITICAL**: No user story work can begin until this phase is complete.
 
-- [x] T001 Migrate `AssessmentService` from `fetchBackend()` to `apiClient` in `src/services/assessmentService.ts`. Mirror how extraction uses `sectionExtractionClient()` from `src/integrations/api/client.ts` (lines 244-253). Specifically: (1) Remove the custom `fetchBackend()` function and `getAuthToken()` helper. (2) Replace all 4 methods (`assessSingleItem`, `assessBatch`, `listSuggestions`, `reviewSuggestion`) to use `apiClient()` with the `/api/v1/ai-assessment` base path. (3) Use `timeout: 120000` for AI assessment calls (same as extraction's 120s timeout). (4) Errors should throw `ApiError` (from client.ts) instead of custom `APIError`. (5) Preserve all existing method signatures and return types so hooks don't break.
+- [x] T001 Migrate `AssessmentService` from `fetchBackend()` to `apiClient` in `frontend/services/assessmentService.ts`.
+  Mirror how extraction uses `sectionExtractionClient()` from `frontend/integrations/api/client.ts` (lines 244-253).
+  Specifically: (1) Remove the custom `fetchBackend()` function and `getAuthToken()` helper. (2) Replace all 4 methods (
+  `assessSingleItem`, `assessBatch`, `listSuggestions`, `reviewSuggestion`) to use `apiClient()` with the
+  `/api/v1/ai-assessment` base path. (3) Use `timeout: 120000` for AI assessment calls (same as extraction's 120s
+  timeout). (4) Errors should throw `ApiError` (from client.ts) instead of custom `APIError`. (5) Preserve all existing
+  method signatures and return types so hooks don't break.
 
-- [x] T002 [P] Create consolidated shared AI suggestion components in `src/components/shared/ai-suggestions/`. Create the directory and move these 4 components from `src/components/extraction/ai/shared/` (the established versions): `AISuggestionActions.tsx`, `AISuggestionConfidence.tsx`, `AISuggestionValue.tsx`, `AISuggestionDetailsPopover.tsx`. Make them generic over suggestion type by accepting a minimal interface: `{ confidence_score: number; reasoning: string; status: string; suggested_value: unknown }`. Create `src/components/shared/ai-suggestions/index.ts` barrel export.
+- [x] T002 [P] Create consolidated shared AI suggestion components in `frontend/components/shared/ai-suggestions/`.
+  Create the directory and move these 4 components from `frontend/components/extraction/ai/shared/` (the established
+  versions): `AISuggestionActions.tsx`, `AISuggestionConfidence.tsx`, `AISuggestionValue.tsx`,
+  `AISuggestionDetailsPopover.tsx`. Make them generic over suggestion type by accepting a minimal interface:
+  `{ confidence_score: number; reasoning: string; status: string; suggested_value: unknown }`. Create
+  `frontend/components/shared/ai-suggestions/index.ts` barrel export.
 
-- [x] T003 Update extraction AI shared imports to use consolidated components. Update all files in `src/components/extraction/ai/` that import from `./shared/` or `../shared/` to import from `@/components/shared/ai-suggestions` instead. Replace `src/components/extraction/ai/shared/index.ts` to re-export from the shared location for backwards compatibility. Verify `src/components/extraction/ai/AISuggestionInline.tsx` still works.
+- [x] T003 Update extraction AI shared imports to use consolidated components. Update all files in
+  `frontend/components/extraction/ai/` that import from `./shared/` or `../shared/` to import from
+  `@/components/shared/ai-suggestions` instead. Replace `frontend/components/extraction/ai/shared/index.ts` to re-export
+  from the shared location for backwards compatibility. Verify
+  `frontend/components/extraction/ai/AISuggestionInline.tsx` still works.
 
-- [x] T004 Update assessment AI shared imports to use consolidated components. Update all files in `src/components/assessment/ai/` that import from `./shared/` or `../shared/` to import from `@/components/shared/ai-suggestions` instead. Replace `src/components/assessment/ai/shared/index.ts` to re-export from the shared location for backwards compatibility. Verify `src/components/assessment/ai/AISuggestionInline.tsx` still works.
+- [x] T004 Update assessment AI shared imports to use consolidated components. Update all files in
+  `frontend/components/assessment/ai/` that import from `./shared/` or `../shared/` to import from
+  `@/components/shared/ai-suggestions` instead. Replace `frontend/components/assessment/ai/shared/index.ts` to re-export
+  from the shared location for backwards compatibility. Verify
+  `frontend/components/assessment/ai/AISuggestionInline.tsx` still works.
 
 **Checkpoint**: Service layer uses canonical `apiClient`, shared AI components are deduplicated. TypeScript must compile cleanly.
 
@@ -56,13 +76,31 @@
 
 ### Implementation for User Story 1
 
-- [x] T005 [US1] Fix suggestion key mismatch in `src/components/assessment/DomainAccordion.tsx`. The hook (`useAIAssessmentSuggestions`) keys suggestions as `ai_suggestion_${itemId}` via `getAssessmentSuggestionKey()`, but `DomainAccordion` looks them up with raw `aiSuggestions?.[item.id]`. Import `getAssessmentSuggestionKey` from `src/services/aiAssessmentSuggestionService.ts` and change the lookup to `aiSuggestions?.[getAssessmentSuggestionKey(item.id)]`. This is the critical bug preventing any suggestion from ever displaying.
+- [x] T005 [US1] Fix suggestion key mismatch in `frontend/components/assessment/DomainAccordion.tsx`. The hook (
+  `useAIAssessmentSuggestions`) keys suggestions as `ai_suggestion_${itemId}` via `getAssessmentSuggestionKey()`, but
+  `DomainAccordion` looks them up with raw `aiSuggestions?.[item.id]`. Import `getAssessmentSuggestionKey` from
+  `frontend/services/aiAssessmentSuggestionService.ts` and change the lookup to
+  `aiSuggestions?.[getAssessmentSuggestionKey(item.id)]`. This is the critical bug preventing any suggestion from ever
+  displaying.
 
-- [x] T006 [US1] Add polling-based suggestion refresh after AI assessment completes in `src/pages/AssessmentFullScreen.tsx`. Mirror extraction's `handleExtractionComplete()` pattern (ExtractionFullScreen.tsx lines 725-809): (1) After `useSingleAssessment.onSuccess` fires, wait 1.5s for backend sync. (2) Call `refreshSuggestions()` and check `result.count > 0`. (3) If no suggestions found, retry up to 5 times with 1s delay between attempts. (4) Log progress: `"Attempt X/5: Reloading suggestions..."`. (5) Run as a non-blocking IIFE so the UI stays responsive. Replace the current simple `await refreshSuggestions()` in the `onSuccess` callback.
+- [x] T006 [US1] Add polling-based suggestion refresh after AI assessment completes in
+  `frontend/pages/AssessmentFullScreen.tsx`. Mirror extraction's `handleExtractionComplete()` pattern (
+  ExtractionFullScreen.tsx lines 725-809): (1) After `useSingleAssessment.onSuccess` fires, wait 1.5s for backend
+  sync. (2) Call `refreshSuggestions()` and check `result.count > 0`. (3) If no suggestions found, retry up to 5 times
+  with 1s delay between attempts. (4) Log progress: `"Attempt X/5: Reloading suggestions..."`. (5) Run as a non-blocking
+  IIFE so the UI stays responsive. Replace the current simple `await refreshSuggestions()` in the `onSuccess` callback.
 
-- [x] T007 [US1] Verify and fix `handleTriggerAI` in `src/pages/AssessmentFullScreen.tsx` (lines 160-177). Ensure it passes all required parameters to `useSingleAssessment.assessItem()`: `projectId`, `articleId`, `instrumentId`, `assessmentItemId`. Add no-PDF validation: before calling `assessItem`, check if the article has a PDF file (via `article.files` or similar). If no PDF, show `toast.error("PDF necessário para avaliação com IA")` and abort. This mirrors extraction's pre-flight PDF check.
+- [x] T007 [US1] Verify and fix `handleTriggerAI` in `frontend/pages/AssessmentFullScreen.tsx` (lines 160-177). Ensure
+  it passes all required parameters to `useSingleAssessment.assessItem()`: `projectId`, `articleId`, `instrumentId`,
+  `assessmentItemId`. Add no-PDF validation: before calling `assessItem`, check if the article has a PDF file (via
+  `article.files` or similar). If no PDF, show `toast.error("PDF necessário para avaliação com IA")` and abort. This
+  mirrors extraction's pre-flight PDF check.
 
-- [x] T008 [US1] Verify loading state feedback works end-to-end in `src/components/assessment/AssessmentItemInput.tsx`. With T005 fixed, the "Avaliar com IA" button should: (1) show spinner when `isTriggerLoading` is true; (2) be disabled during loading; (3) hide when a pending suggestion exists; (4) show again if suggestion is rejected. After assessment completes, the purple suggestion card should render with `AISuggestionInline` showing the level, confidence %, and reasoning. Test the full cycle visually.
+- [x] T008 [US1] Verify loading state feedback works end-to-end in
+  `frontend/components/assessment/AssessmentItemInput.tsx`. With T005 fixed, the "Avaliar com IA" button should: (1)
+  show spinner when `isTriggerLoading` is true; (2) be disabled during loading; (3) hide when a pending suggestion
+  exists; (4) show again if suggestion is rejected. After assessment completes, the purple suggestion card should render
+  with `AISuggestionInline` showing the level, confidence %, and reasoning. Test the full cycle visually.
 
 **Checkpoint**: Clicking "Avaliar com IA" triggers the backend, polls for the suggestion, and displays it inline. User Story 1 is fully functional.
 
@@ -78,13 +116,32 @@
 
 ### Implementation for User Story 2
 
-- [x] T009 [US2] Verify `handleAISuggestionAccepted` callback in `src/pages/AssessmentFullScreen.tsx` (lines 106-115). It should map the accepted suggestion's `level` to `selected_level` and `evidence_passages` to `evidence` in the `AssessmentResponse`, then call `updateResponse(itemId, response)`. Currently it does this — verify the mapping is correct: `{ selected_level: suggestionValue.level, notes: null, evidence: suggestionValue.evidence_passages || [] }`. Ensure `confidence` from the suggestion is also preserved if applicable.
+- [x] T009 [US2] Verify `handleAISuggestionAccepted` callback in `frontend/pages/AssessmentFullScreen.tsx` (lines
+  106-115). It should map the accepted suggestion's `level` to `selected_level` and `evidence_passages` to `evidence` in
+  the `AssessmentResponse`, then call `updateResponse(itemId, response)`. Currently it does this — verify the mapping is
+  correct: `{ selected_level: suggestionValue.level, notes: null, evidence: suggestionValue.evidence_passages || [] }`.
+  Ensure `confidence` from the suggestion is also preserved if applicable.
 
-- [x] T010 [US2] Fix `handleAISuggestionRejected` callback in `src/pages/AssessmentFullScreen.tsx` (lines 126-129). Currently it's a NO-OP (just logs). Mirror extraction's pattern (ExtractionFullScreen.tsx line 151): `updateValue(instanceId, fieldId, null)`. Change to: `updateResponse(itemId, { selected_level: '', notes: null, evidence: [] })` to clear the form field when a suggestion is rejected. This ensures reject actually has a visible effect, matching extraction behavior where reject clears the extracted value.
+- [x] T010 [US2] Fix `handleAISuggestionRejected` callback in `frontend/pages/AssessmentFullScreen.tsx` (lines 126-129).
+  Currently it's a NO-OP (just logs). Mirror extraction's pattern (ExtractionFullScreen.tsx line 151):
+  `updateValue(instanceId, fieldId, null)`. Change to:
+  `updateResponse(itemId, { selected_level: '', notes: null, evidence: [] })` to clear the form field when a suggestion
+  is rejected. This ensures reject actually has a visible effect, matching extraction behavior where reject clears the
+  extracted value.
 
-- [x] T011 [US2] Add suggestion history popover to `src/components/assessment/ai/AISuggestionInline.tsx`. Mirror extraction's `AISuggestionInline` (extraction/ai/AISuggestionInline.tsx lines 31-82): when a suggestion is accepted, show an `AISuggestionHistoryPopover` (or a simpler "IA aceita" badge with re-reject capability). Currently assessment shows only a plain "IA aceita" text. Add: (1) an `itemId` prop and `getHistory` optional prop to the component. (2) When `getHistory` is provided and suggestion is accepted, render a clickable badge that can show history or allow re-rejecting. (3) Pass `getSuggestionsHistory` from `useAIAssessmentSuggestions` through the component chain.
+- [x] T011 [US2] Add suggestion history popover to `frontend/components/assessment/ai/AISuggestionInline.tsx`. Mirror
+  extraction's `AISuggestionInline` (extraction/ai/AISuggestionInline.tsx lines 31-82): when a suggestion is accepted,
+  show an `AISuggestionHistoryPopover` (or a simpler "IA aceita" badge with re-reject capability). Currently assessment
+  shows only a plain "IA aceita" text. Add: (1) an `itemId` prop and `getHistory` optional prop to the component. (2)
+  When `getHistory` is provided and suggestion is accepted, render a clickable badge that can show history or allow
+  re-rejecting. (3) Pass `getSuggestionsHistory` from `useAIAssessmentSuggestions` through the component chain.
 
-- [x] T012 [US2] Wire history popover through the component chain. In `src/pages/AssessmentFullScreen.tsx`, add `getSuggestionsHistory` to the `formViewProps` passed to `AssessmentFormPanel`. Update `AssessmentFormViewProps` in `src/components/assessment/AssessmentFormView.tsx` to accept `getSuggestionsHistory?: (itemId: string, limit?: number) => Promise<AIAssessmentSuggestionHistoryItem[]>`. Pass it through `DomainAccordion` → `AssessmentItemInput` → `AISuggestionInline`. Mirror how extraction passes `getSuggestionsHistory` through its component chain.
+- [x] T012 [US2] Wire history popover through the component chain. In `frontend/pages/AssessmentFullScreen.tsx`, add
+  `getSuggestionsHistory` to the `formViewProps` passed to `AssessmentFormPanel`. Update `AssessmentFormViewProps` in
+  `frontend/components/assessment/AssessmentFormView.tsx` to accept
+  `getSuggestionsHistory?: (itemId: string, limit?: number) => Promise<AIAssessmentSuggestionHistoryItem[]>`. Pass it
+  through `DomainAccordion` → `AssessmentItemInput` → `AISuggestionInline`. Mirror how extraction passes
+  `getSuggestionsHistory` through its component chain.
 
 **Checkpoint**: Accept fills the form response. Reject clears it. Accepted suggestions show a history badge. All operations update the UI immediately. User Stories 1 AND 2 are fully functional.
 
@@ -100,13 +157,38 @@
 
 ### Implementation for User Story 3
 
-- [x] T013 [US3] Create `useBatchAssessment` hook in `src/hooks/assessment/ai/useBatchAssessment.ts`. Mirror `useFullAIExtraction` pattern (extraction/useFullAIExtraction.ts lines 72-279). Interface: `useBatchAssessment(options?: { onComplete?: () => Promise<void> }): { assessBatch: (params) => Promise<void>, loading: boolean, error: string | null, progress: BatchAssessmentProgress | null }`. The `assessBatch` function should: (1) Accept `{ projectId, articleId, instrumentId, items, existingResponses }`. (2) Filter out items that already have accepted responses (from `existingResponses`). (3) Call `AssessmentService.assessBatch()` with remaining item IDs. (4) Track progress: `{ current: number, total: number, stage: 'assessing' }`. (5) On completion, fire `onComplete` callback (which should trigger `refreshSuggestions`). (6) Show success toast with count: `"Avaliação em lote concluída! X sugestões criadas"`. (7) Handle errors with toast and set `error` state.
+- [x] T013 [US3] Create `useBatchAssessment` hook in `frontend/hooks/assessment/ai/useBatchAssessment.ts`. Mirror
+  `useFullAIExtraction` pattern (extraction/useFullAIExtraction.ts lines 72-279). Interface:
+  `useBatchAssessment(options?: { onComplete?: () => Promise<void> }): { assessBatch: (params) => Promise<void>, loading: boolean, error: string | null, progress: BatchAssessmentProgress | null }`.
+  The `assessBatch` function should: (1) Accept `{ projectId, articleId, instrumentId, items, existingResponses }`. (2)
+  Filter out items that already have accepted responses (from `existingResponses`). (3) Call
+  `AssessmentService.assessBatch()` with remaining item IDs. (4) Track progress:
+  `{ current: number, total: number, stage: 'assessing' }`. (5) On completion, fire `onComplete` callback (which should
+  trigger `refreshSuggestions`). (6) Show success toast with count:
+  `"Avaliação em lote concluída! X sugestões criadas"`. (7) Handle errors with toast and set `error` state.
 
-- [x] T014 [US3] Create `AssessmentHeaderAIActions` component in `src/components/assessment/ai/AssessmentHeaderAIActions.tsx`. Mirror extraction's `HeaderAIActions` pattern (extraction/header/HeaderAIActions.tsx lines 26-95). Props: `{ suggestions: Record<string, AIAssessmentSuggestion>, onBatchAssess: () => void, batchLoading: boolean, batchProgress: BatchAssessmentProgress | null }`. Render: (1) "Avaliar Tudo com IA" button with `Sparkles` icon — disabled when `batchLoading`. (2) During batch: replace button text with progress "Avaliando X de Y". (3) Pending suggestions badge (count of `status === 'pending'` suggestions) — hide when 0, cap at "99+". Use `Brain` icon + `Badge` component with tooltip showing "X sugestões de IA pendentes". onClick scrolls to first pending suggestion.
+- [x] T014 [US3] Create `AssessmentHeaderAIActions` component in
+  `frontend/components/assessment/ai/AssessmentHeaderAIActions.tsx`. Mirror extraction's `HeaderAIActions` pattern (
+  extraction/header/HeaderAIActions.tsx lines 26-95). Props:
+  `{ suggestions: Record<string, AIAssessmentSuggestion>, onBatchAssess: () => void, batchLoading: boolean, batchProgress: BatchAssessmentProgress | null }`.
+  Render: (1) "Avaliar Tudo com IA" button with `Sparkles` icon — disabled when `batchLoading`. (2) During batch:
+  replace button text with progress "Avaliando X de Y". (3) Pending suggestions badge (count of `status === 'pending'`
+  suggestions) — hide when 0, cap at "99+". Use `Brain` icon + `Badge` component with tooltip showing "X sugestões de IA
+  pendentes". onClick scrolls to first pending suggestion.
 
-- [x] T015 [US3] Create `BatchAssessmentProgress` floating display in `src/components/assessment/ai/BatchAssessmentProgress.tsx`. Mirror extraction's `FullAIExtractionProgress` pattern. Render as a fixed-position card at bottom-right (`fixed bottom-6 right-6 z-[9999] w-96`). Show: (1) Stage description: "Avaliando qualidade com IA". (2) Progress bar or text: "Item X de Y". (3) Close button to dismiss. (4) Minimize button. Only show when `batchLoading && batchProgress` is truthy.
+- [x] T015 [US3] Create `BatchAssessmentProgress` floating display in
+  `frontend/components/assessment/ai/BatchAssessmentProgress.tsx`. Mirror extraction's `FullAIExtractionProgress`
+  pattern. Render as a fixed-position card at bottom-right (`fixed bottom-6 right-6 z-[9999] w-96`). Show: (1) Stage
+  description: "Avaliando qualidade com IA". (2) Progress bar or text: "Item X de Y". (3) Close button to dismiss. (4)
+  Minimize button. Only show when `batchLoading && batchProgress` is truthy.
 
-- [x] T016 [US3] Integrate batch assessment in `src/pages/AssessmentFullScreen.tsx`. (1) Instantiate `useBatchAssessment` hook with `onComplete: refreshSuggestions`. (2) Add `AssessmentHeaderAIActions` to the page header area, passing `aiSuggestions`, batch handler, batch loading state, and batch progress. (3) Create `handleBatchAssess` function that calls `assessBatch({ projectId, articleId, instrumentId, items, existingResponses: responses })`. (4) Render `BatchAssessmentProgress` at the page level (fixed position) when batch is running, with minimize/close controls. (5) After batch completes, use the same polling-based refresh from T006 to load all suggestions.
+- [x] T016 [US3] Integrate batch assessment in `frontend/pages/AssessmentFullScreen.tsx`. (1) Instantiate
+  `useBatchAssessment` hook with `onComplete: refreshSuggestions`. (2) Add `AssessmentHeaderAIActions` to the page
+  header area, passing `aiSuggestions`, batch handler, batch loading state, and batch progress. (3) Create
+  `handleBatchAssess` function that calls
+  `assessBatch({ projectId, articleId, instrumentId, items, existingResponses: responses })`. (4) Render
+  `BatchAssessmentProgress` at the page level (fixed position) when batch is running, with minimize/close controls. (5)
+  After batch completes, use the same polling-based refresh from T006 to load all suggestions.
 
 **Checkpoint**: "Avaliar Tudo com IA" processes all items via batch endpoint. Floating progress shows "Item X de Y". Suggestions appear for all items. Header badge shows pending count.
 
@@ -122,9 +204,17 @@
 
 ### Implementation for User Story 4
 
-- [x] T017 [US4] Add "Aceitar com alta confianca" button to `AssessmentHeaderAIActions` in `src/components/assessment/ai/AssessmentHeaderAIActions.tsx`. Add a new prop: `onBatchAccept: (threshold: number) => Promise<number>`. Show this button only when there are pending suggestions (count > 0). On click, call `onBatchAccept(0.80)`. Show the count of accepted suggestions in a success toast: `"X sugestões aceitas automaticamente"`. Disable button while processing. Use `CheckCheck` icon from lucide-react.
+- [x] T017 [US4] Add "Aceitar com alta confianca" button to `AssessmentHeaderAIActions` in
+  `frontend/components/assessment/ai/AssessmentHeaderAIActions.tsx`. Add a new prop:
+  `onBatchAccept: (threshold: number) => Promise<number>`. Show this button only when there are pending suggestions (
+  count > 0). On click, call `onBatchAccept(0.80)`. Show the count of accepted suggestions in a success toast:
+  `"X sugestões aceitas automaticamente"`. Disable button while processing. Use `CheckCheck` icon from lucide-react.
 
-- [x] T018 [US4] Wire batch accept in `src/pages/AssessmentFullScreen.tsx`. Pass `useAIAssessmentSuggestions.batchAccept` to `AssessmentHeaderAIActions` as `onBatchAccept`. After `batchAccept` completes, the `onSuggestionAccepted` callback should fire for each accepted suggestion (this happens inside the hook). Verify the badge count decreases reactively as suggestions move from `pending` to `accepted`. Verify form responses update for all batch-accepted items.
+- [x] T018 [US4] Wire batch accept in `frontend/pages/AssessmentFullScreen.tsx`. Pass
+  `useAIAssessmentSuggestions.batchAccept` to `AssessmentHeaderAIActions` as `onBatchAccept`. After `batchAccept`
+  completes, the `onSuggestionAccepted` callback should fire for each accepted suggestion (this happens inside the
+  hook). Verify the badge count decreases reactively as suggestions move from `pending` to `accepted`. Verify form
+  responses update for all batch-accepted items.
 
 **Checkpoint**: Badge shows pending count, "Aceitar com alta confianca" processes high-confidence suggestions. Form updates for all accepted items. Badge decreases.
 
@@ -135,7 +225,9 @@
 **Purpose**: Final validation and cleanup across all user stories.
 
 - [x] T019 Verify TypeScript compilation passes with zero errors by running `npx tsc --noEmit` from project root
-- [x] T020 [P] Remove obsolete shared component files. After T003 and T004, delete the original component files from `src/components/extraction/ai/shared/` and `src/components/assessment/ai/shared/` (keeping only the re-export index.ts files if needed). Verify no imports reference the old direct file paths.
+- [x] T020 [P] Remove obsolete shared component files. After T003 and T004, delete the original component files from
+  `frontend/components/extraction/ai/shared/` and `frontend/components/assessment/ai/shared/` (keeping only the
+  re-export index.ts files if needed). Verify no imports reference the old direct file paths.
 - [x] T021 Run quickstart.md validation — walk through all 4 integration scenarios in `specs/002-ai-assessment-flow/quickstart.md` to verify end-to-end functionality
 
 ---

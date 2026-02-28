@@ -91,7 +91,7 @@ Temos ideias para melhorias? Ótimo!
 
 ```
 review-hub/
-├── src/                    # Código fonte do frontend
+├── frontend/               # Código fonte do frontend
 │   ├── components/         # Componentes React
 │   ├── hooks/              # Custom hooks
 │   ├── services/           # Serviços e APIs

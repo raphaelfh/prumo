@@ -43,7 +43,7 @@
 - `AISuggestionValue.tsx` - same pattern
 - `AISuggestionDetails.tsx` - same pattern
 
-Moving to `src/components/shared/ai-suggestions/` follows DRY principle from spec.
+Moving to `frontend/components/shared/ai-suggestions/` follows DRY principle from spec.
 
 **Alternatives considered**: Keeping duplicates was rejected per explicit DRY requirement in feature spec.
 
@@ -51,7 +51,9 @@ Moving to `src/components/shared/ai-suggestions/` follows DRY principle from spe
 
 **Decision**: Migrate `AssessmentService` from custom `fetchBackend()` to `apiClient`.
 
-**Rationale**: Constitution Principle VI requires `apiClient` from `src/integrations/api/client.ts` as the canonical HTTP client. The current `AssessmentService` reimplements auth token management, error handling, and timeout logic that `apiClient` already provides.
+**Rationale**: Constitution Principle VI requires `apiClient` from `frontend/integrations/api/client.ts` as the
+canonical HTTP client. The current `AssessmentService` reimplements auth token management, error handling, and timeout
+logic that `apiClient` already provides.
 
 **Alternatives considered**: Keeping `fetchBackend()` violates Constitution Principle VI (Frontend Conventions).
 

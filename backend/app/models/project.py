@@ -9,11 +9,11 @@ from enum import Enum as PyEnum
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base, BaseModel, PostgreSQLEnumType, TimestampMixin
+from app.models.base import BaseModel, PostgreSQLEnumType
 
 if TYPE_CHECKING:
     from app.models.article import Article
@@ -227,7 +227,7 @@ class ProjectMember(BaseModel):
     # Índices definidos via __table_args__
     __table_args__ = (
         # Unique constraint para evitar duplicatas
-        UniqueConstraint("project_id", "user_id", name="uq_project_members_project_user"),
+        UniqueConstraint("project_id", "user_id", name="uq_project_user"),
         {"schema": "public"},
     )
     

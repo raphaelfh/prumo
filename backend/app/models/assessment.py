@@ -24,13 +24,10 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base, BaseModel, PostgreSQLEnumType, TimestampMixin, UUIDMixin
+from app.models.base import Base, BaseModel, PostgreSQLEnumType, UUIDMixin
 
 if TYPE_CHECKING:
-    from app.models.article import Article, ArticleFile
-    from app.models.extraction import ExtractionInstance
     from app.models.project import Project
-    from app.models.user import Profile
 
 
 class AssessmentStatus(str, PyEnum):
@@ -380,7 +377,7 @@ class AIAssessment(BaseModel):
     # Índices definidos via __table_args__
     __table_args__ = (
         # Índice GIN para JSONB
-        Index("idx_ai_assessments_evidence_passages_gin", "evidence_passages", postgresql_using="gin"),
+        Index("idx_ai_assessments_evidence_gin", "evidence_passages", postgresql_using="gin"),
         {"schema": "public"},
     )
 

@@ -16,7 +16,7 @@
 
 ```
 review-ai-hub/
-├── src/                          # Frontend React application
+├── frontend/                     # Frontend React application
 │   ├── components/              # React components
 │   ├── hooks/                   # Custom React hooks
 │   ├── services/                # API client services
@@ -27,6 +27,9 @@ review-ai-hub/
 │   └── integrations/            # External API integrations
 │
 ├── backend/                     # FastAPI backend
+│   ├── alembic/                # Alembic migrations (public schema — source of truth)
+│   │   └── versions/           # Migration files (0001_initial_public_schema, 0002_seed_instruments, …)
+│   ├── alembic.ini             # Alembic configuration
 │   ├── app/
 │   │   ├── api/v1/             # REST API endpoints
 │   │   │   ├── endpoints/      # Domain-specific endpoints
@@ -57,12 +60,13 @@ review-ai-hub/
 │   └── pyproject.toml          # Python dependencies (uv)
 │
 ├── supabase/
-│   └── migrations/             # Database migrations (source of truth)
+│   └── migrations/             # Storage & auth migrations only (Supabase CLI)
+│                               # 0014: articles storage bucket / 0015: auth.users trigger
 │
 ├── docs/                       # Documentation
-│   ├── guias/                  # Development guides (Portuguese)
 │   ├── estrutura_database/     # Database schema docs
-│   ├── tecnicas/               # Technical docs
+│   ├── templates/              # Assessment & extraction templates (CHARMS, PROBAST)
+│   ├── planos/                 # Roadmap
 │   └── legal/                  # Legal documents
 │
 ├── scripts/                    # Automation scripts
@@ -322,19 +326,36 @@ async def handle_event(event: DomainEvent) -> None:
 
 ## Database Guidelines
 
-### Source of Truth
-**Supabase migrations** in `supabase/migrations/` are the **single source of truth** for database schema.
+### Migration Ownership (Split Model)
+
+| Schema                            | Owner            | Tool                       | Location                    |
+|-----------------------------------|------------------|----------------------------|-----------------------------|
+| `public` (all application tables) | **Alembic**      | `make db-generate MSG=...` | `backend/alembic/versions/` |
+| `auth.*` / `storage.*`            | **Supabase CLI** | `supabase migration new`   | `supabase/migrations/`      |
+
+- **Do NOT** create `.sql` migration files in `supabase/migrations/` for application tables.
+- **Do NOT** reference `auth.*` or `storage.*` in Alembic migration files.
+- Alembic `env.py` `include_object` filter prevents autogenerate from touching Supabase-owned objects.
+- The application **refuses to start** if migrations are pending (`check_pending_migrations()` in `app/main.py`).
 
 ### Row Level Security (RLS)
-All tables use Supabase RLS policies that check `auth.uid()`. The backend authenticates users via JWT tokens from Supabase Auth.
 
-### Migration Flow
-1. Create migration: `supabase migration new <name>`
-2. Write SQL in generated file
-3. Apply locally: `supabase db reset` (drops + recreates)
-4. Push to remote: `supabase db push`
+All tables use Supabase RLS policies that check `auth.uid()`. RLS is enabled and policies are created inside Alembic
+migration files.
 
-**See**: [docs/guias/FLUXO_ALTERACAO_DATABASE.md](fleet-file://fcrd10ohldn5524f0egu/Users/raphaelhaddad/PycharmProjects/review-ai-hub/docs/guias/FLUXO_ALTERACAO_DATABASE.md?type=file&root=%252F)
+### Migration Flow (Application Tables)
+
+1. Update SQLAlchemy model in `backend/app/models/`
+2. Generate migration: `make db-generate MSG="description"`
+3. Review generated file (no `auth.*`/`storage.*` references; RLS present for new tables)
+4. Apply locally: `make db-migrate`
+5. Verify empty diff: `make db-generate MSG="verify_empty"` → should be empty
+
+### Local Setup from Scratch
+
+```bash
+make db-setup   # = supabase db reset + alembic upgrade head
+```
 
 ## API Conventions
 
@@ -422,11 +443,18 @@ npm run dev
 - `make logs` - View logs
 - `make help` - List all commands
 
+**Database (Alembic)**:
+
+- `make db-setup` - Full reset + apply all migrations (use for fresh setup)
+- `make db-migrate` - Apply pending migrations only
+- `make db-rollback` - Revert last migration (`alembic downgrade -1`)
+- `make db-current` - Show current revision
+- `make db-history` - Show full migration history
+- `make db-generate MSG="..."` - Generate migration from model changes
+
 ## Adding New Features
 
 ### Adding a New Endpoint
-
-**Flow**: [docs/guias/FLUXO_ADICIONAR_ENDPOINT.md](fleet-file://fcrd10ohldn5524f0egu/Users/raphaelhaddad/PycharmProjects/review-ai-hub/docs/guias/FLUXO_ADICIONAR_ENDPOINT.md?type=file&root=%252F)
 
 **Steps**:
 1. Define Pydantic schemas in `app/schemas/`
@@ -437,15 +465,13 @@ npm run dev
 
 ### Adding a New Feature
 
-**Flow**: [docs/guias/FLUXO_ADICIONAR_FEATURE.md](fleet-file://fcrd10ohldn5524f0egu/Users/raphaelhaddad/PycharmProjects/review-ai-hub/docs/guias/FLUXO_ADICIONAR_FEATURE.md?type=file&root=%252F)
-
 **Steps**:
 1. Design database schema (if needed)
-2. Create migration
-3. Create models
-4. Create repositories
-5. Create services
-6. Create endpoints
+2. Update SQLAlchemy model in `app/models/`
+3. Generate migration: `make db-generate MSG="add_foo_table"`
+4. Create repositories in `app/repositories/`
+5. Create services in `app/services/`
+6. Create endpoints in `app/api/v1/endpoints/`
 7. Add frontend integration
 8. Add tests
 
@@ -548,12 +574,8 @@ class MyService:
 ## Useful References
 
 ### Documentation
-- [Architecture Guide](fleet-file://fcrd10ohldn5524f0egu/Users/raphaelhaddad/PycharmProjects/review-ai-hub/docs/guias/ARQUITETURA_BACKEND.md?type=file&root=%252F)
 - [Database Schema](fleet-file://fcrd10ohldn5524f0egu/Users/raphaelhaddad/PycharmProjects/review-ai-hub/docs/estrutura_database/DATABASE_SCHEMA.md?type=file&root=%252F)
-- [Database Quick Guide](fleet-file://fcrd10ohldn5524f0egu/Users/raphaelhaddad/PycharmProjects/review-ai-hub/docs/estrutura_database/GUIA_RAPIDO.md?type=file&root=%252F)
-- [Assessment Schema Refactoring](fleet-file://fcrd10ohldn5524f0egu/Users/raphaelhaddad/PycharmProjects/review-ai-hub/docs/ASSESSMENT_SCHEMA_REFACTORING.md?type=file&root=%252F) - Clean architecture for assessment schemas
-- [Backend Run ID Migration](fleet-file://fcrd10ohldn5524f0egu/Users/raphaelhaddad/PycharmProjects/review-ai-hub/docs/BACKEND_RUN_ID_MIGRATION.md?type=file&root=%252F) - Database migration guide
-- [Frontend Run ID Fix](fleet-file://fcrd10ohldn5524f0egu/Users/raphaelhaddad/PycharmProjects/review-ai-hub/docs/FRONTEND_RUN_ID_FIX.md?type=file&root=%252F) - Frontend migration fixes
+- [Migration Quickstart](fleet-file://fcrd10ohldn5524f0egu/Users/raphaelhaddad/PycharmProjects/review-ai-hub/specs/001-alembic-migrations/quickstart.md?type=file&root=%252F)
 - [Contributing Guide](fleet-file://fcrd10ohldn5524f0egu/Users/raphaelhaddad/PycharmProjects/review-ai-hub/.github/CONTRIBUTING.md?type=file&root=%252F)
 
 ### External Docs
@@ -581,35 +603,14 @@ test: add tests
 chore: maintenance tasks
 ```
 
-### Current Git Status
-```
-Branch: dev
-Modified:
-  - backend/app/api/v1/endpoints/ai_assessment.py
-  - backend/app/api/v1/endpoints/model_extraction.py
-  - backend/app/api/v1/endpoints/section_extraction.py
-  - backend/app/api/v1/endpoints/user_api_keys.py
-  - backend/app/api/v1/endpoints/zotero_import.py
-  - backend/app/repositories/article_repository.py
-  - backend/app/schemas/assessment.py
-  - backend/app/schemas/extraction.py
-  - backend/app/worker/tasks/import_tasks.py
-  - backend/pyproject.toml
+### Migration Architecture (current)
 
-Deleted (recent refactoring):
-  - backend/app/repositories/queries/ (consolidated into repositories)
-  - backend/app/use_cases/ (simplified to service layer)
-
-Untracked:
-  - backend/app/schemas/user_api_key.py
-  - backend/app/services/zotero_import_service.py
-```
-
-Recent refactoring focused on:
-- Simplifying worker tasks with service layer
-- Consolidating Supabase config
-- Removing Alembic (using Supabase migrations only)
-- Removing edge functions
+| Location                                                 | Owner        | Contains                                                                    |
+|----------------------------------------------------------|--------------|-----------------------------------------------------------------------------|
+| `backend/alembic/versions/0001_initial_public_schema.py` | Alembic      | Full DDL: all 32+ public tables, ENUMs, RLS, functions, triggers, views     |
+| `backend/alembic/versions/0002_seed_instruments.py`      | Alembic      | Seed data: PROBAST instrument (20 items) + CHARMS 2.0 template (~80 fields) |
+| `supabase/migrations/0001_storage_bucket_articles.sql`   | Supabase CLI | Storage: articles bucket                                                    |
+| `supabase/migrations/0002_handle_new_user_trigger.sql`   | Supabase CLI | Auth: handle_new_user trigger on auth.users                                 |
 
 ## AI Assistant Best Practices
 
@@ -635,15 +636,16 @@ When asked to add/modify features, files typically go in:
 - **New repository** → `backend/app/repositories/{entity}_repository.py`
 - **New model** → `backend/app/models/{entity}.py`
 - **New schema** → `backend/app/schemas/{domain}.py`
-- **New migration** → `supabase/migrations/{timestamp}_{name}.sql`
-- **New React component** → `src/components/{category}/{ComponentName}.tsx`
-- **New React page** → `src/pages/{PageName}.tsx`
-- **New API service** → `src/services/{domain}Service.ts`
+- **New app table migration** → `backend/alembic/versions/` (generated via `make db-generate MSG=...`)
+- **New storage migration** → `supabase/migrations/{NNNN}_{name}.sql` (Supabase CLI only)
+- **New React component** → `frontend/components/{category}/{ComponentName}.tsx`
+- **New React page** → `frontend/pages/{PageName}.tsx`
+- **New API service** → `frontend/services/{domain}Service.ts`
 - **Tests** → `backend/tests/{unit|integration}/test_{module}.py`
 
 ---
 
-**Last Updated**: 2026-01-25
+**Last Updated**: 2026-02-28
 **Project Version**: 0.1.0
 **Python Version**: 3.11+
 **Node Version**: 18+
@@ -657,6 +659,9 @@ When asked to add/modify features, files typically go in:
 - PostgreSQL via Supabase (existing tables: `ai_assessment_runs`, `ai_suggestions`, `ai_assessments`) (002-ai-assessment-flow)
 - TypeScript 5.8 (frontend React 18) + React 18, TanStack Query v5, shadcn/ui (Radix), Zustand, react-hook-form, Zod (003-fix-assessment-sync)
 - Supabase (PostgreSQL) via FastAPI backend API (leitura/escrita de `ai_suggestions`, `assessment_responses`) (003-fix-assessment-sync)
+- Python 3.11+ (backend only — no frontend changes) + SQLAlchemy 2.0 (async), asyncpg, FastAPI — adding
+  `alembic>=1.13` (001-alembic-migrations)
+- PostgreSQL 15 via Supabase (local: `postgresql://postgres:postgres@localhost:54322/postgres`) (001-alembic-migrations)
 
 ## Recent Changes
 - 001-fix-assessment-instrument: Added TypeScript 5.8 (frontend), Python 3.11+ (backend — no changes needed) + React 18, TanStack Query v5, shadcn/ui (Radix), Vite

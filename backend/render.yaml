@@ -3,7 +3,7 @@ services:
     name: review-hub-backend
     runtime: python
     buildCommand: pip install -e .
-    startCommand: gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:$PORT app.main:app
+    startCommand: alembic upgrade head && gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:$PORT app.main:app
     envVars: &backend_env
       - key: DATABASE_URL
         sync: false

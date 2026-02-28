@@ -77,7 +77,8 @@ src/
     └── assessmentService.ts                   # Verify: API response parsing
 ```
 
-**Structure Decision**: Web application structure. All changes are in `src/` (frontend). The Assessment already has a parallel component structure to Extraction — the fix targets the hooks/state layer, not the UI component layer.
+**Structure Decision**: Web application structure. All changes are in `frontend/`. The Assessment already has a parallel
+component structure to Extraction — the fix targets the hooks/state layer, not the UI component layer.
 
 ## Complexity Tracking
 
