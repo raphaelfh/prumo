@@ -2,6 +2,7 @@ services:
   - type: web
     name: review-hub-backend
     runtime: python
+    rootDir: backend
     buildCommand: pip install -e .
     startCommand: alembic upgrade head && gunicorn -k uvicorn.workers.UvicornWorker -w 1 -b 0.0.0.0:$PORT app.main:app
     envVars: &backend_env
