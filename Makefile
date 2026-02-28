@@ -1,4 +1,4 @@
-.PHONY: help setup start stop restart status backend frontend supabase install install-backend install-frontend logs logs-backend logs-frontend clean reset-db health db-migrate db-rollback db-history db-current db-generate db-setup
+.PHONY: help setup start stop restart status backend frontend supabase install install-backend install-frontend logs logs-backend logs-frontend clean reset-db health db-migrate db-migrate-remote db-rollback db-history db-current db-generate db-setup
 
 # Variáveis
 BACKEND_DIR := backend
@@ -178,6 +178,11 @@ db-setup: ## Setup completo do banco: supabase db reset + alembic upgrade head
 	done
 	@$(MAKE) db-migrate
 	@echo "$(GREEN)✅ Banco de dados pronto$(NC)"
+
+db-migrate-remote: ## Aplica migrações Alembic no banco REMOTO (usa DATABASE_URL do root .env)
+	@echo "$(YELLOW)⚠️  Applying Alembic migrations to REMOTE database...$(NC)"
+	@if [ -z "$(DATABASE_URL)" ]; then echo "$(RED)❌ DATABASE_URL não definida no root .env$(NC)"; exit 1; fi
+	@cd $(BACKEND_DIR) && uv run alembic upgrade head
 
 clean: ## Limpa arquivos temporários e caches
 	@echo "$(YELLOW)🧹 Limpando arquivos temporários...$(NC)"
