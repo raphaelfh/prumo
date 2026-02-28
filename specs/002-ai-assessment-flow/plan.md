@@ -106,7 +106,10 @@ backend/
         └── assessment_repository.py    # EXISTING: AI assessment repos
 ```
 
-**Structure Decision**: Web application (frontend + backend). This feature is **frontend-only** — all backend infrastructure exists. Changes are concentrated in `src/components/assessment/`, `src/hooks/assessment/ai/`, `src/services/assessmentService.ts`, and a new `src/components/shared/ai-suggestions/` directory for DRY consolidation.
+**Structure Decision**: Web application (frontend + backend). This feature is **frontend-only** — all backend
+infrastructure exists. Changes are concentrated in `frontend/components/assessment/`, `frontend/hooks/assessment/ai/`,
+`frontend/services/assessmentService.ts`, and a new `frontend/components/shared/ai-suggestions/` directory for DRY
+consolidation.
 
 ## Complexity Tracking
 

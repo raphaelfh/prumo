@@ -123,10 +123,12 @@ Static typing is mandatory across the entire stack.
 
 The frontend MUST follow a consistent state and data-fetching strategy.
 
-- **API Client**: `apiClient` from `src/integrations/api/client.ts` is the canonical HTTP client for all FastAPI calls. New code MUST NOT create ad-hoc `fetch()` wrappers.
+- **API Client**: `apiClient` from `frontend/integrations/api/client.ts` is the canonical HTTP client for all FastAPI
+  calls. New code MUST NOT create ad-hoc `fetch()` wrappers.
 - **Server State**: TanStack Query (v5) with structured `queryKey` factories for all FastAPI-backed data. Direct Supabase queries are acceptable only for simple table operations not routed through FastAPI.
 - **Client State**: Zustand stores for complex cross-component UI state. React Context for app-wide singletons (`AuthContext`, `ProjectContext`, `SidebarContext`).
-- **Components**: Functional components with hooks only. shadcn/ui (Radix) for UI primitives. Domain components organized by category under `src/components/{domain}/`.
+- **Components**: Functional components with hooks only. shadcn/ui (Radix) for UI primitives. Domain components
+  organized by category under `frontend/components/{domain}/`.
 - **Forms**: `react-hook-form` + `Zod` for all form handling and validation.
 
 **Rationale**: A single API client prevents inconsistent error handling. TanStack Query provides caching, deduplication, and background refetching. Zustand avoids prop drilling without Context boilerplate overhead.
@@ -211,10 +213,10 @@ No merges are permitted when any gate fails.
 | Pydantic schema          | `backend/app/schemas/{domain}.py`                                            |
 | App table migration      | `backend/alembic/versions/{YYYYMMDD}_{rev}_{slug}.py` (Alembic)              |
 | Storage migration        | `supabase/migrations/{NNNN}_{description}.sql` (Supabase CLI only)           |
-| React component          | `src/components/{category}/{ComponentName}.tsx`                              |
-| React page               | `src/pages/{PageName}.tsx`                                                   |
-| Frontend API service     | `src/services/{domain}Service.ts`                                            |
-| React hook               | `src/hooks/{domain}/use{Name}.ts`                                            |
+| React component          | `frontend/components/{category}/{ComponentName}.tsx`                         |
+| React page               | `frontend/pages/{PageName}.tsx`                                              |
+| Frontend API service     | `frontend/services/{domain}Service.ts`                                       |
+| React hook               | `frontend/hooks/{domain}/use{Name}.ts`                                       |
 | Backend unit test        | `backend/tests/unit/test_{module}.py`                                        |
 | Backend integration test | `backend/tests/integration/test_{module}.py`                                 |
 

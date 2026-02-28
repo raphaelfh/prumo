@@ -154,12 +154,12 @@ A combinação das Issues 1, 2 e 3 cria o bug:
 
 ## Files to Modify
 
-| File | Type | Change |
-|------|------|--------|
-| `src/pages/AssessmentFullScreen.tsx` | Fix | Refatorar `onSuccess`: remover polling, fazer refresh direto, mover `setTriggeringItemId(null)` para depois do refresh |
-| `src/hooks/assessment/ai/useAIAssessmentSuggestions.ts` | Fix | Garantir que `refresh()` retorna dados corretamente; adicionar verificação de sugestão específica |
-| `src/services/aiAssessmentSuggestionService.ts` | Investigate | Verificar mapeamento de keys (`effectiveItemId`) vs `item.id` dos componentes |
-| `src/components/assessment/AssessmentItemInput.tsx` | Verify | Confirmar `hasPendingSuggestion` logic; ajustar se necessário |
+| File                                                         | Type        | Change                                                                                                                 |
+|--------------------------------------------------------------|-------------|------------------------------------------------------------------------------------------------------------------------|
+| `frontend/pages/AssessmentFullScreen.tsx`                    | Fix         | Refatorar `onSuccess`: remover polling, fazer refresh direto, mover `setTriggeringItemId(null)` para depois do refresh |
+| `frontend/hooks/assessment/ai/useAIAssessmentSuggestions.ts` | Fix         | Garantir que `refresh()` retorna dados corretamente; adicionar verificação de sugestão específica                      |
+| `frontend/services/aiAssessmentSuggestionService.ts`         | Investigate | Verificar mapeamento de keys (`effectiveItemId`) vs `item.id` dos componentes                                          |
+| `frontend/components/assessment/AssessmentItemInput.tsx`     | Verify      | Confirmar `hasPendingSuggestion` logic; ajustar se necessário                                                          |
 
 ## Risks
 
