@@ -55,18 +55,46 @@ All runtime dependencies MUST be injected, never imported as global singletons.
 
 **Rationale**: Constructor injection makes dependencies explicit, enables test doubles, and prevents hidden coupling.
 
-### III. Supabase Migrations as Source of Truth
+### III. Split Migration Ownership (NON-NEGOTIABLE)
 
-The database schema MUST be defined exclusively in `supabase/migrations/` SQL files.
+The `public` application schema is managed exclusively by **Alembic**. Supabase-owned schemas (`auth.*`, `storage.*`)
+are managed exclusively by **Supabase CLI**. These domains MUST NOT cross.
 
-- Alembic MUST NOT be used. Supabase migration CLI is the sole migration tool.
-- Every new table MUST have Row Level Security (RLS) enabled in its migration.
+**Alembic owns (`public` schema)**:
+
+- All application tables, views, functions, triggers, indexes, and RLS policies in the `public` schema.
+- Migration files live in `backend/alembic/versions/` (Python, named `YYYYMMDD_{rev}_{slug}.py`).
+- Apply with: `cd backend && uv run alembic upgrade head`.
+- Generate new migration with: `make db-generate MSG="description"`.
+
+**Supabase CLI owns**:
+
+- Storage bucket setup only (`supabase/migrations/0001_storage_bucket_articles.sql`).
+- The `auth.users` trigger that auto-creates `profiles` (`supabase/migrations/0002_handle_new_user_trigger.sql`).
+- **Do NOT add new application-table migrations to `supabase/migrations/`.**
+
+**Alembic autogenerate safeguards**:
+
+- `env.py` `include_object` filter excludes all non-`public` schemas and Supabase-injected tables.
+- Alembic migration files MUST NOT reference `auth.*` or `storage.*` objects.
+- A CI script (`scripts/validate_migration_boundaries.sh`) enforces this automatically.
+
+**Remaining rules (unchanged)**:
+
+- Every new table MUST have Row Level Security (RLS) enabled in its Alembic migration.
 - RLS policies MUST use `auth.uid()` and project-scoped helpers (`is_project_member()`, `is_project_manager()`).
-- New PostgreSQL ENUM types MUST be created in the migration SQL AND registered in `POSTGRESQL_ENUM_VALUES` in `app/models/base.py`.
+- New PostgreSQL ENUM types MUST be created in the Alembic migration SQL AND registered in `POSTGRESQL_ENUM_VALUES` in
+  `app/models/base.py`.
 - Model columns using enums MUST use `PostgreSQLEnumType("enum_name")`, never raw Python `Enum`.
-- Migration files follow sequential numeric naming: `NNNN_description.sql`.
 
-**Rationale**: A single schema source of truth prevents drift between migrations and ORM models. RLS enforcement guarantees tenant isolation at the database level.
+**Startup safety**:
+
+- The application MUST refuse to start if `alembic current` ≠ `alembic head`. `check_pending_migrations()` in
+  `app/main.py` enforces this.
+
+**Rationale**: Splitting ownership prevents schema drift — Alembic autogenerate detects application-table changes while
+Supabase CLI retains control over its internal auth/storage objects. RLS enforcement guarantees tenant isolation at the
+database level.
 
 ### IV. Security by Design
 
@@ -131,20 +159,20 @@ All API responses MUST use a uniform envelope format.
 
 The following technology choices are binding for all contributors:
 
-| Concern | Tool | Notes |
-|---------|------|-------|
-| Python package manager | `uv` | Never use `pip install` directly |
-| Frontend package manager | `npm` | |
-| Python linter/formatter | Ruff | 100-char line length, Python 3.11+ target |
-| Python type checker | mypy | Strict mode, `warn_return_any = true` |
-| Frontend linter | ESLint | typescript-eslint + react-hooks plugins |
-| Backend test framework | pytest | 70% minimum coverage (excludes `schemas/read_models/*`, `worker/*`) |
-| Frontend test framework | Vitest | @testing-library/react + MSW for mocking |
-| Structured logging | structlog | All backend logging via `LoggerMixin` or `get_logger()` |
-| Rate limiting | slowapi | `get_remote_address` key function |
-| Database migrations | Supabase CLI | `supabase migration new`, `supabase db reset` |
-| Background tasks | Celery + Redis | Task definitions in `app/worker/tasks/` |
-| AI models | OpenAI GPT-4o/4o-mini | BYOK supported; LangChain for orchestration |
+| Concern                  | Tool                                             | Notes                                                                                   |
+|--------------------------|--------------------------------------------------|-----------------------------------------------------------------------------------------|
+| Python package manager   | `uv`                                             | Never use `pip install` directly                                                        |
+| Frontend package manager | `npm`                                            |                                                                                         |
+| Python linter/formatter  | Ruff                                             | 100-char line length, Python 3.11+ target                                               |
+| Python type checker      | mypy                                             | Strict mode, `warn_return_any = true`                                                   |
+| Frontend linter          | ESLint                                           | typescript-eslint + react-hooks plugins                                                 |
+| Backend test framework   | pytest                                           | 70% minimum coverage (excludes `schemas/read_models/*`, `worker/*`)                     |
+| Frontend test framework  | Vitest                                           | @testing-library/react + MSW for mocking                                                |
+| Structured logging       | structlog                                        | All backend logging via `LoggerMixin` or `get_logger()`                                 |
+| Rate limiting            | slowapi                                          | `get_remote_address` key function                                                       |
+| Database migrations      | Alembic (public schema) + Supabase CLI (storage) | `make db-generate MSG=...` for app tables; Supabase CLI for storage bucket changes only |
+| Background tasks         | Celery + Redis                                   | Task definitions in `app/worker/tasks/`                                                 |
+| AI models                | OpenAI GPT-4o/4o-mini                            | BYOK supported; LangChain for orchestration                                             |
 
 ## Development Workflow & Quality Gates
 
@@ -174,20 +202,21 @@ No merges are permitted when any gate fails.
 
 ### File Location Conventions
 
-| Artifact | Path |
-|----------|------|
-| FastAPI endpoint | `backend/app/api/v1/endpoints/{domain}.py` + register in `router.py` |
-| Service | `backend/app/services/{domain}_service.py` |
-| Repository | `backend/app/repositories/{entity}_repository.py` + add to `unit_of_work.py` |
-| SQLAlchemy model | `backend/app/models/{entity}.py` + export in `__init__.py` |
-| Pydantic schema | `backend/app/schemas/{domain}.py` |
-| Migration | `supabase/migrations/{NNNN}_{description}.sql` |
-| React component | `src/components/{category}/{ComponentName}.tsx` |
-| React page | `src/pages/{PageName}.tsx` |
-| Frontend API service | `src/services/{domain}Service.ts` |
-| React hook | `src/hooks/{domain}/use{Name}.ts` |
-| Backend unit test | `backend/tests/unit/test_{module}.py` |
-| Backend integration test | `backend/tests/integration/test_{module}.py` |
+| Artifact                 | Path                                                                         |
+|--------------------------|------------------------------------------------------------------------------|
+| FastAPI endpoint         | `backend/app/api/v1/endpoints/{domain}.py` + register in `router.py`         |
+| Service                  | `backend/app/services/{domain}_service.py`                                   |
+| Repository               | `backend/app/repositories/{entity}_repository.py` + add to `unit_of_work.py` |
+| SQLAlchemy model         | `backend/app/models/{entity}.py` + export in `__init__.py`                   |
+| Pydantic schema          | `backend/app/schemas/{domain}.py`                                            |
+| App table migration      | `backend/alembic/versions/{YYYYMMDD}_{rev}_{slug}.py` (Alembic)              |
+| Storage migration        | `supabase/migrations/{NNNN}_{description}.sql` (Supabase CLI only)           |
+| React component          | `src/components/{category}/{ComponentName}.tsx`                              |
+| React page               | `src/pages/{PageName}.tsx`                                                   |
+| Frontend API service     | `src/services/{domain}Service.ts`                                            |
+| React hook               | `src/hooks/{domain}/use{Name}.ts`                                            |
+| Backend unit test        | `backend/tests/unit/test_{module}.py`                                        |
+| Backend integration test | `backend/tests/integration/test_{module}.py`                                 |
 
 ## Governance
 
@@ -209,4 +238,4 @@ This constitution is the authoritative reference for all architectural and proce
 - Added complexity beyond what a principle prescribes MUST be justified in the PR description.
 - Use `CLAUDE.md` as the runtime development guidance companion to this constitution.
 
-**Version**: 1.0.0 | **Ratified**: 2026-02-16 | **Last Amended**: 2026-02-16
+**Version**: 2.0.0 | **Ratified**: 2026-02-16 | **Last Amended**: 2026-02-27

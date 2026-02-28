@@ -92,8 +92,22 @@ jobs:
       - name: Install Postgres client (psql)
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
-      - name: Apply Supabase SQL migrations
-        run: bash scripts/apply_supabase_migrations.sh
+      - name: Validate migration boundaries (no auth.*/storage.* in Alembic files)
+        run: bash ../scripts/validate_migration_boundaries.sh
+        working-directory: backend
+
+      - name: Bootstrap auth schema stub (Supabase auth.users FK target)
+        run: |
+          psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE SCHEMA IF NOT EXISTS auth;
+          CREATE TABLE IF NOT EXISTS auth.users (
+            id UUID PRIMARY KEY,
+            email TEXT
+          );
+          SQL
+
+      - name: Apply Alembic migrations
+        run: uv run alembic upgrade head
 
       - name: Run tests with coverage
         run: |

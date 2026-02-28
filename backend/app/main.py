@@ -16,6 +16,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from sqlalchemy import create_engine
+
+from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
+from alembic.config import Config as AlembicConfig
 
 from app.api.v1.router import api_router
 from app.core.config import settings
@@ -28,16 +33,49 @@ from app.utils.rate_limiter import limiter
 logger = get_logger(__name__)
 
 
+def check_pending_migrations() -> None:
+    """
+    Verifica se há migrações pendentes antes de iniciar a aplicação.
+
+    Compara a revisão atual do banco com a revisão head do Alembic.
+    Encerra o processo com SystemExit(1) se houver migrações pendentes,
+    impedindo que a aplicação suba com um schema desatualizado.
+    """
+    alembic_cfg = AlembicConfig("alembic.ini")
+    script = ScriptDirectory.from_config(alembic_cfg)
+
+    sync_url = settings.DATABASE_URL.unicode_string().replace(
+        "postgresql://", "postgresql+psycopg://", 1
+    )
+    engine = create_engine(sync_url)
+    try:
+        with engine.connect() as conn:
+            migration_ctx = MigrationContext.configure(conn)
+            current_heads = set(migration_ctx.get_current_heads())
+            target_heads = set(script.get_heads())
+            pending = target_heads - current_heads
+    finally:
+        engine.dispose()
+
+    if pending:
+        logger.error(
+            "unapplied_migrations_detected",
+            pending_revisions=list(pending),
+        )
+        raise SystemExit(1)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     Gerencia o ciclo de vida da aplicação.
-    
+
     - Startup: Configura logging, conexões de banco, etc.
     - Shutdown: Fecha conexões e limpa recursos.
     """
     # Startup
     configure_logging()
+    check_pending_migrations()
     logger.info(
         "application_startup",
         project_name=settings.PROJECT_NAME,

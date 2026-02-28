@@ -150,8 +150,8 @@ echo
 if [[ ! $REPLY =~ ^[Nn]$ ]]; then
     if docker ps | grep -q "supabase"; then
         echo "   Gerando tipos..."
-        supabase gen types typescript --local > src/integrations/supabase/types.ts
-        echo "✅ Tipos gerados em src/integrations/supabase/types.ts"
+        supabase gen types typescript --local > frontend/integrations/supabase/types.ts
+        echo "✅ Tipos gerados em frontend/integrations/supabase/types.ts"
     else
         echo "⚠️  Supabase local não está rodando. Não é possível gerar tipos."
     fi
