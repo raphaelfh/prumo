@@ -7,9 +7,13 @@ import {AppLayout} from "@/components/layout/AppLayout";
 import {Button} from "@/components/ui/button";
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from "@/components/ui/card";
 import {Badge} from "@/components/ui/badge";
-import {BarChart3, BookOpen, ClipboardCheck, FileText, Plus} from "lucide-react";
+import {Skeleton} from "@/components/ui/skeleton";
+import {BookOpen, Plus} from "lucide-react";
 import {toast} from "sonner";
 import {AddProjectDialog} from "@/components/project/AddProjectDialog";
+import {PageHeader} from "@/components/patterns/PageHeader";
+import {EmptyState} from "@/components/patterns/EmptyState";
+import {ErrorState} from "@/components/patterns/ErrorState";
 
 interface Project {
   id: string;
@@ -21,19 +25,19 @@ interface Project {
 }
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const {user} = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
 
-  const {data: projects = [], isLoading: loading} = useQuery({
+  const {data: projects = [], isLoading, isError, refetch} = useQuery({
     queryKey: ['projects'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const {data, error} = await supabase
         .from("projects")
         .select("id, name, description, created_at, is_active, review_title")
-        .order("created_at", { ascending: false });
+          .order("created_at", {ascending: false});
       if (error) throw error;
       return data ?? [];
     },
@@ -49,13 +53,12 @@ export default function Dashboard() {
     setCreating(true);
 
     try {
-      // Usar função RPC que cria projeto e adiciona criador como manager atomicamente
-      const { data: projectId, error: rpcError } = await supabase.rpc(
+      const {data: projectId, error: rpcError} = await supabase.rpc(
         'create_project_with_member',
         {
           p_name: data.name,
           p_description: data.description || undefined,
-          p_review_title: undefined
+          p_review_title: undefined,
         }
       );
 
@@ -70,114 +73,121 @@ export default function Dashboard() {
         return;
       }
 
-      console.log('✅ Projeto criado com sucesso:', projectId);
-
       toast.success("Projeto criado com sucesso!");
-
       await queryClient.invalidateQueries({queryKey: ['projects']});
       setAddDialogOpen(false);
-
-    } catch (error: any) {
-      console.error("Unexpected error:", error);
+    } catch (_err) {
       toast.error("Erro inesperado ao criar projeto");
     } finally {
       setCreating(false);
     }
   };
 
-  if (loading) {
+  const header = (
+      <PageHeader
+          title="Meus Projetos"
+          description="Gerencie suas revisões sistemáticas"
+          actions={
+            <Button onClick={() => setAddDialogOpen(true)} disabled={creating}>
+              <Plus className="mr-2 h-4 w-4"/>
+              Novo Projeto
+            </Button>
+          }
+      />
+  );
+
+  if (isLoading) {
     return (
       <AppLayout>
-        <div className="flex min-h-screen items-center justify-center">
-          <div className="text-center">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4"></div>
-            <p className="text-muted-foreground">Carregando projetos...</p>
+        {header}
+        <div className="p-6">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {[1, 2, 3].map((i) => (
+                <Card key={i}>
+                  <CardHeader>
+                    <Skeleton className="h-5 w-3/4"/>
+                    <Skeleton className="h-4 w-full mt-2"/>
+                  </CardHeader>
+                  <CardContent>
+                    <Skeleton className="h-3 w-1/3"/>
+                  </CardContent>
+                </Card>
+            ))}
           </div>
         </div>
       </AppLayout>
     );
   }
 
-  return (
-    <AppLayout>
-      <div className="min-h-screen bg-secondary">
-        <main className="container mx-auto px-4 py-8">
-        <div className="mb-8 flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bold">Meus Projetos</h2>
-            <p className="text-muted-foreground">Gerencie suas revisões sistemáticas</p>
-          </div>
-          <Button onClick={() => setAddDialogOpen(true)} disabled={creating}>
-            <Plus className="mr-2 h-4 w-4" />
-            Novo Projeto
-          </Button>
-        </div>
+  if (isError) {
+    return (
+        <AppLayout>
+          {header}
+          <ErrorState
+              message="Não foi possível carregar os projetos."
+              onRetry={refetch}
+          />
+        </AppLayout>
+    );
+  }
 
+  return (
+      <AppLayout>
+        {header}
+        <div className="p-6">
         {projects.length === 0 ? (
-          <Card className="border-dashed">
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <BookOpen className="mb-4 h-12 w-12 text-muted-foreground" />
-              <h3 className="mb-2 text-lg font-medium">Nenhum projeto ainda</h3>
-              <p className="mb-4 text-center text-sm text-muted-foreground">
-                Crie seu primeiro projeto de revisão sistemática
-              </p>
-              <Button onClick={() => setAddDialogOpen(true)} disabled={creating}>
-                <Plus className="mr-2 h-4 w-4" />
-                Criar Primeiro Projeto
-              </Button>
-            </CardContent>
-          </Card>
+            <EmptyState
+                icon={<BookOpen className="h-12 w-12"/>}
+                title="Nenhum projeto ainda"
+                description="Crie seu primeiro projeto de revisão sistemática"
+                action={{
+                  label: "Criar Primeiro Projeto",
+                  onClick: () => setAddDialogOpen(true),
+                }}
+            />
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {projects.map((project) => (
-              <Card 
-                key={project.id} 
-                className="cursor-pointer transition-all hover:shadow-md"
+                <Card
+                    key={project.id}
+                    role="button"
+                    tabIndex={0}
+                    className="cursor-pointer transition-shadow hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 outline-none"
                 onClick={() => navigate(`/projects/${project.id}`)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') navigate(`/projects/${project.id}`);
+                    }}
               >
                 <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <CardTitle className="text-lg">{project.name}</CardTitle>
+                  <div className="flex items-start justify-between gap-2">
+                    <CardTitle className="text-base leading-snug">{project.name}</CardTitle>
                     {project.is_active && (
-                      <Badge variant="secondary" className="bg-success text-success-foreground">
+                        <Badge className="shrink-0 bg-success/15 text-success border-transparent">
                         Ativo
                       </Badge>
                     )}
                   </div>
-                  <CardDescription>
+                  <CardDescription className="line-clamp-2">
                     {project.description || project.review_title || "Sem descrição"}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="flex gap-2 text-sm text-muted-foreground">
-                    <div className="flex items-center gap-1">
-                      <FileText className="h-4 w-4" />
-                      <span>Artigos</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <ClipboardCheck className="h-4 w-4" />
-                      <span>Extração</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <BarChart3 className="h-4 w-4" />
-                      <span>Avaliação</span>
-                    </div>
-                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Criado em {new Date(project.created_at).toLocaleDateString('pt-BR')}
+                  </p>
                 </CardContent>
               </Card>
             ))}
           </div>
         )}
-        </main>
+        </div>
 
-        {/* Diálogo de Adicionar Projeto */}
         <AddProjectDialog
-          open={addDialogOpen}
-          onOpenChange={setAddDialogOpen}
-          onProjectCreate={handleCreateProject}
-          isCreating={creating}
+            open={addDialogOpen}
+            onOpenChange={setAddDialogOpen}
+            onProjectCreate={handleCreateProject}
+            isCreating={creating}
         />
-      </div>
     </AppLayout>
   );
 }
