@@ -6,9 +6,8 @@ usando Pydantic Settings.
 """
 
 from functools import lru_cache
-from typing import Any
 
-from pydantic import PostgresDsn, field_validator
+from pydantic import PostgresDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -50,6 +49,10 @@ class Settings(BaseSettings):
     # =================== DATABASE ===================
     # Connection string do Postgres (Supabase ou local)
     DATABASE_URL: PostgresDsn
+    # Direct connection (bypasses PgBouncer) — required for Alembic migrations.
+    # Set this to the Supabase "Direct connection" URL (port 5432, db.xxx.supabase.co).
+    # Falls back to DATABASE_URL in local dev where there is no pooler.
+    DIRECT_DATABASE_URL: str | None = None
     
     @property
     def async_database_url(self) -> str:

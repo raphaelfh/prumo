@@ -34,10 +34,16 @@ logger = logging.getLogger("alembic.env")
 # ---------------------------------------------------------------------------
 # Override database URL from app settings (never use the placeholder in .ini)
 # ---------------------------------------------------------------------------
-# async_database_url returns "postgresql+asyncpg://..." — required for the
-# async engine used here.  The startup-check sync engine (in main.py) uses
-# DATABASE_URL.unicode_string() with a psycopg sync driver.
-config.set_main_option("sqlalchemy.url", settings.async_database_url)
+# Migrations must use the direct Supabase connection (port 5432), NOT the
+# PgBouncer pooler (port 6543, transaction mode), which is incompatible with
+# DDL and asyncpg prepared statements.
+#
+# DIRECT_DATABASE_URL should be set in production (e.g. Render env vars) to
+# the Supabase direct connection string. Falls back to DATABASE_URL for local
+# dev where there is no pooler.
+_direct_url = settings.DIRECT_DATABASE_URL or str(settings.DATABASE_URL)
+_migration_url = _direct_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+config.set_main_option("sqlalchemy.url", _migration_url)
 
 # ---------------------------------------------------------------------------
 # Model metadata — Alembic compares this against the live DB for autogenerate

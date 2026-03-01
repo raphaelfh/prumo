@@ -2435,6 +2435,12 @@ Provide your assessment with clear justification and cite specific passages from
     # are created above.  Supabase migration 0014 creates the storage bucket;
     # these policies reference public-schema tables so they live here.
     # ===========================================================================
+    # Drop first to make this idempotent (policies may survive public schema wipe
+    # because they live on storage.objects, not in the public schema).
+    _exec('DROP POLICY IF EXISTS "Members can view article files" ON storage.objects;')
+    _exec('DROP POLICY IF EXISTS "Authenticated users can upload article files" ON storage.objects;')
+    _exec('DROP POLICY IF EXISTS "Members can update article files" ON storage.objects;')
+    _exec('DROP POLICY IF EXISTS "Members can delete article files" ON storage.objects;')
     _exec("""
         CREATE POLICY "Members can view article files"
         ON storage.objects FOR SELECT
