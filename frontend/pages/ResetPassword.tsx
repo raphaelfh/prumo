@@ -86,24 +86,52 @@ export default function ResetPassword() {
     const [success, setSuccess] = useState(false);
 
     useEffect(() => {
-        const hasRecoveryParams =
-            window.location.hash.includes("type=recovery") ||
-            window.location.hash.includes("access_token");
+        let settled = false;
 
-        if (!hasRecoveryParams) {
-            setSessionError(true);
-            return;
-        }
+        const settle = (ready: boolean) => {
+            if (!settled) {
+                settled = true;
+                ready ? setSessionReady(true) : setSessionError(true);
+            }
+        };
 
+        // 1. Subscribe FIRST so we don't miss events fired during code exchange
         const {
             data: {subscription},
         } = supabase.auth.onAuthStateChange((event, session) => {
             if ((event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") && session) {
-                setSessionReady(true);
+                settle(true);
             }
         });
 
-        return () => subscription.unsubscribe();
+        // 2. Detect recovery URL — PKCE uses ?code=, implicit flow uses #access_token
+        const hasCode = new URLSearchParams(window.location.search).has("code");
+        const hasHash =
+            window.location.hash.includes("type=recovery") ||
+            window.location.hash.includes("access_token");
+        const hasRecoveryUrl = hasCode || hasHash;
+
+        // 3. Check for an existing session (PKCE may have exchanged the code before mount)
+        supabase.auth.getSession().then(({data: {session}}) => {
+            if (session) {
+                settle(true);
+            } else if (!hasRecoveryUrl) {
+                // No recovery params and no session → show error immediately
+                settle(false);
+            }
+            // hasRecoveryUrl but no session yet → wait for onAuthStateChange
+        });
+
+        // 4. Safety timeout in case PKCE exchange takes too long or fails silently
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        if (hasRecoveryUrl) {
+            timeout = setTimeout(() => settle(false), 10_000);
+        }
+
+        return () => {
+            subscription.unsubscribe();
+            if (timeout) clearTimeout(timeout);
+        };
     }, []);
 
     useEffect(() => {
