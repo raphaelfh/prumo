@@ -328,6 +328,7 @@ async def _run_migrations_online() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         future=True,
+        connect_args={"statement_cache_size": 0},
     )
 
     async with connectable.connect() as connection:
