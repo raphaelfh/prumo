@@ -16,92 +16,80 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
+/* Definition of the design system inspired by Linear. */
 
 @layer base {
   :root {
-    /* Academic color palette - blues and neutrals */
     --background: 0 0% 100%;
-    --foreground: 217 33% 17%;
+      --foreground: 240 10% 3.9%;
 
     --card: 0 0% 100%;
-    --card-foreground: 217 33% 17%;
+      --card-foreground: 240 10% 3.9%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 217 33% 17%;
+      --popover-foreground: 240 10% 3.9%;
 
-    /* Deep academic blue */
-    --primary: 217 91% 40%;
-    --primary-foreground: 0 0% 100%;
-    --primary-hover: 217 91% 35%;
+      --primary: 240 5.9% 10%;
+      --primary-foreground: 0 0% 98%;
 
-    /* Light neutral secondary */
-    --secondary: 214 32% 96%;
-    --secondary-foreground: 217 33% 17%;
+      --secondary: 240 4.8% 95.9%;
+      --secondary-foreground: 240 5.9% 10%;
 
-    /* Muted grays */
-    --muted: 214 32% 95%;
-    --muted-foreground: 215 16% 47%;
+      --muted: 240 4.8% 95.9%;
+      --muted-foreground: 240 3.8% 46.1%;
 
-    /* Accent blue */
-    --accent: 217 91% 45%;
-    --accent-foreground: 0 0% 100%;
+      --accent: 240 4.8% 95.9%;
+      --accent-foreground: 240 5.9% 10%;
 
-    /* Status colors */
     --success: 142 71% 45%;
     --success-foreground: 0 0% 100%;
     
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
-    
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
+
+      --destructive: 0 84.2% 60.2%;
+      --destructive-foreground: 0 0% 98%;
 
     --info: 199 89% 48%;
     --info-foreground: 0 0% 100%;
 
-    /* Borders and inputs */
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 217 91% 40%;
+      --border: 240 5.9% 90%;
+      --input: 240 5.9% 90%;
+      --ring: 240 5.9% 10%;
 
     --radius: 0.5rem;
 
-    /* Sidebar */
-    --sidebar-background: 217 91% 40%;
-    --sidebar-foreground: 0 0% 100%;
-    --sidebar-primary: 217 91% 35%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 217 91% 45%;
-    --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 217 91% 35%;
-    --sidebar-ring: 0 0% 100%;
+      --sidebar-background: 0 0% 98%;
+      --sidebar-foreground: 240 5.3% 26.1%;
+      --sidebar-primary: 240 5.9% 10%;
+      --sidebar-primary-foreground: 0 0% 98%;
+      --sidebar-accent: 240 4.8% 95.9%;
+      --sidebar-accent-foreground: 240 5.9% 10%;
+      --sidebar-border: 220 13% 91%;
+      --sidebar-ring: 217.2 91.2% 59.8%;
   }
 
   .dark {
-    --background: 217 33% 10%;
+      --background: 240 10% 3.9%;
     --foreground: 0 0% 98%;
 
-    --card: 217 33% 13%;
+      --card: 240 10% 3.9%;
     --card-foreground: 0 0% 98%;
 
-    --popover: 217 33% 13%;
+      --popover: 240 10% 3.9%;
     --popover-foreground: 0 0% 98%;
 
-    --primary: 217 91% 50%;
-    --primary-foreground: 0 0% 100%;
-    --primary-hover: 217 91% 45%;
+      --primary: 0 0% 98%;
+      --primary-foreground: 240 5.9% 10%;
 
-    --secondary: 217 33% 17%;
+      --secondary: 240 3.7% 15.9%;
     --secondary-foreground: 0 0% 98%;
 
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
+      --muted: 240 3.7% 15.9%;
+      --muted-foreground: 240 5% 64.9%;
 
-    --accent: 217 91% 50%;
-    --accent-foreground: 0 0% 100%;
+      --accent: 240 3.7% 15.9%;
+      --accent-foreground: 0 0% 98%;
 
     --success: 142 71% 45%;
     --success-foreground: 0 0% 100%;
@@ -109,24 +97,24 @@ All colors MUST be HSL.
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
 
-    --destructive: 0 62% 50%;
-    --destructive-foreground: 0 0% 100%;
+      --destructive: 0 62.8% 30.6%;
+      --destructive-foreground: 0 0% 98%;
 
     --info: 199 89% 48%;
     --info-foreground: 0 0% 100%;
 
-    --border: 217 33% 17%;
-    --input: 217 33% 17%;
-    --ring: 217 91% 50%;
+      --border: 240 3.7% 15.9%;
+      --input: 240 3.7% 15.9%;
+      --ring: 240 4.9% 83.9%;
 
-    --sidebar-background: 217 33% 13%;
-    --sidebar-foreground: 0 0% 98%;
-    --sidebar-primary: 217 91% 50%;
+      --sidebar-background: 240 5.9% 10%;
+      --sidebar-foreground: 240 4.8% 95.9%;
+      --sidebar-primary: 224.3 76.3% 48%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 217 33% 17%;
-    --sidebar-accent-foreground: 0 0% 98%;
-    --sidebar-border: 217 33% 17%;
-    --sidebar-ring: 217 91% 50%;
+      --sidebar-accent: 240 3.7% 15.9%;
+      --sidebar-accent-foreground: 240 4.8% 95.9%;
+      --sidebar-border: 240 3.7% 15.9%;
+      --sidebar-ring: 217.2 91.2% 59.8%;
   }
 }
 
@@ -136,12 +124,64 @@ All colors MUST be HSL.
   }
 
   body {
-    @apply bg-background text-foreground;
+      @apply bg-background text-foreground antialiased selection:bg-primary/10;
+      font-feature-settings: "cv02", "cv03", "cv04", "cv11", "ss01";
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+  }
+
+    h1, h2, h3, h4, h5, h6 {
+        @apply tracking-tight font-semibold text-foreground;
+    }
+}
+
+@layer components {
+    /* Linear inspired card */
+    .linear-card {
+        @apply rounded-md border border-border/50 bg-card/30 shadow-[0_1px_3px_rgba(0,0,0,0.05)] transition-all hover:border-border hover:shadow-[0_2px_8px_rgba(0,0,0,0.08)];
+    }
+
+    /* High density list item */
+    .linear-list-item {
+        @apply flex items-center gap-3 px-4 py-2.5 text-[13px] font-normal text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground cursor-pointer border-b border-border/30 last:border-0;
+    }
+
+    /* Linear style header */
+    .linear-header {
+        @apply sticky top-0 z-50 flex h-14 items-center gap-4 border-b border-border/40 bg-background/80 px-6 backdrop-blur-md;
+    }
+
+    /* Subtle button style */
+    .linear-btn-secondary {
+        @apply inline-flex items-center justify-center rounded-md border border-border/60 bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-colors hover:bg-muted hover:border-border focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50;
   }
 }
 
 @layer utilities {
-  /* Line clamp utilities for text truncation */
+    /* Custom scrollbar - Linear style */
+    ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+        @apply bg-muted-foreground/20 rounded-full transition-colors hover:bg-muted-foreground/40;
+    }
+
+    .scrollbar-none {
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+    }
+
+    .scrollbar-none::-webkit-scrollbar {
+        display: none;
+    }
+
+    /* Line clamp utilities */
   .line-clamp-1 {
     overflow: hidden;
     display: -webkit-box;
@@ -155,35 +195,4 @@ All colors MUST be HSL.
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
   }
-  
-  .line-clamp-3 {
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
-  }
-
-  /* Custom scrollbar for horizontal scroll */
-  .scrollbar-horizontal {
-    scrollbar-width: thin;
-    scrollbar-color: hsl(var(--muted-foreground)) transparent;
-  }
-  
-  .scrollbar-horizontal::-webkit-scrollbar {
-    height: 6px;
-  }
-  
-  .scrollbar-horizontal::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  
-  .scrollbar-horizontal::-webkit-scrollbar-thumb {
-    background-color: hsl(var(--muted-foreground));
-    border-radius: 3px;
-  }
-  
-  .scrollbar-horizontal::-webkit-scrollbar-thumb:hover {
-    background-color: hsl(var(--foreground));
-  }
 }
-

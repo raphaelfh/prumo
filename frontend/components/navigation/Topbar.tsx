@@ -4,14 +4,13 @@
  */
 
 import React, {useContext, useState} from 'react';
-import {Menu, PanelLeft} from 'lucide-react';
+import {PanelLeft} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {cn} from '@/lib/utils';
 import {useUserProfile} from '@/hooks/useNavigation';
 import {SidebarContext} from '@/contexts/SidebarContext';
 import {ProjectContext} from '@/contexts/ProjectContext';
 import {ProfileMenu} from './ProfileMenu';
-import {MobileSidebar} from '@/components/layout/MobileSidebar';
 import {FeedbackButton} from '@/components/feedback/FeedbackButton';
 import {NotificationCenter} from './NotificationCenter';
 import type {TopbarProps} from '@/types/navigation';
@@ -64,10 +63,11 @@ export const Topbar: React.FC<TopbarProps> = ({
   }
 
   return (
-    <header className={cn("z-40 w-full border-b bg-background", className)}>
-      <div className="flex h-14 w-full items-center justify-between px-6 flex-shrink-0">
+      <header
+          className={cn("z-40 w-full border-b border-border/40 bg-background/80 backdrop-blur-md sticky top-0", className)}>
+          <div className="flex h-12 w-full items-center justify-between px-4 flex-shrink-0">
         {/* Left Section - Toggle */}
-        <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
           {/* Sidebar Toggle - Apenas Desktop */}
           {sidebarContext && isProjectPage && (
             <Button
@@ -75,40 +75,26 @@ export const Topbar: React.FC<TopbarProps> = ({
               size="icon"
               onClick={sidebarContext.toggleSidebar}
               aria-label={sidebarContext.sidebarCollapsed ? "Expandir sidebar" : "Recolher sidebar"}
-              className="hidden lg:flex flex-shrink-0"
+              className="hidden lg:flex flex-shrink-0 h-8 w-8 hover:bg-muted/50 transition-colors"
             >
-              <PanelLeft className="h-4 w-4" />
+                <PanelLeft className="h-4 w-4 text-muted-foreground"/>
             </Button>
           )}
 
-          {/* Mobile Menu Button - para páginas de projeto */}
-          {isProjectPage && projectContext && (
-            <>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="lg:hidden flex-shrink-0"
-                aria-label="Abrir menu"
-                onClick={() => setMobileMenuOpen(true)}
-              >
-                <Menu className="h-4 w-4" />
-              </Button>
-              
-              <MobileSidebar
-                open={mobileMenuOpen}
-                onOpenChange={setMobileMenuOpen}
-                activeTab={projectContext.activeTab}
-                onTabChange={projectContext.changeTab}
-                projectName={projectContext.project?.name}
-              />
-            </>
+                  {/* Breadcrumb or Brand */}
+                  {!isProjectPage && (
+                      <div className="flex items-center gap-2 px-2">
+                          <span
+                              className="text-[13px] font-semibold text-foreground tracking-tight">Review AI Hub</span>
+                      </div>
           )}
         </div>
 
         {/* Right Section - Notifications + Feedback + Profile Menu */}
-        <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1.5">
           <NotificationCenter />
           <FeedbackButton />
+                  <div className="h-4 w-[1px] bg-border/40 mx-1"/>
           <ProfileMenu user={user} />
         </div>
       </div>

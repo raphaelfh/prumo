@@ -1,45 +1,40 @@
 import {useEffect, useMemo, useState} from "react";
-import {Card, CardContent} from "@/components/ui/card";
 import {Input} from "@/components/ui/input";
 import {Button} from "@/components/ui/button";
 import {Badge} from "@/components/ui/badge";
 import {Checkbox} from "@/components/ui/checkbox";
 import {
-    BookOpen,
-    Calendar,
-    ChevronDown,
-    ChevronsUpDown,
-    ChevronUp,
-    ExternalLink,
-    FilePlus,
-    FileText,
-    Filter,
-    MoreHorizontal,
-    Search,
-    Settings2,
-    Trash2,
-    Upload,
-    Users
+  ChevronDown,
+  ChevronsUpDown,
+  ChevronUp,
+  FileText,
+  Filter,
+  MoreHorizontal,
+  Plus,
+  Search,
+  Settings2,
+  Trash2,
+  Upload
 } from "lucide-react";
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from "@/components/ui/table";
 import {
-    DropdownMenu,
-    DropdownMenuCheckboxItem,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
 } from "@/components/ui/alert-dialog";
 import {Popover, PopoverContent, PopoverTrigger} from "@/components/ui/popover";
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "@/components/ui/tooltip";
@@ -459,528 +454,566 @@ export function ArticlesList({ articles, onArticleClick, projectId, onArticlesCh
   };
 
   return (
-    <div className="space-y-4">
-      {/* Barra de Busca e Controles */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex flex-col md:flex-row gap-4">
-            {/* Busca Global */}
-            <div className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar em todos os campos..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-9 h-9"
-                />
-              </div>
-            </div>
-            
+      <div className="space-y-6">
+          {/* Barra de Busca e Controles - Estilo Command Line Linear */}
+          <div className="flex flex-col gap-4">
+              <div className="flex flex-col md:flex-row gap-3 items-center">
+                  {/* Busca Global */}
+                  <div className="flex-1 w-full group">
+                      <div className="relative">
+                          <Search
+                              className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground transition-colors group-focus-within:text-foreground"/>
+                          <Input
+                              placeholder="Buscar em todos os campos... (⌘ K)"
+                              value={searchTerm}
+                              onChange={(e) => setSearchTerm(e.target.value)}
+                              className="pl-9 h-9 bg-muted/40 border-transparent focus:bg-background focus:ring-0 focus:border-border/60 focus:shadow-sm transition-all text-sm rounded-md"
+                          />
+                          <div
+                              className="absolute right-3 top-1/2 -translate-y-1/2 hidden md:flex items-center gap-1 opacity-40">
+                              <kbd className="text-[10px] font-sans border rounded px-1.5 py-0.5 bg-background">⌘</kbd>
+                              <kbd className="text-[10px] font-sans border rounded px-1.5 py-0.5 bg-background">K</kbd>
+                          </div>
+                      </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
             {/* Botão Importar do Zotero */}
             {hasZoteroConfigured && (
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="h-9 gap-2"
+              <Button
+                  variant="ghost"
+                size="sm"
+                  className="h-9 px-3 text-xs font-medium hover:bg-muted/60 transition-colors"
                 onClick={() => setZoteroImportOpen(true)}
               >
-                <Upload className="h-4 w-4" />
-                Importar do Zotero
+                  <Upload className="h-3.5 w-3.5 mr-2"/>
+                  Zotero
               </Button>
             )}
 
             {/* Seletor de Colunas */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-9 gap-2">
-                  <Settings2 className="h-4 w-4" />
+                  <Button variant="ghost" size="sm"
+                          className="h-9 px-3 text-xs font-medium hover:bg-muted/60 transition-colors">
+                      <Settings2 className="h-3.5 w-3.5 mr-2"/>
                   Colunas
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuLabel>Colunas visíveis</DropdownMenuLabel>
+                  <DropdownMenuLabel
+                      className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider p-2">Colunas
+                      visíveis</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuCheckboxItem
                   checked={visibleColumns.title}
                   onCheckedChange={() => toggleColumn('title')}
                   disabled
+                  className="text-xs"
                 >
-                  Título (obrigatório)
+                    Título
                 </DropdownMenuCheckboxItem>
                 <DropdownMenuCheckboxItem
                   checked={visibleColumns.pdf}
                   onCheckedChange={() => toggleColumn('pdf')}
+                  className="text-xs"
                 >
                   PDF
                 </DropdownMenuCheckboxItem>
                 <DropdownMenuCheckboxItem
                   checked={visibleColumns.authors}
                   onCheckedChange={() => toggleColumn('authors')}
+                  className="text-xs"
                 >
                   Autores
                 </DropdownMenuCheckboxItem>
                 <DropdownMenuCheckboxItem
                   checked={visibleColumns.journal}
                   onCheckedChange={() => toggleColumn('journal')}
+                  className="text-xs"
                 >
                   Revista
                 </DropdownMenuCheckboxItem>
                 <DropdownMenuCheckboxItem
                   checked={visibleColumns.year}
                   onCheckedChange={() => toggleColumn('year')}
+                  className="text-xs"
                 >
                   Ano
                 </DropdownMenuCheckboxItem>
                 <DropdownMenuCheckboxItem
                   checked={visibleColumns.keywords}
                   onCheckedChange={() => toggleColumn('keywords')}
+                  className="text-xs"
                 >
                   Palavras-chave
                 </DropdownMenuCheckboxItem>
                 <DropdownMenuCheckboxItem
                   checked={visibleColumns.doi}
                   onCheckedChange={() => toggleColumn('doi')}
+                  className="text-xs"
                 >
                   DOI
                 </DropdownMenuCheckboxItem>
                 <DropdownMenuCheckboxItem
                   checked={visibleColumns.abstract}
                   onCheckedChange={() => toggleColumn('abstract')}
+                  className="text-xs"
                 >
                   Resumo
                 </DropdownMenuCheckboxItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-
-          <div className="mt-4 flex items-center justify-between">
-            <div className="text-sm text-muted-foreground">
-              {filteredArticles.length} de {articles.length} artigo(s)
-            </div>
-            
-            {selectedArticles.size > 0 && (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">
-                  {selectedArticles.size} selecionado(s)
-                </span>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={() => setBulkDeleteDialogOpen(true)}
-                  disabled={deleting}
-                >
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Deletar Selecionados
-                </Button>
               </div>
-            )}
+
+              <div className="flex items-center justify-between px-1">
+                  <div className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                      {filteredArticles.length} de {articles.length} artigo(s)
+                  </div>
+
+                  {selectedArticles.size > 0 && (
+                      <div className="flex items-center gap-3 animate-in fade-in slide-in-from-right-2 duration-200">
+              <span className="text-xs font-medium text-foreground">
+                {selectedArticles.size} selecionado(s)
+              </span>
+                          <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setBulkDeleteDialogOpen(true)}
+                              disabled={deleting}
+                              className="h-7 text-[11px] font-semibold text-destructive hover:text-destructive hover:bg-destructive/10 uppercase tracking-tight"
+                          >
+                              <Trash2 className="mr-1.5 h-3 w-3"/>
+                              Deletar
+                          </Button>
+                      </div>
+                  )}
+              </div>
           </div>
-        </CardContent>
-      </Card>
 
       {/* Articles Table */}
       {filteredArticles.length === 0 && articles.length === 0 ? (
-        <Card>
-          <CardContent className="py-12">
-            <div className="text-center">
-              <FileText className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
-              <h3 className="mb-2 text-lg font-medium">Nenhum artigo encontrado</h3>
-              <p className="text-sm text-muted-foreground">
-                Comece adicionando artigos à sua revisão
+          <div
+              className="flex flex-col items-center justify-center py-24 px-4 bg-muted/10 rounded-lg border border-dashed">
+              <FileText className="h-10 w-10 text-muted-foreground/30 mb-4" strokeWidth={1.2}/>
+              <h3 className="text-base font-medium text-foreground mb-1.5 text-center">Nenhum artigo ainda</h3>
+              <p className="text-sm text-muted-foreground text-center mb-8 max-w-xs mx-auto">
+                  Comece importando seus artigos de pesquisa para organizar sua revisão.
               </p>
-            </div>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    {/* Checkbox de seleção */}
-                    <TableHead className="w-[40px]">
-                      <Checkbox
-                        checked={selectedArticles.size === filteredArticles.length && filteredArticles.length > 0}
-                        onCheckedChange={handleSelectAll}
-                        aria-label="Selecionar todos"
-                      />
-                    </TableHead>
-
-                    {/* Título - sempre visível */}
-                    <TableHead className="min-w-[300px]">
-                      <div className="flex items-center gap-1.5">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleSort('title')}
-                          className="h-auto p-0 font-semibold hover:bg-transparent"
-                        >
-                          Título
-                        </Button>
-                        {getSortIcon('title')}
-                        <ColumnFilterButton column="title" />
-                      </div>
-                    </TableHead>
-
-                    {/* PDF */}
-                    {visibleColumns.pdf && (
-                      <TableHead className="w-[90px]">
-                        <div className="flex items-center gap-1.5">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleSort('has_main_file')}
-                            className="h-auto p-0 font-semibold hover:bg-transparent"
-                          >
-                            <FileText className="h-3.5 w-3.5 mr-1" />
-                            PDF
-                          </Button>
-                          {getSortIcon('has_main_file')}
-                        </div>
-                      </TableHead>
-                    )}
-
-                    {/* Autores */}
-                    {visibleColumns.authors && (
-                      <TableHead className="w-[120px]">
-                        <div className="flex items-center gap-1.5">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleSort('authors')}
-                            className="h-auto p-0 font-semibold hover:bg-transparent"
-                          >
-                            <Users className="h-3.5 w-3.5 mr-1" />
-                            Autores
-                          </Button>
-                          {getSortIcon('authors')}
-                          <ColumnFilterButton column="authors" />
-                        </div>
-                      </TableHead>
-                    )}
-
-                    {/* Revista */}
-                    {visibleColumns.journal && (
-                      <TableHead className="w-[140px]">
-                        <div className="flex items-center gap-1.5">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleSort('journal_title')}
-                            className="h-auto p-0 font-semibold hover:bg-transparent"
-                          >
-                            <BookOpen className="h-3.5 w-3.5 mr-1" />
-                            Revista
-                          </Button>
-                          {getSortIcon('journal_title')}
-                          <ColumnFilterButton column="journal_title" />
-                        </div>
-                      </TableHead>
-                    )}
-
-                    {/* Ano */}
-                    {visibleColumns.year && (
-                      <TableHead className="w-[100px]">
-                        <div className="flex items-center gap-1.5">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleSort('publication_year')}
-                            className="h-auto p-0 font-semibold hover:bg-transparent"
-                          >
-                            <Calendar className="h-3.5 w-3.5 mr-1" />
-                            Ano
-                          </Button>
-                          {getSortIcon('publication_year')}
-                          <ColumnFilterButton column="publication_year" />
-                        </div>
-                      </TableHead>
-                    )}
-
-                    {/* Keywords */}
-                    {visibleColumns.keywords && (
-                      <TableHead className="w-[150px]">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-semibold text-sm">Palavras-chave</span>
-                          <ColumnFilterButton column="keywords" />
-                        </div>
-                      </TableHead>
-                    )}
-
-                    {/* DOI */}
-                    {visibleColumns.doi && (
-                      <TableHead className="w-[120px]">
-                        <span className="font-semibold text-sm">DOI</span>
-                      </TableHead>
-                    )}
-
-                    {/* Abstract */}
-                    {visibleColumns.abstract && (
-                      <TableHead className="w-[250px]">
-                        <span className="font-semibold text-sm">Resumo</span>
-                      </TableHead>
-                    )}
-
-                    {/* Ações */}
-                    <TableHead className="w-[100px] text-right">Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredArticles.map((article) => (
-                    <TableRow 
-                      key={article.id}
-                      className="hover:bg-muted/50"
-                    >
-                      {/* Checkbox */}
-                      <TableCell>
-                        <Checkbox
-                          checked={selectedArticles.has(article.id)}
-                          onCheckedChange={(checked) => handleSelectArticle(article.id, checked as boolean)}
-                          onClick={(e) => e.stopPropagation()}
-                          aria-label={`Selecionar ${article.title}`}
-                        />
-                      </TableCell>
-
-                      {/* Título */}
-                      <TableCell 
-                        className="font-medium cursor-pointer"
-                        onClick={() => onArticleClick(article.id)}
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                  <Button
+                      onClick={() => (window.location.href = `/projects/${projectId}/articles/add`)}
+                      className="bg-[#111111] hover:bg-[#2c2c2c] text-white h-9 px-6 text-xs font-medium rounded-md transition-all"
+                  >
+                      <Plus className="mr-2 h-3.5 w-3.5"/>
+                      Adicionar Primeiro Artigo
+                  </Button>
+                  {hasZoteroConfigured && (
+                      <Button
+                          variant="outline"
+                          onClick={() => setZoteroImportOpen(true)}
+                          className="h-9 px-6 text-xs font-medium rounded-md transition-all"
                       >
-                        <div className="line-clamp-2 text-sm leading-tight">
-                          {article.title}
-                        </div>
-                      </TableCell>
+                          <Upload className="mr-2 h-3.5 w-3.5"/>
+                          Importar via Zotero
+                      </Button>
+                  )}
+              </div>
+          </div>
+      ) : (
+          <div className="border rounded-md overflow-hidden bg-background shadow-sm border-border/60">
+              <div className="overflow-x-auto scrollbar-horizontal">
+                  <Table>
+                      <TableHeader className="bg-muted/30">
+                          <TableRow className="hover:bg-transparent border-b-border/60">
+                              {/* Checkbox de seleção */}
+                              <TableHead className="w-[45px] px-3">
+                                  <Checkbox
+                                      checked={selectedArticles.size === filteredArticles.length && filteredArticles.length > 0}
+                                      onCheckedChange={handleSelectAll}
+                                      aria-label="Selecionar todos"
+                                      className="h-3.5 w-3.5 rounded-sm"
+                                  />
+                              </TableHead>
 
-                      {/* PDF */}
-                      {visibleColumns.pdf && (
-                        <TableCell>
-                          {articlesWithMainFile.has(article.id) ? (
-                            <Badge 
-                              variant="default" 
-                              className="text-xs bg-green-600 hover:bg-green-700 px-2 py-0.5 cursor-pointer"
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                try {
-                                  // Buscar o arquivo PDF MAIN do artigo
-                                  const { data: fileData, error } = await supabase
-                                    .from("article_files")
-                                    .select("storage_key, original_filename")
-                                    .eq("article_id", article.id)
-                                    .eq("file_role", "MAIN")
-                                    .single();
+                              {/* Título - sempre visível */}
+                              <TableHead className="min-w-[320px] px-3">
+                                  <div className="flex items-center gap-1.5">
+                                      <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => handleSort('title')}
+                                          className="h-auto p-0 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider hover:bg-transparent hover:text-foreground transition-colors"
+                                      >
+                                          Título
+                                      </Button>
+                                      {getSortIcon('title')}
+                                      <ColumnFilterButton column="title"/>
+                                  </div>
+                              </TableHead>
 
-                                  if (error || !fileData) {
-                                    toast.error("Arquivo PDF não encontrado");
-                                    return;
-                                  }
-
-                                  // Gerar URL assinada para download/visualização
-                                  const { data: signedUrl, error: urlError } = await supabase.storage
-                                    .from("articles")
-                                    .createSignedUrl(fileData.storage_key, 3600); // 1 hora de validade
-
-                                  if (urlError) {
-                                    toast.error("Erro ao acessar arquivo PDF");
-                                    return;
-                                  }
-
-                                  // Abrir PDF em nova aba
-                                  window.open(signedUrl.signedUrl, "_blank");
-                                } catch (error) {
-                                  console.error("Error opening PDF:", error);
-                                  toast.error("Erro ao abrir PDF");
-                                }
-                              }}
-                            >
-                              PDF
-                            </Badge>
-                          ) : (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openUploadDialog(article.id);
-                              }}
-                              className="h-7 gap-1 text-xs text-muted-foreground hover:text-foreground"
-                            >
-                              <FilePlus className="h-3 w-3" />
-                              Adicionar
-                            </Button>
-                          )}
-                        </TableCell>
-                      )}
-
-                      {/* Autores */}
-                      {visibleColumns.authors && (
-                        <TableCell className="text-sm text-muted-foreground">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <div className="truncate cursor-help">
-                                  {(() => {
-                                    const authorsText = article.authors?.slice(0, 2).join(", ") + 
-                                      ((article.authors?.length || 0) > 2 ? " et al." : "");
-                                    return authorsText && authorsText.length > 15 
-                                      ? authorsText.substring(0, 15) + "..." 
-                                      : authorsText;
-                                  })()}
-                                </div>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <div className="max-w-xs">
-                                  <p className="font-medium">Autores:</p>
-                                  <p className="text-sm">{article.authors?.join(", ")}</p>
-                                </div>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </TableCell>
-                      )}
-
-                      {/* Revista */}
-                      {visibleColumns.journal && (
-                        <TableCell className="text-sm text-muted-foreground">
-                          <span 
-                            className="line-clamp-2 italic block" 
-                            title={article.journal_title || undefined}
-                          >
-                            {article.journal_title || "-"}
-                          </span>
-                        </TableCell>
-                      )}
-
-                      {/* Ano */}
-                      {visibleColumns.year && (
-                        <TableCell>
-                          {article.publication_year ? (
-                            <Badge variant="secondary" className="text-xs">
-                              {article.publication_year}
-                            </Badge>
-                          ) : (
-                            <span className="text-sm text-muted-foreground">-</span>
-                          )}
-                        </TableCell>
-                      )}
-
-                      {/* Keywords */}
-                      {visibleColumns.keywords && (
-                        <TableCell>
-                          {article.keywords && article.keywords.length > 0 ? (
-                            <div className="flex flex-wrap gap-1">
-                              {article.keywords.slice(0, 2).map((keyword, idx) => (
-                                <Badge key={idx} variant="outline" className="text-xs">
-                                  {keyword}
-                                </Badge>
-                              ))}
-                              {article.keywords.length > 2 && (
-                                <Badge variant="outline" className="text-xs">
-                                  +{article.keywords.length - 2}
-                                </Badge>
+                              {/* PDF */}
+                              {visibleColumns.pdf && (
+                                  <TableHead className="w-[100px] px-3">
+                                      <div className="flex items-center gap-1.5">
+                                          <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={() => handleSort('has_main_file')}
+                                              className="h-auto p-0 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider hover:bg-transparent hover:text-foreground transition-colors"
+                                          >
+                                              PDF
+                                          </Button>
+                                          {getSortIcon('has_main_file')}
+                                      </div>
+                                  </TableHead>
                               )}
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">-</span>
-                          )}
-                        </TableCell>
-                      )}
 
-                      {/* DOI */}
-                      {visibleColumns.doi && (
-                        <TableCell>
-                          {article.doi ? (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                window.open(`https://doi.org/${article.doi}`, "_blank");
-                              }}
-                              className="h-7 gap-1 text-xs"
-                            >
-                              <ExternalLink className="h-3 w-3" />
-                              Ver DOI
-                            </Button>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">-</span>
-                          )}
-                        </TableCell>
-                      )}
+                              {/* Autores */}
+                              {visibleColumns.authors && (
+                                  <TableHead className="w-[140px] px-3">
+                                      <div className="flex items-center gap-1.5">
+                                          <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={() => handleSort('authors')}
+                                              className="h-auto p-0 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider hover:bg-transparent hover:text-foreground transition-colors"
+                                          >
+                                              Autores
+                                          </Button>
+                                          {getSortIcon('authors')}
+                                          <ColumnFilterButton column="authors"/>
+                                      </div>
+                                  </TableHead>
+                              )}
 
-                      {/* Abstract */}
-                      {visibleColumns.abstract && (
-                        <TableCell>
-                          <div className="text-xs text-muted-foreground line-clamp-3">
-                            {article.abstract || "-"}
-                          </div>
-                        </TableCell>
-                      )}
+                              {/* Revista */}
+                              {visibleColumns.journal && (
+                                  <TableHead className="w-[160px] px-3">
+                                      <div className="flex items-center gap-1.5">
+                                          <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={() => handleSort('journal_title')}
+                                              className="h-auto p-0 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider hover:bg-transparent hover:text-foreground transition-colors"
+                                          >
+                                              Revista
+                                          </Button>
+                                          {getSortIcon('journal_title')}
+                                          <ColumnFilterButton column="journal_title"/>
+                                      </div>
+                                  </TableHead>
+                              )}
 
-                      {/* Ações */}
-                      <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-8 w-8"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onArticleClick(article.id);
-                              }}
-                            >
-                              <FileText className="mr-2 h-4 w-4" />
-                              Ver Detalhes
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openUploadDialog(article.id);
-                              }}
-                            >
-                              <Upload className="mr-2 h-4 w-4" />
-                              Vincular Arquivo
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openDeleteDialog(article.id);
-                              }}
-                              className="text-destructive focus:text-destructive"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Deletar
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+                              {/* Ano */}
+                              {visibleColumns.year && (
+                                  <TableHead className="w-[100px] px-3">
+                                      <div className="flex items-center gap-1.5">
+                                          <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={() => handleSort('publication_year')}
+                                              className="h-auto p-0 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider hover:bg-transparent hover:text-foreground transition-colors"
+                                          >
+                                              Ano
+                                          </Button>
+                                          {getSortIcon('publication_year')}
+                                          <ColumnFilterButton column="publication_year"/>
+                                      </div>
+                                  </TableHead>
+                              )}
+
+                              {/* Keywords */}
+                              {visibleColumns.keywords && (
+                                  <TableHead className="w-[160px] px-3">
+                                      <div className="flex items-center gap-1.5">
+                                          <span
+                                              className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Keywords</span>
+                                          <ColumnFilterButton column="keywords"/>
+                                      </div>
+                                  </TableHead>
+                              )}
+
+                              {/* DOI */}
+                              {visibleColumns.doi && (
+                                  <TableHead className="w-[130px] px-3">
+                                      <span
+                                          className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">DOI</span>
+                                  </TableHead>
+                              )}
+
+                              {/* Abstract */}
+                              {visibleColumns.abstract && (
+                                  <TableHead className="w-[280px] px-3">
+                                      <span
+                                          className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Resumo</span>
+                                  </TableHead>
+                              )}
+
+                              {/* Ações */}
+                              <TableHead className="w-[60px] px-3 text-right"></TableHead>
+                          </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                          {filteredArticles.map((article) => (
+                              <TableRow
+                                  key={article.id}
+                                  className="hover:bg-muted/40 transition-colors group border-b-border/40"
+                              >
+                                  {/* Checkbox */}
+                                  <TableCell className="px-3">
+                                      <Checkbox
+                                          checked={selectedArticles.has(article.id)}
+                                          onCheckedChange={(checked) => handleSelectArticle(article.id, checked as boolean)}
+                                          onClick={(e) => e.stopPropagation()}
+                                          aria-label={`Selecionar ${article.title}`}
+                                          className="h-3.5 w-3.5 rounded-sm"
+                                      />
+                                  </TableCell>
+
+                                  {/* Título */}
+                                  <TableCell
+                                      className="px-3 py-4 font-medium cursor-pointer"
+                                      onClick={() => onArticleClick(article.id)}
+                                  >
+                                      <div
+                                          className="line-clamp-2 text-sm leading-[1.3] text-foreground font-semibold group-hover:text-primary transition-colors">
+                                          {article.title}
+                                      </div>
+                                  </TableCell>
+
+                                  {/* PDF */}
+                                  {visibleColumns.pdf && (
+                                      <TableCell className="px-3">
+                                          {articlesWithMainFile.has(article.id) ? (
+                                              <div
+                                                  className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-success/10 text-success text-[10px] font-bold uppercase tracking-tight cursor-pointer hover:bg-success/20 transition-colors"
+                                                  onClick={async (e) => {
+                                                      e.stopPropagation();
+                                                      try {
+                                                          const {data: fileData, error} = await supabase
+                                                              .from("article_files")
+                                                              .select("storage_key, original_filename")
+                                                              .eq("article_id", article.id)
+                                                              .eq("file_role", "MAIN")
+                                                              .single();
+
+                                                          if (error || !fileData) {
+                                                              toast.error("Arquivo PDF não encontrado");
+                                                              return;
+                                                          }
+
+                                                          const {
+                                                              data: signedUrl,
+                                                              error: urlError
+                                                          } = await supabase.storage
+                                                              .from("articles")
+                                                              .createSignedUrl(fileData.storage_key, 3600);
+
+                                                          if (urlError) {
+                                                              toast.error("Erro ao acessar arquivo PDF");
+                                                              return;
+                                                          }
+
+                                                          window.open(signedUrl.signedUrl, "_blank");
+                                                      } catch (error) {
+                                                          console.error("Error opening PDF:", error);
+                                                          toast.error("Erro ao abrir PDF");
+                                                      }
+                                                  }}
+                                              >
+                                                  PDF
+                                              </div>
+                                          ) : (
+                                              <Button
+                                                  size="sm"
+                                                  variant="ghost"
+                                                  onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      openUploadDialog(article.id);
+                                                  }}
+                                                  className="h-6 px-1.5 text-[10px] font-semibold text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-all"
+                                              >
+                                                  <Plus className="h-2.5 w-2.5 mr-1"/>
+                                                  Vincular
+                                              </Button>
+                                          )}
+                                      </TableCell>
+                                  )}
+
+                                  {/* Autores */}
+                                  {visibleColumns.authors && (
+                                      <TableCell className="px-3 text-[13px] text-muted-foreground font-medium">
+                                          <TooltipProvider>
+                                              <Tooltip>
+                                                  <TooltipTrigger asChild>
+                                                      <div className="truncate max-w-[120px]">
+                                                          {(() => {
+                                                              const authorsText = article.authors?.slice(0, 2).join(", ") +
+                                                                  ((article.authors?.length || 0) > 2 ? " et al." : "");
+                                                              return authorsText || "-";
+                                                          })()}
+                                                      </div>
+                                                  </TooltipTrigger>
+                                                  <TooltipContent>
+                                                      <div className="max-w-xs p-1">
+                                                          <p className="font-semibold text-xs mb-1">Autores:</p>
+                                                          <p className="text-[11px] leading-relaxed">{article.authors?.join(", ")}</p>
+                                                      </div>
+                                                  </TooltipContent>
+                                              </Tooltip>
+                                          </TooltipProvider>
+                                      </TableCell>
+                                  )}
+
+                                  {/* Revista */}
+                                  {visibleColumns.journal && (
+                                      <TableCell className="px-3 text-[13px] text-muted-foreground italic">
+                        <span
+                            className="line-clamp-2 leading-tight"
+                            title={article.journal_title || undefined}
+                        >
+                          {article.journal_title || "-"}
+                        </span>
+                                      </TableCell>
+                                  )}
+
+                                  {/* Ano */}
+                                  {visibleColumns.year && (
+                                      <TableCell className="px-3">
+                                          {article.publication_year ? (
+                                              <span
+                                                  className="text-xs font-semibold px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                            {article.publication_year}
+                          </span>
+                                          ) : (
+                                              <span className="text-[13px] text-muted-foreground/40">-</span>
+                                          )}
+                                      </TableCell>
+                                  )}
+
+                                  {/* Keywords */}
+                                  {visibleColumns.keywords && (
+                                      <TableCell className="px-3">
+                                          {article.keywords && article.keywords.length > 0 ? (
+                                              <div className="flex flex-wrap gap-1">
+                                                  {article.keywords.slice(0, 1).map((keyword, idx) => (
+                                                      <Badge key={idx} variant="outline"
+                                                             className="text-[10px] h-4.5 px-1 font-medium bg-transparent border-border/60">
+                                                          {keyword}
+                                                      </Badge>
+                                                  ))}
+                                                  {article.keywords.length > 1 && (
+                                                      <Badge variant="outline"
+                                                             className="text-[10px] h-4.5 px-1 font-medium bg-transparent border-border/60">
+                                                          +{article.keywords.length - 1}
+                                                      </Badge>
+                                                  )}
+                                              </div>
+                                          ) : (
+                                              <span className="text-[13px] text-muted-foreground/40">-</span>
+                                          )}
+                                      </TableCell>
+                                  )}
+
+                                  {/* DOI */}
+                                  {visibleColumns.doi && (
+                                      <TableCell className="px-3">
+                                          {article.doi ? (
+                                              <Button
+                                                  size="sm"
+                                                  variant="ghost"
+                                                  onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      window.open(`https://doi.org/${article.doi}`, "_blank");
+                                                  }}
+                                                  className="h-6 px-1 text-[11px] font-medium text-primary hover:bg-primary/5"
+                                              >
+                                                  Link DOI
+                                              </Button>
+                                          ) : (
+                                              <span className="text-[13px] text-muted-foreground/40">-</span>
+                                          )}
+                                      </TableCell>
+                                  )}
+
+                                  {/* Abstract */}
+                                  {visibleColumns.abstract && (
+                                      <TableCell className="px-3">
+                                          <div
+                                              className="text-[12px] text-muted-foreground/80 line-clamp-2 leading-tight">
+                                              {article.abstract || "-"}
+                                          </div>
+                                      </TableCell>
+                                  )}
+
+                                  {/* Ações */}
+                                  <TableCell className="px-3 text-right">
+                                      <DropdownMenu>
+                                          <DropdownMenuTrigger asChild>
+                                              <Button
+                                                  size="icon"
+                                                  variant="ghost"
+                                                  className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                  onClick={(e) => e.stopPropagation()}
+                                              >
+                                                  <MoreHorizontal className="h-3.5 w-3.5"/>
+                                              </Button>
+                                          </DropdownMenuTrigger>
+                                          <DropdownMenuContent align="end" className="w-44">
+                                              <DropdownMenuItem
+                                                  onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      onArticleClick(article.id);
+                                                  }}
+                                                  className="text-xs"
+                                              >
+                                                  <FileText className="mr-2 h-3.5 w-3.5"/>
+                                                  Ver Detalhes
+                                              </DropdownMenuItem>
+                                              <DropdownMenuItem
+                                                  onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      openUploadDialog(article.id);
+                                                  }}
+                                                  className="text-xs"
+                                              >
+                                                  <Upload className="mr-2 h-3.5 w-3.5"/>
+                                                  Vincular Arquivo
+                                              </DropdownMenuItem>
+                                              <DropdownMenuSeparator/>
+                                              <DropdownMenuItem
+                                                  onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      openDeleteDialog(article.id);
+                                                  }}
+                                                  className="text-xs text-destructive focus:text-destructive"
+                                              >
+                                                  <Trash2 className="mr-2 h-3.5 w-3.5"/>
+                                                  Deletar
+                                              </DropdownMenuItem>
+                                          </DropdownMenuContent>
+                                      </DropdownMenu>
+                                  </TableCell>
+                              </TableRow>
+                          ))}
+                      </TableBody>
+                  </Table>
+              </div>
+          </div>
+      )
+      }
 
       {/* Estado vazio após filtros */}
       {filteredArticles.length === 0 && articles.length > 0 && (
-        <div className="text-center py-8 border rounded-lg bg-muted/20">
-          <Search className="h-8 w-8 mx-auto mb-2 text-muted-foreground opacity-50" />
-          <p className="font-medium">Nenhum artigo encontrado</p>
-          <p className="text-sm text-muted-foreground mt-1">Tente ajustar os filtros de busca.</p>
+          <div className="text-center py-16 border rounded-lg bg-muted/10 border-dashed">
+              <Search className="h-8 w-8 mx-auto mb-3 text-muted-foreground/30" strokeWidth={1.2}/>
+              <p className="text-sm font-semibold">Nenhum artigo corresponde à sua busca</p>
+              <p className="text-xs text-muted-foreground mt-1 max-w-xs mx-auto">Tente ajustar seus termos de pesquisa
+                  ou limpar os filtros ativos.</p>
           <Button
-            variant="outline"
+              variant="ghost"
             size="sm"
             onClick={() => {
               setSearchTerm('');
@@ -992,9 +1025,9 @@ export function ArticlesList({ articles, onArticleClick, projectId, onArticlesCh
                 keywords: '' 
               });
             }}
-            className="mt-3"
+              className="mt-6 text-xs font-semibold underline underline-offset-4 hover:bg-transparent"
           >
-            Limpar filtros
+              Limpar todos os filtros
           </Button>
         </div>
       )}

@@ -14,11 +14,11 @@ import {supabase} from '@/integrations/supabase/client';
 import {toast} from 'sonner';
 import {AddProjectDialog} from '@/components/project/AddProjectDialog';
 import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
 interface ProjectSidebarProps {
@@ -220,38 +220,37 @@ export const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
           return (
             <Button
               key={item.id}
-              variant={isActive ? "secondary" : "ghost"}
+              variant="ghost"
               className={cn(
-                "w-full justify-start gap-3 h-auto p-3 group",
-                isCollapsed && "justify-center p-2",
-                isActive && "bg-primary/10 text-primary border-primary/20",
-                !isActive && "hover:bg-primary hover:text-white"
+                  "w-full justify-start gap-3 h-auto py-2.5 px-3 group relative rounded-md transition-all",
+                  isCollapsed && "justify-center px-0",
+                  isActive ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
               )}
               onClick={() => onTabChange(item.id)}
               title={isCollapsed ? item.label : undefined}
             >
+                {isActive && (
+                    <div className="absolute left-0 top-1.5 bottom-1.5 w-[2px] bg-primary rounded-full"/>
+                )}
               <Icon className={cn(
                 "h-4 w-4 shrink-0 transition-colors",
-                isActive && "text-primary",
-                !isActive && "group-hover:text-white"
+                  isActive ? "text-foreground" : "group-hover:text-foreground"
               )} />
               {!isCollapsed && (
                 <>
                   <div className="flex-1 text-left">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium">{item.label}</span>
+                      <span className={cn(
+                          "text-sm font-medium transition-colors",
+                          isActive ? "text-foreground" : "text-muted-foreground group-hover:text-foreground"
+                      )}>{item.label}</span>
                       {item.badge && (
-                        <Badge variant="secondary" className="text-xs">
+                          <Badge variant="secondary"
+                                 className="text-[10px] h-4 px-1 font-semibold uppercase tracking-wider">
                           {item.badge}
                         </Badge>
                       )}
                     </div>
-                    <p className={cn(
-                      "text-xs mt-0.5 transition-colors",
-                      isActive ? "text-muted-foreground" : "text-muted-foreground group-hover:text-white/80"
-                    )}>
-                      {item.description}
-                    </p>
                   </div>
                 </>
               )}

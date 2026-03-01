@@ -109,16 +109,19 @@ export default function ProjectView() {
     switch (activeTab) {
       case 'articles':
         return (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
+            <div className="space-y-4">
+              <div className="flex justify-between items-center mb-6">
               <div>
-                <h2 className="text-2xl font-semibold">Artigos</h2>
+                <h2 className="text-xl font-semibold tracking-tight">Artigos</h2>
                 <p className="text-sm text-muted-foreground mt-1">
                   Gerencie os artigos da sua revisão sistemática
                 </p>
               </div>
-              <Button onClick={() => navigate(`/projects/${projectId}/articles/add`)}>
-                <Plus className="mr-2 h-4 w-4" />
+                <Button
+                    onClick={() => navigate(`/projects/${projectId}/articles/add`)}
+                    className="bg-[#111111] hover:bg-[#2c2c2c] text-white rounded-md h-9 px-4 text-xs font-medium transition-all"
+                >
+                  <Plus className="mr-1.5 h-3.5 w-3.5"/>
                 Adicionar Artigo
               </Button>
             </div>
@@ -154,9 +157,9 @@ export default function ProjectView() {
           {renderContent()}
         </div>
       ) : (
-        // Layout com container para outras abas
-        <div className="container mx-auto px-6 py-6 lg:px-10 lg:py-8 h-full">
-          <div className="mx-auto w-full max-w-[1200px] h-full">
+          // Layout com container mais largo e padding ajustado para estilo Linear
+          <div className="w-full px-6 py-8 lg:px-10 h-full overflow-y-auto">
+            <div className="w-full max-w-[1400px] mx-auto h-full">
             {renderContent()}
           </div>
         </div>
