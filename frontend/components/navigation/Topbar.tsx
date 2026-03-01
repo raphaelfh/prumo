@@ -82,12 +82,24 @@ export const Topbar: React.FC<TopbarProps> = ({
           )}
 
                   {/* Breadcrumb or Brand */}
-                  {!isProjectPage && (
+                  {!isProjectPage ? (
                       <div className="flex items-center gap-2 px-2">
-                          <span
-                              className="text-[13px] font-semibold text-foreground tracking-tight">Review AI Hub</span>
+                          <div className="h-5 w-5 rounded bg-primary flex items-center justify-center">
+                              <span className="text-[10px] font-bold text-primary-foreground">R</span>
+                          </div>
+                          <span className="text-[13px] font-medium text-foreground tracking-tight">Review AI Hub</span>
                       </div>
-          )}
+                  ) : (
+                      <div className="flex items-center gap-2 px-2 text-[13px] font-medium">
+                          <span
+                              className="text-muted-foreground/60 hover:text-foreground cursor-pointer transition-colors"
+                              onClick={() => window.location.href = '/'}>Projetos</span>
+                          <span className="text-muted-foreground/30">/</span>
+                          <span
+                              className="text-foreground truncate max-w-[200px]">{projectContext?.project?.name}</span>
+                      </div>
+                  )}
+
         </div>
 
         {/* Right Section - Notifications + Feedback + Profile Menu */}

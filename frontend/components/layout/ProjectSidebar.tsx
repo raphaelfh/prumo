@@ -6,7 +6,6 @@
 import React, {useState} from 'react';
 import {BarChart3, ChevronDown, ClipboardCheck, FileText, Folder, Loader2, Plus, Settings} from 'lucide-react';
 import {Button} from '@/components/ui/button';
-import {Badge} from '@/components/ui/badge';
 import {cn} from '@/lib/utils';
 import {useProjectsList} from '@/hooks/useProjectsList';
 import {useAuth} from '@/contexts/AuthContext';
@@ -127,43 +126,39 @@ export const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
   return (
     <aside 
       className={cn(
-        "bg-card border-r transition-all duration-300 ease-in-out",
-        "flex flex-col flex-shrink-0 h-full overflow-y-auto",
-        isCollapsed ? "w-16" : "w-64",
+          "bg-[#fafafa] dark:bg-[#0c0c0c] border-r border-border/40 transition-all duration-300 ease-in-out",
+          "flex flex-col flex-shrink-0 h-full",
+          isCollapsed ? "w-14" : "w-[240px]",
         "hidden lg:flex",
         className
       )}
     >
-      {/* Header do Sidebar */}
-      <div className="p-4 border-b">
+        {/* Header do Sidebar - Mais Clean e Fino */}
+        <div className="h-12 flex items-center px-3 border-b border-border/30">
         {!isCollapsed ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
-                className="w-full justify-start gap-2 h-auto p-2 rounded-lg hover:bg-primary/10 transition-colors group"
+                className="w-full justify-start gap-2 h-8 px-2 rounded-md hover:bg-muted/50 transition-colors group"
               >
-                <div className="p-2 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors">
-                  <Folder className="h-5 w-5 text-primary transition-colors" />
+                  <div
+                      className="h-5 w-5 rounded bg-primary/5 flex items-center justify-center border border-primary/10">
+                      <Folder className="h-3 w-3 text-primary"/>
                 </div>
                 <div className="min-w-0 flex-1 text-left">
-                  <h2 className="text-sm font-semibold truncate transition-colors">
+                    <h2 className="text-[13px] font-medium truncate text-foreground/80">
                     {projectName || 'Projeto'}
                   </h2>
-                  <p className="text-xs text-muted-foreground truncate transition-colors">
-                    {projectName ? 'Projeto de revisão sistemática' : 'Carregando...'}
-                  </p>
                 </div>
-                <ChevronDown className="h-4 w-4 text-muted-foreground transition-colors" />
+                  <ChevronDown className="h-3 w-3 text-muted-foreground/50"/>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-64">
+              <DropdownMenuContent align="start"
+                                   className="w-[220px] p-1 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-border/50">
               {loading ? (
                 <div className="flex items-center justify-center p-4">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span className="ml-2 text-sm text-muted-foreground">
-                    Carregando projetos...
-                  </span>
+                    <Loader2 className="h-3 w-3 animate-spin text-muted-foreground"/>
                 </div>
               ) : (
                 <>
@@ -171,95 +166,74 @@ export const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
                     <DropdownMenuItem
                       key={project.id}
                       onClick={() => switchProject(project.id)}
-                      className="p-0"
+                      className="px-2 py-1.5 rounded-md text-[13px] focus:bg-muted/60"
                     >
-                    <div className="flex items-start gap-2 w-full p-2 group-data-[highlighted]:text-white">
-                      <Folder className="h-4 w-4 text-muted-foreground group-data-[highlighted]:text-white mt-0.5 shrink-0 transition-colors" />
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium text-sm truncate">
-                          {project.name}
-                        </div>
-                        <p className="text-xs text-muted-foreground group-data-[highlighted]:text-white/80 truncate mt-0.5 transition-colors">
-                          {project.description || 'Projeto de revisão sistemática'}
-                        </p>
-                      </div>
-                    </div>
+                        <Folder className="h-3.5 w-3.5 mr-2 text-muted-foreground/60"/>
+                        <span className="truncate">{project.name}</span>
                     </DropdownMenuItem>
                   ))}
-                  <DropdownMenuSeparator />
+                    <DropdownMenuSeparator className="bg-border/30"/>
                   <DropdownMenuItem
                     onClick={() => setShowAddDialog(true)}
-                    className="p-0"
+                    className="px-2 py-1.5 rounded-md text-[13px] text-primary focus:bg-primary/5 focus:text-primary"
                   >
-                    <div className="flex items-center gap-2 w-full p-2 group-data-[highlighted]:text-white">
-                      <Plus className="h-4 w-4 text-primary group-data-[highlighted]:text-white shrink-0 transition-colors" />
-                      <span className="font-medium text-sm text-primary group-data-[highlighted]:text-white transition-colors">
-                        Criar Novo Projeto
-                      </span>
-                    </div>
+                      <Plus className="h-3.5 w-3.5 mr-2"/>
+                      <span>Criar Novo Projeto</span>
                   </DropdownMenuItem>
                 </>
               )}
             </DropdownMenuContent>
           </DropdownMenu>
         ) : (
-          <div className="flex items-center justify-center">
-            <div className="p-2 rounded-lg bg-primary/10">
-              <Folder className="h-5 w-5 text-primary" />
+            <div className="flex items-center justify-center w-full">
+                <div className="h-7 w-7 rounded bg-primary/5 flex items-center justify-center border border-primary/10">
+                    <Folder className="h-3.5 w-3.5 text-primary"/>
             </div>
           </div>
         )}
       </div>
 
-      {/* Navegação Principal */}
-      <nav className="flex-1 p-4 space-y-1">
+        {/* Navegação Principal - Alta Densidade */}
+        <nav className="flex-1 p-2 space-y-0.5">
         {SIDEBAR_ITEMS.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
-          
+
           return (
             <Button
               key={item.id}
               variant="ghost"
               className={cn(
-                  "w-full justify-start gap-3 h-auto py-2.5 px-3 group relative rounded-md transition-all",
+                  "w-full justify-start gap-2.5 h-8 py-0 px-2.5 group relative rounded-md transition-all duration-75",
                   isCollapsed && "justify-center px-0",
-                  isActive ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                  isActive
+                      ? "bg-muted text-foreground font-medium"
+                      : "text-muted-foreground/80 hover:bg-muted/40 hover:text-foreground"
               )}
               onClick={() => onTabChange(item.id)}
               title={isCollapsed ? item.label : undefined}
             >
-                {isActive && (
-                    <div className="absolute left-0 top-1.5 bottom-1.5 w-[2px] bg-primary rounded-full"/>
-                )}
               <Icon className={cn(
                 "h-4 w-4 shrink-0 transition-colors",
-                  isActive ? "text-foreground" : "group-hover:text-foreground"
-              )} />
+                  isActive ? "text-foreground" : "group-hover:text-foreground/80"
+              )} strokeWidth={1.5}/>
+
               {!isCollapsed && (
-                <>
-                  <div className="flex-1 text-left">
-                    <div className="flex items-center gap-2">
-                      <span className={cn(
-                          "text-sm font-medium transition-colors",
-                          isActive ? "text-foreground" : "text-muted-foreground group-hover:text-foreground"
-                      )}>{item.label}</span>
-                      {item.badge && (
-                          <Badge variant="secondary"
-                                 className="text-[10px] h-4 px-1 font-semibold uppercase tracking-wider">
-                          {item.badge}
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                </>
+                  <span className="text-[13px] transition-colors">
+                  {item.label}
+                </span>
+              )}
+
+                {isActive && !isCollapsed && (
+                    <div className="absolute right-2 h-1.5 w-1.5 rounded-full bg-primary/60"/>
               )}
             </Button>
           );
         })}
       </nav>
 
-      {/* Dialog para criar novo projeto */}
+
+        {/* Dialog para criar novo projeto */}
       <AddProjectDialog
         open={showAddDialog}
         onOpenChange={setShowAddDialog}

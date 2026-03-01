@@ -2098,26 +2098,30 @@ Provide your assessment with clear justification and cite specific passages from
           LANGUAGE plpgsql SECURITY DEFINER;
           """)
 
-    # get_project_members (from 0025/0026)
+    # get_project_members (from 0025/0026) — column names fixed in 0002
     _exec("""
           CREATE
           OR REPLACE FUNCTION get_project_members(p_project_id uuid)
         RETURNS TABLE (
-            user_id     uuid,
-            email       text,
-            full_name   text,
-            avatar_url  text,
-            role        project_member_role,
-            joined_at   timestamptz
+            id              uuid,
+            user_id         uuid,
+            role            project_member_role,
+            permissions     jsonb,
+            created_at      timestamptz,
+            user_email      text,
+            user_full_name  text,
+            user_avatar_url text
         ) AS $$
           BEGIN
           RETURN QUERY
-          SELECT pm.user_id,
-                 u.email,
-                 p.full_name,
-                 p.avatar_url,
+          SELECT pm.id,
+                 pm.user_id,
                  pm.role,
-                 pm.created_at AS joined_at
+                 pm.permissions,
+                 pm.created_at,
+                 u.email      AS user_email,
+                 p.full_name  AS user_full_name,
+                 p.avatar_url AS user_avatar_url
           FROM project_members pm
                    JOIN auth.users u ON u.id = pm.user_id
                    LEFT JOIN profiles p ON p.id = pm.user_id
