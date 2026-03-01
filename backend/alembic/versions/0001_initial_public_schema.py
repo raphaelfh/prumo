@@ -584,6 +584,9 @@ def upgrade() -> None:
               allowed_units     jsonb,
               sort_order        integer               NOT NULL             DEFAULT 0,
               llm_description   text,
+              allow_other       boolean NOT NULL DEFAULT false,
+              other_label       character varying,
+              other_placeholder character varying,
               created_at        timestamptz           NOT NULL             DEFAULT now(),
               updated_at        timestamptz           NOT NULL             DEFAULT now(),
               CONSTRAINT extraction_fields_entity_type_id_fkey
@@ -1423,16 +1426,76 @@ Provide your assessment with clear justification and cite specific passages from
           USING (is_project_manager(project_id, auth.uid()));
     """)
 
-    # --- extraction_entity_types (public read) ---
+    # --- extraction_entity_types (public read + project write) ---
     _exec("""
         CREATE POLICY "extraction_entity_types_select"
           ON extraction_entity_types FOR SELECT USING (true);
+        CREATE POLICY "extraction_entity_types_project_insert"
+          ON extraction_entity_types FOR INSERT
+          WITH CHECK (
+            project_template_id IS NOT NULL AND
+            EXISTS (
+              SELECT 1 FROM project_extraction_templates pet
+              WHERE pet.id = project_template_id
+                AND is_project_member(pet.project_id, auth.uid())
+            )
+          );
+        CREATE POLICY "extraction_entity_types_project_update"
+          ON extraction_entity_types FOR UPDATE
+          USING (
+            project_template_id IS NOT NULL AND
+            EXISTS (
+              SELECT 1 FROM project_extraction_templates pet
+              WHERE pet.id = project_template_id
+                AND is_project_member(pet.project_id, auth.uid())
+            )
+          );
+        CREATE POLICY "extraction_entity_types_project_delete"
+          ON extraction_entity_types FOR DELETE
+          USING (
+            project_template_id IS NOT NULL AND
+            EXISTS (
+              SELECT 1 FROM project_extraction_templates pet
+              WHERE pet.id = project_template_id
+                AND is_project_manager(pet.project_id, auth.uid())
+            )
+          );
     """)
 
-    # --- extraction_fields (public read) ---
+    # --- extraction_fields (public read + project write) ---
     _exec("""
         CREATE POLICY "extraction_fields_select"
           ON extraction_fields FOR SELECT USING (true);
+        CREATE POLICY "extraction_fields_project_insert"
+          ON extraction_fields FOR INSERT
+          WITH CHECK (
+            EXISTS (
+              SELECT 1 FROM extraction_entity_types et
+              JOIN project_extraction_templates pet ON pet.id = et.project_template_id
+              WHERE et.id = entity_type_id
+                AND is_project_member(pet.project_id, auth.uid())
+            )
+          );
+        CREATE POLICY "extraction_fields_project_update"
+          ON extraction_fields FOR UPDATE
+          USING (
+            EXISTS (
+              SELECT 1 FROM extraction_entity_types et
+              JOIN project_extraction_templates pet ON pet.id = et.project_template_id
+              WHERE et.id = entity_type_id
+                AND is_project_member(pet.project_id, auth.uid())
+            )
+          );
+        CREATE POLICY "extraction_fields_project_delete"
+          ON extraction_fields FOR DELETE
+          USING (
+            EXISTS (
+              SELECT 1 FROM extraction_entity_types et
+              JOIN project_extraction_templates pet ON pet.id = et.project_template_id
+              WHERE et.id = entity_type_id
+                AND is_project_manager(pet.project_id, auth.uid())
+            )
+          );
     """)
 
     # --- extraction_instances ---
@@ -2425,6 +2488,27 @@ Provide your assessment with clear justification and cite specific passages from
     # Grant permissions on the view
     _exec("GRANT SELECT, INSERT, UPDATE, DELETE ON assessments TO authenticated;")
     _exec("GRANT SELECT, INSERT, UPDATE, DELETE ON assessments TO service_role;")
+
+    # -----------------------------------------------------------------------
+    # 9b. GRANTS — required after DROP SCHEMA public CASCADE wipes default privs
+    # -----------------------------------------------------------------------
+    # These are needed because Supabase's initial schema grants are lost when the
+    # public schema is recreated. Without them, PostgREST returns 403 even with
+    # a valid JWT because the 'authenticated' role has no table-level permission.
+    _exec("GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;")
+    _exec("GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated, service_role;")
+    _exec("GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated, service_role;")
+    _exec("GRANT ALL ON ALL ROUTINES IN SCHEMA public TO authenticated, service_role;")
+    # Public-read tables (anon role can SELECT without login)
+    for tbl in [
+        "extraction_templates_global", "extraction_entity_types", "extraction_fields",
+        "assessment_instruments", "assessment_items", "ai_assessment_prompts",
+    ]:
+        _exec(f"GRANT SELECT ON TABLE {tbl} TO anon;")
+    # Default privileges so future tables also inherit correct grants
+    _exec("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO authenticated, service_role;")
+    _exec("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO authenticated, service_role;")
+    _exec("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON ROUTINES TO authenticated, service_role;")
 
     # -----------------------------------------------------------------------
     # 10. SEED DATA — moved to 0002_seed_instruments.py (SRP: schema only here)

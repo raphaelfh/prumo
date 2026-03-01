@@ -24,12 +24,10 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base, BaseModel, PostgreSQLEnumType, TimestampMixin, UUIDMixin
+from app.models.base import Base, BaseModel, PostgreSQLEnumType, UUIDMixin
 
 if TYPE_CHECKING:
-    from app.models.article import Article, ArticleFile
-    from app.models.project import Project
-    from app.models.user import Profile
+    pass
 
 
 class ExtractionFramework(str, PyEnum):
@@ -303,10 +301,15 @@ class ExtractionField(BaseModel):
     allowed_units: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    
+
     # Descrição para LLM
     llm_description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    
+
+    # "Other" option support for select/multiselect fields
+    allow_other: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    other_label: Mapped[str | None] = mapped_column(String, nullable=True)
+    other_placeholder: Mapped[str | None] = mapped_column(String, nullable=True)
+
     # Relationships
     entity_type: Mapped["ExtractionEntityType"] = relationship(
         "ExtractionEntityType",

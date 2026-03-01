@@ -21,6 +21,7 @@ const ExtractionFullScreen = lazy(() => import("./pages/ExtractionFullScreen"));
 const AddArticle = lazy(() => import("./pages/AddArticle"));
 const EditArticle = lazy(() => import("./pages/EditArticle"));
 const UserSettings = lazy(() => import("./pages/UserSettings"));
+const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 // Componente de loading para Suspense
@@ -60,6 +61,7 @@ const App = () => {
                   <Suspense fallback={<PageLoader />}>
                     <Routes>
                   <Route path="/auth" element={<Auth />} />
+                        <Route path="/auth/reset-password" element={<ResetPassword/>}/>
                   <Route
                     path="/"
                     element={

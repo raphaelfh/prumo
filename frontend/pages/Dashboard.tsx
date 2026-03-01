@@ -1,14 +1,15 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/contexts/AuthContext";
-import { AppLayout } from "@/components/layout/AppLayout";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { BookOpen, Plus, FileText, ClipboardCheck, BarChart3 } from "lucide-react";
-import { toast } from "sonner";
-import { AddProjectDialog } from "@/components/project/AddProjectDialog";
+import {useState} from "react";
+import {useNavigate} from "react-router-dom";
+import {useQuery, useQueryClient} from "@tanstack/react-query";
+import {supabase} from "@/integrations/supabase/client";
+import {useAuth} from "@/contexts/AuthContext";
+import {AppLayout} from "@/components/layout/AppLayout";
+import {Button} from "@/components/ui/button";
+import {Card, CardContent, CardDescription, CardHeader, CardTitle} from "@/components/ui/card";
+import {Badge} from "@/components/ui/badge";
+import {BarChart3, BookOpen, ClipboardCheck, FileText, Plus} from "lucide-react";
+import {toast} from "sonner";
+import {AddProjectDialog} from "@/components/project/AddProjectDialog";
 
 interface Project {
   id: string;
@@ -22,31 +23,22 @@ interface Project {
 export default function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
 
-  useEffect(() => {
-    loadProjects();
-  }, [user]);
-
-  const loadProjects = async () => {
-    try {
+  const {data: projects = [], isLoading: loading} = useQuery({
+    queryKey: ['projects'],
+    queryFn: async () => {
       const { data, error } = await supabase
         .from("projects")
         .select("id, name, description, created_at, is_active, review_title")
         .order("created_at", { ascending: false });
-
       if (error) throw error;
-      setProjects(data || []);
-    } catch (error: any) {
-      toast.error("Erro ao carregar projetos");
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
+      return data ?? [];
+    },
+    staleTime: 30_000,
+  });
 
   const handleCreateProject = async (data: { name: string; description?: string }) => {
     if (!user?.id) {
@@ -80,12 +72,10 @@ export default function Dashboard() {
 
       console.log('✅ Projeto criado com sucesso:', projectId);
 
-      // Feedback para usuário
       toast.success("Projeto criado com sucesso!");
 
-      // Fechar diálogo e recarregar lista de projetos
+      await queryClient.invalidateQueries({queryKey: ['projects']});
       setAddDialogOpen(false);
-      await loadProjects();
 
     } catch (error: any) {
       console.error("Unexpected error:", error);

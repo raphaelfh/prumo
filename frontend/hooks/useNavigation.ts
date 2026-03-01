@@ -6,6 +6,7 @@
 import {useCallback, useEffect, useState} from 'react';
 import {useLocation, useNavigate} from 'react-router-dom';
 import {supabase} from '@/integrations/supabase/client';
+import {useAuth} from '@/contexts/AuthContext';
 import {BarChart3, File, FileText, Folder, LogIn, Settings} from 'lucide-react';
 import type {BreadcrumbItem, NotificationItem, SearchResult, UserProfile} from '@/types/navigation';
 
@@ -241,29 +242,22 @@ export const useNotifications = () => {
 };
 
 export const useUserProfile = () => {
+    const {user: authUser} = useAuth();
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const loadUserProfile = useCallback(async () => {
-    try {
-      setError(null);
-      setIsLoading(true);
-      
-      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
-      
-      if (authError) {
-        console.error('Erro de autenticação:', authError);
-        setUser(null);
-        return;
-      }
-      
       if (!authUser) {
-        setUser(null);
-        return;
+          setUser(null);
+          setIsLoading(false);
+          return;
       }
 
-      // Buscar dados do perfil com tratamento de erro
+      try {
+          setError(null);
+          setIsLoading(true);
+
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('*')
@@ -272,14 +266,11 @@ export const useUserProfile = () => {
 
       if (profileError) {
         console.warn('Erro ao buscar perfil, usando dados básicos:', profileError);
-        // Criar perfil básico se não existir no banco
-        const initials = authUser.email?.charAt(0).toUpperCase() || 'U';
-        
         setUser({
           id: authUser.id,
           name: authUser.user_metadata?.full_name || 'Usuário',
           email: authUser.email || '',
-          initials,
+            initials: authUser.email?.charAt(0).toUpperCase() || 'U',
           role: 'Pesquisador',
         });
         return;
@@ -287,7 +278,7 @@ export const useUserProfile = () => {
 
       if (profile) {
         const initials = profile.full_name
-          ? profile.full_name.split(' ').map(n => n[0]).join('').toUpperCase()
+            ? profile.full_name.split(' ').map((n: string) => n[0]).join('').toUpperCase()
           : authUser.email?.charAt(0).toUpperCase() || 'U';
 
         setUser({
@@ -300,14 +291,14 @@ export const useUserProfile = () => {
           organization: 'Instituto de Pesquisa',
         });
       }
-    } catch (error) {
-      console.error('Erro inesperado ao carregar perfil:', error);
+      } catch (err) {
+          console.error('Erro inesperado ao carregar perfil:', err);
       setError('Erro ao carregar perfil do usuário');
       setUser(null);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [authUser]);
 
   useEffect(() => {
     loadUserProfile();
