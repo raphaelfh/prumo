@@ -59,6 +59,9 @@ def upgrade() -> None:
         $$
                LANGUAGE plpgsql SECURITY DEFINER;
                """)
+    # Re-grant after DROP+CREATE (GRANT ALL ON ALL ROUTINES only covers
+    # functions that existed at grant time; the new function needs it explicitly)
+    op.execute("GRANT EXECUTE ON FUNCTION get_project_members(uuid) TO authenticated, service_role;")
 
 
 def downgrade() -> None:
