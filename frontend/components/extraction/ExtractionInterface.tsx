@@ -440,16 +440,6 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold">Extração de Dados</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Extraia dados estruturados dos artigos usando templates padronizados
-          </p>
-        </div>
-      </div>
-
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={(value) => handleTabChange(value as any)}>
         <TabsList className="grid w-full grid-cols-3">

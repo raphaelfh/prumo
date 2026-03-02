@@ -22,6 +22,11 @@ interface Article {
   keywords: string[] | null;
 }
 
+const TAB_DESCRIPTIONS: Record<string, string> = {
+  extraction: 'Extraia dados estruturados usando templates padronizados',
+  assessment: 'Avalie a qualidade metodológica dos artigos',
+};
+
 export default function ProjectView() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
@@ -109,30 +114,12 @@ export default function ProjectView() {
     switch (activeTab) {
       case 'articles':
         return (
-            <div className="space-y-4">
-              <div className="flex justify-between items-center mb-6">
-              <div>
-                <h2 className="text-xl font-semibold tracking-tight">Artigos</h2>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Gerencie os artigos da sua revisão sistemática
-                </p>
-              </div>
-                <Button
-                    onClick={() => navigate(`/projects/${projectId}/articles/add`)}
-                    className="bg-[#111111] hover:bg-[#2c2c2c] text-white rounded-md h-9 px-4 text-xs font-medium transition-all"
-                >
-                  <Plus className="mr-1.5 h-3.5 w-3.5"/>
-                Adicionar Artigo
-              </Button>
-            </div>
-
-            <ArticlesList 
-              articles={articles} 
-              onArticleClick={(articleId) => navigate(`/projects/${projectId}/articles/${articleId}/edit`)}
-              projectId={projectId || ''}
-              onArticlesChange={loadArticles}
+            <ArticlesList
+                articles={articles}
+                onArticleClick={(articleId) => navigate(`/projects/${projectId}/articles/${articleId}/edit`)}
+                projectId={projectId || ''}
+                onArticlesChange={loadArticles}
             />
-          </div>
         );
 
       case 'extraction':
@@ -150,16 +137,35 @@ export default function ProjectView() {
   };
 
   return (
-    <div className="h-full bg-background">
+      <div className="h-full bg-background flex flex-col">
+
+        {/* Sticky action bar — outside scroll container for edge-to-edge sticking */}
+        {activeTab !== 'settings' && (
+            <div
+                className="flex-shrink-0 h-11 flex items-center justify-between border-b border-border/30 bg-background/80 backdrop-blur-sm px-6 lg:px-10">
+          <span className="text-[12px] text-muted-foreground/70">
+            {activeTab === 'articles'
+                ? `${articles.length} artigo${articles.length !== 1 ? 's' : ''}`
+                : (TAB_DESCRIPTIONS[activeTab] ?? '')}
+          </span>
+              {activeTab === 'articles' && (
+                  <Button
+                      size="sm"
+                      onClick={() => navigate(`/projects/${projectId}/articles/add`)}
+                      className="h-7 px-3 text-[12px] font-medium rounded-md"
+                  >
+                    <Plus className="mr-1.5 h-3.5 w-3.5"/>
+                    Adicionar Artigo
+                  </Button>
+              )}
+            </div>
+        )}
+
       {activeTab === 'settings' ? (
-        // Layout wide para configurações - sem containers limitantes
-        <div className="h-full">
-          {renderContent()}
-        </div>
+          <div className="flex-1 overflow-y-auto">{renderContent()}</div>
       ) : (
-          // Layout com container mais largo e padding ajustado para estilo Linear
-          <div className="w-full px-6 py-8 lg:px-10 h-full overflow-y-auto">
-            <div className="w-full max-w-[1400px] mx-auto h-full">
+          <div className="flex-1 overflow-y-auto px-6 py-6 lg:px-10">
+            <div className="w-full max-w-[1400px] mx-auto">
             {renderContent()}
           </div>
         </div>

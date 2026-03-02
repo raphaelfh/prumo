@@ -23,10 +23,10 @@ import {Button} from '@/components/ui/button';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {cn} from '@/lib/utils';
 import type {
-    AIAssessmentSuggestion,
-    AIAssessmentSuggestionHistoryItem,
-    AssessmentItem,
-    AssessmentResponse
+  AIAssessmentSuggestion,
+  AIAssessmentSuggestionHistoryItem,
+  AssessmentItem,
+  AssessmentResponse
 } from '@/types/assessment';
 import {AISuggestionDisplay} from './ai/AISuggestionDisplay';
 
@@ -125,7 +125,7 @@ export function AssessmentItemInput(props: AssessmentItemInputProps) {
   const hasError = item.is_required && !selectedLevel;
 
   return (
-    <div className="grid grid-cols-[30%_1fr] gap-6 py-6 items-start border-b border-slate-100 last:border-b-0">
+      <div className="grid grid-cols-[30%_1fr] gap-4 py-4 items-start border-b border-border/40 last:border-b-0">
       {/* Coluna esquerda: Label + Código + Guidance */}
       <div className="space-y-2 pt-2">
         <div className="flex items-start justify-between gap-2">
@@ -156,8 +156,8 @@ export function AssessmentItemInput(props: AssessmentItemInputProps) {
 
         {/* Guidance expandível */}
         {showGuidance && item.guidance && (
-          <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-950/20 rounded-md border border-blue-200 dark:border-blue-800">
-            <p className="text-xs text-blue-900 dark:text-blue-100 leading-relaxed whitespace-pre-wrap">
+            <div className="mt-2 p-3 bg-muted/50 rounded-md border border-border/50">
+                <p className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap">
               {item.guidance}
             </p>
           </div>
@@ -198,7 +198,7 @@ export function AssessmentItemInput(props: AssessmentItemInputProps) {
             onValueChange={handleLevelChange}
             disabled={disabled}
             className={cn(
-              "space-y-2",
+                "space-y-1.5",
               hasError && "border-l-2 border-destructive pl-3"
             )}
           >
@@ -237,7 +237,7 @@ export function AssessmentItemInput(props: AssessmentItemInputProps) {
             onChange={(e) => handleNotesChange(e.target.value)}
             placeholder="Adicione comentários ou justificativas para esta avaliação..."
             disabled={disabled}
-            className="text-sm min-h-[80px]"
+            className="text-[13px] min-h-[80px] resize-none"
           />
         </div>
 

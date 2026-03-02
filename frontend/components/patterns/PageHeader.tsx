@@ -13,38 +13,31 @@ import React from 'react';
 import {cn} from '@/lib/utils';
 
 interface PageHeaderProps {
-  title: string;
+    title?: string;
   description?: string;
   actions?: React.ReactNode;
   className?: string;
 }
 
-export function PageHeader({ 
-  title, 
-  description, 
-  actions, 
-  className 
-}: PageHeaderProps) {
+export function PageHeader({title, description, actions, className}: PageHeaderProps) {
   return (
-    <div className={cn("border-b bg-background", className)}>
-      <div className="flex h-16 items-center justify-between px-6">
-        <div className="space-y-1 flex-1 min-w-0">
-          <h1 className="text-2xl font-semibold text-foreground truncate">
-            {title}
-          </h1>
-          {description && (
-            <p className="text-sm text-muted-foreground truncate">
-              {description}
-            </p>
-          )}
-        </div>
-        
-        {actions && (
-          <div className="flex items-center gap-2 flex-shrink-0 ml-4">
-            {actions}
+      <div className={cn(
+          "h-11 flex items-center justify-between border-b border-border/30 bg-background/80 backdrop-blur-sm px-6 flex-shrink-0",
+          className
+      )}>
+          <div className="flex items-baseline gap-3 flex-1 min-w-0">
+              {title && (
+                  <span className="text-[13px] font-medium text-foreground truncate">{title}</span>
+              )}
+              {description && (
+                  <span className="text-[12px] text-muted-foreground/70 truncate">{description}</span>
+              )}
           </div>
-        )}
-      </div>
+          {actions && (
+              <div className="flex items-center gap-2 flex-shrink-0">
+                  {actions}
+              </div>
+          )}
     </div>
   );
 }

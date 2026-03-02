@@ -4,7 +4,7 @@
  */
 
 import React, {useState} from 'react';
-import {BarChart3, ChevronDown, ClipboardCheck, FileText, Folder, Loader2, Plus, Settings} from 'lucide-react';
+import {BarChart3, ChevronDown, ClipboardCheck, FileText, Home, Loader2, Plus, Settings} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {cn} from '@/lib/utils';
 import {useProjectsList} from '@/hooks/useProjectsList';
@@ -13,16 +13,16 @@ import {supabase} from '@/integrations/supabase/client';
 import {toast} from 'sonner';
 import {AddProjectDialog} from '@/components/project/AddProjectDialog';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {useNavigate} from 'react-router-dom';
 
 interface ProjectSidebarProps {
   isCollapsed: boolean;
-  onToggle: () => void;
   activeTab: string;
   onTabChange: (tab: string) => void;
   projectName?: string;
@@ -31,34 +31,10 @@ interface ProjectSidebarProps {
 
 
 const SIDEBAR_ITEMS = [
-  {
-    id: 'articles',
-    label: 'Artigos',
-    icon: FileText,
-    description: 'Gerenciar artigos do projeto',
-    badge: null,
-  },
-  {
-    id: 'extraction',
-    label: 'Extração',
-    icon: ClipboardCheck,
-    description: 'Extrair dados dos artigos',
-    badge: null,
-  },
-  {
-    id: 'assessment',
-    label: 'Avaliação',
-    icon: BarChart3,
-    description: 'Avaliar qualidade dos estudos',
-    badge: null,
-  },
-  {
-    id: 'settings',
-    label: 'Configurações',
-    icon: Settings,
-    description: 'Configurar projeto',
-    badge: null,
-  },
+    {id: 'articles', label: 'Artigos', icon: FileText},
+    {id: 'extraction', label: 'Extração', icon: ClipboardCheck},
+    {id: 'assessment', label: 'Avaliação', icon: BarChart3},
+    {id: 'settings', label: 'Configurações', icon: Settings},
 ];
 
 export const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
@@ -69,6 +45,7 @@ export const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
   className,
 }) => {
   const { user } = useAuth();
+    const navigate = useNavigate();
   const { projects, loading, switchProject, loadProjects } = useProjectsList();
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -124,7 +101,7 @@ export const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
   };
 
   return (
-    <aside 
+      <aside
       className={cn(
           "bg-[#fafafa] dark:bg-[#0c0c0c] border-r border-border/40 transition-all duration-300 ease-in-out",
           "flex flex-col flex-shrink-0 h-full",
@@ -133,7 +110,7 @@ export const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
         className
       )}
     >
-        {/* Header do Sidebar - Mais Clean e Fino */}
+          {/* Header do Sidebar */}
         <div className="h-12 flex items-center px-3 border-b border-border/30">
         {!isCollapsed ? (
           <DropdownMenu>
@@ -143,8 +120,10 @@ export const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
                 className="w-full justify-start gap-2 h-8 px-2 rounded-md hover:bg-muted/50 transition-colors group"
               >
                   <div
-                      className="h-5 w-5 rounded bg-primary/5 flex items-center justify-center border border-primary/10">
-                      <Folder className="h-3 w-3 text-primary"/>
+                      className="h-5 w-5 rounded bg-primary/10 flex items-center justify-center flex-shrink-0 border border-primary/15">
+                  <span className="text-[10px] font-semibold text-primary leading-none">
+                    {(projectName || 'P')[0].toUpperCase()}
+                  </span>
                 </div>
                 <div className="min-w-0 flex-1 text-left">
                     <h2 className="text-[13px] font-medium truncate text-foreground/80">
@@ -168,7 +147,12 @@ export const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
                       onClick={() => switchProject(project.id)}
                       className="px-2 py-1.5 rounded-md text-[13px] focus:bg-muted/60"
                     >
-                        <Folder className="h-3.5 w-3.5 mr-2 text-muted-foreground/60"/>
+                        <div
+                            className="h-4 w-4 rounded bg-primary/10 flex items-center justify-center flex-shrink-0 border border-primary/15 mr-2">
+                          <span className="text-[9px] font-semibold text-primary leading-none">
+                            {project.name[0].toUpperCase()}
+                          </span>
+                        </div>
                         <span className="truncate">{project.name}</span>
                     </DropdownMenuItem>
                   ))}
@@ -186,15 +170,25 @@ export const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
           </DropdownMenu>
         ) : (
             <div className="flex items-center justify-center w-full">
-                <div className="h-7 w-7 rounded bg-primary/5 flex items-center justify-center border border-primary/10">
-                    <Folder className="h-3.5 w-3.5 text-primary"/>
+                <div
+                    className="h-7 w-7 rounded bg-primary/10 flex items-center justify-center border border-primary/15">
+                  <span className="text-[11px] font-semibold text-primary leading-none">
+                    {(projectName || 'P')[0].toUpperCase()}
+                  </span>
             </div>
           </div>
         )}
       </div>
 
-        {/* Navegação Principal - Alta Densidade */}
+          {/* Navegação Principal */}
         <nav className="flex-1 p-2 space-y-0.5">
+            {!isCollapsed && (
+                <div className="px-2.5 pb-1 pt-2">
+              <span className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider select-none">
+                Navegação
+              </span>
+                </div>
+            )}
         {SIDEBAR_ITEMS.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
@@ -223,15 +217,44 @@ export const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
                   {item.label}
                 </span>
               )}
-
-                {isActive && !isCollapsed && (
-                    <div className="absolute right-2 h-1.5 w-1.5 rounded-full bg-primary/60"/>
-              )}
             </Button>
           );
         })}
       </nav>
 
+          {/* Footer */}
+          <div className="border-t border-border/30 p-2 space-y-0.5">
+              <button
+                  onClick={() => navigate('/')}
+                  className={cn(
+                      "flex items-center gap-2.5 w-full h-8 px-2.5 rounded-md transition-colors text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+                      isCollapsed && "justify-center px-0"
+                  )}
+                  title={isCollapsed ? 'Dashboard' : undefined}
+              >
+                  <Home className="h-4 w-4 flex-shrink-0" strokeWidth={1.5}/>
+                  {!isCollapsed && <span className="text-[13px]">Dashboard</span>}
+              </button>
+
+              {user && (
+                  <div className={cn(
+                      "flex items-center gap-2.5 h-8 px-2.5 rounded-md",
+                      isCollapsed && "justify-center px-0"
+                  )}>
+                      <div
+                          className="h-5 w-5 rounded-full bg-muted flex items-center justify-center flex-shrink-0 border border-border/40">
+              <span className="text-[9px] font-medium text-muted-foreground">
+                {(user.user_metadata?.full_name || user.email || 'U').charAt(0).toUpperCase()}
+              </span>
+                      </div>
+                      {!isCollapsed && (
+                          <span className="text-[12px] text-muted-foreground truncate">
+                {user.user_metadata?.full_name || user.email?.split('@')[0]}
+              </span>
+                      )}
+                  </div>
+              )}
+          </div>
 
         {/* Dialog para criar novo projeto */}
       <AddProjectDialog

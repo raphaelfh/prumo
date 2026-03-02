@@ -16,34 +16,34 @@ import {Label} from "@/components/ui/label";
 import {Textarea} from "@/components/ui/textarea";
 import {Badge} from "@/components/ui/badge";
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from "@/components/ui/card";
-import {ScrollArea} from "@/components/ui/scroll-area";
 import {Alert, AlertDescription} from "@/components/ui/alert";
+import {cn} from "@/lib/utils";
 import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {supabase} from "@/integrations/supabase/client";
 import {toast} from "sonner";
 import {
-    AlertCircle,
-    ArrowLeft,
-    BookOpen,
-    Download,
-    Eye,
-    FileText,
-    Hash,
-    Loader2,
-    Plus,
-    Save,
-    Tag,
-    Trash2,
-    Upload
+  AlertCircle,
+  ArrowLeft,
+  BookOpen,
+  Download,
+  Eye,
+  FileText,
+  Hash,
+  Loader2,
+  Plus,
+  Save,
+  Tag,
+  Trash2,
+  Upload
 } from "lucide-react";
 import {useAuth} from "@/contexts/AuthContext";
 import {ArticleFileUploadDialogNew} from './ArticleFileUploadDialogNew';
@@ -553,11 +553,6 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
     }
   };
 
-  const getStepStatus = (step: FormStep): 'pending' | 'current' => {
-    if (step === currentStep) return 'current';
-    return 'pending';
-  };
-
   const renderStepContent = () => {
     switch (currentStep) {
       case 'basic':
@@ -966,8 +961,8 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-          <p>Carregando artigo...</p>
+          <Loader2 className="h-6 w-6 animate-spin mx-auto mb-3 text-muted-foreground"/>
+          <p className="text-[13px] text-muted-foreground">Carregando artigo...</p>
         </div>
       </div>
     );
@@ -976,49 +971,56 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
   return (
     <div className="h-screen flex flex-col bg-background">
       {/* Header */}
-      <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="flex h-16 items-center px-6">
+      <div className="flex-shrink-0 border-b border-border/40 bg-background/80 backdrop-blur-md">
+        <div className="flex h-14 items-center gap-4 px-6">
           <Button
             variant="ghost"
             size="sm"
             onClick={() => navigate(-1)}
-            className="mr-4"
+            aria-label="Voltar"
           >
-            <ArrowLeft className="mr-2 h-4 w-4" />
+            <ArrowLeft className="h-4 w-4 mr-2"/>
             Voltar
           </Button>
-          
-          <div className="flex-1">
-            <h1 className="text-xl font-semibold">
-              {mode === 'add' ? 'Adicionar Artigo' : 'Editar Artigo'}
-            </h1>
-            {article && (
-              <p className="text-sm text-muted-foreground truncate">
-                {article.title}
-              </p>
-            )}
-          </div>
 
-          <div className="flex items-center gap-2">
+          <div className="h-5 w-px bg-border"/>
+
+          <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2">
+            <FileText className="h-5 w-5 text-muted-foreground"/>
+            {mode === 'add' ? 'Adicionar Artigo' : 'Editar Artigo'}
+            {article && (
+                <>
+                  <span className="text-muted-foreground font-normal">·</span>
+                  <span
+                      className="text-muted-foreground font-normal text-base truncate max-w-xs">{article.title}</span>
+                </>
+            )}
+          </h1>
+
+          <div className="ml-auto flex items-center gap-2">
             <Button
               variant="outline"
+              size="sm"
+              className="h-8 px-3 text-[12px]"
               onClick={() => navigate(-1)}
             >
               Cancelar
             </Button>
             <Button
+                size="sm"
+                className="h-8 px-3 text-[12px] font-medium"
               onClick={handleSave}
               disabled={saving || !isStepValid('basic')}
             >
               {saving ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin"/>
                   Salvando...
                 </>
               ) : (
                 <>
-                  <Save className="mr-2 h-4 w-4" />
-                  {mode === 'add' ? 'Criar Artigo' : 'Salvar Alterações'}
+                  <Save className="mr-1.5 h-3.5 w-3.5"/>
+                  {mode === 'add' ? 'Criar Artigo' : 'Salvar'}
                 </>
               )}
             </Button>
@@ -1028,55 +1030,48 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
 
       <div className="flex-1 flex overflow-hidden">
         {/* Sidebar de Navegação */}
-        <div className="w-80 border-r bg-muted/30 flex flex-col">
-          <div className="p-6">
-            <h2 className="font-semibold mb-4">Etapas do Formulário</h2>
-            <div className="space-y-2">
-              {STEPS.map((step) => {
-                const status = getStepStatus(step.id);
-                const isValid = isStepValid(step.id);
-                const Icon = step.icon;
-                
-                return (
+        <div className="w-60 border-r bg-muted/30 flex-shrink-0 py-4 px-3">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-2">
+            Formulário
+          </p>
+          <nav role="tablist" aria-label="Etapas do formulário" className="space-y-0.5">
+            {STEPS.map((step) => {
+              const Icon = step.icon;
+              const isActive = step.id === currentStep;
+
+              return (
                   <button
-                    key={step.id}
-                    onClick={() => setCurrentStep(step.id)}
-                    className={`w-full text-left p-3 rounded-lg transition-colors ${
-                      status === 'current'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'hover:bg-muted'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-                        status === 'current'
-                          ? 'bg-primary-foreground/20'
-                          : 'bg-muted-foreground/20 text-muted-foreground'
-                      }`}>
-                        <Icon className="h-4 w-4" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm">{step.label}</p>
-                        <p className="text-xs opacity-75">{step.description}</p>
-                      </div>
-                      {status === 'current' && !isValid && (
-                        <AlertCircle className="h-4 w-4 text-yellow-500" />
+                      key={step.id}
+                      role="tab"
+                      aria-selected={isActive}
+                      onClick={() => setCurrentStep(step.id)}
+                      className={cn(
+                          'w-full flex items-start gap-3 px-3 py-2.5 rounded-md text-left transition-colors',
+                          isActive ? 'bg-primary/10 text-primary' : 'text-foreground hover:bg-muted'
                       )}
+                  >
+                    <Icon
+                        className={cn('h-4 w-4 mt-0.5 flex-shrink-0', isActive ? 'text-primary' : 'text-muted-foreground')}/>
+                    <div className="min-w-0">
+                      <p className={cn('text-sm', isActive ? 'font-medium' : 'font-normal')}>{step.label}</p>
+                      <p className="text-xs text-muted-foreground leading-snug mt-0.5 truncate">{step.description}</p>
                     </div>
+                    {isActive && step.id === 'basic' && !isStepValid('basic') && (
+                        <AlertCircle className="h-3.5 w-3.5 text-warning mt-0.5 ml-auto flex-shrink-0"/>
+                    )}
                   </button>
-                );
-              })}
-            </div>
-          </div>
+              );
+            })}
+          </nav>
         </div>
 
         {/* Conteúdo Principal */}
-        <div className="flex-1 overflow-hidden">
-          <ScrollArea className="h-full">
-            <div className="p-6 max-w-4xl">
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-8">
+            <div className="max-w-2xl">
               {renderStepContent()}
             </div>
-          </ScrollArea>
+          </div>
         </div>
       </div>
 

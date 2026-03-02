@@ -15,6 +15,13 @@ import {FeedbackButton} from '@/components/feedback/FeedbackButton';
 import {NotificationCenter} from './NotificationCenter';
 import type {TopbarProps} from '@/types/navigation';
 
+const TAB_LABELS: Record<string, string> = {
+    articles: 'Artigos',
+    extraction: 'Extração',
+    assessment: 'Avaliação',
+    settings: 'Configurações',
+};
+
 export const Topbar: React.FC<TopbarProps> = ({
   className,
 }) => {
@@ -102,14 +109,9 @@ export const Topbar: React.FC<TopbarProps> = ({
                           <span className="text-[13px] font-medium text-foreground tracking-tight">Review AI Hub</span>
                       </div>
                   ) : (
-                      <div className="flex items-center gap-2 px-2 text-[13px] font-medium">
-                          <span
-                              className="text-muted-foreground/60 hover:text-foreground cursor-pointer transition-colors"
-                              onClick={() => window.location.href = '/'}>Projetos</span>
-                          <span className="text-muted-foreground/30">/</span>
-                          <span
-                              className="text-foreground truncate max-w-[200px]">{projectContext?.project?.name}</span>
-                      </div>
+                      <span className="text-[13px] font-medium text-foreground px-2">
+                        {TAB_LABELS[projectContext?.activeTab ?? ''] ?? 'Projeto'}
+                      </span>
                   )}
 
         </div>

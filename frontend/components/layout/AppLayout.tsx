@@ -57,7 +57,6 @@ export const ProjectLayout: React.FC<AppLayoutProps> = ({ children, className })
           {/* Sidebar Fixo - Desktop */}
         <ProjectSidebar
           isCollapsed={sidebarCollapsed}
-          onToggle={toggleSidebar}
           activeTab={activeTab}
           onTabChange={changeTab}
           projectName={project?.name}

@@ -65,9 +65,9 @@ export function FieldInput(props: FieldInputProps) {
   const [validationError, setValidationError] = useState<string | null>(null);
   
   // Espaçamento fixo confortável
-  const containerPadding = 'py-6';
-  const inputHeight = 'h-11';
-  const gap = 'gap-6';
+  const containerPadding = 'py-4';
+  const inputHeight = 'h-9';
+  const gap = 'gap-4';
 
   // Lógica de valor exibido no campo:
   // - Valor do estado local sempre tem prioridade (pode ser manual ou aceito da IA)
@@ -162,7 +162,7 @@ export function FieldInput(props: FieldInputProps) {
               placeholder={`Digite ${field.label.toLowerCase()}`}
               disabled={disabled}
               className={cn(
-                "text-base min-h-[100px]",
+                  "text-sm min-h-[80px]",
                 hasAIPending && "border-purple-500 bg-purple-50/30 dark:bg-purple-950/10",
                 validationError && "border-destructive"
               )}
@@ -178,7 +178,7 @@ export function FieldInput(props: FieldInputProps) {
             disabled={disabled}
               className={cn(
                 inputHeight,
-                "text-base",
+                  "text-sm",
                 hasAIPending && "border-purple-500 bg-purple-50/30 dark:bg-purple-950/10",
                 validationError && "border-destructive"
               )}
@@ -213,7 +213,7 @@ export function FieldInput(props: FieldInputProps) {
               }}
               placeholder="0"
               disabled={disabled}
-              className={cn("flex-1", inputHeight, "text-base", validationError && "border-destructive")}
+              className={cn("flex-1", inputHeight, "text-sm", validationError && "border-destructive")}
             />
             
             {/* Unit selector se houver unidades */}
@@ -257,7 +257,7 @@ export function FieldInput(props: FieldInputProps) {
             value={value || ''}
             onChange={(e) => handleChange(e.target.value)}
             disabled={disabled}
-            className={cn(inputHeight, "text-base", validationError && "border-destructive")}
+            className={cn(inputHeight, "text-sm", validationError && "border-destructive")}
           />
         );
 
@@ -284,7 +284,7 @@ export function FieldInput(props: FieldInputProps) {
             onValueChange={handleChange} 
             disabled={disabled}
           >
-            <SelectTrigger className={cn(inputHeight, "text-base", validationError && "border-destructive")}>
+            <SelectTrigger className={cn(inputHeight, "text-sm", validationError && "border-destructive")}>
               <SelectValue placeholder={`Selecione ${field.label.toLowerCase()}`} />
             </SelectTrigger>
             <SelectContent>
@@ -325,7 +325,7 @@ export function FieldInput(props: FieldInputProps) {
             onChange={(e) => handleChange(e.target.value.split(',').map(v => v.trim()))}
             placeholder="Valores separados por vírgula"
             disabled={disabled}
-            className={cn(inputHeight, "text-base", validationError && "border-destructive")}
+            className={cn(inputHeight, "text-sm", validationError && "border-destructive")}
           />
         );
       }
@@ -350,7 +350,7 @@ export function FieldInput(props: FieldInputProps) {
             value={value || ''}
             onChange={(e) => handleChange(e.target.value)}
             disabled={disabled}
-            className={cn(inputHeight, "text-base", validationError && "border-destructive")}
+            className={cn(inputHeight, "text-sm", validationError && "border-destructive")}
           />
         );
     }
@@ -372,7 +372,8 @@ export function FieldInput(props: FieldInputProps) {
   );
 
   return (
-    <div className={cn("grid grid-cols-[30%_1fr] items-start", gap, containerPadding)}>
+      <div
+          className={cn("grid grid-cols-[30%_1fr] items-start border-b border-border/40 last:border-b-0", gap, containerPadding)}>
       {/* Coluna esquerda: Label + Description */}
       <div className="space-y-1 pt-2">
         <Label className="text-sm font-medium flex items-center gap-2">

@@ -3,23 +3,23 @@
  * Mesma navegação do desktop adaptada para mobile
  */
 
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { 
-  FileText, 
-  ClipboardCheck, 
-  BarChart3, 
-  Settings, 
-  ChevronLeft,
-  Folder,
-  ChevronDown,
-  Loader2
+import React, {useState} from 'react';
+import {useNavigate} from 'react-router-dom';
+import {
+    BarChart3,
+    ChevronDown,
+    ChevronLeft,
+    ClipboardCheck,
+    FileText,
+    Folder,
+    Home,
+    Loader2,
+    Settings
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
-import { useProjectsList } from '@/hooks/useProjectsList';
+import {Button} from '@/components/ui/button';
+import {Sheet, SheetContent, SheetHeader, SheetTitle} from '@/components/ui/sheet';
+import {cn} from '@/lib/utils';
+import {useProjectsList} from '@/hooks/useProjectsList';
 
 interface MobileSidebarProps {
   open: boolean;
@@ -30,34 +30,10 @@ interface MobileSidebarProps {
 }
 
 const SIDEBAR_ITEMS = [
-  {
-    id: 'articles',
-    label: 'Artigos',
-    icon: FileText,
-    description: 'Gerenciar artigos do projeto',
-    badge: null,
-  },
-  {
-    id: 'extraction',
-    label: 'Extração',
-    icon: ClipboardCheck,
-    description: 'Extrair dados dos artigos',
-    badge: null,
-  },
-  {
-    id: 'assessment',
-    label: 'Avaliação',
-    icon: BarChart3,
-    description: 'Avaliar qualidade dos estudos',
-    badge: null,
-  },
-  {
-    id: 'settings',
-    label: 'Configurações',
-    icon: Settings,
-    description: 'Configurar projeto',
-    badge: null,
-  },
+    {id: 'articles', label: 'Artigos', icon: FileText},
+    {id: 'extraction', label: 'Extração', icon: ClipboardCheck},
+    {id: 'assessment', label: 'Avaliação', icon: BarChart3},
+    {id: 'settings', label: 'Configurações', icon: Settings},
 ];
 
 export const MobileSidebar: React.FC<MobileSidebarProps> = ({
@@ -94,81 +70,65 @@ export const MobileSidebar: React.FC<MobileSidebarProps> = ({
         <SheetContent side="left" className="w-[280px] p-0">
           <div className="flex flex-col h-full">
             {/* Header */}
-            <SheetHeader className="p-4 border-b">
+              <SheetHeader className="px-3 py-3 border-b border-border/30">
               <Button
                 variant="ghost"
-                className="w-full justify-start gap-2 h-auto p-2 rounded-lg hover:bg-primary/10 transition-colors group"
+                className="w-full justify-start gap-2.5 h-9 px-2 rounded-md hover:bg-muted/50 transition-colors"
                 onClick={() => setShowProjectsList(true)}
               >
-                <div className="p-2 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors">
-                  <Folder className="h-5 w-5 text-primary transition-colors" />
+                  <div
+                      className="h-5 w-5 rounded bg-primary/10 flex items-center justify-center flex-shrink-0 border border-primary/15">
+                  <span className="text-[10px] font-semibold text-primary leading-none">
+                    {(projectName || 'P')[0].toUpperCase()}
+                  </span>
                 </div>
-                <div className="min-w-0 flex-1 text-left">
-                  <SheetTitle className="text-sm font-semibold truncate transition-colors">
-                    {projectName || 'Projeto'}
+                  <SheetTitle className="flex-1 text-left text-[13px] font-medium truncate text-foreground">
+                      {projectName || 'Projeto'}
                   </SheetTitle>
-                  <p className="text-xs text-muted-foreground truncate transition-colors">
-                    {projectName ? 'Projeto de revisão sistemática' : 'Carregando...'}
-                  </p>
-                </div>
-                <ChevronDown className="h-4 w-4 text-muted-foreground transition-colors" />
+                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/50 flex-shrink-0"/>
               </Button>
             </SheetHeader>
 
           {/* Navegação */}
-          <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+              <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
+                  <div className="px-2.5 pb-1 pt-2">
+              <span className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider select-none">
+                Navegação
+              </span>
+                  </div>
             {SIDEBAR_ITEMS.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
-              
+
               return (
                 <Button
                   key={item.id}
-                  variant={isActive ? "secondary" : "ghost"}
+                  variant="ghost"
                   className={cn(
-                    "w-full justify-start gap-3 h-auto p-3 group",
-                    isActive && "bg-primary/10 text-primary border-primary/20",
-                    !isActive && "hover:bg-primary hover:text-white"
+                      "w-full justify-start gap-2.5 h-10 px-2.5 rounded-md transition-colors",
+                      isActive
+                          ? "bg-muted text-foreground font-medium"
+                          : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"
                   )}
                   onClick={() => handleTabChange(item.id)}
                 >
-                  <Icon className={cn(
-                    "h-4 w-4 shrink-0 transition-colors",
-                    isActive && "text-primary",
-                    !isActive && "group-hover:text-white"
-                  )} />
-                  <div className="flex-1 text-left">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{item.label}</span>
-                      {item.badge && (
-                        <Badge variant="secondary" className="text-xs">
-                          {item.badge}
-                        </Badge>
-                      )}
-                    </div>
-                    <p className={cn(
-                      "text-xs mt-0.5 transition-colors",
-                      isActive ? "text-muted-foreground" : "text-muted-foreground group-hover:text-white/80"
-                    )}>
-                      {item.description}
-                    </p>
-                  </div>
+                    <Icon className={cn("h-4 w-4 flex-shrink-0", isActive ? "text-foreground" : "")} strokeWidth={1.5}/>
+                    <span className="text-[13px]">{item.label}</span>
                 </Button>
               );
             })}
           </nav>
 
           {/* Footer */}
-          <div className="p-4 border-t">
-            <Button
-              variant="outline"
-              className="w-full justify-start gap-3 h-auto py-3"
+              <div className="border-t border-border/30 p-2">
+                  <button
               onClick={handleBackToDashboard}
+              className="flex items-center gap-2.5 w-full h-10 px-2.5 rounded-md text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-colors"
             >
-              <ChevronLeft className="h-4 w-4 flex-shrink-0" />
-              <span className="truncate">Voltar ao Dashboard</span>
-            </Button>
-            </div>
+                      <Home className="h-4 w-4 flex-shrink-0" strokeWidth={1.5}/>
+                      <span className="text-[13px]">Dashboard</span>
+                  </button>
+              </div>
           </div>
         </SheetContent>
       </Sheet>
@@ -177,7 +137,7 @@ export const MobileSidebar: React.FC<MobileSidebarProps> = ({
       <Sheet open={showProjectsList} onOpenChange={setShowProjectsList}>
         <SheetContent side="left" className="w-[280px] p-0">
           <div className="flex flex-col h-full">
-            <SheetHeader className="p-4 border-b">
+              <SheetHeader className="px-3 py-3 border-b border-border/30">
               <div className="flex items-center gap-2">
                 <Button
                   variant="ghost"
@@ -187,7 +147,7 @@ export const MobileSidebar: React.FC<MobileSidebarProps> = ({
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <SheetTitle className="text-sm font-semibold">
+                  <SheetTitle className="text-[13px] font-semibold">
                   Projetos
                 </SheetTitle>
               </div>
@@ -202,23 +162,16 @@ export const MobileSidebar: React.FC<MobileSidebarProps> = ({
                   </span>
                 </div>
               ) : (
-                <div className="p-4 space-y-2">
+                  <div className="p-2 space-y-0.5">
                   {projects.map((project) => (
                     <Button
                       key={project.id}
                       variant="ghost"
-                      className="w-full justify-start gap-3 h-auto p-3 hover:bg-primary hover:text-white group transition-colors"
+                      className="w-full justify-start gap-2.5 h-10 px-2.5 rounded-md text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-colors"
                       onClick={() => handleProjectSwitch(project.id)}
                     >
-                      <Folder className="h-4 w-4 text-muted-foreground group-hover:text-white transition-colors" />
-                      <div className="flex-1 text-left">
-                        <div className="font-medium truncate">
-                          {project.name}
-                        </div>
-                        <p className="text-xs text-muted-foreground group-hover:text-white/80 truncate mt-0.5 transition-colors">
-                          {project.description || 'Projeto de revisão sistemática'}
-                        </p>
-                      </div>
+                        <Folder className="h-4 w-4 flex-shrink-0" strokeWidth={1.5}/>
+                        <span className="text-[13px] truncate">{project.name}</span>
                     </Button>
                   ))}
                 </div>
@@ -230,4 +183,3 @@ export const MobileSidebar: React.FC<MobileSidebarProps> = ({
     </>
   );
 };
-
