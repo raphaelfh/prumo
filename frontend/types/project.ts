@@ -26,6 +26,22 @@ export type ProjectInsert = Database['public']['Tables']['projects']['Insert'];
 export type ProjectUpdate = Partial<Omit<Project, 'id' | 'created_at'>>;
 
 /**
+ * Tipo enxuto para listas de projetos.
+ */
+export type ProjectListItem = Pick<
+    Project,
+    'id' | 'name' | 'description' | 'created_at' | 'is_active' | 'review_title'
+>;
+
+/**
+ * Tipo enxuto para contexto de projeto.
+ */
+export type ProjectSummary = Pick<
+    Project,
+    'id' | 'name' | 'description' | 'review_title' | 'condition_studied'
+>;
+
+/**
  * Tipo completo de Project com todas as configurações
  * Mantido para compatibilidade com código existente
  */
@@ -67,4 +83,3 @@ export interface ProjectConfigData {
   eligibility_criteria: EligibilityCriteria;
   study_design: StudyDesign;
 }
-

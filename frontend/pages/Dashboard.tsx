@@ -10,15 +10,7 @@ import {BookOpen, ChevronRight, Plus} from "lucide-react";
 import {toast} from "sonner";
 import {AddProjectDialog} from "@/components/project/AddProjectDialog";
 import {ErrorState} from "@/components/patterns/ErrorState";
-
-interface Project {
-  id: string;
-  name: string;
-  description: string | null;
-  created_at: string;
-  is_active: boolean;
-  review_title: string | null;
-}
+import type {ProjectListItem} from "@/types/project";
 
 export default function Dashboard() {
   const {user} = useAuth();
@@ -27,7 +19,7 @@ export default function Dashboard() {
   const [creating, setCreating] = useState(false);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
 
-  const {data: projects = [], isLoading, isError, refetch} = useQuery({
+    const {data: projects = [], isLoading, isError, refetch} = useQuery<ProjectListItem[]>({
     queryKey: ['projects'],
     queryFn: async () => {
       const {data, error} = await supabase

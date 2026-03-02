@@ -7,15 +7,7 @@ import {useCallback, useEffect, useState} from 'react';
 import {useNavigate} from 'react-router-dom';
 import {supabase} from '@/integrations/supabase/client';
 import {toast} from 'sonner';
-
-export interface ProjectListItem {
-  id: string;
-  name: string;
-  description: string | null;
-  created_at: string;
-  is_active: boolean;
-  review_title: string | null;
-}
+import type {ProjectListItem} from '@/types/project';
 
 export const useProjectsList = () => {
   const navigate = useNavigate();

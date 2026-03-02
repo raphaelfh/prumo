@@ -5,18 +5,11 @@
 
 import React, {createContext, ReactNode, useCallback, useContext, useEffect, useState} from 'react';
 import {useSearchParams} from 'react-router-dom';
-
-export interface Project {
-  id: string;
-  name: string;
-  description: string | null;
-  review_title: string | null;
-  condition_studied: string | null;
-}
+import type {ProjectSummary} from '@/types/project';
 
 export interface ProjectContextType {
-  project: Project | null;
-  setProject: (project: Project | null) => void;
+    project: ProjectSummary | null;
+    setProject: (project: ProjectSummary | null) => void;
   activeTab: string;
   setActiveTab: (tab: string) => void;
   changeTab: (tab: string) => void;
@@ -30,7 +23,7 @@ interface ProjectProviderProps {
 
 export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [project, setProject] = useState<Project | null>(null);
+    const [project, setProject] = useState<ProjectSummary | null>(null);
   
   // Ler tab da URL ou usar padrão
   const tabFromUrl = searchParams.get('tab');
