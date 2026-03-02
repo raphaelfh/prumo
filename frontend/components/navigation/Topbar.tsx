@@ -4,7 +4,7 @@
  */
 
 import React, {useContext, useState} from 'react';
-import {PanelLeft} from 'lucide-react';
+import {Menu, PanelLeft} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {cn} from '@/lib/utils';
 import {useUserProfile} from '@/hooks/useNavigation';
@@ -68,7 +68,19 @@ export const Topbar: React.FC<TopbarProps> = ({
           <div className="flex h-12 w-full items-center justify-between px-4 flex-shrink-0">
         {/* Left Section - Toggle */}
               <div className="flex items-center gap-2">
-          {/* Sidebar Toggle - Apenas Desktop */}
+                  {/* Hamburger Menu - Mobile/Tablet only */}
+                  {sidebarContext && isProjectPage && (
+                      <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={sidebarContext.toggleMobile}
+                          aria-label="Abrir menu"
+                          className="flex lg:hidden flex-shrink-0 h-8 w-8 hover:bg-muted/50 transition-colors"
+                      >
+                          <Menu className="h-4 w-4 text-muted-foreground"/>
+                      </Button>
+                  )}
+                  {/* Sidebar Toggle - Desktop only */}
           {sidebarContext && isProjectPage && (
             <Button
               variant="ghost"

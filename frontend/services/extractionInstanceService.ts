@@ -12,12 +12,12 @@
 import {supabase} from '@/integrations/supabase/client';
 import {extractionLogger, performanceTracker} from '@/lib/extraction/observability';
 import {
-    deleteOne,
-    handleSupabaseError,
-    insertOne,
-    queryBuilder,
-    queryBuilderSingle,
-    SupabaseRepositoryError
+  deleteOne,
+  handleSupabaseError,
+  insertOne,
+  queryBuilder,
+  queryBuilderSingle,
+  SupabaseRepositoryError
 } from '@/lib/supabase/baseRepository';
 import type {ExtractionEntityType, ExtractionInstance, ProjectExtractionTemplate} from '@/types/extraction';
 
@@ -69,72 +69,6 @@ export interface GetInstancesParams {
 // =================== SERVICE CLASS ===================
 
 export class ExtractionInstanceService {
-  /**
-   * Gera próximo label único para um entity type
-   */
-  private async generateLabel(
-    entityType: ExtractionEntityType,
-    articleId: string,
-    parentInstanceId?: string | null,
-    parentInstance?: ExtractionInstance
-  ): Promise<string> {
-    // Contar instâncias existentes do mesmo tipo e parent
-    const { count, error } = await supabase
-      .from('extraction_instances')
-      .select('*', { count: 'exact', head: true })
-      .eq('article_id', articleId)
-      .eq('entity_type_id', entityType.id)
-      .eq('parent_instance_id', parentInstanceId || null);
-
-    if (error) {
-      console.warn('Erro ao contar instâncias, usando fallback:', error);
-    }
-
-    const nextNumber = (count || 0) + 1;
-
-    // Se tem parent, incluir nome do parent no label
-    if (parentInstance) {
-      return `${parentInstance.label} - ${entityType.label} ${nextNumber}`;
-    }
-
-    return `${entityType.label} ${nextNumber}`;
-  }
-
-  /**
-   * Verifica se nome único é necessário (prevenir constraint violation)
-   */
-  private async ensureUniqueName(
-    label: string,
-    articleId: string,
-    entityTypeId: string,
-    maxAttempts: number = 10
-  ): Promise<string> {
-    let uniqueLabel = label;
-    let attempt = 1;
-
-    while (attempt <= maxAttempts) {
-      const { data: existing, error } = await supabase
-        .from('extraction_instances')
-        .select('id')
-        .eq('article_id', articleId)
-        .eq('entity_type_id', entityTypeId)
-        .eq('label', uniqueLabel)
-        .limit(1);
-
-      if (error) throw error;
-
-      if (!existing || existing.length === 0) {
-        return uniqueLabel;
-      }
-
-      attempt++;
-      uniqueLabel = attempt === 2 ? `${label} (2)` : label.replace(/\(\d+\)$/, `(${attempt})`);
-    }
-
-    // Fallback com timestamp
-    return `${label} (${Date.now()})`;
-  }
-
   /**
    * Cria uma nova instância de extração
    */
@@ -216,7 +150,7 @@ export class ExtractionInstanceService {
             filters: { id: parentInstanceId },
           }
         );
-        
+
         if (data) {
           parentInstance = data;
         }
@@ -238,12 +172,14 @@ export class ExtractionInstanceService {
       );
 
       // Calcular sort_order
-      const { count } = await supabase
+        const sortBaseQuery = supabase
         .from('extraction_instances')
         .select('*', { count: 'exact', head: true })
         .eq('article_id', articleId)
-        .eq('entity_type_id', entityTypeId)
-        .eq('parent_instance_id', parentInstanceId || null);
+            .eq('entity_type_id', entityTypeId);
+        const {count} = await (parentInstanceId
+            ? sortBaseQuery.eq('parent_instance_id', parentInstanceId)
+            : sortBaseQuery.is('parent_instance_id', null));
 
       const sortOrder = count || 0;
 
@@ -265,7 +201,7 @@ export class ExtractionInstanceService {
       );
 
       const duration = performanceTracker.end(perfId);
-      
+
       extractionLogger.info('createInstance', 'Instância criada com sucesso', {
         instanceId: newInstance.id,
         label: uniqueLabel,
@@ -279,10 +215,10 @@ export class ExtractionInstanceService {
 
     } catch (error: unknown) {
       performanceTracker.end(perfId);
-      
+
       // Detectar erros de validação do banco (trigger/constraint)
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-      const isValidationError = 
+      const isValidationError =
         errorMessage.includes('parent_entity_type_id') ||
         errorMessage.includes('template_id') ||
         errorMessage.includes('Ciclo detectado') ||
@@ -294,7 +230,7 @@ export class ExtractionInstanceService {
         label: customLabel,
         isValidationError
       });
-      
+
       // Se já é SupabaseRepositoryError, re-throw com contexto adicional
       if (error instanceof SupabaseRepositoryError) {
         // Melhorar mensagem para erros de validação
@@ -307,14 +243,82 @@ export class ExtractionInstanceService {
         }
         throw error;
       }
-      
+
       // Mensagem mais específica para erros de validação
       if (isValidationError) {
         throw new Error(`Validação de integridade falhou: ${errorMessage}`);
       }
-      
+
       throw new Error(`Falha ao criar instância: ${errorMessage}`);
     }
+  }
+
+  /**
+   * Verifica se nome único é necessário (prevenir constraint violation)
+   */
+  private async ensureUniqueName(
+    label: string,
+    articleId: string,
+    entityTypeId: string,
+    maxAttempts: number = 10
+  ): Promise<string> {
+    let uniqueLabel = label;
+    let attempt = 1;
+
+    while (attempt <= maxAttempts) {
+      const { data: existing, error } = await supabase
+        .from('extraction_instances')
+        .select('id')
+        .eq('article_id', articleId)
+        .eq('entity_type_id', entityTypeId)
+        .eq('label', uniqueLabel)
+        .limit(1);
+
+      if (error) throw error;
+
+      if (!existing || existing.length === 0) {
+        return uniqueLabel;
+      }
+
+      attempt++;
+      uniqueLabel = attempt === 2 ? `${label} (2)` : label.replace(/\(\d+\)$/, `(${attempt})`);
+    }
+
+    // Fallback com timestamp
+    return `${label} (${Date.now()})`;
+  }
+
+  /**
+   * Gera próximo label único para um entity type
+   */
+  private async generateLabel(
+    entityType: ExtractionEntityType,
+    articleId: string,
+    parentInstanceId?: string | null,
+    parentInstance?: ExtractionInstance
+  ): Promise<string> {
+    // Contar instâncias existentes do mesmo tipo e parent
+      const baseQuery = supabase
+      .from('extraction_instances')
+      .select('*', { count: 'exact', head: true })
+      .eq('article_id', articleId)
+          .eq('entity_type_id', entityType.id);
+      const {count, error} = await (parentInstanceId
+          ? baseQuery.eq('parent_instance_id', parentInstanceId)
+          : baseQuery.is('parent_instance_id', null));
+
+    if (error) {
+      console.warn('Erro ao contar instâncias, usando fallback:', error);
+    }
+
+    const nextNumber = (count || 0) + 1;
+
+    // Se tem parent, incluir nome do parent no label
+    if (parentInstance) {
+      return `${parentInstance.label} - ${entityType.label} ${nextNumber}`;
+    }
+
+    return `${entityType.label} ${nextNumber}`;
   }
 
   /**

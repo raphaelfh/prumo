@@ -7,6 +7,7 @@ import React from 'react';
 import {Outlet} from 'react-router-dom';
 import {Topbar} from '@/components/navigation';
 import {ProjectSidebar} from './ProjectSidebar';
+import {MobileSidebar} from './MobileSidebar';
 import {useProject} from '@/contexts/ProjectContext';
 import {useSidebar} from '@/contexts/SidebarContext';
 import {cn} from '@/lib/utils';
@@ -33,7 +34,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children, className }) => 
 // Layout com Sidebar para páginas específicas
 export const ProjectLayout: React.FC<AppLayoutProps> = ({ children, className }) => {
   const { project, activeTab, changeTab } = useProject();
-  const { sidebarCollapsed, toggleSidebar } = useSidebar();
+    const {sidebarCollapsed, toggleSidebar, mobileOpen, setMobileOpen} = useSidebar();
 
   return (
     <div className={cn("h-screen flex flex-col overflow-hidden bg-background", className)}>
@@ -41,10 +42,19 @@ export const ProjectLayout: React.FC<AppLayoutProps> = ({ children, className })
       <div className="flex-shrink-0">
         <Topbar />
       </div>
-      
+
+        {/* Mobile Sidebar (Sheet) */}
+        <MobileSidebar
+            open={mobileOpen}
+            onOpenChange={setMobileOpen}
+            activeTab={activeTab}
+            onTabChange={changeTab}
+            projectName={project?.name}
+        />
+
       {/* Container Principal: Sidebar + Conteúdo */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar Fixo */}
+          {/* Sidebar Fixo - Desktop */}
         <ProjectSidebar
           isCollapsed={sidebarCollapsed}
           onToggle={toggleSidebar}
@@ -52,8 +62,8 @@ export const ProjectLayout: React.FC<AppLayoutProps> = ({ children, className })
           onTabChange={changeTab}
           projectName={project?.name}
         />
-        
-        {/* Main Content com Scroll Próprio */}
+
+          {/* Main Content com Scroll Próprio */}
         <main className="flex-1 overflow-y-auto">
           {children || <Outlet />}
         </main>
