@@ -1,15 +1,13 @@
 /**
- * Input de Item de Assessment
+ * Assessment item input
  *
- * Componente que renderiza input apropriado para um item de avaliação (assessment):
- * - Radio buttons para níveis permitidos (Low Risk, High Risk, etc.)
- * - Textarea para comentários/justificativas (opcional)
- * - Exibe guidance (orientação) do item
- * - Mostra sugestões de IA quando disponíveis
+ * Renders the appropriate input for an assessment item:
+ * - Radio buttons for allowed levels (Low Risk, High Risk, etc.)
+ * - Textarea for comments/justification (optional)
+ * - Shows item guidance
+ * - Shows AI suggestions when available
  *
- * Baseado em FieldInput.tsx, mas simplificado para items de assessment (DRY + KISS).
- * Padrão de callbacks: onAcceptAI/onRejectAI recebem (itemId) e são ligados a item.id
- * aqui (como em Extraction: InstanceCard passa (instanceId, fieldId) ao FieldInput).
+ * Based on FieldInput.tsx, simplified for assessment items (DRY + KISS).
  *
  * @component
  */
@@ -22,6 +20,7 @@ import {AlertCircle, Info, Sparkles} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {cn} from '@/lib/utils';
+import {t} from '@/lib/copy';
 import type {
   AIAssessmentSuggestion,
   AIAssessmentSuggestionHistoryItem,
@@ -68,29 +67,29 @@ export function AssessmentItemInput(props: AssessmentItemInputProps) {
 
   const [showGuidance, setShowGuidance] = useState(false);
 
-  // Estado local para edição
+    // Local state for editing
   const selectedLevel = value?.selected_level ?? '';
   const notes = value?.notes ?? '';
 
-  // Determinar estado da sugestão (espelha Extraction: FieldInput)
+    // Determine suggestion state (mirrors Extraction: FieldInput)
   const hasPendingSuggestion = aiSuggestion?.status === 'pending';
   const hasAcceptedSuggestion = aiSuggestion?.status === 'accepted';
   const hasInvalidLevel = hasPendingSuggestion
     && aiSuggestion?.suggested_value?.level
     && !item.allowed_levels.includes(aiSuggestion.suggested_value.level);
 
-  // Edição manual: valor no campo diferente do aceito pela IA (permite esconder display quando usuário editou)
+    // Manual edit: value in field differs from AI-accepted (hide suggestion when user edited)
   const aiAcceptedLevel = hasAcceptedSuggestion ? aiSuggestion?.suggested_value?.level : null;
   const hasManualValue = !!selectedLevel && (!hasAcceptedSuggestion || selectedLevel !== aiAcceptedLevel);
 
-  // Mostrar sugestão para pending, accepted (se não editado manualmente) e rejected (permite reverter)
+    // Show suggestion for pending, accepted (if not manually edited) and rejected (allow revert)
   const shouldShowSuggestion = aiSuggestion && (
     aiSuggestion.status === 'pending' ||
     (aiSuggestion.status === 'accepted' && !hasManualValue) ||
     aiSuggestion.status === 'rejected'
   );
 
-  // Handler para mudança de nível
+    // Handler for level change
   const buildResponse = (
     overrides: Partial<AssessmentResponse>
   ): AssessmentResponse => ({
@@ -111,7 +110,7 @@ export function AssessmentItemInput(props: AssessmentItemInputProps) {
     );
   };
 
-  // Handler para mudança de notas
+    // Handler for notes change
   const handleNotesChange = (newNotes: string) => {
     onChange(
       buildResponse({
@@ -121,12 +120,12 @@ export function AssessmentItemInput(props: AssessmentItemInputProps) {
     );
   };
 
-  // Validação
+    // Validation
   const hasError = item.is_required && !selectedLevel;
 
   return (
       <div className="grid grid-cols-[30%_1fr] gap-4 py-4 items-start border-b border-border/40 last:border-b-0">
-      {/* Coluna esquerda: Label + Código + Guidance */}
+          {/* Left column: Label + Code + Guidance */}
       <div className="space-y-2 pt-2">
         <div className="flex items-start justify-between gap-2">
           <Label className="text-sm font-medium flex items-center gap-2">
@@ -146,7 +145,7 @@ export function AssessmentItemInput(props: AssessmentItemInputProps) {
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Ver orientação</p>
+                  <p>{t('assessment', 'itemInputViewGuidance')}</p>
               </TooltipContent>
             </Tooltip>
           )}
@@ -164,9 +163,9 @@ export function AssessmentItemInput(props: AssessmentItemInputProps) {
         )}
       </div>
 
-      {/* Coluna direita: Input */}
+          {/* Right column: Input */}
       <div className="space-y-3">
-        {/* AI Trigger Button - mostrar se não houver sugestão ou se foi rejeitada */}
+          {/* AI Trigger Button - show when no suggestion or rejected */}
         {onTriggerAI && (!aiSuggestion || aiSuggestion.status === 'rejected') && (
           <div className="flex justify-end">
             <Button
@@ -179,19 +178,19 @@ export function AssessmentItemInput(props: AssessmentItemInputProps) {
               {isTriggerLoading ? (
                 <>
                   <Sparkles className="h-4 w-4 animate-pulse" />
-                  Avaliando com IA...
+                    {t('assessment', 'itemInputEvaluatingAI')}
                 </>
               ) : (
                 <>
                   <Sparkles className="h-4 w-4" />
-                  Avaliar com IA
+                    {t('assessment', 'itemInputAssessWithAI')}
                 </>
               )}
             </Button>
           </div>
         )}
 
-        {/* Radio buttons para níveis */}
+          {/* Radio buttons for levels */}
         <div>
           <RadioGroup
             value={selectedLevel}
@@ -216,7 +215,7 @@ export function AssessmentItemInput(props: AssessmentItemInputProps) {
           </RadioGroup>
         </div>
 
-        {/* Sugestão de IA inline (espelha Extraction: valor + % + aceitar/rejeitar) */}
+          {/* Inline AI suggestion (mirrors Extraction: value + % + accept/reject) */}
         {shouldShowSuggestion && aiSuggestion && (
           <AISuggestionDisplay
             suggestion={aiSuggestion}
@@ -227,15 +226,15 @@ export function AssessmentItemInput(props: AssessmentItemInputProps) {
           />
         )}
 
-        {/* Textarea para notas */}
+          {/* Textarea for notes */}
         <div className="space-y-2">
           <Label className="text-xs text-muted-foreground">
-            Comentário/Justificativa (opcional)
+              {t('assessment', 'itemInputCommentLabel')}
           </Label>
           <Textarea
             value={notes}
             onChange={(e) => handleNotesChange(e.target.value)}
-            placeholder="Adicione comentários ou justificativas para esta avaliação..."
+            placeholder={t('assessment', 'itemInputCommentPlaceholder')}
             disabled={disabled}
             className="text-[13px] min-h-[80px] resize-none"
           />
@@ -245,7 +244,7 @@ export function AssessmentItemInput(props: AssessmentItemInputProps) {
         {hasError && (
           <p className="text-xs text-destructive flex items-center gap-1">
             <AlertCircle className="h-3 w-3" />
-            Este item é obrigatório
+              {t('assessment', 'itemInputRequiredError')}
           </p>
         )}
       </div>
@@ -254,7 +253,7 @@ export function AssessmentItemInput(props: AssessmentItemInputProps) {
 }
 
 /**
- * Exporta versão memoizada para evitar re-renders desnecessários
+ * Exports memoized version to avoid unnecessary re-renders
  */
 export default memo(AssessmentItemInput, (prevProps, nextProps) => {
   const aiSuggestionChanged =

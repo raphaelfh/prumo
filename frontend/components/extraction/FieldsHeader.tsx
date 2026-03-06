@@ -1,7 +1,7 @@
 /**
  * Header do Gerenciador de Campos
- * 
- * Componente responsável pelo cabeçalho com título, contador e botão de adicionar.
+ *
+ * Header component with title, count and add button.
  * 
  * @component
  */
@@ -11,6 +11,7 @@ import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,} from '@/components/ui/tooltip';
 import {Lock, Plus} from 'lucide-react';
+import {t} from '@/lib/copy';
 
 interface FieldsHeaderProps {
   fieldsCount: number;
@@ -40,10 +41,11 @@ export const FieldsHeader = memo(function FieldsHeader({
     <div className="flex items-center justify-between" role="banner">
       <div className="flex items-center gap-2">
         <h4 className="text-sm font-medium" id="fields-header">
-          Campos desta seção ({fieldsCount})
+            {t('extraction', 'fieldsOfThisSection')} ({fieldsCount})
         </h4>
         {userRole && (
-          <Badge variant="outline" className="text-xs" aria-label={`Função do usuário: ${getRoleBadge(userRole)}`}>
+            <Badge variant="outline" className="text-xs"
+                   aria-label={t('common', 'userRoleAria').replace('{{role}}', getRoleBadge(userRole))}>
             {getRoleBadge(userRole)}
           </Badge>
         )}
@@ -58,18 +60,18 @@ export const FieldsHeader = memo(function FieldsHeader({
                 onClick={onAddField}
                 disabled={!canCreate}
                 className="gap-2"
-                aria-label="Adicionar novo campo"
+                aria-label={t('extraction', 'addFieldAria')}
                 aria-describedby="fields-header"
               >
                 {canCreate ? (
                   <>
                     <Plus className="h-4 w-4" aria-hidden="true" />
-                    Adicionar Campo
+                      {t('extraction', 'addFieldButton')}
                   </>
                 ) : (
                   <>
                     <Lock className="h-4 w-4" aria-hidden="true" />
-                    Adicionar Campo
+                      {t('extraction', 'addFieldButton')}
                   </>
                 )}
               </Button>
@@ -77,7 +79,7 @@ export const FieldsHeader = memo(function FieldsHeader({
           </TooltipTrigger>
           {!canCreate && (
             <TooltipContent>
-              <p>Apenas managers podem adicionar campos</p>
+                <p>{t('extraction', 'onlyManagersCanAddFields')}</p>
             </TooltipContent>
           )}
         </Tooltip>

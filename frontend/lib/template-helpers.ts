@@ -1,16 +1,16 @@
 /**
- * Helpers para validação e manipulação de templates
- * 
- * Garante que estamos usando os IDs corretos para templates:
- * - extraction_templates_global.id (templates globais CHARMS, PICOS, etc.)
- * - project_extraction_templates.id (instâncias do template no projeto)
+ * Helpers for template validation and manipulation
+ *
+ * Ensures we use the correct template IDs:
+ * - extraction_templates_global.id (global templates CHARMS, PICOS, etc.)
+ * - project_extraction_templates.id (template instances in the project)
  */
 
 import {supabase} from '@/integrations/supabase/client';
 
 /**
- * Valida se o templateId fornecido é de um project_extraction_templates
- * ao invés de extraction_templates_global
+ * Validates that the given templateId is from project_extraction_templates
+ * rather than extraction_templates_global
  */
 export async function validateProjectTemplateId(templateId: string): Promise<{
   isValid: boolean;
@@ -19,7 +19,7 @@ export async function validateProjectTemplateId(templateId: string): Promise<{
   error?: string;
 }> {
   try {
-    // Verificar se é um project template
+      // Check if it is a project template
     const { data: projectTemplate, error: projectError } = await supabase
       .from('project_extraction_templates')
       .select('id, name, is_active')
@@ -34,7 +34,7 @@ export async function validateProjectTemplateId(templateId: string): Promise<{
       };
     }
 
-    // Verificar se é um global template (não deveria ser usado para entity_types)
+      // Check if it is a global template (should not be used for entity_types)
     const { data: globalTemplate, error: globalError } = await supabase
       .from('extraction_templates_global')
       .select('id, name')
@@ -46,7 +46,7 @@ export async function validateProjectTemplateId(templateId: string): Promise<{
         isValid: false,
         isProjectTemplate: false,
         isGlobalTemplate: true,
-        error: `Template ID ${templateId} é um template global (${globalTemplate.name}). Use o ID do project_extraction_templates correspondente.`
+          error: `Template ID ${templateId} is a global template (${globalTemplate.name}). Use the corresponding project_extraction_templates ID.`
       };
     }
 
@@ -54,7 +54,7 @@ export async function validateProjectTemplateId(templateId: string): Promise<{
       isValid: false,
       isProjectTemplate: false,
       isGlobalTemplate: false,
-      error: `Template ID ${templateId} não encontrado em nenhuma tabela de templates.`
+        error: `Template ID ${templateId} not found in any template table.`
     };
 
   } catch (error: any) {
@@ -62,13 +62,13 @@ export async function validateProjectTemplateId(templateId: string): Promise<{
       isValid: false,
       isProjectTemplate: false,
       isGlobalTemplate: false,
-      error: `Erro ao validar template: ${error.message}`
+        error: `Error validating template: ${error.message}`
     };
   }
 }
 
 /**
- * Obtém informações detalhadas sobre o template para debug
+ * Gets detailed template info for debug
  */
 export async function getTemplateDebugInfo(templateId: string): Promise<{
   templateInfo?: any;
@@ -77,7 +77,7 @@ export async function getTemplateDebugInfo(templateId: string): Promise<{
   error?: string;
 }> {
   try {
-    // Buscar template
+      // Fetch template
     const { data: template, error: templateError } = await supabase
       .from('project_extraction_templates')
       .select(`
@@ -97,22 +97,22 @@ export async function getTemplateDebugInfo(templateId: string): Promise<{
       return {
         entityTypesCount: 0,
         fieldsCount: 0,
-        error: `Template não encontrado: ${templateError?.message || 'ID inválido'}`
+          error: `Template not found: ${templateError?.message || 'Invalid ID'}`
       };
     }
 
-    // Contar entity types
+      // Count entity types
     const { count: entityTypesCount, error: etError } = await supabase
       .from('extraction_entity_types')
       .select('*', { count: 'exact', head: true })
       .eq('project_template_id', templateId);
 
     if (etError) {
-      console.warn('Erro ao contar entity types:', etError);
+        console.warn('Error counting entity types:', etError);
     }
 
-    // Contar fields
-    // Primeiro, buscar os IDs dos entity types
+      // Count fields
+      // First, fetch entity type IDs
     const { data: entityTypeIds, error: etIdsError } = await supabase
       .from('extraction_entity_types')
       .select('id')
@@ -127,12 +127,12 @@ export async function getTemplateDebugInfo(templateId: string): Promise<{
         .in('entity_type_id', ids);
 
       if (fieldsError) {
-        console.warn('Erro ao contar fields:', fieldsError);
+          console.warn('Error counting fields:', fieldsError);
       } else {
         fieldsCount = count || 0;
       }
     } else if (etIdsError) {
-      console.warn('Erro ao buscar IDs de entity types:', etIdsError);
+        console.warn('Error fetching entity type IDs:', etIdsError);
     }
 
     return {
@@ -149,13 +149,13 @@ export async function getTemplateDebugInfo(templateId: string): Promise<{
     return {
       entityTypesCount: 0,
       fieldsCount: 0,
-      error: `Erro ao obter informações do template: ${error.message}`
+        error: `Error getting template info: ${error.message}`
     };
   }
 }
 
 /**
- * Log estruturado para debug de templates
+ * Structured log for template debug
  */
 export function logTemplateDebug(
   context: string,
@@ -167,30 +167,30 @@ export function logTemplateDebug(
   console.log('Timestamp:', new Date().toISOString());
   
   if (additionalInfo) {
-    console.log('Informações adicionais:', additionalInfo);
+      console.log('Additional info:', additionalInfo);
   }
   
   console.groupEnd();
 }
 
 /**
- * Garante que estamos usando project_template_id nas queries
- * 
- * @deprecated Use validateProjectTemplateId() para validação mais robusta
+ * Ensures we use project_template_id in queries
+ *
+ * @deprecated Use validateProjectTemplateId() for more robust validation
  */
 export function ensureProjectTemplateId(templateId: string): void {
-  console.warn('ensureProjectTemplateId() está deprecated. Use validateProjectTemplateId() para validação completa.');
+    console.warn('ensureProjectTemplateId() is deprecated. Use validateProjectTemplateId() for full validation.');
   
   if (!templateId) {
-    throw new Error('Template ID não pode ser vazio');
+      throw new Error('Template ID cannot be empty');
   }
-  
-  // Log básico para debug
-  console.log(`🔍 Template ID sendo usado: ${templateId}`);
+
+    // Basic log for debug
+    console.log(`🔍 Template ID in use: ${templateId}`);
 }
 
 /**
- * Obtém o template ativo de um projeto
+ * Gets the active template for a project
  */
 export async function getActiveProjectTemplate(projectId: string): Promise<{
   template?: any;
@@ -212,7 +212,7 @@ export async function getActiveProjectTemplate(projectId: string): Promise<{
     }
 
     if (!template) {
-      return { error: 'Nenhum template ativo encontrado para este projeto' };
+        return {error: 'No active template found for this project'};
     }
 
     return { template };

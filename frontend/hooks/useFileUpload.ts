@@ -5,23 +5,23 @@ import {FILE_ERROR_MESSAGES} from '@/lib/file-constants';
 import type {ArticleFileInsert, FileUploadProgress, FileUploadResult} from '@/types/article-files';
 
 /**
- * Hook reutilizável para upload de arquivos de artigos
- * Centraliza lógica de validação, upload e tratamento de erros
- * 
- * IMPORTANTE: 
- * - fileRole = função do arquivo (MAIN, SUPPLEMENT, etc.) - SELECIONADO PELO USUÁRIO
- * - fileType = formato do arquivo (PDF, DOC, etc.) - DETECTADO AUTOMATICAMENTE
+ * Reusable hook for article file uploads
+ * Centralizes validation, upload and error handling
+ *
+ * IMPORTANT:
+ * - fileRole = file role (MAIN, SUPPLEMENT, etc.) - SELECTED BY USER
+ * - fileType = file format (PDF, DOC, etc.) - DETECTED AUTOMATICALLY
  */
 export function useFileUpload() {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<FileUploadProgress[]>([]);
 
   /**
-   * Faz upload de um único arquivo
-   * @param file - Arquivo a ser enviado
-   * @param projectId - ID do projeto
-   * @param articleId - ID do artigo
-   * @param fileRole - Função/papel do arquivo (MAIN, SUPPLEMENT, etc.)
+   * Uploads a single file
+   * @param file - File to upload
+   * @param projectId - Project ID
+   * @param articleId - Article ID
+   * @param fileRole - File role (MAIN, SUPPLEMENT, etc.)
    */
   const uploadFile = async (
     file: File,
@@ -29,7 +29,7 @@ export function useFileUpload() {
     articleId: string,
     fileRole: string
   ): Promise<FileUploadResult> => {
-    // Validar arquivo e detectar formato automaticamente
+      // Validate file and detect format automatically
     const validation = validateFile(file);
     if (!validation.valid) {
       return {
@@ -59,7 +59,7 @@ export function useFileUpload() {
         project_id: projectId,
         article_id: articleId,
         file_type: detectedFormat,  // Formato detectado automaticamente
-        file_role: fileRole,         // Função selecionada pelo usuário
+          file_role: fileRole,         // Role selected by user
         storage_key: storageKey,
         original_filename: file.name,
         bytes: file.size,
@@ -92,11 +92,11 @@ export function useFileUpload() {
   };
 
   /**
-   * Faz upload de múltiplos arquivos com tracking de progresso
+   * Uploads multiple files with progress tracking
    * @param files - Array de arquivos a serem enviados
    * @param projectId - ID do projeto
    * @param articleId - ID do artigo
-   * @param fileRole - Função/papel dos arquivos (todos terão a mesma função)
+   * @param fileRole - File role (all will have the same role)
    */
   const uploadMultipleFiles = async (
     files: File[],

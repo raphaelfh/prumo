@@ -1,17 +1,17 @@
 /**
- * Tabela genérica de comparação
- * 
- * Componente reutilizável para comparar valores entre múltiplos usuários.
- * Funciona com qualquer tipo de dados através de TypeScript generics.
- * 
+ * Generic comparison table
+ *
+ * Reusable component to compare values across multiple users.
+ * Works with any data type via TypeScript generics.
+ *
  * Features:
- * - Generic <T> para type safety
- * - Colunas configuráveis
- * - Detecção automática de consenso
- * - Highlights visuais de match/divergência
- * - Performance otimizada (useMemo)
- * - Acessibilidade completa
- * 
+ * - Generic <T> for type safety
+ * - Configurable columns
+ * - Automatic consensus detection
+ * - Visual highlights for match/divergence
+ * - Optimized performance (useMemo)
+ * - Full accessibility
+ *
  * @component
  */
 
@@ -21,6 +21,7 @@ import {ScrollArea} from '@/components/ui/scroll-area';
 import {Badge} from '@/components/ui/badge';
 import {AlertTriangle, TrendingUp} from 'lucide-react';
 import {cn} from '@/lib/utils';
+import {t} from '@/lib/copy';
 import {formatComparisonValue} from '@/lib/comparison/formatters';
 import {detectConsensus} from '@/lib/comparison/consensus';
 import {ConsensusIndicator} from './ConsensusIndicator';
@@ -29,7 +30,7 @@ import {ComparisonCell} from './ComparisonCell';
 // =================== INTERFACES ===================
 
 /**
- * Definição de coluna para comparação
+ * Column definition for comparison
  */
 export interface ComparisonColumn<T = any> {
   id: string;
@@ -38,11 +39,11 @@ export interface ComparisonColumn<T = any> {
   isRequired?: boolean;
   width?: string;
   formatValue?: (value: any) => string;
-  field?: any; // ✅ NOVO: metadados do campo
+    field?: any; // Field metadata for specialized editing
 }
 
 /**
- * Dados de um usuário na comparação
+ * User data in the comparison
  */
 export interface ComparisonUser {
   userId: string;
@@ -52,7 +53,7 @@ export interface ComparisonUser {
 }
 
 /**
- * Props do ComparisonTable
+ * ComparisonTable props
  */
 export interface ComparisonTableProps<T = any> {
   columns: ComparisonColumn<T>[];
@@ -62,8 +63,8 @@ export interface ComparisonTableProps<T = any> {
   data: Record<string, Record<string, T>>; // userId -> rowId -> value
   showConsensus?: boolean;
   consensusThreshold?: number; // 0-1, default: 0.5
-  editable?: boolean; // Permite edição inline para current user
-  onValueChange?: (rowId: string, newValue: any) => void; // Callback de edição
+    editable?: boolean; // Allow inline edit for current user
+    onValueChange?: (rowId: string, newValue: any) => void; // Edit callback
   onCellClick?: (rowId: string, userId: string, value: T) => void;
   className?: string;
   maxHeight?: string;
@@ -72,13 +73,13 @@ export interface ComparisonTableProps<T = any> {
 // =================== COMPONENT ===================
 
 /**
- * Tabela genérica de comparação entre usuários
- * 
- * Estrutura:
- * - Header sticky com nomes dos usuários
- * - Body scrollable com valores
- * - Coluna de consenso (opcional)
- * - Highlights automáticos
+ * Generic comparison table between users
+ *
+ * Structure:
+ * - Sticky header with user names
+ * - Scrollable body with values
+ * - Optional consensus column
+ * - Automatic highlights
  */
 export function ComparisonTable<T = any>({
   columns,
@@ -103,14 +104,14 @@ export function ComparisonTable<T = any>({
   // Pre-computar grid data (memoizado para performance)
   const gridData = useMemo(() => {
     return rows.map(rowId => {
-      // Coletar valor de cada usuário para esta linha
+        // Collect value from each user for this row
       const userValues = allUsers.map(user => {
         const userData = data[user.userId] || {};
-        // Assumindo que row representa um campo único
+          // Assuming row represents a single field
         return userData[rowId];
       });
 
-      // Detectar consenso para esta linha
+        // Detect consensus for this row
       const consensus = detectConsensus(userValues, consensusThreshold);
 
       return {
@@ -124,7 +125,7 @@ export function ComparisonTable<T = any>({
     });
   }, [rows, allUsers, data, consensusThreshold]);
 
-  // Estatísticas gerais
+    // Overall statistics
   const stats = useMemo(() => {
     const totalRows = gridData.length;
     let consensusRows = 0;
@@ -145,44 +146,44 @@ export function ComparisonTable<T = any>({
     };
   }, [gridData]);
 
-  // Calcular altura dinâmica baseada no número de rows
+    // Compute dynamic height based on number of rows
   const tableHeight = useMemo(() => {
     const headerHeight = 50; // px
     const statsHeight = showConsensus && stats.total > 0 ? 45 : 0; // px
-    const rowHeight = 60; // px aproximado por row
+      const rowHeight = 60; // px approximate per row
     const padding = 20; // px
 
     const calculatedHeight = headerHeight + statsHeight + (rows.length * rowHeight) + padding;
     const maxHeightPx = parseInt(maxHeight.replace('px', '')); // Parse '600px' → 600
 
-    // Retornar mínimo entre calculado e máximo (para scroll em tabelas grandes)
+      // Return min of calculated and max (for scroll on large tables)
     return Math.min(calculatedHeight, maxHeightPx);
   }, [rows.length, showConsensus, stats.total, maxHeight]);
 
   if (rows.length === 0) {
     return (
       <div className="border rounded-lg p-8 text-center text-muted-foreground">
-        <p>Nenhum campo para comparar</p>
+          <p>{t('shared', 'noFieldsToCompare')}</p>
       </div>
     );
   }
 
   return (
     <div className={cn("border rounded-lg overflow-hidden", className)}>
-      {/* Estatísticas (opcional) */}
+        {/* Statistics (optional) */}
       {showConsensus && stats.total > 0 && (
         <div className="bg-muted/30 px-4 py-2 border-b flex items-center gap-3 text-sm">
-          <span className="text-muted-foreground">Resumo:</span>
+            <span className="text-muted-foreground">{t('shared', 'summary')}</span>
           <Badge variant="secondary" className="gap-1">
             <TrendingUp className="h-3 w-3" />
-            {stats.consensus} consenso
+              {stats.consensus} {t('shared', 'consensus')}
           </Badge>
           <Badge variant="outline" className="gap-1">
             <AlertTriangle className="h-3 w-3 text-orange-600" />
-            {stats.divergent} divergência
+              {stats.divergent} {t('shared', 'divergence')}
           </Badge>
           <Badge variant="outline" className="ml-auto">
-            {stats.consensusPercentage}% concordância
+              {stats.consensusPercentage}% {t('shared', 'agreement')}
           </Badge>
         </div>
       )}
@@ -191,27 +192,27 @@ export function ComparisonTable<T = any>({
         <Table>
           <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
             <TableRow>
-              <TableHead className="w-[200px] font-semibold">Campo</TableHead>
-              
-              {/* Coluna do usuário atual (destacada) */}
+                <TableHead className="w-[200px] font-semibold">{t('shared', 'fieldLabel')}</TableHead>
+
+                {/* Current user column (highlighted) */}
               <TableHead className="w-[150px] bg-blue-50 dark:bg-blue-950/20 font-semibold">
                 <div className="flex items-center gap-2">
                   <span>{currentUser.userName}</span>
-                  <Badge variant="secondary" className="text-xs">Você</Badge>
+                    <Badge variant="secondary" className="text-xs">{t('shared', 'youLabel')}</Badge>
                 </div>
               </TableHead>
 
-              {/* Colunas de outros usuários */}
+                {/* Other users columns */}
               {otherUsers.map(user => (
                 <TableHead key={user.userId} className="w-[150px]">
                   {user.userName}
                 </TableHead>
               ))}
 
-              {/* Coluna de consenso */}
+                {/* Consensus column */}
               {showConsensus && (
                 <TableHead className="w-[140px] font-semibold text-center">
-                  Consenso
+                    {t('shared', 'consensusColumn')}
                 </TableHead>
               )}
             </TableRow>
@@ -219,29 +220,29 @@ export function ComparisonTable<T = any>({
 
           <TableBody>
             {gridData.map(({ rowId, userValues, consensus }) => {
-              // Encontrar metadados da linha (do primeiro campo que contém este rowId)
+                // Find row metadata (from first column that contains this rowId)
               const rowMetadata = columns.find(c => c.id === rowId);
               const rowLabel = rowMetadata?.label || rowId;
               const isRequired = rowMetadata?.isRequired;
 
-              const myValue = userValues[0]; // Current user sempre primeiro
+                const myValue = userValues[0]; // Current user is always first
               const myValueFormatted = formatComparisonValue(myValue.value);
 
               return (
                 <TableRow key={rowId}>
-                  {/* Label da linha */}
+                    {/* Row label */}
                   <TableCell className="font-medium">
                     <div className="space-y-1">
                       <div>{rowLabel}</div>
                       {isRequired && (
                         <Badge variant="destructive" className="text-xs">
-                          Obrigatório
+                            {t('shared', 'required')}
                         </Badge>
                       )}
                     </div>
                   </TableCell>
 
-                  {/* Valores de cada usuário */}
+                    {/* Values per user */}
                   {userValues.map((userValue, idx) => {
                     const isCurrentUser = idx === 0;
                     const userValueFormatted = formatComparisonValue(userValue.value);
@@ -258,12 +259,12 @@ export function ComparisonTable<T = any>({
                           onValueChange={isCurrentUser && onValueChange ? (newValue) => onValueChange(rowId, newValue) : undefined}
                           onClick={onCellClick ? () => onCellClick(rowId, userValue.userId, userValue.value) : undefined}
                           formatValue={rowMetadata?.formatValue}
-                          field={rowMetadata?.field} // ✅ NOVO: passar field
+                          field={rowMetadata?.field}
                         />
                       );
                   })}
 
-                  {/* Coluna de consenso */}
+                    {/* Consensus column */}
                   {showConsensus && (
                     <TableCell className="text-center">
                       <ConsensusIndicator 

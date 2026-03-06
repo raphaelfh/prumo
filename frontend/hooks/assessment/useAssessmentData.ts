@@ -1,13 +1,13 @@
 /**
- * Hook para carregar dados de assessment (avaliação de qualidade)
+ * Hook to load assessment data (quality assessment)
  *
- * Centraliza toda a lógica de carregamento de dados para avaliação:
- * - Artigo, projeto, instrumento
- * - Items de assessment agrupados por domínio
- * - Assessment existente do usuário (se houver)
+ * Centralizes all data loading logic for assessment:
+ * - Article, project, instrument
+ * - Assessment items grouped by domain
+ * - Existing user assessment (if any)
  *
- * Baseado em useExtractionData.ts (DRY + KISS)
- * Reduz complexidade do componente principal seguindo princípio SRP.
+ * Based on useExtractionData.ts (DRY + KISS)
+ * Reduces main component complexity following SRP.
  *
  * @example
  * ```typescript
@@ -29,6 +29,7 @@
 import {useCallback, useEffect, useState} from 'react';
 import {supabase} from '@/integrations/supabase/client';
 import {toast} from 'sonner';
+import {t} from '@/lib/copy';
 import type {Article} from '@/types/article';
 import type {Project} from '@/types/project';
 import type {
@@ -42,7 +43,7 @@ import {getInstrument} from '@/services/projectAssessmentInstrumentService';
 import {useCurrentUser} from '@/hooks/useCurrentUser';
 
 /**
- * Domínio com seus items
+ * Domain with its items
  */
 export interface DomainWithItems {
   domain: string;
@@ -58,10 +59,10 @@ export interface AssessmentArticleRef {
 }
 
 /**
- * Retorno do hook
+ * Hook return type
  */
 export interface UseAssessmentDataReturn {
-  // Dados carregados
+    // Loaded data
   article: Article | null;
   project: Project | null;
   instrument: AssessmentInstrument | null;
@@ -70,18 +71,18 @@ export interface UseAssessmentDataReturn {
   assessment: Assessment | null;
   articles: AssessmentArticleRef[];
 
-  // Estados
+    // State
   loading: boolean;
   initialized: boolean;
   error: string | null;
 
-  // Funções
+    // Functions
   refresh: () => Promise<void>;
   refreshAssessment: () => Promise<void>;
 }
 
 /**
- * Props do hook
+ * Hook props
  */
 export interface UseAssessmentDataProps {
   projectId: string | undefined;
@@ -91,7 +92,7 @@ export interface UseAssessmentDataProps {
 }
 
 /**
- * Hook para carregar todos os dados necessários para assessment
+ * Hook to load all data required for assessment
  */
 export function useAssessmentData({
   projectId,
@@ -113,7 +114,7 @@ export function useAssessmentData({
   const { user, loading: authLoading } = useCurrentUser();
 
   /**
-   * Carrega artigo
+   * Load article
    */
   const loadArticle = useCallback(async () => {
     if (!articleId) {
@@ -128,15 +129,15 @@ export function useAssessmentData({
       .single();
 
     if (error) {
-      console.error('❌ [useAssessmentData] Erro ao carregar artigo:', error);
-      throw new Error(`Erro ao carregar artigo: ${error.message}`);
+        console.error('[useAssessmentData] Error loading article:', error);
+        throw new Error(`${t('articles', 'errorLoadArticle')}: ${error.message}`);
     }
 
     setArticle(data);
   }, [articleId]);
 
   /**
-   * Carrega projeto
+   * Load project
    */
   const loadProject = useCallback(async () => {
     if (!projectId) {
@@ -151,15 +152,15 @@ export function useAssessmentData({
       .single();
 
     if (error) {
-      console.error('❌ [useAssessmentData] Erro ao carregar projeto:', error);
-      throw new Error(`Erro ao carregar projeto: ${error.message}`);
+        console.error('[useAssessmentData] Error loading project:', error);
+        throw new Error(`${t('pages', 'projectViewErrorLoading')}: ${error.message}`);
     }
 
     setProject(data);
   }, [projectId]);
 
   /**
-   * Carrega instrumento com seus items
+   * Load instrument with its items
    */
   const loadInstrument = useCallback(async () => {
     if (!instrumentId) {
@@ -169,7 +170,7 @@ export function useAssessmentData({
       return;
     }
 
-    // Carregar instrumento via API (project_assessment_instruments)
+      // Load instrument via API (project_assessment_instruments)
     const projectInstrument = await getInstrument(instrumentId);
 
     const instrumentSchema = parseInstrumentSchema(projectInstrument.schema);
@@ -182,7 +183,7 @@ export function useAssessmentData({
       schema: instrumentSchema,
     } as AssessmentInstrument);
 
-    // Mapear items do projeto para o formato AssessmentItem
+      // Map project items to AssessmentItem format
     const normalizedItems: AssessmentItem[] = (projectInstrument.items || [])
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .map((item) => ({
@@ -200,7 +201,7 @@ export function useAssessmentData({
       }));
     setItems(normalizedItems);
 
-    // Agrupar por dominio
+      // Group by domain
     const domainMap = new Map<string, DomainWithItems>();
     const domainMetadata = new Map<string, AssessmentInstrumentSchemaDomain>();
 
@@ -234,7 +235,7 @@ export function useAssessmentData({
 
     setDomains(domainsArray);
 
-    console.log(`📊 [useAssessmentData] Instrumento carregado:`, {
+      console.log('[useAssessmentData] Instrument loaded:', {
       instrumentId,
       name: projectInstrument.name,
       itemsCount: normalizedItems.length,
@@ -243,7 +244,7 @@ export function useAssessmentData({
   }, [instrumentId]);
 
   /**
-   * Carrega assessment existente do usuário
+   * Load existing user assessment
    */
   const loadAssessment = useCallback(async () => {
     if (!projectId || !articleId || !instrumentId) {
@@ -255,7 +256,7 @@ export function useAssessmentData({
       return;
     }
     if (!user) {
-      console.warn('⚠️ [useAssessmentData] Usuário não autenticado');
+        console.warn('[useAssessmentData] User not authenticated');
       setAssessment(null);
       return;
     }
@@ -273,14 +274,14 @@ export function useAssessmentData({
       .maybeSingle();
 
     if (error) {
-      console.error('❌ [useAssessmentData] Erro ao carregar assessment:', error);
-      // Não lançar erro, apenas logar (assessment pode não existir ainda)
+        console.error('[useAssessmentData] Error loading assessment:', error);
+        // Do not throw; assessment may not exist yet
       setAssessment(null);
       return;
     }
 
     if (data) {
-      console.log('✅ [useAssessmentData] Assessment existente carregado:', {
+        console.log('[useAssessmentData] Existing assessment loaded:', {
         assessmentId: data.id,
         status: data.status,
         completionPercentage: data.completion_percentage,
@@ -292,7 +293,7 @@ export function useAssessmentData({
   }, [projectId, articleId, instrumentId, authLoading, user]);
 
   /**
-   * Carrega lista de artigos do projeto (para navegação)
+   * Load project article list (for navigation)
    */
   const loadArticles = useCallback(async () => {
     if (!projectId) {
@@ -307,7 +308,7 @@ export function useAssessmentData({
       .order('created_at', { ascending: true });
 
     if (error) {
-      console.error('❌ [useAssessmentData] Erro ao carregar lista de artigos:', error);
+        console.error('[useAssessmentData] Error loading article list:', error);
       setArticles([]);
       return;
     }
@@ -316,7 +317,7 @@ export function useAssessmentData({
   }, [projectId]);
 
   /**
-   * Carrega todos os dados
+   * Load all data
    */
   const loadAll = useCallback(async () => {
     if (!enabled || !projectId || !articleId || !instrumentId) {
@@ -329,13 +330,13 @@ export function useAssessmentData({
     setError(null);
 
     try {
-      console.log('🔄 [useAssessmentData] Iniciando carregamento:', {
+        console.log('[useAssessmentData] Starting load:', {
         projectId,
         articleId,
         instrumentId,
       });
 
-      // Carregar em paralelo (otimização)
+        // Load in parallel (optimization)
       await Promise.all([
         loadArticle(),
         loadProject(),
@@ -344,13 +345,13 @@ export function useAssessmentData({
         loadArticles(),
       ]);
 
-      console.log('✅ [useAssessmentData] Carregamento concluído');
+        console.log('[useAssessmentData] Load completed');
       setInitialized(true);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Erro desconhecido';
-      console.error('❌ [useAssessmentData] Erro no carregamento:', err);
+        const errorMessage = err instanceof Error ? err.message : t('common', 'errors_unknownError');
+        console.error('[useAssessmentData] Load error:', err);
       setError(errorMessage);
-      toast.error(`Erro ao carregar dados: ${errorMessage}`);
+        toast.error(`${t('assessment', 'errors_loadData')}: ${errorMessage}`);
       setInitialized(false);
     } finally {
       setLoading(false);
@@ -358,24 +359,24 @@ export function useAssessmentData({
   }, [enabled, projectId, articleId, instrumentId, loadArticle, loadProject, loadInstrument, loadAssessment, loadArticles]);
 
   /**
-   * Refresh apenas assessment
+   * Refresh assessment only
    */
   const refreshAssessment = useCallback(async () => {
     try {
       await loadAssessment();
     } catch (err) {
-      console.error('❌ [useAssessmentData] Erro ao refresh assessment:', err);
+        console.error('[useAssessmentData] Error refreshing assessment:', err);
     }
   }, [loadAssessment]);
 
   /**
-   * Refresh todos os dados
+   * Refresh all data
    */
   const refresh = useCallback(async () => {
     await loadAll();
   }, [loadAll]);
 
-  // Effect para carregar dados quando deps mudarem
+    // Load data when deps change
   useEffect(() => {
     loadAll();
   }, [loadAll]);

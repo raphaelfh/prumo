@@ -1,5 +1,5 @@
 /**
- * Tipos para Evidências
+ * Types for evidence
  * 
  * Usado em AI assessments e extraction evidence
  */

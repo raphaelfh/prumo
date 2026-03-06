@@ -1,5 +1,5 @@
 /**
- * usePDFSearchHighlight - Hook para gerenciar highlight e scroll de busca
+ * usePDFSearchHighlight - Hook to manage search highlight and scroll
  * 
  * Monitora quando highlights são renderizados e faz scroll fino até o resultado atual.
  */
@@ -83,8 +83,8 @@ export function usePDFSearchHighlight({
         requestAnimationFrame(() => {
           const rect = targetMark.getBoundingClientRect();
           const containerRect = scrollContainer.getBoundingClientRect();
-          
-          // Calcular posição relativa
+
+            // Compute relative position
           const relativeTop = rect.top - containerRect.top + scrollContainer.scrollTop;
           const targetScroll = relativeTop - (containerRect.height / 2);
           
@@ -205,7 +205,7 @@ export function usePDFSearchHighlight({
     };
   }, [pageNumber, searchQuery, currentMatchIndex, isHighlighted, scrollToMatch]);
 
-  // Limpar ao desmontar
+    // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (scrollIntervalRef.current) {

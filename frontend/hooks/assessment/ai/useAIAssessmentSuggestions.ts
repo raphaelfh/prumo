@@ -1,14 +1,14 @@
 /**
- * Hook para gerenciar sugestões de IA para Assessment
+ * Hook to manage AI suggestions for Assessment
  *
  * Features:
- * - Carregar sugestões pendentes/accepted/rejected
- * - Aceitar sugestão (criar/atualizar assessment response)
- * - Rejeitar sugestão (remover response se foi aceita)
- * - Batch accept por threshold
- * - Histórico de sugestões
+ * - Load pending/accepted/rejected suggestions
+ * - Accept suggestion (create/update assessment response)
+ * - Reject suggestion (remove response if was accepted)
+ * - Batch accept by threshold
+ * - Suggestion history
  *
- * Baseado em useAISuggestions.ts (DRY + KISS)
+ * Based on useAISuggestions.ts (DRY + KISS)
  *
  * @hook
  */
@@ -27,45 +27,46 @@ import {
     type LoadAssessmentSuggestionsResult,
 } from '@/services/aiAssessmentSuggestionService';
 import {AuthenticationError, getErrorMessage,} from '@/lib/ai-extraction/errors';
+import {t} from '@/lib/copy';
 import {useCurrentUser} from '@/hooks/useCurrentUser';
 
 /**
- * Props do hook
+ * Hook props
  */
 export interface UseAIAssessmentSuggestionsProps {
   projectId: string;
   articleId: string;
   instrumentId?: string;
-  extractionInstanceId?: string;  // Para PROBAST por modelo
+    extractionInstanceId?: string;  // For PROBAST per model
   enabled?: boolean;
   onSuggestionAccepted?: (itemId: string, value: { level: AssessmentLevel; evidence_passages: EvidencePassage[] }) => void | Promise<void>;
   onSuggestionRejected?: (itemId: string) => void | Promise<void>;
 }
 
 /**
- * Retorno do hook
+ * Hook return type
  */
 export interface UseAIAssessmentSuggestionsReturn {
-  // Estado
+    // State
   suggestions: Record<string, AIAssessmentSuggestion>;  // key: ai_suggestion_${itemId}
   loading: boolean;
 
-  // Funções principais
+    // Main functions
   acceptSuggestion: (itemId: string) => Promise<void>;
   rejectSuggestion: (itemId: string) => Promise<void>;
   batchAccept: (threshold?: number) => Promise<number>;
 
-  // Funções auxiliares
+    // Helper functions
   getSuggestionsHistory: (itemId: string, limit?: number) => Promise<AIAssessmentSuggestionHistoryItem[]>;
   getLatestSuggestion: (itemId: string) => AIAssessmentSuggestion | undefined;
   refresh: () => Promise<LoadAssessmentSuggestionsResult>;
 
-  // Estado de loading por ação (para UI feedback)
+    // Loading state per action (for UI feedback)
   isActionLoading: (itemId: string) => 'accept' | 'reject' | null;
 }
 
 /**
- * Hook para gerenciar sugestões de IA para assessment
+ * Hook to manage AI suggestions for assessment
  */
 export function useAIAssessmentSuggestions(
   props: UseAIAssessmentSuggestionsProps
@@ -80,14 +81,14 @@ export function useAIAssessmentSuggestions(
     onSuggestionRejected,
   } = props;
 
-  // Estados
+    // State
   const [suggestions, setSuggestions] = useState<Record<string, AIAssessmentSuggestion>>({});
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<Record<string, 'accept' | 'reject' | null>>({});
   const { user, loading: authLoading } = useCurrentUser();
 
   /**
-   * Carrega sugestões do backend
+   * Loads suggestions from backend
    */
   const loadSuggestions = useCallback(async (): Promise<LoadAssessmentSuggestionsResult> => {
     setLoading(true);
@@ -104,9 +105,9 @@ export function useAIAssessmentSuggestions(
       setSuggestions(result.suggestions);
       return result;
     } catch (err) {
-      console.error('❌ [useAIAssessmentSuggestions] Erro ao carregar sugestões:', err);
+        console.error('[useAIAssessmentSuggestions] Error loading suggestions:', err);
       const message = getErrorMessage(err);
-      toast.error(`Erro ao carregar sugestões: ${message}`);
+        toast.error(`${t('assessment', 'errors_loadSuggestions')}: ${message}`);
       setSuggestions({});
       return { suggestions: {}, count: 0 };
     } finally {
@@ -115,7 +116,7 @@ export function useAIAssessmentSuggestions(
   }, [articleId, projectId, instrumentId, extractionInstanceId]);
 
   /**
-   * Effect para carregar sugestões quando deps mudarem
+   * Effect to load suggestions when deps change
    */
   useEffect(() => {
     if (!enabled || !articleId || !projectId) return;
@@ -123,31 +124,31 @@ export function useAIAssessmentSuggestions(
   }, [articleId, projectId, instrumentId, extractionInstanceId, enabled, loadSuggestions]);
 
   /**
-   * Aceita uma sugestão
+   * Accepts a suggestion
    */
   const acceptSuggestion = useCallback(async (itemId: string) => {
     const key = getAssessmentSuggestionKey(itemId);
     const suggestion = suggestions[key];
 
     if (!suggestion) {
-      console.warn(`⚠️ [acceptSuggestion] Sugestão não encontrada: ${itemId}`);
+        console.warn(`⚠️ [acceptSuggestion] Suggestion not found: ${itemId}`);
       return;
     }
 
-    // Feedback visual imediato
+      // Immediate visual feedback
     setActionLoading(prev => ({ ...prev, [key]: 'accept' }));
 
     try {
-      // Obter usuário autenticado
+        // Get authenticated user
       if (authLoading || !user) throw new AuthenticationError();
 
-      console.log('✅ [acceptSuggestion] Aceitando sugestão:', {
+        console.log('[acceptSuggestion] Accepting suggestion:', {
         itemId,
         suggestionId: suggestion.id,
         level: suggestion.suggested_value.level,
       });
 
-      // Aceitar usando o serviço
+        // Accept using service
       await AIAssessmentSuggestionService.acceptSuggestion({
         suggestionId: suggestion.id,
         projectId,
@@ -160,10 +161,10 @@ export function useAIAssessmentSuggestions(
         extractionInstanceId,
       });
 
-      // Atualizar status no estado local para 'accepted'
+        // Update local state status to 'accepted'
       setSuggestions(prev => {
         if (!prev[key]) {
-          console.warn(`⚠️ [acceptSuggestion] Sugestão ${key} não encontrada no estado`);
+            console.warn(`⚠️ [acceptSuggestion] Suggestion ${key} not found in state`);
           return prev;
         }
 
@@ -175,24 +176,24 @@ export function useAIAssessmentSuggestions(
           reviewed_at: new Date().toISOString(),
         };
 
-        console.log(`✅ [acceptSuggestion] Estado atualizado para 'accepted': ${key}`);
-        return { ...next }; // Nova referência para re-render
+          console.log(`[acceptSuggestion] State updated to 'accepted': ${key}`);
+          return {...next}; // New reference for re-render
       });
 
-      // Callback para atualizar response (não bloquear)
+        // Callback to update response (non-blocking)
       if (onSuggestionAccepted) {
         Promise.resolve(
           onSuggestionAccepted(itemId, suggestion.suggested_value)
         ).catch(err => {
-          console.error('⚠️ [acceptSuggestion] Erro no callback onSuggestionAccepted:', err);
+            console.error('[acceptSuggestion] Error in onSuggestionAccepted callback:', err);
         });
       }
 
-      toast.success('Sugestão aceita com sucesso');
+        toast.success(t('assessment', 'toastSuggestionAccepted'));
     } catch (err) {
-      console.error('❌ [acceptSuggestion] Erro:', err);
+        console.error('[acceptSuggestion] Error:', err);
       const message = getErrorMessage(err);
-      toast.error(`Erro ao aceitar sugestão: ${message}`);
+        toast.error(`${t('assessment', 'errors_acceptSuggestion')}: ${message}`);
       throw err;
     } finally {
       setActionLoading(prev => ({ ...prev, [key]: null }));
@@ -200,14 +201,14 @@ export function useAIAssessmentSuggestions(
   }, [suggestions, projectId, articleId, instrumentId, extractionInstanceId, onSuggestionAccepted, user, authLoading]);
 
   /**
-   * Rejeita uma sugestão
+   * Rejects a suggestion
    */
   const rejectSuggestion = useCallback(async (itemId: string) => {
     const key = getAssessmentSuggestionKey(itemId);
     const suggestion = suggestions[key];
 
     if (!suggestion) {
-      console.warn(`⚠️ [rejectSuggestion] Sugestão não encontrada: ${itemId}`);
+        console.warn(`⚠️ [rejectSuggestion] Suggestion not found: ${itemId}`);
       return;
     }
 
@@ -219,13 +220,13 @@ export function useAIAssessmentSuggestions(
 
       const wasAccepted = suggestion.status === 'accepted';
 
-      console.log('❌ [rejectSuggestion] Rejeitando sugestão:', {
+        console.log('[rejectSuggestion] Rejecting suggestion:', {
         itemId,
         suggestionId: suggestion.id,
         wasAccepted,
       });
 
-      // Rejeitar usando o serviço
+        // Reject using service
       await AIAssessmentSuggestionService.rejectSuggestion({
         suggestionId: suggestion.id,
         reviewerId: user.id,
@@ -237,10 +238,10 @@ export function useAIAssessmentSuggestions(
         extractionInstanceId,
       });
 
-      // Atualizar status no estado local para 'rejected'
+        // Update local state status to 'rejected'
       setSuggestions(prev => {
         if (!prev[key]) {
-          console.warn(`⚠️ [rejectSuggestion] Sugestão ${key} não encontrada no estado`);
+            console.warn(`⚠️ [rejectSuggestion] Suggestion ${key} not found in state`);
           return prev;
         }
 
@@ -252,22 +253,22 @@ export function useAIAssessmentSuggestions(
           reviewed_at: new Date().toISOString(),
         };
 
-        console.log(`✅ [rejectSuggestion] Estado atualizado para 'rejected': ${key}`);
+          console.log(`[rejectSuggestion] State updated to 'rejected': ${key}`);
         return { ...next };
       });
 
-      // Callback para limpar response (não bloquear)
+        // Callback to clear response (non-blocking)
       if (onSuggestionRejected) {
         Promise.resolve(onSuggestionRejected(itemId)).catch(err => {
-          console.error('⚠️ [rejectSuggestion] Erro no callback onSuggestionRejected:', err);
+            console.error('[rejectSuggestion] Error in onSuggestionRejected callback:', err);
         });
       }
 
-      toast.success('Sugestão rejeitada');
+        toast.success(t('assessment', 'toastSuggestionRejected'));
     } catch (err) {
-      console.error('❌ [rejectSuggestion] Erro:', err);
+        console.error('[rejectSuggestion] Error:', err);
       const message = getErrorMessage(err);
-      toast.error(`Erro ao rejeitar sugestão: ${message}`);
+        toast.error(`${t('assessment', 'errors_rejectSuggestion')}: ${message}`);
       throw err;
     } finally {
       setActionLoading(prev => ({ ...prev, [key]: null }));
@@ -275,13 +276,13 @@ export function useAIAssessmentSuggestions(
   }, [suggestions, projectId, articleId, instrumentId, extractionInstanceId, onSuggestionRejected, user, authLoading]);
 
   /**
-   * Aceita múltiplas sugestões em batch (acima de threshold)
+   * Accepts multiple suggestions in batch (above threshold)
    */
   const batchAccept = useCallback(async (threshold: number = 0.8): Promise<number> => {
     try {
       if (authLoading || !user) throw new AuthenticationError();
 
-      console.log('📦 [batchAccept] Iniciando batch accept:', { threshold });
+        console.log('[batchAccept] Starting batch accept:', {threshold});
 
       const accepted = await AIAssessmentSuggestionService.batchAcceptSuggestions({
         suggestions,
@@ -294,24 +295,23 @@ export function useAIAssessmentSuggestions(
       });
 
       if (accepted > 0) {
-        // Refresh para atualizar estado
         await loadSuggestions();
-        toast.success(`${accepted} sugestão(ões) aceita(s) automaticamente`);
+          toast.success(t('assessment', 'batchAcceptSuccessToast').replace('{{n}}', String(accepted)));
       } else {
-        toast.info('Nenhuma sugestão atingiu o threshold de confiança');
+          toast.info(t('assessment', 'noSuggestionThresholdToast'));
       }
 
       return accepted;
     } catch (err) {
-      console.error('❌ [batchAccept] Erro:', err);
+        console.error('[batchAccept] Error:', err);
       const message = getErrorMessage(err);
-      toast.error(`Erro no batch accept: ${message}`);
+        toast.error(`${t('assessment', 'batchAcceptError')}: ${message}`);
       return 0;
     }
   }, [suggestions, projectId, articleId, instrumentId, extractionInstanceId, loadSuggestions, user, authLoading]);
 
   /**
-   * Busca histórico de sugestões para um item
+   * Fetches suggestion history for an item
    */
   const getSuggestionsHistory = useCallback(async (
     itemId: string,
@@ -320,13 +320,13 @@ export function useAIAssessmentSuggestions(
     try {
       return await AIAssessmentSuggestionService.getHistory(itemId, limit);
     } catch (err) {
-      console.error('❌ [getSuggestionsHistory] Erro:', err);
+        console.error('[getSuggestionsHistory] Error:', err);
       return [];
     }
   }, []);
 
   /**
-   * Busca sugestão mais recente para um item
+   * Gets latest suggestion for an item
    */
   const getLatestSuggestion = useCallback((itemId: string): AIAssessmentSuggestion | undefined => {
     const key = getAssessmentSuggestionKey(itemId);
@@ -334,14 +334,14 @@ export function useAIAssessmentSuggestions(
   }, [suggestions]);
 
   /**
-   * Refresh (recarrega sugestões)
+   * Refresh (reloads suggestions)
    */
   const refresh = useCallback(async (): Promise<LoadAssessmentSuggestionsResult> => {
     return await loadSuggestions();
   }, [loadSuggestions]);
 
   /**
-   * Verifica se uma ação está em loading
+   * Checks if an action is loading
    */
   const isActionLoading = useCallback((itemId: string): 'accept' | 'reject' | null => {
     const key = getAssessmentSuggestionKey(itemId);

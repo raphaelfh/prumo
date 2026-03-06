@@ -1,7 +1,7 @@
 import {ComponentType, memo} from 'react';
 
 /**
- * HOC para adicionar memoização a componentes de lista
+ * HOC to add memoization to list components
  */
 export function withListMemo<P extends object>(
   Component: ComponentType<P>,
@@ -13,7 +13,7 @@ export function withListMemo<P extends object>(
 }
 
 /**
- * HOC para memoização personalizada baseada em uma chave
+ * HOC for custom memoization based on a key
  */
 export function withCustomMemo<P extends object>(
   Component: ComponentType<P>,

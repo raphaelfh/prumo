@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/breadcrumb';
 import {Tooltip, TooltipContent, TooltipTrigger,} from '@/components/ui/tooltip';
 import {ArrowLeft, ChevronLeft, ChevronRight} from 'lucide-react';
+import {t} from '@/lib/copy';
 
 // =================== INTERFACES ===================
 
@@ -72,7 +73,7 @@ export function HeaderNavigation(props: HeaderNavigationProps) {
       {/* Botão Voltar */}
       <Button variant="ghost" size="sm" onClick={onBack}>
         <ArrowLeft className="h-4 w-4 mr-2" />
-        Voltar
+          {t('assessment', 'headerBack')}
       </Button>
 
       <div className="h-6 w-px bg-border" />
@@ -118,7 +119,7 @@ export function HeaderNavigation(props: HeaderNavigationProps) {
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Artigo anterior</p>
+                  <p>{t('assessment', 'headerArticlePrevious')}</p>
               </TooltipContent>
             </Tooltip>
 
@@ -139,7 +140,7 @@ export function HeaderNavigation(props: HeaderNavigationProps) {
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Próximo artigo</p>
+                  <p>{t('assessment', 'headerArticleNext')}</p>
               </TooltipContent>
             </Tooltip>
           </div>

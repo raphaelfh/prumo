@@ -1,15 +1,15 @@
 /**
  * Model Selector Component
- * 
- * Seletor de modelos de predição para extração hierárquica.
+ *
+ * Prediction model selector for hierarchical extraction.
  * Permite selecionar modelo via dropdown, adicionar novos e remover o ativo.
  * 
  * Features:
  * - Dropdown limpo e minimalista
- * - Badge com progresso por modelo
- * - Botão para adicionar novo modelo
- * - Botão para remover modelo ativo
- * - Extração automática com IA
+ * - Badge with progress per model
+ * - Button to add new model
+ * - Button to remove active model
+ * - Automatic AI extraction
  * 
  * @component
  */
@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/select';
 import { Plus, Trash2, Sparkles, Loader2, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {t} from '@/lib/copy';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   DropdownMenu,
@@ -55,10 +56,10 @@ interface ModelSelectorProps {
   onExtractModels?: () => Promise<void>;
   extractingModels?: boolean;
   loading?: boolean;
-  // Props para extração de todas as seções de um modelo
+    // Props for extracting all sections of one model
   onExtractAllSections?: () => Promise<void>;
   extractingAllSections?: boolean;
-  // Props para extração de seções de todos os modelos
+    // Props for extracting sections from all models
   onExtractAllSectionsForAllModels?: () => Promise<void>;
   extractingAllSectionsForAllModels?: boolean;
   projectId?: string;
@@ -114,13 +115,13 @@ export function ModelSelector({
     );
   }
 
-  // Empty state (sem modelos)
+    // Empty state (no models)
   if (models.length === 0) {
     return (
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-dashed border-blue-200 rounded-lg p-6">
         <div className="text-center">
           <h3 className="text-base font-semibold text-slate-900 mb-2">
-            Nenhum modelo adicionado
+              {t('extraction', 'noModelsAdded')}
           </h3>
           <p className="text-sm text-slate-600 mb-4">
             Adicione um modelo manualmente ou extraia automaticamente do artigo.
@@ -142,14 +143,14 @@ export function ModelSelector({
                 ) : (
                   <>
                     <Sparkles className="h-4 w-4" />
-                    Extrair com IA
+                      Extract with AI
                   </>
                 )}
               </Button>
             )}
             <Button onClick={onAddModel} size="default" variant="outline" className="gap-2">
               <Plus className="h-4 w-4" />
-              Adicionar Manualmente
+                {t('extraction', 'addManually')}
             </Button>
           </div>
         </div>
@@ -157,15 +158,15 @@ export function ModelSelector({
     );
   }
 
-  // Interface com dropdown
+    // Interface with dropdown
   return (
     <div className="bg-white border rounded-lg shadow-sm p-4 space-y-4">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-semibold text-slate-900">Modelos de Predição</h3>
+            <h3 className="text-sm font-semibold text-slate-900">{t('extraction', 'modelSelectorTitle')}</h3>
           <p className="text-xs text-slate-500 mt-1">
-            Selecione um modelo para extrair seus dados
+              {t('extraction', 'modelSelectorDesc')}
           </p>
         </div>
         <div className="flex gap-2 flex-shrink-0">
@@ -177,14 +178,14 @@ export function ModelSelector({
                   variant="default"
                   className="gap-2"
                   disabled={extractingModels || extractingAllSectionsForAllModels}
-                  title="Extrair modelos automaticamente com IA"
+                  title={t('extraction', 'modelExtractAITitle')}
                 >
                   {extractingModels || extractingAllSectionsForAllModels ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <Sparkles className="h-4 w-4" />
                   )}
-                  <span className="hidden sm:inline">Extrair IA</span>
+                    <span className="hidden sm:inline">{t('extraction', 'modelExtractAIShort')}</span>
                   <ChevronDown className="h-3 w-3" />
                 </Button>
               </DropdownMenuTrigger>
@@ -193,14 +194,14 @@ export function ModelSelector({
                   onClick={onExtractModels}
                   disabled={extractingModels || extractingAllSectionsForAllModels}
                 >
-                  Extrair apenas modelos
+                    {t('extraction', 'modelExtractModelsOnly')}
                 </DropdownMenuItem>
                 {onExtractAllSectionsForAllModels && (
                   <DropdownMenuItem 
                     onClick={onExtractAllSectionsForAllModels}
                     disabled={extractingModels || extractingAllSectionsForAllModels || models.length === 0}
                   >
-                    Extrair seções de todos os modelos
+                      {t('extraction', 'modelExtractAllSections')}
                   </DropdownMenuItem>
                 )}
               </DropdownMenuContent>
@@ -211,19 +212,19 @@ export function ModelSelector({
             size="sm" 
             variant="outline" 
             className="gap-2"
-            title="Adicionar novo modelo manualmente"
+            title={t('extraction', 'modelAddManuallyTitle')}
           >
             <Plus className="h-4 w-4" />
-            <span className="hidden sm:inline">Novo</span>
+              <span className="hidden sm:inline">{t('extraction', 'modelNewShort')}</span>
           </Button>
         </div>
       </div>
 
-      {/* Selector e ações */}
+        {/* Selector and actions */}
       <div className="flex items-center gap-2">
         <Select value={activeModelId || undefined} onValueChange={onSelectModel}>
           <SelectTrigger className="flex-1">
-            <SelectValue placeholder="Selecione um modelo..." />
+              <SelectValue placeholder={t('extraction', 'selectModelPlaceholder')}/>
           </SelectTrigger>
           <SelectContent>
             {models.map((model) => (
@@ -242,7 +243,7 @@ export function ModelSelector({
             size="sm"
             variant="ghost"
             onClick={() => onRemoveModel(activeModelId)}
-            title="Remover modelo ativo"
+            title={t('extraction', 'modelRemoveActiveTitle')}
             className="flex-shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
           >
             <Trash2 className="h-4 w-4" />
@@ -250,12 +251,12 @@ export function ModelSelector({
         )}
       </div>
 
-      {/* Informações do modelo ativo */}
+        {/* Active model info */}
       {activeModel && (
         <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
           <div className="flex items-center justify-between">
             <div className="min-w-0 flex-1">
-              <p className="text-xs text-slate-600">Modelo Ativo</p>
+                <p className="text-xs text-slate-600">{t('extraction', 'modelActiveLabel')}</p>
               <p className="font-medium text-slate-900 mt-0.5 truncate">{activeModel.modelName}</p>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
@@ -280,7 +281,7 @@ export function ModelSelector({
                           onExtractAllSections();
                         }}
                         disabled={extractingAllSections}
-                        title="Extrair todas as seções do modelo com IA"
+                        title={t('extraction', 'extractAllSectionsWithAI')}
                       >
                         {extractingAllSections ? (
                           <Loader2 className="h-4 w-4 animate-spin text-primary" />
@@ -292,8 +293,8 @@ export function ModelSelector({
                     <TooltipContent>
                       <p>
                         {extractingAllSections
-                          ? "Extraindo todas as seções com IA..."
-                          : "Extrair todas as seções do modelo com IA"}
+                            ? t('extraction', 'extractingAllSectionsWithAI')
+                            : t('extraction', 'extractAllSectionsWithAI')}
                       </p>
                     </TooltipContent>
                   </Tooltip>

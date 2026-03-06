@@ -1,8 +1,8 @@
 """
-JSON Parser Robusto.
+Robust JSON Parser.
 
-Utilitários para parsing de JSON com tratamento robusto de erros,
-validação de schema e logging estruturado.
+Utilities for JSON parsing with robust error handling,
+schema validation and structured logging.
 """
 
 import json
@@ -15,7 +15,7 @@ logger = get_logger(__name__)
 
 
 class JSONParseError(Exception):
-    """Erro específico de parsing JSON."""
+    """JSON parsing specific error."""
 
     def __init__(self, message: str, original_content: str | None = None):
         super().__init__(message)
@@ -24,28 +24,28 @@ class JSONParseError(Exception):
 
 def _extract_json_from_markdown(content: str) -> str:
     """
-    Extrai JSON de blocos markdown ou texto misto.
-    
-    A OpenAI às vezes retorna JSON dentro de blocos ```json```.
-    
+    Extract JSON from markdown blocks or mixed text.
+
+    OpenAI sometimes returns JSON inside ```json``` blocks.
+
     Args:
-        content: String que pode conter JSON puro ou em markdown.
-        
+        content: String that may contain raw or markdown-wrapped JSON.
+
     Returns:
-        String com apenas o JSON.
+        String with JSON only.
     """
-    # Remove blocos markdown ```json ... ```
+    # Remove markdown blocks ```json ... ```
     json_block_pattern = r"```(?:json)?\s*([\s\S]*?)\s*```"
     match = re.search(json_block_pattern, content)
     if match:
         return match.group(1).strip()
-    
-    # Tenta encontrar JSON inline (começa com { ou [)
+
+    # Try to find inline JSON (starts with { or [)
     content = content.strip()
     if content.startswith("{") or content.startswith("["):
         return content
-    
-    # Busca primeiro { ou [ no texto
+
+    # Find first { or [ in text
     json_start = -1
     for i, char in enumerate(content):
         if char in "{[":
@@ -65,40 +65,40 @@ def parse_json_safe(
     default: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
-    Parse JSON de forma segura com validação e logging.
-    
-    Tenta extrair JSON de múltiplos formatos (puro, markdown)
-    e valida a presença de chaves esperadas.
-    
+    Parse JSON safely with validation and logging.
+
+    Tries to extract JSON from multiple formats (raw, markdown)
+    and validates presence of expected keys.
+
     Args:
-        content: String contendo JSON.
-        expected_keys: Lista de chaves que devem estar presentes.
-        trace_id: ID de trace para logging.
-        default: Valor default se parsing falhar (None levanta exceção).
-        
+        content: String containing JSON.
+        expected_keys: List of keys that must be present.
+        trace_id: Trace ID for logging.
+        default: Default value if parsing fails (None raises exception).
+
     Returns:
-        Dicionário parseado.
-        
+        Parsed dictionary.
+
     Raises:
-        JSONParseError: Se parsing falhar e default não for fornecido.
+        JSONParseError: If parsing fails and default is not provided.
     """
     if not content or not content.strip():
         if default is not None:
             logger.warning(
-                "JSON vazio recebido, usando default",
+                "Empty JSON received, using default",
                 trace_id=trace_id,
             )
             return default
-        raise JSONParseError("Conteúdo JSON vazio", original_content=content)
-    
-    # Extrai JSON de possíveis wrappers
+        raise JSONParseError("Empty JSON content", original_content=content)
+
+    # Extract JSON from possible wrappers
     cleaned = _extract_json_from_markdown(content)
     
     try:
         result = json.loads(cleaned)
     except json.JSONDecodeError as e:
         logger.error(
-            "Falha ao parsear JSON",
+            "Failed to parse JSON",
             error=str(e),
             content_preview=content[:200] if content else None,
             trace_id=trace_id,
@@ -106,34 +106,34 @@ def parse_json_safe(
         if default is not None:
             return default
         raise JSONParseError(
-            f"JSON inválido: {e}",
+            f"Invalid JSON: {e}",
             original_content=content,
         ) from e
-    
-    # Garante que é um dict
+
+    # Ensure it is a dict
     if not isinstance(result, dict):
         logger.warning(
-            "JSON parseado não é um dicionário",
+            "Parsed JSON is not a dictionary",
             type=type(result).__name__,
             trace_id=trace_id,
         )
-        # Se for lista, tenta wrappear
+        # If list, try to wrap
         if isinstance(result, list):
             result = {"items": result}
         elif default is not None:
             return default
         else:
             raise JSONParseError(
-                f"JSON esperado como objeto, recebido {type(result).__name__}",
+                f"JSON expected as object, got {type(result).__name__}",
                 original_content=content,
             )
-    
-    # Valida chaves esperadas
+
+    # Validate expected keys
     if expected_keys:
         missing = [k for k in expected_keys if k not in result]
         if missing:
             logger.warning(
-                "JSON faltando chaves esperadas",
+                "JSON missing expected keys",
                 missing_keys=missing,
                 available_keys=list(result.keys()),
                 trace_id=trace_id,
@@ -148,25 +148,25 @@ def parse_json_array_safe(
     default: list[Any] | None = None,
 ) -> list[Any]:
     """
-    Parse JSON array de forma segura.
-    
-    Útil quando se espera uma lista diretamente da resposta.
-    
+    Parse JSON array safely.
+
+    Useful when expecting a list directly from the response.
+
     Args:
-        content: String contendo JSON array.
-        trace_id: ID de trace para logging.
-        default: Valor default se parsing falhar (None levanta exceção).
-        
+        content: String containing JSON array.
+        trace_id: Trace ID for logging.
+        default: Default value if parsing fails (None raises exception).
+
     Returns:
-        Lista parseada.
-        
+        Parsed list.
+
     Raises:
-        JSONParseError: Se parsing falhar e default não for fornecido.
+        JSONParseError: If parsing fails and default is not provided.
     """
     if not content or not content.strip():
         if default is not None:
             return default
-        raise JSONParseError("Conteúdo JSON vazio", original_content=content)
+        raise JSONParseError("Empty JSON content", original_content=content)
     
     cleaned = _extract_json_from_markdown(content)
     
@@ -174,7 +174,7 @@ def parse_json_array_safe(
         result = json.loads(cleaned)
     except json.JSONDecodeError as e:
         logger.error(
-            "Falha ao parsear JSON array",
+            "Failed to parse JSON array",
             error=str(e),
             content_preview=content[:200] if content else None,
             trace_id=trace_id,
@@ -182,11 +182,11 @@ def parse_json_array_safe(
         if default is not None:
             return default
         raise JSONParseError(
-            f"JSON inválido: {e}",
+            f"Invalid JSON: {e}",
             original_content=content,
         ) from e
-    
-    # Se for dict com items, extrai
+
+    # If dict with items, extract
     if isinstance(result, dict):
         if "items" in result:
             result = result["items"]
@@ -195,7 +195,7 @@ def parse_json_array_safe(
         elif "data" in result:
             result = result["data"]
         else:
-            # Tenta primeiro valor que seja lista
+            # Try first value that is a list
             for value in result.values():
                 if isinstance(value, list):
                     result = value
@@ -203,14 +203,14 @@ def parse_json_array_safe(
     
     if not isinstance(result, list):
         logger.warning(
-            "JSON parseado não é uma lista",
+            "Parsed JSON is not a list",
             type=type(result).__name__,
             trace_id=trace_id,
         )
         if default is not None:
             return default
         raise JSONParseError(
-            f"JSON esperado como array, recebido {type(result).__name__}",
+            f"JSON expected as array, got {type(result).__name__}",
             original_content=content,
         )
     
@@ -222,26 +222,26 @@ def extract_models_from_response(
     trace_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Extrai lista de modelos de resposta OpenAI.
-    
-    Trata múltiplos formatos de resposta:
-    - Array direto: [{"name": ...}, ...]
-    - Objeto com models: {"models": [...]}
-    - Objeto com data: {"data": [...]}
-    
+    Extract list of models from OpenAI response.
+
+    Handles multiple response formats:
+    - Direct array: [{"name": ...}, ...]
+    - Object with models: {"models": [...]}
+    - Object with data: {"data": [...]}
+
     Args:
-        content: Resposta da OpenAI.
-        trace_id: ID de trace para logging.
-        
+        content: OpenAI response.
+        trace_id: Trace ID for logging.
+
     Returns:
-        Lista de modelos extraídos.
+        Extracted list of models.
     """
     try:
         result = parse_json_array_safe(content, trace_id=trace_id, default=[])
         return result
     except JSONParseError:
         logger.error(
-            "Falha ao extrair modelos da resposta",
+            "Failed to extract models from response",
             content_preview=content[:200] if content else None,
             trace_id=trace_id,
         )

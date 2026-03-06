@@ -1,11 +1,11 @@
 /**
- * Service Layer para gerenciamento de instâncias de extração
- * 
- * Centraliza toda a lógica de criação, atualização e remoção de instâncias,
- * proporcionando uma interface unificada e evitando duplicação de código.
- * 
- * FASE 3: Agora com observabilidade completa (logging + métricas).
- * 
+ * Service layer for extraction instance management
+ *
+ * Centralizes create, update and delete logic for instances,
+ * providing a unified interface and avoiding code duplication.
+ *
+ * Phase 3: Full observability (logging + metrics).
+ *
  * @module services/extractionInstanceService
  */
 
@@ -70,7 +70,7 @@ export interface GetInstancesParams {
 
 export class ExtractionInstanceService {
   /**
-   * Cria uma nova instância de extração
+   * Creates a new extraction instance
    */
   async createInstance(params: CreateInstanceParams): Promise<CreateInstanceResult> {
     const {
@@ -85,20 +85,20 @@ export class ExtractionInstanceService {
       userId
     } = params;
 
-    // Tracking de performance
+      // Performance tracking
     const perfId = performanceTracker.start('createInstance', {
       entityType: entityType.name,
       cardinality: entityType.cardinality
     });
 
     try {
-      extractionLogger.debug('createInstance', 'Iniciando criação de instância', {
+        extractionLogger.debug('createInstance', 'Starting instance creation', {
         entityType: entityType.name,
         cardinality: entityType.cardinality,
         hasParent: !!parentInstanceId
       });
 
-      // Validação proativa de cardinalidade usando função do banco
+        // Proactive cardinality validation via DB function
       if (entityType.cardinality === 'one') {
         const { data: canCreate, error: cardinalityError } = await supabase
           .rpc('check_cardinality_one', {
@@ -108,13 +108,13 @@ export class ExtractionInstanceService {
           });
 
         if (cardinalityError) {
-          extractionLogger.warn('createInstance', 'Erro ao validar cardinalidade', cardinalityError, {
+            extractionLogger.warn('createInstance', 'Cardinality validation error', cardinalityError, {
             entityType: entityType.name,
             articleId
           });
-          // Continuar com validação antiga como fallback
+            // Continue with legacy validation as fallback
         } else if (canCreate === false) {
-          // Já existe instância, buscar e retornar
+            // Instance already exists, fetch and return
           const { data: existing } = await queryBuilderSingle<ExtractionInstance>(
             'extraction_instances',
             {
@@ -128,7 +128,7 @@ export class ExtractionInstanceService {
           );
 
           if (existing) {
-            extractionLogger.info('createInstance', 'Instância cardinality=one já existe', {
+              extractionLogger.info('createInstance', 'Instance with cardinality=one already exists', {
               instanceId: existing.id,
               label: existing.label
             });
@@ -140,7 +140,7 @@ export class ExtractionInstanceService {
         }
       }
 
-      // Buscar parent instance se necessário
+        // Fetch parent instance if needed
       let parentInstance: ExtractionInstance | undefined;
       if (parentInstanceId) {
         const { data } = await queryBuilderSingle<ExtractionInstance>(
@@ -156,7 +156,7 @@ export class ExtractionInstanceService {
         }
       }
 
-      // Gerar label se não fornecido
+        // Generate label if not provided
       const generatedLabel = customLabel || await this.generateLabel(
         entityType,
         articleId,
@@ -164,14 +164,14 @@ export class ExtractionInstanceService {
         parentInstance
       );
 
-      // Garantir label único
+        // Ensure unique label
       const uniqueLabel = await this.ensureUniqueName(
         generatedLabel,
         articleId,
         entityTypeId
       );
 
-      // Calcular sort_order
+        // Compute sort_order
         const sortBaseQuery = supabase
         .from('extraction_instances')
         .select('*', { count: 'exact', head: true })
@@ -183,7 +183,7 @@ export class ExtractionInstanceService {
 
       const sortOrder = count || 0;
 
-      // Criar instância usando baseRepository
+        // Create instance using baseRepository
       const newInstance = await insertOne<ExtractionInstance>(
         'extraction_instances',
         {
@@ -202,7 +202,7 @@ export class ExtractionInstanceService {
 
       const duration = performanceTracker.end(perfId);
 
-      extractionLogger.info('createInstance', 'Instância criada com sucesso', {
+        extractionLogger.info('createInstance', 'Instance created successfully', {
         instanceId: newInstance.id,
         label: uniqueLabel,
         duration
@@ -216,27 +216,27 @@ export class ExtractionInstanceService {
     } catch (error: unknown) {
       performanceTracker.end(perfId);
 
-      // Detectar erros de validação do banco (trigger/constraint)
-      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+        // Detect DB validation errors (trigger/constraint); support both EN and PT messages
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       const isValidationError =
         errorMessage.includes('parent_entity_type_id') ||
         errorMessage.includes('template_id') ||
-        errorMessage.includes('Ciclo detectado') ||
+          errorMessage.includes('cycle detected') ||
         errorMessage.includes('cardinality') ||
-        errorMessage.includes('não é filho de');
+          errorMessage.includes('is not a child of');
 
-      extractionLogger.error('createInstance', 'Falha ao criar instância', error as Error, {
+        extractionLogger.error('createInstance', 'Failed to create instance', error as Error, {
         entityType: entityType.name,
         label: customLabel,
         isValidationError
       });
 
-      // Se já é SupabaseRepositoryError, re-throw com contexto adicional
+        // If already SupabaseRepositoryError, re-throw with extra context
       if (error instanceof SupabaseRepositoryError) {
-        // Melhorar mensagem para erros de validação
+          // Improve message for validation errors
         if (isValidationError) {
           throw new SupabaseRepositoryError(
-            `Erro de validação: ${errorMessage}. Verifique a hierarquia do template e a cardinalidade da entidade.`,
+              `Validation error: ${errorMessage}. Check the template hierarchy and entity cardinality.`,
             error.code,
             error.originalError
           );
@@ -244,17 +244,17 @@ export class ExtractionInstanceService {
         throw error;
       }
 
-      // Mensagem mais específica para erros de validação
+        // More specific message for validation errors
       if (isValidationError) {
-        throw new Error(`Validação de integridade falhou: ${errorMessage}`);
+          throw new Error(`Integrity validation failed: ${errorMessage}`);
       }
 
-      throw new Error(`Falha ao criar instância: ${errorMessage}`);
+        throw new Error(`Failed to create instance: ${errorMessage}`);
     }
   }
 
   /**
-   * Verifica se nome único é necessário (prevenir constraint violation)
+   * Checks if unique name is required (prevent constraint violation)
    */
   private async ensureUniqueName(
     label: string,
@@ -284,12 +284,12 @@ export class ExtractionInstanceService {
       uniqueLabel = attempt === 2 ? `${label} (2)` : label.replace(/\(\d+\)$/, `(${attempt})`);
     }
 
-    // Fallback com timestamp
+      // Fallback with timestamp
     return `${label} (${Date.now()})`;
   }
 
   /**
-   * Gera próximo label único para um entity type
+   * Generates next unique label for an entity type
    */
   private async generateLabel(
     entityType: ExtractionEntityType,
@@ -297,7 +297,7 @@ export class ExtractionInstanceService {
     parentInstanceId?: string | null,
     parentInstance?: ExtractionInstance
   ): Promise<string> {
-    // Contar instâncias existentes do mesmo tipo e parent
+      // Count existing instances of same type and parent
       const baseQuery = supabase
       .from('extraction_instances')
       .select('*', { count: 'exact', head: true })
@@ -308,12 +308,12 @@ export class ExtractionInstanceService {
           : baseQuery.is('parent_instance_id', null));
 
     if (error) {
-      console.warn('Erro ao contar instâncias, usando fallback:', error);
+        console.warn('Error counting instances, using fallback:', error);
     }
 
     const nextNumber = (count || 0) + 1;
 
-    // Se tem parent, incluir nome do parent no label
+      // If has parent, include parent name in label
     if (parentInstance) {
       return `${parentInstance.label} - ${entityType.label} ${nextNumber}`;
     }
@@ -323,7 +323,7 @@ export class ExtractionInstanceService {
 
   /**
    * Cria hierarquia completa (parent + children)
-   * Usado principalmente para models
+   * Used mainly for models
    */
   async createHierarchy(params: CreateHierarchyParams): Promise<CreateHierarchyResult> {
     const {
@@ -343,7 +343,7 @@ export class ExtractionInstanceService {
     });
 
     try {
-      extractionLogger.info('createHierarchy', 'Iniciando criação de hierarquia', {
+        extractionLogger.info('createHierarchy', 'Starting hierarchy creation', {
         parentType: parentEntityType.name,
         childrenCount: childEntityTypes.length,
         label
@@ -362,9 +362,9 @@ export class ExtractionInstanceService {
 
       const parentInstance = parentResult.instance;
 
-      // 2. Criar child instances automaticamente (apenas para cardinality='one')
+        // 2. Create child instances automatically (only for cardinality='one')
       const childrenToCreate = childEntityTypes.filter(
-        et => et.cardinality === 'one' // Só criar automaticamente se for 'one'
+          et => et.cardinality === 'one' // Only auto-create if 'one'
       );
 
       const childInstances: ExtractionInstance[] = [];
@@ -384,8 +384,8 @@ export class ExtractionInstanceService {
       }
 
       const duration = performanceTracker.end(perfId);
-      
-      extractionLogger.info('createHierarchy', 'Hierarquia criada com sucesso', {
+
+        extractionLogger.info('createHierarchy', 'Hierarchy created successfully', {
         parentId: parentInstance.id,
         childrenCount: childInstances.length,
         duration
@@ -398,29 +398,29 @@ export class ExtractionInstanceService {
 
     } catch (error: any) {
       performanceTracker.end(perfId);
-      extractionLogger.error('createHierarchy', 'Falha ao criar hierarquia', error, {
+        extractionLogger.error('createHierarchy', 'Failed to create hierarchy', error, {
         parentType: parentEntityType.name,
         label
       });
-      throw new Error(`Falha ao criar hierarquia: ${error.message}`);
+        throw new Error(`Failed to create hierarchy: ${error.message}`);
     }
   }
 
   /**
-   * Remove uma instância (CASCADE automático via Postgres)
+   * Removes an instance (CASCADE automatic via Postgres)
    */
   async removeInstance(instanceId: string): Promise<boolean> {
     const perfId = performanceTracker.start('removeInstance');
 
     try {
-      extractionLogger.debug('removeInstance', 'Removendo instância', { instanceId });
+        extractionLogger.debug('removeInstance', 'Removing instance', {instanceId});
 
-      // Usar baseRepository para delete padronizado
+        // Use baseRepository for standardized delete
       await deleteOne('extraction_instances', instanceId, 'removeInstance');
 
       const duration = performanceTracker.end(perfId);
-      
-      extractionLogger.info('removeInstance', 'Instância removida (CASCADE)', {
+
+        extractionLogger.info('removeInstance', 'Instance removed (CASCADE)', {
         instanceId,
         duration
       });
@@ -429,28 +429,28 @@ export class ExtractionInstanceService {
 
     } catch (error: unknown) {
       performanceTracker.end(perfId);
-      const message = error instanceof Error ? error.message : 'Erro desconhecido';
-      extractionLogger.error('removeInstance', 'Falha ao remover instância', error as Error, {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        extractionLogger.error('removeInstance', 'Failed to remove instance', error as Error, {
         instanceId
       });
-      
-      // Se já é SupabaseRepositoryError, re-throw
+
+        // If already SupabaseRepositoryError, re-throw
       if (error instanceof SupabaseRepositoryError) {
         throw error;
       }
-      
-      throw new Error(`Falha ao remover instância: ${message}`);
+
+        throw new Error(`Failed to remove instance: ${message}`);
     }
   }
 
   /**
-   * Busca instâncias com opções de filtro
+   * Fetches instances with filter options
    */
   async getInstances(params: GetInstancesParams): Promise<ExtractionInstance[]> {
     const { articleId, templateId, options = {} } = params;
 
     try {
-      // Construir filtros para queryBuilder
+        // Build filters for queryBuilder
       const filters: Record<string, unknown> = {
         article_id: articleId,
         template_id: templateId,
@@ -464,7 +464,7 @@ export class ExtractionInstanceService {
         filters.parent_instance_id = options.parentInstanceId;
       }
 
-      // Usar queryBuilder do baseRepository
+        // Use baseRepository queryBuilder
       const { data, error } = await queryBuilder<ExtractionInstance>(
         'extraction_instances',
         {
@@ -484,14 +484,14 @@ export class ExtractionInstanceService {
       if (error instanceof SupabaseRepositoryError) {
         throw error;
       }
-      const message = error instanceof Error ? error.message : 'Erro desconhecido';
-      console.error('❌ Erro ao buscar instâncias:', error);
-      throw new Error(`Falha ao buscar instâncias: ${message}`);
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        console.error('Error fetching instances:', error);
+        throw new Error(`Failed to fetch instances: ${message}`);
     }
   }
 
   /**
-   * Cria instâncias iniciais para um artigo (study-level apenas)
+   * Creates initial instances for an article (study-level only)
    */
   async initializeArticleInstances(
     articleId: string,
@@ -501,7 +501,7 @@ export class ExtractionInstanceService {
     userId: string
   ): Promise<ExtractionInstance[]> {
     try {
-      // Buscar instâncias existentes
+        // Fetch existing instances
       const existingInstances = await this.getInstances({
         articleId,
         templateId: template.id
@@ -513,17 +513,17 @@ export class ExtractionInstanceService {
 
       const createdInstances: ExtractionInstance[] = [...existingInstances];
 
-      // Criar instâncias faltantes apenas para:
-      // - Entity types com cardinality='one'
+        // Create missing instances only for:
+        // - Entity types with cardinality='one'
       // - Entity types sem parent (study-level)
       for (const entityType of entityTypes) {
         if (existingEntityTypeIds.has(entityType.id)) {
-          continue; // Já existe
+            continue; // Already exists
         }
 
-        // Pular se tem parent OU cardinality='many'
+          // Skip if has parent OR cardinality='many'
         if (entityType.parent_entity_type_id || entityType.cardinality === 'many') {
-          console.log(`⏭️ Pulando criação automática: ${entityType.name}`);
+            console.log(`Skipping auto-creation: ${entityType.name}`);
           continue;
         }
 
@@ -541,12 +541,12 @@ export class ExtractionInstanceService {
         }
       }
 
-      console.log(`✅ Inicialização: ${createdInstances.length} instâncias total`);
+        console.log(`Initialization: ${createdInstances.length} instance(s) total`);
       return createdInstances;
 
     } catch (error: any) {
-      console.error('❌ Erro ao inicializar instâncias:', error);
-      throw new Error(`Falha ao inicializar: ${error.message}`);
+        console.error('Error initializing instances:', error);
+        throw new Error(`Failed to initialize: ${error.message}`);
     }
   }
 }
@@ -554,7 +554,7 @@ export class ExtractionInstanceService {
 // =================== SINGLETON EXPORT ===================
 
 /**
- * Instância singleton do service
+ * Service singleton instance
  */
 export const extractionInstanceService = new ExtractionInstanceService();
 

@@ -1,8 +1,8 @@
 """
 Repository Layer.
 
-Implementa o padrão Repository para abstrair acesso a dados.
-Facilita testes, manutenção e migração de queries.
+Implements the Repository pattern to abstract data access.
+Facilitates testing, maintenance and query migration.
 """
 
 from app.repositories.article_repository import ArticleFileRepository, ArticleRepository

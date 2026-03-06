@@ -1,32 +1,97 @@
 /**
- * Tipos para Projects e configurações
- * 
- * Centraliza interfaces relacionadas a projetos para evitar 'any'
- * e garantir type safety.
- * 
- * Baseado nos tipos gerados do Supabase para garantir consistência.
+ * Types for Projects and settings
+ *
+ * Centralizes project-related interfaces to avoid 'any'
+ * and ensure type safety.
+ *
+ * Based on Supabase generated types for consistency.
  */
 
 import type {Database} from '@/integrations/supabase/types';
 
+/** Review type (Supabase enum). */
+export type ReviewType = Database['public']['Enums']['review_type'];
+
+/** Project member role (Supabase enum). */
+export type MemberRole = Database['public']['Enums']['project_member_role'];
+
+/** Metadata per review type for UI labels and descriptions. */
+export const REVIEW_TYPES: Record<
+    ReviewType,
+    { label: string; description: string; badge?: string }
+> = {
+    interventional: {
+        label: 'Interventions',
+        description: 'Review of intervention effectiveness (classic PICO)',
+    },
+    predictive_model: {
+        label: 'Predictive Models',
+        description: 'Review of predictive and prognostic models (PICOTS)',
+        badge: 'PICOTS',
+    },
+    diagnostic: {
+        label: 'Diagnostic Tests',
+        description: 'Review of diagnostic test accuracy',
+    },
+    prognostic: {
+        label: 'Prognostic Factors',
+        description: 'Review of factors associated with prognosis',
+    },
+    qualitative: {
+        label: 'Qualitative Studies',
+        description: 'Synthesis of qualitative evidence',
+    },
+    other: {
+        label: 'Other',
+        description: 'Other types of systematic review',
+    },
+};
+
+/** Metadata per member role for labels and Badge variant. */
+export const MEMBER_ROLES: Record<
+    MemberRole,
+    { label: string; description: string; variant: 'default' | 'secondary' | 'outline' }
+> = {
+    manager: {
+        label: 'Manager',
+        description: 'Manages settings, members, and has full access',
+        variant: 'default',
+    },
+    reviewer: {
+        label: 'Reviewer',
+        description: 'Evaluates articles and participates in the review',
+        variant: 'secondary',
+    },
+    viewer: {
+        label: 'Viewer',
+        description: 'View only, no edit permission',
+        variant: 'outline',
+    },
+    consensus: {
+        label: 'Consensus',
+        description: 'Resolves conflicts between reviewers',
+        variant: 'secondary',
+    },
+};
+
 /**
- * Tipo base de Project do banco de dados
- * Usa o tipo gerado do Supabase para garantir type safety
+ * Base Project type from database
+ * Uses Supabase-generated type for type safety
  */
 export type Project = Database['public']['Tables']['projects']['Row'];
 
 /**
- * Tipo para inserção de Project
+ * Type for Project insert
  */
 export type ProjectInsert = Database['public']['Tables']['projects']['Insert'];
 
 /**
- * Tipo para atualização de Project
+ * Type for Project update
  */
 export type ProjectUpdate = Partial<Omit<Project, 'id' | 'created_at'>>;
 
 /**
- * Tipo enxuto para listas de projetos.
+ * Lean type for project lists.
  */
 export type ProjectListItem = Pick<
     Project,
@@ -34,7 +99,7 @@ export type ProjectListItem = Pick<
 >;
 
 /**
- * Tipo enxuto para contexto de projeto.
+ * Lean type for project context.
  */
 export type ProjectSummary = Pick<
     Project,
@@ -42,8 +107,8 @@ export type ProjectSummary = Pick<
 >;
 
 /**
- * Tipo completo de Project com todas as configurações
- * Mantido para compatibilidade com código existente
+ * Full Project type with all settings
+ * Kept for compatibility with existing code
  */
 export interface ProjectData extends Project {
   review_rationale: string | null;

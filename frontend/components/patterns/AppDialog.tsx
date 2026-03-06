@@ -1,18 +1,18 @@
 /**
- * AppDialog - Dialog com tamanho e footer padronizados
- * 
- * Uso:
+ * AppDialog - Dialog with configurable size and footer.
+ *
+ * Usage:
  * <AppDialog
  *   open={open}
  *   onOpenChange={setOpen}
- *   title="Confirmar Exclusão"
- *   description="Esta ação não pode ser desfeita"
+ *   title="Confirm deletion"
+ *   description="This action cannot be undone"
  *   size="sm"
  *   onConfirm={handleDelete}
- *   confirmLabel="Excluir"
+ *   confirmLabel="Delete"
  *   confirmVariant="destructive"
  * >
- *   <p>Conteúdo do modal...</p>
+ *   <p>Modal content...</p>
  * </AppDialog>
  */
 
@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/dialog';
 import {Button, type ButtonProps} from '@/components/ui/button';
 import {cn} from '@/lib/utils';
+import {t} from '@/lib/copy';
 
 interface AppDialogProps {
   open: boolean;
@@ -62,8 +63,8 @@ export function AppDialog({
   size = 'md',
   onConfirm,
   onCancel,
-  confirmLabel = 'Confirmar',
-  cancelLabel = 'Cancelar',
+                              confirmLabel = t('common', 'confirm'),
+                              cancelLabel = t('common', 'cancel'),
   confirmVariant = 'default',
   isLoading = false,
   showFooter = true,

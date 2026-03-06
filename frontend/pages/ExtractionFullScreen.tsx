@@ -1,17 +1,17 @@
 /**
- * Interface Full Screen para Extração de Dados
- * 
- * Página principal onde o usuário extrai dados de um artigo específico.
- * Similar ao AssessmentFullScreen, com PDF viewer ao lado e formulário de extração.
- * 
+ * Full-screen data extraction interface
+ *
+ * Main page where the user extracts data from a specific article.
+ * Similar to AssessmentFullScreen, with PDF viewer beside extraction form.
+ *
  * Features:
- * - PDF viewer com toggle
- * - Formulário de extração por seções
- * - Auto-save automático
- * - Colaboração multi-usuário (popover + grid)
- * - Sugestões de IA (prefill + badge)
+ * - PDF viewer with toggle
+ * - Section-based extraction form
+ * - Automatic auto-save
+ * - Multi-user collaboration (popover + grid)
+ * - AI suggestions (prefill + badge)
  * - Progress tracking
- * 
+ *
  * @page
  */
 
@@ -44,6 +44,7 @@ import {FullAIExtractionProgress} from '@/components/extraction/FullAIExtraction
 
 // Hooks adicionais
 import {useModelManagement} from '@/hooks/extraction/useModelManagement';
+import {t} from '@/lib/copy';
 
 // =================== COMPONENT ===================
 
@@ -51,7 +52,7 @@ export default function ExtractionFullScreen() {
   const { projectId, articleId } = useParams();
   const navigate = useNavigate();
 
-  // Carregar dados usando hook dedicado (SRP: separação de responsabilidades)
+    // Load data using dedicated hook (SRP: separation of concerns)
   const {
     article,
     project,
@@ -75,8 +76,8 @@ export default function ExtractionFullScreen() {
   // UI state
   const [showPDF, setShowPDF] = useState(true);
   const [viewMode, setViewMode] = useState<'extract' | 'compare'>('extract');
-  
-  // Estado de progresso de extração IA
+
+    // AI extraction progress state
   const [aiExtractionState, setAiExtractionState] = useState<{
     loading: boolean;
     progress: any;
@@ -92,7 +93,7 @@ export default function ExtractionFullScreen() {
     fieldsCount: number;
   } | null>(null);
 
-  // Hook para gerenciar valores extraídos
+    // Hook to manage extracted values
   const {
     values,
     updateValue,
@@ -110,7 +111,7 @@ export default function ExtractionFullScreen() {
   const { completedFields, totalFields, completionPercentage, isComplete } = 
     useExtractionProgress(values, entityTypes);
 
-  // Hook para auto-save (só habilitar após valores inicializados)
+    // Auto-save hook (only enable after values initialized)
   const { isSaving, lastSaved } = useExtractionAutoSave({
     articleId: articleId || '',
     projectId: projectId || '',
@@ -118,13 +119,13 @@ export default function ExtractionFullScreen() {
     enabled: !!articleId && !!projectId && !loading && valuesInitialized
   });
 
-  // Hook de permissões (controla acesso a comparação)
+    // Permissions hook (controls comparison access)
   const permissions = useComparisonPermissions(
     projectId || '',
     currentUserId
   );
 
-  // Hook para outras extrações (colaboração) - controlado por permissões
+    // Hook for other extractions (collaboration) - controlled by permissions
   const { otherExtractions } = useOtherExtractions({
     articleId: articleId || '',
     projectId: projectId || '',
@@ -132,22 +133,22 @@ export default function ExtractionFullScreen() {
     enabled: permissions.canSeeOthers && !!currentUserId
   });
 
-  // Hook para sugestões de IA com callbacks para preencher/limpar campo
+    // Hook for AI suggestions with callbacks to fill/clear field
   const handleAISuggestionAccepted = useCallback(async (instanceId: string, fieldId: string, value: any) => {
-    // Preencher o campo automaticamente quando sugestão é aceita
-    console.log('🤖 Aceitando sugestão de IA:', { instanceId, fieldId, value });
-    // updateValue atualiza o estado local imediatamente
-    // O serviço AISuggestionService.acceptSuggestion já salva no banco
-    // Não é necessário recarregar todos os valores (refreshValues causava recarregamento da página)
+      // Fill field automatically when suggestion is accepted
+      console.log('Accepting AI suggestion:', {instanceId, fieldId, value});
+      // updateValue updates local state immediately
+      // AISuggestionService.acceptSuggestion already saves to DB
+      // No need to reload all values (refreshValues caused full page reload)
     updateValue(instanceId, fieldId, value);
   }, [updateValue]);
 
   const handleAISuggestionRejected = useCallback(async (instanceId: string, fieldId: string) => {
-    // Limpar o campo quando sugestão é rejeitada
-    console.log('🤖 Rejeitando sugestão de IA - limpando campo:', { instanceId, fieldId });
-    // updateValue atualiza o estado local imediatamente
-    // O serviço AISuggestionService.rejectSuggestion já atualiza o status no banco
-    // Não é necessário recarregar todos os valores (refreshValues causava recarregamento da página)
+      // Clear field when suggestion is rejected
+      console.log('Rejecting AI suggestion - clearing field:', {instanceId, fieldId});
+      // updateValue updates local state immediately
+      // AISuggestionService.rejectSuggestion already updates status in DB
+      // No need to reload all values (refreshValues caused full page reload)
     updateValue(instanceId, fieldId, null);
   }, [updateValue]);
 
@@ -187,7 +188,7 @@ export default function ExtractionFullScreen() {
     enabled: !!template && !!modelParentEntityType
   });
 
-  // Persistência do modelo ativo no localStorage
+    // Persist active model in localStorage
   useEffect(() => {
     if (activeModelId && articleId) {
       localStorage.setItem(`active-model-${articleId}`, activeModelId);
@@ -219,16 +220,16 @@ export default function ExtractionFullScreen() {
     [entityTypes, modelParentEntityType]
   );
 
-  // ✅ Memoizar função de filtro de instances (evita recrear função)
+    // Memoize instance filter function (avoids recreating it)
   const getInstancesForModel = useCallback((entityTypeId: string, modelId: string) => {
     return instances.filter(
       i => i.entity_type_id === entityTypeId && i.parent_instance_id === modelId
     );
   }, [instances]);
 
-  // Removido: SectionAccordion não precisa memo, FieldInput é memoizado individualmente
+    // Removed: SectionAccordion does not need memo, FieldInput is memoized individually
 
-  // Carregar usuário atual
+    // Load current user
   useEffect(() => {
     const loadUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -239,7 +240,7 @@ export default function ExtractionFullScreen() {
     loadUser();
   }, []);
 
-  // Redirecionar se erro crítico
+    // Redirect on critical error
   useEffect(() => {
     if (dataError && projectId) {
       toast.error(dataError);
@@ -247,7 +248,7 @@ export default function ExtractionFullScreen() {
     }
   }, [dataError, projectId, navigate]);
 
-  // Função para recarregar instâncias (usada após extração de modelos)
+    // Function to reload instances (used after model extraction)
   const handleRefreshInstances = useCallback(async () => {
     await refreshInstances();
   }, [refreshInstances]);
@@ -266,18 +267,18 @@ export default function ExtractionFullScreen() {
   };
 
   const handleConfirmAddModel = async (modelName: string, modellingMethod: string) => {
-    console.log('🎯 Iniciando criação de modelo:', modelName);
+      console.log('Starting model creation:', modelName);
     const result = await createModel(modelName, modellingMethod);
     
     if (result) {
-      console.log('✅ Modelo criado com sucesso:', result.model);
+        console.log('Model created successfully:', result.model);
       setShowAddModelDialog(false);
-      
-      // ✅ CORREÇÃO: Recarregar apenas instâncias (child instances serão incluídas)
-      // Não chamar refreshModels() - o hook já atualiza o estado local
+
+        // Reload instances only (child instances will be included)
+        // Do not call refreshModels() - hook already updates local state
       await refreshInstances();
-      
-      console.log('✅ Estado atualizado, campos devem aparecer imediatamente!');
+
+        console.log('State updated, fields should appear immediately');
     }
   };
 
@@ -285,7 +286,7 @@ export default function ExtractionFullScreen() {
     const model = models.find(m => m.instanceId === instanceId);
     if (!model) return;
 
-    // Calcular se tem dados extraídos
+      // Check if there is extracted data
     const progress = await getModelProgress(instanceId);
     const hasData = !!(progress && progress.completed > 0);
 
@@ -301,7 +302,7 @@ export default function ExtractionFullScreen() {
     if (!modelToRemove) return;
     
     try {
-      extractionLogger.info('removeModelHandler', 'Iniciando remoção de modelo', {
+        extractionLogger.info('removeModelHandler', 'Starting model removal', {
         modelId: modelToRemove.id,
         modelName: modelToRemove.name,
         hasData: modelToRemove.hasData,
@@ -309,39 +310,39 @@ export default function ExtractionFullScreen() {
       });
 
       const modelIdToRemove = modelToRemove.id;
-      
-      // ✅ Remover modelo (já atualiza estado local)
+
+        // Remove model (already updates local state)
       await removeModel(modelIdToRemove);
-      
-      extractionLogger.info('removeModelHandler', 'Modelo removido com sucesso', {
+
+        extractionLogger.info('removeModelHandler', 'Model removed successfully', {
         modelId: modelIdToRemove,
         modelName: modelToRemove.name
       });
 
-      // Fechar dialog imediatamente após remoção bem-sucedida
+        // Close dialog immediately after successful removal
       setModelToRemove(null);
-      
-      // ✅ CORREÇÃO: Não chamar refreshModels() - o hook já atualiza o estado local
-      // Apenas recarregar instâncias para garantir que child instances sejam removidas da UI
+
+        // Do not call refreshModels() - hook already updates local state
+        // Only reload instances so child instances are removed from UI
       try {
         await refreshInstances();
-        extractionLogger.info('removeModelHandler', 'Estado atualizado, modelo removido da interface', {
+          extractionLogger.info('removeModelHandler', 'State updated, model removed from UI', {
           modelId: modelIdToRemove,
           instancesRemoved: instances.filter(i => 
             i.id === modelIdToRemove || i.parent_instance_id === modelIdToRemove
           ).length
         });
       } catch (refreshError: any) {
-        // Log do erro mas não re-throw - modelo já foi removido com sucesso
-        extractionLogger.error('removeModelHandler', 'Erro ao recarregar instâncias após remoção', refreshError, {
+          // Log error but do not re-throw - model was already removed successfully
+          extractionLogger.error('removeModelHandler', 'Error reloading instances after removal', refreshError, {
           modelId: modelIdToRemove
         });
-        // Não bloquear o fluxo - modelo já foi removido do estado local
+          // Do not block flow - model was already removed from local state
       }
       
     } catch (error: any) {
       // ✅ Re-throw para o modal capturar e exibir erro
-      extractionLogger.error('removeModelHandler', 'Falha ao remover modelo', error, {
+        extractionLogger.error('removeModelHandler', 'Failed to remove model', error, {
         modelId: modelToRemove.id,
         modelName: modelToRemove.name
       });
@@ -353,30 +354,30 @@ export default function ExtractionFullScreen() {
     if (!template) return;
 
     try {
-      extractionLogger.info('handleAddInstance', 'Iniciando criação de instância', {
+        extractionLogger.info('handleAddInstance', 'Starting instance creation', {
         entityTypeId,
         templateId: template.id
       });
 
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Usuário não autenticado');
+        if (!user) throw new Error(t('common', 'errors_userNotAuthenticated'));
 
       // Encontrar entity type
       const entityType = entityTypes.find(et => et.id === entityTypeId);
       if (!entityType) {
-        extractionLogger.warn('handleAddInstance', 'Entity type não encontrado', { entityTypeId });
+          extractionLogger.warn('handleAddInstance', 'Entity type not found', {entityTypeId});
         return;
       }
 
-      // Determinar parent_instance_id se for uma entity type hierárquica
+        // Determine parent_instance_id if hierarchical entity type
       let parentInstanceId: string | undefined = undefined;
-      
-      // Se tem parent_entity_type_id, é uma child entity (ex: model child sections)
+
+        // If it has parent_entity_type_id, it is a child entity (e.g. model child sections)
       if (entityType.parent_entity_type_id) {
-        // Se o parent é prediction_models, usar activeModelId
+          // If parent is prediction_models, use activeModelId
         if (entityType.parent_entity_type_id === modelParentEntityType?.id) {
           if (!activeModelId) {
-            toast.error('Selecione um modelo antes de adicionar esta seção');
+              toast.error(t('pages', 'extractionScreenSelectModelFirst'));
             return;
           }
           parentInstanceId = activeModelId;
@@ -388,22 +389,22 @@ export default function ExtractionFullScreen() {
           if (parentInstance) {
             parentInstanceId = parentInstance.id;
           } else {
-            toast.error('Instância pai não encontrada. Crie a seção pai primeiro.');
+              toast.error(t('pages', 'extractionScreenParentNotFound'));
             return;
           }
         }
       }
 
-      // Contar instâncias existentes para gerar label (considerar mesmo parent)
+        // Count existing instances to generate label (same parent)
       const existingCount = instances.filter(i => 
         i.entity_type_id === entityTypeId && 
         i.parent_instance_id === (parentInstanceId || null)
       ).length;
-      
-      // Gerar label único
+
+        // Generate unique label
       let newLabel: string;
       if (parentInstanceId) {
-        // Para child instances, incluir referência ao parent para evitar conflitos
+          // For child instances, include parent reference to avoid conflicts
         const parentInstance = instances.find(i => i.id === parentInstanceId);
         newLabel = parentInstance 
           ? `${parentInstance.label} - ${entityType.label} ${existingCount + 1}`
@@ -412,7 +413,7 @@ export default function ExtractionFullScreen() {
         newLabel = `${entityType.label} ${existingCount + 1}`;
       }
 
-      extractionLogger.debug('handleAddInstance', 'Criando instância via service', {
+        extractionLogger.debug('handleAddInstance', 'Creating instance via service', {
         entityTypeId,
         entityTypeName: entityType.name,
         parentInstanceId,
@@ -420,7 +421,7 @@ export default function ExtractionFullScreen() {
       });
 
       // ✅ MELHORIA: Usar service layer em vez de INSERT direto
-      // Isso garante validações, logs e consistência
+        // Ensures validations, logs and consistency
       const result = await extractionInstanceService.createInstance({
         projectId: projectId!,
         articleId: articleId!,
@@ -433,44 +434,42 @@ export default function ExtractionFullScreen() {
       });
 
       if (result.wasCreated) {
-        // Recarregar instâncias após criar
+          // Reload instances after create
         await refreshInstances();
-        
-        extractionLogger.info('handleAddInstance', 'Instância criada com sucesso', {
+
+          extractionLogger.info('handleAddInstance', 'Instance created successfully', {
           instanceId: result.instance.id,
           label: result.instance.label
         });
-        
-        toast.success(`${result.instance.label} adicionado com sucesso`);
+
+          toast.success(`${result.instance.label} ${t('pages', 'extractionScreenInstanceAddedSuccess')}`);
       } else {
-        extractionLogger.info('handleAddInstance', 'Instância já existia', {
+          extractionLogger.info('handleAddInstance', 'Instance already existed', {
           instanceId: result.instance.id,
           label: result.instance.label
         });
-        
-        toast.info('Instância já existe');
+
+          toast.info(t('pages', 'extractionScreenInstanceAlreadyExists'));
       }
 
     } catch (error: any) {
-      extractionLogger.error('handleAddInstance', 'Falha ao criar instância', error, {
+        extractionLogger.error('handleAddInstance', 'Failed to create instance', error, {
         entityTypeId,
         templateId: template.id
       });
-      
-      console.error('Erro ao adicionar instância:', error);
-      toast.error(`Erro ao adicionar instância: ${error.message}`);
+
+        console.error('Error adding instance:', error);
+        toast.error(`${t('pages', 'extractionScreenErrorAddInstance')}: ${error.message}`);
     }
   };
 
   const handleRemoveInstance = async (instanceId: string) => {
     try {
-      // Verificar se tem valores extraídos
+        // Check if there are extracted values
       const hasValues = Object.keys(values).some(key => key.startsWith(`${instanceId}_`));
 
       if (hasValues) {
-        const confirmed = window.confirm(
-          'Esta instância tem valores extraídos. Tem certeza que deseja remover?'
-        );
+          const confirmed = window.confirm(t('pages', 'extractionScreenConfirmRemoveInstance'));
         if (!confirmed) return;
       }
 
@@ -481,46 +480,46 @@ export default function ExtractionFullScreen() {
 
       if (error) throw error;
 
-      // Recarregar instâncias após remover
+        // Reload instances after remove
       await refreshInstances();
-      toast.success('Instância removida com sucesso');
+        toast.success(t('pages', 'extractionScreenInstanceRemoved'));
 
     } catch (error: any) {
-      console.error('Erro ao remover instância:', error);
-      toast.error('Erro ao remover instância');
+        console.error('Error removing instance:', error);
+        toast.error(t('pages', 'extractionScreenErrorRemoveInstance'));
     }
   };
 
   const handleFinalize = async () => {
     if (!isComplete) {
-      toast.error('Complete todos os campos obrigatórios antes de finalizar');
+        toast.error(t('pages', 'extractionScreenCompleteRequiredFields'));
       return;
     }
 
-    // Validar dados necessários
+      // Validate required data
     if (!articleId || !projectId) {
-      extractionLogger.error('handleFinalize', 'Dados incompletos para finalizar extração', undefined, {
+        extractionLogger.error('handleFinalize', 'Incomplete data to finalize extraction', undefined, {
         articleId,
         projectId
       });
-      toast.error('Erro: Dados do artigo não encontrados');
+        toast.error(t('pages', 'extractionScreenErrorArticleNotFound'));
       return;
     }
 
-    // Validar se há instâncias para atualizar
+      // Validate that there are instances to update
     if (!instances || instances.length === 0) {
-      extractionLogger.warn('handleFinalize', 'Nenhuma instância encontrada para finalizar', {
+        extractionLogger.warn('handleFinalize', 'No instances found to finalize', {
         articleId,
         projectId
       });
-      toast.error('Erro: Nenhuma instância de extração encontrada');
+        toast.error(t('pages', 'extractionScreenErrorNoInstances'));
       return;
     }
 
     setSubmitting(true);
 
     const logger = extractionLogger;
-    logger.info('handleFinalize', 'Iniciando finalização de extração', {
+      logger.info('handleFinalize', 'Starting extraction finalization', {
       articleId,
       projectId,
       instancesCount: instances.length,
@@ -557,12 +556,12 @@ export default function ExtractionFullScreen() {
           }
         );
 
-        throw new Error(`Erro ao salvar valores: ${saveError.message || 'Erro desconhecido'}`);
+          throw new Error(`${t('extraction', 'errors_saveValues')}: ${saveError.message || t('common', 'errors_unknownError')}`);
       }
 
-      // 2. Atualizar status das instâncias
+        // 2. Update instance statuses
       const instanceIds = instances.map(i => i.id);
-      logger.debug('handleFinalize', 'Atualizando status das instâncias...', {
+        logger.debug('handleFinalize', 'Updating instance statuses...', {
         instanceIds,
         instancesCount: instanceIds.length
       });
@@ -571,15 +570,15 @@ export default function ExtractionFullScreen() {
         .from('extraction_instances')
         .update({
           status: 'completed'
-          // ❌ Removido: completed_at não existe na tabela extraction_instances
+            // Removed: completed_at does not exist on extraction_instances table
           // (existe apenas em extraction_runs)
         })
         .eq('article_id', articleId)
         .in('id', instanceIds)
-        .select('id, status'); // Retornar dados para confirmar atualização
+          .select('id, status'); // Return data to confirm update
 
       if (updateError) {
-        logger.error('handleFinalize', 'Erro ao atualizar status das instâncias', updateError as Error, {
+          logger.error('handleFinalize', 'Error updating instance statuses', updateError as Error, {
           errorCode: updateError.code,
           errorMessage: updateError.message,
           errorDetails: updateError.details,
@@ -588,7 +587,7 @@ export default function ExtractionFullScreen() {
         });
 
         errorTracker.captureError(
-          new Error(updateError.message || 'Erro ao atualizar status das instâncias'),
+            new Error(updateError.message || 'Error updating instance statuses'),
           {
             component: 'ExtractionFullScreen',
             action: 'handleFinalize',
@@ -603,53 +602,53 @@ export default function ExtractionFullScreen() {
           }
         );
 
-        // Mensagem de erro mais específica baseada no código de erro
-        let errorMessage = 'Erro ao atualizar status das instâncias';
+          // More specific error message based on error code
+          let errorMessage = t('pages', 'extractionScreenErrorUpdateStatus');
         if (updateError.code === 'PGRST301' || updateError.message.includes('permission denied')) {
-          errorMessage = 'Erro de permissão: Você não tem permissão para finalizar esta extração';
+            errorMessage = t('pages', 'extractionScreenErrorPermission');
         } else if (updateError.code === '23503' || updateError.message.includes('foreign key')) {
-          errorMessage = 'Erro: Dados relacionados não encontrados. Recarregue a página e tente novamente';
+            errorMessage = t('pages', 'extractionScreenErrorRelatedData');
         } else if (updateError.message) {
-          errorMessage = `Erro: ${updateError.message}`;
+            errorMessage = `Error: ${updateError.message}`;
         }
 
         throw new Error(errorMessage);
       }
 
-      // Confirmar que instâncias foram atualizadas
+        // Confirm instances were updated
       const updatedCount = updatedData?.length || 0;
       if (updatedCount === 0) {
-        logger.warn('handleFinalize', 'Nenhuma instância foi atualizada', {
+          logger.warn('handleFinalize', 'No instances were updated', {
           instanceIds,
           articleId
         });
-        throw new Error('Nenhuma instância foi atualizada. Verifique as permissões e tente novamente');
+          throw new Error(t('pages', 'extractionScreenNoInstanceUpdated'));
       }
 
       if (updatedCount < instanceIds.length) {
-        logger.warn('handleFinalize', 'Algumas instâncias não foram atualizadas', {
+          logger.warn('handleFinalize', 'Some instances were not updated', {
           expected: instanceIds.length,
           actual: updatedCount,
           instanceIds
         });
       }
 
-      logger.info('handleFinalize', 'Extração finalizada com sucesso', {
+        logger.info('handleFinalize', 'Extraction finalized successfully', {
         articleId,
         instancesUpdated: updatedCount,
         totalInstances: instanceIds.length
       });
 
-      toast.success('Extração finalizada com sucesso!');
+        toast.success(t('pages', 'extractionScreenFinalizeSuccess'));
       handleBack();
 
     } catch (error: any) {
-      // Erro já foi logado e capturado acima, apenas exibir mensagem ao usuário
-      const errorMessage = error instanceof Error 
-        ? error.message 
-        : (error?.message || 'Erro desconhecido ao finalizar extração');
+        // Error already logged and caught above, just show message to user
+        const errorMessage = error instanceof Error
+            ? error.message
+            : (error?.message || t('pages', 'extractionScreenErrorFinalizeUnknown'));
 
-      logger.error('handleFinalize', 'Falha ao finalizar extração', error instanceof Error ? error : new Error(errorMessage), {
+        logger.error('handleFinalize', 'Failed to finalize extraction', error instanceof Error ? error : new Error(errorMessage), {
         articleId,
         projectId,
         finalError: errorMessage
@@ -669,7 +668,7 @@ export default function ExtractionFullScreen() {
       <div className="h-screen flex items-center justify-center">
         <div className="text-center space-y-4">
           <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto" />
-          <p className="text-muted-foreground">Carregando interface de extração...</p>
+            <p className="text-muted-foreground">{t('pages', 'extractionScreenLoading')}</p>
         </div>
       </div>
     );
@@ -680,8 +679,8 @@ export default function ExtractionFullScreen() {
     return (
       <div className="h-screen flex items-center justify-center">
         <div className="text-center space-y-4">
-          <p className="text-destructive">Erro ao carregar dados</p>
-          <Button onClick={handleBack}>Voltar</Button>
+            <p className="text-destructive">{t('pages', 'extractionScreenErrorLoad')}</p>
+            <Button onClick={handleBack}>{t('common', 'back')}</Button>
         </div>
       </div>
     );
@@ -693,117 +692,117 @@ export default function ExtractionFullScreen() {
       <div className="h-screen flex items-center justify-center">
         <div className="text-center space-y-6 max-w-md">
           <div className="space-y-2">
-            <h3 className="text-lg font-semibold">Nenhum campo para extração</h3>
+              <h3 className="text-lg font-semibold">{t('pages', 'extractionScreenNoFieldsTitle')}</h3>
             <p className="text-muted-foreground">
-              O template <strong>{template?.name}</strong> não possui campos configurados para extração de dados.
+                {t('pages', 'extractionScreenNoFieldsDesc')}
             </p>
           </div>
           
           <div className="bg-muted/50 p-4 rounded-lg space-y-2 text-sm">
-            <p className="font-medium">Para resolver:</p>
+              <p className="font-medium">{t('pages', 'extractionScreenToResolve')}</p>
             <ul className="text-left space-y-1 text-muted-foreground">
-              <li>• Entre em contato com o gerente do projeto</li>
-              <li>• Solicite a configuração dos campos de extração</li>
-              <li>• Ou configure um novo template com campos</li>
+                <li>• {t('pages', 'extractionScreenContactManager')}</li>
+                <li>• {t('pages', 'extractionScreenRequestConfig')}</li>
+                <li>• {t('pages', 'extractionScreenOrConfigureTemplate')}</li>
             </ul>
           </div>
-          
-          <Button onClick={handleBack}>Voltar</Button>
+
+            <Button onClick={handleBack}>{t('common', 'back')}</Button>
         </div>
       </div>
     );
   }
 
   /**
-   * Handler chamado após extração de seção ser concluída
-   * 
-   * Faz refresh de sugestões e valores extraídos em background.
-   * Usa polling para garantir que sugestões sejam carregadas quando disponíveis.
-   * 
-   * IMPORTANTE: Esta função não deve bloquear - executa em background.
+   * Handler called after section extraction completes
+   *
+   * Refreshes suggestions and extracted values in background.
+   * Uses polling to ensure suggestions are loaded when available.
+   *
+   * IMPORTANT: This function must not block - runs in background.
    */
   const handleExtractionComplete = (runId?: string) => {
     console.log('✅ Extraction completed', runId ? `runId: ${runId}` : '');
-    
-    // Executar refresh em background (não bloquear)
-    // O loading do hook deve ser resetado independentemente deste callback
+
+      // Run refresh in background (do not block)
+      // Hook loading should be reset regardless of this callback
     (async () => {
       try {
-        // IMPORTANTE: Recarregar instâncias primeiro (o backend pode ter criado novas para cardinality="many")
-        // Aguardar tempo suficiente para garantir que o backend terminou de criar as instâncias
-        // e que o Supabase sincronizou as mudanças no banco
+          // IMPORTANT: Reload instances first (backend may have created new ones for cardinality="many")
+          // Wait long enough for backend to finish creating instances
+          // and that Supabase synced changes to the DB
         await new Promise(resolve => setTimeout(resolve, 1500));
-        
-        // 1. Recarregar instâncias (backend pode ter criado novas para cardinality="many")
+
+          // 1. Reload instances (backend may have created new ones for cardinality="many")
         if (template) {
-          console.log('🔄 Recarregando instâncias após extração...');
+            console.log('Reloading instances after extraction...');
           try {
             await refreshInstances();
-            console.log('✅ Instâncias recarregadas com sucesso');
+              console.log('Instances reloaded successfully');
           } catch (err) {
-            console.error('⚠️ Erro ao recarregar instâncias (não crítico):', err);
-            // Não bloquear o fluxo - instâncias serão recarregadas no próximo refresh
+              console.error('Error reloading instances (non-critical):', err);
+              // Do not block flow - instances will be reloaded on next refresh
           }
         }
-        
-        // Refresh imediato de valores extraídos
+
+          // Immediate refresh of extracted values
         await refreshValues();
-        
-        // IMPORTANTE: Aguardar adicional antes de buscar sugestões
-        // Isso garante que as instâncias recém-recargadas estejam disponíveis quando buscarmos sugestões
+
+          // IMPORTANT: Wait longer before fetching suggestions
+          // Ensures newly reloaded instances are available when we fetch suggestions
         await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Polling otimizado: usar resultado direto do refresh ao invés de estado React
-        // Isso elimina dependência de estado assíncrono e torna polling mais confiável
+
+          // Optimized polling: use refresh result directly instead of React state
+          // Removes async state dependency and makes polling more reliable
         let attempts = 0;
-        const maxAttempts = 5; // 5 tentativas = ~5 segundos total (reduzido de 6)
+          const maxAttempts = 5; // 5 attempts = ~5 seconds total
         const pollDelay = 1000; // 1 segundo entre tentativas
-        
-        // Primeira tentativa (após delays acima)
-        console.log('🔄 Recarregando sugestões de IA...');
+
+          // First attempt (after delays above)
+          console.log('Reloading AI suggestions...');
         let result = await refreshAISuggestions();
-        
-        // Verificar se há sugestões usando resultado direto (não estado React)
+
+          // Check for suggestions using direct result (not React state)
         let foundSuggestions = result.count > 0;
         
         if (foundSuggestions) {
-          console.log(`✅ ${result.count} sugestão(ões) encontrada(s) imediatamente`);
+            console.log(`${result.count} suggestion(s) found immediately`);
           return;
         }
-        
-        // Continuar polling se não encontramos sugestões
+
+          // Continue polling if we did not find suggestions
         while (!foundSuggestions && attempts < maxAttempts) {
           attempts++;
-          
-          console.log(`🔄 Tentativa ${attempts + 1}/${maxAttempts + 1}: Recarregando sugestões...`);
-          
-          // Aguardar antes de recarregar (dar tempo para backend criar sugestões)
+
+            console.log(`Attempt ${attempts + 1}/${maxAttempts + 1}: Reloading suggestions...`);
+
+            // Wait before reload (give backend time to create suggestions)
           await new Promise(resolve => setTimeout(resolve, pollDelay));
-          
-          // Recarregar sugestões e obter resultado diretamente
+
+            // Reload suggestions and get result directly
           result = await refreshAISuggestions();
-          
-          // Verificar usando resultado direto (mais confiável que estado React)
+
+            // Check using direct result (more reliable than React state)
           foundSuggestions = result.count > 0;
           
           if (foundSuggestions) {
-            console.log(`✅ ${result.count} sugestão(ões) encontrada(s) após ${attempts + 1} tentativa(s)`);
+              console.log(`${result.count} suggestion(s) found after ${attempts + 1} attempt(s)`);
             return;
           }
         }
-        
-        // Se chegamos aqui sem encontrar sugestões
+
+          // If we got here without finding suggestions
         if (!foundSuggestions) {
-          console.log('⚠️ Nenhuma sugestão encontrada após múltiplas tentativas');
-          console.log('   Pode ser que:');
-          console.log('   - Sugestões não tenham sido criadas (campos já preenchidos, etc)');
-          console.log('   - Sugestões foram criadas mas ainda não estão disponíveis no banco');
-          console.log('   - Há um problema com o carregamento das sugestões');
+            console.log('No suggestions found after multiple attempts');
+            console.log('   Possible reasons:');
+            console.log('   - Suggestions were not created (fields already filled, etc)');
+            console.log('   - Suggestions were created but not yet available in the database');
+            console.log('   - There is an issue loading suggestions');
         }
       } catch (error) {
-        console.error('❌ Erro ao recarregar sugestões:', error);
-        // Não mostrar toast de erro - pode ser que sugestões não tenham sido criadas
-        // (já tratado pelo hook de extração)
+          console.error('Error reloading suggestions:', error);
+          // Do not show error toast - suggestions may not have been created
+          // (already handled by extraction hook)
       }
     })(); // IIFE - executar imediatamente sem bloquear
   };
@@ -813,7 +812,7 @@ export default function ExtractionFullScreen() {
       {/* Header Unificado */}
       <ExtractionHeader
         projectId={projectId || ''}
-        projectName={project?.name || 'Projeto'}
+        projectName={project?.name || t('pages', 'extractionScreenProjectFallback')}
         articleTitle={article.title}
         onBack={handleBack}
         articles={articles}
@@ -839,9 +838,9 @@ export default function ExtractionFullScreen() {
         onExtractionComplete={handleExtractionComplete}
         aiSuggestions={aiSuggestions}
         onAISuggestionsClick={() => {
-          // Scroll para primeira sugestão ou abrir painel
+            // Scroll to first suggestion or open panel
           // Por enquanto, apenas log - pode ser melhorado depois
-          console.log('Clicou no badge de IA - scroll para primeira sugestão');
+            console.log('Clicked AI badge - scrolling to first suggestion');
         }}
         template={template}
         instances={instances}
@@ -850,7 +849,7 @@ export default function ExtractionFullScreen() {
         onExtractionStateChange={setAiExtractionState}
       />
 
-      {/* Progresso de Extração IA - Renderizado no nível da página para evitar conflitos */}
+        {/* AI extraction progress - Rendered at page level to avoid conflicts */}
       {(aiExtractionState?.loading && aiExtractionState?.progress) || isProgressMinimized ? (
         <div className="fixed bottom-6 right-6 z-[9999] w-96 max-w-[calc(100vw-3rem)]">
           <FullAIExtractionProgress 
@@ -869,14 +868,14 @@ export default function ExtractionFullScreen() {
       {/* Main content */}
       <div className="flex-1 overflow-hidden">
         <ResizablePanelGroup direction="horizontal">
-          {/* PDF Viewer (opcional) - Extraído para componente isolado */}
+            {/* PDF Viewer (optional) - Extracted to isolated component */}
           <ExtractionPDFPanel 
             articleId={articleId || ''} 
             projectId={projectId || ''} 
             showPDF={showPDF}
           />
 
-          {/* Formulário de extração - Extraído para componente isolado */}
+            {/* Extraction form - Extracted to isolated component */}
           <ResizablePanel defaultSize={showPDF ? 50 : 100} minSize={30}>
             <ExtractionFormPanel
               viewMode={viewMode}
@@ -920,7 +919,7 @@ export default function ExtractionFullScreen() {
                 otherExtractions,
                 currentUser: {
                   userId: currentUserId,
-                  userName: 'Você', // TODO: Usar nome real do usuário quando disponível
+                    userName: t('pages', 'extractionScreenYou'),
                   isCurrentUser: true
                 },
                 editable: true,

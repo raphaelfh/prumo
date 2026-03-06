@@ -1,14 +1,15 @@
 /**
  * Indicador visual de consenso
- * 
- * Badge reutilizável que mostra se há consenso ou divergência
- * entre múltiplos revisores.
+ *
+ * Reusable badge showing consensus or divergence
+ * across multiple reviewers.
  * 
  * @component
  */
 
 import {Badge} from '@/components/ui/badge';
 import {AlertTriangle, TrendingUp} from 'lucide-react';
+import {t} from '@/lib/copy';
 import type {ConsensusResult} from '@/lib/comparison/consensus';
 
 interface ConsensusIndicatorProps {
@@ -18,7 +19,7 @@ interface ConsensusIndicatorProps {
 }
 
 /**
- * Badge que indica consenso ou divergência
+ * Badge indicating consensus or divergence
  * 
  * Variantes:
  * - default: Mostra valor + contagem (ex: "150 (2/3)")
@@ -38,7 +39,7 @@ export function ConsensusIndicator({
     );
   }
 
-  // Há consenso (≥ threshold)
+    // There is consensus (≥ threshold)
   if (consensus.hasConsensus) {
     return (
       <Badge variant="secondary" className={`gap-1 ${className}`}>
@@ -58,11 +59,11 @@ export function ConsensusIndicator({
     );
   }
 
-  // Divergência (< threshold)
+    // Divergence (< threshold)
   return (
     <Badge variant="outline" className={`gap-1 text-orange-600 ${className}`}>
       <AlertTriangle className="h-3 w-3" />
-      {variant === 'default' ? 'Divergência' : `${consensus.percentage}%`}
+        {variant === 'default' ? t('shared', 'divergence') : `${consensus.percentage}%`}
     </Badge>
   );
 }

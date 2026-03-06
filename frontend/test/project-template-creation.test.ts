@@ -1,23 +1,23 @@
 /**
- * Testes básicos para validação da estrutura do projeto
- * 
- * Valida se:
- * 1. Componentes são importados corretamente
- * 2. Tipos estão definidos
- * 3. Estrutura básica está funcional
+ * Basic tests for project structure validation
+ *
+ * Validates:
+ * 1. Components are imported correctly
+ * 2. Types are defined
+ * 3. Basic structure is functional
  */
 
 import {describe, expect, it} from 'vitest';
 
 describe('Project Structure Validation', () => {
-  it('deve importar tipos básicos corretamente', () => {
-    // Validar que os tipos básicos estão definidos
+    it('should import basic types correctly', () => {
+        // Validate that basic types are defined
     expect(typeof 'string').toBe('string');
     expect(typeof 1).toBe('number');
     expect(Array.isArray([])).toBe(true);
   });
 
-  it('deve ter estrutura básica de projeto definida', () => {
+    it('should have basic project structure defined', () => {
     const projectStructure = {
       id: 'test-id',
       name: 'Test Project',
@@ -31,7 +31,7 @@ describe('Project Structure Validation', () => {
     expect(projectStructure.created_at).toBeDefined();
   });
 
-  it('deve validar tipos de campo disponíveis', () => {
+    it('should validate available field types', () => {
     const fieldTypes = ['text', 'number', 'date', 'select', 'multiselect', 'boolean'];
     
     expect(fieldTypes).toContain('text');
@@ -40,7 +40,7 @@ describe('Project Structure Validation', () => {
     expect(fieldTypes.length).toBe(6);
   });
 
-  it('deve validar estrutura de campo de extração', () => {
+    it('should validate extraction field structure', () => {
     const mockField = {
       id: 'field-id',
       name: 'test_field',

@@ -2,6 +2,7 @@ import {usePDFStore} from '@/stores/usePDFStore';
 import {ScrollArea} from '@/components/ui/scroll-area';
 import {cn} from '@/lib/utils';
 import {FileText} from 'lucide-react';
+import {t} from '@/lib/copy';
 
 interface PageThumbnailsProps {
   className?: string;
@@ -14,7 +15,7 @@ export function PageThumbnails({ className }: PageThumbnailsProps) {
     return (
       <div className={cn('h-full border-r bg-muted/20 flex items-center justify-center', className)}>
         <p className="text-sm text-muted-foreground text-center px-4">
-          Nenhuma página disponível
+            {t('pdf', 'thumbnailsNoPages')}
         </p>
       </div>
     );
@@ -24,7 +25,7 @@ export function PageThumbnails({ className }: PageThumbnailsProps) {
     <div className={cn('h-full border-r bg-muted/20 flex flex-col', className)}>
       <div className="p-4 border-b">
         <h3 className="font-semibold text-sm">
-          Páginas ({numPages})
+            {t('pdf', 'thumbnailsPagesTitle').replace('{{n}}', String(numPages))}
         </h3>
       </div>
       
@@ -60,11 +61,11 @@ export function PageThumbnails({ className }: PageThumbnailsProps) {
                       'text-sm font-medium',
                       isActive ? 'text-primary' : 'text-foreground'
                     )}>
-                      Página {pageNum}
+                        {t('pdf', 'thumbnailsPageLabel').replace('{{n}}', String(pageNum))}
                     </p>
                     {isActive && (
                       <p className="text-xs text-muted-foreground mt-1">
-                        Página atual
+                          {t('pdf', 'thumbnailsCurrentPage')}
                       </p>
                     )}
                   </div>

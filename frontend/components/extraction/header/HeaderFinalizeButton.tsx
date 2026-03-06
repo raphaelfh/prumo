@@ -1,10 +1,10 @@
 /**
- * Componente do botão Finalizar
- * Reutilizável com estados de loading e disabled
+ * Finalize button component. Reusable with loading and disabled states.
  */
 
 import {Button} from '@/components/ui/button';
 import {CheckCircle, Loader2} from 'lucide-react';
+import {t} from '@/lib/copy';
 
 interface HeaderFinalizeButtonProps {
   isComplete: boolean;
@@ -24,7 +24,7 @@ export function HeaderFinalizeButton({
   submitting = false,
   variant = 'default',
   size = 'sm',
-  label = 'Finalizar',
+                                         label = t('extraction', 'headerFinalize'),
 }: HeaderFinalizeButtonProps) {
   return (
     <Button
@@ -42,7 +42,7 @@ export function HeaderFinalizeButton({
       {submitting ? (
         <>
           <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-          Finalizando...
+            {t('extraction', 'headerFinalizing')}
         </>
       ) : (
         <>

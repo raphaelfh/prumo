@@ -1,6 +1,6 @@
 /**
- * Porcentagem de confiança da sugestão de IA
- * Componente compartilhado reutilizável
+ * AI suggestion confidence percentage
+ * Reusable shared component
  */
 
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
@@ -10,9 +10,9 @@ import type {AISuggestion} from '@/hooks/extraction/ai/useAISuggestions';
 
 interface AISuggestionConfidenceProps {
   suggestion: AISuggestion;
-  /** Se true, abre modal de detalhes ao clicar no % */
+    /** If true, opens details modal when clicking the % */
   showDetailsOnClick?: boolean;
-  /** Se true, renderiza só o % (para o pai usar como parte do trigger do modal) */
+    /** If true, renders only the % (for parent to use as part of modal trigger) */
   asTriggerChild?: boolean;
   className?: string;
 }
@@ -31,7 +31,7 @@ export function AISuggestionConfidence({
   const hasEvidence = !!suggestion.evidence?.text?.trim();
   const hasDetails = hasReasoning || hasEvidence;
 
-  // Quando usado como parte do trigger (valor + % clicáveis), só renderiza o %
+    // When used as part of trigger (value + % clickable), only render the %
   if (asTriggerChild) {
     return (
       <span className={`${confidenceSpanClass} shrink-0 ${className}`}>
@@ -40,7 +40,7 @@ export function AISuggestionConfidence({
     );
   }
 
-  // Se há detalhes e deve mostrar no clique, usar modal só no %
+    // If there are details and should show on click, use modal only on %
   if (hasDetails && showDetailsOnClick) {
     return (
       <AISuggestionDetailsPopover
@@ -54,7 +54,7 @@ export function AISuggestionConfidence({
     );
   }
 
-  // Caso contrário, apenas tooltip
+    // Otherwise, tooltip only
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -63,7 +63,7 @@ export function AISuggestionConfidence({
         </span>
       </TooltipTrigger>
       <TooltipContent>
-        <p className="text-xs">Nível de confiança da sugestão da IA</p>
+          <p className="text-xs">AI suggestion confidence level</p>
       </TooltipContent>
     </Tooltip>
   );

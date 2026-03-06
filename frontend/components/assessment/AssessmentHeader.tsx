@@ -1,17 +1,17 @@
 /**
- * Header Refatorado - Assessment Module
+ * Refactored Header - Assessment Module
  *
- * Componente principal do header da interface de avaliação.
- * REFATORADO para usar sub-componentes modulares (DRY + KISS).
+ * Main header component for the assessment interface.
+ * Refactored to use modular sub-components (DRY + KISS).
  *
- * Baseado em ExtractionHeader.tsx - Arquitetura modular
+ * Based on ExtractionHeader.tsx - Modular architecture
  *
- * Sub-componentes:
- * - HeaderNavigation: Botão voltar, breadcrumb, navegação artigos
- * - HeaderPDFControls: Toggles de PDF e comparação, dropdown artigos
- * - HeaderStatusBadges: Progresso, auto-save status
- * - HeaderFinalizeButton: Botão de finalização
- * - HeaderMoreMenu: Menu dropdown com ações secundárias
+ * Sub-components:
+ * - HeaderNavigation: Back button, breadcrumb, article navigation
+ * - HeaderPDFControls: PDF and comparison toggles, article dropdown
+ * - HeaderStatusBadges: Progress, auto-save status
+ * - HeaderFinalizeButton: Finalize button
+ * - HeaderMoreMenu: Dropdown menu with secondary actions
  *
  * @component
  */
@@ -31,23 +31,23 @@ interface Article {
 }
 
 export interface AssessmentHeaderProps {
-  // Navegação
+    // Navigation
   projectName: string;
   instrumentName: string;
   articleTitle: string;
   onBack: () => void;
 
-  // Navegação entre artigos
+    // Article navigation
   articles: Article[];
   currentArticleId: string;
   onNavigateToArticle: (articleId: string) => void;
 
-  // Progresso
+    // Progress
   completedItems: number;
   totalItems: number;
   completionPercentage: number;
 
-  // Controles
+    // Controls
   showPDF: boolean;
   onTogglePDF: () => void;
   showComparison: boolean;
@@ -60,7 +60,7 @@ export interface AssessmentHeaderProps {
   onUndo: () => void;
   onRedo: () => void;
 
-  // Status e ações
+    // Status and actions
   isSaving?: boolean;
   lastSaved?: Date | null;
   isComplete: boolean;
@@ -104,10 +104,10 @@ export function AssessmentHeader(props: AssessmentHeaderProps) {
 
   return (
     <TooltipProvider>
-      <header className="border-b bg-background sticky top-0 z-50">
+        <header className="border-b border-border/40 bg-background/80 backdrop-blur-md sticky top-0 z-50">
         <div className="container mx-auto">
           {/* Desktop Layout (≥1024px) */}
-          <div className="hidden lg:flex items-center justify-between h-16 px-6 gap-4">
+            <div className="hidden lg:flex items-center justify-between h-12 px-6 gap-4">
             {/* Left: Navigation */}
             <HeaderNavigation
               projectName={projectName}

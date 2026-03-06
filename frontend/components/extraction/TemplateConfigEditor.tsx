@@ -1,10 +1,10 @@
 /**
- * Editor de Configuração do Template (REFATORADO)
- * 
- * Mudança principal: Trabalha diretamente com extraction_entity_types
- * ao invés de usar "template instances" (is_template=true).
- * 
- * Isso simplifica o código e permite suporte natural a hierarquia.
+ * Template configuration editor (refactored)
+ *
+ * Main change: Works directly with extraction_entity_types
+ * instead of "template instances" (is_template=true).
+ *
+ * Simplifies code and allows natural hierarchy support.
  */
 
 import {useEffect, useState} from 'react';
@@ -17,6 +17,7 @@ import {Accordion, AccordionContent, AccordionItem, AccordionTrigger,} from '@/c
 import {ChevronRight, Download, Edit2, Loader2, Plus, Save, Settings, Trash2, X} from 'lucide-react';
 import {toast} from 'sonner';
 import {cn} from '@/lib/utils';
+import {t} from '@/lib/copy';
 import {FieldsManager} from './FieldsManager';
 import {AddSectionDialog, ImportTemplateDialog, RemoveSectionDialog} from './dialogs';
 import {ExtractionEntityType} from '@/types/extraction';
@@ -84,7 +85,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
       setEntityTypes(entityTypesWithCounts as ExtractionEntityType[]);
     } catch (err: any) {
       console.error('Erro ao carregar entity types:', err);
-      toast.error(`Erro: ${err.message}`);
+        toast.error(`${t('common', 'error')}: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -104,12 +105,12 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
 
       if (error) throw error;
 
-      toast.success('Label atualizado com sucesso');
+        toast.success(t('extraction', 'labelUpdatedSuccess'));
       setEditingId(null);
       await loadEntityTypes();
     } catch (err: any) {
       console.error('Erro ao atualizar label:', err);
-      toast.error(`Erro: ${err.message}`);
+        toast.error(`${t('common', 'error')}: ${err.message}`);
     }
   };
 
@@ -153,7 +154,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
     return (
       <div className="flex items-center justify-center p-12">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <span className="ml-3 text-muted-foreground">Carregando configuração...</span>
+          <span className="ml-3 text-muted-foreground">{t('extraction', 'loadingConfiguration')}</span>
       </div>
     );
   }
@@ -166,10 +167,10 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Settings className="h-5 w-5" />
-                Configuração do Template
+                  Template configuration
               </CardTitle>
               <CardDescription className="mt-2">
-                Configure as seções e campos que serão usados na extração de dados
+                  Configure sections and fields used for data extraction
               </CardDescription>
             </div>
             <div className="flex items-center gap-3">
@@ -183,7 +184,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
                 Importar Template
               </Button>
               <Badge variant="outline">
-                {entityTypes.length} seções ({rootEntityTypes.length} principais)
+                  {entityTypes.length} sections ({rootEntityTypes.length} main)
               </Badge>
             </div>
           </div>
@@ -217,7 +218,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
                           <span className="font-medium">{entityType.label}</span>
                           {hasChildren && (
                             <Badge variant="secondary" className="text-xs">
-                              {children.length} sub-seções
+                                {children.length} sub-sections
                             </Badge>
                           )}
                         </div>
@@ -225,10 +226,10 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant="outline">
-                        {(entityType as any).fieldsCount || 0} campos
+                          {(entityType as any).fieldsCount || 0} {t('extraction', 'fieldsCountLabel')}
                       </Badge>
                       <Badge variant="outline">
-                        {entityType.cardinality === 'one' ? 'Único' : 'Múltiplo'}
+                          {entityType.cardinality === 'one' ? t('extraction', 'cardinalityUnique') : t('extraction', 'cardinalityMultiple')}
                       </Badge>
                     </div>
                   </div>
@@ -237,9 +238,9 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
                   <CardContent className="pt-4 space-y-4">
                     <div className="flex items-center justify-between">
                       <div className="text-sm text-muted-foreground">
-                        <p><strong>Nome técnico:</strong> {entityType.name}</p>
+                          <p><strong>{t('extraction', 'technicalName')}:</strong> {entityType.name}</p>
                         <p className="mt-1">
-                          <strong>Tipo:</strong> {entityType.cardinality === 'one' ? 'Seção única' : 'Seção múltipla'}
+                            <strong>{t('extraction', 'typeLabel')}:</strong> {entityType.cardinality === 'one' ? t('extraction', 'sectionSingle') : t('extraction', 'sectionMultiple')}
                         </p>
                         {entityType.description && (
                           <p className="mt-1">{entityType.description}</p>
@@ -254,7 +255,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
                               className="gap-1"
                             >
                               <Save className="h-4 w-4" />
-                              Salvar
+                                {t('common', 'save')}
                             </Button>
                             <Button
                               size="sm"
@@ -263,7 +264,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
                               className="gap-1"
                             >
                               <X className="h-4 w-4" />
-                              Cancelar
+                                {t('common', 'cancel')}
                             </Button>
                           </>
                         ) : (
@@ -275,7 +276,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
                               className="gap-1"
                             >
                               <Edit2 className="h-4 w-4" />
-                              Editar Label
+                                {t('extraction', 'editLabelButton')}
                             </Button>
                             <Button
                               size="sm"
@@ -284,7 +285,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
                               className="gap-1 text-destructive hover:text-destructive"
                             >
                               <Trash2 className="h-4 w-4" />
-                              Remover
+                                {t('extraction', 'removeButton')}
                             </Button>
                           </>
                         )}
@@ -299,12 +300,12 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
                       />
                     </div>
 
-                    {/* Children deste entity type (sub-seções) */}
+                      {/* Children of this entity type (sub-sections) */}
                     {hasChildren && (
                       <div className="border-t pt-4 mt-4">
                         <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
                           <ChevronRight className="h-4 w-4" />
-                          Sub-seções ({children.length})
+                            {t('extraction', 'subSections')} ({children.length})
                         </h4>
                         <div className="space-y-3 pl-4">
                           {children.map((child) => (
@@ -314,11 +315,11 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
                                   <div>
                                     <CardTitle className="text-sm">{child.label}</CardTitle>
                                     <p className="text-xs text-muted-foreground mt-1">
-                                      {child.name} • {child.cardinality === 'many' ? 'Múltiplo' : 'Único'}
+                                        {child.name} • {child.cardinality === 'many' ? t('extraction', 'cardinalityMultiple') : t('extraction', 'cardinalityUnique')}
                                     </p>
                                   </div>
                                   <Badge variant="outline" className="text-xs">
-                                    {(child as any).fieldsCount || 0} campos
+                                      {(child as any).fieldsCount || 0} {t('extraction', 'fieldsCountLabel')}
                                   </Badge>
                                 </div>
                               </CardHeader>
@@ -346,9 +347,9 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
           <CardContent className="pt-6">
             <div className="text-center text-muted-foreground">
               <Plus className="h-12 w-12 mx-auto mb-3 text-muted-foreground/50" />
-              <p className="text-sm font-medium mb-1">Nenhuma seção configurada</p>
+                <p className="text-sm font-medium mb-1">{t('extraction', 'noSectionsConfigured')}</p>
               <p className="text-xs mb-4">
-                Importe um template global ou crie seções personalizadas
+                  Import a global template or create custom sections
               </p>
               <div className="flex gap-2 justify-center">
                 <Button 
@@ -363,7 +364,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
                   onClick={() => setShowAddSectionDialog(true)}
                 >
                   <Plus className="h-4 w-4 mr-2" />
-                  Adicionar Seção
+                    {t('extraction', 'addSection')}
                 </Button>
               </div>
             </div>
@@ -371,7 +372,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         </Card>
       )}
 
-      {/* Botão adicionar seção */}
+        {/* Add section button */}
       {entityTypes.length > 0 && (
         <Card>
           <CardContent className="pt-6">
@@ -381,7 +382,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
                 onClick={() => setShowAddSectionDialog(true)}
               >
                 <Plus className="h-4 w-4 mr-2" />
-                Adicionar Nova Seção
+                  {t('extraction', 'addNewSection')}
               </Button>
             </div>
           </CardContent>

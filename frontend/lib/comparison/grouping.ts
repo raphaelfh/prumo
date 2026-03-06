@@ -1,39 +1,39 @@
 /**
- * Helpers para agrupar instances por label
- * 
- * Usado em comparações de cardinality='many':
- * - Agrupa instances do current user
- * - Agrupa instances de outros usuários
- * - Retorna entidades únicas (ex: ["model A", "model B"])
+ * Helpers to group instances by label
+ *
+ * Used in cardinality='many' comparisons:
+ * - Groups current user instances
+ * - Groups other users' instances
+ * - Returns unique entities (e.g. ["model A", "model B"])
  */
 
 import type {ExtractionInstance} from '@/types/extraction';
 
-// Tipo para instances com criador
+// Type for instances with creator
 export interface InstanceWithCreator extends ExtractionInstance {
   created_by: string;
 }
 
 export interface GroupedEntity {
-  label: string; // ex: "model A"
+    label: string; // e.g. "model A"
   instancesByUser: Map<string, string>; // userId -> instanceId
 }
 
 /**
- * Agrupa instances por label de todos os usuários
- * VERSÃO CORRIGIDA: Usa instances reais do banco em vez de inferir
+ * Groups instances by label across all users
+ * Uses real DB instances instead of inferring
  */
 export function groupInstancesByLabel(
   myInstances: ExtractionInstance[],
   myUserId: string,
-  allUserInstances: InstanceWithCreator[], // NOVO: instances reais do banco
+  allUserInstances: InstanceWithCreator[], // Real instances from DB
   entityTypeId: string
 ): GroupedEntity[] {
   const labelMap = new Map<string, Map<string, string>>();
-  
-  // Agrupar TODAS as instances (minhas + outros usuários) por label
+
+    // Group ALL instances (mine + other users) by label
   allUserInstances.forEach(instance => {
-    if (instance.entity_type_id !== entityTypeId) return; // ✅ Filtrar por entityType
+      if (instance.entity_type_id !== entityTypeId) return; // Filter by entityType
     
     const userId = instance.created_by;
     const label = instance.label;
@@ -44,18 +44,18 @@ export function groupInstancesByLabel(
     
     labelMap.get(label)!.set(userId, instance.id);
   });
-  
-  // Converter para array e filtrar apenas grupos com pelo menos 1 usuário
+
+    // Convert to array and keep only groups with at least 1 user
   return Array.from(labelMap.entries())
     .map(([label, instancesByUser]) => ({
       label,
       instancesByUser
     }))
-    .filter(entity => entity.instancesByUser.size > 0); // Pelo menos 1 usuário
+      .filter(entity => entity.instancesByUser.size > 0); // At least 1 user
 }
 
 /**
- * Extrai valores de uma instance específica de um usuário específico
+ * Extracts values for a specific instance of a specific user
  */
 export function extractInstanceValuesForUser(
   allValues: Record<string, any>,

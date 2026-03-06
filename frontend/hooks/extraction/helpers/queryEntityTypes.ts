@@ -1,43 +1,43 @@
 /**
- * Helper reutilizável para queries de entity_types com fallback
- * 
- * Abstrai a lógica comum de buscar entity_types que podem estar em:
- * - project_template_id (template de projeto)
- * - template_id (template global)
- * 
- * Sempre tenta primeiro project_template_id, depois template_id como fallback.
+ * Reusable helper for entity_types queries with fallback
+ *
+ * Abstracts common logic to fetch entity_types that may live under:
+ * - project_template_id (project template)
+ * - template_id (global template)
+ *
+ * Always tries project_template_id first, then template_id as fallback.
  */
 
 import {supabase} from '@/integrations/supabase/client';
 import type {PostgrestFilterBuilder} from '@supabase/postgrest-js';
 
 /**
- * Opções para query de entity_types
+ * Options for entity_types query
  */
 export interface QueryEntityTypesOptions<T> {
-  /** ID do template (pode ser project_template_id ou template_id) */
+    /** Template ID (may be project_template_id or template_id) */
   templateId: string;
-  /** Seleção de campos (ex: 'id, name, label, sort_order') */
+    /** Field selection (e.g. 'id, name, label, sort_order') */
   select: string;
-  /** Filtros adicionais a serem aplicados na query */
+    /** Additional filters to apply to the query */
   filters?: (query: PostgrestFilterBuilder<any, any, any, T>) => PostgrestFilterBuilder<any, any, any, T>;
-  /** Ordenação (padrão: sort_order asc) */
+    /** Order (default: sort_order asc) */
   orderBy?: { column: string; ascending?: boolean };
 }
 
 /**
- * Busca entity_types com fallback automático project_template_id -> template_id
- * 
- * @param options - Opções da query
- * @returns Array de entity_types encontrados
- * @throws Error se houver erro na query
+ * Fetches entity_types with automatic fallback project_template_id -> template_id
+ *
+ * @param options - Query options
+ * @returns Array of entity_types found
+ * @throws Error on query failure
  */
 export async function queryEntityTypesWithFallback<T = any>(
   options: QueryEntityTypesOptions<T>
 ): Promise<T[]> {
   const { templateId, select, filters, orderBy } = options;
 
-  // Construir query base
+    // Build base query
   const buildQuery = (useProjectTemplate: boolean) => {
     let query = supabase
       .from('extraction_entity_types')
@@ -55,11 +55,11 @@ export async function queryEntityTypesWithFallback<T = any>(
       query = filters(query);
     }
 
-    // Aplicar ordenação
+      // Apply sort order
     if (orderBy) {
       query = query.order(orderBy.column, { ascending: orderBy.ascending !== false });
     } else {
-      // Ordenação padrão por sort_order
+        // Default sort by sort_order
       query = query.order('sort_order', { ascending: true });
     }
 
@@ -69,7 +69,7 @@ export async function queryEntityTypesWithFallback<T = any>(
   // Tentar primeiro project_template_id (template de projeto)
   let { data: results, error } = await buildQuery(true);
 
-  // Se não encontrou, tentar template_id (template global)
+    // If not found, try template_id (global template)
   if (!results || results.length === 0) {
     const { data: globalResults, error: globalError } = await buildQuery(false);
 

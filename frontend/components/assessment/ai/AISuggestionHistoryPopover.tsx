@@ -1,8 +1,8 @@
 /**
- * Popover de Histórico de Sugestões de IA - Assessment
+ * AI suggestion history popover - Assessment
  *
- * Mostra histórico de sugestões para um item de assessment
- * Permite re-aceitar ou re-rejeitar sugestões passadas
+ * Shows suggestion history for an assessment item
+ * Allows re-accept or re-reject past suggestions
  *
  * Adaptado de extraction/ai/AISuggestionHistoryPopover.tsx
  *
@@ -18,12 +18,13 @@ import {Clock, Loader2, X} from 'lucide-react';
 import {cn} from '@/lib/utils';
 import type {AIAssessmentSuggestionHistoryItem} from '@/types/assessment';
 import {formatAssessmentLevel} from '@/lib/assessment-utils';
+import {t} from '@/lib/copy';
 
-const formatTimestamp = (date: Date | string): string => {
+const formatTimestamp = (date: Date | string, invalidLabel: string): string => {
   try {
     const dateObj = date instanceof Date ? date : new Date(date);
-    if (isNaN(dateObj.getTime())) return 'Data inválida';
-    return new Intl.DateTimeFormat('pt-BR', {
+      if (isNaN(dateObj.getTime())) return invalidLabel;
+      return new Intl.DateTimeFormat('en-US', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
@@ -31,7 +32,7 @@ const formatTimestamp = (date: Date | string): string => {
       minute: '2-digit',
     }).format(dateObj);
   } catch {
-    return 'Data inválida';
+      return invalidLabel;
   }
 };
 
@@ -63,7 +64,7 @@ export function AISuggestionHistoryPopover({
       const data = await getHistory(itemId);
       setHistory(data);
     } catch (err) {
-      console.error('❌ [AISuggestionHistoryPopover] Erro ao carregar histórico:', err);
+        console.error('❌ [AISuggestionHistoryPopover] Error loading history:', err);
       setHistory([]);
     } finally {
       setLoading(false);
@@ -85,9 +86,9 @@ export function AISuggestionHistoryPopover({
       </PopoverTrigger>
       <PopoverContent className="w-96 max-w-[90vw] sm:max-w-md p-0 z-50" align="start" side="bottom">
         <div className="p-4 border-b">
-          <h4 className="font-semibold text-sm">Histórico de Sugestões</h4>
+            <h4 className="font-semibold text-sm">{t('assessment', 'aiHistoryTitle')}</h4>
           <p className="text-xs text-muted-foreground mt-1">
-            {history.length} sugestão(ões) encontrada(s)
+              {history.length} {t('assessment', 'aiHistoryCount')}
           </p>
         </div>
 
@@ -98,7 +99,7 @@ export function AISuggestionHistoryPopover({
             </div>
           ) : history.length === 0 ? (
             <div className="p-8 text-center text-sm text-muted-foreground">
-              Nenhuma sugestão anterior encontrada
+                {t('assessment', 'aiHistoryEmpty')}
             </div>
           ) : (
             <div className="p-2 sm:p-3 space-y-2">
@@ -139,9 +140,9 @@ export function AISuggestionHistoryPopover({
                         )}
                       >
                         {suggestion.status === 'accepted'
-                          ? 'Aceita'
+                            ? t('assessment', 'aiHistoryAccepted')
                           : suggestion.status === 'rejected'
-                          ? 'Rejeitada'
+                                ? t('assessment', 'aiHistoryRejected')
                           : `${confidencePercent}%`}
                       </Badge>
                     </div>
@@ -149,7 +150,7 @@ export function AISuggestionHistoryPopover({
                     <div className="flex items-center justify-between gap-2 flex-wrap">
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
                         <Clock className="h-3 w-3" />
-                        <span>{formatTimestamp(suggestion.timestamp)}</span>
+                          <span>{formatTimestamp(suggestion.timestamp, t('assessment', 'aiHistoryInvalidDate'))}</span>
                       </div>
 
                       {isCurrent && suggestion.status === 'accepted' && (
@@ -164,7 +165,7 @@ export function AISuggestionHistoryPopover({
                             }}
                           >
                             <X className="h-3 w-3 mr-1" />
-                            <span className="hidden sm:inline">Rejeitar</span>
+                              <span className="hidden sm:inline">{t('assessment', 'aiHistoryReject')}</span>
                           </Button>
                         </div>
                       )}

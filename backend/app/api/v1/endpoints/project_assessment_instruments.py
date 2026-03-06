@@ -1,10 +1,11 @@
 """
 Project Assessment Instruments Endpoints.
 
-Gerencia instrumentos de avaliação por projeto.
-Permite clonar instrumentos globais (PROBAST, ROBIS) ou criar customizados.
+Manages assessment instruments per project.
+Allows cloning global instruments (PROBAST, ROBIS) or creating custom ones.
 """
 
+import time
 import uuid
 from uuid import UUID
 
@@ -35,8 +36,8 @@ logger = get_logger(__name__)
 @router.get(
     "/global",
     response_model=ApiResponse,
-    summary="Listar instrumentos globais",
-    description="Lista todos os instrumentos globais disponíveis para clonagem.",
+    summary="List global instruments",
+    description="Lists all global instruments available for cloning.",
 )
 @limiter.limit("30/minute")
 async def list_global_instruments(
@@ -45,9 +46,9 @@ async def list_global_instruments(
     user: CurrentUser,
 ) -> ApiResponse:
     """
-    Lista instrumentos globais disponíveis (PROBAST, ROBIS, etc.).
+    List available global instruments (PROBAST, ROBIS, etc.).
 
-    Retorna informações resumidas de cada instrumento para seleção.
+    Returns summary info for each instrument for selection.
     """
     trace_id = str(uuid.uuid4())
 
@@ -69,8 +70,8 @@ async def list_global_instruments(
 @router.get(
     "/project/{project_id}",
     response_model=ApiResponse,
-    summary="Listar instrumentos do projeto",
-    description="Lista todos os instrumentos configurados para um projeto.",
+    summary="List project instruments",
+    description="Lists all instruments configured for a project.",
 )
 @limiter.limit("30/minute")
 async def list_project_instruments(
@@ -81,13 +82,14 @@ async def list_project_instruments(
     active_only: bool = True,
 ) -> ApiResponse:
     """
-    Lista instrumentos de um projeto.
+    List instruments for a project.
 
     Args:
-        project_id: ID do projeto.
-        active_only: Se True, retorna apenas instrumentos ativos.
+        project_id: Project ID.
+        active_only: If True, return only active instruments.
     """
     trace_id = str(uuid.uuid4())
+    t0 = time.perf_counter()
 
     service = ProjectAssessmentInstrumentService(
         db=db,
@@ -100,6 +102,15 @@ async def list_project_instruments(
         active_only=active_only,
     )
 
+    duration_ms = (time.perf_counter() - t0) * 1000
+    logger.info(
+        "list_project_instruments_done",
+        trace_id=trace_id,
+        project_id=str(project_id),
+        count=len(instruments),
+        duration_ms=round(duration_ms, 2),
+    )
+
     return ApiResponse(
         ok=True,
         data={"instruments": [i.model_dump(by_alias=True) for i in instruments]},
@@ -110,8 +121,8 @@ async def list_project_instruments(
 @router.get(
     "/{instrument_id}",
     response_model=ApiResponse,
-    summary="Buscar instrumento",
-    description="Busca um instrumento por ID com todos os seus items.",
+    summary="Get instrument",
+    description="Fetches an instrument by ID with all its items.",
 )
 @limiter.limit("30/minute")
 async def get_instrument(
@@ -121,7 +132,7 @@ async def get_instrument(
     user: CurrentUser,
 ) -> ApiResponse:
     """
-    Busca instrumento por ID com items.
+    Fetch instrument by ID with items.
     """
     trace_id = str(uuid.uuid4())
 
@@ -149,8 +160,8 @@ async def get_instrument(
 @router.post(
     "/clone",
     response_model=ApiResponse,
-    summary="Clonar instrumento global",
-    description="Clona um instrumento global para um projeto específico.",
+    summary="Clone global instrument",
+    description="Clones a global instrument to a specific project.",
 )
 @limiter.limit("10/minute")
 async def clone_global_instrument(
@@ -160,10 +171,10 @@ async def clone_global_instrument(
     user: CurrentUser,
 ) -> ApiResponse:
     """
-    Clona um instrumento global (PROBAST, ROBIS) para um projeto.
+    Clone a global instrument (PROBAST, ROBIS) to a project.
 
-    Cria uma cópia completa com todos os items, permitindo
-    customização posterior sem afetar o instrumento original.
+    Creates a full copy with all items, allowing later
+    customization without affecting the original instrument.
     """
     trace_id = str(uuid.uuid4())
 
@@ -217,8 +228,8 @@ async def clone_global_instrument(
 @router.post(
     "",
     response_model=ApiResponse,
-    summary="Criar instrumento customizado",
-    description="Cria um novo instrumento customizado para um projeto.",
+    summary="Create custom instrument",
+    description="Creates a new custom instrument for a project.",
 )
 @limiter.limit("10/minute")
 async def create_instrument(
@@ -228,10 +239,10 @@ async def create_instrument(
     user: CurrentUser,
 ) -> ApiResponse:
     """
-    Cria um instrumento customizado.
+    Create a custom instrument.
 
-    Permite criar instrumentos personalizados com items definidos
-    pelo usuário, sem necessidade de clonar um instrumento global.
+    Allows creating custom instruments with user-defined items,
+    without cloning a global instrument.
     """
     trace_id = str(uuid.uuid4())
 
@@ -261,8 +272,8 @@ async def create_instrument(
 @router.patch(
     "/{instrument_id}",
     response_model=ApiResponse,
-    summary="Atualizar instrumento",
-    description="Atualiza um instrumento de projeto.",
+    summary="Update instrument",
+    description="Updates a project instrument.",
 )
 @limiter.limit("20/minute")
 async def update_instrument(
@@ -301,8 +312,8 @@ async def update_instrument(
 @router.delete(
     "/{instrument_id}",
     response_model=ApiResponse,
-    summary="Deletar instrumento",
-    description="Deleta um instrumento de projeto.",
+    summary="Delete instrument",
+    description="Deletes a project instrument.",
 )
 @limiter.limit("10/minute")
 async def delete_instrument(
@@ -345,8 +356,8 @@ async def delete_instrument(
 @router.post(
     "/{instrument_id}/items",
     response_model=ApiResponse,
-    summary="Adicionar item",
-    description="Adiciona um item a um instrumento.",
+    summary="Add item",
+    description="Adds an item to an instrument.",
 )
 @limiter.limit("20/minute")
 async def add_item(
@@ -379,8 +390,8 @@ async def add_item(
 @router.patch(
     "/items/{item_id}",
     response_model=ApiResponse,
-    summary="Atualizar item",
-    description="Atualiza um item de instrumento.",
+    summary="Update item",
+    description="Updates an instrument item.",
 )
 @limiter.limit("20/minute")
 async def update_item(
@@ -419,8 +430,8 @@ async def update_item(
 @router.delete(
     "/items/{item_id}",
     response_model=ApiResponse,
-    summary="Deletar item",
-    description="Deleta um item de instrumento.",
+    summary="Delete item",
+    description="Deletes an instrument item.",
 )
 @limiter.limit("20/minute")
 async def delete_item(

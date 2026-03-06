@@ -44,6 +44,7 @@ import {AddFieldDialog} from './dialogs/AddFieldDialog';
 import {DeleteFieldConfirm} from './dialogs/DeleteFieldConfirm';
 import {EditFieldDialog} from './dialogs/EditFieldDialog';
 import {useProject} from '@/contexts/ProjectContext';
+import {t} from '@/lib/copy';
 import type {ExtractionField, FieldValidationResult} from '@/types/extraction';
 
 interface FieldsManagerProps {
@@ -100,12 +101,12 @@ function SortableTableRow({
 
   const getFieldTypeLabel = (type: string) => {
     const labels: Record<string, string> = {
-      text: 'Texto',
-      number: 'Número',
-      date: 'Data',
-      select: 'Seleção',
-      multiselect: 'Múltipla Escolha',
-      boolean: 'Sim/Não',
+        text: t('extraction', 'fieldTypeText'),
+        number: t('extraction', 'fieldTypeNumber'),
+        date: t('extraction', 'fieldTypeDate'),
+        select: t('extraction', 'fieldTypeSelect'),
+        multiselect: t('extraction', 'fieldTypeMultiselect'),
+        boolean: t('extraction', 'fieldTypeBoolean'),
     };
     return labels[type] || type;
   };
@@ -127,7 +128,7 @@ function SortableTableRow({
         </div>
       </TableCell>
 
-      {/* Número */}
+        {/* Number */}
       <TableCell className="font-mono text-xs text-muted-foreground w-[50px]">
         {index + 1}
       </TableCell>
@@ -139,13 +140,13 @@ function SortableTableRow({
             <Input
               value={editData.label || ''}
               onChange={(e) => onEditData({ ...editData, label: e.target.value })}
-              placeholder="Label do campo"
+              placeholder={t('extraction', 'fieldLabelPlaceholder')}
               disabled={savingEdit}
             />
             <Textarea
               value={editData.description || ''}
               onChange={(e) => onEditData({ ...editData, description: e.target.value })}
-              placeholder="Descrição"
+              placeholder={t('extraction', 'fieldDescriptionPlaceholder')}
               rows={2}
               className="text-sm"
               disabled={savingEdit}
@@ -175,7 +176,7 @@ function SortableTableRow({
         </Badge>
       </TableCell>
 
-      {/* Obrigatório */}
+        {/* Required */}
       <TableCell className="text-center">
         {isEditing ? (
           <Switch
@@ -187,12 +188,12 @@ function SortableTableRow({
           />
         ) : (
           <Badge variant={field.is_required ? 'default' : 'outline'}>
-            {field.is_required ? 'Sim' : 'Não'}
+              {field.is_required ? t('extraction', 'yes') : t('extraction', 'no')}
           </Badge>
         )}
       </TableCell>
 
-      {/* Ações */}
+        {/* Actions */}
       <TableCell className="text-right">
         {isEditing ? (
           <div className="flex justify-end gap-2">
@@ -207,7 +208,7 @@ function SortableTableRow({
               ) : (
                 <Save className="h-3 w-3" />
               )}
-              Salvar
+                {t('common', 'save')}
             </Button>
             <Button
               size="sm"
@@ -217,7 +218,7 @@ function SortableTableRow({
               className="gap-1"
             >
               <X className="h-3 w-3" />
-              Cancelar
+                {t('common', 'cancel')}
             </Button>
           </div>
         ) : (
@@ -243,13 +244,13 @@ function SortableTableRow({
                 </TooltipTrigger>
                 {!canEdit && (
                   <TooltipContent>
-                    <p>Apenas managers podem editar</p>
+                      <p>{t('extraction', 'onlyManagersCanEdit')}</p>
                   </TooltipContent>
                 )}
               </Tooltip>
             </TooltipProvider>
 
-            {/* Botão Editar Avançado */}
+              {/* Advanced edit button */}
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -267,11 +268,11 @@ function SortableTableRow({
                 </TooltipTrigger>
                 {canEdit ? (
                   <TooltipContent>
-                    <p>Edição avançada (tipo, unidade, etc.)</p>
+                      <p>{t('extraction', 'advancedEditHint')}</p>
                   </TooltipContent>
                 ) : (
                   <TooltipContent>
-                    <p>Apenas managers podem editar</p>
+                      <p>{t('extraction', 'onlyManagersCanEdit')}</p>
                   </TooltipContent>
                 )}
               </Tooltip>
@@ -298,7 +299,7 @@ function SortableTableRow({
                 </TooltipTrigger>
                 {!canDelete && (
                   <TooltipContent>
-                    <p>Apenas managers podem excluir</p>
+                      <p>{t('extraction', 'onlyManagersCanDelete')}</p>
                   </TooltipContent>
                 )}
               </Tooltip>
@@ -328,7 +329,7 @@ export function FieldsManagerWithDragDrop({ entityTypeId, sectionName }: FieldsM
     validateField,
   } = useFieldManagement({ entityTypeId, projectId });
 
-  // Estados locais para edição inline
+    // Local state for inline edit
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<ExtractionField>>({});
   const [savingEdit, setSavingEdit] = useState(false);
@@ -350,7 +351,7 @@ export function FieldsManagerWithDragDrop({ entityTypeId, sectionName }: FieldsM
     })
   );
 
-  // Handlers para edição inline (mantidos para compatibilidade)
+    // Handlers for inline edit (kept for compatibility)
   const handleStartEdit = (field: ExtractionField) => {
     setEditingId(field.id);
     setEditData({
@@ -390,14 +391,14 @@ export function FieldsManagerWithDragDrop({ entityTypeId, sectionName }: FieldsM
       const validation = await validateField(field.id);
       setDeleteValidation(validation);
     } catch (err) {
-      console.error('Erro ao validar campo para exclusão:', err);
+        console.error('Error validating field for deletion:', err);
       setDeleteValidation({
         canDelete: false,
         canUpdate: false,
         canChangeType: false,
         extractedValuesCount: 0,
         affectedArticles: [],
-        message: 'Erro ao validar campo',
+          message: t('extraction', 'errors_validateField'),
       });
     } finally {
       setValidatingDelete(false);
@@ -424,17 +425,17 @@ export function FieldsManagerWithDragDrop({ entityTypeId, sectionName }: FieldsM
     // Preparar dados para backend
     const reorderData = reorderedFields.map((field, index) => ({
       id: field.id,
-      sort_order: index + 1, // sort_order começa em 1
+        sort_order: index + 1, // sort_order starts at 1
     }));
 
     try {
       const success = await reorderFields(reorderData);
       if (!success) {
-        // Se falhou no backend, reverter mudança
-        // (a lista será recarregada automaticamente)
+          // If backend failed, revert change
+          // (list will reload automatically)
       }
     } catch (err) {
-      console.error('Erro ao reordenar:', err);
+        console.error('Error reordering:', err);
     } finally {
       setIsReordering(false);
     }
@@ -444,18 +445,18 @@ export function FieldsManagerWithDragDrop({ entityTypeId, sectionName }: FieldsM
     return (
       <div className="flex items-center justify-center p-4">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        <span className="ml-2 text-sm text-muted-foreground">Carregando campos...</span>
+          <span className="ml-2 text-sm text-muted-foreground">{t('extraction', 'loadingFields')}</span>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      {/* Header com ações */}
+        {/* Header with actions */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h4 className="text-sm font-medium">
-            Campos desta seção ({fields.length})
+              {t('extraction', 'fieldsOfThisSection')} ({fields.length})
           </h4>
           {userRole && (
             <Badge variant="outline" className="text-xs">
@@ -464,7 +465,7 @@ export function FieldsManagerWithDragDrop({ entityTypeId, sectionName }: FieldsM
           )}
           {isReordering && (
             <Badge variant="secondary" className="text-xs animate-pulse">
-              Reordenando...
+                {t('extraction', 'reordering')}
             </Badge>
           )}
         </div>
@@ -482,12 +483,12 @@ export function FieldsManagerWithDragDrop({ entityTypeId, sectionName }: FieldsM
                   {canCreate ? (
                     <>
                       <Plus className="h-4 w-4" />
-                      Adicionar Campo
+                        {t('extraction', 'addFieldButton')}
                     </>
                   ) : (
                     <>
                       <Lock className="h-4 w-4" />
-                      Adicionar Campo
+                        {t('extraction', 'addFieldButton')}
                     </>
                   )}
                 </Button>
@@ -495,7 +496,7 @@ export function FieldsManagerWithDragDrop({ entityTypeId, sectionName }: FieldsM
             </TooltipTrigger>
             {!canCreate && (
               <TooltipContent>
-                <p>Apenas managers podem adicionar campos</p>
+                  <p>{t('extraction', 'onlyManagersCanAddFields')}</p>
               </TooltipContent>
             )}
           </Tooltip>
@@ -508,7 +509,7 @@ export function FieldsManagerWithDragDrop({ entityTypeId, sectionName }: FieldsM
           <CardContent className="pt-6">
             <div className="text-center py-8">
               <p className="text-sm text-muted-foreground mb-4">
-                Nenhum campo nesta seção
+                  {t('extraction', 'noFieldsInThisSection')}
               </p>
               {canCreate && (
                 <Button
@@ -517,7 +518,7 @@ export function FieldsManagerWithDragDrop({ entityTypeId, sectionName }: FieldsM
                   onClick={() => setShowAddDialog(true)}
                 >
                   <Plus className="h-4 w-4 mr-2" />
-                  Adicionar Primeiro Campo
+                    {t('extraction', 'addFirstFieldFull')}
                 </Button>
               )}
             </div>
@@ -534,10 +535,10 @@ export function FieldsManagerWithDragDrop({ entityTypeId, sectionName }: FieldsM
               <TableRow>
                 <TableHead className="w-[30px]"></TableHead>
                 <TableHead className="w-[50px]">#</TableHead>
-                <TableHead>Campo</TableHead>
-                <TableHead>Tipo</TableHead>
-                <TableHead className="text-center">Obrigatório</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
+                  <TableHead>{t('extraction', 'fieldColumn')}</TableHead>
+                  <TableHead>{t('extraction', 'typeColumn')}</TableHead>
+                  <TableHead className="text-center">{t('extraction', 'requiredColumn')}</TableHead>
+                  <TableHead className="text-right">{t('extraction', 'tableActions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

@@ -15,7 +15,8 @@ import {Badge} from '@/components/ui/badge';
 import {Tooltip, TooltipContent, TooltipTrigger,} from '@/components/ui/tooltip';
 import {CheckCircle, Clock, Loader2} from 'lucide-react';
 import {format} from 'date-fns';
-import {ptBR} from 'date-fns/locale';
+import {enUS} from 'date-fns/locale';
+import {t} from '@/lib/copy';
 
 // =================== INTERFACES ===================
 
@@ -63,8 +64,8 @@ export function HeaderStatusBadges(props: HeaderStatusBadgesProps) {
         <TooltipContent>
           <p>
             {isComplete
-              ? 'Avaliação completa'
-              : `${totalItems - completedItems} item(ns) restante(s)`}
+                ? t('assessment', 'headerAssessmentComplete')
+                : `${totalItems - completedItems} ${t('assessment', 'headerItemsRemaining')}`}
           </p>
         </TooltipContent>
       </Tooltip>
@@ -73,7 +74,7 @@ export function HeaderStatusBadges(props: HeaderStatusBadgesProps) {
       {isSaving && (
         <Badge variant="outline" className="gap-1.5">
           <Loader2 className="h-3 w-3 animate-spin" />
-          Salvando...
+            {t('assessment', 'headerSaving')}
         </Badge>
       )}
 
@@ -82,13 +83,13 @@ export function HeaderStatusBadges(props: HeaderStatusBadgesProps) {
           <TooltipTrigger asChild>
             <Badge variant="outline" className="gap-1.5">
               <Clock className="h-3 w-3" />
-              Salvo
+                {t('assessment', 'headerSaved')}
             </Badge>
           </TooltipTrigger>
           <TooltipContent>
             <p>
-              Última atualização:{' '}
-              {format(lastSaved, "HH:mm'h'", { locale: ptBR })}
+                {t('assessment', 'headerLastUpdate')}:{' '}
+                {format(lastSaved, "HH:mm'h'", {locale: enUS})}
             </p>
           </TooltipContent>
         </Tooltip>

@@ -1,8 +1,8 @@
 /**
- * Store para gerenciar Background Jobs
- * 
- * Mantém estado de jobs em execução e histórico recente,
- * com persistência em LocalStorage para sobreviver a reloads.
+ * Store for Background Jobs
+ *
+ * Keeps state of running jobs and recent history,
+ * with LocalStorage persistence to survive reloads.
  */
 
 import { create } from 'zustand';
@@ -24,7 +24,7 @@ interface BackgroundJobsState {
   getRecentJobs: (limit?: number) => BackgroundJob[];
 }
 
-const MAX_COMPLETED_JOBS = 10; // Manter apenas últimos 10 jobs completos
+const MAX_COMPLETED_JOBS = 10; // Keep only last 10 completed jobs
 
 export const useBackgroundJobs = create<BackgroundJobsState>()(
   persist(
@@ -71,8 +71,8 @@ export const useBackgroundJobs = create<BackgroundJobsState>()(
 
       getRecentJobs: (limit = 10) => {
         const allJobs = get().jobs;
-        
-        // Manter jobs ativos + últimos N completos/failed/cancelled
+
+          // Keep active jobs + last N completed/failed/cancelled
         const activeJobs = allJobs.filter(
           (job) => job.status === 'running' || job.status === 'pending'
         );

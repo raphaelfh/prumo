@@ -27,7 +27,7 @@ export function VirtualList<T>({
     setScrollTop(e.currentTarget.scrollTop);
   };
 
-  // Calcular itens visíveis
+    // Compute visible items
   const { visibleItems, offsetY, totalHeight, startIndex } = useMemo(() => {
     const startIndex = Math.max(0, Math.floor(scrollTop / itemHeight) - overscan);
     const endIndex = Math.min(

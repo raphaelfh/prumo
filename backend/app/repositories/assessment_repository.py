@@ -1,7 +1,7 @@
 """
 Assessment Repository.
 
-Gerencia acesso a dados de assessments e instrumentos.
+Manages access to assessment and instrument data.
 """
 
 from uuid import UUID
@@ -28,9 +28,8 @@ from app.repositories.base import BaseRepository
 
 class AssessmentInstrumentRepository(BaseRepository[AssessmentInstrument]):
     """
-    Repository para instrumentos de assessment.
-    
-    Gerencia ROBINS-I, RoB 2, etc.
+    Repository for assessment instruments.
+    Manages ROBINS-I, RoB 2, etc.
     """
     
     def __init__(self, db: AsyncSession):
@@ -41,13 +40,11 @@ class AssessmentInstrumentRepository(BaseRepository[AssessmentInstrument]):
         project_id: UUID | str,
     ) -> list[AssessmentInstrument]:
         """
-        Lista instrumentos de um projeto.
-        
+        List instruments for a project.
         Args:
-            project_id: ID do projeto.
-            
+            project_id: Project ID.
         Returns:
-            Lista de instrumentos.
+            List of instruments.
         """
         if isinstance(project_id, str):
             project_id = UUID(project_id)
@@ -63,13 +60,11 @@ class AssessmentInstrumentRepository(BaseRepository[AssessmentInstrument]):
         instrument_id: UUID | str,
     ) -> AssessmentInstrument | None:
         """
-        Busca instrumento com seus items.
-        
+        Fetch instrument with its items.
         Args:
-            instrument_id: ID do instrumento.
-            
+            instrument_id: Instrument ID.
         Returns:
-            Instrumento com items ou None.
+            Instrument with items or None.
         """
         if isinstance(instrument_id, str):
             instrument_id = UUID(instrument_id)
@@ -81,12 +76,25 @@ class AssessmentInstrumentRepository(BaseRepository[AssessmentInstrument]):
         )
         return result.scalar_one_or_none()
 
+    async def get_all_active_with_items(self) -> list[AssessmentInstrument]:
+        """
+        List all active global instruments with items (single query).
+        Returns:
+            List of active instruments with items loaded.
+        """
+        result = await self.db.execute(
+            select(AssessmentInstrument)
+            .options(selectinload(AssessmentInstrument.items))
+            .where(AssessmentInstrument.is_active == True)  # noqa: E712
+            .order_by(AssessmentInstrument.created_at.desc())
+        )
+        return list(result.scalars().all())
+
 
 class AssessmentItemRepository(BaseRepository[AssessmentItem]):
     """
-    Repository para items de assessment.
-    
-    Gerencia perguntas/critérios de avaliação.
+    Repository for assessment items.
+    Manages questions/evaluation criteria.
     """
     
     def __init__(self, db: AsyncSession):
@@ -97,13 +105,11 @@ class AssessmentItemRepository(BaseRepository[AssessmentItem]):
         instrument_id: UUID | str,
     ) -> list[AssessmentItem]:
         """
-        Lista items de um instrumento.
-        
+        List items of an instrument.
         Args:
-            instrument_id: ID do instrumento.
-            
+            instrument_id: Instrument ID.
         Returns:
-            Lista de items ordenados.
+            Sorted list of items.
         """
         if isinstance(instrument_id, str):
             instrument_id = UUID(instrument_id)
@@ -120,13 +126,11 @@ class AssessmentItemRepository(BaseRepository[AssessmentItem]):
         item_id: UUID | str,
     ) -> AssessmentItem | None:
         """
-        Busca item com níveis permitidos.
-        
+        Fetch item with allowed levels.
         Args:
-            item_id: ID do item.
-            
+            item_id: Item ID.
         Returns:
-            Item ou None.
+            Item or None.
         """
         if isinstance(item_id, str):
             item_id = UUID(item_id)
@@ -138,21 +142,20 @@ class AssessmentItemRepository(BaseRepository[AssessmentItem]):
 
 
 # =================== REMOVED: LEGACY AssessmentRepository ===================
-# A tabela "assessments" foi removida na migração 0032 (2026-01-28).
+# The "assessments" table was removed in migration 0032 (2026-01-28).
 # Use:
-# - AssessmentInstanceRepository (para instances)
-# - AssessmentResponseRepository (para respostas individuais)
-# - AssessmentEvidenceRepository (para evidências)
+# - AssessmentInstanceRepository (for instances)
+# - AssessmentResponseRepository (for individual responses)
+# - AssessmentEvidenceRepository (for evidence)
 #
-# Veja abaixo as novas repositories (linha ~520)
+# See new repositories below (line ~520)
 # =============================================================================
 
 
 class AIAssessmentRepository(BaseRepository[AIAssessment]):
     """
-    Repository para AI assessments.
-    
-    Gerencia avaliações automáticas via OpenAI.
+    Repository for AI assessments.
+    Manages automated assessments via OpenAI.
     """
     
     def __init__(self, db: AsyncSession):
@@ -164,14 +167,12 @@ class AIAssessmentRepository(BaseRepository[AIAssessment]):
         assessment_item_id: UUID | str,
     ) -> AIAssessment | None:
         """
-        Busca AI assessment específico.
-        
+        Fetch specific AI assessment.
         Args:
-            article_id: ID do artigo.
-            assessment_item_id: ID do item.
-            
+            article_id: Article ID.
+            assessment_item_id: Item ID.
         Returns:
-            AI assessment ou None.
+            AI assessment or None.
         """
         if isinstance(article_id, str):
             article_id = UUID(article_id)
@@ -192,13 +193,11 @@ class AIAssessmentRepository(BaseRepository[AIAssessment]):
         article_id: UUID | str,
     ) -> list[AIAssessment]:
         """
-        Lista todos AI assessments de um artigo.
-        
+        List all AI assessments for an article.
         Args:
-            article_id: ID do artigo.
-            
+            article_id: Article ID.
         Returns:
-            Lista de AI assessments.
+            List of AI assessments.
         """
         if isinstance(article_id, str):
             article_id = UUID(article_id)
@@ -215,13 +214,11 @@ class AIAssessmentRepository(BaseRepository[AIAssessment]):
         project_id: UUID | str,
     ) -> list[AIAssessment]:
         """
-        Lista AI assessments pendentes de review.
-        
+        List AI assessments pending review.
         Args:
-            project_id: ID do projeto.
-            
+            project_id: Project ID.
         Returns:
-            Lista de AI assessments pendentes.
+            List of pending AI assessments.
         """
         if isinstance(project_id, str):
             project_id = UUID(project_id)
@@ -236,10 +233,8 @@ class AIAssessmentRepository(BaseRepository[AIAssessment]):
 
 class AIAssessmentRunRepository(BaseRepository[AIAssessmentRun]):
     """
-    Repository para AI assessment runs.
-
-    Gerencia rastreamento de execuções de assessment por IA,
-    similar ao ExtractionRunRepository.
+    Repository for AI assessment runs.
+    Manages tracking of AI assessment runs, similar to ExtractionRunRepository.
     """
 
     def __init__(self, db: AsyncSession):
@@ -257,20 +252,18 @@ class AIAssessmentRunRepository(BaseRepository[AIAssessmentRun]):
         is_project_instrument: bool = False,
     ) -> AIAssessmentRun:
         """
-        Cria um novo assessment run com status 'pending'.
-
+        Create a new assessment run with status 'pending'.
         Args:
-            project_id: ID do projeto.
-            article_id: ID do artigo.
-            instrument_id: ID do instrumento (global or project).
-            created_by: ID do usuário que criou.
-            stage: Estágio da execução ('assess_single', 'assess_batch', 'assess_hierarchical').
-            parameters: Parâmetros de entrada (model, temperature, item_ids, etc.).
-            extraction_instance_id: ID da extraction instance (para PROBAST por modelo).
+            project_id: Project ID.
+            article_id: Article ID.
+            instrument_id: Instrument ID (global or project).
+            created_by: User ID who created.
+            stage: Run stage ('assess_single', 'assess_batch', 'assess_hierarchical').
+            parameters: Input parameters (model, temperature, item_ids, etc.).
+            extraction_instance_id: Extraction instance ID (for PROBAST per model).
             is_project_instrument: True if instrument_id is from project_assessment_instruments.
-
         Returns:
-            Run criado.
+            Created run.
         """
         if is_project_instrument:
             run = AIAssessmentRun(
@@ -305,10 +298,9 @@ class AIAssessmentRunRepository(BaseRepository[AIAssessmentRun]):
 
     async def start_run(self, run_id: UUID) -> None:
         """
-        Marca run como 'running' e define started_at.
-
+        Mark run as 'running' and set started_at.
         Args:
-            run_id: ID do run.
+            run_id: Run ID.
         """
         await self.db.execute(
             update(AIAssessmentRun)
@@ -319,11 +311,10 @@ class AIAssessmentRunRepository(BaseRepository[AIAssessmentRun]):
 
     async def complete_run(self, run_id: UUID, results: dict) -> None:
         """
-        Marca run como 'completed' e armazena resultados.
-
+        Mark run as 'completed' and store results.
         Args:
-            run_id: ID do run.
-            results: Dicionário com métricas (tokens, duration, etc.).
+            run_id: Run ID.
+            results: Dict with metrics (tokens, duration, etc.).
         """
         await self.db.execute(
             update(AIAssessmentRun)
@@ -338,11 +329,10 @@ class AIAssessmentRunRepository(BaseRepository[AIAssessmentRun]):
 
     async def fail_run(self, run_id: UUID, error: str) -> None:
         """
-        Marca run como 'failed' com mensagem de erro.
-
+        Mark run as 'failed' with error message.
         Args:
-            run_id: ID do run.
-            error: Mensagem de erro.
+            run_id: Run ID.
+            error: Error message.
         """
         await self.db.execute(
             update(AIAssessmentRun)
@@ -361,14 +351,14 @@ class AIAssessmentRunRepository(BaseRepository[AIAssessmentRun]):
         status: str | None = None,
     ) -> list[AIAssessmentRun]:
         """
-        Lista runs de um projeto.
+        List runs for a project.
 
         Args:
-            project_id: ID do projeto.
+            project_id: Project ID.
             status: Filtro por status (opcional).
 
         Returns:
-            Lista de runs.
+            List of runs.
         """
         query = (
             select(AIAssessmentRun)
@@ -387,7 +377,7 @@ class AIAssessmentConfigRepository(BaseRepository[AIAssessmentConfig]):
     """
     Repository para AI assessment configs.
 
-    Gerencia configurações de IA por projeto/instrumento.
+    Manages AI settings per project/instrument.
     """
 
     def __init__(self, db: AsyncSession):
@@ -399,14 +389,12 @@ class AIAssessmentConfigRepository(BaseRepository[AIAssessmentConfig]):
         instrument_id: UUID | None = None,
     ) -> AIAssessmentConfig | None:
         """
-        Busca configuração ativa para projeto/instrumento.
-
+        Fetch active config for project/instrument.
         Args:
-            project_id: ID do projeto.
-            instrument_id: ID do instrumento (opcional).
-
+            project_id: Project ID.
+            instrument_id: Instrument ID (optional).
         Returns:
-            Config ativa ou None.
+            Active config or None.
         """
         query = (
             select(AIAssessmentConfig)
@@ -426,9 +414,8 @@ class AIAssessmentConfigRepository(BaseRepository[AIAssessmentConfig]):
 
 class AIAssessmentPromptRepository(BaseRepository[AIAssessmentPrompt]):
     """
-    Repository para AI assessment prompts.
-
-    Gerencia prompts customizados por assessment item.
+    Repository for AI assessment prompts.
+    Manages custom prompts per assessment item.
     """
 
     def __init__(self, db: AsyncSession):
@@ -439,13 +426,11 @@ class AIAssessmentPromptRepository(BaseRepository[AIAssessmentPrompt]):
         assessment_item_id: UUID,
     ) -> AIAssessmentPrompt | None:
         """
-        Busca prompt customizado para um assessment item.
-
+        Fetch custom prompt for an assessment item.
         Args:
-            assessment_item_id: ID do assessment item.
-
+            assessment_item_id: Assessment item ID.
         Returns:
-            Prompt customizado ou None.
+            Custom prompt or None.
         """
         result = await self.db.execute(
             select(AIAssessmentPrompt).where(
@@ -459,13 +444,11 @@ class AIAssessmentPromptRepository(BaseRepository[AIAssessmentPrompt]):
         assessment_item_id: UUID,
     ) -> AIAssessmentPrompt:
         """
-        Busca prompt existente ou cria um com valores default.
-
+        Fetch existing prompt or create one with default values.
         Args:
-            assessment_item_id: ID do assessment item.
-
+            assessment_item_id: Assessment item ID.
         Returns:
-            Prompt (existente ou novo com defaults).
+            Prompt (existing or new with defaults).
         """
         prompt = await self.get_by_item(assessment_item_id)
 
@@ -483,10 +466,9 @@ class AIAssessmentPromptRepository(BaseRepository[AIAssessmentPrompt]):
 
 class AssessmentInstanceRepository(BaseRepository[AssessmentInstance]):
     """
-    Repository para assessment instances.
-
-    Análogo a ExtractionInstanceRepository. Gerencia instances de avaliação
-    (PROBAST por artigo ou por modelo).
+    Repository for assessment instances.
+    Analogous to ExtractionInstanceRepository. Manages assessment instances
+    (PROBAST per article or per model).
     """
 
     def __init__(self, db: AsyncSession):
@@ -498,14 +480,12 @@ class AssessmentInstanceRepository(BaseRepository[AssessmentInstance]):
         instrument_id: UUID | str | None = None,
     ) -> list[AssessmentInstance]:
         """
-        Lista instances de um artigo.
-
+        List instances for an article.
         Args:
-            article_id: ID do artigo.
-            instrument_id: Filtro por instrumento (opcional).
-
+            article_id: Article ID.
+            instrument_id: Filter by instrument (optional).
         Returns:
-            Lista de assessment instances.
+            List of assessment instances.
         """
         if isinstance(article_id, str):
             article_id = UUID(article_id)
@@ -529,15 +509,12 @@ class AssessmentInstanceRepository(BaseRepository[AssessmentInstance]):
         extraction_instance_id: UUID | str,
     ) -> list[AssessmentInstance]:
         """
-        Lista assessment instances vinculadas a uma extraction instance.
-
-        Útil para buscar PROBAST de um modelo específico.
-
+        List assessment instances linked to an extraction instance.
+        Useful to fetch PROBAST for a specific model.
         Args:
-            extraction_instance_id: ID da extraction instance (modelo).
-
+            extraction_instance_id: Extraction instance ID (model).
         Returns:
-            Lista de assessment instances (ex: PROBAST do modelo).
+            List of assessment instances (e.g. PROBAST for the model).
         """
         if isinstance(extraction_instance_id, str):
             extraction_instance_id = UUID(extraction_instance_id)
@@ -556,13 +533,11 @@ class AssessmentInstanceRepository(BaseRepository[AssessmentInstance]):
         instance_id: UUID | str,
     ) -> AssessmentInstance | None:
         """
-        Busca instance com suas responses carregadas.
-
+        Fetch instance with its responses loaded.
         Args:
-            instance_id: ID da instance.
-
+            instance_id: Instance ID.
         Returns:
-            AssessmentInstance com responses ou None.
+            AssessmentInstance with responses or None.
         """
         if isinstance(instance_id, str):
             instance_id = UUID(instance_id)
@@ -579,15 +554,12 @@ class AssessmentInstanceRepository(BaseRepository[AssessmentInstance]):
         parent_instance_id: UUID | str,
     ) -> list[AssessmentInstance]:
         """
-        Lista child instances de uma instance.
-
-        Útil para hierarquias (ex: PROBAST root → Domain instances).
-
+        List child instances of an instance.
+        Useful for hierarchies (e.g. PROBAST root → Domain instances).
         Args:
-            parent_instance_id: ID da parent instance.
-
+            parent_instance_id: Parent instance ID.
         Returns:
-            Lista de child instances.
+            List of child instances.
         """
         if isinstance(parent_instance_id, str):
             parent_instance_id = UUID(parent_instance_id)
@@ -606,15 +578,13 @@ class AssessmentInstanceRepository(BaseRepository[AssessmentInstance]):
         status: str | None = None,
     ) -> list[AssessmentInstance]:
         """
-        Lista instances de um revisor em um projeto.
-
+        List instances for a reviewer in a project.
         Args:
-            project_id: ID do projeto.
-            reviewer_id: ID do revisor.
-            status: Filtro por status (opcional).
-
+            project_id: Project ID.
+            reviewer_id: Reviewer ID.
+            status: Filter by status (optional).
         Returns:
-            Lista de assessment instances.
+            List of assessment instances.
         """
         if isinstance(project_id, str):
             project_id = UUID(project_id)
@@ -638,10 +608,9 @@ class AssessmentInstanceRepository(BaseRepository[AssessmentInstance]):
 
 class AssessmentResponseRepository(BaseRepository[AssessmentResponse]):
     """
-    Repository para assessment responses.
-
-    Análogo a ExtractedValueRepository. Gerencia respostas individuais
-    a assessment items (granularidade total: 1 linha = 1 resposta).
+    Repository for assessment responses.
+    Analogous to ExtractedValueRepository. Manages individual responses
+    to assessment items (full granularity: 1 row = 1 response).
     """
 
     def __init__(self, db: AsyncSession):
@@ -652,13 +621,11 @@ class AssessmentResponseRepository(BaseRepository[AssessmentResponse]):
         assessment_instance_id: UUID | str,
     ) -> list[AssessmentResponse]:
         """
-        Lista responses de uma assessment instance.
-
+        List responses for an assessment instance.
         Args:
-            assessment_instance_id: ID da instance.
-
+            assessment_instance_id: Instance ID.
         Returns:
-            Lista de responses.
+            List of responses.
         """
         if isinstance(assessment_instance_id, str):
             assessment_instance_id = UUID(assessment_instance_id)
@@ -678,14 +645,12 @@ class AssessmentResponseRepository(BaseRepository[AssessmentResponse]):
         assessment_item_id: UUID | str,
     ) -> AssessmentResponse | None:
         """
-        Busca response específica de uma instance para um item.
-
+        Fetch specific response of an instance for an item.
         Args:
-            assessment_instance_id: ID da instance.
-            assessment_item_id: ID do item.
-
+            assessment_instance_id: Instance ID.
+            assessment_item_id: Item ID.
         Returns:
-            Response ou None.
+            Response or None.
         """
         if isinstance(assessment_instance_id, str):
             assessment_instance_id = UUID(assessment_instance_id)
@@ -706,14 +671,12 @@ class AssessmentResponseRepository(BaseRepository[AssessmentResponse]):
         reviewer_id: UUID | str | None = None,
     ) -> list[AssessmentResponse]:
         """
-        Lista responses de um artigo.
-
+        List responses for an article.
         Args:
-            article_id: ID do artigo.
-            reviewer_id: Filtro por revisor (opcional).
-
+            article_id: Article ID.
+            reviewer_id: Filter by reviewer (optional).
         Returns:
-            Lista de responses.
+            List of responses.
         """
         if isinstance(article_id, str):
             article_id = UUID(article_id)
@@ -739,17 +702,14 @@ class AssessmentResponseRepository(BaseRepository[AssessmentResponse]):
         instrument_id: UUID | str | None = None,
     ) -> list[AssessmentResponse]:
         """
-        Lista responses de um projeto com nível específico.
-
-        Útil para queries como "todos os High risk" ou "todos os Low risk".
-
+        List responses for a project with specific level.
+        Useful for queries like "all High risk" or "all Low risk".
         Args:
-            project_id: ID do projeto.
-            selected_level: Nível selecionado (ex: "Low", "High", "Unclear").
-            instrument_id: Filtro por instrumento (opcional).
-
+            project_id: Project ID.
+            selected_level: Selected level (e.g. "Low", "High", "Unclear").
+            instrument_id: Filter by instrument (optional).
         Returns:
-            Lista de responses.
+            List of responses.
         """
         if isinstance(project_id, str):
             project_id = UUID(project_id)
@@ -763,7 +723,7 @@ class AssessmentResponseRepository(BaseRepository[AssessmentResponse]):
         if instrument_id:
             if isinstance(instrument_id, str):
                 instrument_id = UUID(instrument_id)
-            # Join com assessment_instances para filtrar por instrumento
+            # Join with assessment_instances to filter by instrument
             query = query.join(AssessmentInstance).where(
                 AssessmentInstance.instrument_id == instrument_id
             )
@@ -778,20 +738,17 @@ class AssessmentResponseRepository(BaseRepository[AssessmentResponse]):
         responses: list[AssessmentResponse],
     ) -> list[AssessmentResponse]:
         """
-        Cria múltiplas responses em batch.
-
-        Útil para aceitar múltiplas sugestões de IA de uma vez.
-
+        Create multiple responses in batch.
+        Useful to accept multiple AI suggestions at once.
         Args:
-            responses: Lista de responses a criar.
-
+            responses: List of responses to create.
         Returns:
-            Lista de responses criadas.
+            List of created responses.
         """
         self.db.add_all(responses)
         await self.db.flush()
 
-        # Refresh para carregar IDs e timestamps
+        # Refresh to load IDs and timestamps
         for response in responses:
             await self.db.refresh(response)
 
@@ -800,10 +757,9 @@ class AssessmentResponseRepository(BaseRepository[AssessmentResponse]):
 
 class AssessmentEvidenceRepository(BaseRepository[AssessmentEvidence]):
     """
-    Repository para assessment evidence.
-
-    Análogo a ExtractionEvidenceRepository. Gerencia evidências
-    que suportam responses ou instances.
+    Repository for assessment evidence.
+    Analogous to ExtractionEvidenceRepository. Manages evidence
+    supporting responses or instances.
     """
 
     def __init__(self, db: AsyncSession):
@@ -814,13 +770,11 @@ class AssessmentEvidenceRepository(BaseRepository[AssessmentEvidence]):
         response_id: UUID | str,
     ) -> list[AssessmentEvidence]:
         """
-        Lista evidências de uma response.
-
+        List evidence for a response.
         Args:
-            response_id: ID da response.
-
+            response_id: Response ID.
         Returns:
-            Lista de evidências.
+            List of evidence.
         """
         if isinstance(response_id, str):
             response_id = UUID(response_id)
@@ -838,13 +792,11 @@ class AssessmentEvidenceRepository(BaseRepository[AssessmentEvidence]):
         instance_id: UUID | str,
     ) -> list[AssessmentEvidence]:
         """
-        Lista evidências de uma instance.
-
+        List evidence for an instance.
         Args:
-            instance_id: ID da instance.
-
+            instance_id: Instance ID.
         Returns:
-            Lista de evidências.
+            List of evidence.
         """
         if isinstance(instance_id, str):
             instance_id = UUID(instance_id)
@@ -862,13 +814,11 @@ class AssessmentEvidenceRepository(BaseRepository[AssessmentEvidence]):
         article_id: UUID | str,
     ) -> list[AssessmentEvidence]:
         """
-        Lista todas evidências de um artigo.
-
+        List all evidence for an article.
         Args:
-            article_id: ID do artigo.
-
+            article_id: Article ID.
         Returns:
-            Lista de evidências.
+            List of evidence.
         """
         if isinstance(article_id, str):
             article_id = UUID(article_id)
@@ -886,9 +836,8 @@ class AssessmentEvidenceRepository(BaseRepository[AssessmentEvidence]):
 
 class ProjectAssessmentInstrumentRepository(BaseRepository[ProjectAssessmentInstrument]):
     """
-    Repository para project assessment instruments.
-
-    Gerencia instrumentos customizados por projeto (clonados ou criados).
+    Repository for project assessment instruments.
+    Manages custom instruments per project (cloned or created).
     """
 
     def __init__(self, db: AsyncSession):
@@ -903,7 +852,7 @@ class ProjectAssessmentInstrumentRepository(BaseRepository[ProjectAssessmentInst
         Lista instrumentos de um projeto.
 
         Args:
-            project_id: ID do projeto.
+            project_id: Project ID.
             active_only: Se True, retorna apenas instrumentos ativos.
 
         Returns:
@@ -958,7 +907,7 @@ class ProjectAssessmentInstrumentRepository(BaseRepository[ProjectAssessmentInst
         Busca instrumento por tipo em um projeto.
 
         Args:
-            project_id: ID do projeto.
+            project_id: Project ID.
             tool_type: Tipo do instrumento (PROBAST, ROBIS, etc.).
 
         Returns:
@@ -988,7 +937,7 @@ class ProjectAssessmentInstrumentRepository(BaseRepository[ProjectAssessmentInst
         Busca instrumento clonado de um global em um projeto.
 
         Args:
-            project_id: ID do projeto.
+            project_id: Project ID.
             global_instrument_id: ID do instrumento global.
 
         Returns:
@@ -1010,9 +959,8 @@ class ProjectAssessmentInstrumentRepository(BaseRepository[ProjectAssessmentInst
 
 class ProjectAssessmentItemRepository(BaseRepository[ProjectAssessmentItem]):
     """
-    Repository para project assessment items.
-
-    Gerencia items de instrumentos customizados.
+    Repository for project assessment items.
+    Manages custom instrument items.
     """
 
     def __init__(self, db: AsyncSession):
@@ -1047,14 +995,12 @@ class ProjectAssessmentItemRepository(BaseRepository[ProjectAssessmentItem]):
         domain: str,
     ) -> list[ProjectAssessmentItem]:
         """
-        Lista items de um domínio específico.
-
+        List items for a specific domain.
         Args:
-            project_instrument_id: ID do instrumento do projeto.
-            domain: Nome do domínio (ex: "participants", "predictors").
-
+            project_instrument_id: Project instrument ID.
+            domain: Domain name (e.g. "participants", "predictors").
         Returns:
-            Lista de items do domínio ordenados.
+            Sorted list of domain items.
         """
         if isinstance(project_instrument_id, str):
             project_instrument_id = UUID(project_instrument_id)
@@ -1075,14 +1021,12 @@ class ProjectAssessmentItemRepository(BaseRepository[ProjectAssessmentItem]):
         item_code: str,
     ) -> ProjectAssessmentItem | None:
         """
-        Busca item por código único dentro do instrumento.
-
+        Fetch item by unique code within the instrument.
         Args:
-            project_instrument_id: ID do instrumento do projeto.
-            item_code: Código do item (ex: "1.1", "2.3").
-
+            project_instrument_id: Project instrument ID.
+            item_code: Item code (e.g. "1.1", "2.3").
         Returns:
-            Item ou None.
+            Item or None.
         """
         if isinstance(project_instrument_id, str):
             project_instrument_id = UUID(project_instrument_id)
@@ -1100,15 +1044,12 @@ class ProjectAssessmentItemRepository(BaseRepository[ProjectAssessmentItem]):
         items: list[ProjectAssessmentItem],
     ) -> list[ProjectAssessmentItem]:
         """
-        Cria múltiplos items em batch.
-
-        Útil para clonar todos os items de um instrumento global.
-
+        Create multiple items in batch.
+        Useful to clone all items from a global instrument.
         Args:
-            items: Lista de items a criar.
-
+            items: List of items to create.
         Returns:
-            Lista de items criados.
+            List of created items.
         """
         self.db.add_all(items)
         await self.db.flush()

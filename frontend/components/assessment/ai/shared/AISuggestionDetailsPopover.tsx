@@ -1,7 +1,7 @@
 /**
  * Modal de detalhes da sugestão de IA (justificativa + evidências) - Assessment
  *
- * Usa Dialog centralizado na viewport para nunca cortar o conteúdo
+ * Uses viewport-centered Dialog so content is never clipped
  * (com ou sem PDF à esquerda). Responsivo, com scroll interno.
  */
 

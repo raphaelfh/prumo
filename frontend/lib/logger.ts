@@ -1,9 +1,9 @@
 /**
- * Logger Centralizado
- * 
- * Logs apenas em desenvolvimento, silencioso em produção.
- * Facilita debug sem poluir produção ou vazar dados sensíveis.
- * 
+ * Centralized logger
+ *
+ * Logs only in development, silent in production.
+ * Eases debugging without polluting production or leaking sensitive data.
+ *
  * @module lib/logger
  */
 
@@ -30,7 +30,7 @@ class Logger {
         break;
       case 'error':
         console.error(`${prefix} ${message}`, data !== undefined ? data : '');
-        // TODO: Enviar para serviço de error tracking em produção
+          // TODO: Send to error tracking service in production
         break;
     }
   }
@@ -54,7 +54,7 @@ class Logger {
 
 export const logger = new Logger();
 
-// Helper para logs de performance
+// Helper for performance logs
 export const perfLog = {
   start(label: string) {
     if (isDev) {

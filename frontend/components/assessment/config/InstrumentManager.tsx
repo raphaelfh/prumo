@@ -24,6 +24,7 @@ import {toast} from 'sonner';
 import type {GlobalInstrumentSummary,} from '@/types/assessment';
 import {useProjectAssessmentInstrumentManager,} from '@/hooks/assessment';
 import {InstrumentConfigEditor} from './InstrumentConfigEditor';
+import {t} from '@/lib/copy';
 
 interface InstrumentManagerProps {
   projectId: string;
@@ -61,12 +62,12 @@ export function InstrumentManager({ projectId }: InstrumentManagerProps) {
         selectedGlobalInstrument.id,
         customName || undefined
       );
-      toast.success('Instrumento clonado com sucesso!');
+        toast.success(t('assessment', 'instrumentCloneSuccess'));
       setShowCloneDialog(false);
       setSelectedGlobalInstrument(null);
     } catch (error) {
       console.error('Error cloning instrument:', error);
-      toast.error('Erro ao clonar instrumento');
+        toast.error(t('assessment', 'instrumentCloneError'));
     }
   };
 
@@ -82,7 +83,7 @@ export function InstrumentManager({ projectId }: InstrumentManagerProps) {
           onClick={() => setEditingInstrumentId(null)}
         >
           <ArrowLeft className="h-4 w-4 mr-1" />
-          Voltar
+            {t('assessment', 'instrumentBack')}
         </Button>
         <InstrumentConfigEditor
           instrumentId={editingInstrumentId}
@@ -97,27 +98,25 @@ export function InstrumentManager({ projectId }: InstrumentManagerProps) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-semibold">Instrumentos de Avaliacao</h3>
+            <h3 className="text-lg font-semibold">{t('assessment', 'instrumentManagerTitle')}</h3>
           <p className="text-sm text-muted-foreground">
-            Configure o instrumento de avaliacao de qualidade para este projeto
+              {t('assessment', 'instrumentManagerDesc')}
           </p>
         </div>
       </div>
 
-      {/* Status */}
       {hasConfiguredInstrument ? (
         <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-950 rounded-lg border border-green-200 dark:border-green-800">
           <CheckCircle className="h-5 w-5 text-green-600" />
           <span className="text-sm text-green-700 dark:text-green-300">
-            Instrumento configurado: {projectInstruments[0]?.name}
+            {t('assessment', 'instrumentConfigured')}: {projectInstruments[0]?.name}
           </span>
         </div>
       ) : (
         <div className="flex items-center gap-2 p-3 bg-yellow-50 dark:bg-yellow-950 rounded-lg border border-yellow-200 dark:border-yellow-800">
           <AlertCircle className="h-5 w-5 text-yellow-600" />
           <span className="text-sm text-yellow-700 dark:text-yellow-300">
-            Nenhum instrumento configurado. Selecione um instrumento abaixo para
-            comecar.
+            {t('assessment', 'instrumentNoneConfigured')}
           </span>
         </div>
       )}
@@ -126,7 +125,7 @@ export function InstrumentManager({ projectId }: InstrumentManagerProps) {
       {projectInstruments.length > 0 && (
         <div className="space-y-3">
           <h4 className="text-sm font-medium text-muted-foreground">
-            Instrumentos do Projeto
+              {t('assessment', 'instrumentProjectInstruments')}
           </h4>
           <div className="grid gap-3">
             {projectInstruments.map((instrument) => (
@@ -144,7 +143,7 @@ export function InstrumentManager({ projectId }: InstrumentManagerProps) {
                       <Badge variant="outline">{instrument.version}</Badge>
                       {instrument.isActive && (
                         <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
-                          Ativo
+                            {t('assessment', 'instrumentActive')}
                         </Badge>
                       )}
                     </div>
@@ -154,7 +153,7 @@ export function InstrumentManager({ projectId }: InstrumentManagerProps) {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <p className="text-sm text-muted-foreground">
-                        {instrument.items?.length || 0} items de avaliacao
+                          {instrument.items?.length || 0} {t('assessment', 'instrumentItemsCount')}
                       </p>
                       <Badge
                         variant="outline"
@@ -165,8 +164,8 @@ export function InstrumentManager({ projectId }: InstrumentManagerProps) {
                         }
                       >
                         {instrument.targetMode === 'per_model'
-                          ? 'Por modelo'
-                          : 'Por artigo'}
+                            ? t('assessment', 'instrumentPerModel')
+                            : t('assessment', 'instrumentPerArticle')}
                       </Badge>
                     </div>
                     <Button
@@ -175,7 +174,7 @@ export function InstrumentManager({ projectId }: InstrumentManagerProps) {
                       onClick={() => setEditingInstrumentId(instrument.id)}
                     >
                       <Settings className="h-4 w-4 mr-1" />
-                      Configurar
+                        {t('assessment', 'instrumentConfigure')}
                     </Button>
                   </div>
                 </CardContent>
@@ -188,7 +187,7 @@ export function InstrumentManager({ projectId }: InstrumentManagerProps) {
       {/* Instrumentos Globais Disponiveis */}
       <div className="space-y-3">
         <h4 className="text-sm font-medium text-muted-foreground">
-          Instrumentos Disponiveis para Importar
+            {t('assessment', 'instrumentAvailableToImport')}
         </h4>
 
         {isLoadingGlobal ? (
@@ -199,12 +198,12 @@ export function InstrumentManager({ projectId }: InstrumentManagerProps) {
           <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-950 rounded-lg border border-red-200 dark:border-red-800">
             <AlertCircle className="h-5 w-5 text-red-600" />
             <span className="text-sm text-red-700 dark:text-red-300">
-              Erro ao carregar instrumentos: {errorGlobal instanceof Error ? errorGlobal.message : 'Erro desconhecido'}
+              {t('assessment', 'instrumentErrorLoad')}: {errorGlobal instanceof Error ? errorGlobal.message : t('assessment', 'instrumentErrorUnknown')}
             </span>
           </div>
         ) : globalInstruments.length === 0 ? (
           <p className="text-sm text-muted-foreground py-4">
-            Nenhum instrumento global disponivel.
+              {t('assessment', 'instrumentNoGlobalAvailable')}
           </p>
         ) : (
           <div className="grid gap-3 md:grid-cols-2">
@@ -227,7 +226,7 @@ export function InstrumentManager({ projectId }: InstrumentManagerProps) {
                     </div>
                     <CardDescription>
                       Versao {instrument.version} | {instrument.itemsCount} items |{' '}
-                      {instrument.targetMode === 'per_model' ? 'Por modelo' : 'Por artigo'}
+                        {instrument.targetMode === 'per_model' ? t('assessment', 'instrumentPerModel') : t('assessment', 'instrumentPerArticle')}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -257,12 +256,12 @@ export function InstrumentManager({ projectId }: InstrumentManagerProps) {
                         {alreadyCloned ? (
                           <>
                             <CheckCircle className="h-4 w-4 mr-1" />
-                            Importado
+                              {t('assessment', 'instrumentImported')}
                           </>
                         ) : (
                           <>
                             <Copy className="h-4 w-4 mr-1" />
-                            Importar
+                              {t('assessment', 'instrumentImport')}
                           </>
                         )}
                       </Button>
@@ -279,17 +278,16 @@ export function InstrumentManager({ projectId }: InstrumentManagerProps) {
       <Dialog open={showCloneDialog} onOpenChange={setShowCloneDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Importar Instrumento</DialogTitle>
+              <DialogTitle>{t('assessment', 'instrumentCloneDialogTitle')}</DialogTitle>
             <DialogDescription>
-              Importe o instrumento {selectedGlobalInstrument?.name} para este
-              projeto. Voce podera customizar os items apos a importacao.
+                {t('assessment', 'instrumentCloneDialogDesc')} {selectedGlobalInstrument?.name}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="customName">
-                Nome Customizado (opcional)
+                  {t('assessment', 'instrumentCloneCustomNameLabel')}
               </Label>
               <Input
                 id="customName"
@@ -298,7 +296,7 @@ export function InstrumentManager({ projectId }: InstrumentManagerProps) {
                 onChange={(e) => setCustomName(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
-                Deixe em branco para usar o nome original
+                  {t('assessment', 'instrumentCloneCustomNameHint')}
               </p>
             </div>
 
@@ -308,8 +306,8 @@ export function InstrumentManager({ projectId }: InstrumentManagerProps) {
                   {selectedGlobalInstrument.name}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {selectedGlobalInstrument.itemsCount} items |{' '}
-                  {selectedGlobalInstrument.domains.length} dominios
+                    {selectedGlobalInstrument.itemsCount} {t('assessment', 'instrumentItemsLabel')} |{' '}
+                    {selectedGlobalInstrument.domains.length} {t('assessment', 'instrumentDomainsLabel')}
                 </p>
               </div>
             )}
@@ -321,18 +319,18 @@ export function InstrumentManager({ projectId }: InstrumentManagerProps) {
               onClick={() => setShowCloneDialog(false)}
               disabled={isCloning}
             >
-              Cancelar
+                {t('common', 'cancel')}
             </Button>
             <Button onClick={handleClone} disabled={isCloning}>
               {isCloning ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Importando...
+                    {t('assessment', 'instrumentCloneImporting')}
                 </>
               ) : (
                 <>
                   <Copy className="h-4 w-4 mr-2" />
-                  Importar
+                    {t('assessment', 'instrumentImport')}
                 </>
               )}
             </Button>

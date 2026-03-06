@@ -1,12 +1,12 @@
 /**
- * Componente para gerenciar lista de valores permitidos
+ * Component to manage allowed values list
  * 
  * Features:
- * - Adicionar valor via input + botão
- * - Remover valor da lista
- * - Reordenar valores com drag-and-drop (@dnd-kit)
- * - Validação de duplicatas em tempo real
- * - Preview visual da lista
+ * - Add value via input + button
+ * - Remove value from list
+ * - Reorder values with drag-and-drop (@dnd-kit)
+ * - Real-time duplicate validation
+ * - Visual list preview
  * - Import/export (futuro)
  * 
  * @component
@@ -18,6 +18,7 @@ import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
 import {GripVertical, Plus, X} from 'lucide-react';
 import {cn} from '@/lib/utils';
+import {t} from '@/lib/copy';
 import {
     closestCenter,
     DndContext,
@@ -51,7 +52,7 @@ interface SortableItemProps {
   disabled?: boolean;
 }
 
-// Componente para item individual da lista (com drag-drop)
+// Component for individual list item (with drag-drop)
 function SortableItem({ id, value, index, onRemove, disabled }: SortableItemProps) {
   const {
     attributes,
@@ -111,7 +112,7 @@ export function AllowedValuesList({
   const [inputValue, setInputValue] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  // Sensores para drag-and-drop
+    // Sensors for drag-and-drop
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
@@ -121,24 +122,24 @@ export function AllowedValuesList({
 
   const handleAdd = () => {
     const trimmed = inputValue.trim();
-    
-    // Validações
+
+      // Validations
     if (!trimmed) {
-      setError('Digite um valor');
+        setError(t('extraction', 'enterValue'));
       return;
     }
 
     if (values.includes(trimmed)) {
-      setError('Este valor já foi adicionado');
+        setError(t('extraction', 'valueAlreadyAdded'));
       return;
     }
 
     if (values.length >= 100) {
-      setError('Máximo de 100 valores permitidos');
+        setError(t('extraction', 'max100Values'));
       return;
     }
 
-    // Adicionar valor
+      // Add value
     onChange([...values, trimmed]);
     setInputValue('');
     setError(null);
@@ -170,7 +171,7 @@ export function AllowedValuesList({
 
   return (
     <div className="space-y-3">
-      {/* Input para adicionar */}
+        {/* Input to add */}
       <div className="flex gap-2">
         <div className="flex-1">
           <Input
@@ -180,7 +181,7 @@ export function AllowedValuesList({
               setError(null);
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Digite uma opção e pressione Enter ou clique +"
+            placeholder={t('extraction', 'placeholderOptions')}
             disabled={disabled}
             className={cn(error && 'border-destructive')}
           />
@@ -204,13 +205,13 @@ export function AllowedValuesList({
         <div className="rounded-lg border bg-muted/30 p-3">
           <div className="flex items-center justify-between mb-2">
             <p className="text-xs font-medium text-muted-foreground">
-              Opções adicionadas ({values.length})
+                Options added ({values.length})
             </p>
           </div>
           
           <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
             {showReorder && values.length > 1 ? (
-              // Lista com drag-and-drop
+                // List with drag-and-drop
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
@@ -233,7 +234,7 @@ export function AllowedValuesList({
                 </SortableContext>
               </DndContext>
             ) : (
-              // Lista simples (sem drag-drop)
+                // Simple list (no drag-drop)
               values.map((value, index) => (
                 <div
                   key={`${value}-${index}`}
@@ -265,11 +266,13 @@ export function AllowedValuesList({
       {values.length === 0 && (
         <div className="rounded-lg border border-dashed p-4 text-center">
           <p className="text-sm text-muted-foreground">
-            Nenhuma opção adicionada ainda
+              {t('extraction', 'noOptionsAddedYet')}
           </p>
           <p className="text-xs text-muted-foreground mt-1">
-            Digite acima e pressione <kbd className="px-1 py-0.5 bg-muted border rounded text-xs font-mono">Enter</kbd> ou clique <Plus className="h-3 w-3 inline" />
-            {showReorder && " • Arraste para reordenar"}
+              {t('extraction', 'typeAbovePressEnter')} <kbd
+              className="px-1 py-0.5 bg-muted border rounded text-xs font-mono">Enter</kbd> <Plus
+              className="h-3 w-3 inline"/>
+              {showReorder && ` • ${t('extraction', 'dragToReorder')}`}
           </p>
         </div>
       )}

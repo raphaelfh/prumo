@@ -1,14 +1,14 @@
 /**
  * Remove Model Dialog
- * 
- * Dialog de confirmação para remover um modelo de predição.
- * Avisa o usuário se o modelo tem dados extraídos.
+ *
+ * Confirmation dialog to remove a prediction model.
+ * Warns the user if the model has extracted data.
  * 
  * Features:
  * - Aviso destacado se modelo tem dados
  * - Contagem de campos preenchidos
- * - Loading state durante remoção
- * - Mensagens claras sobre consequências
+ * - Loading state during removal
+ * - Clear messages about consequences
  * 
  * @component
  */
@@ -26,6 +26,7 @@ import {Button} from '@/components/ui/button';
 import {Alert, AlertDescription} from '@/components/ui/alert';
 import {AlertTriangle, Info, Loader2, Trash2} from 'lucide-react';
 import {extractionLogger} from '@/lib/extraction/observability';
+import {t} from '@/lib/copy';
 
 // =================== INTERFACES ===================
 
@@ -51,32 +52,32 @@ export function RemoveModelDialog({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Handler de confirmação
+    // Confirmation handler
   const handleConfirm = async () => {
     setLoading(true);
     setError(null);
 
     try {
-      extractionLogger.info('removeModelDialog', 'Iniciando remoção de modelo', {
+        extractionLogger.info('removeModelDialog', 'Starting model removal', {
         modelName,
         hasExtractedData,
         extractedFieldsCount
       });
 
       await onConfirm();
-      
-      extractionLogger.info('removeModelDialog', 'Modelo removido com sucesso', {
+
+        extractionLogger.info('removeModelDialog', 'Model removed successfully', {
         modelName
       });
-      
-      // Dialog será fechado pelo parent component
+
+        // Dialog will be closed by parent component
     } catch (err: any) {
-      extractionLogger.error('removeModelDialog', 'Falha ao remover modelo', err, {
+        extractionLogger.error('removeModelDialog', 'Failed to remove model', err, {
         modelName,
         hasExtractedData
       });
-      
-      setError(err.message || 'Erro ao remover modelo');
+
+        setError(err.message || t('extraction', 'removeModelError'));
     } finally {
       // ✅ SEMPRE resetar loading, independente de sucesso/erro
       // Isso previne o modal ficar travado no estado "Removendo..."
@@ -90,28 +91,29 @@ export function RemoveModelDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-destructive">
             <Trash2 className="h-5 w-5" />
-            Remover Modelo
+              {t('extraction', 'removeModelTitle')}
           </DialogTitle>
           <DialogDescription>
-            Você está prestes a remover o modelo "{modelName}"
+              {t('extraction', 'removeModelDesc').replace('{{name}}', modelName)}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
-          {/* Aviso se tem dados extraídos */}
+            {/* Warning if there is extracted data */}
           {hasExtractedData ? (
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
                 <div className="space-y-2">
                   <p className="font-semibold">
-                    Atenção: Este modelo contém dados extraídos!
+                      {t('extraction', 'removeModelWarningTitle')}
                   </p>
                   <p>
-                    <strong>{extractedFieldsCount}</strong> {extractedFieldsCount === 1 ? 'campo está preenchido' : 'campos estão preenchidos'} neste modelo.
+                      <strong>{extractedFieldsCount}</strong> {extractedFieldsCount === 1 ? t('extraction', 'removeModelFieldFilled') : t('extraction', 'removeModelFieldsFilled')} in
+                      this model.
                   </p>
                   <p className="text-sm">
-                    Todos os dados extraídos serão permanentemente removidos e não poderão ser recuperados.
+                      {t('extraction', 'removeModelDataPermanent')}
                   </p>
                 </div>
               </AlertDescription>
@@ -120,29 +122,30 @@ export function RemoveModelDialog({
             <Alert>
               <Info className="h-4 w-4" />
               <AlertDescription>
-                Este modelo não possui dados extraídos. A remoção não afetará outros modelos ou seções study-level.
+                  {t('extraction', 'removeModelNoData')}
               </AlertDescription>
             </Alert>
           )}
 
-          {/* Detalhes da operação */}
+            {/* Operation details */}
           <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
             <p className="text-sm font-medium text-slate-900 mb-2">
-              O que será removido:
+                {t('extraction', 'removeModelWhatRemoved')}
             </p>
             <ul className="space-y-1 text-sm text-slate-600">
               <li className="flex items-start gap-2">
                 <span className="text-destructive">•</span>
-                <span>Modelo "{modelName}"</span>
+                  <span>Model "{modelName}"</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="text-destructive">•</span>
-                <span>Todas as sub-seções deste modelo (Candidate Predictors, Final Predictors, etc.)</span>
+                  <span>{t('extraction', 'removeModelSubsections')}</span>
               </li>
               {hasExtractedData && (
                 <li className="flex items-start gap-2">
                   <span className="text-destructive">•</span>
-                  <span className="font-medium">Todos os valores extraídos ({extractedFieldsCount} campos)</span>
+                    <span
+                        className="font-medium">{t('extraction', 'removeModelAllValues').replace('{{count}}', String(extractedFieldsCount))}</span>
                 </li>
               )}
             </ul>
@@ -164,7 +167,7 @@ export function RemoveModelDialog({
             onClick={onCancel}
             disabled={loading}
           >
-            Cancelar
+              {t('common', 'cancel')}
           </Button>
           <Button
             type="button"
@@ -175,12 +178,12 @@ export function RemoveModelDialog({
             {loading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Removendo...
+                  {t('extraction', 'removeModelRemoving')}
               </>
             ) : (
               <>
                 <Trash2 className="mr-2 h-4 w-4" />
-                {hasExtractedData ? 'Sim, Remover Mesmo Assim' : 'Remover Modelo'}
+                  {hasExtractedData ? t('extraction', 'removeModelAnyway') : t('extraction', 'removeModel')}
               </>
             )}
           </Button>

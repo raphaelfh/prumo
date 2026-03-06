@@ -1,13 +1,13 @@
 /**
- * Zustand Store para Estado de Extração
- * 
- * Centraliza estado de extração para:
+ * Zustand store for extraction state
+ *
+ * Centralizes extraction state for:
  * - Evitar prop drilling excessivo
- * - Facilitar acesso global ao contexto de extração
- * - Manter sincronização entre componentes
- * 
- * NOTA: Store é OPCIONAL. Componentes podem continuar usando props
- * diretamente. Use o store apenas quando prop drilling for problemático.
+ * - Global access to extraction context
+ * - Keep components in sync
+ *
+ * NOTE: Store is OPTIONAL. Components can continue using props
+ * directly. Use the store only when prop drilling is problematic.
  * 
  * @module stores/useExtractionStore
  */
@@ -45,7 +45,7 @@ interface ExtractionState {
 }
 
 interface ExtractionActions {
-  // Inicialização
+    // Initialization
   initialize: (projectId: string, articleId: string, template: ProjectExtractionTemplate) => void;
   reset: () => void;
   
@@ -188,7 +188,7 @@ export const useExtractionStore = create<ExtractionStore>()(
       }),
       {
         name: 'extraction-store',
-        // Persistir apenas preferências de UI
+          // Persist only UI preferences
         partialize: (state) => ({
           showPDF: state.showPDF,
           viewMode: state.viewMode,
@@ -201,7 +201,7 @@ export const useExtractionStore = create<ExtractionStore>()(
 // =================== HOOKS AUXILIARES ===================
 
 /**
- * Hook para acessar apenas contexto (sem causar re-render desnecessário)
+ * Hook to access context only (without causing unnecessary re-render)
  */
 export const useExtractionContext = () => {
   const projectId = useExtractionStore(state => state.projectId);
@@ -212,7 +212,7 @@ export const useExtractionContext = () => {
 };
 
 /**
- * Hook para UI state (PDF, viewMode, etc)
+ * Hook for UI state (PDF, viewMode, etc)
  */
 export const useExtractionUI = () => {
   const showPDF = useExtractionStore(state => state.showPDF);
@@ -233,7 +233,7 @@ export const useExtractionUI = () => {
 };
 
 /**
- * Hook para instances com selectors
+ * Hook for instances with selectors
  */
 export const useExtractionInstances = () => {
   const instances = useExtractionStore(state => state.instances);

@@ -1,8 +1,8 @@
 /**
- * Hook para gerenciar extraction_runs
- * 
- * Carrega histórico de extrações de IA (section-extraction) para um artigo específico.
- * 
+ * Hook to manage extraction_runs
+ *
+ * Loads AI extraction history (section-extraction) for a specific article.
+ *
  * @hook
  */
 
@@ -16,7 +16,7 @@ import type {
 } from "@/types/ai-extraction";
 import {normalizeExtractionRun} from "@/types/ai-extraction";
 
-// Re-exportar tipo para compatibilidade
+// Re-export type for compatibility
 export type { ExtractionRun };
 
 export function useExtractionRuns(props: UseExtractionRunsProps): UseExtractionRunsReturn {
@@ -71,7 +71,7 @@ export function useExtractionRuns(props: UseExtractionRunsProps): UseExtractionR
   };
 }
 
-// Alias deprecated para compatibilidade temporária
+// Deprecated alias for temporary compatibility
 /**
  * @deprecated Use useExtractionRuns instead.
  * This alias will be removed in a future version.

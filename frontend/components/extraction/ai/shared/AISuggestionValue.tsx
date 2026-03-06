@@ -1,6 +1,6 @@
 /**
  * Valor sugerido truncado com tooltip
- * Componente compartilhado reutilizável
+ * Shared reusable component
  */
 
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';

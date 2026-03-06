@@ -1,16 +1,16 @@
 /**
- * Hook para gerenciamento de modelos de predição hierárquicos
- * 
- * Responsável por:
- * - Carregar modelos existentes (instances de prediction_models)
- * - Criar novo modelo (com sub-seções automaticamente)
- * - Remover modelo (com todas as sub-seções e dados)
- * - Calcular progresso por modelo
- * - Gerenciar modelo ativo
- * 
- * REFATORADO (Fase 2): Usa extractionInstanceService e função SQL otimizada
- * para calcular progresso (1 query para todos os modelos).
- * 
+ * Hook for hierarchical prediction model management
+ *
+ * Responsible for:
+ * - Loading existing models (prediction_models instances)
+ * - Creating new model (with sub-sections automatically)
+ * - Removing model (with all sub-sections and data)
+ * - Computing progress per model
+ * - Managing active model
+ *
+ * Refactored (Phase 2): Uses extractionInstanceService and optimized SQL
+ * for progress (1 query for all models).
+ *
  * @module hooks/extraction/useModelManagement
  */
 
@@ -18,6 +18,7 @@ import {useCallback, useEffect, useRef, useState} from 'react';
 import {supabase} from '@/integrations/supabase/client';
 import {useAuth} from '@/contexts/AuthContext';
 import {toast} from 'sonner';
+import {t} from '@/lib/copy';
 import {extractionInstanceService} from '@/services/extractionInstanceService';
 import type {Model} from '@/components/extraction/hierarchy/ModelSelector';
 
@@ -62,23 +63,23 @@ export function useModelManagement({
   const [activeModelId, setActiveModelId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
-  // Ref para evitar loop infinito: rastrear activeModelId sem causar re-render
+
+    // Ref to avoid infinite loop: track activeModelId without causing re-render
   const activeModelIdRef = useRef<string | null>(null);
-  
-  // Ref para armazenar loadModels e evitar loops no useEffect
+
+    // Ref to store loadModels and avoid loops in useEffect
   const loadModelsRef = useRef<() => Promise<void>>();
-  
-  // Sincronizar ref com state
+
+    // Sync ref with state
   useEffect(() => {
     activeModelIdRef.current = activeModelId;
   }, [activeModelId]);
 
-  // Calcular progresso de um modelo (usando função SQL otimizada)
-  // Declarado ANTES de loadModels porque loadModels depende dele
+    // Calculate progress for a model (using optimized SQL function)
+    // Declared BEFORE loadModels because loadModels depends on it
   const getModelProgress = useCallback(async (instanceId: string): Promise<Model['progress']> => {
     try {
-      // Usar função SQL otimizada (1 query)
+        // Use optimized SQL function (1 query)
       const { data, error } = await supabase
         .rpc('calculate_model_progress', {
           p_article_id: articleId,
@@ -86,7 +87,7 @@ export function useModelManagement({
         });
 
       if (error) {
-        console.warn('Erro ao calcular progresso (fallback para 0):', error);
+          console.warn('Error calculating progress (fallback to 0):', error);
         return { completed: 0, total: 0, percentage: 0 };
       }
 
@@ -102,12 +103,12 @@ export function useModelManagement({
       };
 
     } catch (err) {
-      console.error('Erro ao calcular progresso do modelo:', err);
+        console.error('Error calculating model progress:', err);
       return { completed: 0, total: 0, percentage: 0 };
     }
   }, [articleId]);
 
-  // Carregar modelos existentes
+    // Load existing models
   const loadModels = useCallback(async () => {
     if (!enabled || !modelParentEntityTypeId) {
       console.log('⏭️ loadModels: Skipped (enabled:', enabled, ', modelParentEntityTypeId:', modelParentEntityTypeId, ')');
@@ -120,9 +121,9 @@ export function useModelManagement({
       setLoading(true);
       setError(null);
 
-      console.log('📥 Carregando modelos para artigo:', articleId, ', entity_type:', modelParentEntityTypeId);
+        console.log('[useModelManagement] Loading models for article:', articleId, ', entity_type:', modelParentEntityTypeId);
 
-      // Buscar instances de prediction_models para este artigo
+        // Fetch prediction_models instances for this article
       const { data: instances, error: instancesError } = await supabase
         .from('extraction_instances')
         .select('id, label, sort_order, created_at')
@@ -137,10 +138,10 @@ export function useModelManagement({
       if (!instances || instances.length === 0) {
         setModels([]);
         setActiveModelId(null);
-        // ✅ CORREÇÃO: Não retornar aqui - deixar finally executar para garantir loading = false
-        // O finally sempre executa, mas é melhor ser explícito
+          // FIX: Do not return here - let finally run so loading = false is guaranteed
+          // finally always runs, but being explicit is clearer
       } else {
-        // Para cada modelo, calcular progresso
+          // For each model, calculate progress
         const modelsWithProgress = await Promise.all(
           instances.map(async (instance) => {
             const progress = await getModelProgress(instance.id);
@@ -160,7 +161,7 @@ export function useModelManagement({
           ? modelsWithProgress.some(model => model.instanceId === currentActiveId)
           : false;
 
-        // Se o modelo ativo não existe mais (ou ainda não foi definido), escolher o primeiro disponível
+          // If active model no longer exists (or not set yet), pick first available
         if (!hasActiveModel) {
           const fallbackModelId = modelsWithProgress[0]?.instanceId ?? null;
           setActiveModelId(fallbackModelId);
@@ -168,20 +169,20 @@ export function useModelManagement({
       }
 
     } catch (err: any) {
-      console.error('Erro ao carregar modelos:', err);
+        console.error('Error loading models:', err);
       setError(err.message);
-      // ✅ CORREÇÃO: Remover setLoading(false) do catch - finally sempre executa
+        // FIX: Do not setLoading(false) in catch - finally always runs
     } finally {
-      // ✅ CORREÇÃO: Garantir que loading sempre seja false, mesmo em retornos antecipados
+        // Ensure loading is always false, even on early returns
       setLoading(false);
     }
   }, [enabled, modelParentEntityTypeId, articleId, getModelProgress]);
-  
-  // ✅ CORREÇÃO: Sincronizar ref com loadModels imediatamente após definição
-  // Isso garante que o ref esteja disponível quando o useEffect tentar usá-lo
+
+    // FIX: Sync ref with loadModels right after definition
+    // Ensures ref is available when useEffect tries to use it
   loadModelsRef.current = loadModels;
 
-  // Função para gerar nome único
+    // Function to generate unique name
   const generateUniqueModelName = useCallback(async (
     baseName: string,
     maxAttempts: number = 10
@@ -190,7 +191,7 @@ export function useModelManagement({
     let attempt = 1;
 
     while (attempt <= maxAttempts) {
-      // Verificar se o nome já existe no banco
+        // Check if name already exists in DB
       const { data: existingInstance, error: checkError } = await supabase
         .from('extraction_instances')
         .select('id')
@@ -201,12 +202,12 @@ export function useModelManagement({
 
       if (checkError) throw checkError;
 
-      // Se não existe, retornar o nome
+        // If not exists, return the name
       if (!existingInstance || existingInstance.length === 0) {
         return uniqueName;
       }
 
-      // Se existe, tentar com sufixo numérico
+        // If exists, try with numeric suffix
       attempt++;
       uniqueName = `${baseName} (${attempt})`;
     }
@@ -215,20 +216,20 @@ export function useModelManagement({
     return `${baseName} (${Date.now()})`;
   }, [articleId, modelParentEntityTypeId]);
 
-  // Criar novo modelo (usando service - simplificado)
+    // Create new model (using service - simplified)
   const createModel = useCallback(async (
     modelName: string,
     modellingMethod: string
   ): Promise<CreateModelResult | null> => {
     if (!user || !modelParentEntityTypeId) {
-      toast.error('Usuário não autenticado ou template inválido');
+        toast.error(t('extraction', 'modelNotAuthenticatedOrInvalid'));
       return null;
     }
 
     try {
-      console.log('🆕 Criando novo modelo:', modelName);
+        console.log('🆕 Creating new model:', modelName);
 
-      // 1. Buscar parent entity type
+        // 1. Fetch parent entity type
       const { data: parentEntityType, error: etError } = await supabase
         .from('extraction_entity_types')
         .select('*')
@@ -236,10 +237,10 @@ export function useModelManagement({
         .single();
 
       if (etError || !parentEntityType) {
-        throw new Error('Entity type de modelo não encontrado');
+          throw new Error(t('extraction', 'modelEntityTypeNotFound'));
       }
 
-      // 2. Buscar child entity types
+        // 2. Fetch child entity types
       const { data: childEntityTypes, error: childTypesError } = await supabase
         .from('extraction_entity_types')
         .select('*')
@@ -248,7 +249,7 @@ export function useModelManagement({
 
       if (childTypesError) throw childTypesError;
 
-      // 3. Delegar criação de hierarquia para o service
+        // 3. Delegate hierarchy creation to service
       const result = await extractionInstanceService.createHierarchy({
         projectId,
         articleId,
@@ -282,43 +283,43 @@ export function useModelManagement({
         }
       }
 
-      // 5. Criar objeto Model
+        // 5. Create Model object
       const newModel: Model = {
         instanceId: result.parent.id,
         modelName: result.parent.label,
         progress: { completed: 0, total: 0, percentage: 0 }
       };
 
-      // 6. Atualizar estado
+        // 6. Update state
       setModels(prev => [...prev, newModel]);
       setActiveModelId(newModel.instanceId);
 
-      toast.success(`Modelo "${result.parent.label}" criado com sucesso!`);
+        toast.success(t('extraction', 'modelCreatedSuccess').replace('{{label}}', result.parent.label));
       
       console.log(`✅ Hierarquia criada: 1 parent + ${result.children.length} children`);
 
-      // Retornar modelo E child instances criadas
+        // Return model AND created child instances
       return {
         model: newModel,
         childInstances: result.children
       };
 
     } catch (err: any) {
-      console.error('Erro ao criar modelo:', err);
-      toast.error(`Erro ao criar modelo: ${err.message}`);
+        console.error('Error creating model:', err);
+        toast.error(`${t('extraction', 'errors_createModel')}: ${err.message}`);
       return null;
     }
   }, [user, modelParentEntityTypeId, projectId, articleId, templateId]);
 
-  // Remover modelo (usando service - simplificado)
+    // Remove model (using service - simplified)
   const removeModel = useCallback(async (instanceId: string): Promise<void> => {
     try {
-      console.log('🗑️ Removendo modelo:', instanceId);
+        console.log('🗑️ Removing model:', instanceId);
 
-      // Delegar para o service (CASCADE automático)
+        // Delegate to service (automatic CASCADE)
       await extractionInstanceService.removeInstance(instanceId);
 
-      // Atualizar estado local - remover o modelo e capturar nome para toast
+        // Update local state - remove model and capture name for toast
       let removedModelName = 'Modelo';
       let updatedModels: Model[] = [];
 
@@ -334,7 +335,7 @@ export function useModelManagement({
         return filteredModels;
       });
 
-      // Garantir que sempre exista um modelo ativo válido após a remoção
+        // Ensure a valid active model always exists after removal
       setActiveModelId(prevActiveId => {
         if (!updatedModels.length) {
           return null;
@@ -348,33 +349,32 @@ export function useModelManagement({
           return prevActiveId;
         }
 
-        // Selecionar o primeiro modelo restante como fallback
+          // Select first remaining model as fallback
         return updatedModels[0].instanceId;
       });
 
       console.log('✅ Modelo removido:', removedModelName);
-      toast.success(`Modelo "${removedModelName}" removido com sucesso`);
+        toast.success(t('extraction', 'modelRemovedSuccess').replace('{{label}}', removedModelName));
 
     } catch (err: any) {
-      console.error('❌ Erro ao remover modelo:', err);
-      toast.error(`Erro ao remover modelo: ${err.message}`);
-      // ✅ MELHORIA: Re-throw erro em vez de retornar boolean
-      // Isso permite tratamento consistente de erro em toda a aplicação
+        console.error('Error removing model:', err);
+        toast.error(`${t('extraction', 'errors_removeModel')}: ${err.message}`);
+        // Re-throw error instead of returning boolean for consistent error handling
       throw err;
     }
-  }, []); // ✅ Sem dependências - usa apenas setters e callbacks funcionais
+  }, []); // No deps - uses only setters and functional callbacks
 
   // Refresh models
   const refreshModels = useCallback(() => {
     return loadModels();
   }, [loadModels]);
 
-  // Carregar modelos ao montar
-  // ✅ CORREÇÃO: Remover loadModels das dependências para evitar loops
-  // Usar ref para acessar a função mais recente sem causar re-execução do useEffect
+    // Load models on mount
+    // FIX: Remove loadModels from deps to avoid loops
+    // Use ref to access latest function without re-running useEffect
   useEffect(() => {
     if (enabled && projectId && articleId && templateId && modelParentEntityTypeId) {
-      // Usar ref para evitar dependência circular
+        // Use ref to avoid circular dependency
       if (loadModelsRef.current) {
         loadModelsRef.current();
       }

@@ -2,10 +2,10 @@
  * Editor de Configuracao do Instrumento de Avaliacao
  *
  * Permite visualizar e editar os items de um instrumento de projeto,
- * agrupados por dominio. Baseado no pattern de TemplateConfigEditor.
+ * grouped by domain. Based on TemplateConfigEditor pattern.
  *
- * Usa hooks e services existentes:
- * - useProjectInstrument() para carregar dados
+ * Uses existing hooks and services:
+ * - useProjectInstrument() to load data
  * - updateItem(), deleteItem() do projectAssessmentInstrumentService
  */
 
@@ -25,6 +25,7 @@ import {useQueryClient} from '@tanstack/react-query';
 import type {ProjectAssessmentItem} from '@/types/assessment';
 import {AddItemDialog} from './AddItemDialog';
 import {AllowedValuesList} from '@/components/extraction/dialogs/AllowedValuesList';
+import {t} from '@/lib/copy';
 
 interface InstrumentConfigEditorProps {
   instrumentId: string;
@@ -71,7 +72,7 @@ export function InstrumentConfigEditor({ instrumentId, projectId }: InstrumentCo
 
   const handleSaveEdit = async (itemId: string) => {
     if (editForm.allowedLevels.length === 0) {
-      toast.error('Adicione pelo menos um nivel permitido');
+        toast.error(t('assessment', 'addItemAddOneLevel'));
       return;
     }
     setSaving(true);
@@ -82,12 +83,12 @@ export function InstrumentConfigEditor({ instrumentId, projectId }: InstrumentCo
         required: editForm.required,
         allowedLevels: editForm.allowedLevels,
       });
-      toast.success('Item atualizado com sucesso');
+        toast.success(t('assessment', 'configEditorItemUpdated'));
       setEditingItemId(null);
       invalidateQueries();
     } catch (err) {
-      console.error('Erro ao atualizar item:', err);
-      toast.error('Erro ao atualizar item');
+        console.error('Error updating item:', err);
+        toast.error(t('assessment', 'configEditorItemUpdateError'));
     } finally {
       setSaving(false);
     }
@@ -97,12 +98,12 @@ export function InstrumentConfigEditor({ instrumentId, projectId }: InstrumentCo
     try {
       await updateItem(item.id, { required: !item.required });
       toast.success(
-        item.required ? 'Item marcado como opcional' : 'Item marcado como obrigatorio'
+          item.required ? t('assessment', 'configEditorItemOptional') : t('assessment', 'configEditorItemRequired')
       );
       invalidateQueries();
     } catch (err) {
-      console.error('Erro ao alterar item:', err);
-      toast.error('Erro ao alterar item');
+        console.error('Error changing item:', err);
+        toast.error(t('assessment', 'configEditorItemChangeError'));
     }
   };
 
@@ -110,11 +111,11 @@ export function InstrumentConfigEditor({ instrumentId, projectId }: InstrumentCo
     setDeletingItemId(itemId);
     try {
       await deleteItem(itemId);
-      toast.success('Item removido com sucesso');
+        toast.success(t('assessment', 'configEditorItemRemoved'));
       invalidateQueries();
     } catch (err) {
-      console.error('Erro ao remover item:', err);
-      toast.error('Erro ao remover item');
+        console.error('Error removing item:', err);
+        toast.error(t('assessment', 'configEditorItemRemoveError'));
     } finally {
       setDeletingItemId(null);
     }
@@ -124,7 +125,7 @@ export function InstrumentConfigEditor({ instrumentId, projectId }: InstrumentCo
     return (
       <div className="flex items-center justify-center p-12">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <span className="ml-3 text-muted-foreground">Carregando configuracao...</span>
+          <span className="ml-3 text-muted-foreground">{t('assessment', 'configEditorLoading')}</span>
       </div>
     );
   }
@@ -134,7 +135,7 @@ export function InstrumentConfigEditor({ instrumentId, projectId }: InstrumentCo
       <Card>
         <CardContent className="pt-6">
           <p className="text-sm text-destructive text-center">
-            Erro ao carregar instrumento. Tente novamente.
+              {t('assessment', 'configEditorErrorLoad')}
           </p>
         </CardContent>
       </Card>
@@ -146,7 +147,7 @@ export function InstrumentConfigEditor({ instrumentId, projectId }: InstrumentCo
   (instrument.items || [])
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .forEach((item) => {
-      const domain = item.domain || 'Sem dominio';
+        const domain = item.domain || t('assessment', 'configEditorNoDomain');
       if (!itemsByDomain.has(domain)) {
         itemsByDomain.set(domain, []);
       }
@@ -186,18 +187,18 @@ export function InstrumentConfigEditor({ instrumentId, projectId }: InstrumentCo
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Settings className="h-5 w-5" />
-                Configuracao do Instrumento
+                  {t('assessment', 'configEditorTitle')}
               </CardTitle>
               <CardDescription className="mt-2">
-                Configure os items de avaliacao de {instrument.name}
+                  {t('assessment', 'configEditorDesc')} {instrument.name}
               </CardDescription>
             </div>
             <div className="flex items-center gap-3">
               <Badge variant="outline">
-                {totalItems} items ({requiredItems} obrigatorios)
+                  {totalItems} {t('assessment', 'instrumentItemsLabel')} ({requiredItems} {t('assessment', 'configEditorRequiredCount')})
               </Badge>
               <Badge variant="outline">
-                {domainEntries.length} dominios
+                  {domainEntries.length} {t('assessment', 'instrumentDomainsLabel')}
               </Badge>
             </div>
           </div>
@@ -208,13 +209,13 @@ export function InstrumentConfigEditor({ instrumentId, projectId }: InstrumentCo
         <Card>
           <CardContent className="pt-6">
             <div className="text-center text-muted-foreground">
-              <p className="text-sm font-medium mb-1">Nenhum item configurado</p>
+                <p className="text-sm font-medium mb-1">{t('assessment', 'configEditorNoItems')}</p>
               <p className="text-xs mb-4">
-                Este instrumento nao possui items de avaliacao.
+                  {t('assessment', 'configEditorNoItemsDesc')}
               </p>
               <Button variant="outline" onClick={() => setShowAddItemDialog(true)}>
                 <Plus className="h-4 w-4 mr-2" />
-                Adicionar Item
+                  {t('assessment', 'addItemTitle')}
               </Button>
             </div>
           </CardContent>
@@ -234,10 +235,10 @@ export function InstrumentConfigEditor({ instrumentId, projectId }: InstrumentCo
                       </div>
                       <div className="flex items-center gap-2">
                         <Badge variant="outline">
-                          {items.length} items
+                            {items.length} {t('assessment', 'instrumentItemsLabel')}
                         </Badge>
                         <Badge variant="secondary">
-                          {domainRequired} obrigatorios
+                            {domainRequired} {t('assessment', 'configEditorRequiredCount')}
                         </Badge>
                       </div>
                     </div>
@@ -257,7 +258,7 @@ export function InstrumentConfigEditor({ instrumentId, projectId }: InstrumentCo
                               {isEditing ? (
                                 <div className="space-y-3">
                                   <div className="space-y-2">
-                                    <Label>Questao</Label>
+                                      <Label>{t('assessment', 'configEditorQuestionLabel')}</Label>
                                     <Textarea
                                       value={editForm.question}
                                       onChange={(e) =>
@@ -267,18 +268,18 @@ export function InstrumentConfigEditor({ instrumentId, projectId }: InstrumentCo
                                     />
                                   </div>
                                   <div className="space-y-2">
-                                    <Label>Descricao</Label>
+                                      <Label>{t('assessment', 'configEditorDescriptionLabel')}</Label>
                                     <Textarea
                                       value={editForm.description}
                                       onChange={(e) =>
                                         setEditForm((f) => ({ ...f, description: e.target.value }))
                                       }
                                       rows={2}
-                                      placeholder="Descricao ou orientacao para o avaliador"
+                                      placeholder={t('assessment', 'configEditorDescriptionPlaceholder')}
                                     />
                                   </div>
                                   <div className="space-y-2">
-                                    <Label>Niveis Permitidos</Label>
+                                      <Label>{t('assessment', 'addItemAllowedLevelsLabel')}</Label>
                                     <AllowedValuesList
                                       values={editForm.allowedLevels}
                                       onChange={(levels) =>
@@ -288,7 +289,7 @@ export function InstrumentConfigEditor({ instrumentId, projectId }: InstrumentCo
                                     />
                                     {editForm.allowedLevels.length === 0 && (
                                       <p className="text-xs text-destructive">
-                                        Adicione pelo menos um nivel permitido
+                                          {t('assessment', 'addItemAddOneLevel')}
                                       </p>
                                     )}
                                   </div>
@@ -299,7 +300,7 @@ export function InstrumentConfigEditor({ instrumentId, projectId }: InstrumentCo
                                         setEditForm((f) => ({ ...f, required: checked }))
                                       }
                                     />
-                                    <Label>Obrigatorio</Label>
+                                      <Label>{t('assessment', 'configEditorRequired')}</Label>
                                   </div>
                                   <div className="flex gap-2 justify-end">
                                     <Button
@@ -309,7 +310,7 @@ export function InstrumentConfigEditor({ instrumentId, projectId }: InstrumentCo
                                       disabled={saving}
                                     >
                                       <X className="h-4 w-4 mr-1" />
-                                      Cancelar
+                                        {t('common', 'cancel')}
                                     </Button>
                                     <Button
                                       size="sm"
@@ -321,7 +322,7 @@ export function InstrumentConfigEditor({ instrumentId, projectId }: InstrumentCo
                                       ) : (
                                         <Save className="h-4 w-4 mr-1" />
                                       )}
-                                      Salvar
+                                        {t('common', 'save')}
                                     </Button>
                                   </div>
                                 </div>
@@ -335,11 +336,11 @@ export function InstrumentConfigEditor({ instrumentId, projectId }: InstrumentCo
                                         </Badge>
                                         {item.required ? (
                                           <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100 text-xs">
-                                            Obrigatorio
+                                              {t('assessment', 'configEditorRequired')}
                                           </Badge>
                                         ) : (
                                           <Badge variant="outline" className="text-xs">
-                                            Opcional
+                                              {t('assessment', 'configEditorOptional')}
                                           </Badge>
                                         )}
                                       </div>
@@ -368,7 +369,7 @@ export function InstrumentConfigEditor({ instrumentId, projectId }: InstrumentCo
                                     <Switch
                                       checked={item.required}
                                       onCheckedChange={() => handleToggleRequired(item)}
-                                      aria-label="Obrigatorio"
+                                      aria-label={t('assessment', 'configEditorRequired')}
                                     />
                                     <Button
                                       size="sm"
@@ -411,7 +412,7 @@ export function InstrumentConfigEditor({ instrumentId, projectId }: InstrumentCo
           <div className="text-center">
             <Button variant="outline" onClick={() => setShowAddItemDialog(true)}>
               <Plus className="h-4 w-4 mr-2" />
-              Adicionar Item
+                {t('assessment', 'addItemTitle')}
             </Button>
           </div>
         </CardContent>

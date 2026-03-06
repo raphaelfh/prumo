@@ -1,6 +1,6 @@
 /**
- * Barrel export para módulo de comparação
- * Centraliza exports para fácil importação
+ * Barrel export for comparison module
+ * Centralizes exports for easy importing
  */
 
 export * from './formatters';

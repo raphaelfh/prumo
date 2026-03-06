@@ -1,5 +1,5 @@
 /**
- * Tipos para o sistema de feedback de usuários
+ * Types for the user feedback system
  */
 
 export type FeedbackType = 'bug' | 'suggestion' | 'question' | 'other';

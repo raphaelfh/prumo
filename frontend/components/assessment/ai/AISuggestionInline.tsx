@@ -1,9 +1,9 @@
 /**
- * Componente Inline de Sugestão de IA - Assessment
+ * Inline AI Suggestion component - Assessment
  *
- * Mostra sugestão ao lado do campo de input de forma minimalista
- * Layout responsivo: [%] [✓] [✗] [Valor truncado]
- * Quando aceita, mostra history popover (mirrors extraction)
+ * Shows suggestion next to the input field in a minimal way
+ * Responsive layout: [%] [✓] [✗] [Truncated value]
+ * When accepted, shows history popover (mirrors extraction)
  *
  * Adaptado de extraction/ai/AISuggestionInline.tsx
  *
@@ -20,17 +20,17 @@ import {isAssessmentSuggestionAccepted} from '@/lib/assessment-utils';
 // =================== INTERFACES ===================
 
 interface AISuggestionInlineProps {
-  /** Sugestão de IA para exibir */
+    /** AI suggestion to display */
   suggestion: AIAssessmentSuggestion;
   /** Item ID for history lookup */
   itemId?: string;
-  /** Callback ao aceitar sugestão */
+    /** Callback when accepting suggestion */
   onAccept?: () => void;
-  /** Callback ao rejeitar sugestão */
+    /** Callback when rejecting suggestion */
   onReject?: () => void;
   /** History fetcher (when provided, shows history popover on accepted suggestions) */
   getHistory?: (itemId: string, limit?: number) => Promise<AIAssessmentSuggestionHistoryItem[]>;
-  /** Estado de carregamento */
+    /** Loading state */
   loading?: boolean;
 }
 
@@ -49,7 +49,7 @@ export function AISuggestionInline({
 
   return (
     <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 animate-in fade-in slide-in-from-right-2 duration-200 flex-wrap">
-      {/* Porcentagem + Botões de ação - mostrar se pendente ou rejeitado */}
+        {/* Confidence % + action buttons - show when pending or rejected */}
       {!isAccepted && (
         <div className="flex items-center gap-2 shrink-0">
           <AISuggestionConfidence suggestion={suggestion} showDetailsOnClick />

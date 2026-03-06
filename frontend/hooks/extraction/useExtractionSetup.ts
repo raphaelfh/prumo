@@ -1,16 +1,17 @@
 /**
- * Hook para inicialização de extração de dados
- * 
- * Responsável APENAS por inicializar extração (criar instâncias automáticas).
- * Cálculo de progresso foi movido para useExtractionProgressCalc (SRP).
- * 
- * REFATORADO (Fase 5): Separado de cálculo de progresso para seguir SRP.
+ * Hook for extraction data initialization
+ *
+ * Responsible ONLY for initializing extraction (creating auto instances).
+ * Progress calculation moved to useExtractionProgressCalc (SRP).
+ *
+ * Refactored (Phase 5): Separated from progress calculation (SRP).
  */
 
 import {useCallback, useState} from 'react';
 import {supabase} from '@/integrations/supabase/client';
 import {useAuth} from '@/contexts/AuthContext';
 import {toast} from 'sonner';
+import {t} from '@/lib/copy';
 
 export interface ExtractionProgress {
   totalRequiredFields: number;
@@ -32,8 +33,8 @@ export function useExtractionSetup() {
   const [error, setError] = useState<string | null>(null);
 
   /**
-   * Inicializa a extração para um artigo específico
-   * Copia as instâncias template configuradas para o artigo
+   * Initializes extraction for a specific article
+   * Copies configured template instances to the article
    */
   const initializeArticleExtraction = useCallback(async (
     articleId: string,
@@ -41,7 +42,7 @@ export function useExtractionSetup() {
     templateId: string
   ): Promise<ExtractionSetupResult> => {
     if (!user) {
-      const error = 'Usuário não autenticado';
+        const error = t('common', 'errors_userNotAuthenticated');
       toast.error(error);
       return { success: false, instancesCreated: 0, error };
     }
@@ -50,9 +51,9 @@ export function useExtractionSetup() {
     setError(null);
 
     try {
-      console.log('Iniciando extração para artigo:', { articleId, projectId, templateId });
+        console.log('Starting extraction for article:', {articleId, projectId, templateId});
 
-      // 1. Verificar se já existem instâncias para este artigo
+        // 1. Check if instances already exist for this article
       const { data: existingInstances, error: checkError } = await supabase
         .from('extraction_instances')
         .select('id')
@@ -61,17 +62,17 @@ export function useExtractionSetup() {
         .limit(1);
 
       if (checkError) {
-        console.error('Erro ao verificar instâncias existentes:', checkError);
+          console.error('Error checking existing instances:', checkError);
         throw checkError;
       }
 
       if (existingInstances && existingInstances.length > 0) {
-        const message = 'Extração já iniciada para este artigo';
+          const message = t('extraction', 'extractionAlreadyStarted');
         toast.info(message);
         return { success: true, instancesCreated: 0, error: message };
       }
 
-      // 2. Buscar entity types do template do projeto para criar instâncias
+        // 2. Fetch project template entity types to create instances
       const { data: entityTypes, error: entityTypesError } = await supabase
         .from('extraction_entity_types')
         .select('*')
@@ -84,14 +85,14 @@ export function useExtractionSetup() {
       }
 
       if (!entityTypes || entityTypes.length === 0) {
-        const error = 'Nenhuma configuração de template encontrada. Configure o template primeiro.';
+          const error = t('extraction', 'noTemplateConfigFound');
         toast.error(error);
         return { success: false, instancesCreated: 0, error };
       }
 
-      console.log(`Criando ${entityTypes.length} instâncias para o artigo`);
+        console.log(`Creating ${entityTypes.length} instances for the article`);
 
-      // 3. Criar instâncias baseadas nos entity types
+        // 3. Create instances based on entity types
       const instances = entityTypes.map((entityType, index) => ({
         project_id: projectId,
         article_id: articleId,
@@ -104,21 +105,21 @@ export function useExtractionSetup() {
         created_by: user.id
       }));
 
-      // 4. Inserir todas as instâncias de uma vez
+        // 4. Insert all instances at once
       const { data: createdInstances, error: insertError } = await supabase
         .from('extraction_instances')
         .insert(instances)
         .select();
 
       if (insertError) {
-        console.error('Erro ao criar instâncias:', insertError);
+          console.error('Error creating instances:', insertError);
         throw insertError;
       }
 
       const instancesCreated = createdInstances?.length || 0;
-      console.log(`${instancesCreated} instâncias criadas com sucesso`);
+        console.log(`${instancesCreated} instances created successfully`);
 
-      toast.success(`Extração iniciada! ${instancesCreated} seções criadas.`);
+        toast.success(t('extraction', 'extractionStartedToast').replace('{{n}}', String(instancesCreated)));
 
       return {
         success: true,
@@ -126,10 +127,10 @@ export function useExtractionSetup() {
       };
 
     } catch (err: any) {
-      const errorMessage = err.message || 'Erro ao inicializar extração';
-      console.error('Erro ao inicializar extração:', err);
+        const errorMessage = err.message || t('extraction', 'errorInitializingExtraction');
+        console.error('Error initializing extraction:', err);
       setError(errorMessage);
-      toast.error(`Erro: ${errorMessage}`);
+        toast.error(`${t('common', 'error')}: ${errorMessage}`);
       
       return {
         success: false,
@@ -141,11 +142,11 @@ export function useExtractionSetup() {
     }
   }, [user]);
 
-  // NOTA: Cálculo de progresso foi movido para useExtractionProgressCalc
-  // para seguir SRP (Single Responsibility Principle)
+    // NOTE: Progress calculation moved to useExtractionProgressCalc
+    // To follow SRP (Single Responsibility Principle)
 
   /**
-   * Verifica se a extração foi iniciada para um artigo
+   * Checks if extraction was initialized for an article
    */
   const isExtractionInitialized = useCallback(async (
     articleId: string,
@@ -160,7 +161,7 @@ export function useExtractionSetup() {
         .limit(1);
 
       if (error) {
-        console.error('Erro ao verificar inicialização:', error);
+          console.error('Error checking initialization:', error);
         return false;
       }
 
@@ -168,7 +169,7 @@ export function useExtractionSetup() {
       console.log(`Artigo ${articleId} inicializado:`, initialized);
       return initialized;
     } catch (err) {
-      console.error('Erro ao verificar inicialização:', err);
+        console.error('Error checking initialization:', err);
       return false;
     }
   }, []);

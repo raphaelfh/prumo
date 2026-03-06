@@ -1,5 +1,5 @@
 /**
- * Barrel export para componentes de comparação de extraction
+ * Barrel export for extraction comparison components
  */
 
 export { ExtractionComparisonView } from './ExtractionComparisonView';

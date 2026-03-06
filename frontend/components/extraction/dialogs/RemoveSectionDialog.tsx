@@ -1,11 +1,11 @@
 /**
- * Dialog para remover seção do template
+ * Dialog to remove section from template
  * 
  * Features:
- * - Validações de impacto (campos, dados existentes)
- * - Confirmação dupla com nome da seção
- * - Feedback visual detalhado do que será removido
- * - Operação CASCADE segura
+ * - Impact validation (fields, existing data)
+ * - Double confirmation with section name
+ * - Detailed visual feedback of what will be removed
+ * - Safe CASCADE operation
  * - Logs detalhados para auditoria
  * - Estados de loading apropriados
  * 
@@ -31,15 +31,19 @@ import {Form, FormControl, FormDescription, FormField, FormItem, FormLabel, Form
 import {AlertTriangle, Database, FileText, Info, Loader2, Trash2, Users} from 'lucide-react';
 import {supabase} from '@/integrations/supabase/client';
 import {toast} from 'sonner';
+import {t} from '@/lib/copy';
 
 // =================== SCHEMAS ===================
 
-const RemoveSectionSchema = z.object({
-  confirmationName: z.string()
-    .min(1, 'Digite o nome da seção para confirmar'),  
-});
+const getRemoveSectionSchema = (sectionName: string) =>
+    z.object({
+        confirmationName: z.string().min(1, t('extraction', 'confirmSectionName')),
+    }).refine((data) => data.confirmationName === sectionName, {
+        message: t('extraction', 'confirmSectionNameExact').replace('{{name}}', sectionName),
+        path: ['confirmationName'],
+    });
 
-type RemoveSectionInput = z.infer<typeof RemoveSectionSchema>;
+type RemoveSectionInput = z.infer<ReturnType<typeof getRemoveSectionSchema>>;
 
 // =================== INTERFACES ===================
 
@@ -77,19 +81,13 @@ export function RemoveSectionDialog({
   const [impact, setImpact] = useState<SectionImpact | null>(null);
 
   const form = useForm<RemoveSectionInput>({
-    resolver: zodResolver(RemoveSectionSchema.refine(
-      (data) => data.confirmationName === sectionName,
-      {
-        message: `Digite exatamente "${sectionName}" para confirmar`,
-        path: ['confirmationName']
-      }
-    )),
+      resolver: zodResolver(getRemoveSectionSchema(sectionName)),
     defaultValues: {
       confirmationName: '',
     },
   });
 
-  // Analisar impacto quando dialog abre
+    // Analyze impact when dialog opens
   useEffect(() => {
     if (open && sectionId) {
       analyzeImpact();
@@ -105,12 +103,12 @@ export function RemoveSectionDialog({
     setAnalyzing(true);
     
     try {
-      console.log('🔍 Analisando impacto da remoção:', { sectionId, sectionName });
+        console.log('Analyzing removal impact:', {sectionId, sectionName});
 
-      // sectionId agora é entity_type_id diretamente
+        // sectionId is now entity_type_id directly
       const entityTypeId = sectionId;
 
-      // 2. Contar campos da seção
+        // 2. Count section fields
       const { count: fieldsCount, error: fieldsError } = await supabase
         .from('extraction_fields')
         .select('id', { count: 'exact', head: true })
@@ -121,18 +119,18 @@ export function RemoveSectionDialog({
         throw fieldsError;
       }
 
-      // 3. Contar instâncias da seção (templates + por artigo)
+        // 3. Count section instances (templates + per article)
       const { count: instancesCount, error: instancesError } = await supabase
         .from('extraction_instances')
         .select('id', { count: 'exact', head: true })
         .eq('entity_type_id', entityTypeId);
 
       if (instancesError) {
-        console.error('Erro ao contar instâncias:', instancesError);
+          console.error('Error counting instances:', instancesError);
         throw instancesError;
       }
 
-      // 4. Contar dados extraídos (via extracted_values)
+        // 4. Count extracted data (via extracted_values)
       const { count: dataCount, error: dataError } = await supabase
         .from('extracted_values')
         .select('id', { count: 'exact', head: true })
@@ -140,27 +138,24 @@ export function RemoveSectionDialog({
 
       if (dataError) {
         console.error('Erro ao contar dados:', dataError);
-        // Não falhar por isso, apenas logar
-        console.warn('Não foi possível contar dados extraídos');
+          // Do not fail for this, just log
+          console.warn('Could not count extracted data');
       }
 
       // 5. Gerar warnings
       const warnings: string[] = [];
       
       if ((fieldsCount || 0) > 0) {
-        warnings.push(`${fieldsCount} campos serão removidos permanentemente`);
+          warnings.push(t('extraction', 'sectionWarnFieldsRemoved').replace('{{count}}', String(fieldsCount)));
       }
-      
       if ((instancesCount || 0) > 1) {
-        warnings.push(`${instancesCount} instâncias da seção serão removidas`);
+          warnings.push(t('extraction', 'sectionWarnInstancesRemoved').replace('{{count}}', String(instancesCount)));
       }
-      
       if ((dataCount || 0) > 0) {
-        warnings.push(`${dataCount} dados extraídos serão perdidos`);
+          warnings.push(t('extraction', 'sectionWarnDataLost').replace('{{count}}', String(dataCount)));
       }
-
       if (warnings.length === 0) {
-        warnings.push('Seção vazia - remoção segura');
+          warnings.push(t('extraction', 'sectionEmptySafe'));
       }
 
       const impactData: SectionImpact = {
@@ -176,15 +171,13 @@ export function RemoveSectionDialog({
 
     } catch (error: any) {
       console.error('Erro ao analisar impacto:', error);
-      toast.error(`Erro ao analisar impacto: ${error.message}`);
-      
-      // Impacto padrão em caso de erro
+        toast.error(`${t('extraction', 'sectionAnalyzeError')}: ${error.message}`);
       setImpact({
         fieldsCount: 0,
         instancesCount: 0,
         dataCount: 0,
         canDelete: false,
-        warnings: ['Erro ao analisar impacto - operação não recomendada']
+          warnings: [t('extraction', 'sectionErrorAnalyzing')],
       });
     } finally {
       setAnalyzing(false);
@@ -197,14 +190,14 @@ export function RemoveSectionDialog({
     setLoading(true);
     
     try {
-      console.log('🗑️ Iniciando remoção da seção:', { sectionId, sectionName });
+        console.log('Starting section removal:', {sectionId, sectionName});
 
-      // sectionId agora é entity_type_id diretamente
+        // sectionId is now entity_type_id directly
       const entityTypeId = sectionId;
 
       console.log('🎯 Entity type a ser removido:', entityTypeId);
 
-      // Deletar entity type (CASCADE automático deleta fields, instances e values)
+        // Delete entity type (CASCADE automatically deletes fields, instances and values)
       const { error: entityError } = await supabase
         .from('extraction_entity_types')
         .delete()
@@ -215,17 +208,17 @@ export function RemoveSectionDialog({
         throw entityError;
       }
 
-      console.log('✅ Entity type e todas as dependências removidos via CASCADE');
+        console.log('Entity type and all dependencies removed via CASCADE');
 
-      toast.success(`Seção "${sectionName}" removida com sucesso!`);
+        toast.success(t('extraction', 'sectionRemovedSuccess').replace('{{name}}', sectionName));
       
       // Fechar dialog e recarregar dados
       onOpenChange(false);
       onSectionRemoved();
 
     } catch (error: any) {
-      console.error('Erro ao remover seção:', error);
-      toast.error(`Erro ao remover seção: ${error.message}`);
+        console.error('Error removing section:', error);
+        toast.error(`${t('extraction', 'sectionRemoveError')}: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -244,27 +237,27 @@ export function RemoveSectionDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-destructive">
             <Trash2 className="h-5 w-5" />
-            Remover Seção
+              {t('extraction', 'removeSection')}
           </DialogTitle>
           <DialogDescription>
-            Esta ação não pode ser desfeita. Todos os dados relacionados serão perdidos permanentemente.
+              {t('extraction', 'removeSectionDesc')}
           </DialogDescription>
         </DialogHeader>
 
         {analyzing && (
           <div className="flex items-center justify-center p-6">
             <Loader2 className="h-6 w-6 animate-spin mr-2" />
-            <span>Analisando impacto...</span>
+              <span>{t('extraction', 'analyzingImpact')}</span>
           </div>
         )}
 
         {impact && !analyzing && (
           <div className="space-y-4">
-            {/* Informações da seção */}
+              {/* Section information */}
             <Alert>
               <Info className="h-4 w-4" />
               <AlertDescription>
-                <div className="font-medium mb-2">Seção a ser removida:</div>
+                  <div className="font-medium mb-2">{t('extraction', 'sectionToBeRemoved')}</div>
                 <div className="font-mono text-sm bg-muted px-2 py-1 rounded">
                   {sectionName}
                 </div>
@@ -276,17 +269,17 @@ export function RemoveSectionDialog({
               <div className="text-center p-3 bg-muted rounded-lg">
                 <FileText className="h-6 w-6 mx-auto mb-1 text-blue-500" />
                 <div className="font-bold text-lg">{impact.fieldsCount}</div>
-                <div className="text-xs text-muted-foreground">Campos</div>
+                  <div className="text-xs text-muted-foreground">{t('extraction', 'fieldsLabel')}</div>
               </div>
               <div className="text-center p-3 bg-muted rounded-lg">
                 <Users className="h-6 w-6 mx-auto mb-1 text-green-500" />
                 <div className="font-bold text-lg">{impact.instancesCount}</div>
-                <div className="text-xs text-muted-foreground">Instâncias</div>
+                  <div className="text-xs text-muted-foreground">{t('extraction', 'instancesLabel')}</div>
               </div>
               <div className="text-center p-3 bg-muted rounded-lg">
                 <Database className="h-6 w-6 mx-auto mb-1 text-purple-500" />
                 <div className="font-bold text-lg">{impact.dataCount}</div>
-                <div className="text-xs text-muted-foreground">Dados</div>
+                  <div className="text-xs text-muted-foreground">{t('extraction', 'dataLabel')}</div>
               </div>
             </div>
 
@@ -294,7 +287,7 @@ export function RemoveSectionDialog({
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
-                <div className="font-medium mb-2">Impacto da remoção:</div>
+                  <div className="font-medium mb-2">{t('extraction', 'removalImpactTitle')}</div>
                 <ul className="list-disc list-inside space-y-1">
                   {impact.warnings.map((warning, index) => (
                     <li key={index} className="text-sm">{warning}</li>
@@ -303,7 +296,7 @@ export function RemoveSectionDialog({
               </AlertDescription>
             </Alert>
 
-            {/* Formulário de confirmação */}
+              {/* Confirmation form */}
             <Form {...form}>
               <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
                 <FormField
@@ -311,16 +304,16 @@ export function RemoveSectionDialog({
                   name="confirmationName"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Confirmação *</FormLabel>
+                        <FormLabel>{t('extraction', 'confirmationLabel')}</FormLabel>
                       <FormControl>
-                        <Input 
-                          placeholder={`Digite "${sectionName}" para confirmar`}
+                        <Input
+                            placeholder={t('extraction', 'sectionConfirmPlaceholder').replace('{{name}}', sectionName)}
                           {...field}
                           disabled={loading}
                         />
                       </FormControl>
                       <FormDescription>
-                        Para confirmar a remoção, digite exatamente o nome da seção acima.
+                          {t('extraction', 'confirmRemovalHint')}
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -334,7 +327,7 @@ export function RemoveSectionDialog({
                     onClick={handleClose}
                     disabled={loading}
                   >
-                    Cancelar
+                      {t('common', 'cancel')}
                   </Button>
                   <Button 
                     type="submit" 
@@ -344,12 +337,12 @@ export function RemoveSectionDialog({
                     {loading ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        Removendo...
+                          {t('extraction', 'removingLabel')}
                       </>
                     ) : (
                       <>
                         <Trash2 className="h-4 w-4 mr-2" />
-                        Remover Seção
+                          {t('extraction', 'removeSection')}
                       </>
                     )}
                   </Button>

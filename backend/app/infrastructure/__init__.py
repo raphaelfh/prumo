@@ -1,5 +1,5 @@
 """
 Infrastructure Layer.
 
-Adapters para serviços externos (Storage, OpenAI, etc).
+Adapters for external services (Storage, OpenAI, etc).
 """

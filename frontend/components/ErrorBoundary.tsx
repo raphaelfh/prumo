@@ -4,6 +4,7 @@ import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/compo
 import {AlertTriangle, Bug, Home, RefreshCw} from 'lucide-react';
 import {toast} from 'sonner';
 import {errorTracker} from '@/services/errorTracking';
+import {t} from '@/lib/copy';
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -72,10 +73,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     }
 
     // Toast de erro para feedback imediato
-    toast.error(`Erro inesperado${this.props.context ? ` em ${this.props.context}` : ''}`, {
-      description: 'Os detalhes foram registrados. Tente recarregar a página.',
-      duration: 5000,
-    });
+      toast.error(
+          t('common', 'errorBoundaryToastTitle') + (this.props.context ? t('common', 'errorBoundaryToastContext').replace('{{context}}', this.props.context) : ''),
+          {description: t('common', 'errorBoundaryToastDesc'), duration: 5000}
+      );
   }
 
   handleReload = () => {
@@ -109,12 +110,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
                 <AlertTriangle className="h-6 w-6 text-red-600" />
               </div>
-              <CardTitle className="text-xl">Algo deu errado</CardTitle>
+                <CardTitle className="text-xl">{t('common', 'errorBoundaryTitle')}</CardTitle>
               <CardDescription>
-                {this.props.context 
-                  ? `Ocorreu um erro inesperado em ${this.props.context}.`
-                  : 'Ocorreu um erro inesperado na aplicação.'
-                }
+                  {this.props.context
+                      ? t('common', 'errorBoundaryDescContext').replace('{{context}}', this.props.context)
+                      : t('common', 'errorBoundaryDescApp')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -123,14 +123,14 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                 <details className="rounded-md border p-3 text-sm">
                   <summary className="cursor-pointer font-medium text-gray-700 hover:text-gray-900">
                     <Bug className="mr-2 inline h-4 w-4" />
-                    Detalhes técnicos
+                      {t('common', 'errorBoundaryTechnicalDetails')}
                   </summary>
                   <div className="mt-2 space-y-2">
                     <div>
-                      <strong>Erro:</strong> {this.state.error.message}
+                        <strong>{t('common', 'errorBoundaryErrorLabel')}</strong> {this.state.error.message}
                     </div>
                     <div>
-                      <strong>ID do Erro:</strong> {this.state.errorId}
+                        <strong>{t('common', 'errorBoundaryErrorIdLabel')}</strong> {this.state.errorId}
                     </div>
                     {this.state.error.stack && (
                       <div>
@@ -144,27 +144,27 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                 </details>
               )}
 
-              {/* Ações */}
+                {/* Actions */}
               <div className="flex flex-col gap-2">
                 <Button onClick={this.handleReset} className="w-full">
                   <RefreshCw className="mr-2 h-4 w-4" />
-                  Tentar novamente
+                    {t('common', 'errorBoundaryTryAgain')}
                 </Button>
                 <Button onClick={this.handleReload} variant="outline" className="w-full">
                   <RefreshCw className="mr-2 h-4 w-4" />
-                  Recarregar página
+                    {t('common', 'errorBoundaryReloadPage')}
                 </Button>
                 <Button onClick={this.handleGoHome} variant="ghost" className="w-full">
                   <Home className="mr-2 h-4 w-4" />
-                  Voltar ao início
+                    {t('common', 'errorBoundaryGoHome')}
                 </Button>
               </div>
 
-              {/* Informações de suporte */}
+                {/* Support information */}
               <div className="text-center text-xs text-gray-500">
-                Se o problema persistir, entre em contato com o suporte.
+                  {t('common', 'errorBoundarySupportMessage')}
                 <br />
-                ID do erro: {this.state.errorId}
+                  {t('common', 'errorBoundaryErrorIdFooter')} {this.state.errorId}
               </div>
             </CardContent>
           </Card>
@@ -176,11 +176,13 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 }
 
-// Hook para usar error boundary em componentes funcionais
+// Hook to use error boundary in functional components
 export const useErrorHandler = () => {
   const handleError = (error: Error, context?: string) => {
     console.error(`[useErrorHandler${context ? ` - ${context}` : ''}]`, error);
-    toast.error(`Erro${context ? ` em ${context}` : ''}: ${error.message}`);
+      toast.error(
+          (context ? t('common', 'errors_inContext').replace('{{context}}', context) : t('common', 'error')) + ': ' + error.message
+      );
   };
 
   return { handleError };

@@ -3,6 +3,7 @@ import {Search, X} from 'lucide-react';
 import {Input} from '@/components/ui/input';
 import {Button} from '@/components/ui/button';
 import {cn} from '@/lib/utils';
+import {t} from '@/lib/copy';
 
 interface GlobalSearchProps {
   placeholder?: string;
@@ -11,9 +12,9 @@ interface GlobalSearchProps {
 }
 
 export const GlobalSearch: React.FC<GlobalSearchProps> = ({
-  placeholder = "Buscar...",
+                                                              placeholder = t('navigation', 'searchPlaceholder'),
   className,
-  onSearch
+                                                              onSearch,
 }) => {
   const [query, setQuery] = useState('');
 
@@ -58,7 +59,7 @@ export const MobileSearchTrigger: React.FC = () => {
       variant="ghost"
       size="icon"
       className="md:hidden"
-      aria-label="Abrir busca"
+      aria-label={t('navigation', 'ariaOpenSearch')}
     >
       <Search className="h-4 w-4" />
     </Button>

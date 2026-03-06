@@ -16,6 +16,7 @@ import {Badge} from '@/components/ui/badge';
 import {Input} from '@/components/ui/input';
 import {Check, Edit2} from 'lucide-react';
 import {cn} from '@/lib/utils';
+import {t} from '@/lib/copy';
 import {formatComparisonValue} from '@/lib/comparison/formatters';
 import {NumberFieldEditor} from './NumberFieldEditor';
 import type {ConsensusResult} from '@/lib/comparison/consensus';
@@ -31,7 +32,7 @@ interface ComparisonCellProps {
   formatValue?: (value: any) => string;
   editable?: boolean; // Se permite edição inline
   className?: string;
-  field?: ExtractionField; // ✅ NOVO: informações do campo para edição especializada
+    field?: ExtractionField; // Field info for specialized editing
 }
 
 /**
@@ -130,7 +131,7 @@ export function ComparisonCell({
         matches && !isCurrentUser && "bg-green-50 dark:bg-green-950/20 border-l-2 border-l-green-400",
         canEdit && !isEditing && "hover:bg-blue-100/70 cursor-pointer",
         onClick && "cursor-pointer hover:bg-muted/50",
-        isEditing && "min-w-[250px]", // ✅ NOVO: dar mais espaço quando editando
+          isEditing && "min-w-[250px]", // More space when editing
         className
       )}
       onClick={canEdit && !isEditing ? () => setIsEditing(true) : onClick}
@@ -138,7 +139,7 @@ export function ComparisonCell({
       tabIndex={canEdit || onClick ? 0 : undefined}
     >
       <div className="flex items-center gap-2" ref={editorRef}>
-        {/* Modo edição (current user + editable) */}
+          {/* Edit mode (current user + editable) */}
         {isEditing ? (
           isNumberField && field ? (
             // ✅ NOVO: Editor especializado para números com unidade
@@ -170,20 +171,21 @@ export function ComparisonCell({
             )}>
               {formattedValue}
             </span>
-            
-            {/* Ícone de edição (hover - current user only) */}
+
+              {/* Edit icon (hover - current user only) */}
             {canEdit && (
               <Edit2 className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
             )}
-            
-            {/* Ícone de match (quando valor igual ao do current user) */}
+
+              {/* Match icon (when value equals current user's) */}
             {matches && !isCurrentUser && (
               <Check className="h-4 w-4 text-green-600 shrink-0" aria-label="Valor igual" />
             )}
-            
-            {/* Badge de consenso (quando é o valor consensual) */}
+
+              {/* Consensus badge (when it's the consensus value) */}
             {isConsensusValue && consensus && consensus.count > 1 && (
-              <Badge variant="secondary" className="text-xs shrink-0" title={`${consensus.count} de ${consensus.total} usuários`}>
+                <Badge variant="secondary" className="text-xs shrink-0"
+                       title={t('shared', 'usersCountTitle').replace('{{count}}', String(consensus.count)).replace('{{total}}', String(consensus.total))}>
                 {consensus.count}
               </Badge>
             )}

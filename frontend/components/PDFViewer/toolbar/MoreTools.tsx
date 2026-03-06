@@ -1,12 +1,12 @@
 /**
- * MoreTools - Menu com ferramentas adicionais
+ * MoreTools - Menu with additional tools
  * 
  * Features:
  * - Download PDF
- * - Print (será implementado na Fase 7)
- * - Exportar Anotações (será implementado na Fase 7)
+ * - Print (to be implemented in Phase 7)
+ * - Export Annotations (to be implemented in Phase 7)
  * - Propriedades do Documento
- * - Configurações
+ * - Settings
  */
 
 import { useState } from 'react';
@@ -20,6 +20,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
+import {t} from '@/lib/copy';
 import { SettingsDialog } from '../dialogs/SettingsDialog';
 
 export function MoreTools() {
@@ -28,23 +29,23 @@ export function MoreTools() {
 
   const handleDownload = () => {
     toast({
-      title: 'Download',
-      description: 'Funcionalidade será implementada em breve.',
+        title: t('pdf', 'moreToolsDownloadTitle'),
+        description: t('pdf', 'moreToolsDownloadDesc'),
     });
   };
 
   const handlePrint = () => {
     toast({
-      title: 'Impressão',
-      description: 'Funcionalidade de impressão avançada será implementada em breve.',
+        title: t('pdf', 'moreToolsPrintTitle'),
+        description: t('pdf', 'moreToolsPrintDesc'),
     });
   };
 
 
   const handleProperties = () => {
     toast({
-      title: 'Propriedades do Documento',
-      description: 'Visualização de metadados será implementada em breve.',
+        title: t('pdf', 'moreToolsPropertiesTitle'),
+        description: t('pdf', 'moreToolsPropertiesDesc'),
     });
   };
 
@@ -60,7 +61,7 @@ export function MoreTools() {
             variant="ghost"
             size="icon"
             className="h-8 w-8"
-            aria-label="Mais Opções"
+            aria-label={t('pdf', 'moreToolsAria')}
           >
             <MoreVertical className="h-4 w-4" />
           </Button>
@@ -68,20 +69,20 @@ export function MoreTools() {
         <DropdownMenuContent align="end">
           <DropdownMenuItem onClick={handleDownload}>
             <Download className="h-4 w-4 mr-2" />
-            Download PDF
+              {t('pdf', 'moreToolsDownload')}
           </DropdownMenuItem>
           <DropdownMenuItem onClick={handlePrint}>
             <Printer className="h-4 w-4 mr-2" />
-            Imprimir
+              {t('pdf', 'moreToolsPrint')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={handleProperties}>
             <Info className="h-4 w-4 mr-2" />
-            Propriedades do Documento
+              {t('pdf', 'moreToolsProperties')}
           </DropdownMenuItem>
           <DropdownMenuItem onClick={handleSettings}>
             <Settings className="h-4 w-4 mr-2" />
-            Configurações
+              {t('pdf', 'moreToolsSettings')}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

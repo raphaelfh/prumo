@@ -1,15 +1,12 @@
 /**
- * Seção de Integração com Zotero
- * Permite configurar credenciais e testar conexão
+ * Zotero integration section — configure credentials and test connection.
  */
 
 import {useState} from 'react';
-import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {Label} from '@/components/ui/label';
 import {Badge} from '@/components/ui/badge';
-import {Alert, AlertDescription} from '@/components/ui/alert';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '@/components/ui/select';
 import {
     AlertDialog,
@@ -22,8 +19,9 @@ import {
     AlertDialogTitle,
     AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import {CheckCircle2, ExternalLink, Info, Link as LinkIcon, Loader2, Unlink} from 'lucide-react';
+import {CheckCircle2, ExternalLink, Loader2, Unlink} from 'lucide-react';
 import {useZoteroIntegration} from '@/hooks/useZoteroIntegration';
+import {t} from '@/lib/copy';
 
 export function ZoteroIntegrationSection() {
   const {
@@ -77,156 +75,127 @@ export function ZoteroIntegrationSection() {
 
   if (loading && !integration) {
     return (
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        </CardContent>
-      </Card>
+        <div className="flex items-center gap-2 py-4 text-[13px] text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin shrink-0" strokeWidth={1.5}/>
+            {t('project', 'zoteroLoading')}
+        </div>
     );
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <LinkIcon className="h-5 w-5" />
-              Integração Zotero
-            </CardTitle>
-            <CardDescription className="mt-2">
-              Importe artigos diretamente das suas collections do Zotero
-            </CardDescription>
-          </div>
-          {isConfigured && (
-            <Badge variant="outline" className="gap-1">
-              <CheckCircle2 className="h-3 w-3" />
-              Conectado
-            </Badge>
-          )}
-        </div>
-      </CardHeader>
-
-      <CardContent className="space-y-6">
-        {/* Estado Configurado */}
-        {isConfigured && integration ? (
-          <div className="space-y-4">
-            <Alert>
-              <CheckCircle2 className="h-4 w-4" />
-              <AlertDescription>
-                Sua conta Zotero está conectada. Você pode importar artigos nas suas listas de artigos.
-              </AlertDescription>
-            </Alert>
-
-            <div className="rounded-lg border bg-muted/50 p-4 space-y-3">
-              <div>
-                <Label className="text-sm text-muted-foreground">User ID</Label>
-                <p className="font-mono text-sm">{maskUserId(integration.zotero_user_id)}</p>
-              </div>
-              <div>
-                <Label className="text-sm text-muted-foreground">Tipo de Biblioteca</Label>
-                <p className="text-sm capitalize">{integration.library_type}</p>
-              </div>
+      <div className="space-y-4">
+          {isConfigured && integration ? (
+              <>
+                  <div className="rounded-md border border-border/40 p-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="gap-1 text-[11px] font-normal">
+                              <CheckCircle2 className="h-3 w-3" strokeWidth={1.5}/>
+                              {t('project', 'zoteroConnected')}
+                          </Badge>
+                      </div>
+                      <div className="text-[13px] text-muted-foreground space-y-1">
+                          <p><span
+                              className="text-[12px] text-muted-foreground/80">{t('project', 'zoteroUserId')}</span>
+                              <span
+                                  className="font-mono text-foreground">{maskUserId(integration.zotero_user_id)}</span>
+                          </p>
+                          <p><span
+                              className="text-[12px] text-muted-foreground/80">{t('project', 'zoteroLibraryType')}</span>
+                              <span className="capitalize">{integration.library_type}</span></p>
               {integration.last_sync_at && (
-                <div>
-                  <Label className="text-sm text-muted-foreground">Última Sincronização</Label>
-                  <p className="text-sm">
-                    {new Date(integration.last_sync_at).toLocaleString('pt-BR')}
+                  <p><span
+                      className="text-[12px] text-muted-foreground/80">{t('project', 'zoteroLastSync')}</span> {new Date(integration.last_sync_at).toLocaleString()}
                   </p>
-                </div>
               )}
-            </div>
+                      </div>
+                  </div>
 
-            <div className="flex gap-2">
-              <Button 
-                variant="outline" 
-                onClick={handleTestConnection}
-                disabled={testing}
-              >
-                {testing ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Testando...
-                  </>
-                ) : (
-                  'Testar Conexão'
-                )}
-              </Button>
+                  <div className="flex gap-2">
+                      <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-9 text-[13px]"
+                          onClick={handleTestConnection}
+                          disabled={testing}
+                      >
+                          {testing ? (
+                              <>
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" strokeWidth={1.5}/>
+                                  {t('project', 'zoteroTesting')}
+                              </>
+                          ) : (
+                              t('project', 'zoteroTestConnection')
+                          )}
+                      </Button>
+                      <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                              <Button variant="outline" size="sm"
+                                      className="h-9 text-[13px] text-muted-foreground hover:text-destructive">
+                                  <Unlink className="mr-2 h-4 w-4" strokeWidth={1.5}/>
+                                  {t('project', 'zoteroDisconnect')}
+                              </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                              <AlertDialogHeader>
+                                  <AlertDialogTitle>{t('project', 'zoteroDisconnectTitle')}</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                      {t('project', 'zoteroDisconnectDescription')}
+                                  </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                  <AlertDialogCancel>{t('common', 'cancel')}</AlertDialogCancel>
+                                  <AlertDialogAction onClick={handleDisconnect}>
+                                      {t('project', 'zoteroDisconnect')}
+                                  </AlertDialogAction>
+                              </AlertDialogFooter>
+                          </AlertDialogContent>
+                      </AlertDialog>
+                  </div>
+              </>
+          ) : (
+              <>
+                  <p className="text-[12px] text-muted-foreground">
+                      {t('project', 'zoteroConfigureDesc')}{' '}
+                      <a
+                          href="https://www.zotero.org/settings/keys/new"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline inline-flex items-center gap-1"
+                      >
+                          {t('project', 'zoteroGenerateApiKey')}
+                          <ExternalLink className="h-3 w-3" strokeWidth={1.5}/>
+                      </a>
+                  </p>
 
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="outline" className="text-destructive">
-                    <Unlink className="mr-2 h-4 w-4" />
-                    Desconectar
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Desconectar do Zotero?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Isso removerá suas credenciais do Zotero. Artigos já importados não serão afetados.
-                      Você precisará reconectar para fazer novas importações.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleDisconnect}>
-                      Desconectar
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
-          </div>
-        ) : (
-          /* Estado Não Configurado */
-          <div className="space-y-4">
-            <Alert>
-              <Info className="h-4 w-4" />
-              <AlertDescription>
-                Configure sua integração com o Zotero para importar artigos automaticamente.
-                {' '}
-                <a 
-                  href="https://www.zotero.org/settings/keys/new" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="underline inline-flex items-center gap-1"
-                >
-                  Gerar API Key
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              </AlertDescription>
-            </Alert>
-
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="zotero-user-id">
-                  Zotero User ID
-                  <a 
-                    href="https://www.zotero.org/settings/keys" 
-                    target="_blank" 
+                  <div className="rounded-md border border-border/40 p-4 space-y-4">
+                      <div className="space-y-1.5">
+                          <Label htmlFor="zotero-user-id" className="text-[13px] font-medium">
+                              {t('project', 'zoteroUserIDLabel')}
+                              <a
+                                  href="https://www.zotero.org/settings/keys"
+                                  target="_blank"
                     rel="noopener noreferrer"
-                    className="ml-2 text-xs text-muted-foreground hover:underline inline-flex items-center gap-1"
+                                  className="ml-2 text-[12px] text-muted-foreground hover:underline inline-flex items-center gap-1 font-normal"
                   >
-                    Como encontrar?
-                    <ExternalLink className="h-3 w-3" />
+                                  {t('project', 'zoteroHowToFind')}
+                                  <ExternalLink className="h-3 w-3" strokeWidth={1.5}/>
                   </a>
                 </Label>
                 <Input
                   id="zotero-user-id"
-                  placeholder="123456"
+                  placeholder={t('project', 'zoteroUserIDPlaceholder')}
                   value={formData.zoteroUserId}
                   onChange={(e) => setFormData({ ...formData, zoteroUserId: e.target.value })}
+                  className="h-9 text-[13px]"
                 />
-                <p className="text-xs text-muted-foreground">
-                  Seu User ID aparece na página de configurações de API Keys
+                          <p className="text-[12px] text-muted-foreground">
+                              {t('project', 'zoteroUserIDHint')}
                 </p>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="api-key">API Key</Label>
+                      <div className="space-y-1.5">
+                          <Label htmlFor="api-key"
+                                 className="text-[13px] font-medium">{t('project', 'zoteroApiKeyLabel')}</Label>
                 <div className="relative">
                   <Input
                     id="api-key"
@@ -234,61 +203,62 @@ export function ZoteroIntegrationSection() {
                     placeholder="••••••••••••••••••••••••"
                     value={formData.apiKey}
                     onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
-                    className="pr-20"
+                    className="pr-20 h-9 text-[13px]"
                   />
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="absolute right-1 top-1 h-7"
+                    className="absolute right-1 top-1 h-7 text-[12px]"
                     onClick={() => setShowApiKey(!showApiKey)}
                   >
-                    {showApiKey ? 'Ocultar' : 'Mostrar'}
+                      {showApiKey ? t('project', 'zoteroHide') : t('project', 'zoteroShow')}
                   </Button>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Permissões necessárias: "Allow library access" e "Allow file access"
+                          <p className="text-[12px] text-muted-foreground">
+                              {t('project', 'zoteroApiKeyPermissions')}
                 </p>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="library-type">Tipo de Biblioteca</Label>
-                <Select 
-                  value={formData.libraryType} 
-                  onValueChange={(value: 'user' | 'group') => 
+                      <div className="space-y-1.5">
+                          <Label htmlFor="library-type"
+                                 className="text-[13px] font-medium">{t('project', 'zoteroLibraryTypeLabel')}</Label>
+                          <Select
+                              value={formData.libraryType}
+                              onValueChange={(value: 'user' | 'group') =>
                     setFormData({ ...formData, libraryType: value })
                   }
                 >
-                  <SelectTrigger id="library-type">
+                              <SelectTrigger id="library-type" className="h-9 text-[13px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="user">Biblioteca Pessoal</SelectItem>
-                    <SelectItem value="group">Biblioteca de Grupo</SelectItem>
+                      <SelectItem value="user">{t('project', 'zoteroPersonalLibrary')}</SelectItem>
+                      <SelectItem value="group">{t('project', 'zoteroGroupLibrary')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
-              <div className="flex gap-2 pt-2">
-                <Button 
+                      <div className="flex gap-2 pt-1">
+                          <Button
                   onClick={handleSaveCredentials}
                   disabled={!formData.zoteroUserId.trim() || !formData.apiKey.trim() || loading}
+                  className="h-9 text-[13px]"
                 >
                   {loading ? (
                     <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Salvando...
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" strokeWidth={1.5}/>
+                        {t('project', 'zoteroSaving')}
                     </>
                   ) : (
-                    'Conectar ao Zotero'
+                      t('project', 'zoteroConnect')
                   )}
                 </Button>
               </div>
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+                  </div>
+              </>
+          )}
+      </div>
   );
 }
 

@@ -1,11 +1,11 @@
 /**
- * Keyboard Shortcuts - Gerenciador de atalhos de teclado
+ * Keyboard shortcuts manager
  * 
  * Features:
- * - Registro centralizado de atalhos
- * - Prevenção de conflitos
- * - Contextos de atalhos (global, viewer, etc)
- * - Help/overlay com lista de atalhos
+ * - Centralized shortcut registration
+ * - Conflict prevention
+ * - Shortcut contexts (global, viewer, etc)
+ * - Help/overlay with shortcut list
  */
 
 export type ShortcutKey = string;
@@ -23,7 +23,7 @@ class KeyboardShortcutManager {
   private enabled: boolean = true;
 
   /**
-   * Normalizar tecla para formato consistente
+   * Normalize key to consistent format
    */
   private normalizeKey(event: KeyboardEvent): string {
     const parts: string[] = [];
@@ -31,8 +31,8 @@ class KeyboardShortcutManager {
     if (event.ctrlKey || event.metaKey) parts.push('Ctrl');
     if (event.shiftKey) parts.push('Shift');
     if (event.altKey) parts.push('Alt');
-    
-    // Normalizar tecla principal
+
+      // Normalize main key
     const key = event.key.length === 1 
       ? event.key.toUpperCase() 
       : event.key;
@@ -43,21 +43,21 @@ class KeyboardShortcutManager {
   }
 
   /**
-   * Registrar atalho
+   * Register shortcut
    */
   register(shortcut: Shortcut): void {
     this.shortcuts.set(shortcut.key, shortcut);
   }
 
   /**
-   * Remover atalho
+   * Remove shortcut
    */
   unregister(key: ShortcutKey): void {
     this.shortcuts.delete(key);
   }
 
   /**
-   * Lidar com evento de teclado
+   * Handle keyboard event
    */
   handleKeyDown(event: KeyboardEvent): boolean {
     if (!this.enabled) return false;
@@ -75,21 +75,21 @@ class KeyboardShortcutManager {
   }
 
   /**
-   * Habilitar/desabilitar atalhos
+   * Enable/disable shortcuts
    */
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
   }
 
   /**
-   * Obter todos os atalhos
+   * Get all shortcuts
    */
   getAllShortcuts(): Shortcut[] {
     return Array.from(this.shortcuts.values());
   }
 
   /**
-   * Obter atalhos por contexto
+   * Get shortcuts by context
    */
   getShortcutsByContext(context: 'global' | 'viewer' | 'edit'): Shortcut[] {
     return Array.from(this.shortcuts.values())
@@ -97,13 +97,14 @@ class KeyboardShortcutManager {
   }
 }
 
-// Instância singleton
+// Singleton instance
 export const keyboardManager = new KeyboardShortcutManager();
 
 /**
- * Hook para usar atalhos de teclado
+ * Hook to use keyboard shortcuts
  */
 import {useEffect} from 'react';
+import {t} from '@/lib/copy';
 
 export function useKeyboardShortcuts(shortcuts: Shortcut[]): void {
   useEffect(() => {
@@ -126,77 +127,73 @@ export function useKeyboardShortcuts(shortcuts: Shortcut[]): void {
 }
 
 /**
- * Atalhos padrão do PDFViewer
+ * PDFViewer default shortcuts
  */
 export const defaultShortcuts: Shortcut[] = [
-  // Navegação
   {
     key: 'PageDown',
     handler: () => console.log('Next page'),
-    description: 'Próxima página',
+      description: t('pdf', 'shortcutNextPage'),
     context: 'viewer',
   },
   {
     key: 'PageUp',
     handler: () => console.log('Previous page'),
-    description: 'Página anterior',
+      description: t('pdf', 'shortcutPrevPage'),
     context: 'viewer',
   },
   {
     key: 'Home',
     handler: () => console.log('First page'),
-    description: 'Primeira página',
+      description: t('pdf', 'shortcutFirstPage'),
     context: 'viewer',
   },
   {
     key: 'End',
     handler: () => console.log('Last page'),
-    description: 'Última página',
+      description: t('pdf', 'shortcutLastPage'),
     context: 'viewer',
   },
-  // Zoom
   {
     key: 'Ctrl+Plus',
     handler: () => console.log('Zoom in'),
-    description: 'Aumentar zoom',
+      description: t('pdf', 'shortcutZoomIn'),
     context: 'viewer',
   },
   {
     key: 'Ctrl+Minus',
     handler: () => console.log('Zoom out'),
-    description: 'Reduzir zoom',
+      description: t('pdf', 'shortcutZoomOut'),
     context: 'viewer',
   },
   {
     key: 'Ctrl+0',
     handler: () => console.log('Reset zoom'),
-    description: 'Resetar zoom',
+      description: t('pdf', 'shortcutResetZoom'),
     context: 'viewer',
   },
-  // Ferramentas
   {
     key: 'Ctrl+F',
     handler: () => console.log('Find'),
-    description: 'Buscar no documento',
+      description: t('pdf', 'shortcutFind'),
     context: 'viewer',
   },
   {
     key: 'Escape',
     handler: () => console.log('Cancel'),
-    description: 'Cancelar ação atual',
+      description: t('pdf', 'shortcutCancel'),
     context: 'global',
   },
-  // Visualização
   {
     key: 'F11',
     handler: () => console.log('Presentation mode'),
-    description: 'Modo apresentação',
+      description: t('pdf', 'shortcutPresentation'),
     context: 'viewer',
   },
   {
     key: 'Ctrl+P',
     handler: () => console.log('Print'),
-    description: 'Imprimir',
+      description: t('pdf', 'shortcutPrint'),
     context: 'viewer',
   },
 ];

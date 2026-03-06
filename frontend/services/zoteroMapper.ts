@@ -1,24 +1,24 @@
 /**
- * Utilitários para mapear dados da API do Zotero para formato da aplicação
+ * Utilities to map Zotero API data to application format
  */
 
 import type {ArticleFromZotero, ZoteroCreator, ZoteroItem} from '@/types/zotero';
 import {supabase} from '@/integrations/supabase/client';
 
 /**
- * Formata array de criadores (autores, editores) do Zotero para formato de string
- * Formato: "Sobrenome, Nome" ou "Nome da Organização"
+ * Formats Zotero creators (authors, editors) array to string format
+ * Format: "LastName, FirstName" or "Organization Name"
  */
 export function formatZoteroCreators(creators: ZoteroCreator[]): string[] {
   if (!creators || creators.length === 0) return [];
 
   return creators.map(creator => {
-    // Se tem name (organização), usar direto
+      // If has name (organization), use as-is
     if (creator.name) {
       return creator.name;
     }
 
-    // Se tem firstName e lastName
+      // If has firstName and lastName
     if (creator.lastName) {
       const firstName = creator.firstName || '';
       return firstName ? `${creator.lastName}, ${firstName}` : creator.lastName;
@@ -30,13 +30,13 @@ export function formatZoteroCreators(creators: ZoteroCreator[]): string[] {
 }
 
 /**
- * Extrai ano de string de data do Zotero
- * Formatos aceitos: "2023", "2023-01-15", "January 2023", etc.
+ * Extracts year from Zotero date string
+ * Accepted formats: "2023", "2023-01-15", "January 2023", etc.
  */
 export function extractYear(dateString: string | undefined): number | null {
   if (!dateString) return null;
 
-  // Tentar extrair 4 dígitos seguidos (ano)
+    // Try to extract 4 consecutive digits (year)
   const yearMatch = dateString.match(/\b(19|20)\d{2}\b/);
   if (yearMatch) {
     return parseInt(yearMatch[0]);
@@ -46,34 +46,34 @@ export function extractYear(dateString: string | undefined): number | null {
 }
 
 /**
- * Extrai mês de string de data do Zotero
+ * Extracts month from Zotero date string
  */
 export function extractMonth(dateString: string | undefined): number | null {
   if (!dateString) return null;
 
-  // Mapeamento de nomes de meses
+    // Month name mapping (English for parsing)
   const months: Record<string, number> = {
-    'jan': 1, 'january': 1, 'janeiro': 1,
-    'feb': 2, 'february': 2, 'fevereiro': 2,
-    'mar': 3, 'march': 3, 'março': 3,
-    'apr': 4, 'april': 4, 'abril': 4,
-    'may': 5, 'maio': 5,
-    'jun': 6, 'june': 6, 'junho': 6,
-    'jul': 7, 'july': 7, 'julho': 7,
-    'aug': 8, 'august': 8, 'agosto': 8,
-    'sep': 9, 'september': 9, 'setembro': 9,
-    'oct': 10, 'october': 10, 'outubro': 10,
-    'nov': 11, 'november': 11, 'novembro': 11,
-    'dec': 12, 'december': 12, 'dezembro': 12,
+      'jan': 1, 'january': 1,
+      'feb': 2, 'february': 2,
+      'mar': 3, 'march': 3,
+      'apr': 4, 'april': 4,
+      'may': 5,
+      'jun': 6, 'june': 6,
+      'jul': 7, 'july': 7,
+      'aug': 8, 'august': 8,
+      'sep': 9, 'september': 9,
+      'oct': 10, 'october': 10,
+      'nov': 11, 'november': 11,
+      'dec': 12, 'december': 12,
   };
 
-  // Tentar formato ISO (2023-01-15)
+    // Try ISO format (2023-01-15)
   const isoMatch = dateString.match(/\d{4}-(\d{2})-\d{2}/);
   if (isoMatch) {
     return parseInt(isoMatch[1]);
   }
 
-  // Tentar nome do mês
+    // Try month name
   const lowerDate = dateString.toLowerCase();
   for (const [monthName, monthNum] of Object.entries(months)) {
     if (lowerDate.includes(monthName)) {
@@ -85,7 +85,7 @@ export function extractMonth(dateString: string | undefined): number | null {
 }
 
 /**
- * Mapeia item do Zotero para formato de artigo da aplicação
+ * Maps Zotero item to application article format
  */
 export function mapZoteroItemToArticle(
   item: ZoteroItem,
@@ -122,7 +122,7 @@ export function mapZoteroItemToArticle(
 }
 
 /**
- * Verifica se artigo deve ser atualizado comparando versões
+ * Checks if article should be updated by comparing versions
  */
 export function shouldUpdateArticle(
   existingVersion: number | null,
@@ -133,8 +133,8 @@ export function shouldUpdateArticle(
 }
 
 /**
- * Busca artigo duplicado no projeto por DOI ou PMID
- * Retorna o artigo existente ou null se não encontrar
+ * Finds duplicate article in project by DOI or title
+ * Returns existing article or null if not found
  */
 export async function findDuplicateArticle(
   projectId: string,
@@ -142,15 +142,15 @@ export async function findDuplicateArticle(
 ): Promise<{ id: string; zotero_version: number | null } | null> {
   const data = item.data;
 
-  // Log para debug: verificar qual project_id está sendo usado
-  console.log('[findDuplicateArticle] Verificando duplicatas:', {
+    // Debug log: which project_id is being used
+    console.log('[findDuplicateArticle] Checking duplicates:', {
     projectId,
     itemKey: item.key,
     doi: data.DOI,
     title: data.title?.substring(0, 50) + '...',
   });
 
-  // Prioridade 1: Buscar por zotero_item_key (caso já tenha sido importado)
+    // Priority 1: Search by zotero_item_key (if already imported)
   if (item.key) {
     const { data: byZoteroKey } = await supabase
       .from('articles')
@@ -160,12 +160,12 @@ export async function findDuplicateArticle(
       .maybeSingle();
 
     if (byZoteroKey) {
-      console.log('[findDuplicateArticle] Duplicata encontrada por zotero_item_key:', byZoteroKey);
+        console.log('[findDuplicateArticle] Duplicate found by zotero_item_key:', byZoteroKey);
       return byZoteroKey;
     }
   }
 
-  // Prioridade 2: Buscar por DOI
+    // Priority 2: Search by DOI
   if (data.DOI) {
     const { data: byDoi, error: doiError } = await supabase
       .from('articles')
@@ -174,7 +174,7 @@ export async function findDuplicateArticle(
       .eq('doi', data.DOI)
       .maybeSingle();
 
-    console.log('[findDuplicateArticle] Resultado da busca por DOI:', {
+      console.log('[findDuplicateArticle] DOI search result:', {
       found: !!byDoi,
       error: doiError,
       result: byDoi,
@@ -183,12 +183,12 @@ export async function findDuplicateArticle(
     });
 
     if (byDoi) {
-      console.log('[findDuplicateArticle] Duplicata encontrada por DOI:', byDoi);
+        console.log('[findDuplicateArticle] Duplicate found by DOI:', byDoi);
       return byDoi;
     }
   }
 
-  // Prioridade 3: Buscar por título exato (fallback)
+    // Priority 3: Search by exact title (fallback)
   if (data.title) {
     const { data: byTitle } = await supabase
       .from('articles')
@@ -198,17 +198,17 @@ export async function findDuplicateArticle(
       .maybeSingle();
 
     if (byTitle) {
-      console.log('[findDuplicateArticle] Duplicata encontrada por título:', byTitle);
+        console.log('[findDuplicateArticle] Duplicate found by title:', byTitle);
       return byTitle;
     }
   }
 
-  console.log('[findDuplicateArticle] Nenhuma duplicata encontrada');
+    console.log('[findDuplicateArticle] No duplicate found');
   return null;
 }
 
 /**
- * Normaliza tipo de arquivo do attachment Zotero
+ * Normalizes Zotero attachment file type
  */
 export function normalizeContentType(contentType: string): string {
   const lower = contentType.toLowerCase();
@@ -223,17 +223,17 @@ export function normalizeContentType(contentType: string): string {
 }
 
 /**
- * Verifica se attachment é um PDF válido para download
+ * Checks if attachment is a valid PDF for download
  */
 export function isValidPdfAttachment(attachment: any): boolean {
   if (attachment.data.itemType !== 'attachment') return false;
-  
-  // Só aceitar arquivos importados (não links)
+
+    // Only accept imported files (not links)
   if (!['imported_file', 'imported_url'].includes(attachment.data.linkMode)) {
     return false;
   }
-  
-  // Verificar se é PDF
+
+    // Check if PDF
   const contentType = attachment.data.contentType || '';
   if (!contentType.toLowerCase().includes('pdf')) {
     return false;
@@ -243,40 +243,40 @@ export function isValidPdfAttachment(attachment: any): boolean {
 }
 
 /**
- * Verifica se attachment deve ser baixado baseado nas opções
+ * Checks if attachment should be downloaded based on options
  */
 export function shouldDownloadAttachment(
   attachment: any,
   onlyPdfs: boolean
 ): boolean {
   if (attachment.data.itemType !== 'attachment') return false;
-  
-  // Só baixar imported files (não links externos)
+
+    // Only download imported files (not external links)
   if (!['imported_file', 'imported_url'].includes(attachment.data.linkMode)) {
     return false;
   }
   
   const contentType = (attachment.data.contentType || '').toLowerCase();
-  
-  // Se opção "apenas PDFs" está ativa, skip não-PDFs
+
+    // If "PDFs only" option is on, skip non-PDFs
   if (onlyPdfs && !contentType.includes('pdf')) {
     return false;
   }
-  
-  // Aceitar PDFs e HTMLs (snapshots)
+
+    // Accept PDFs and HTMLs (snapshots)
   return contentType.includes('pdf') || contentType.includes('html');
 }
 
 /**
- * Prioriza attachments para identificar qual deve ser o arquivo MAIN
- * Usa heurísticas baseadas no título e metadata
+ * Prioritizes attachments to identify which should be MAIN file
+ * Uses heuristics based on title and metadata
  */
 export function prioritizeMainPdf(attachments: any[]): any[] {
   return [...attachments].sort((a, b) => {
     const aTitle = (a.data.title || '').toLowerCase();
     const bTitle = (b.data.title || '').toLowerCase();
-    
-    // Palavras-chave que indicam arquivo principal
+
+      // Keywords that indicate main file
     const mainKeywords = /main|article|manuscript|full.*text|full.*pdf|published|final/i;
     const suppKeywords = /supplement|supporting|appendix|additional/i;
     
@@ -284,46 +284,46 @@ export function prioritizeMainPdf(attachments: any[]): any[] {
     const bIsMain = mainKeywords.test(bTitle);
     const aIsSupp = suppKeywords.test(aTitle);
     const bIsSupp = suppKeywords.test(bTitle);
-    
-    // Prioridade 1: Arquivo explicitamente marcado como main
+
+      // Priority 1: File explicitly marked as main
     if (aIsMain && !bIsMain) return -1;
     if (!aIsMain && bIsMain) return 1;
-    
-    // Prioridade 2: Evitar arquivos explicitamente suplementares
+
+      // Priority 2: Avoid explicitly supplementary files
     if (!aIsSupp && bIsSupp) return -1;
     if (aIsSupp && !bIsSupp) return 1;
-    
-    // Prioridade 3: Preferir PDFs sobre outros formatos
+
+      // Priority 3: Prefer PDFs over other formats
     const aIsPdf = (a.data.contentType || '').toLowerCase().includes('pdf');
     const bIsPdf = (b.data.contentType || '').toLowerCase().includes('pdf');
     
     if (aIsPdf && !bIsPdf) return -1;
     if (!aIsPdf && bIsPdf) return 1;
-    
-    // Prioridade 4: Manter ordem original do Zotero
+
+      // Priority 4: Keep original Zotero order
     return 0;
   });
 }
 
 /**
- * Determina o file_role apropriado para um attachment
+ * Determines the appropriate file_role for an attachment
  */
 export function determineFileRole(
   attachment: any,
   index: number,
   hasMainFile: boolean
 ): 'MAIN' | 'SUPPLEMENT' {
-  // Se já existe MAIN, todos são SUPPLEMENT
+    // If MAIN already exists, all others are SUPPLEMENT
   if (hasMainFile) {
     return 'SUPPLEMENT';
   }
-  
-  // Primeiro attachment vai como MAIN
+
+    // First attachment is MAIN
   if (index === 0) {
     return 'MAIN';
   }
-  
-  // Demais vão como SUPPLEMENT
+
+    // Rest are SUPPLEMENT
   return 'SUPPLEMENT';
 }
 

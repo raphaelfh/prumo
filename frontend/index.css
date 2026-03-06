@@ -146,9 +146,9 @@
         @apply flex items-center gap-3 px-4 py-2.5 text-[13px] font-normal text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground cursor-pointer border-b border-border/30 last:border-0;
     }
 
-    /* Linear style header */
+    /* Linear style header - design system: headers h-12 */
     .linear-header {
-        @apply sticky top-0 z-50 flex h-14 items-center gap-4 border-b border-border/40 bg-background/80 px-6 backdrop-blur-md;
+        @apply sticky top-0 z-50 flex h-12 items-center gap-4 border-b border-border/40 bg-background/80 px-6 backdrop-blur-md;
     }
 
     /* Subtle button style */

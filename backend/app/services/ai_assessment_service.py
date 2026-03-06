@@ -1,14 +1,14 @@
 """
 AI Assessment Service.
 
-Migrado de: supabase/functions/ai-assessment/index.ts
+Migrated from: supabase/functions/ai-assessment/index.ts
 
-Serviço para avaliação de artigos usando OpenAI.
-Implementa:
-- Leitura direta de PDF via Responses API
-- File Search com Vector Store para PDFs grandes
-- Prompts customizados por instrumento
-- Repository Pattern com SQLAlchemy
+Service for assessing articles using OpenAI.
+Implements:
+- Direct PDF reading via Responses API
+- File Search with Vector Store for large PDFs
+- Custom prompts per instrument
+- Repository pattern with SQLAlchemy
 """
 
 import base64
@@ -42,7 +42,7 @@ from app.repositories import (
 
 @dataclass
 class AssessmentResult:
-    """Resultado de uma avaliação AI."""
+    """Result of an AI assessment."""
     
     assessment_id: str
     selected_level: str
@@ -57,14 +57,13 @@ class AssessmentResult:
 
 class AIAssessmentService(LoggerMixin):
     """
-    Service para avaliação AI de artigos.
-    
-    Usa OpenAI Responses API para ler PDF diretamente.
-    Para PDFs grandes (>32MB), usa File Search com Vector Store.
-    Migrado para usar SQLAlchemy via Repository Pattern.
+    Service for AI assessment of articles.
+    Uses OpenAI Responses API to read PDF directly.
+    For large PDFs (>32MB), uses File Search with Vector Store.
+    Migrated to use SQLAlchemy via Repository Pattern.
     """
-    
-    # Limite de tamanho para usar input_file direto (32MB)
+
+    # Size limit to use direct input_file (32MB)
     DIRECT_FILE_SIZE_LIMIT = 32 * 1024 * 1024
     
     def __init__(
@@ -110,7 +109,7 @@ class AIAssessmentService(LoggerMixin):
         extraction_instance_id: UUID | None = None,  # NEW: For PROBAST by model
     ) -> AssessmentResult:
         """
-        Executa avaliação AI de um item de assessment com run tracking completo.
+        Run AI assessment for one assessment item with full run tracking.
 
         NEW in Phase 2:
         - Run tracking (pending → running → completed/failed)
@@ -120,20 +119,20 @@ class AIAssessmentService(LoggerMixin):
         - BYOK support via openai_api_key parameter
 
         Args:
-            project_id: ID do projeto.
-            article_id: ID do artigo.
-            assessment_item_id: ID do item de assessment.
-            instrument_id: ID do instrumento.
-            pdf_storage_key: Chave do PDF no storage.
-            pdf_base64: PDF em base64 (alternativa).
-            pdf_filename: Nome do arquivo PDF.
-            pdf_file_id: ID do arquivo no OpenAI (alternativa).
-            force_file_search: Forçar uso de File Search.
-            model: Modelo OpenAI a usar (optional, overrides config).
-            extraction_instance_id: ID da extraction instance (para PROBAST por modelo).
+            project_id: Project ID.
+            article_id: Article ID.
+            assessment_item_id: Assessment item ID.
+            instrument_id: Instrument ID.
+            pdf_storage_key: PDF key in storage.
+            pdf_base64: PDF as base64 (alternative).
+            pdf_filename: PDF file name.
+            pdf_file_id: OpenAI file ID (alternative).
+            force_file_search: Force use of File Search.
+            model: OpenAI model to use (optional, overrides config).
+            extraction_instance_id: Extraction instance ID (for PROBAST per model).
 
         Returns:
-            AssessmentResult com suggestion_id (não assessment_id final).
+            AssessmentResult with suggestion_id (not final assessment_id).
         """
         start_time = time.time()
 
@@ -165,7 +164,7 @@ class AIAssessmentService(LoggerMixin):
 
         try:
             # === Continue with existing logic ===
-            # 1. Buscar metadados via repositories (project items first, then global)
+            # 1. Fetch metadata via repositories (project items first, then global)
             item = await self._project_assessment_items.get_by_id(assessment_item_id)
             if not item:
                 item = await self._assessment_items.get_by_id(assessment_item_id)
@@ -178,14 +177,14 @@ class AIAssessmentService(LoggerMixin):
 
             project_summary = await self._projects.get_summary(project_id)
 
-            # 2. Descobrir storage_key se não fornecido
+            # 2. Discover storage_key if not provided
             storage_key = pdf_storage_key
             if not storage_key:
                 pdf_file = await self._article_files.get_latest_pdf(article_id)
                 if pdf_file:
                     storage_key = pdf_file.storage_key
 
-            # 3. Preparar arquivo para OpenAI
+            # 3. Prepare file for OpenAI
             input_file_node, approx_size = await self._prepare_pdf_file(
                 pdf_file_id=pdf_file_id,
                 pdf_base64=pdf_base64,
@@ -193,14 +192,14 @@ class AIAssessmentService(LoggerMixin):
                 storage_key=storage_key,
             )
 
-            # 4. Construir prompts customizados por instrumento
+            # 4. Build custom prompts per instrument
             allowed_levels = self._parse_allowed_levels(item.allowed_levels)
 
             system_prompt = self._build_system_prompt(item, project_summary)
             user_prompt = self._build_user_prompt(item, project_summary, allowed_levels)
             response_format = self._build_response_schema(allowed_levels)
 
-            # 5. Escolher método: input_file direto ou File Search
+            # 5. Choose method: direct input_file or File Search
             use_file_search = force_file_search or (
                 approx_size and approx_size > self.DIRECT_FILE_SIZE_LIMIT
             )
@@ -214,7 +213,7 @@ class AIAssessmentService(LoggerMixin):
                 assessment_item_id=str(assessment_item_id),
             )
 
-            # 6. Chamar OpenAI
+            # 6. Call OpenAI
             ai_start = time.time()
 
             if use_file_search:
@@ -327,21 +326,20 @@ class AIAssessmentService(LoggerMixin):
         extraction_instance_id: UUID | None = None,
     ) -> list[AssessmentResult]:
         """
-        Executa avaliação AI em batch para múltiplos itens.
-
-        Otimiza processamento ao reutilizar PDF e construir contexto de memória.
-        Segue o padrão do extraction module.
+        Run AI assessment in batch for multiple items.
+        Optimizes by reusing PDF and building memory context.
+        Follows extraction module pattern.
 
         Args:
             project_id: ID do projeto.
             article_id: ID do artigo.
             item_ids: Lista de IDs dos itens de assessment.
-            instrument_id: ID do instrumento.
-            model: Modelo OpenAI a usar.
-            extraction_instance_id: ID da extraction instance (para PROBAST por modelo).
+            instrument_id: Instrument ID.
+            model: OpenAI model to use.
+            extraction_instance_id: Extraction instance ID (for PROBAST per model).
 
         Returns:
-            Lista de AssessmentResult para cada item.
+            List of AssessmentResult per item.
         """
         start_time = time.time()
 
@@ -635,10 +633,9 @@ class AIAssessmentService(LoggerMixin):
         storage_key: str | None,
     ) -> tuple[dict[str, Any], int | None]:
         """
-        Prepara arquivo PDF para envio à OpenAI.
-        
+        Prepare PDF file for sending to OpenAI.
         Returns:
-            Tuple com node do arquivo e tamanho aproximado.
+            Tuple of file node and approximate size.
         """
         if pdf_file_id:
             return {"type": "input_file", "file_id": pdf_file_id}, None
@@ -671,9 +668,8 @@ class AIAssessmentService(LoggerMixin):
         project: dict[str, Any],
     ) -> str:
         """
-        Constrói prompt do sistema customizado por instrumento.
-        
-        Prompts diferenciados para diferentes tipos de instrumentos
+        Build system prompt customized per instrument.
+        Different prompts for different instrument types
         (PROBAST, QUADAS-2, ROB-2, etc.).
         """
         # Detectar instrumento pelo nome do item ou projeto
@@ -683,8 +679,8 @@ class AIAssessmentService(LoggerMixin):
             "You are an expert research quality assessor with deep knowledge of "
             "systematic review methodology and risk of bias assessment."
         )
-        
-        # Customizar por instrumento
+
+        # Customize per instrument
         if "PROBAST" in instrument_name.upper():
             return f"{base_prompt} You are specifically trained in PROBAST (Prediction model Risk Of Bias Assessment Tool) for evaluating prediction model studies. Focus on model development, validation, and applicability."
         
@@ -693,8 +689,8 @@ class AIAssessmentService(LoggerMixin):
         
         if "ROB" in instrument_name.upper() or "COCHRANE" in instrument_name.upper():
             return f"{base_prompt} You are specifically trained in ROB-2 (Risk of Bias 2) for evaluating randomized controlled trials. Focus on randomization, deviations, missing data, measurement, and selective reporting."
-        
-        # Prompt genérico
+
+        # Generic prompt
         return (
             f"{base_prompt} Read the PDF and answer the specific question based on "
             "the evidence found. Quote page numbers when possible."
@@ -708,16 +704,16 @@ class AIAssessmentService(LoggerMixin):
         memory_context: list[dict[str, str]] | None = None,
     ) -> str:
         """
-        Constrói prompt do usuário com contexto.
+        Build user prompt with context.
 
         Args:
-            item: Assessment item com question/guidance.
-            project: Dados do projeto (review_title, etc.).
-            allowed_levels: Lista de níveis permitidos para resposta.
-            memory_context: Contexto de assessments anteriores (para batch).
+            item: Assessment item with question/guidance.
+            project: Project data (review_title, etc.).
+            allowed_levels: List of allowed levels for response.
+            memory_context: Context of previous assessments (for batch).
 
         Returns:
-            User prompt completo.
+            Full user prompt.
         """
         levels_str = ", ".join(allowed_levels) if allowed_levels else "N/A"
 
@@ -770,8 +766,8 @@ Return STRICT JSON with:
         return prompt
     
     def _build_response_schema(self, allowed_levels: list[str]) -> dict[str, Any]:
-        """Constrói schema de resposta para OpenAI."""
-        # Se não há níveis definidos, usar string livre
+        """Build response schema for OpenAI."""
+        # If no levels defined, use free string
         level_schema: dict[str, Any]
         if allowed_levels:
             level_schema = {"type": "string", "enum": allowed_levels}
@@ -819,7 +815,7 @@ Return STRICT JSON with:
         response_format: dict[str, Any],
         model: str,
     ) -> dict[str, Any]:
-        """Chama OpenAI com input_file direto via Responses API."""
+        """Call OpenAI with direct input_file via Responses API."""
         payload = {
             "model": model,
             "input": [
@@ -881,25 +877,25 @@ Return STRICT JSON with:
         model: str,
     ) -> dict[str, Any]:
         """
-        Chama OpenAI usando File Search com Vector Store.
-        
-        Este método:
-        1. Faz upload do arquivo para OpenAI Files API
-        2. Cria um Vector Store temporário
-        3. Executa a query com file_search tool
-        4. Limpa recursos após uso
+        Call OpenAI using File Search with Vector Store.
+
+        This method:
+        1. Uploads file to OpenAI Files API
+        2. Creates a temporary Vector Store
+        3. Runs the query with file_search tool
+        4. Cleans up resources after use
         """
-        # Por enquanto, implementar fallback para chamada direta
-        # TODO: Implementar upload para OpenAI Files API + Vector Store completo
+        # For now, implement fallback to direct call
+        # TODO: Implement upload to OpenAI Files API + full Vector Store
         
         self.logger.warning(
             "file_search_falling_back_to_direct",
             trace_id=self.trace_id,
             message="File Search not fully implemented, using direct call",
         )
-        
-        # Tentar chamada direta mesmo para arquivos grandes
-        # Pode falhar, mas permite testar o fluxo
+
+        # Try direct call even for large files
+        # May fail but allows testing the flow
         try:
             return await self._call_direct(
                 input_file_node, system_prompt, user_prompt, response_format, model
@@ -917,9 +913,8 @@ Return STRICT JSON with:
     
     def to_dict(self, result: AssessmentResult) -> dict[str, Any]:
         """
-        Converte resultado para dict compatível com resposta do endpoint.
-        
-        Mantém formato compatível com a Edge Function original.
+        Convert result to dict compatible with endpoint response.
+        Keeps format compatible with original Edge Function.
         """
         return {
             "id": result.assessment_id,

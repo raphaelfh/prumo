@@ -11,6 +11,7 @@ import {toast} from "sonner";
 import {AddProjectDialog} from "@/components/project/AddProjectDialog";
 import {ErrorState} from "@/components/patterns/ErrorState";
 import type {ProjectListItem} from "@/types/project";
+import {t} from '@/lib/copy';
 
 export default function Dashboard() {
   const {user} = useAuth();
@@ -34,7 +35,7 @@ export default function Dashboard() {
 
   const handleCreateProject = async (data: { name: string; description?: string }) => {
     if (!user?.id) {
-      toast.error("Você precisa estar autenticado para criar um projeto");
+        toast.error(t('pages', 'dashboardAuthRequired'));
       return;
     }
 
@@ -52,20 +53,20 @@ export default function Dashboard() {
 
       if (rpcError) {
         console.error("Error creating project via RPC:", rpcError);
-        toast.error(`Erro ao criar projeto: ${rpcError.message}`);
+          toast.error(`${t('pages', 'dashboardErrorCreating')}: ${rpcError.message}`);
         return;
       }
 
       if (!projectId) {
-        toast.error("Erro: ID do projeto não foi retornado");
+          toast.error(t('pages', 'dashboardErrorProjectIdNotReturned'));
         return;
       }
 
-      toast.success("Projeto criado com sucesso!");
+        toast.success(t('pages', 'dashboardProjectCreated'));
       await queryClient.invalidateQueries({queryKey: ['projects']});
       setAddDialogOpen(false);
     } catch (_err) {
-      toast.error("Erro inesperado ao criar projeto");
+        toast.error(t('pages', 'dashboardUnexpectedError'));
     } finally {
       setCreating(false);
     }
@@ -73,10 +74,10 @@ export default function Dashboard() {
 
   const header = (
       <div
-          className="flex items-center justify-between px-6 h-14 border-b border-border/40 sticky top-0 bg-background/80 backdrop-blur-md z-10">
+          className="flex items-center justify-between px-6 h-12 border-b border-border/40 sticky top-0 bg-background/80 backdrop-blur-md z-10">
         <div className="flex items-center gap-2">
-          <h1 className="text-[13px] font-semibold tracking-tight text-foreground uppercase tracking-[0.05em] opacity-80">Meus
-            Projetos</h1>
+            <h1 className="text-[13px] font-semibold tracking-tight text-foreground uppercase tracking-[0.05em] opacity-80">{t('pages', 'dashboardMyProjects')}
+            </h1>
         </div>
         <Button
             variant="default"
@@ -86,7 +87,7 @@ export default function Dashboard() {
             className="h-8 px-3 text-[12px] font-medium transition-all rounded-md shadow-sm"
         >
           <Plus className="mr-1.5 h-3.5 w-3.5"/>
-          Novo Projeto
+            {t('pages', 'dashboardNewProject')}
         </Button>
       </div>
   );
@@ -120,7 +121,7 @@ export default function Dashboard() {
           {header}
           <div className="px-6">
             <ErrorState
-                message="Não foi possível carregar os projetos."
+                message={t('pages', 'dashboardCouldNotLoadProjects')}
                 onRetry={refetch}
             />
           </div>
@@ -139,16 +140,16 @@ export default function Dashboard() {
                     className="h-12 w-12 rounded-2xl bg-muted/30 flex items-center justify-center mx-auto mb-5 border border-border/50">
                   <BookOpen className="h-6 w-6 text-muted-foreground/40" strokeWidth={1.5}/>
                 </div>
-                <h3 className="text-base font-medium text-foreground mb-2">Comece com seu primeiro projeto</h3>
+                  <h3 className="text-base font-medium text-foreground mb-2">{t('pages', 'dashboardStartFirstProject')}</h3>
                 <p className="text-sm text-muted-foreground mb-8 max-w-xs mx-auto leading-relaxed">
-                  Crie um projeto para importar artigos, extrair dados e realizar avaliações sistemáticas.
+                    {t('pages', 'dashboardStartFirstProjectDesc')}
                 </p>
                 <Button
                     onClick={() => setAddDialogOpen(true)}
                     className="h-9 px-6 text-xs font-medium rounded-md transition-all shadow-sm"
                 >
                   <Plus className="mr-2 h-3.5 w-3.5"/>
-                  Criar Projeto
+                    {t('pages', 'dashboardCreateProject')}
                 </Button>
               </div>
             </div>
@@ -183,7 +184,7 @@ export default function Dashboard() {
                       </div>
                       <div className="flex items-center gap-3">
                         <p className="text-[12px] text-muted-foreground/60 truncate max-w-[500px] font-normal leading-relaxed">
-                          {project.description || project.review_title || "Sem descrição adicional"}
+                            {project.description || project.review_title || t('pages', 'dashboardNoDescription')}
                         </p>
                       </div>
                     </div>
@@ -193,10 +194,10 @@ export default function Dashboard() {
                     <div className="hidden sm:flex flex-col items-end">
                       <span
                           className="text-[10px] text-muted-foreground/40 font-semibold uppercase tracking-wider mb-0.5">
-                        Data de Criação
+                        {t('pages', 'dashboardCreatedDate')}
                       </span>
                       <span className="text-[12px] text-muted-foreground/80 font-medium">
-                        {new Date(project.created_at).toLocaleDateString('pt-BR')}
+                        {new Date(project.created_at).toLocaleDateString('en-US')}
                       </span>
                     </div>
                     <div

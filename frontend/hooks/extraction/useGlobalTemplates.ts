@@ -1,5 +1,5 @@
 /**
- * Hook para gerenciar templates globais disponíveis para importação
+ * Hook to manage global templates available for import
  * 
  * Features:
  * - Lista templates globais (CHARMS, PICOS, etc.)
@@ -12,6 +12,7 @@
 
 import {useEffect, useRef, useState} from 'react';
 import {supabase} from '@/integrations/supabase/client';
+import {t} from '@/lib/copy';
 import {GlobalExtractionTemplate} from '@/types/extraction';
 
 // =================== INTERFACES ===================
@@ -41,9 +42,9 @@ export function useGlobalTemplates(): UseGlobalTemplatesReturn {
     setError(null);
 
     try {
-      console.log('📚 Buscando templates globais disponíveis...');
+        console.log('Fetching available global templates...');
 
-      // Buscar templates globais
+        // Fetch global templates
       const { data: templatesData, error: templatesError } = await supabase
         .from('extraction_templates_global')
         .select('*')
@@ -51,7 +52,7 @@ export function useGlobalTemplates(): UseGlobalTemplatesReturn {
         .order('framework', { ascending: true });
 
       if (templatesError) {
-        console.error('Erro ao buscar templates globais:', templatesError);
+          console.error('Error fetching global templates:', templatesError);
         throw templatesError;
       }
 
@@ -89,7 +90,7 @@ export function useGlobalTemplates(): UseGlobalTemplatesReturn {
 
     } catch (err: any) {
       console.error('Erro ao carregar templates globais:', err);
-      setError(err.message || 'Erro desconhecido');
+        setError(err.message || t('common', 'errors_unknownError'));
       setTemplates([]);
     } finally {
       setLoading(false);

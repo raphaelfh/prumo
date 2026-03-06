@@ -1,7 +1,7 @@
 /**
- * throttle - Função utilitária para throttling
- * 
- * Limita a execução de uma função a no máximo uma vez por período.
+ * throttle - Utility for throttling
+ *
+ * Limits function execution to at most once per period.
  */
 
 export function throttle<T extends (...args: any[]) => any>(

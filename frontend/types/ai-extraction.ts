@@ -1,30 +1,19 @@
 /**
- * Tipos TypeScript centralizados para AI Extraction
- * 
- * Este arquivo consolida todos os tipos relacionados à extração com IA,
- * focando exclusivamente no pipeline de section-extraction (extração granular por seção).
- * 
- * FONTE ÚNICA DA VERDADE: Todos os tipos de AI extraction devem ser definidos aqui.
- * 
- * ARQUITETURA:
- * - Tipos Raw: Representam dados exatamente como vêm do banco (AISuggestionRaw, ExtractionRunRaw)
- * - Tipos Processados: Valores normalizados para uso no frontend (AISuggestion, ExtractionRun)
- * - Utilitários: Funções para converter entre raw e processado (normalizeAISuggestion, etc.)
- * 
+ * Centralized TypeScript types for AI Extraction
+ *
+ * This file consolidates all types related to AI extraction,
+ * focusing on the section-extraction pipeline (granular extraction per section).
+ *
+ * SINGLE SOURCE OF TRUTH: All AI extraction types must be defined here.
+ *
+ * ARCHITECTURE:
+ * - Raw types: Data exactly as from the DB (AISuggestionRaw, ExtractionRunRaw)
+ * - Processed types: Values normalized for frontend use (AISuggestion, ExtractionRun)
+ * - Utilities: Functions to convert between raw and processed (normalizeAISuggestion, etc.)
+ *
  * @example
  * ```typescript
- * // Usar tipos processados em componentes
- * const suggestion: AISuggestion = {
- *   id: '...',
- *   runId: '...',
- *   value: 'extracted value',
- *   confidence: 0.95,
- *   reasoning: '...',
- *   status: 'pending',
- *   timestamp: new Date(),
- * };
- * 
- * // Normalizar dados do banco
+ * const suggestion: AISuggestion = { ... };
  * const normalized = normalizeAISuggestion(rawSuggestionFromDB);
  * ```
  */
@@ -36,15 +25,15 @@ export type ExtractionRunStatus = 'pending' | 'running' | 'completed' | 'failed'
 export type ExtractionRunStage = 'data_suggest' | 'parsing' | 'validation' | 'consensus';
 
 /**
- * Modelos suportados para extração com IA
+ * Supported models for AI extraction
  */
 export type SupportedAIModel = 'gpt-4o-mini' | 'gpt-4o' | 'gpt-5';
 
-// =================== SUGESTÕES DE IA ===================
+// =================== AI SUGGESTIONS ===================
 
 /**
- * Sugestão de IA como retornada do banco de dados (raw)
- * Representa a estrutura exata da tabela ai_suggestions
+ * AI suggestion as returned from the database (raw)
+ * Matches the ai_suggestions table structure
  */
 export interface AISuggestionRaw {
   id: string;
@@ -53,7 +42,7 @@ export interface AISuggestionRaw {
   field_id: string;
   suggested_value: {
     value: any;
-  } | any; // Pode ser {value: X} ou direto dependendo do contexto
+  } | any; // Can be {value: X} or direct depending on context
   confidence_score: number | null;
   reasoning: string | null;
   status: SuggestionStatus;
@@ -69,17 +58,17 @@ export interface AISuggestionRaw {
 }
 
 /**
- * Sugestão de IA processada para uso no frontend
- * Valores normalizados e formatados para facilitar uso em componentes
+ * AI suggestion processed for frontend use
+ * Normalized and formatted values for easy use in components
  */
 export interface AISuggestion {
   id: string;
   runId: string;
-  value: any; // Valor extraído e normalizado (não o objeto {value: X})
-  confidence: number; // confidence_score normalizado (0-1), padrão 0 se null
-  reasoning: string; // reasoning normalizado (string vazia se null)
+  value: any; // Extracted and normalized value (not the {value: X} object)
+  confidence: number; // Normalized confidence_score (0-1), default 0 if null
+  reasoning: string; // Normalized reasoning (empty string if null)
   status: SuggestionStatus;
-  timestamp: Date; // created_at convertido para Date
+  timestamp: Date; // created_at converted to Date
   evidence?: {
     text: string;
     pageNumber?: number | null;
@@ -87,17 +76,16 @@ export interface AISuggestion {
 }
 
 /**
- * Item do histórico de sugestões
- * Type alias para AISuggestion mantendo compatibilidade
- * (Pode ser convertido para interface no futuro se campos específicos forem adicionados) 
+ * Suggestion history item
+ * Type alias for AISuggestion for compatibility
  */
 export type AISuggestionHistoryItem = AISuggestion;
 
-// =================== EXECUÇÕES DE EXTRAÇÃO ===================
+// =================== EXTRACTION RUNS ===================
 
 /**
- * Execução de extração como retornada do banco (raw)
- * Representa a estrutura da tabela extraction_runs
+ * Extraction run as returned from DB (raw)
+ * Matches extraction_runs table structure
  */
 export interface ExtractionRunRaw {
   id: string;
@@ -127,7 +115,7 @@ export interface ExtractionRunRaw {
 }
 
 /**
- * Execução de extração processada para uso no frontend
+ * Processed extraction run for frontend use
  */
 export interface ExtractionRun {
   id: string;
@@ -152,15 +140,15 @@ export interface ExtractionRun {
 // =================== REQUESTS E RESPONSES ===================
 
 /**
- * Request para extração de seção específica
- * Usado para chamar a edge function section-extraction
+ * Request for specific section extraction
+ * Used to call the section-extraction edge function
  */
 export interface SectionExtractionRequest {
   projectId: string;
   articleId: string;
   templateId: string;
   entityTypeId: string;
-  parentInstanceId?: string; // Nova: para filtrar child entities por modelo
+  parentInstanceId?: string; // To filter child entities by model
   options?: {
     model?: SupportedAIModel;
   };
@@ -175,7 +163,7 @@ export interface SectionExtractionResponse {
     runId: string;
     entityTypeId?: string;
     suggestionsCreated: number;
-    // Campos de tokens diretos (não em metadata)
+    // Direct token fields (not in metadata)
     tokensPrompt?: number;
     tokensCompletion?: number;
     tokensTotal?: number;
@@ -197,7 +185,7 @@ export interface SectionExtractionResponse {
 }
 
 /**
- * Request para extração de modelos de predição
+ * Request for prediction model extraction
  */
 export interface ModelExtractionRequest {
   projectId: string;
@@ -209,32 +197,32 @@ export interface ModelExtractionRequest {
 }
 
 /**
- * Memória resumida de uma seção extraída (para contexto em batch)
+ * Summary memory of an extracted section (for batch context)
  */
 export interface SectionMemory {
   entityTypeId: string;
   entityTypeName: string;
-  summary: string; // Máx 200 chars - resumo estruturado
+  summary: string; // Max 200 chars - structured summary
 }
 
 /**
- * Request para extração em batch de todas as seções de um modelo
+ * Request for batch extraction of all sections of a model
  */
 export interface BatchSectionExtractionRequest {
   projectId: string;
   articleId: string;
   templateId: string;
-  parentInstanceId: string; // Instância do modelo (obrigatório)
-  extractAllSections: true; // Flag para indicar batch extraction
-  sectionIds?: string[]; // NOVO: Filtrar seções específicas (para chunking)
-  pdfText?: string; // NOVO: Texto do PDF já processado (evita reprocessar)
+  parentInstanceId: string; // Model instance (required)
+  extractAllSections: true; // Flag for batch extraction
+  sectionIds?: string[]; // Filter specific sections (for chunking)
+  pdfText?: string; // Pre-processed PDF text (avoids reprocessing)
   options?: {
     model?: SupportedAIModel;
   };
 }
 
 /**
- * Resultado de extração de uma seção individual (usado no batch)
+ * Result of single section extraction (used in batch)
  */
 export interface BatchSectionResult {
   entityTypeId: string;
@@ -246,7 +234,7 @@ export interface BatchSectionResult {
 }
 
 /**
- * Response da extração em batch de todas as seções
+ * Response of batch extraction of all sections
  */
 export interface BatchSectionExtractionResponse {
   ok: boolean;
@@ -256,8 +244,8 @@ export interface BatchSectionExtractionResponse {
     successfulSections: number;
     failedSections: number;
     totalSuggestionsCreated: number;
-    totalTokensUsed: number;  // Direto na resposta (não em metadata)
-    durationMs: number;       // Direto na resposta (não em metadata)
+    totalTokensUsed: number;  // Direct in response (not in metadata)
+    durationMs: number;       // Direct in response (not in metadata)
     sections: BatchSectionResult[];
   };
   error?: {
@@ -269,7 +257,7 @@ export interface BatchSectionExtractionResponse {
 }
 
 /**
- * Response da extração de modelos
+ * Response of model extraction
  */
 export interface ModelExtractionResponse {
   ok: boolean;
@@ -284,7 +272,7 @@ export interface ModelExtractionResponse {
     metadata?: {
       tokensPrompt?: number;
       tokensCompletion?: number;
-      tokensTotal?: number;  // Backend retorna tokensTotal (não tokensUsed)
+      tokensTotal?: number;  // Backend returns tokensTotal (not tokensUsed)
       duration?: number;
       modelsFound?: number;
       [key: string]: any;
@@ -298,10 +286,10 @@ export interface ModelExtractionResponse {
   traceId?: string;
 }
 
-// =================== TIPOS PARA HOOKS ===================
+// =================== HOOK PROPS ===================
 
 /**
- * Props para o hook useAISuggestions
+ * Props for the useAISuggestions hook
  */
 export interface UseAISuggestionsProps {
   articleId: string;
@@ -312,7 +300,7 @@ export interface UseAISuggestionsProps {
 }
 
 /**
- * Retorno do hook useAISuggestions
+ * Return type of useAISuggestions hook
  */
 export interface UseAISuggestionsReturn {
   suggestions: Record<string, AISuggestion>; // key: `${instanceId}_${fieldId}`
@@ -322,8 +310,8 @@ export interface UseAISuggestionsReturn {
   batchAccept: (threshold?: number) => Promise<void>;
   getSuggestionsHistory: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
   getLatestSuggestion: (instanceId: string, fieldId: string) => AISuggestion | undefined;
-  refresh: () => Promise<LoadSuggestionsResult>; // Retorna resultado diretamente para polling eficiente
-  isActionLoading: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null; // Verifica se ação está em loading
+  refresh: () => Promise<LoadSuggestionsResult>; // Returns result directly for efficient polling
+  isActionLoading: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null; // Whether action is loading
 }
 
 export interface LoadSuggestionsResult {
@@ -332,7 +320,7 @@ export interface LoadSuggestionsResult {
 }
 
 /**
- * Props para o hook useExtractionRuns
+ * Props for the useExtractionRuns hook
  */
 export interface UseExtractionRunsProps {
   articleId: string;
@@ -341,7 +329,7 @@ export interface UseExtractionRunsProps {
 }
 
 /**
- * Retorno do hook useExtractionRuns
+ * Return type of useExtractionRuns hook
  */
 export interface UseExtractionRunsReturn {
   runs: ExtractionRun[];
@@ -350,10 +338,10 @@ export interface UseExtractionRunsReturn {
   refresh: () => Promise<void>;
 }
 
-// =================== TIPOS PARA COMPONENTES ===================
+// =================== COMPONENT PROPS ===================
 
 /**
- * Props para componentes que exibem sugestões de IA
+ * Props for components that display AI suggestions
  */
 export interface AISuggestionDisplayProps {
   instanceId: string;
@@ -365,35 +353,35 @@ export interface AISuggestionDisplayProps {
   loading?: boolean;
 }
 
-// =================== UTILIDADES ===================
+// =================== UTILITIES ===================
 
 /**
- * Chave única para identificar uma sugestão no mapa
+ * Unique key to identify a suggestion in the map
  */
 export function getSuggestionKey(instanceId: string, fieldId: string): string {
   return `${instanceId}_${fieldId}`;
 }
 
 /**
- * Parse de suggested_value do banco para valor normalizado
- * Lida com diferentes formatos: {value: X} ou valor direto
+ * Parse suggested_value from DB to normalized value
+ * Handles formats: {value: X} or direct value
  */
 export function parseSuggestedValue(rawValue: any): any {
   if (rawValue === null || rawValue === undefined) {
     return '';
   }
-  
-  // Se for objeto com propriedade 'value', extrair o valor
+
+  // If object with 'value' property, extract it
   if (typeof rawValue === 'object' && 'value' in rawValue) {
     return rawValue.value ?? '';
   }
-  
-  // Caso contrário, retornar o valor direto
+
+  // Otherwise return the value as-is
   return rawValue;
 }
 
 /**
- * Normaliza uma sugestão raw do banco para o formato processado
+ * Normalize a raw suggestion from DB to processed format
  */
 export function normalizeAISuggestion(raw: AISuggestionRaw): AISuggestion {
   return {
@@ -414,7 +402,7 @@ export function normalizeAISuggestion(raw: AISuggestionRaw): AISuggestion {
 }
 
 /**
- * Normaliza um run raw do banco para o formato processado
+ * Normalize a raw run from DB to processed format
  */
 export function normalizeExtractionRun(raw: ExtractionRunRaw): ExtractionRun {
   return {

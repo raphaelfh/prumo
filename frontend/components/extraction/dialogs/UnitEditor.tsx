@@ -1,12 +1,12 @@
 /**
- * Editor de unidades de medida
+ * Measure unit editor
  * 
  * Features:
- * - Input com sugestões comuns
- * - Dropdown com categorias (tempo, peso, dimensão, etc.)
+ * - Input with common suggestions
+ * - Dropdown with categories (time, weight, dimension, etc.)
  * - Permite valores customizados
  * - Pode ser null/vazio (opcional)
- * - Validação de tamanho
+ * - Size validation
  * 
  * @component
  */
@@ -19,6 +19,7 @@ import {Popover, PopoverContent, PopoverTrigger,} from '@/components/ui/popover'
 import {Command, CommandEmpty, CommandGroup, CommandInput, CommandItem,} from '@/components/ui/command';
 import {Check, ChevronDown, X} from 'lucide-react';
 import {cn} from '@/lib/utils';
+import {t} from '@/lib/copy';
 
 interface UnitEditorProps {
   value: string;
@@ -26,38 +27,38 @@ interface UnitEditorProps {
   disabled?: boolean;
 }
 
-// Unidades comuns organizadas por categoria
+// Common units organized by category
 const COMMON_UNITS = {
-  'Tempo': [
-    'segundos', 'minutos', 'horas', 'dias', 'semanas', 'meses', 'anos'
+    'Time': [
+        'seconds', 'minutes', 'hours', 'days', 'weeks', 'months', 'years'
   ],
-  'Peso/Massa': [
-    'mg', 'g', 'kg', 'libras', 'onças'
+    'Weight/Mass': [
+        'mg', 'g', 'kg', 'pounds', 'ounces'
   ],
-  'Dimensão': [
-    'mm', 'cm', 'm', 'km', 'polegadas', 'pés'
+    'Dimension': [
+        'mm', 'cm', 'm', 'km', 'inches', 'feet'
   ],
   'Volume': [
-    'ml', 'l', 'galões'
+      'ml', 'l', 'gallons'
   ],
-  'Pressão': [
+    'Pressure': [
     'mmHg', 'kPa', 'atm'
   ],
-  'Temperatura': [
+    'Temperature': [
     '°C', '°F', 'K'
   ],
-  'Porcentagem/Score': [
-    '%', 'pontos', 'score', 'escala'
+    'Percentage/Score': [
+        '%', 'points', 'score', 'scale'
   ],
-  'Frequência': [
-    'Hz', 'bpm', 'por minuto', 'por hora', 'por dia'
+    'Frequency': [
+        'Hz', 'bpm', 'per minute', 'per hour', 'per day'
   ],
-  'Outros': [
-    'unidades', 'doses', 'ciclos', 'episódios'
+    'Other': [
+        'units', 'doses', 'cycles', 'episodes'
   ],
 };
 
-// Flatten todas as unidades para busca
+// Flatten all units for search
 const ALL_UNITS = Object.values(COMMON_UNITS).flat();
 
 export function UnitEditor({ value, onChange, disabled = false }: UnitEditorProps) {
@@ -73,7 +74,7 @@ export function UnitEditor({ value, onChange, disabled = false }: UnitEditorProp
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value;
     setInputValue(newValue);
-    onChange(newValue || null); // Converter string vazia para null
+      onChange(newValue || null); // Convert empty string to null
   };
 
   const handleClear = () => {
@@ -88,7 +89,7 @@ export function UnitEditor({ value, onChange, disabled = false }: UnitEditorProp
           <Input
             value={inputValue}
             onChange={handleInputChange}
-            placeholder="Ex: anos, kg, %, mmHg (ou deixe vazio)"
+            placeholder={t('extraction', 'unitPlaceholder')}
             disabled={disabled}
             className="font-mono"
           />
@@ -103,14 +104,14 @@ export function UnitEditor({ value, onChange, disabled = false }: UnitEditorProp
               disabled={disabled}
               className="w-[140px] justify-between"
             >
-              Sugestões
+                {t('extraction', 'unitSuggestionsButton')}
               <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-[300px] p-0" align="end">
             <Command>
-              <CommandInput placeholder="Buscar unidade..." />
-              <CommandEmpty>Nenhuma unidade encontrada</CommandEmpty>
+                <CommandInput placeholder={t('extraction', 'unitSearchPlaceholder')}/>
+                <CommandEmpty>{t('extraction', 'unitNoneFound')}</CommandEmpty>
               
               {Object.entries(COMMON_UNITS).map(([category, units]) => (
                 <CommandGroup key={category} heading={category}>
@@ -155,15 +156,15 @@ export function UnitEditor({ value, onChange, disabled = false }: UnitEditorProp
             {inputValue}
           </Badge>
           <p className="text-xs text-muted-foreground">
-            Aparecerá como: "Valor <span className="font-mono">{inputValue}</span>" para o revisor
+              Will appear as: "Value <span className="font-mono">{inputValue}</span>" for the reviewer
           </p>
         </div>
       )}
 
-      {/* Explicação sobre null */}
+        {/* Explanation about null */}
       {!inputValue && (
         <p className="text-xs text-muted-foreground">
-          💡 Deixar vazio é válido - a maioria dos campos não tem unidade específica
+            💡 Leaving empty is valid - most fields have no specific unit
         </p>
       )}
     </div>

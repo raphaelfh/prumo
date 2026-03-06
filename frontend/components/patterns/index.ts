@@ -1,8 +1,8 @@
 /**
- * Padrões Compostos - Componentes reutilizáveis que compõem primitivos
- * 
- * Estes componentes seguem o Design System e devem ser usados
- * em vez de recriar layouts semelhantes em cada feature.
+ * Composite patterns - Reusable components that compose primitives
+ *
+ * These components follow the Design System and should be used
+ * instead of recreating similar layouts in each feature.
  */
 
 export { PageHeader } from './PageHeader';

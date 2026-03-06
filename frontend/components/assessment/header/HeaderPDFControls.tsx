@@ -1,10 +1,10 @@
 /**
  * Header PDF Controls - Assessment Module
  *
- * Sub-componente do header responsável por:
- * - Toggle de visualização do PDF
- * - Toggle de modo de comparação (quando disponível)
- * - Navegação dropdown de artigos
+ * Header sub-component responsible for:
+ * - PDF view toggle
+ * - Comparison mode toggle (when available)
+ * - Article dropdown navigation
  *
  * Baseado em ExtractionHeader/HeaderPDFControls (DRY + KISS)
  *
@@ -16,6 +16,7 @@ import {DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
 import {Tooltip, TooltipContent, TooltipTrigger,} from '@/components/ui/tooltip';
 import {FileText, Users} from 'lucide-react';
 import {cn} from '@/lib/utils';
+import {t} from '@/lib/copy';
 
 // =================== INTERFACES ===================
 
@@ -26,7 +27,7 @@ export interface HeaderPDFControlsProps {
   onToggleComparison: () => void;
   hasOtherAssessments: boolean;
 
-  // Navegação de artigos via dropdown
+    // Article navigation via dropdown
   articles: Array<{ id: string; title: string }>;
   currentArticleId: string;
   onNavigateToArticle: (articleId: string) => void;
@@ -62,11 +63,10 @@ export function HeaderPDFControls(props: HeaderPDFControlsProps) {
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          <p>{showPDF ? 'Ocultar PDF' : 'Mostrar PDF'}</p>
+            <p>{showPDF ? t('assessment', 'headerPdfHide') : t('assessment', 'headerPdfShow')}</p>
         </TooltipContent>
       </Tooltip>
 
-      {/* Toggle Comparação (só se houver outras avaliações) */}
       {hasOtherAssessments && (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -77,21 +77,20 @@ export function HeaderPDFControls(props: HeaderPDFControlsProps) {
               className="gap-2"
             >
               <Users className="h-4 w-4" />
-              Comparar
+                {t('assessment', 'headerCompare')}
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            <p>{showComparison ? 'Ocultar comparação' : 'Comparar com outros'}</p>
+              <p>{showComparison ? t('assessment', 'headerHideComparison') : t('assessment', 'headerCompareWithOthers')}</p>
           </TooltipContent>
         </Tooltip>
       )}
 
-      {/* Dropdown de Navegação de Artigos (mobile/tablet) */}
       {articles.length > 1 && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="md:hidden">
-              Artigos ({articles.findIndex((a) => a.id === currentArticleId) + 1}/
+                {t('assessment', 'headerArticles')} ({articles.findIndex((a) => a.id === currentArticleId) + 1}/
               {articles.length})
             </Button>
           </DropdownMenuTrigger>

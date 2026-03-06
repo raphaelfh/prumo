@@ -1,47 +1,46 @@
 import {z} from 'zod';
 
 /**
- * Esquemas de validação para avaliações usando Zod
- * Garante consistência entre frontend e backend
+ * Validation schemas for assessments using Zod
+ * Keeps frontend and backend consistent
  */
 
-// Esquema para resposta de avaliação
 export const AssessmentResponseSchema = z.object({
-  level: z.string().min(1, 'Nível é obrigatório'),
+    level: z.string().min(1, 'Level is required'),
   comment: z.string().optional(),
 });
 
-// Esquema para avaliação completa
+// Schema for full assessment
 export const AssessmentSchema = z.object({
-  project_id: z.string().uuid('ID do projeto inválido'),
-  article_id: z.string().uuid('ID do artigo inválido'),
-  user_id: z.string().uuid('ID do usuário inválido'),
-  instrument_id: z.string().uuid('ID do instrumento inválido'),
+    project_id: z.string().uuid('Invalid project ID'),
+    article_id: z.string().uuid('Invalid article ID'),
+    user_id: z.string().uuid('Invalid user ID'),
+    instrument_id: z.string().uuid('Invalid instrument ID'),
   tool_type: z.enum(['manual', 'ai_assisted', 'ai_automatic']),
   responses: z.record(z.string(), AssessmentResponseSchema),
   status: z.enum(['in_progress', 'submitted', 'locked', 'archived']),
   completion_percentage: z.number().min(0).max(100),
 });
 
-// Esquema para configuração de IA
+// Schema for AI configuration
 export const AIConfigurationSchema = z.object({
-  project_id: z.string().uuid('ID do projeto inválido'),
-  instrument_id: z.string().uuid('ID do instrumento inválido').optional(),
-  model_name: z.string().min(1, 'Nome do modelo é obrigatório'),
+    project_id: z.string().uuid('Invalid project ID'),
+    instrument_id: z.string().uuid('Invalid instrument ID').optional(),
+    model_name: z.string().min(1, 'Model name is required'),
   temperature: z.number().min(0).max(2),
   max_tokens: z.number().min(1).max(4096),
   system_instruction: z.string().optional(),
   is_active: z.boolean(),
 });
 
-// Esquema para configuração de prompt de IA
+// Schema for AI prompt configuration
 export const AIPromptConfigSchema = z.object({
-  assessment_item_id: z.string().uuid('ID do item de avaliação inválido'),
-  system_prompt: z.string().min(1, 'Prompt do sistema é obrigatório'),
-  user_prompt_template: z.string().min(1, 'Template do prompt do usuário é obrigatório'),
+    assessment_item_id: z.string().uuid('Invalid assessment item ID'),
+    system_prompt: z.string().min(1, 'System prompt is required'),
+    user_prompt_template: z.string().min(1, 'User prompt template is required'),
 });
 
-// Esquema para resultado de avaliação de IA
+// Schema for AI assessment result
 export const AIAssessmentResultSchema = z.object({
   selected_level: z.string(),
   confidence_score: z.number().min(0).max(1),
@@ -53,15 +52,15 @@ export const AIAssessmentResultSchema = z.object({
   })),
 });
 
-// Esquema para upload de arquivo
+// Schema for file upload
 export const FileUploadSchema = z.object({
-  article_id: z.string().uuid('ID do artigo inválido'),
+    article_id: z.string().uuid('Invalid article ID'),
   file_type: z.enum(['MAIN_PDF', 'SUPPLEMENTARY_PDF', 'DATA_FILE', 'FIGURE', 'TABLE']),
-  original_filename: z.string().min(1, 'Nome do arquivo é obrigatório'),
-  bytes: z.number().min(1, 'Tamanho do arquivo deve ser maior que 0'),
+    original_filename: z.string().min(1, 'File name is required'),
+    bytes: z.number().min(1, 'File size must be greater than 0'),
 });
 
-// Esquema para configuração global de IA
+// Schema for global AI configuration
 export const AIGlobalConfigSchema = z.object({
   parallelMode: z.boolean(),
   concurrency: z.number().min(1).max(10),
@@ -73,7 +72,7 @@ export const AIGlobalConfigSchema = z.object({
   userPromptTemplate: z.string().min(1),
 });
 
-// Esquemas para validação de entrada de Edge Functions
+// Schemas for Edge Function input validation
 export const EdgeFunctionAIAssessmentSchema = z.object({
   projectId: z.string().uuid(),
   articleId: z.string().uuid(),
@@ -86,7 +85,7 @@ export const EdgeFunctionAIAssessmentSchema = z.object({
   force_file_search: z.boolean().optional(),
 });
 
-// Tipos TypeScript derivados dos esquemas
+// TypeScript types derived from schemas
 export type AssessmentResponse = z.infer<typeof AssessmentResponseSchema>;
 export type Assessment = z.infer<typeof AssessmentSchema>;
 export type AIConfiguration = z.infer<typeof AIConfigurationSchema>;
@@ -96,7 +95,7 @@ export type FileUpload = z.infer<typeof FileUploadSchema>;
 export type AIGlobalConfig = z.infer<typeof AIGlobalConfigSchema>;
 export type EdgeFunctionAIAssessment = z.infer<typeof EdgeFunctionAIAssessmentSchema>;
 
-// Funções utilitárias para validação
+// Utility functions for validation
 export const validateAssessmentResponse = (data: unknown): AssessmentResponse => {
   return AssessmentResponseSchema.parse(data);
 };
@@ -129,7 +128,7 @@ export const validateEdgeFunctionInput = (data: unknown): EdgeFunctionAIAssessme
   return EdgeFunctionAIAssessmentSchema.parse(data);
 };
 
-// Funções para validação segura (não lançam exceção)
+// Safe validation helpers (do not throw)
 export const safeValidate = <T>(
   schema: z.ZodSchema<T>,
   data: unknown

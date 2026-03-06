@@ -8,9 +8,14 @@ import {Tooltip, TooltipContent, TooltipTrigger,} from '@/components/ui/tooltip'
 import {DropdownMenu, DropdownMenuContent, DropdownMenuTrigger,} from '@/components/ui/dropdown-menu';
 import {Clock, EyeOff, Loader2, MoreHorizontal} from 'lucide-react';
 import {format} from 'date-fns';
-import {ptBR} from 'date-fns/locale';
-import {getRoleLabel, type UserRole} from '@/lib/comparison/permissions';
+import {enUS} from 'date-fns/locale';
+import {type UserRole} from '@/lib/comparison/permissions';
 import {useIsMobile} from '@/hooks/use-mobile';
+import {t} from '@/lib/copy';
+
+function getRoleCopyKey(role: UserRole): keyof typeof import('@/lib/copy').common {
+    return (`role${role.charAt(0).toUpperCase()}${role.slice(1)}` as 'roleManager' | 'roleConsensus' | 'roleReviewer' | 'roleViewer');
+}
 
 interface HeaderStatusBadgesProps {
   // Permissões
@@ -43,13 +48,12 @@ export function HeaderStatusBadges({
   const isMobile = useIsMobile();
   const shouldGroupBadges = compact || isMobile;
 
-  // Badge de Role - minimalista
   const roleBadge = userRole ? (
     <Badge 
       variant="secondary" 
       className="text-xs font-medium px-2 py-0.5 bg-muted/60 text-muted-foreground border-0"
     >
-      {getRoleLabel(userRole)}
+        {t('common', getRoleCopyKey(userRole))}
     </Badge>
   ) : null;
 
@@ -61,7 +65,8 @@ export function HeaderStatusBadges({
           <EyeOff className="h-3 w-3" />
         </Badge>
       </TooltipTrigger>
-      <TooltipContent side="top" sideOffset={5} className="z-[100]">Modo Cego</TooltipContent>
+        <TooltipContent side="top" sideOffset={5}
+                        className="z-[100]">{t('extraction', 'headerBlindMode')}</TooltipContent>
     </Tooltip>
   ) : null;
 
@@ -87,7 +92,7 @@ export function HeaderStatusBadges({
         </Badge>
       </TooltipTrigger>
       <TooltipContent side="top" sideOffset={5} className="z-[100]">
-        {completedFields} de {totalFields} campos completos ({completionPercentage}%)
+          {completedFields} {t('extraction', 'headerProgressOf')} {totalFields} {t('extraction', 'headerProgressFields')} ({completionPercentage}%)
       </TooltipContent>
     </Tooltip>
   );
@@ -103,7 +108,7 @@ export function HeaderStatusBadges({
           <Loader2 className="h-3 w-3 animate-spin text-primary" />
         </Badge>
       </TooltipTrigger>
-      <TooltipContent side="top" sideOffset={5} className="z-[100]">Salvando...</TooltipContent>
+        <TooltipContent side="top" sideOffset={5} className="z-[100]">{t('extraction', 'headerSaving')}</TooltipContent>
     </Tooltip>
   ) : lastSaved ? (
     <Tooltip>
@@ -113,11 +118,11 @@ export function HeaderStatusBadges({
           className="gap-1.5 text-xs px-2 py-0.5 border-border/60 bg-transparent text-muted-foreground hover:text-foreground transition-colors"
         >
           <Clock className="h-3 w-3" />
-          <span className="tabular-nums">{format(lastSaved, 'HH:mm', { locale: ptBR })}</span>
+            <span className="tabular-nums">{format(lastSaved, 'HH:mm', {locale: enUS})}</span>
         </Badge>
       </TooltipTrigger>
       <TooltipContent side="top" sideOffset={5} className="z-[100]">
-        Salvo às {format(lastSaved, 'HH:mm', { locale: ptBR })}
+          {t('extraction', 'headerSavedAt')} {format(lastSaved, 'HH:mm', {locale: enUS})}
       </TooltipContent>
     </Tooltip>
   ) : null;
@@ -136,10 +141,10 @@ export function HeaderStatusBadges({
 
   // Agrupar badges em dropdown para mobile
   const badges = [
-    roleBadge && { label: 'Role', content: roleBadge },
-    blindModeBadge && { label: 'Modo Cego', content: blindModeBadge },
-    progressBadge && { label: 'Progresso', content: progressBadge },
-    saveStatusBadge && { label: 'Status', content: saveStatusBadge },
+      roleBadge && {label: t('extraction', 'headerRole'), content: roleBadge},
+      blindModeBadge && {label: t('extraction', 'headerBlindMode'), content: blindModeBadge},
+      progressBadge && {label: t('extraction', 'headerProgress'), content: progressBadge},
+      saveStatusBadge && {label: t('extraction', 'headerStatus'), content: saveStatusBadge},
   ].filter(Boolean) as Array<{ label: string; content: JSX.Element }>;
 
   // Se não há badges, não renderizar nada
@@ -172,7 +177,8 @@ export function HeaderStatusBadges({
             </Badge>
           </DropdownMenuTrigger>
         </TooltipTrigger>
-        <TooltipContent side="top" sideOffset={5} className="z-[100]">Ver todos os status</TooltipContent>
+          <TooltipContent side="top" sideOffset={5}
+                          className="z-[100]">{t('extraction', 'headerViewAllStatus')}</TooltipContent>
       </Tooltip>
       <DropdownMenuContent align="end" className="w-56 p-2">
         {badges.map((badge, index) => (

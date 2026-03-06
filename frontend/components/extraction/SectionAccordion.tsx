@@ -1,8 +1,8 @@
 /**
- * Accordion de Seção de Extração
- * 
- * Componente que renderiza uma seção (entity type) com seus campos.
- * Suporta cardinality 'one' (única instância) e 'many' (múltiplas instâncias).
+ * Extraction section accordion
+ *
+ * Renders a section (entity type) with its fields.
+ * Supports cardinality 'one' (single instance) and 'many' (multiple instances).
  * 
  * @component
  */
@@ -14,8 +14,9 @@ import {Button} from '@/components/ui/button';
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
 import {ChevronDown, Loader2, Plus, Sparkles} from 'lucide-react';
 import {cn} from '@/lib/utils';
+import {t} from '@/lib/copy';
 import {useRef} from 'react';
-import MemoizedFieldInput from './FieldInput'; // Usar versão memoizada
+import MemoizedFieldInput from './FieldInput'; // Use memoized version
 import {InstanceCard} from './InstanceCard';
 import {useSectionExtraction} from '@/hooks/extraction/useSectionExtraction';
 import type {ExtractionEntityType, ExtractionField, ExtractionInstance} from '@/types/extraction';
@@ -32,8 +33,8 @@ interface SectionAccordionProps {
   onValueChange: (instanceId: string, fieldId: string, value: any) => void;
   projectId: string;
   articleId: string;
-  templateId: string; // Nova: necessário para extração de seção
-  parentInstanceId?: string; // Nova: ID da instância pai (para filtrar child entities por modelo)
+    templateId: string; // Required for section extraction
+    parentInstanceId?: string; // Parent instance ID (to filter child entities by model)
   otherExtractions?: OtherExtraction[];
   aiSuggestions?: Record<string, AISuggestion>;
   onAcceptAI?: (instanceId: string, fieldId: string) => Promise<void>;
@@ -43,7 +44,7 @@ interface SectionAccordionProps {
   onAddInstance?: () => void;
   onRemoveInstance?: (instanceId: string) => void;
   viewMode?: 'extract' | 'compare';
-  onExtractionComplete?: (runId?: string) => void | Promise<void>; // Callback para refresh de sugestões após extração
+    onExtractionComplete?: (runId?: string) => void | Promise<void>; // Callback to refresh suggestions after extraction
 }
 
 // =================== COMPONENT ===================
@@ -62,13 +63,13 @@ export function SectionAccordion(props: SectionAccordionProps) {
 
   const isMultiple = entityType.cardinality === 'many';
 
-  // Hook para extração de seção específica
-  // Callback onSuccess notifica componente pai para refresh de sugestões
-  // IMPORTANTE: onSuccess não deve bloquear - chamar sem await para não travar o loading
+    // Hook for specific section extraction
+    // onSuccess callback notifies parent for suggestion refresh
+    // IMPORTANT: onSuccess must not block - call without await so loading is not stuck
   const { extractSection, loading: extractionLoading } = useSectionExtraction({
     onSuccess: async (runId, suggestionsCreated) => {
-      // Notificar componente pai que extração foi concluída
-      // CRÍTICO: Não fazer await aqui - deixar executar em background
+        // Notify parent that extraction completed
+        // CRITICAL: Do not await here - let it run in background
       // O loading deve ser resetado pelo hook independentemente deste callback
       if (props.onExtractionComplete) {
         try {
@@ -77,27 +78,27 @@ export function SectionAccordion(props: SectionAccordionProps) {
           if (result && typeof result === 'object' && 'catch' in result) {
             result.catch(err => {
               console.error('Erro no callback onExtractionComplete:', err);
-              // Não bloquear o hook de resetar loading
+                // Do not block the hook from resetting loading
             });
           }
         } catch (err) {
           console.error('Erro ao chamar callback onExtractionComplete:', err);
-          // Não bloquear o hook de resetar loading
+            // Do not block the hook from resetting loading
         }
       }
     },
   });
 
   /**
-   * Handler para extração de seção
-   * IMPORTANTE: Para cardinality="many", o backend agora cria instâncias automaticamente,
-   * então permitimos extração mesmo sem instâncias pré-existentes.
+   * Handler for section extraction
+   * IMPORTANT: For cardinality="many", the backend now creates instances automatically,
+   * so we allow extraction even without pre-existing instances.
    */
   const handleExtractSection = async () => {
-    // Verificar se há instâncias existentes
-    // EXCEÇÃO: Para cardinality="many", permitir extração (backend cria instâncias automaticamente)
+      // Check for existing instances
+      // EXCEPTION: For cardinality="many", allow extraction (backend creates instances automatically)
     if (instances.length === 0 && !isMultiple) {
-      // Toast já será mostrado pelo hook, mas podemos adicionar aqui também se necessário
+        // Toast will be shown by the hook; we can add here too if needed
       return;
     }
 
@@ -110,25 +111,25 @@ export function SectionAccordion(props: SectionAccordionProps) {
         parentInstanceId: props.parentInstanceId, // Nova: passar parentInstanceId quando fornecido
       });
     } catch (error) {
-      // Erro já tratado pelo hook com toast
+        // Error already handled by hook with toast
       console.error('Section extraction failed:', error);
     }
   };
 
-  // Calcular progresso desta seção
+    // Calculate progress for this section
   const requiredFields = fields.filter(f => f.is_required);
   const totalRequired = requiredFields.length * (isMultiple ? instances.length : 1);
   
   const completedRequired = requiredFields.reduce((count, field) => {
     if (isMultiple) {
-      // Para seções múltiplas, contar por instância
+        // For multiple sections, count per instance
       return count + instances.filter(instance => {
         const key = `${instance.id}_${field.id}`;
         const value = values[key];
         return value !== null && value !== undefined && value !== '';
       }).length;
     } else {
-      // Para seção única
+        // For single section
       const instance = instances[0];
       if (!instance) return count;
       const key = `${instance.id}_${field.id}`;
@@ -149,7 +150,7 @@ export function SectionAccordion(props: SectionAccordionProps) {
     ? "border-l-blue-500"
     : "border-l-slate-300";
 
-  // Ref para o trigger do accordion, para poder clicar no chevron e abrir/fechar
+    // Ref for accordion trigger so chevron can be clicked to open/close
   const triggerRef = useRef<HTMLButtonElement>(null);
 
   const handleChevronClick = (e: React.MouseEvent) => {
@@ -175,23 +176,23 @@ export function SectionAccordion(props: SectionAccordionProps) {
                   "flex flex-1 items-center justify-between py-4 font-medium transition-all hover:no-underline"
                 )}
               >
-                {/* Título à esquerda */}
+                  {/* Title on the left */}
                 <div className="flex items-center gap-3">
                   <h3 className="font-semibold text-base">{entityType.label}</h3>
                   {isMultiple && (
                     <Badge variant="outline" className="text-xs">
-                      Múltipla ({instances.length})
+                        Multiple ({instances.length})
                     </Badge>
                   )}
                 </div>
-                {/* Progresso à direita */}
+                  {/* Progress on the right */}
                 <div className="flex items-center gap-3 text-sm text-muted-foreground">
                   <span className="font-medium">{completedRequired}/{totalRequired}</span>
                   <span>{progressPercentage}%</span>
                 </div>
               </AccordionPrimitive.Trigger>
             </AccordionPrimitive.Header>
-            {/* Botão minimalista de extração de IA - fora do AccordionTrigger para evitar aninhamento de botões */}
+              {/* Minimal AI extraction button - outside AccordionTrigger to avoid nested buttons */}
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -206,8 +207,8 @@ export function SectionAccordion(props: SectionAccordionProps) {
                     disabled={extractionLoading || (instances.length === 0 && !isMultiple)}
                     title={
                       instances.length === 0 && !isMultiple
-                        ? "Crie pelo menos uma instância desta seção antes de extrair"
-                        : `Extrair dados de "${entityType.label}" com IA`
+                          ? t('extraction', 'createInstanceBeforeExtract')
+                          : t('extraction', 'extractSectionWithAI').replace('{{label}}', entityType.label)
                     }
                   >
                     {extractionLoading ? (
@@ -220,15 +221,15 @@ export function SectionAccordion(props: SectionAccordionProps) {
                 <TooltipContent>
                   <p>
                     {instances.length === 0 && !isMultiple
-                      ? "Crie pelo menos uma instância desta seção antes de extrair"
+                        ? t('extraction', 'createInstanceBeforeExtract')
                       : extractionLoading
-                      ? "Extraindo dados com IA..."
-                      : `Extrair dados de "${entityType.label}" com IA`}
+                            ? t('extraction', 'extractingWithAI')
+                            : t('extraction', 'extractSectionWithAI').replace('{{label}}', entityType.label)}
                   </p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
-            {/* Chevron manualmente posicionado no final, após o botão de IA - clicável para abrir/fechar accordion */}
+              {/* Chevron manually positioned at the end, after AI button - clickable to open/close accordion */}
             <button
               type="button"
               onClick={handleChevronClick}
@@ -244,19 +245,19 @@ export function SectionAccordion(props: SectionAccordionProps) {
           <div className="space-y-6">
             {instances.length === 0 ? (
               <div className="text-center py-8">
-                <p className="text-muted-foreground mb-4">Nenhuma instância criada para esta seção</p>
+                  <p className="text-muted-foreground mb-4">{t('extraction', 'sectionNoInstances')}</p>
                 {isMultiple && props.onAddInstance && (
                   <Button
                     variant="outline"
                     onClick={props.onAddInstance}
                   >
                     <Plus className="mr-2 h-4 w-4" />
-                    Adicionar {entityType.label}
+                      {t('extraction', 'sectionAddInstance')} {entityType.label}
                   </Button>
                 )}
               </div>
             ) : isMultiple ? (
-              // Seção múltipla: Mostrar cards de instâncias
+                // Multiple section: show instance cards
               <>
                 {instances.map((instance, index) => (
                   <div key={instance.id}>
@@ -291,13 +292,13 @@ export function SectionAccordion(props: SectionAccordionProps) {
                       onClick={props.onAddInstance}
                     >
                       <Plus className="mr-2 h-4 w-4" />
-                      Adicionar {entityType.label}
+                        {t('extraction', 'addInstanceLabel').replace('{{label}}', entityType.label)}
                     </Button>
                   </div>
                 )}
               </>
             ) : (
-              // Seção única: Mostrar campos diretamente
+                // Single section: show fields directly
               <div className="divide-y divide-slate-100">
                 {fields.map(field => {
                   const key = `${instances[0].id}_${field.id}`;

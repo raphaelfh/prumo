@@ -1,8 +1,8 @@
 /**
- * PDFCanvas - Componente de renderização do canvas PDF com scroll contínuo
- * 
- * Implementa virtualização para otimizar performance com documentos grandes.
- * Renderiza apenas páginas visíveis + buffer usando Intersection Observer.
+ * PDFCanvas - PDF canvas rendering component with continuous scroll
+ *
+ * Implements virtualization to optimize performance with large documents.
+ * Renders only visible pages + buffer using Intersection Observer.
  */
 
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
@@ -27,28 +27,28 @@ export function PDFCanvas() {
     searchResults,
   } = usePDFStore();
 
-  // Debug: verificar se searchQuery está no store
+    // Debug: check if searchQuery is in store
   useEffect(() => {
     if (searchQuery) {
-      console.debug(`[PDFCanvas] searchQuery no store: "${searchQuery}", ${searchResults?.length || 0} resultados`);
+        console.debug(`[PDFCanvas] searchQuery in store: "${searchQuery}", ${searchResults?.length || 0} results`);
     }
   }, [searchQuery, searchResults]);
   
   const viewMode = ui?.viewMode || 'continuous';
 
-  // Calcular altura estimada da página baseada no scale
+    // Compute estimated page height from scale
   const estimatedPageHeight = useMemo(() => {
-    // Altura base assumida de ~1100px (A4 em 100% zoom)
-    // Ajustar baseado no scale
+      // Base height assumed ~1100px (A4 at 100% zoom)
+      // Adjust based on scale
     return CONTINUOUS_SCROLL_CONFIG.placeholderHeight * scale;
   }, [scale]);
 
-  // Usar altura real se disponível, senão usar estimada
+    // Use actual height if available, otherwise estimated
   const getPageHeight = useCallback((pageNum: number): number => {
     return actualPageHeights.get(pageNum) || estimatedPageHeight;
   }, [actualPageHeights, estimatedPageHeight]);
 
-  // Callback para atualizar altura real da página
+    // Callback to update actual page height
   const handlePageHeightMeasured = useCallback((pageNum: number, height: number) => {
     setActualPageHeights((prev) => {
       const next = new Map(prev);
@@ -57,10 +57,10 @@ export function PDFCanvas() {
     });
   }, []);
 
-  // Margem entre páginas (mb-4 = 1rem = 16px)
+    // Margin between pages (mb-4 = 1rem = 16px)
   const PAGE_MARGIN_BOTTOM = 16;
 
-  // Hook de virtualização para scroll contínuo
+    // Virtualization hook for continuous scroll
   const {
     shouldRenderPage,
     registerPageRef,
@@ -74,9 +74,9 @@ export function PDFCanvas() {
   });
 
   const handlePageLoadSuccess = useCallback((page: any) => {
-    // Page loaded successfully - pode ser usado para métricas futuras
+      // Page loaded successfully - can be used for future metrics
     console.debug('Page loaded:', page.pageNumber);
-    // Marcar página como renderizada e não mais carregando
+      // Mark page as rendered and no longer loading
     if (markPageRendered) {
       markPageRendered(page.pageNumber);
     }
@@ -85,8 +85,8 @@ export function PDFCanvas() {
     }
   }, [markPageRendered, markPageLoading]);
 
-  // Modo CONTINUOUS - Scroll contínuo com virtualização
-  // Calcular altura total baseada em alturas reais quando disponíveis
+    // CONTINUOUS mode - Continuous scroll with virtualization
+    // Compute total height from actual heights when available
   const totalHeight = useMemo(() => {
     if (numPages === 0) return 0;
     
@@ -101,7 +101,7 @@ export function PDFCanvas() {
     return total;
   }, [numPages, getPageHeight, PAGE_MARGIN_BOTTOM]);
 
-  // Modo TWO-PAGE - Máximo 2 páginas para manter performance
+    // TWO-PAGE mode - Max 2 pages for performance
   if (viewMode === 'two-page' && numPages > 1) {
     const nextPage = currentPage < numPages ? currentPage + 1 : null;
     return (
@@ -124,7 +124,7 @@ export function PDFCanvas() {
     );
   }
 
-  // Modo SINGLE - Apenas página atual
+    // SINGLE mode - Current page only
   if (viewMode === 'single') {
     return (
       <div className="flex justify-center">
@@ -143,9 +143,9 @@ export function PDFCanvas() {
       ref={containerRef}
       className="flex justify-start"
       style={{
-        // Altura total exata para scroll correto (sem espaço extra no final)
+          // Exact total height for correct scroll (no extra space at end)
         height: `${totalHeight}px`,
-        minWidth: '100%', // Garantir largura mínima para permitir scroll horizontal quando necessário
+          minWidth: '100%', // Ensure min width for horizontal scroll when needed
       }}
     >
       <div className="flex flex-col items-center">
@@ -154,13 +154,13 @@ export function PDFCanvas() {
           const isLastPage = pageNum === numPages;
           const shouldRender = shouldRenderPage(pageNum);
 
-          // Verificar se esta página tem resultado de busca atual
+            // Check if this page has current search result
           const currentPageResult = currentSearchIndex >= 0 && searchResults?.length > 0 
             ? searchResults[currentSearchIndex]
             : null;
           const isHighlighted = currentPageResult?.pageNumber === pageNum;
-          
-          // Usar matchIndex diretamente do resultado (já é o índice do match na página)
+
+            // Use matchIndex from result (already the match index on the page)
           const currentMatchIndex = isHighlighted && currentPageResult 
             ? currentPageResult.matchIndex 
             : -1;

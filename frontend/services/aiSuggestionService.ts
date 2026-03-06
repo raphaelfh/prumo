@@ -1,18 +1,18 @@
 /**
- * Service para Gerenciamento de Sugestões de IA
- * 
- * Centraliza todas as operações de banco de dados relacionadas a sugestões de IA.
- * Abstrai queries Supabase do hook, permitindo reutilização e testes unitários.
- * 
- * FOCUS: Section extraction pipeline (extração granular por seção)
- * 
+ * AI Suggestions management service
+ *
+ * Centralizes all DB operations for AI suggestions.
+ * Abstracts Supabase queries from the hook for reuse and unit tests.
+ *
+ * FOCUS: Section extraction pipeline (granular extraction per section)
+ *
  * @example
  * ```typescript
- * // Carregar sugestões para um artigo
+ * // Load suggestions for an article
  * const instanceIds = await AISuggestionService.getArticleInstanceIds(articleId);
  * const result = await AISuggestionService.loadSuggestions(articleId, instanceIds);
- * 
- * // Aceitar uma sugestão
+ *
+ * // Accept a suggestion
  * await AISuggestionService.acceptSuggestion({
  *   suggestionId: '...',
  *   projectId: '...',
@@ -39,19 +39,19 @@ import {getSuggestionKey, normalizeAISuggestion,} from '@/types/ai-extraction';
 import {APIError,} from '@/lib/ai-extraction/errors';
 
 /**
- * Service para operações com sugestões de IA
+ * Service for AI suggestion operations
  */
 export class AISuggestionService {
   /**
-   * Carrega sugestões para instâncias de um artigo
-   * 
-   * Busca sugestões pendentes, aceitas e rejeitadas, mantendo apenas a mais recente por campo.
-   * Inclui rejeitadas para permitir reverter a decisão.
-   * 
-   * @param articleId - ID do artigo
-   * @param instanceIds - IDs das instâncias de extração
-   * @param statuses - Statuses para filtrar (padrão: ['pending', 'accepted', 'rejected'])
-   * @returns Mapa de sugestões indexadas por `${instanceId}_${fieldId}`
+   * Loads suggestions for an article's instances
+   *
+   * Fetches pending, accepted and rejected suggestions, keeping only the latest per field.
+   * Includes rejected so the decision can be reverted.
+   *
+   * @param articleId - Article ID
+   * @param instanceIds - Extraction instance IDs
+   * @param statuses - Statuses to filter (default: ['pending', 'accepted', 'rejected'])
+   * @returns Map of suggestions keyed by `${instanceId}_${fieldId}`
    */
   static async loadSuggestions(
     articleId: string,
@@ -80,15 +80,15 @@ export class AISuggestionService {
       handleSupabaseError(error, 'loadSuggestions');
     }
 
-    // Mapear para formato { instanceId_fieldId: suggestion }
-    // Manter apenas a mais recente por campo (primeira do array ordenado)
+      // Map to format { instanceId_fieldId: suggestion }
+      // Keep only the latest per field (first in sorted array)
     const suggestionsMap: Record<string, AISuggestion> = {};
 
-    console.log(`📊 [loadSuggestions] Processando ${(data || []).length} sugestão(ões) do banco para ${instanceIds.length} instância(s)`);
+      console.log(`📊 [loadSuggestions] Processing ${(data || []).length} suggestion(s) from DB for ${instanceIds.length} instance(s)`);
 
     (data || []).forEach((item: AISuggestionRaw) => {
       if (!item.instance_id) {
-        console.warn('⚠️ [loadSuggestions] Sugestão sem instance_id ignorada:', {
+          console.warn('[loadSuggestions] Suggestion without instance_id ignored:', {
           suggestionId: item.id,
           fieldId: item.field_id,
           status: item.status
@@ -97,21 +97,21 @@ export class AISuggestionService {
       }
 
       const key = getSuggestionKey(item.instance_id, item.field_id);
-      // Só adiciona se ainda não existe (mantém a mais recente)
+        // Only add if not already present (keeps latest)
       if (!suggestionsMap[key]) {
         suggestionsMap[key] = normalizeAISuggestion(item);
-        console.log(`✅ [loadSuggestions] Sugestão adicionada: ${key}`, {
+          console.log(`✅ [loadSuggestions] Suggestion added: ${key}`, {
           status: item.status,
           fieldId: item.field_id,
           instanceId: item.instance_id
         });
       } else {
-        console.log(`⏭️ [loadSuggestions] Sugestão mais recente já existe para ${key}, ignorando esta`);
+          console.log(`⏭️ [loadSuggestions] Latest suggestion already exists for ${key}, skipping`);
       }
     });
 
     const finalCount = Object.keys(suggestionsMap).length;
-    console.log(`🎯 [loadSuggestions] Total de ${finalCount} sugestão(ões) únicas mapeadas`);
+      console.log(`🎯 [loadSuggestions] Total of ${finalCount} unique suggestion(s) mapped`);
 
     return {
       suggestions: suggestionsMap,
@@ -120,12 +120,12 @@ export class AISuggestionService {
   }
 
   /**
-   * Busca histórico completo de sugestões para um campo específico
-   * 
-   * @param instanceId - ID da instância
-   * @param fieldId - ID do campo
-   * @param limit - Limite de resultados (padrão: 10)
-   * @returns Lista de sugestões ordenadas por data (mais recente primeiro)
+   * Fetches full suggestion history for a specific field
+   *
+   * @param instanceId - Instance ID
+   * @param fieldId - Field ID
+   * @param limit - Result limit (default: 10)
+   * @returns List of suggestions sorted by date (newest first)
    */
   static async getHistory(
     instanceId: string,
@@ -156,12 +156,11 @@ export class AISuggestionService {
   }
 
   /**
-   * Aceita uma sugestão de IA
-   * 
-   * Cria extracted_value e atualiza status da sugestão para 'accepted'.
-   * 
-   * @param params - Parâmetros para aceitar sugestão
-   * @returns void
+   * Accepts an AI suggestion
+   *
+   * Creates extracted_value and updates suggestion status to 'accepted'.
+   *
+   * @param params - Accept suggestion parameters
    */
   static async acceptSuggestion(params: {
     suggestionId: string;
@@ -184,7 +183,7 @@ export class AISuggestionService {
       reviewerId,
     } = params;
 
-    // 1. Verificar se já existe extracted_value para esse instance_id, field_id e reviewer_id
+      // 1. Check if extracted_value already exists for this instance_id, field_id and reviewer_id
     const { data: existing, error: selectError } = await supabase
       .from('extracted_values')
       .select('id')
@@ -197,7 +196,7 @@ export class AISuggestionService {
       throw new APIError(`Failed to check existing extracted value: ${selectError.message}`, undefined, { selectError });
     }
 
-    // Preparar dados do valor
+      // Prepare value data
     const valueData = {
       project_id: projectId,
       article_id: articleId,
@@ -211,7 +210,7 @@ export class AISuggestionService {
       ai_suggestion_id: suggestionId,
     };
 
-    // 2. UPDATE se existir, INSERT se não existir
+      // 2. UPDATE if exists, INSERT if not
     if (existing) {
       const { error: updateError } = await supabase
         .from('extracted_values')
@@ -231,7 +230,7 @@ export class AISuggestionService {
       }
     }
 
-    // 3. Atualizar status da suggestion para 'accepted'
+      // 3. Update suggestion status to 'accepted'
     const { error: updateError } = await supabase
       .from('ai_suggestions')
       .update({
@@ -247,13 +246,12 @@ export class AISuggestionService {
   }
 
   /**
-   * Rejeita uma sugestão de IA
-   * 
-   * Atualiza status da sugestão para 'rejected'.
-   * Se foi aceito antes, remove o extracted_value relacionado.
-   * 
-   * @param params - Parâmetros para rejeitar sugestão
-   * @returns void
+   * Rejects an AI suggestion
+   *
+   * Updates suggestion status to 'rejected'.
+   * If it was accepted before, removes the related extracted_value.
+   *
+   * @param params - Reject suggestion parameters
    */
   static async rejectSuggestion(params: {
     suggestionId: string;
@@ -266,7 +264,7 @@ export class AISuggestionService {
   }): Promise<void> {
     const { suggestionId, reviewerId, wasAccepted, instanceId, fieldId, projectId, articleId } = params;
 
-    // Se foi aceito antes, remover o extracted_value relacionado
+      // If was accepted before, remove related extracted_value
     if (wasAccepted && instanceId && fieldId && projectId && articleId) {
       const { error: deleteError } = await supabase
         .from('extracted_values' as any)
@@ -278,12 +276,12 @@ export class AISuggestionService {
         .eq('ai_suggestion_id', suggestionId);
 
       if (deleteError) {
-        console.warn(`⚠️ Erro ao remover extracted_value ao rejeitar: ${deleteError.message}`);
-        // Não lançar erro - continuar com rejeição mesmo se não conseguir remover
+          console.warn(`⚠️ Error removing extracted_value on reject: ${deleteError.message}`);
+          // Do not throw - continue with reject even if remove fails
       }
     }
 
-    // Atualizar status da sugestão para 'rejected'
+      // Update suggestion status to 'rejected'
     const { error } = await supabase
       .from('ai_suggestions')
       .update({
@@ -299,31 +297,31 @@ export class AISuggestionService {
   }
 
   /**
-   * Busca instâncias de extração para um artigo
-   * 
-   * Helper para obter lista de instance IDs antes de carregar sugestões.
-   * IMPORTANTE: Filtra apenas instâncias com article_id não nulo (instâncias específicas do artigo).
-   * 
-   * @param articleId - ID do artigo
-   * @returns Array de IDs de instâncias
+   * Fetches extraction instances for an article
+   *
+   * Helper to get instance IDs before loading suggestions.
+   * IMPORTANT: Filters only instances with non-null article_id (article-specific instances).
+   *
+   * @param articleId - Article ID
+   * @returns Array of instance IDs
    */
   static async getArticleInstanceIds(articleId: string): Promise<string[]> {
     const { data, error } = await supabase
       .from('extraction_instances')
       .select('id, label, entity_type_id, article_id')
       .eq('article_id', articleId)
-      .not('article_id', 'is', null); // Garantir que article_id não é null
+        .not('article_id', 'is', null); // Ensure article_id is not null
 
     if (error) {
-      console.error('❌ Erro ao buscar instâncias para sugestões:', error);
+        console.error('Error fetching instances for suggestions:', error);
       throw new APIError(`Failed to load instances: ${error.message}`, undefined, { error });
     }
 
     const instanceIds = (data || []).map((i) => i.id);
-    
-    // Log detalhado para debug
-    console.log(`📋 [getArticleInstanceIds] Encontradas ${instanceIds.length} instância(s) para artigo ${articleId}:`, {
-      instanceIds: instanceIds.slice(0, 10), // Primeiros 10 para não poluir log
+
+      // Detailed log for debug
+      console.log(`📋 [getArticleInstanceIds] Found ${instanceIds.length} instance(s) for article ${articleId}:`, {
+          instanceIds: instanceIds.slice(0, 10), // First 10 to avoid log noise
       instances: (data || []).slice(0, 5).map(i => ({
         id: i.id,
         label: i.label,

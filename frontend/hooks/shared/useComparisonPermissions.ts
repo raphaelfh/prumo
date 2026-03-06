@@ -1,24 +1,25 @@
 /**
- * Hook unificado de permissões para comparação
- * 
- * Centraliza toda a lógica de permissões relacionadas a comparação
- * de extrações/assessments entre usuários.
- * 
- * Usado em:
+ * Unified comparison permissions hook
+ *
+ * Centralizes all permission logic for comparing
+ * extractions/assessments across users.
+ *
+ * Used in:
  * - ExtractionFullScreen
  * - AssessmentFullScreen
- * 
- * Elimina duplicação de código e garante consistência.
- * 
+ *
+ * Eliminates code duplication and ensures consistency.
+ *
  * @hook
  */
 
 import {useCallback, useEffect, useState} from 'react';
 import {supabase} from '@/integrations/supabase/client';
 import {getRolePermissions, isValidUserRole, type PermissionRules, type UserRole} from '@/lib/comparison/permissions';
+import {t} from '@/lib/copy';
 
 /**
- * Estado completo de permissões
+ * Full permission state
  */
 export interface ComparisonPermissions extends PermissionRules {
   userRole: UserRole;
@@ -28,15 +29,15 @@ export interface ComparisonPermissions extends PermissionRules {
 }
 
 /**
- * Hook para carregar e gerenciar permissões de comparação
- * 
- * Faz 2 queries otimizadas:
- * 1. Buscar role do membro no projeto
- * 2. Buscar configuração de blind_mode
- * 
- * @param projectId - ID do projeto
- * @param userId - ID do usuário
- * @returns Permissões completas com estado de loading
+ * Hook to load and manage comparison permissions
+ *
+ * Runs 2 optimized queries:
+ * 1. Fetch member role in project
+ * 2. Fetch blind_mode project config
+ *
+ * @param projectId - Project ID
+ * @param userId - User ID
+ * @returns Full permissions with loading state
  * 
  * @example
  * const permissions = useComparisonPermissions(projectId, userId);
@@ -66,7 +67,7 @@ export function useComparisonPermissions(
     try {
       setPermissions(prev => ({ ...prev, loading: true, error: null }));
 
-      // Query 1: Buscar role do membro
+        // Query 1: Fetch member role
       const { data: member, error: memberError } = await supabase
         .from('project_members')
         .select('role')
@@ -77,10 +78,10 @@ export function useComparisonPermissions(
       if (memberError) throw memberError;
 
       if (!member) {
-        throw new Error('Usuário não é membro do projeto');
+          throw new Error(t('common', 'errors_userNotProjectMember'));
       }
 
-      // Query 2: Buscar configuração do projeto
+        // Query 2: Fetch project config
       const { data: project, error: projectError } = await supabase
         .from('projects')
         .select('settings')
@@ -89,16 +90,16 @@ export function useComparisonPermissions(
 
       if (projectError) throw projectError;
 
-      // Validar role
+        // Validate role
       const role = member.role;
       if (!isValidUserRole(role)) {
-        throw new Error(`Role inválido: ${role}`);
+          throw new Error(`${t('common', 'errors_invalidRole')}: ${role}`);
       }
 
-      // Extrair blind_mode (com fallback seguro)
+        // Extract blind_mode (with safe fallback)
       const isBlindMode = project?.settings?.blind_mode === true;
 
-      // Calcular permissões usando regras centralizadas
+        // Compute permissions using centralized rules
       const rolePermissions = getRolePermissions(role, isBlindMode);
 
       setPermissions({
@@ -110,19 +111,19 @@ export function useComparisonPermissions(
       });
 
     } catch (err: any) {
-      console.error('❌ Erro ao carregar permissões de comparação:', err);
-      
-      // Estado de erro: assume permissões mínimas (seguro)
+        console.error('Error loading comparison permissions:', err);
+
+        // Error state: assume minimum permissions (safe)
       setPermissions({
         userRole: 'reviewer',
-        isBlindMode: true, // Assumir blind mode em caso de erro (mais seguro)
+          isBlindMode: true, // Assume blind mode on error (safer)
         canSeeOthers: false,
         canResolveConflicts: false,
         canManageBlindMode: false,
         canExport: false,
         canEditTemplate: false,
         loading: false,
-        error: err.message || 'Erro ao carregar permissões'
+          error: err.message || t('common', 'errors_loadPermissions')
       });
     }
   }, [projectId, userId]);
@@ -136,7 +137,7 @@ export function useComparisonPermissions(
     loadPermissions();
   }, [projectId, userId, loadPermissions]);
 
-  // Retornar função de refresh para recarregar permissões
+    // Return refresh function to reload permissions
   return {
     ...permissions,
     refresh: loadPermissions

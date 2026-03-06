@@ -1,6 +1,7 @@
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/components/ui/select";
 import {Label} from "@/components/ui/label";
 import {AssessmentInstrument} from "@/hooks/assessment/useAssessmentInstruments";
+import {t} from '@/lib/copy';
 
 interface InstrumentSelectorProps {
   instruments: AssessmentInstrument[];
@@ -17,10 +18,10 @@ export const InstrumentSelector = ({
 }: InstrumentSelectorProps) => {
   return (
     <div className="space-y-2">
-      <Label htmlFor="instrument">Instrumento de Avaliação</Label>
+        <Label htmlFor="instrument">{t('assessment', 'instrumentSelectorLabel')}</Label>
       <Select value={value || undefined} onValueChange={onValueChange} disabled={disabled}>
         <SelectTrigger id="instrument">
-          <SelectValue placeholder="Selecione um instrumento" />
+            <SelectValue placeholder={t('assessment', 'instrumentSelectorPlaceholder')}/>
         </SelectTrigger>
         <SelectContent>
           {instruments.map((instrument) => (

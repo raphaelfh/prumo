@@ -1,14 +1,14 @@
 /**
- * DetailSheet - Sheet para detalhes de itens com largura fixa
- * 
- * Uso:
+ * DetailSheet - Sheet for item details with fixed width.
+ *
+ * Usage:
  * <DetailSheet
  *   open={open}
  *   onOpenChange={setOpen}
- *   title="Detalhes do Artigo"
- *   footer={<Button>Salvar</Button>}
+ *   title="Article details"
+ *   footer={<Button>Save</Button>}
  * >
- *   <p>Conteúdo...</p>
+ *   <p>Content...</p>
  * </DetailSheet>
  */
 
@@ -52,13 +52,13 @@ export function DetailSheet({
         <SheetHeader>
           <SheetTitle>{title}</SheetTitle>
         </SheetHeader>
-        
-        {/* Conteúdo com scroll interno */}
+
+          {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto py-6">
           {children}
         </div>
-        
-        {/* Footer fixo */}
+
+          {/* Fixed footer */}
         {footer && (
           <div className="border-t pt-4 flex justify-end gap-2 flex-shrink-0">
             {footer}

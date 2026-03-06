@@ -9,6 +9,7 @@ import {Separator} from "@/components/ui/separator";
 import {supabase} from "@/integrations/supabase/client";
 import {toast} from "sonner";
 import {AlertCircle, Download, ExternalLink, Eye, FileText, Save, X} from "lucide-react";
+import {t} from "@/lib/copy";
 
 interface Article {
   id: string;
@@ -71,15 +72,15 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
   const [keywordsInput, setKeywordsInput] = useState("");
   const [authorsInput, setAuthorsInput] = useState("");
   const [meshTermsInput, setMeshTermsInput] = useState("");
-  
-  // Campos de data como strings para validação no input
+
+    // Date fields as strings for input validation
   const [dateFields, setDateFields] = useState({
     publication_year: "",
     publication_month: "",
     publication_day: "",
   });
-  
-  // Estado para erros de validação
+
+    // State for validation errors
   const [validationErrors, setValidationErrors] = useState<{
     publication_year?: string;
     publication_month?: string;
@@ -99,13 +100,13 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
       setKeywordsInput(article.keywords?.join(", ") || "");
       setAuthorsInput(article.authors?.join(", ") || "");
       setMeshTermsInput(article.mesh_terms?.join(", ") || "");
-      // Converter números de data para strings para os inputs
+        // Convert date numbers to strings for inputs
       setDateFields({
         publication_year: article.publication_year?.toString() || "",
         publication_month: article.publication_month?.toString() || "",
         publication_day: article.publication_day?.toString() || "",
       });
-      // Limpar erros de validação ao carregar artigo
+        // Clear validation errors when loading article
       setValidationErrors({});
     }
   }, [article]);
@@ -125,7 +126,7 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
       setArticle(data);
     } catch (error: any) {
       console.error("Error loading article:", error);
-      toast.error("Erro ao carregar artigo");
+        toast.error(t('articles', 'errorLoadArticle'));
     } finally {
       setLoading(false);
     }
@@ -148,7 +149,7 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
     }
   };
 
-  // Validação de campos de data
+    // Date field validation
   const validateDateField = (field: 'publication_year' | 'publication_month' | 'publication_day', value: string): string | undefined => {
     if (!value || value.trim() === '') {
       setValidationErrors(prev => ({ ...prev, [field]: undefined }));
@@ -157,7 +158,7 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
 
     const num = parseInt(value.trim(), 10);
     if (isNaN(num)) {
-      const error = 'Deve ser um número válido';
+        const error = t('articles', 'validNumber');
       setValidationErrors(prev => ({ ...prev, [field]: error }));
       return error;
     }
@@ -165,7 +166,7 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
     let error: string | undefined;
     if (field === 'publication_month') {
       if (num < 1 || num > 12) {
-        error = 'Mês deve estar entre 1 e 12';
+          error = t('articles', 'monthBetween');
       }
     } else if (field === 'publication_day') {
       if (num < 1 || num > 31) {
@@ -181,7 +182,7 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
     return error;
   };
 
-  // Handler para mudanças nos campos de data
+    // Handler for date field changes
   const handleDateFieldChange = (field: 'publication_year' | 'publication_month' | 'publication_day', value: string) => {
     setDateFields(prev => ({ ...prev, [field]: value }));
     validateDateField(field, value);
@@ -196,13 +197,13 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
     const dayError = validateDateField('publication_day', dateFields.publication_day);
 
     if (yearError || monthError || dayError) {
-      toast.error("Por favor, corrija os erros nos campos de data antes de salvar");
+        toast.error(t('articles', 'fixDateErrors'));
       return;
     }
 
     setSaving(true);
     try {
-      // Helper para converter string para número ou null
+        // Helper to convert string to number or null
       const parseDateValue = (value: string): number | null => {
         if (!value || value.trim() === '') return null;
         const num = parseInt(value.trim(), 10);
@@ -210,13 +211,13 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
         return num;
       };
 
-      // Process arrays e converter valores numéricos de data
+        // Process arrays and convert numeric date values
       const processedData = {
         ...formData,
         keywords: keywordsInput ? keywordsInput.split(",").map(k => k.trim()).filter(Boolean) : null,
         authors: authorsInput ? authorsInput.split(",").map(a => a.trim()).filter(Boolean) : null,
         mesh_terms: meshTermsInput ? meshTermsInput.split(",").map(m => m.trim()).filter(Boolean) : null,
-        // Converter strings para números (já validados acima)
+          // Convert strings to numbers (already validated above)
         publication_year: parseDateValue(dateFields.publication_year),
         publication_month: parseDateValue(dateFields.publication_month),
         publication_day: parseDateValue(dateFields.publication_day),
@@ -229,14 +230,14 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
 
       if (error) throw error;
 
-      toast.success("Artigo atualizado com sucesso!");
+        toast.success(t('articles', 'articleUpdatedSuccess'));
       setEditing(false);
       onArticleUpdated?.();
       loadArticle(); // Reload to get updated data
     } catch (error: any) {
       console.error("Error updating article:", error);
-      const errorMessage = error?.message || error?.details || "Erro desconhecido";
-      toast.error(`Erro ao atualizar artigo: ${errorMessage}`);
+        const errorMessage = error?.message || error?.details || t('articles', 'errorUnknown');
+        toast.error(`${t('articles', 'errorUpdateArticle')}: ${errorMessage}`);
     } finally {
       setSaving(false);
     }
@@ -270,7 +271,7 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
       URL.revokeObjectURL(url);
     } catch (error: any) {
       console.error("Error downloading file:", error);
-      toast.error("Erro ao baixar arquivo");
+        toast.error(t('articles', 'errorDownloadFile'));
     }
   };
 
@@ -292,7 +293,7 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
       setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch (error: any) {
       console.error("Error viewing PDF:", error);
-      toast.error("Erro ao visualizar PDF. Tente fazer o download.");
+        toast.error(t('articles', 'errorViewPdf'));
     }
   };
 
@@ -304,23 +305,23 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
         <DialogHeader>
           <div className="flex items-center justify-between">
             <DialogTitle className="text-xl leading-tight pr-8">
-              {editing ? "Editar Artigo" : article.title}
+                {editing ? t('articles', 'editArticle') : article.title}
             </DialogTitle>
             <div className="flex gap-2">
               {editing ? (
                 <>
                   <Button variant="outline" size="sm" onClick={handleCancel}>
                     <X className="mr-2 h-4 w-4" />
-                    Cancelar
+                      {t('common', 'cancel')}
                   </Button>
                   <Button size="sm" onClick={handleSave} disabled={saving}>
                     <Save className="mr-2 h-4 w-4" />
-                    {saving ? "Salvando..." : "Salvar"}
+                      {saving ? t('articles', 'saving') : t('common', 'save')}
                   </Button>
                 </>
               ) : (
                 <Button size="sm" onClick={() => setEditing(true)}>
-                  Editar
+                    {t('common', 'edit')}
                 </Button>
               )}
             </div>
@@ -331,7 +332,7 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
           {/* Basic Information */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="title">Título *</Label>
+                <Label htmlFor="title">{t('articles', 'titleRequired')}</Label>
               {editing ? (
                 <Textarea
                   id="title"
@@ -355,7 +356,7 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
                 />
               ) : (
                 <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                  {article.abstract || "Não informado"}
+                    {article.abstract || t('articles', 'notProvided')}
                 </p>
               )}
             </div>
@@ -369,11 +370,11 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
                 id="authors"
                 value={authorsInput}
                 onChange={(e) => setAuthorsInput(e.target.value)}
-                placeholder="Separe os autores por vírgula"
+                placeholder={t('articles', 'authorsPlaceholderComma')}
               />
             ) : (
               <p className="text-sm text-muted-foreground">
-                {article.authors?.join(", ") || "Não informado"}
+                  {article.authors?.join(", ") || t('articles', 'notProvided')}
               </p>
             )}
           </div>
@@ -390,7 +391,7 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
                 />
               ) : (
                 <p className="text-sm text-muted-foreground italic">
-                  {article.journal_title || "Não informado"}
+                    {article.journal_title || t('articles', 'notProvided')}
                 </p>
               )}
             </div>
@@ -419,7 +420,7 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
                 </>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  {article.publication_year || "Não informado"}
+                    {article.publication_year || t('articles', 'notProvided')}
                 </p>
               )}
             </div>
@@ -434,7 +435,7 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
                 />
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  {article.volume || "Não informado"}
+                    {article.volume || t('articles', 'notProvided')}
                 </p>
               )}
             </div>
@@ -462,7 +463,7 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
                       <ExternalLink className="ml-1 h-3 w-3" />
                     </Button>
                   ) : (
-                    <p className="text-sm text-muted-foreground">Não informado</p>
+                      <p className="text-sm text-muted-foreground">{t('articles', 'notProvided')}</p>
                   )}
                 </div>
               )}
@@ -478,7 +479,7 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
                 />
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  {article.pmid || "Não informado"}
+                    {article.pmid || t('articles', 'notProvided')}
                 </p>
               )}
             </div>
@@ -486,13 +487,13 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
 
           {/* Keywords */}
           <div className="space-y-2">
-            <Label htmlFor="keywords">Palavras-chave</Label>
+              <Label htmlFor="keywords">{t('articles', 'keywordsLabel')}</Label>
             {editing ? (
               <Input
                 id="keywords"
                 value={keywordsInput}
                 onChange={(e) => setKeywordsInput(e.target.value)}
-                placeholder="Separe as palavras-chave por vírgula"
+                placeholder={t('articles', 'keywordsPlaceholder')}
               />
             ) : (
               <div className="flex flex-wrap gap-2">
@@ -503,7 +504,7 @@ export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpda
                     </Badge>
                   ))
                 ) : (
-                  <p className="text-sm text-muted-foreground">Não informado</p>
+                    <p className="text-sm text-muted-foreground">{t('articles', 'notProvided')}</p>
                 )}
               </div>
             )}

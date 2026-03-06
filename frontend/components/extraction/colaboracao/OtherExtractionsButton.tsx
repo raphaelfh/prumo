@@ -1,7 +1,7 @@
 /**
- * Botão para mostrar outras extrações
- * 
- * Componente minimalista com badge de contagem.
+ * Button to show other extractions
+ *
+ * Minimal component with count badge.
  * Usado como trigger do popover.
  * 
  * @component
@@ -52,7 +52,7 @@ export const OtherExtractionsButton = forwardRef<
         </Button>
       </TooltipTrigger>
       <TooltipContent>
-        <p>Ver extrações de outros membros ({count})</p>
+          <p>View other members' extractions ({count})</p>
       </TooltipContent>
     </Tooltip>
   );

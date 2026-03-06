@@ -4,20 +4,23 @@ import {supabase} from "@/integrations/supabase/client";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {Label} from "@/components/ui/label";
+import {t} from "@/lib/copy";
 import {AlertCircle, BookOpen, CheckCircle2, Eye, EyeOff, Loader2,} from "lucide-react";
 
-// ─── Password helpers (mirrored from SecuritySection) ─────────────────────────
+// ─── Password helpers (shared with Auth, use auth copy) ───────────────────────
 
 function validatePassword(password: string): string | null {
-    if (password.length < 8) return "A senha deve ter no mínimo 8 caracteres";
-    if (!/[A-Z]/.test(password)) return "A senha deve conter pelo menos uma letra maiúscula";
-    if (!/[a-z]/.test(password)) return "A senha deve conter pelo menos uma letra minúscula";
-    if (!/[0-9]/.test(password)) return "A senha deve conter pelo menos um número";
+    if (password.length < 8) return t("auth", "passwordMinLength");
+    if (!/[A-Z]/.test(password)) return t("auth", "passwordUppercase");
+    if (!/[a-z]/.test(password)) return t("auth", "passwordLowercase");
+    if (!/[0-9]/.test(password)) return t("auth", "passwordNumber");
     return null;
 }
 
-function getPasswordStrength(password: string) {
-    if (!password) return {strength: 0, label: "", color: ""};
+type StrengthKey = "strengthWeak" | "strengthMedium" | "strengthStrong";
+
+function getPasswordStrength(password: string): { strength: number; labelKey: StrengthKey; color: string } {
+    if (!password) return {strength: 0, labelKey: "strengthWeak", color: ""};
     let strength = 0;
     if (password.length >= 8) strength++;
     if (password.length >= 12) strength++;
@@ -25,20 +28,21 @@ function getPasswordStrength(password: string) {
     if (/[a-z]/.test(password)) strength++;
     if (/[0-9]/.test(password)) strength++;
     if (/[^A-Za-z0-9]/.test(password)) strength++;
-    if (strength <= 2) return {strength, label: "Fraca", color: "bg-red-500"};
-    if (strength <= 4) return {strength, label: "Média", color: "bg-yellow-500"};
-    return {strength, label: "Forte", color: "bg-green-500"};
+    if (strength <= 2) return {strength, labelKey: "strengthWeak", color: "bg-red-500"};
+    if (strength <= 4) return {strength, labelKey: "strengthMedium", color: "bg-yellow-500"};
+    return {strength, labelKey: "strengthStrong", color: "bg-green-500"};
 }
 
 function PasswordStrengthBar({password}: { password: string }) {
-    const {strength, label, color} = getPasswordStrength(password);
+    const {strength, labelKey, color} = getPasswordStrength(password);
     if (!password) return null;
+    const label = t("auth", labelKey);
     return (
         <div className="space-y-1.5">
             <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Força da senha:</span>
+                <span className="text-muted-foreground">{t("auth", "passwordStrengthLabel")}</span>
                 <span className={`font-medium ${
-                    label === "Fraca" ? "text-red-500" : label === "Média" ? "text-yellow-500" : "text-green-500"
+                    labelKey === "strengthWeak" ? "text-red-500" : labelKey === "strengthMedium" ? "text-yellow-500" : "text-green-500"
                 }`}>{label}</span>
             </div>
             <div className="flex gap-1">
@@ -61,12 +65,12 @@ function PasswordMatchIndicator({password, confirm}: { password: string; confirm
             {match ? (
                 <>
                     <CheckCircle2 className="h-3 w-3 text-green-500"/>
-                    <span className="text-green-500">As senhas coincidem</span>
+                    <span className="text-green-500">{t("auth", "passwordsMatch")}</span>
                 </>
             ) : (
                 <>
                     <AlertCircle className="h-3 w-3 text-red-500"/>
-                    <span className="text-red-500">As senhas não coincidem</span>
+                    <span className="text-red-500">{t("auth", "passwordsDoNotMatch")}</span>
                 </>
             )}
         </div>
@@ -151,7 +155,7 @@ export default function ResetPassword() {
             return;
         }
         if (form.newPassword !== form.confirmPassword) {
-            setError("As senhas não coincidem");
+            setError(t("auth", "passwordsDoNotMatch"));
             return;
         }
 
@@ -161,7 +165,7 @@ export default function ResetPassword() {
             if (error) throw error;
             setSuccess(true);
         } catch (err: any) {
-            setError(err.message || "Erro ao redefinir senha");
+            setError(err.message || t("auth", "errorResetPassword"));
         } finally {
             setLoading(false);
         }
@@ -182,7 +186,7 @@ export default function ResetPassword() {
                 {!sessionReady && !sessionError && (
                     <div className="flex flex-col items-center gap-3 text-center">
                         <Loader2 className="h-8 w-8 animate-spin text-primary"/>
-                        <p className="text-sm text-muted-foreground">Verificando link...</p>
+                        <p className="text-sm text-muted-foreground">{t("auth", "checkingLink")}</p>
                     </div>
                 )}
 
@@ -194,13 +198,13 @@ export default function ResetPassword() {
                             <AlertCircle className="h-7 w-7 text-red-600 dark:text-red-400"/>
                         </div>
                         <div>
-                            <p className="font-semibold">Link inválido ou expirado</p>
+                            <p className="font-semibold">{t("auth", "invalidLinkTitle")}</p>
                             <p className="mt-1 text-sm text-muted-foreground">
-                                Este link de recuperação não é válido ou já foi utilizado. Solicite um novo link.
+                                {t("auth", "invalidLinkDesc")}
                             </p>
                         </div>
                         <Button className="w-full" onClick={() => navigate("/auth")}>
-                            Voltar ao login
+                            {t("auth", "backToLogin")}
                         </Button>
                     </div>
                 )}
@@ -213,9 +217,9 @@ export default function ResetPassword() {
                             <CheckCircle2 className="h-7 w-7 text-green-600 dark:text-green-400"/>
                         </div>
                         <div>
-                            <p className="font-semibold">Senha redefinida!</p>
+                            <p className="font-semibold">{t("auth", "passwordResetSuccessTitle")}</p>
                             <p className="mt-1 text-sm text-muted-foreground">
-                                Sua senha foi alterada com sucesso. Redirecionando...
+                                {t("auth", "passwordResetSuccessDesc")}
                             </p>
                         </div>
                         <Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground"/>
@@ -226,9 +230,9 @@ export default function ResetPassword() {
                 {sessionReady && !success && (
                     <div className="space-y-2">
                         <div className="mb-6">
-                            <h2 className="text-xl font-bold">Criar nova senha</h2>
+                            <h2 className="text-xl font-bold">{t("auth", "newPasswordTitle")}</h2>
                             <p className="text-sm text-muted-foreground mt-1">
-                                Escolha uma senha forte para proteger sua conta.
+                                {t("auth", "newPasswordDesc")}
                             </p>
                         </div>
 
@@ -242,12 +246,12 @@ export default function ResetPassword() {
                             )}
 
                             <div className="space-y-1.5">
-                                <Label htmlFor="new-password">Nova Senha</Label>
+                                <Label htmlFor="new-password">{t("auth", "newPasswordLabel")}</Label>
                                 <div className="relative">
                                     <Input
                                         id="new-password"
                                         type={show.newPassword ? "text" : "password"}
-                                        placeholder="Mínimo 8 caracteres"
+                                        placeholder={t("auth", "passwordPlaceholder")}
                                         value={form.newPassword}
                                         onChange={(e) => setForm({...form, newPassword: e.target.value})}
                                         required
@@ -267,12 +271,12 @@ export default function ResetPassword() {
                             </div>
 
                             <div className="space-y-1.5">
-                                <Label htmlFor="confirm-password">Confirmar Senha</Label>
+                                <Label htmlFor="confirm-password">{t("auth", "confirmPassword")}</Label>
                                 <div className="relative">
                                     <Input
                                         id="confirm-password"
                                         type={show.confirmPassword ? "text" : "password"}
-                                        placeholder="Repita a senha"
+                                        placeholder={t("auth", "confirmPasswordPlaceholder")}
                                         value={form.confirmPassword}
                                         onChange={(e) => setForm({...form, confirmPassword: e.target.value})}
                                         required
@@ -296,10 +300,10 @@ export default function ResetPassword() {
                                 {loading ? (
                                     <>
                                         <Loader2 className="mr-2 h-4 w-4 animate-spin"/>
-                                        Redefinindo...
+                                        {t("auth", "resetting")}
                                     </>
                                 ) : (
-                                    "Redefinir senha"
+                                    t("auth", "resetPasswordButton")
                                 )}
                             </Button>
                         </form>

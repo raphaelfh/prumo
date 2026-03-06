@@ -1,8 +1,8 @@
 /**
  * Supabase Environment Configuration
  *
- * Centraliza resolução de variáveis de ambiente do Supabase com suporte a:
- * - Dev local (VITE_SUPABASE_*)
+ * Centralizes Supabase environment variable resolution with support for:
+ * - Local dev (VITE_SUPABASE_*)
  * - Vercel (SUPABASE_*)
  * - Next.js (NEXT_PUBLIC_SUPABASE_*)
  */

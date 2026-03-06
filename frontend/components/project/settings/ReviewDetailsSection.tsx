@@ -1,18 +1,23 @@
 /**
- * Seção de Detalhes da Revisão
- * PICOTS com critérios de inclusão/exclusão, estratégia de busca, justificativa e contexto
+ * Review details section — PICOTS, search strategy, rationale, context.
  */
 
-import {Input} from "@/components/ui/input";
-import {Label} from "@/components/ui/label";
-import {Textarea} from "@/components/ui/textarea";
-import {Card, CardContent, CardDescription, CardHeader, CardTitle} from "@/components/ui/card";
-import {Badge} from "@/components/ui/badge";
-import {Separator} from "@/components/ui/separator";
-import {Accordion, AccordionContent, AccordionItem, AccordionTrigger,} from "@/components/ui/accordion";
-import {PICOTSItemEditor} from "./PICOTSItemEditor";
+import {Input} from '@/components/ui/input';
+import {Textarea} from '@/components/ui/textarea';
+import {Badge} from '@/components/ui/badge';
+import {Separator} from '@/components/ui/separator';
+import {
+    Accordion,
+    AccordionContent,
+    AccordionItem,
+    AccordionTrigger,
+} from '@/components/ui/accordion';
+import {SettingsSection, SettingsField, SettingsCard} from '@/components/settings';
+import {PICOTSItemEditor} from './PICOTSItemEditor';
+import type {Project} from '@/types/project';
+import {t} from '@/lib/copy';
 
-interface PICOTSItem {
+export interface PICOTSItem {
   description?: string;
   inclusion?: string[];
   exclusion?: string[];
@@ -23,350 +28,290 @@ interface PICOTSTiming {
   prediction_horizon?: PICOTSItem;
 }
 
-type ReviewType = 'interventional' | 'predictive_model' | 'diagnostic' | 'prognostic' | 'qualitative' | 'other';
-
-interface Project {
-  review_title: string | null;
-  condition_studied: string | null;
-  review_rationale: string | null;
-  search_strategy: string | null;
-  review_context: string | null;
-  review_type?: ReviewType | null;
-  picots_config_ai_review: {
+export type PicotsConfig = {
     population?: PICOTSItem;
     index_models?: PICOTSItem;
     comparator_models?: PICOTSItem;
     outcomes?: PICOTSItem;
     timing?: PICOTSTiming;
     setting_and_intended_use?: PICOTSItem;
-  } | null;
-}
+};
+
+type ProjectShape = Pick<
+    Project,
+    | 'review_title'
+    | 'condition_studied'
+    | 'review_rationale'
+    | 'search_strategy'
+    | 'review_context'
+    | 'review_type'
+    | 'picots_config_ai_review'
+>;
 
 interface ReviewDetailsSectionProps {
-  project: Project;
-  onChange: (updates: Partial<Project>) => void;
+    project: ProjectShape;
+    onChange: (updates: Partial<ProjectShape>) => void;
 }
 
+const PICOTS_FIELDS: Array<{
+    value: string;
+    badge: string;
+    label: string;
+    fieldKey: string;
+    infoTooltip: string;
+    descriptionPlaceholder: string;
+}> = [
+    {
+        value: 'population',
+        badge: 'P',
+        label: t('project', 'picotsPopulationLabel'),
+        fieldKey: 'population',
+        infoTooltip: t('project', 'picotsPopulationTooltip'),
+        descriptionPlaceholder: t('project', 'picotsPopulationPlaceholder')
+    },
+    {
+        value: 'index_models',
+        badge: 'I',
+        label: t('project', 'picotsIndexModelsLabel'),
+        fieldKey: 'index_models',
+        infoTooltip: t('project', 'picotsIndexModelsTooltip'),
+        descriptionPlaceholder: t('project', 'picotsIndexModelsPlaceholder')
+    },
+    {
+        value: 'comparator_models',
+        badge: 'C',
+        label: t('project', 'picotsComparatorsLabel'),
+        fieldKey: 'comparator_models',
+        infoTooltip: t('project', 'picotsComparatorsTooltip'),
+        descriptionPlaceholder: t('project', 'picotsComparatorsPlaceholder')
+    },
+    {
+        value: 'outcomes',
+        badge: 'O',
+        label: t('project', 'picotsOutcomesLabel'),
+        fieldKey: 'outcomes',
+        infoTooltip: t('project', 'picotsOutcomesTooltip'),
+        descriptionPlaceholder: t('project', 'picotsOutcomesPlaceholder')
+    },
+    {
+        value: 'setting',
+        badge: 'S',
+        label: t('project', 'picotsSettingLabel'),
+        fieldKey: 'setting_and_intended_use',
+        infoTooltip: t('project', 'picotsSettingTooltip'),
+        descriptionPlaceholder: t('project', 'picotsSettingPlaceholder')
+    },
+];
+
 export function ReviewDetailsSection({ project, onChange }: ReviewDetailsSectionProps) {
-  const picots = project.picots_config_ai_review || {};
+    const picots: PicotsConfig = (project.picots_config_ai_review as PicotsConfig) || {};
   const isPredictiveModel = project.review_type === 'predictive_model';
 
-  // Helper para atualizar campos do PICOTS
-  const updatePICOTSField = (
-    mainField: string,
-    subField: string,
-    value: any
-  ) => {
+    const updatePICOTSField = (mainField: string, subField: string, value: unknown) => {
     const newPicots = { ...picots };
-    
+
     if (mainField.includes('.')) {
-      // Para timing que é nested
       const [parent, child] = mainField.split('.');
-      newPicots[parent as keyof typeof picots] = {
-        ...(newPicots[parent as keyof typeof picots] as any),
+        const parentKey = parent as keyof PicotsConfig;
+        const parentVal = newPicots[parentKey] as Record<string, unknown> | undefined;
+        (newPicots as Record<string, unknown>)[parent] = {
+            ...parentVal,
         [child]: {
-          ...(((newPicots[parent as keyof typeof picots] as any)?.[child]) || {}),
-          [subField]: value
-        }
+            ...((parentVal?.[child] as object) || {}),
+            [subField]: value,
+        },
       };
     } else {
-      // Para campos normais (population, index_models, etc)
-      newPicots[mainField as keyof typeof picots] = {
-        ...(newPicots[mainField as keyof typeof picots] as PICOTSItem),
-        [subField]: value
+        (newPicots as Record<string, unknown>)[mainField] = {
+            ...((newPicots[mainField as keyof PicotsConfig] as object) || {}),
+            [subField]: value,
       };
     }
-    
     onChange({ picots_config_ai_review: newPicots });
   };
 
-  // Helper para adicionar item a array (inclusion/exclusion)
   const addArrayItem = (mainField: string, arrayField: 'inclusion' | 'exclusion', value: string) => {
     if (!value.trim()) return;
-    
-    const current = picots[mainField as keyof typeof picots] as PICOTSItem || {};
+      const current = (picots[mainField as keyof PicotsConfig] as PICOTSItem) || {};
     const currentArray = current[arrayField] || [];
-    
     updatePICOTSField(mainField, arrayField, [...currentArray, value.trim()]);
   };
 
-  // Helper para remover item de array
-  const removeArrayItem = (mainField: string, arrayField: 'inclusion' | 'exclusion', index: number) => {
-    const current = picots[mainField as keyof typeof picots] as PICOTSItem || {};
+    const removeArrayItem = (
+        mainField: string,
+        arrayField: 'inclusion' | 'exclusion',
+        index: number
+    ) => {
+        const current = (picots[mainField as keyof PicotsConfig] as PICOTSItem) || {};
     const currentArray = current[arrayField] || [];
-    
     updatePICOTSField(mainField, arrayField, currentArray.filter((_, i) => i !== index));
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold mb-2">Detalhes da Revisão</h2>
-        <p className="text-sm text-muted-foreground">
-          Configure os aspectos metodológicos da sua revisão sistemática.
-        </p>
-      </div>
-
-      {/* Informações Gerais da Revisão */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Informações Gerais</CardTitle>
-          <CardDescription>
-            Título, condição estudada e justificativa da revisão.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="space-y-2">
-            <Label htmlFor="review_title">Título da Revisão</Label>
+      <SettingsSection
+          title={t('project', 'reviewSectionTitle')}
+          description={t('project', 'reviewSectionDesc')}
+      >
+          <SettingsCard
+              title={t('project', 'reviewCardGeneralTitle')}
+              description={t('project', 'reviewCardGeneralDesc')}
+          >
+              <div className="space-y-4">
+                  <SettingsField
+                      label={t('project', 'reviewTitleLabel')}
+                      htmlFor="review_title"
+                      hint={t('project', 'reviewTitleHint')}
+                  >
             <Input
               id="review_title"
-              value={project.review_title || ""}
+              value={project.review_title ?? ''}
               onChange={(e) => onChange({ review_title: e.target.value })}
-              placeholder="Título completo e formal da revisão sistemática"
+              placeholder={t('project', 'reviewTitlePlaceholder')}
+              className="text-[13px] h-9"
             />
-            <p className="text-xs text-muted-foreground">
-              O título oficial que aparecerá em publicações e relatórios.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="condition_studied">Condição Estudada</Label>
+                  </SettingsField>
+                  <SettingsField
+                      label={t('project', 'reviewConditionStudiedLabel')}
+                      htmlFor="condition_studied"
+                      hint={t('project', 'reviewConditionStudiedHint')}
+                  >
             <Input
               id="condition_studied"
-              value={project.condition_studied || ""}
+              value={project.condition_studied ?? ''}
               onChange={(e) => onChange({ condition_studied: e.target.value })}
-              placeholder="Ex: Diabetes tipo 2, Câncer de mama, Hipertensão"
+              placeholder={t('project', 'reviewConditionStudiedPlaceholder')}
+              className="text-[13px] h-9"
             />
-            <p className="text-xs text-muted-foreground">
-              A condição de saúde ou fenômeno clínico sendo investigado.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="review_context">Contexto da Revisão</Label>
+                  </SettingsField>
+                  <SettingsField
+                      label={t('project', 'reviewContextLabel')}
+                      htmlFor="review_context"
+                      hint={t('project', 'reviewContextHint')}
+                  >
             <Textarea
               id="review_context"
-              value={project.review_context || ""}
+              value={project.review_context ?? ''}
               onChange={(e) => onChange({ review_context: e.target.value })}
-              placeholder="Descreva o contexto clínico, epidemiológico ou social relevante..."
+              placeholder={t('project', 'reviewContextPlaceholder')}
               rows={3}
-              className="resize-none"
+              className="resize-none text-[13px]"
             />
-            <p className="text-xs text-muted-foreground">
-              Informações sobre o cenário e relevância da condição estudada.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="review_rationale">Justificativa da Revisão</Label>
+                  </SettingsField>
+                  <SettingsField
+                      label={t('project', 'reviewRationaleLabel')}
+                      htmlFor="review_rationale"
+                      hint={t('project', 'reviewRationaleHint')}
+                  >
             <Textarea
               id="review_rationale"
-              value={project.review_rationale || ""}
+              value={project.review_rationale ?? ''}
               onChange={(e) => onChange({ review_rationale: e.target.value })}
-              placeholder="Por que esta revisão é necessária? Qual lacuna do conhecimento ela pretende preencher?"
+              placeholder={t('project', 'reviewRationalePlaceholder')}
               rows={5}
-              className="resize-none"
+              className="resize-none text-[13px]"
             />
-            <p className="text-xs text-muted-foreground">
-              Explique a importância e necessidade desta revisão sistemática.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+                  </SettingsField>
+              </div>
+          </SettingsCard>
 
-      {/* Estratégia de Busca */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Estratégia de Busca</CardTitle>
-          <CardDescription>
-            Bases de dados, termos de busca e período de coleta.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <Label htmlFor="search_strategy">Descrição da Estratégia</Label>
+          <SettingsCard
+              title={t('project', 'reviewCardSearchTitle')}
+              description={t('project', 'reviewCardSearchDesc')}
+          >
+              <SettingsField
+                  label={t('project', 'reviewStrategyLabel')}
+                  htmlFor="search_strategy"
+                  hint={t('project', 'reviewStrategyHint')}
+              >
           <Textarea
             id="search_strategy"
-            value={project.search_strategy || ""}
+            value={project.search_strategy ?? ''}
             onChange={(e) => onChange({ search_strategy: e.target.value })}
-            placeholder="Exemplo:&#10;&#10;Bases de dados: PubMed, Scopus, Web of Science&#10;Período: Janeiro 2010 - Dezembro 2023&#10;&#10;Termos de busca:&#10;(diabetes OR &quot;metabolic syndrome&quot;) AND (treatment OR therapy) AND (effectiveness OR efficacy)"
+            placeholder={t('project', 'reviewStrategyPlaceholder')}
             rows={8}
-            className="font-mono text-sm resize-none"
+            className="font-mono text-[13px] resize-none"
           />
-          <p className="text-xs text-muted-foreground">
-            Documente suas bases de dados, termos de busca e filtros aplicados.
-          </p>
-        </CardContent>
-      </Card>
+              </SettingsField>
+          </SettingsCard>
 
-      {/* PICOTS para AI Review - Só aparece para modelos preditivos */}
       {isPredictiveModel && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <CardTitle>Configuração PICOTS</CardTitle>
-              <Badge variant="secondary">Modelos Preditivos</Badge>
-            </div>
-            <CardDescription>
-              Framework PICOTS para modelos preditivos - defina critérios de inclusão e exclusão para cada componente.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Accordion type="multiple" className="w-full">
-            {/* Population */}
-            <AccordionItem value="population">
-              <AccordionTrigger className="text-base font-semibold">
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline">P</Badge>
-                  População
-                </div>
-              </AccordionTrigger>
-              <AccordionContent>
-                <PICOTSItemEditor
-                  label="População"
-                  fieldKey="population"
-                  data={(picots.population as PICOTSItem) || {}}
-                  infoTooltip="Defina as características demográficas e clínicas da população alvo. Considere idade, condições de saúde, setting de cuidado e estágio da doença."
-                  descriptionPlaceholder="Descreva a população alvo, características demográficas e clínicas relevantes..."
-                  onUpdate={updatePICOTSField}
-                  onAddItem={addArrayItem}
-                  onRemoveItem={removeArrayItem}
-                />
-              </AccordionContent>
-            </AccordionItem>
+          <SettingsCard
+              title={t('project', 'reviewCardPicotsTitle')}
+              description={t('project', 'reviewCardPicotsDesc')}
+          >
+              <div className="mb-2">
+                  <Badge variant="secondary" className="text-[11px]">
+                      {t('project', 'reviewPredictiveModelsBadge')}
+                  </Badge>
+              </div>
+              <Accordion type="multiple" className="w-full">
+                  {PICOTS_FIELDS.map((field) => (
+                      <AccordionItem key={field.value} value={field.value}>
+                          <AccordionTrigger className="text-[13px] font-medium py-2 hover:no-underline">
+                              <div className="flex items-center gap-2">
+                                  <Badge variant="outline" className="text-[11px]">
+                                      {field.badge}
+                                  </Badge>
+                                  {field.label}
+                              </div>
+                          </AccordionTrigger>
+                          <AccordionContent>
+                              <PICOTSItemEditor
+                                  label={field.label}
+                                  fieldKey={field.fieldKey}
+                                  data={(picots[field.fieldKey as keyof PicotsConfig] as PICOTSItem) || {}}
+                                  infoTooltip={field.infoTooltip}
+                                  descriptionPlaceholder={field.descriptionPlaceholder}
+                                  onUpdate={updatePICOTSField}
+                                  onAddItem={addArrayItem}
+                                  onRemoveItem={removeArrayItem}
+                              />
+                          </AccordionContent>
+                      </AccordionItem>
+                  ))}
 
-            {/* Index Models */}
-            <AccordionItem value="index_models">
-              <AccordionTrigger className="text-base font-semibold">
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline">I</Badge>
-                  Modelos/Intervenções Índice
-                </div>
-              </AccordionTrigger>
-              <AccordionContent>
-                <PICOTSItemEditor
-                  label="Modelos Índice"
-                  fieldKey="index_models"
-                  data={(picots.index_models as PICOTSItem) || {}}
-                  infoTooltip="Especifique os tipos de modelos preditivos, algoritmos ou ferramentas diagnósticas que serão incluídos. Considere a técnica estatística, tipo de algoritmo e complexidade do modelo."
-                  descriptionPlaceholder="Modelos preditivos, algoritmos de IA, ferramentas de diagnóstico ou intervenções sendo avaliados..."
-                  onUpdate={updatePICOTSField}
-                  onAddItem={addArrayItem}
-                  onRemoveItem={removeArrayItem}
-                />
-              </AccordionContent>
-            </AccordionItem>
-
-            {/* Comparator */}
-            <AccordionItem value="comparator_models">
-              <AccordionTrigger className="text-base font-semibold">
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline">C</Badge>
-                  Comparadores
-                </div>
-              </AccordionTrigger>
-              <AccordionContent>
-                <PICOTSItemEditor
-                  label="Comparadores"
-                  fieldKey="comparator_models"
-                  data={(picots.comparator_models as PICOTSItem) || {}}
-                  infoTooltip="Defina quais modelos de referência, escores clínicos tradicionais ou padrões-ouro serão aceitos como comparadores válidos para avaliar a performance relativa."
-                  descriptionPlaceholder="Modelos de referência, padrão-ouro, cuidado usual ou controles usados para comparação..."
-                  onUpdate={updatePICOTSField}
-                  onAddItem={addArrayItem}
-                  onRemoveItem={removeArrayItem}
-                />
-              </AccordionContent>
-            </AccordionItem>
-
-            {/* Outcomes */}
-            <AccordionItem value="outcomes">
-              <AccordionTrigger className="text-base font-semibold">
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline">O</Badge>
-                  Desfechos
-                </div>
-              </AccordionTrigger>
-              <AccordionContent>
-                <PICOTSItemEditor
-                  label="Desfechos"
-                  fieldKey="outcomes"
-                  data={(picots.outcomes as PICOTSItem) || {}}
-                  infoTooltip="Liste os desfechos de interesse, incluindo métricas de performance do modelo (acurácia, discriminação, calibração) e desfechos clínicos relevantes quando disponíveis."
-                  descriptionPlaceholder="Desfechos primários e secundários de interesse (performance do modelo, impacto clínico, etc)..."
-                  onUpdate={updatePICOTSField}
-                  onAddItem={addArrayItem}
-                  onRemoveItem={removeArrayItem}
-                />
-              </AccordionContent>
-            </AccordionItem>
-
-            {/* Timing - Nested structure */}
             <AccordionItem value="timing">
-              <AccordionTrigger className="text-base font-semibold">
+                <AccordionTrigger className="text-[13px] font-medium py-2 hover:no-underline">
                 <div className="flex items-center gap-2">
-                  <Badge variant="outline">T</Badge>
-                  Tempo (Timing)
+                    <Badge variant="outline" className="text-[11px]">
+                        T
+                    </Badge>
+                    {t('project', 'reviewTimingLabel')}
                 </div>
               </AccordionTrigger>
-              <AccordionContent className="space-y-6">
-                <div className="space-y-4">
-                  <h4 className="text-sm font-semibold">Momento da Predição</h4>
+                <AccordionContent className="space-y-4">
+                    <div className="space-y-3">
+                        <h4 className="text-[13px] font-medium">{t('project', 'reviewPredictionMomentLabel')}</h4>
                   <PICOTSItemEditor
-                    label="Momento da Predição"
+                      label={t('project', 'reviewPredictionMomentLabel')}
                     fieldKey="timing.prediction_moment"
                     data={(picots.timing?.prediction_moment as PICOTSItem) || {}}
-                    infoTooltip="Especifique em que momento do curso da doença ou cuidado a predição é realizada. Considere o contexto clínico e o objetivo da predição (ex: ao diagnóstico, na admissão hospitalar, durante o seguimento)."
-                    descriptionPlaceholder="Descreva em que momento do curso da doença/tratamento a predição ocorre..."
+                      infoTooltip={t('project', 'reviewPredictionMomentTooltip')}
+                      descriptionPlaceholder={t('project', 'reviewPredictionMomentPlaceholder')}
                     onUpdate={updatePICOTSField}
                     onAddItem={addArrayItem}
                     onRemoveItem={removeArrayItem}
                   />
                 </div>
-
                 <Separator />
-
-                <div className="space-y-4">
-                  <h4 className="text-sm font-semibold">Horizonte de Predição</h4>
+                    <div className="space-y-3">
+                        <h4 className="text-[13px] font-medium">{t('project', 'reviewPredictionHorizonLabel')}</h4>
                   <PICOTSItemEditor
-                    label="Horizonte de Predição"
+                      label={t('project', 'reviewPredictionHorizonLabel')}
                     fieldKey="timing.prediction_horizon"
                     data={(picots.timing?.prediction_horizon as PICOTSItem) || {}}
-                    infoTooltip="Defina o período futuro que está sendo predito. Considere a relevância clínica do horizonte temporal para a tomada de decisão (ex: 30 dias, 1 ano, 5 anos)."
-                    descriptionPlaceholder="Descreva o horizonte temporal da predição (ex: mortalidade em 1 ano, recorrência em 5 anos)..."
+                      infoTooltip={t('project', 'reviewPredictionHorizonTooltip')}
+                      descriptionPlaceholder={t('project', 'reviewPredictionHorizonPlaceholder')}
                     onUpdate={updatePICOTSField}
                     onAddItem={addArrayItem}
                     onRemoveItem={removeArrayItem}
                   />
                 </div>
-              </AccordionContent>
-            </AccordionItem>
-
-            {/* Setting */}
-            <AccordionItem value="setting">
-              <AccordionTrigger className="text-base font-semibold">
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline">S</Badge>
-                  Contexto e Uso Pretendido
-                </div>
-              </AccordionTrigger>
-              <AccordionContent>
-                <PICOTSItemEditor
-                  label="Contexto e Uso Pretendido"
-                  fieldKey="setting_and_intended_use"
-                  data={(picots.setting_and_intended_use as PICOTSItem) || {}}
-                  infoTooltip="Descreva onde e como o modelo será usado na prática clínica. Considere o setting de cuidado (atenção primária, especializada, UTI), recursos disponíveis e objetivo da aplicação do modelo."
-                  descriptionPlaceholder="Descreva o setting clínico, contexto de aplicação e uso pretendido do modelo..."
-                  onUpdate={updatePICOTSField}
-                  onAddItem={addArrayItem}
-                  onRemoveItem={removeArrayItem}
-                />
               </AccordionContent>
             </AccordionItem>
           </Accordion>
-        </CardContent>
-      </Card>
+          </SettingsCard>
       )}
-    </div>
+      </SettingsSection>
   );
 }
-

@@ -1,6 +1,6 @@
 /**
- * Layout principal da aplicação
- * Integra Topbar, Sidebar e área de conteúdo
+ * Main application layout
+ * Integrates Topbar, Sidebar and content area
  */
 
 import React from 'react';
@@ -31,7 +31,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children, className }) => 
   );
 };
 
-// Layout com Sidebar para páginas específicas
+// Layout with Sidebar for specific pages
 export const ProjectLayout: React.FC<AppLayoutProps> = ({ children, className }) => {
   const { project, activeTab, changeTab } = useProject();
     const {sidebarCollapsed, toggleSidebar, mobileOpen, setMobileOpen} = useSidebar();
@@ -52,7 +52,7 @@ export const ProjectLayout: React.FC<AppLayoutProps> = ({ children, className })
             projectName={project?.name}
         />
 
-      {/* Container Principal: Sidebar + Conteúdo */}
+        {/* Main container: Sidebar + Content */}
       <div className="flex flex-1 overflow-hidden">
           {/* Sidebar Fixo - Desktop */}
         <ProjectSidebar
@@ -62,7 +62,7 @@ export const ProjectLayout: React.FC<AppLayoutProps> = ({ children, className })
           projectName={project?.name}
         />
 
-          {/* Main Content com Scroll Próprio */}
+          {/* Main content with its own scroll */}
         <main className="flex-1 overflow-y-auto">
           {children || <Outlet />}
         </main>
@@ -71,7 +71,7 @@ export const ProjectLayout: React.FC<AppLayoutProps> = ({ children, className })
   );
 };
 
-// Layout simples para páginas de autenticação
+// Simple layout for auth pages
 export const AuthLayout: React.FC<AppLayoutProps> = ({ children, className }) => {
   return (
     <div className={cn("min-h-screen bg-background flex items-center justify-center p-4", className)}>

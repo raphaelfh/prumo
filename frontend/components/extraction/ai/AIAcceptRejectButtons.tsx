@@ -1,7 +1,7 @@
 /**
- * Botões para aceitar/rejeitar sugestões de IA
- * 
- * Componente minimalista com botões inline ✓ ✗
+ * Buttons to accept/reject AI suggestions
+ *
+ * Minimal component with inline ✓ ✗ buttons
  * 
  * @component
  */
@@ -29,7 +29,7 @@ export function AIAcceptRejectButtons(props: AIAcceptRejectButtonsProps) {
 
   return (
     <div className="flex items-center gap-0.5">
-      {/* Botão Aceitar */}
+        {/* Accept button */}
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -50,11 +50,11 @@ export function AIAcceptRejectButtons(props: AIAcceptRejectButtonsProps) {
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          <p>Aceitar sugestão da IA</p>
+            <p>Accept AI suggestion</p>
         </TooltipContent>
       </Tooltip>
 
-      {/* Botão Rejeitar */}
+        {/* Reject button */}
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -71,7 +71,7 @@ export function AIAcceptRejectButtons(props: AIAcceptRejectButtonsProps) {
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          <p>Rejeitar sugestão</p>
+            <p>Reject suggestion</p>
         </TooltipContent>
       </Tooltip>
     </div>

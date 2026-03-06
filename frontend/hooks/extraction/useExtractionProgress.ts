@@ -1,9 +1,8 @@
 /**
- * Hook para calcular progresso da extração
- * 
- * Calcula quantos campos obrigatórios foram preenchidos
- * e retorna porcentagem de completude.
- * 
+ * Hook to compute extraction progress
+ *
+ * Computes how many required fields were filled and returns completion percentage.
+ *
  * @hook
  */
 
@@ -32,7 +31,7 @@ export function useExtractionProgress(
 ): UseExtractionProgressReturn {
   
   return useMemo(() => {
-    // Coletar todos os campos obrigatórios
+      // Collect all required fields
     const requiredFields: Array<{ fieldId: string; instanceIds: string[] }> = [];
 
     entityTypes.forEach(entityType => {
@@ -41,7 +40,7 @@ export function useExtractionProgress(
         .forEach(field => {
           requiredFields.push({
             fieldId: field.id,
-            instanceIds: [] // Será preenchido com instâncias reais
+              instanceIds: [] // Will be filled with real instances
           });
         });
     });
@@ -50,7 +49,7 @@ export function useExtractionProgress(
 
     // Contar campos preenchidos
     const completedRequired = requiredFields.filter(({ fieldId }) => {
-      // Verificar se há pelo menos uma instância com valor para este campo
+        // Check if at least one instance has a value for this field
       const hasValue = Object.keys(values).some(key => {
         const [, fId] = key.split('_');
         return fId === fieldId && values[key] !== null && values[key] !== undefined && values[key] !== '';

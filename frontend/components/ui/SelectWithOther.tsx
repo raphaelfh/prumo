@@ -1,6 +1,7 @@
 import {useEffect, useMemo, useState} from 'react';
 import {Input} from '@/components/ui/input';
 import {cn} from '@/lib/utils';
+import {t} from '@/lib/copy';
 import {isOtherObject, OTHER_OPTION_VALUE} from '@/lib/validations/selectOther';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue,} from '@/components/ui/select';
 
@@ -17,11 +18,21 @@ interface SelectWithOtherProps {
 }
 
 export function SelectWithOther(props: SelectWithOtherProps) {
-  const { options, value, onChange, allowOther = false, otherLabel = 'Outro (especificar)', otherPlaceholder, disabled, placeholder, className } = props;
+    const {
+        options,
+        value,
+        onChange,
+        allowOther = false,
+        otherLabel = t('common', 'otherSpecify'),
+        otherPlaceholder,
+        disabled,
+        placeholder,
+        className
+    } = props;
 
   const [internalOtherText, setInternalOtherText] = useState('');
 
-  // Detectar se "Other" está selecionado (aceita other_text vazio para mostrar input imediatamente)
+    // Detect if "Other" is selected (accepts empty other_text to show input immediately)
   const isOtherSelected = useMemo(() => {
     if (!allowOther || !value) return false;
     // Aceitar objeto com selected='other' mesmo se other_text estiver vazio
@@ -32,12 +43,12 @@ export function SelectWithOther(props: SelectWithOtherProps) {
   useEffect(() => {
     if (isOtherSelected && isOtherObject(value)) {
       const currentText = (value as any).other_text || '';
-      // Só atualizar se for diferente para evitar loops
+        // Only update if different to avoid loops
       if (currentText !== internalOtherText) {
         setInternalOtherText(currentText);
       }
     } else if (!isOtherSelected) {
-      // Limpar apenas se realmente não está selecionado
+        // Clear only if really not selected
       if (internalOtherText !== '') {
         setInternalOtherText('');
       }
@@ -50,7 +61,7 @@ export function SelectWithOther(props: SelectWithOtherProps) {
       // Isso garante que o input aparece imediatamente
       const newValue = { selected: 'other' as const, other_text: internalOtherText || '' };
       onChange(newValue);
-      // Garantir que internalOtherText está sincronizado
+        // Ensure internalOtherText is in sync
       if (!internalOtherText) {
         setInternalOtherText('');
       }
@@ -71,7 +82,8 @@ export function SelectWithOther(props: SelectWithOtherProps) {
           {options.map((opt) => (
             <SelectItem key={opt} value={opt}>{opt}</SelectItem>
           ))}
-          {allowOther && <SelectItem value={OTHER_OPTION_VALUE}>{otherLabel || 'Outro (especificar)'}</SelectItem>}
+            {allowOther &&
+                <SelectItem value={OTHER_OPTION_VALUE}>{otherLabel || t('common', 'otherSpecify')}</SelectItem>}
         </SelectContent>
       </Select>
 
@@ -83,7 +95,7 @@ export function SelectWithOther(props: SelectWithOtherProps) {
             setInternalOtherText(text);
             onChange({ selected: 'other', other_text: text });
           }}
-          placeholder={otherPlaceholder || 'Digite aqui'}
+          placeholder={otherPlaceholder || t('common', 'typeHere')}
           disabled={disabled}
         />
       )}

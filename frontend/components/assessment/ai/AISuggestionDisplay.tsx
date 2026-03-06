@@ -1,8 +1,8 @@
 /**
- * Componente de Exibição de Sugestão de IA - Assessment
+ * AI suggestion display component - Assessment
  *
- * Mostra valor sugerido (nível) + % + botões aceitar/rejeitar abaixo do input.
- * Clique no valor ou no % abre o modal de justificativa/evidência (quando houver).
+ * Shows suggested value (level) + % + accept/reject buttons below the input.
+ * Click on value or % opens justification/evidence modal (when available).
  * Layout responsivo: [Valor sugerido] [%] [✓] [✗]
  *
  * @component
@@ -13,6 +13,7 @@ import {AISuggestionActions} from '@/components/shared/ai-suggestions';
 import {AISuggestionConfidence} from './shared/AISuggestionConfidence';
 import {AISuggestionDetailsPopover} from './shared/AISuggestionDetailsPopover';
 import {AISuggestionValue} from './shared/AISuggestionValue';
+import {t} from '@/lib/copy';
 import {isAssessmentSuggestionAccepted} from '@/lib/assessment-utils';
 
 interface AISuggestionDisplayProps {
@@ -46,7 +47,7 @@ export function AISuggestionDisplay({
   return (
     <div className="mt-2 animate-in fade-in slide-in-from-top-2 duration-200 w-full">
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-2 w-full">
-        {/* Valor + %: área clicável para abrir modal de detalhes (quando houver) */}
+          {/* Value + %: clickable area to open details modal (when available) */}
         <div className="flex-1 min-w-0 w-full sm:w-auto flex items-center gap-2">
           {hasDetails ? (
             <AISuggestionDetailsPopover
@@ -56,8 +57,8 @@ export function AISuggestionDisplay({
                   className={triggerAreaClass}
                   role="button"
                   tabIndex={0}
-                  title="Clique para ver justificativa e evidência"
-                  aria-label="Ver justificativa e evidência da sugestão"
+                  title={t('assessment', 'aiEvidenceClickTitle')}
+                  aria-label={t('assessment', 'aiEvidenceClickAria')}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
@@ -78,7 +79,7 @@ export function AISuggestionDisplay({
           )}
         </div>
 
-        {/* Botões de ação - sempre mostrar */}
+          {/* Action buttons - always show */}
         <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end sm:justify-start pr-1">
           <div className="overflow-visible">
             <AISuggestionActions

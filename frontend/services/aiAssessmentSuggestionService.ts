@@ -1,23 +1,23 @@
 /**
- * Service para Gerenciamento de Sugestões de IA para Assessment
+ * AI Assessment Suggestions management service
  *
- * Centraliza todas as operações de banco de dados relacionadas a sugestões de IA
- * para avaliação de qualidade (PROBAST, QUADAS-2, ROB-2, etc.)
+ * Centralizes all DB operations for AI suggestions for quality assessment
+ * (PROBAST, QUADAS-2, ROB-2, etc.)
  *
- * Baseado em aiSuggestionService.ts (DRY + KISS)
+ * Based on aiSuggestionService.ts (DRY + KISS)
  *
  * FOCUS: Assessment AI suggestions workflow
  *
  * @example
  * ```typescript
- * // Carregar sugestões para um artigo
+ * // Load suggestions for an article
  * const result = await AIAssessmentSuggestionService.loadSuggestions({
  *   articleId: '...',
  *   projectId: '...',
  *   instrumentId: '...',
  * });
  *
- * // Aceitar uma sugestão
+ * // Accept a suggestion
  * await AIAssessmentSuggestionService.acceptSuggestion({
  *   suggestionId: '...',
  *   projectId: '...',
@@ -41,9 +41,10 @@ import type {
 } from '@/types/assessment';
 import {getAssessmentSuggestionKey, normalizeAIAssessmentSuggestion,} from '@/lib/assessment-utils';
 import {APIError, SuggestionNotFoundError,} from '@/lib/ai-extraction/errors';
+import {t} from '@/lib/copy';
 
 /**
- * Resultado de loadSuggestions
+ * Result of loadSuggestions
  */
 export interface LoadAssessmentSuggestionsResult {
   suggestions: Record<string, AIAssessmentSuggestion>;  // key: ai_suggestion_${itemId}
@@ -51,7 +52,7 @@ export interface LoadAssessmentSuggestionsResult {
 }
 
 /**
- * Parâmetros para acceptSuggestion
+ * Parameters for acceptSuggestion
  */
 export interface AcceptAssessmentSuggestionParams {
   suggestionId: string;
@@ -69,7 +70,7 @@ export interface AcceptAssessmentSuggestionParams {
 }
 
 /**
- * Parâmetros para rejectSuggestion
+ * Parameters for rejectSuggestion
  */
 export interface RejectAssessmentSuggestionParams {
   suggestionId: string;
@@ -99,22 +100,22 @@ const normalizeId = (value?: string | null): string | null => {
 };
 
 /**
- * Service para operações com sugestões de IA para assessment
+ * Service for AI assessment suggestion operations
  */
 export class AIAssessmentSuggestionService {
   /**
-   * Carrega sugestões de IA para um artigo
+   * Loads AI suggestions for an article
    *
-   * Busca sugestões pendentes, aceitas e rejeitadas para assessment_items.
-   * Diferente do extraction, não precisa filtrar por instâncias, filtra por instrument_id.
+   * Fetches pending, accepted and rejected suggestions for assessment_items.
+   * Unlike extraction, does not filter by instances; filters by instrument_id.
    *
-   * @param params - Parâmetros de busca
-   * @param params.articleId - ID do artigo
-   * @param params.projectId - ID do projeto
-   * @param params.instrumentId - ID do instrumento (opcional, filtra por instrumento)
-   * @param params.extractionInstanceId - ID da extraction instance (opcional, para PROBAST por modelo)
-   * @param params.statuses - Statuses para filtrar
-   * @returns Mapa de sugestões indexadas por `ai_suggestion_${itemId}`
+   * @param params - Search params
+   * @param params.articleId - Article ID
+   * @param params.projectId - Project ID
+   * @param params.instrumentId - Instrument ID (optional, filter by instrument)
+   * @param params.extractionInstanceId - Extraction instance ID (optional, for PROBAST per model)
+   * @param params.statuses - Statuses to filter
+   * @returns Map of suggestions keyed by `ai_suggestion_${itemId}`
    */
   static async loadSuggestions(params: {
     articleId: string;
@@ -126,7 +127,7 @@ export class AIAssessmentSuggestionService {
     const { articleId, projectId, instrumentId, extractionInstanceId, statuses = ['pending', 'accepted', 'rejected'] } = params;
 
     // Query assessment suggestions (either global or project-scoped)
-    // + JOIN com ai_assessment_runs para filtrar por projectId/articleId
+      // + JOIN with ai_assessment_runs to filter by projectId/articleId
 
     const query = supabase
       .from('ai_suggestions')
@@ -169,12 +170,12 @@ export class AIAssessmentSuggestionService {
     const { data, error } = await query;
 
     if (error) {
-      console.error('❌ [loadSuggestions] Erro ao carregar sugestões:', error);
-      throw new APIError(`Erro ao carregar sugestões: ${error.message}`);
+        console.error('[loadSuggestions] Error loading suggestions:', error);
+        throw new APIError(`${t('assessment', 'errors_loadSuggestions')}: ${error.message}`);
     }
 
-    // Mapear para formato { ai_suggestion_${itemId}: suggestion }
-    // Manter apenas a mais recente por item
+      // Map to format { ai_suggestion_${itemId}: suggestion }
+      // Keep only the latest per item
     const suggestionsMap: Record<string, AIAssessmentSuggestion> = {};
 
     const rows = (data || []) as AIAssessmentSuggestionRow[];
@@ -184,7 +185,7 @@ export class AIAssessmentSuggestionService {
       const effectiveItemId = item.project_assessment_item_id || item.assessment_item_id;
 
       if (!effectiveItemId) {
-        console.warn('[loadSuggestions] Sugestão sem item ID ignorada:', item.id);
+          console.warn('[loadSuggestions] Suggestion without item ID ignored:', item.id);
         return;
       }
 
@@ -204,11 +205,11 @@ export class AIAssessmentSuggestionService {
   }
 
   /**
-   * Busca histórico completo de sugestões para um item específico
+   * Fetches full suggestion history for a specific item
    *
-   * @param itemId - ID do assessment item
-   * @param limit - Limite de resultados (padrão: 10)
-   * @returns Lista de sugestões ordenadas por data (mais recente primeiro)
+   * @param itemId - Assessment item ID
+   * @param limit - Result limit (default: 10)
+   * @returns List of suggestions sorted by date (newest first)
    */
   static async getHistory(
     itemId: string,
@@ -223,8 +224,8 @@ export class AIAssessmentSuggestionService {
       .limit(limit) as { data: AIAssessmentSuggestionRaw[] | null; error: { message: string } | null };
 
     if (error) {
-      console.error('❌ [getHistory] Erro ao buscar histórico:', error);
-      throw new APIError(`Erro ao buscar histórico: ${error.message}`);
+        console.error('[getHistory] Error loading history:', error);
+        throw new APIError(`${t('assessment', 'errors_getHistory')}: ${error.message}`);
     }
 
     return (data || []).map(item => ({
@@ -242,22 +243,22 @@ export class AIAssessmentSuggestionService {
   }
 
   /**
-   * Aceita uma sugestão de IA
+   * Accepts an AI suggestion
    *
    * Workflow:
-   * 1. Verifica se já existe assessment_response (poderia ter sido aceita antes)
-   * 2. Se não existir: cria novo assessment ou atualiza existente
-   * 3. Atualiza status da sugestão para 'accepted'
-   * 4. Marca reviewed_by e reviewed_at
+   * 1. Check if assessment_response already exists (may have been accepted before)
+   * 2. If not: create new assessment or update existing
+   * 3. Update suggestion status to 'accepted'
+   * 4. Set reviewed_by and reviewed_at
    *
-   * @param params - Parâmetros da aceitação
-   * @throws {SuggestionNotFoundError} Se sugestão não for encontrada
-   * @throws {APIError} Se houver erro na operação
+   * @param params - Accept parameters
+   * @throws {SuggestionNotFoundError} If suggestion not found
+   * @throws {APIError} On operation error
    */
   static async acceptSuggestion(params: AcceptAssessmentSuggestionParams): Promise<void> {
     const { suggestionId, projectId, articleId, itemId, value, confidence, reviewerId, instrumentId, extractionInstanceId } = params;
 
-    // 1. Buscar sugestão para verificar se existe
+      // 1. Fetch suggestion to verify it exists
     const { data: suggestion, error: fetchError } = await supabase
       .from('ai_suggestions')
       .select('*')
@@ -265,7 +266,7 @@ export class AIAssessmentSuggestionService {
       .single();
 
     if (fetchError || !suggestion) {
-      throw new SuggestionNotFoundError(`Sugestão ${suggestionId} não encontrada`);
+        throw new SuggestionNotFoundError(suggestionId, '');
     }
 
     let resolvedInstrumentId = normalizeId(instrumentId);
@@ -292,7 +293,7 @@ export class AIAssessmentSuggestionService {
       }
     }
 
-    // 2. Buscar assessment existente do usuário
+      // 2. Fetch existing assessment for user
     let assessmentQuery = supabase
       .from('assessments')
       .select('id, responses')
@@ -316,10 +317,10 @@ export class AIAssessmentSuggestionService {
 
     if (assessmentFetchError) {
       console.error('❌ [acceptSuggestion] Erro ao buscar assessment:', assessmentFetchError);
-      throw new APIError(`Erro ao buscar assessment: ${assessmentFetchError.message}`);
+        throw new APIError(`${t('assessment', 'errors_loadAssessment')}: ${assessmentFetchError.message}`);
     }
 
-    // 3. Atualizar ou criar assessment com resposta
+      // 3. Update or create assessment with response
     const responses = existingAssessment?.responses || {};
     responses[itemId] = {
       item_id: itemId,
@@ -330,7 +331,7 @@ export class AIAssessmentSuggestionService {
     };
 
     if (existingAssessment) {
-      // Atualizar assessment existente
+        // Update existing assessment
       const { error: updateError } = await supabase
         .from('assessments')
         .update({
@@ -341,7 +342,7 @@ export class AIAssessmentSuggestionService {
 
       if (updateError) {
         console.error('❌ [acceptSuggestion] Erro ao atualizar assessment:', updateError);
-        throw new APIError(`Erro ao atualizar assessment: ${updateError.message}`);
+          throw new APIError(`${t('assessment', 'errors_updateAssessment')}: ${updateError.message}`);
       }
     } else {
       const resolvedToolType = await (async () => {
@@ -362,7 +363,7 @@ export class AIAssessmentSuggestionService {
         return projectData?.tool_type ?? 'CUSTOM';
       })();
 
-      // Criar novo assessment
+        // Create new assessment
       const { error: insertError } = await supabase
         .from('assessments')
         .insert({
@@ -381,11 +382,11 @@ export class AIAssessmentSuggestionService {
 
       if (insertError) {
         console.error('❌ [acceptSuggestion] Erro ao criar assessment:', insertError);
-        throw new APIError(`Erro ao criar assessment: ${insertError.message}`);
+          throw new APIError(`${t('assessment', 'errors_createAssessment')}: ${insertError.message}`);
       }
     }
 
-    // 4. Atualizar status da sugestão
+      // 4. Update suggestion status
     const { error: updateSuggestionError } = await supabase
       .from('ai_suggestions')
       .update({
@@ -396,23 +397,23 @@ export class AIAssessmentSuggestionService {
       .eq('id', suggestionId);
 
     if (updateSuggestionError) {
-      console.error('❌ [acceptSuggestion] Erro ao atualizar status da sugestão:', updateSuggestionError);
-      throw new APIError(`Erro ao atualizar sugestão: ${updateSuggestionError.message}`);
+        console.error('[acceptSuggestion] Error updating suggestion status:', updateSuggestionError);
+        throw new APIError(`${t('assessment', 'errors_updateSuggestion')}: ${updateSuggestionError.message}`);
     }
 
   }
 
   /**
-   * Rejeita uma sugestão de IA
+   * Rejects an AI suggestion
    *
    * Workflow:
-   * 1. Se foi aceita anteriormente: remove resposta do assessment
-   * 2. Atualiza status da sugestão para 'rejected'
-   * 3. Marca reviewed_by e reviewed_at
+   * 1. If was accepted before: remove response from assessment
+   * 2. Update suggestion status to 'rejected'
+   * 3. Set reviewed_by and reviewed_at
    *
-   * @param params - Parâmetros da rejeição
-   * @throws {SuggestionNotFoundError} Se sugestão não for encontrada
-   * @throws {APIError} Se houver erro na operação
+   * @param params - Reject parameters
+   * @throws {SuggestionNotFoundError} If suggestion not found
+   * @throws {APIError} On operation error
    */
   static async rejectSuggestion(params: RejectAssessmentSuggestionParams): Promise<void> {
     const {
@@ -426,7 +427,7 @@ export class AIAssessmentSuggestionService {
       extractionInstanceId,
     } = params;
 
-    // 1. Se foi aceita, remover resposta do assessment
+      // 1. If was accepted, remove response from assessment
     if (wasAccepted && itemId && projectId && articleId) {
       const resolvedInstrumentId = normalizeId(instrumentId);
       const resolvedExtractionInstanceId = normalizeId(extractionInstanceId);
@@ -453,8 +454,8 @@ export class AIAssessmentSuggestionService {
         .maybeSingle();
 
       if (fetchError) {
-        console.error('❌ [rejectSuggestion] Erro ao buscar assessment:', fetchError);
-        throw new APIError(`Erro ao buscar assessment: ${fetchError.message}`);
+          console.error('❌ [rejectSuggestion] Error fetching assessment:', fetchError);
+          throw new APIError(`${t('assessment', 'errors_loadAssessment')}: ${fetchError.message}`);
       }
 
       if (existingAssessment && existingAssessment.responses[itemId]) {
@@ -470,14 +471,14 @@ export class AIAssessmentSuggestionService {
           .eq('id', existingAssessment.id);
 
         if (updateError) {
-          console.error('❌ [rejectSuggestion] Erro ao remover resposta:', updateError);
-          throw new APIError(`Erro ao remover resposta: ${updateError.message}`);
+            console.error('❌ [rejectSuggestion] Error removing response:', updateError);
+            throw new APIError(`${t('assessment', 'errors_removeResponse')}: ${updateError.message}`);
         }
 
       }
     }
 
-    // 2. Atualizar status da sugestão
+      // 2. Update suggestion status
     const { error: updateError } = await supabase
       .from('ai_suggestions')
       .update({
@@ -488,23 +489,23 @@ export class AIAssessmentSuggestionService {
       .eq('id', suggestionId);
 
     if (updateError) {
-      console.error('❌ [rejectSuggestion] Erro ao atualizar status da sugestão:', updateError);
-      throw new APIError(`Erro ao atualizar sugestão: ${updateError.message}`);
+        console.error('[rejectSuggestion] Error updating suggestion status:', updateError);
+        throw new APIError(`${t('assessment', 'errors_updateSuggestion')}: ${updateError.message}`);
     }
 
   }
 
   /**
-   * Aceita múltiplas sugestões em batch (acima de threshold de confiança)
+   * Accepts multiple suggestions in batch (above confidence threshold)
    *
-   * @param params - Parâmetros do batch
-   * @param params.suggestions - Sugestões a processar
-   * @param params.threshold - Limite mínimo de confiança (0-1)
-   * @param params.reviewerId - ID do revisor
-   * @param params.projectId - ID do projeto
-   * @param params.articleId - ID do artigo
-   * @param params.instrumentId - ID do instrumento
-   * @returns Quantidade de sugestões aceitas
+   * @param params - Batch params
+   * @param params.suggestions - Suggestions to process
+   * @param params.threshold - Minimum confidence (0-1)
+   * @param params.reviewerId - Reviewer ID
+   * @param params.projectId - Project ID
+   * @param params.articleId - Article ID
+   * @param params.instrumentId - Instrument ID
+   * @returns Number of suggestions accepted
    */
   static async batchAcceptSuggestions(params: {
     suggestions: Record<string, AIAssessmentSuggestion>;
@@ -538,8 +539,8 @@ export class AIAssessmentSuggestionService {
           });
           accepted++;
         } catch (error) {
-          console.error(`❌ [batchAccept] Erro ao aceitar sugestão ${suggestion.id}:`, error);
-          // Continuar com próximas sugestões
+            console.error(`❌ [batchAccept] Error accepting suggestion ${suggestion.id}:`, error);
+            // Continue with next suggestions
         }
       }
     }

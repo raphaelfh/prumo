@@ -1,10 +1,10 @@
 /**
- * Tipos TypeScript para o módulo de extração de dados
- * 
- * Este arquivo define todas as interfaces e tipos necessários
- * para o sistema de extração de dados estruturados.
- * 
- * Inclui schemas Zod para validação runtime.
+ * TypeScript types for the data extraction module
+ *
+ * This file defines all interfaces and types required for the
+ * structured data extraction system.
+ *
+ * Includes Zod schemas for runtime validation.
  */
 
 import {z} from 'zod';
@@ -20,8 +20,8 @@ export type ExtractionRunStatus = 'pending' | 'running' | 'completed' | 'failed'
 export type SuggestionStatus = 'pending' | 'accepted' | 'rejected';
 
 /**
- * Tipo para valores de extração baseado no tipo de campo
- * Garante type safety ao invés de usar `any`
+ * Extraction value type by field type
+ * Ensures type safety instead of using `any`
  */
 export type ExtractionValue = 
   | string      // text, select
@@ -29,9 +29,9 @@ export type ExtractionValue =
   | Date        // date
   | string[]    // multiselect
   | boolean     // boolean
-  | null;       // valores não preenchidos
+    | null;       // unfilled values
 
-// Valores com suporte a "Outro (especificar)"
+// Values with "Other (specify)" support
 export type SelectSingleValue = 
   | string
   | { selected: 'other'; other_text: string };
@@ -43,8 +43,8 @@ export type SelectMultiValue =
 // =================== TEMPLATES ===================
 
 /**
- * Template global padronizado (CHARMS, PICOS, PRISMA, etc.)
- * Mantido por administradores, read-only para usuários
+ * Standardized global template (CHARMS, PICOS, PRISMA, etc.)
+ * Maintained by admins, read-only for users
  */
 export interface GlobalExtractionTemplate {
   id: string;
@@ -58,7 +58,7 @@ export interface GlobalExtractionTemplate {
   updated_at: string;
 }
 
-// Alias para compatibilidade (deprecated, usar GlobalExtractionTemplate)
+// Alias for compatibility (deprecated, use GlobalExtractionTemplate)
 export type ExtractionTemplate = GlobalExtractionTemplate;
 
 export interface ProjectExtractionTemplate {
@@ -102,17 +102,17 @@ export interface ExtractionField {
   validation_schema: any;
   allowed_values: string[] | null;
   unit: string | null;
-  allowed_units: string[] | null; // Unidades alternativas configuráveis para campos numéricos
-  llm_description: string | null; // Instrução específica para extração com IA
+    allowed_units: string[] | null; // Configurable alternative units for number fields
+    llm_description: string | null; // Specific instruction for AI extraction
   sort_order: number;
   created_at: string;
-  // Suporte a "Outro (especificar)" inline
+    // "Other (specify)" support inline
   allow_other?: boolean;
   other_label?: string | null;
   other_placeholder?: string | null;
 }
 
-// =================== INSTÂNCIAS E VALORES ===================
+// =================== INSTANCES AND VALUES ===================
 
 export interface ExtractionInstance {
   id: string;
@@ -165,25 +165,25 @@ export interface ExtractionEvidence {
 // =================== IA E EXECUÇÕES ===================
 
 /**
- * @deprecated Use ExtractionRunRaw from '@/types/ai-extraction' para dados do banco
- * Use ExtractionRun from '@/types/ai-extraction' para dados processados
- * 
- * Mantido apenas para compatibilidade com código legado.
+ * @deprecated Use ExtractionRunRaw from '@/types/ai-extraction' for DB data
+ * Use ExtractionRun from '@/types/ai-extraction' for processed data
+ *
+ * Kept only for backward compatibility with legacy code.
  */
 export type { ExtractionRunRaw as ExtractionRun } from '@/types/ai-extraction';
 
 /**
- * @deprecated Use AISuggestionRaw from '@/types/ai-extraction' para dados do banco
- * Use AISuggestion from '@/types/ai-extraction' para dados processados
- * 
- * Mantido apenas para compatibilidade com código legado.
+ * @deprecated Use AISuggestionRaw from '@/types/ai-extraction' for DB data
+ * Use AISuggestion from '@/types/ai-extraction' for processed data
+ *
+ * Kept only for backward compatibility with legacy code.
  */
 export type { AISuggestionRaw as AISuggestion } from '@/types/ai-extraction';
 
-// Re-exportar tipos relacionados para conveniência
+// Re-export related types for convenience
 export type { SuggestionStatus, ExtractionRunStatus, ExtractionRunStage } from '@/types/ai-extraction';
 
-// =================== TIPOS PARA INSERÇÃO ===================
+// =================== INSERT TYPES ===================
 
 export interface ExtractionInstanceInsert {
   project_id: string;
@@ -223,7 +223,7 @@ export interface ExtractionEvidenceInsert {
   created_by: string;
 }
 
-// =================== TIPOS PARA FORMULÁRIOS ===================
+// =================== FORM TYPES ===================
 
 export interface ExtractionFormData {
   [instanceId: string]: {
@@ -241,7 +241,7 @@ export interface ExtractionFormState {
   error: string | null;
 }
 
-// =================== TIPOS PARA UI ===================
+// =================== UI TYPES ===================
 
 export interface ExtractionTemplateOption {
   id: string;
@@ -265,7 +265,7 @@ export interface ExtractionFieldDisplay {
   evidence: ExtractionEvidence[];
 }
 
-// =================== TIPOS PARA EXPORTAÇÃO ===================
+// =================== EXPORT TYPES ===================
 
 export interface ExtractionExportData {
   template: ProjectExtractionTemplate;
@@ -292,7 +292,7 @@ export interface ExtractionSummaryData {
   completion_percentage: number;
 }
 
-// =================== TIPOS PARA VALIDAÇÃO ===================
+// =================== VALIDATION TYPES ===================
 
 export interface ExtractionValidationError {
   field_id: string;
@@ -308,41 +308,41 @@ export interface ExtractionValidationResult {
   warnings: ExtractionValidationError[];
 }
 
-// =================== ZOD SCHEMAS (Validação Runtime) ===================
+// =================== ZOD SCHEMAS (Runtime validation) ===================
 
 /**
- * Schema Zod para validação de campo de extração
- * Usado ao criar ou editar campos
+ * Zod schema for extraction field validation
+ * Used when creating or editing fields
  */
 export const ExtractionFieldSchema = z.object({
   name: z.string()
-    .regex(/^[a-z][a-z0-9_]*$/, 'Nome deve estar em snake_case (ex: campo_exemplo)')
-    .min(2, 'Nome deve ter no mínimo 2 caracteres')
-    .max(50, 'Nome deve ter no máximo 50 caracteres'),
+      .regex(/^[a-z][a-z0-9_]*$/, 'Name must be in snake_case (e.g. field_example)')
+      .min(2, 'Name must be at least 2 characters')
+      .max(50, 'Name must be at most 50 characters'),
   
   label: z.string()
-    .min(1, 'Label é obrigatório')
-    .max(100, 'Label deve ter no máximo 100 caracteres'),
+      .min(1, 'Label is required')
+      .max(100, 'Label must be at most 100 characters'),
   
   description: z.string()
-    .max(500, 'Descrição deve ter no máximo 500 caracteres')
+      .max(500, 'Description must be at most 500 characters')
     .optional()
     .nullable(),
   
   field_type: z.enum(['text', 'number', 'date', 'select', 'multiselect', 'boolean'], {
-    errorMap: () => ({ message: 'Tipo de campo inválido' }),
+      errorMap: () => ({message: 'Invalid field type'}),
   }),
   
   is_required: z.boolean().default(false),
   
   unit: z.string()
-    .max(50, 'Unidade deve ter no máximo 50 caracteres')
+      .max(50, 'Unit must be at most 50 characters')
     .optional()
     .nullable(),
   
   allowed_units: z.array(z.string().max(50))
-    .min(1, 'Deve ter pelo menos uma unidade alternativa')
-    .max(20, 'Máximo de 20 unidades alternativas')
+      .min(1, 'Must have at least one alternative unit')
+      .max(20, 'Maximum of 20 alternative units')
     .optional()
     .nullable()
     .refine(
@@ -351,17 +351,17 @@ export const ExtractionFieldSchema = z.object({
         const unique = new Set(units);
         return unique.size === units.length;
       },
-      { message: 'Unidades não podem ter duplicatas' }
+        {message: 'Units cannot have duplicates'}
     ),
   
   llm_description: z.string()
-    .max(1000, 'Instrução para IA deve ter no máximo 1000 caracteres')
+      .max(1000, 'AI instruction must be at most 1000 characters')
     .optional()
     .nullable(),
   
   allowed_values: z.array(z.string())
-    .min(1, 'Deve ter pelo menos um valor permitido')
-    .max(100, 'Máximo de 100 valores permitidos')
+      .min(1, 'Must have at least one allowed value')
+      .max(100, 'Maximum of 100 allowed values')
     .optional()
     .nullable()
     .refine(
@@ -370,18 +370,18 @@ export const ExtractionFieldSchema = z.object({
         const unique = new Set(values);
         return unique.size === values.length;
       },
-      { message: 'Valores permitidos não podem ter duplicatas' }
+        {message: 'Allowed values cannot have duplicates'}
     ),
 
   // Suporte a "Outro (especificar)"
   allow_other: z.boolean().default(false).optional(),
   other_label: z.string()
-    .max(100, 'Label do "Outro" deve ter no máximo 100 caracteres')
+      .max(100, '"Other" label must be at most 100 characters')
     .default('Outro (especificar)')
     .optional()
     .nullable(),
   other_placeholder: z.string()
-    .max(200, 'Placeholder deve ter no máximo 200 caracteres')
+      .max(200, 'Placeholder must be at most 200 characters')
     .optional()
     .nullable(),
   
@@ -390,24 +390,24 @@ export const ExtractionFieldSchema = z.object({
     .nullable(),
   
   sort_order: z.number()
-    .int('Ordem deve ser um número inteiro')
-    .min(0, 'Ordem deve ser maior ou igual a 0')
+      .int('Order must be an integer')
+      .min(0, 'Order must be greater than or equal to 0')
     .default(0),
 });
 
 /**
- * Tipo inferido do schema Zod
+ * Inferred type from Zod schema
  */
 export type ExtractionFieldInput = z.infer<typeof ExtractionFieldSchema>;
 
 /**
- * Schema parcial para atualização (todos os campos opcionais)
+ * Partial schema for update (all fields optional)
  */
 export const ExtractionFieldUpdateSchema = ExtractionFieldSchema.partial();
 export type ExtractionFieldUpdate = z.infer<typeof ExtractionFieldUpdateSchema>;
 
 /**
- * Tipo para inserção no banco (adiciona entity_type_id)
+ * Type for DB insert (adds entity_type_id)
  */
 export interface ExtractionFieldInsert extends Omit<ExtractionFieldInput, 'sort_order'> {
   entity_type_id: string;
@@ -415,10 +415,10 @@ export interface ExtractionFieldInsert extends Omit<ExtractionFieldInput, 'sort_
   allowed_units?: string[] | null;
 }
 
-// =================== TIPOS PARA GERENCIAMENTO DE CAMPOS ===================
+// =================== FIELD MANAGEMENT TYPES ===================
 
 /**
- * Resultado da validação de um campo antes de operações
+ * Result of field validation before operations
  */
 export interface FieldValidationResult {
   canDelete: boolean;
@@ -430,7 +430,7 @@ export interface FieldValidationResult {
 }
 
 /**
- * Resultado de operações de campo
+ * Result of field operations
  */
 export interface FieldOperationResult {
   success: boolean;
@@ -439,12 +439,12 @@ export interface FieldOperationResult {
 }
 
 /**
- * Role do usuário no projeto (para controle de permissões)
+ * User role in the project (for permission control)
  */
 export type ProjectMemberRole = 'manager' | 'reviewer' | 'viewer' | 'consensus';
 
 /**
- * Resultado de verificação de permissões
+ * Result of permission check
  */
 export interface PermissionCheckResult {
   canView: boolean;
@@ -455,11 +455,11 @@ export interface PermissionCheckResult {
   message?: string;
 }
 
-// =================== TIPOS PARA HIERARQUIA ===================
+// =================== HIERARCHY TYPES ===================
 
 /**
- * Nó na árvore hierárquica de entities e instances
- * Usado para renderização recursiva de UI
+ * Node in the hierarchy tree of entities and instances
+ * Used for recursive UI rendering
  */
 export interface EntityNode {
   entityType: ExtractionEntityType;
@@ -468,8 +468,8 @@ export interface EntityNode {
 }
 
 /**
- * Contexto completo da hierarquia de extraction
- * Inclui árvore e maps auxiliares para queries rápidas
+ * Full extraction hierarchy context
+ * Includes tree and helper maps for fast lookups
  */
 export interface ExtractionHierarchyContext {
   tree: EntityNode[];
@@ -479,7 +479,7 @@ export interface ExtractionHierarchyContext {
 }
 
 /**
- * Resultado de query recursiva de children
+ * Result of recursive children query
  */
 export interface InstanceChild {
   id: string;

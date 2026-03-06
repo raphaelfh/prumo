@@ -1,14 +1,15 @@
 /**
- * Hook para calcular progresso de assessment instance
+ * Hook to compute assessment instance progress
  *
- * Usa a função SQL calculate_assessment_instance_progress()
- * para obter progresso preciso (total items vs answered items).
+ * Uses SQL function calculate_assessment_instance_progress()
+ * for precise progress (total items vs answered items).
  *
- * @see calculate_assessment_instance_progress() - Função SQL no banco
+ * @see calculate_assessment_instance_progress() - SQL function in DB
  */
 
 import {useCallback, useEffect, useState} from 'react';
 import {supabase} from '@/integrations/supabase/client';
+import {t} from '@/lib/copy';
 import {AssessmentInstanceProgress} from '@/types/assessment';
 
 interface UseAssessmentInstanceProgressProps {
@@ -24,7 +25,7 @@ export function useAssessmentInstanceProgress({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Calcular progresso usando função SQL
+    // Compute progress using SQL function
   const calculateProgress = useCallback(async () => {
     if (!enabled || !instanceId) {
       setProgress(null);
@@ -36,7 +37,7 @@ export function useAssessmentInstanceProgress({
       setLoading(true);
       setError(null);
 
-      // Chamar função SQL
+        // Call SQL function
       const { data, error: rpcError } = await supabase.rpc(
         'calculate_assessment_instance_progress',
         { p_instance_id: instanceId }
@@ -58,7 +59,7 @@ export function useAssessmentInstanceProgress({
         });
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Erro ao calcular progresso';
+        const message = err instanceof Error ? err.message : t('assessment', 'errorCalculatingProgress');
       console.error('Erro ao calcular progresso:', err);
       setError(message);
       setProgress(null);

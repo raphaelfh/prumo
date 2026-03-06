@@ -1,17 +1,18 @@
 /**
- * Hook para gerenciar instâncias de assessment (Assessment 2.0)
+ * Hook to manage assessment instances (Assessment 2.0)
  *
- * Análogo a useExtractionInstances. Gerencia APENAS instances
- * (criação, atualização, exclusão, hierarquia).
+ * Analogous to useExtractionInstances. Manages instances only
+ * (create, update, delete, hierarchy).
  *
- * Permite PROBAST por modelo via extraction_instance_id.
+ * Allows PROBAST per model via extraction_instance_id.
  *
- * @see useExtractionInstances - Hook análogo para extraction
+ * @see useExtractionInstances - Analogous hook for extraction
  */
 
 import {useCallback, useEffect, useMemo, useState} from 'react';
 import {supabase} from '@/integrations/supabase/client';
 import {toast} from 'sonner';
+import {t} from '@/lib/copy';
 import {
     AssessmentInstance,
     CreateAssessmentInstanceRequest,
@@ -77,8 +78,8 @@ export function useAssessmentInstances({
 
       setInstances(data || []);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Erro ao carregar assessment instances';
-      console.error('Erro ao carregar assessment instances:', err);
+        const message = err instanceof Error ? err.message : t('assessment', 'instanceLoadError');
+        console.error('Assessment instances load error:', err);
       setError(message);
       toast.error(message);
     } finally {
@@ -118,13 +119,13 @@ export function useAssessmentInstances({
 
       if (newInstance) {
         setInstances(prev => [newInstance, ...prev]);
-        toast.success('Assessment instance criada com sucesso');
+          toast.success(t('assessment', 'instanceCreateSuccess'));
       }
 
       return newInstance;
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Erro ao criar assessment instance';
-      console.error('Erro ao criar instance:', err);
+        const message = err instanceof Error ? err.message : t('assessment', 'instanceCreateError');
+        console.error('Error creating assessment instance:', err);
       toast.error(message);
       return null;
     }
@@ -147,7 +148,7 @@ export function useAssessmentInstances({
 
       if (error) throw error;
 
-      // Atualizar estado local
+        // Update local state
       setInstances(prev =>
         prev.map(inst =>
           inst.id === instanceId
@@ -156,11 +157,11 @@ export function useAssessmentInstances({
         )
       );
 
-      toast.success('Instance atualizada');
+        toast.success(t('assessment', 'instanceUpdateSuccess'));
       return true;
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Erro ao atualizar instance';
-      console.error('Erro ao atualizar instance:', err);
+        const message = err instanceof Error ? err.message : t('assessment', 'instanceUpdateError');
+        console.error('Error updating instance:', err);
       toast.error(message);
       return false;
     }
@@ -179,11 +180,11 @@ export function useAssessmentInstances({
       // Remover do estado local
       setInstances(prev => prev.filter(inst => inst.id !== instanceId));
 
-      toast.success('Instance deletada');
+        toast.success(t('assessment', 'instanceDeleteSuccess'));
       return true;
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Erro ao deletar instance';
-      console.error('Erro ao deletar instance:', err);
+        const message = err instanceof Error ? err.message : t('assessment', 'instanceDeleteError');
+        console.error('Error deleting instance:', err);
       toast.error(message);
       return false;
     }
@@ -207,13 +208,12 @@ export function useAssessmentInstances({
 
       return data;
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Erro ao buscar instance';
-      console.error('Erro ao buscar instance:', err);
+        console.error('Error fetching instance:', err);
       return null;
     }
   }, []);
 
-  // Buscar children de uma instance (hierarquia)
+    // Fetch children of an instance (hierarchy)
   const getChildren = useCallback(async (
     parentInstanceId: string
   ): Promise<AssessmentInstance[]> => {
@@ -228,7 +228,7 @@ export function useAssessmentInstances({
 
       return data || [];
     } catch (err: unknown) {
-      console.error('Erro ao buscar children:', err);
+        console.error('Error fetching child instances:', err);
       return [];
     }
   }, []);

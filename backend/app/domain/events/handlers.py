@@ -1,7 +1,6 @@
 """
 Event Handlers.
-
-Handlers para processar domain events.
+Handlers to process domain events.
 """
 
 import structlog
@@ -26,12 +25,11 @@ logger = structlog.get_logger()
 @event_bus.subscribe(ArticleAssessed)
 async def on_article_assessed(event: ArticleAssessed) -> None:
     """
-    Handler para quando um artigo é avaliado.
-    
+    Handler when an article is assessed.
     Actions:
-    - Log estruturado
-    - Atualizar métricas (futuro)
-    - Notificar usuário (futuro)
+    - Structured log
+    - Update metrics (future)
+    - Notify user (future)
     """
     logger.info(
         "handler_article_assessed",
@@ -40,20 +38,19 @@ async def on_article_assessed(event: ArticleAssessed) -> None:
         selected_level=event.selected_level,
         confidence=event.confidence_score,
     )
-    
-    # TODO: Atualizar métricas de uso de AI
-    # TODO: Enviar notificação se confidence < threshold
+
+    # TODO: Update AI usage metrics
+    # TODO: Send notification if confidence < threshold
 
 
 @event_bus.subscribe(AssessmentApproved)
 async def on_assessment_approved(event: AssessmentApproved) -> None:
     """
-    Handler para quando um assessment é aprovado.
-    
+    Handler when an assessment is approved.
     Actions:
-    - Atualizar status do artigo
-    - Atualizar progresso do projeto
-    - Log de auditoria
+    - Update article status
+    - Update project progress
+    - Audit log
     """
     logger.info(
         "handler_assessment_approved",
@@ -62,20 +59,19 @@ async def on_assessment_approved(event: AssessmentApproved) -> None:
         reviewer_id=str(event.reviewer_id),
         modifications_made=event.modifications_made,
     )
-    
-    # TODO: Atualizar contadores de artigos avaliados
-    # TODO: Verificar se projeto está completo
+
+    # TODO: Update assessed article counters
+    # TODO: Check if project is complete
 
 
 @event_bus.subscribe(AssessmentRejected)
 async def on_assessment_rejected(event: AssessmentRejected) -> None:
     """
-    Handler para quando um assessment é rejeitado.
-    
+    Handler when an assessment is rejected.
     Actions:
-    - Log para análise de qualidade AI
-    - Coletar feedback
-    - Re-agendar avaliação manual
+    - Log for AI quality analysis
+    - Collect feedback
+    - Re-schedule manual assessment
     """
     logger.warning(
         "handler_assessment_rejected",
@@ -83,9 +79,9 @@ async def on_assessment_rejected(event: AssessmentRejected) -> None:
         article_id=str(event.article_id),
         reason=event.rejection_reason,
     )
-    
-    # TODO: Coletar rejeições para análise de qualidade
-    # TODO: Disparar re-avaliação se necessário
+
+    # TODO: Collect rejections for quality analysis
+    # TODO: Trigger re-assessment if needed
 
 
 # =================== EXTRACTION HANDLERS ===================
@@ -93,12 +89,11 @@ async def on_assessment_rejected(event: AssessmentRejected) -> None:
 @event_bus.subscribe(ExtractionCompleted)
 async def on_extraction_completed(event: ExtractionCompleted) -> None:
     """
-    Handler para quando uma extração é completada.
-    
+    Handler when an extraction is completed.
     Actions:
-    - Atualizar progresso
-    - Disparar próximas extrações
-    - Log de performance
+    - Update progress
+    - Trigger next extractions
+    - Performance log
     """
     logger.info(
         "handler_extraction_completed",
@@ -107,20 +102,19 @@ async def on_extraction_completed(event: ExtractionCompleted) -> None:
         suggestions_created=event.suggestions_created,
         duration_ms=event.duration_ms,
     )
-    
-    # TODO: Verificar se há mais seções a extrair
+
+    # TODO: Check if there are more sections to extract
     # TODO: Atualizar progresso do artigo
 
 
 @event_bus.subscribe(ModelsExtracted)
 async def on_models_extracted(event: ModelsExtracted) -> None:
     """
-    Handler para quando modelos são extraídos.
-    
+    Handler when models are extracted.
     Actions:
-    - Disparar extração de seções filhas
-    - Atualizar contagem
-    - Notificar usuário
+    - Trigger extraction of child sections
+    - Update count
+    - Notify user
     """
     logger.info(
         "handler_models_extracted",
@@ -129,20 +123,19 @@ async def on_models_extracted(event: ModelsExtracted) -> None:
         child_instances=event.child_instances_count,
         model_names=event.model_names,
     )
-    
-    # TODO: Disparar extração automática de seções filhas
-    # TODO: Enviar notificação de modelos encontrados
+
+    # TODO: Trigger automatic extraction of child sections
+    # TODO: Send notification of models found
 
 
 @event_bus.subscribe(SuggestionAccepted)
 async def on_suggestion_accepted(event: SuggestionAccepted) -> None:
     """
-    Handler para quando uma sugestão é aceita.
-    
+    Handler when a suggestion is accepted.
     Actions:
-    - Coletar feedback para treinamento
-    - Atualizar métricas de acurácia
-    - Log de auditoria
+    - Collect feedback for training
+    - Update accuracy metrics
+    - Audit log
     """
     logger.info(
         "handler_suggestion_accepted",
@@ -152,16 +145,15 @@ async def on_suggestion_accepted(event: SuggestionAccepted) -> None:
     )
     
     # TODO: Coletar para dataset de fine-tuning
-    # TODO: Calcular taxa de modificação por campo
+    # TODO: Calculate modification rate per field
 
 
 def register_handlers() -> None:
     """
-    Registra todos os handlers.
-    
-    Chamar no startup da aplicação para garantir que os handlers
-    estão registrados antes de qualquer evento ser publicado.
+    Register all handlers.
+    Call at application startup to ensure handlers
+    are registered before any event is published.
     """
-    # Os decorators já registram automaticamente, mas esta função
-    # garante que o módulo foi importado
+    # Decorators already register automatically, but this function
+    # ensures the module was imported
     logger.info("event_handlers_registered", handler_count=6)

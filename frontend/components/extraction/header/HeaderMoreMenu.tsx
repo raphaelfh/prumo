@@ -19,6 +19,7 @@ import {Download, ExternalLink, HelpCircle, Keyboard, MoreHorizontal, Sparkles} 
 import {ExtractionExport} from '@/components/extraction/ExtractionExport';
 import {useFullAIExtraction} from '@/hooks/extraction/useFullAIExtraction';
 import type {ExtractedValue, ExtractionInstance, ProjectExtractionTemplate} from '@/types/extraction';
+import {t} from '@/lib/copy';
 
 interface HeaderMoreMenuProps {
   /** Projeto ID para export */
@@ -27,7 +28,7 @@ interface HeaderMoreMenuProps {
   template?: ProjectExtractionTemplate | null;
   /** Instâncias para export */
   instances?: ExtractionInstance[];
-  /** Valores extraídos para export */
+    /** Extracted values for export */
   values?: ExtractedValue[];
   /** Modo compacto (apenas ícone) */
   compact?: boolean;
@@ -37,7 +38,7 @@ interface HeaderMoreMenuProps {
   templateId?: string;
   /** Callback após extração completa */
   onExtractionComplete?: () => Promise<void>;
-  /** Callback para expor estado de extração (para renderizar progresso no parent) */
+    /** Callback to expose extraction state (to render progress in parent) */
   onExtractionStateChange?: (state: { loading: boolean; progress: any }) => void;
 }
 
@@ -55,7 +56,7 @@ export function HeaderMoreMenu({
   const [exportOpen, setExportOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
-  // Hook para extração IA completa
+    // Hook for full AI extraction
   const { extractFullAI, loading: extractingAI, progress: extractionProgress } = useFullAIExtraction({
     onSuccess: async () => {
       if (onExtractionComplete) {
@@ -75,11 +76,11 @@ export function HeaderMoreMenu({
   }, [extractingAI, extractionProgress, onExtractionStateChange]);
 
   const shortcuts = [
-    { keys: 'Ctrl/Cmd + S', action: 'Salvar manualmente' },
-    { keys: 'Ctrl/Cmd + K', action: 'Buscar' },
-    { keys: 'Esc', action: 'Cancelar ação' },
-    { keys: 'Tab', action: 'Próximo campo' },
-    { keys: 'Shift + Tab', action: 'Campo anterior' },
+      {keys: 'Ctrl/Cmd + S', action: t('extraction', 'moreShortcutSave')},
+      {keys: 'Ctrl/Cmd + K', action: t('extraction', 'moreShortcutSearch')},
+      {keys: 'Esc', action: t('extraction', 'moreShortcutCancel')},
+      {keys: 'Tab', action: t('extraction', 'moreShortcutNextField')},
+      {keys: 'Shift + Tab', action: t('extraction', 'moreShortcutPrevField')},
   ];
 
   const handleExport = () => {
@@ -97,7 +98,7 @@ export function HeaderMoreMenu({
 
   const handleFullAIExtraction = async () => {
     if (!articleId || !templateId) {
-      console.warn('[HeaderMoreMenu] articleId ou templateId não fornecido para extração IA');
+        console.warn('[HeaderMoreMenu] articleId or templateId not provided for AI extraction');
       return;
     }
 
@@ -109,7 +110,7 @@ export function HeaderMoreMenu({
       });
     } catch (error) {
       // Erro já tratado pelo hook com toast
-      console.error('[HeaderMoreMenu] Erro na extração IA completa:', error);
+        console.error('[HeaderMoreMenu] Full AI extraction error:', error);
     }
   };
 
@@ -118,7 +119,7 @@ export function HeaderMoreMenu({
       variant="ghost"
       size="sm"
       className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-      aria-label="Mais opções"
+      aria-label={t('extraction', 'moreOptions')}
     >
       <MoreHorizontal className="h-4 w-4" />
     </Button>
@@ -134,12 +135,12 @@ export function HeaderMoreMenu({
             </DropdownMenuTrigger>
           </TooltipTrigger>
           <TooltipContent side="top" sideOffset={5} className="z-[100]">
-            Mais opções
+              {t('extraction', 'moreOptions')}
           </TooltipContent>
         </Tooltip>
         <DropdownMenuContent align="end" className="w-56">
           <DropdownMenuLabel className="text-xs text-muted-foreground">
-            Ações
+              {t('extraction', 'moreActions')}
           </DropdownMenuLabel>
           {articleId && templateId && (
             <DropdownMenuItem 
@@ -147,33 +148,33 @@ export function HeaderMoreMenu({
               disabled={extractingAI}
             >
               <Sparkles className="mr-2 h-4 w-4" />
-              {extractingAI ? 'Extraindo IA...' : 'Extrair IA'}
+                {extractingAI ? t('extraction', 'moreExtractingAI') : t('extraction', 'moreExtractAI')}
             </DropdownMenuItem>
           )}
           <DropdownMenuItem onClick={handleExport}>
             <Download className="mr-2 h-4 w-4" />
-            Exportar Dados
+              {t('extraction', 'moreExportData')}
           </DropdownMenuItem>
           <DropdownMenuItem onClick={handleShortcuts}>
             <Keyboard className="mr-2 h-4 w-4" />
-            Atalhos de Teclado
+              {t('extraction', 'moreKeyboardShortcuts')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={handleHelp}>
             <HelpCircle className="mr-2 h-4 w-4" />
-            Ajuda
+              {t('extraction', 'moreHelp')}
             <ExternalLink className="ml-auto h-3 w-3" />
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* Dialog de Export */}
+        {/* Export Dialog */}
       <Dialog open={exportOpen} onOpenChange={setExportOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Exportar Dados Extraídos</DialogTitle>
+              <DialogTitle>{t('extraction', 'moreExportDialogTitle')}</DialogTitle>
             <DialogDescription>
-              Exporte os dados extraídos em diferentes formatos
+                {t('extraction', 'moreExportDialogDesc')}
             </DialogDescription>
           </DialogHeader>
           <ExtractionExport
@@ -185,16 +186,16 @@ export function HeaderMoreMenu({
         </DialogContent>
       </Dialog>
 
-      {/* Dialog de Atalhos */}
+        {/* Shortcuts Dialog */}
       <Dialog open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Keyboard className="h-5 w-5" />
-              Atalhos de Teclado
+                {t('extraction', 'moreShortcutsDialogTitle')}
             </DialogTitle>
             <DialogDescription>
-              Atalhos disponíveis na interface de extração
+                {t('extraction', 'moreShortcutsDialogDesc')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 max-h-[400px] overflow-y-auto py-4">
@@ -211,7 +212,7 @@ export function HeaderMoreMenu({
             ))}
           </div>
           <p className="text-xs text-muted-foreground mt-4 pt-4 border-t">
-            Dica: Pressione <kbd className="px-1.5 py-0.5 bg-muted rounded text-[10px]">?</kbd> para ver esta lista rapidamente
+              {t('extraction', 'moreShortcutTip')}
           </p>
         </DialogContent>
       </Dialog>

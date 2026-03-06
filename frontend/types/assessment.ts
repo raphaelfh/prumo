@@ -1,13 +1,13 @@
 /**
- * Tipos TypeScript para o módulo de avaliação de qualidade (Assessment)
+ * TypeScript types for the quality assessment module (Assessment)
  *
- * Este arquivo define todas as interfaces e tipos necessários
- * para o sistema de avaliação de qualidade de estudos (PROBAST, QUADAS-2, ROB-2, etc.)
+ * This file defines all interfaces and types required for the quality
+ * assessment system (PROBAST, QUADAS-2, ROB-2, etc.)
  *
- * Baseado na arquitetura do módulo de extração (DRY + KISS)
+ * Based on the extraction module architecture (DRY + KISS)
  *
  * @see assessment.py (backend schemas)
- * @see extraction.ts (tipos similares para extração)
+ * @see extraction.ts (similar types for extraction)
  */
 
 import {z} from 'zod';
@@ -15,65 +15,65 @@ import {z} from 'zod';
 // =================== ENUMS ===================
 
 /**
- * Tipos de instrumentos de avaliação suportados
+ * Supported assessment instrument types
  */
 export type AssessmentInstrumentType =
   | 'PROBAST'        // Prediction model Risk Of Bias Assessment Tool
   | 'QUADAS_2'       // Quality Assessment of Diagnostic Accuracy Studies
   | 'ROB_2'          // Risk of Bias tool (Cochrane)
   | 'ROBINS_I'       // Risk Of Bias In Non-randomized Studies
-  | 'CUSTOM';        // Instrumento customizado
+    | 'CUSTOM';        // Custom instrument
 
 /**
- * Modo de execução do assessment
+ * Assessment execution mode
  */
 export type AssessmentMode =
-  | 'human'   // Manual (humano)
-  | 'ai'      // Automático (IA)
-  | 'hybrid'; // Híbrido (IA + revisão humana)
+    | 'human'   // Manual (human)
+    | 'ai'      // Automatic (AI)
+    | 'hybrid'; // Hybrid (AI + human review)
 
 /**
- * Modo de alvo do assessment (por artigo ou por modelo)
- * Similar ao CHARMS que extrai por modelo
+ * Assessment target mode (per article or per model)
+ * Similar to CHARMS which extracts per model
  */
 export type AssessmentTargetMode =
-  | 'per_article'  // Avalia o artigo como um todo
-  | 'per_model';   // Avalia cada modelo extraído separadamente (PROBAST style)
+    | 'per_article'  // Assess the article as a whole
+    | 'per_model';   // Assess each extracted model separately (PROBAST style)
 
 /**
- * Status da avaliação (alinhado com enum do banco)
+ * Assessment status (aligned with DB enum)
  */
 export type AssessmentStatus =
-  | 'in_progress'    // Em progresso
-  | 'submitted'      // Submetida (finalizada)
-  | 'locked'         // Travada (read-only)
-  | 'archived';      // Arquivada
+    | 'in_progress'    // In progress
+    | 'submitted'      // Submitted (finalized)
+    | 'locked'         // Locked (read-only)
+    | 'archived';      // Archived
 
 /**
- * Status de sugestão de IA para assessment
+ * AI suggestion status for assessment
  */
 export type AssessmentSuggestionStatus = 'pending' | 'accepted' | 'rejected';
 
 /**
- * Níveis de resposta comuns (podem variar por instrumento)
+ * Common response levels (may vary by instrument)
  */
 export type AssessmentLevel =
-  | 'Low'           // Baixo risco
-  | 'High'          // Alto risco
-  | 'Unclear'       // Não claro
-  | 'Some concerns' // Algumas preocupações
-  | 'Yes'           // Sim
-  | 'Partially'     // Parcialmente
-  | 'No'            // Não
-  | string;         // Customizado
+    | 'Low'           // Low risk
+    | 'High'          // High risk
+    | 'Unclear'       // Unclear
+    | 'Some concerns' // Some concerns
+    | 'Yes'           // Yes
+    | 'Partially'     // Partially
+    | 'No'            // No
+    | string;         // Custom
 
 /**
- * Stages de execução de AI assessment
+ * AI assessment execution stages
  */
 export type AssessmentRunStage =
-  | 'assess_single'      // Avaliação de item único
-  | 'assess_batch'       // Avaliação em batch
-  | 'assess_hierarchical'; // Avaliação hierárquica (PROBAST por modelo)
+    | 'assess_single'      // Single item assessment
+    | 'assess_batch'       // Batch assessment
+    | 'assess_hierarchical'; // Hierarchical assessment (PROBAST per model)
 
 export type AssessmentRunStatus = 'pending' | 'running' | 'completed' | 'failed';
 
@@ -91,8 +91,8 @@ export interface AssessmentInstrumentSchema {
 }
 
 /**
- * Instrumento de avaliação (PROBAST, QUADAS-2, etc.)
- * Representa a linha do banco para assessment_instruments.
+ * Assessment instrument (PROBAST, QUADAS-2, etc.)
+ * Represents the DB row for assessment_instruments.
  */
 export interface AssessmentInstrument {
   id: string;
@@ -107,8 +107,8 @@ export interface AssessmentInstrument {
 }
 
 /**
- * Domínio de avaliação (ex: Domain 1 do PROBAST)
- * Similar a ExtractionEntityType de nível superior
+ * Assessment domain (e.g. Domain 1 of PROBAST)
+ * Similar to top-level ExtractionEntityType
  */
 export interface AssessmentDomain {
   id: string;
@@ -122,28 +122,28 @@ export interface AssessmentDomain {
 }
 
 /**
- * Item de avaliação (pergunta/critério)
- * Similar a ExtractionField
+ * Assessment item (question/criterion)
+ * Similar to ExtractionField
  */
 export interface AssessmentItem {
   id: string;
   instrument_id: string;
   domain: string;
-  item_code: string;         // Ex: "D1.1", "D1.2", "D2.1"
+    item_code: string;         // E.g. "D1.1", "D1.2", "D2.1"
   question: string;
   guidance: string | null;
-  allowed_levels: AssessmentLevel[];  // Ex: ["Low", "High", "Unclear"]
+    allowed_levels: AssessmentLevel[];  // E.g. ["Low", "High", "Unclear"]
   sort_order: number;
   is_required: boolean;
   llm_description: string | null;
   created_at: string;
 }
 
-// =================== AVALIAÇÕES HUMANAS ===================
+// =================== HUMAN ASSESSMENTS ===================
 
 /**
- * Avaliação de qualidade feita por um usuário
- * Similar a ExtractionInstance (mas contém múltiplas respostas)
+ * Quality assessment made by a user
+ * Similar to ExtractionInstance (but contains multiple responses)
  */
 export interface Assessment {
   id: string;
@@ -153,10 +153,10 @@ export interface Assessment {
   instrument_id: string | null;
   tool_type: AssessmentInstrumentType;
 
-  // Respostas estruturadas por item
+    // Structured responses per item
   responses: Record<string, AssessmentResponseValue>;  // key: item_id
 
-  // Avaliação geral agregada
+    // Aggregated overall assessment
   overall_assessment: {
     overall_risk?: AssessmentLevel;
     summary?: string;
@@ -166,7 +166,7 @@ export interface Assessment {
   status: AssessmentStatus;
   completion_percentage: number | null;
 
-  // Para PROBAST: pode ser por modelo de predição
+    // For PROBAST: can be per prediction model
   extraction_instance_id: string | null;
 
   // Blind review
@@ -178,8 +178,8 @@ export interface Assessment {
 }
 
 /**
- * Resposta a um item de avaliação
- * Similar a ExtractedValue
+ * Response to an assessment item
+ * Similar to ExtractedValue
  */
 export interface AssessmentResponse {
   item_id: string;
@@ -190,7 +190,7 @@ export interface AssessmentResponse {
 }
 
 /**
- * Formato legado de respostas (level/comment)
+ * Legacy response format (level/comment)
  */
 export interface LegacyAssessmentResponse {
   level: AssessmentLevel;
@@ -200,7 +200,7 @@ export interface LegacyAssessmentResponse {
 export type AssessmentResponseValue = AssessmentResponse | LegacyAssessmentResponse;
 
 /**
- * Passagem de evidência citada
+ * Cited evidence passage
  */
 export interface EvidencePassage {
   text: string;
@@ -208,18 +208,18 @@ export interface EvidencePassage {
   source?: string;
 }
 
-// =================== SUGESTÕES DE IA ===================
+// =================== AI SUGGESTIONS ===================
 
 /**
- * Sugestão de IA para assessment (reusa ai_suggestions table)
- * Similar a AISuggestion de extraction
+ * AI suggestion for assessment (reuses ai_suggestions table)
+ * Similar to extraction AISuggestion
  */
 export interface AIAssessmentSuggestion {
   id: string;
-  assessment_run_id: string;  // FK para ai_assessment_runs
+    assessment_run_id: string;  // FK to ai_assessment_runs
   assessment_item_id: string;  // Effective item ID (global or project-scoped)
 
-  // Valor sugerido estruturado
+    // Structured suggested value
   suggested_value: {
     level: AssessmentLevel;
     evidence_passages: EvidencePassage[];
@@ -229,7 +229,7 @@ export interface AIAssessmentSuggestion {
   reasoning: string | null;
   status: AssessmentSuggestionStatus;
 
-  // Metadata de execução
+    // Execution metadata
   metadata_: {
     trace_id?: string;
     ai_model_used?: string;
@@ -237,7 +237,7 @@ export interface AIAssessmentSuggestion {
     method_used?: 'direct' | 'file_search';
     prompt_tokens?: number;
     completion_tokens?: number;
-    extraction_instance_id?: string;  // Para PROBAST por modelo
+      extraction_instance_id?: string;  // For PROBAST per model
   };
 
   reviewed_by: string | null;
@@ -246,16 +246,16 @@ export interface AIAssessmentSuggestion {
 }
 
 /**
- * Versão raw da sugestão (como vem do backend)
+ * Raw suggestion version (as returned from backend)
  */
 export interface AIAssessmentSuggestionRaw {
   id: string;
-  assessment_run_id: string;        // FK para ai_assessment_runs
-  extraction_run_id: string | null; // FK para extraction_runs (não usado para assessment)
+    assessment_run_id: string;        // FK to ai_assessment_runs
+    extraction_run_id: string | null; // FK to extraction_runs (not used for assessment)
   instance_id: string | null;
   field_id: string | null;
-  assessment_item_id: string | null;       // FK para assessment_items (global)
-  project_assessment_item_id: string | null; // FK para project_assessment_items (project-scoped)
+    assessment_item_id: string | null;       // FK to assessment_items (global)
+    project_assessment_item_id: string | null; // FK to project_assessment_items (project-scoped)
   suggested_value: unknown;
   confidence_score: number | null;
   reasoning: string | null;
@@ -267,15 +267,15 @@ export interface AIAssessmentSuggestionRaw {
 }
 
 /**
- * Execução de AI assessment (tracking)
- * Similar a ExtractionRun
+ * AI assessment run (tracking)
+ * Similar to ExtractionRun
  */
 export interface AIAssessmentRun {
   id: string;
   project_id: string;
   article_id: string;
   instrument_id: string;
-  extraction_instance_id: string | null;  // Para PROBAST por modelo
+    extraction_instance_id: string | null;  // For PROBAST per model
 
   stage: AssessmentRunStage;
   status: AssessmentRunStatus;
@@ -311,7 +311,7 @@ export interface AIAssessmentRun {
 // =================== REQUESTS/RESPONSES ===================
 
 /**
- * Request para avaliação AI de item único
+ * Request for single-item AI assessment
  */
 export interface AIAssessmentRequest {
   projectId: string;
@@ -319,22 +319,22 @@ export interface AIAssessmentRequest {
   assessmentItemId: string;
   instrumentId: string;
 
-  // PDF source (opcional, usa do artigo se não fornecido)
+    // PDF source (optional, uses article's if not provided)
   pdfStorageKey?: string;
   pdfBase64?: string;
   pdfFilename?: string;
   pdfFileId?: string;
 
-  // Opções
+    // Options
   forceFileSearch?: boolean;
   openaiApiKey?: string;  // BYOK
-  extractionInstanceId?: string;  // Para PROBAST por modelo
+    extractionInstanceId?: string;  // For PROBAST per model
   model?: string;
   temperature?: number;
 }
 
 /**
- * Response de avaliação AI
+ * AI assessment response
  */
 export interface AIAssessmentResponse {
   ok: boolean;
@@ -360,7 +360,7 @@ export interface AIAssessmentResponse {
 }
 
 /**
- * Request para avaliação AI em batch
+ * Request for batch AI assessment
  */
 export interface BatchAIAssessmentRequest {
   projectId: string;
@@ -376,7 +376,7 @@ export interface BatchAIAssessmentRequest {
 }
 
 /**
- * Response de batch assessment
+ * Batch assessment response
  */
 export interface BatchAIAssessmentResponse {
   ok: boolean;
@@ -393,7 +393,7 @@ export interface BatchAIAssessmentResponse {
 }
 
 /**
- * Request para salvar assessment humano
+ * Request to save human assessment
  */
 export interface SaveAssessmentRequest {
   projectId: string;
@@ -402,11 +402,11 @@ export interface SaveAssessmentRequest {
   responses: Record<string, AssessmentResponse>;
   status?: AssessmentStatus;
   privateNotes?: string;
-  extractionInstanceId?: string;  // Para PROBAST por modelo
+    extractionInstanceId?: string;  // For PROBAST per model
 }
 
 /**
- * Request para revisar sugestão de IA
+ * Request to review AI suggestion
  */
 export interface ReviewAISuggestionRequest {
   action: 'accept' | 'reject' | 'modify';
@@ -419,7 +419,7 @@ export interface ReviewAISuggestionRequest {
 }
 
 /**
- * Response de revisão de sugestão
+ * Suggestion review response
  */
 export interface ReviewAISuggestionResponse {
   ok: boolean;
@@ -437,7 +437,7 @@ export interface ReviewAISuggestionResponse {
 }
 
 /**
- * Request para listar sugestões pendentes
+ * Request to list pending suggestions
  */
 export interface ListSuggestionsRequest {
   projectId: string;
@@ -448,7 +448,7 @@ export interface ListSuggestionsRequest {
 }
 
 /**
- * Response com lista de sugestões
+ * Response with list of suggestions
  */
 export interface ListSuggestionsResponse {
   ok: boolean;
@@ -463,11 +463,11 @@ export interface ListSuggestionsResponse {
   traceId?: string;
 }
 
-// =================== HISTÓRICO E COMPARAÇÃO ===================
+// =================== HISTORY AND COMPARISON ===================
 
 /**
- * Item de histórico de sugestões
- * Similar ao de extraction
+ * Suggestion history item
+ * Similar to extraction
  */
 export interface AIAssessmentSuggestionHistoryItem {
   id: string;
@@ -484,7 +484,7 @@ export interface AIAssessmentSuggestionHistoryItem {
 }
 
 /**
- * Comparação de assessments de múltiplos revisores
+ * Comparison of assessments from multiple reviewers
  */
 export interface AssessmentComparison {
   articleId: string;
@@ -502,8 +502,8 @@ export interface AssessmentComparison {
 }
 
 /**
- * Assessment de outro usuário (para comparação/consenso)
- * Similar a OtherExtraction
+ * Another user's assessment (for comparison/consensus)
+ * Similar to OtherExtraction
  */
 export interface OtherAssessment {
   userId: string;
@@ -513,10 +513,10 @@ export interface OtherAssessment {
   isBlind: boolean;
 }
 
-// =================== VALIDAÇÃO (ZOD SCHEMAS) ===================
+// =================== VALIDATION (ZOD SCHEMAS) ===================
 
 /**
- * Schema Zod para validação de resposta
+ * Zod schema for response validation
  */
 export const AssessmentResponseSchema = z.object({
   item_id: z.string().uuid(),
@@ -531,7 +531,7 @@ export const AssessmentResponseSchema = z.object({
 });
 
 /**
- * Schema para salvar assessment
+ * Schema for saving assessment
  */
 export const SaveAssessmentRequestSchema = z.object({
   projectId: z.string().uuid(),
@@ -546,68 +546,68 @@ export const SaveAssessmentRequestSchema = z.object({
 // =================== NEW TYPES (Assessment 2.0 - Extraction Pattern) ===================
 
 /**
- * Origem da resposta de assessment
- * Alinhado com enum 'assessment_source' do PostgreSQL
+ * Source of assessment response
+ * Aligned with PostgreSQL enum 'assessment_source'
  */
 export type AssessmentSource = 'human' | 'ai' | 'consensus';
 
 /**
- * Instância de avaliação (PROBAST por artigo ou por modelo)
- * Análogo a ExtractionInstance
+ * Assessment instance (PROBAST per article or per model)
+ * Analogous to ExtractionInstance
  */
 export interface AssessmentInstance {
   id: string;
   project_id: string;
   article_id: string;
   instrument_id: string;
-  extraction_instance_id: string | null;  // Vincula ao modelo (PROBAST por modelo)
-  parent_instance_id: string | null;      // Hierarquia (opcional)
+    extraction_instance_id: string | null;  // Links to model (PROBAST per model)
+    parent_instance_id: string | null;      // Hierarchy (optional)
 
   label: string;  // "PROBAST - Model A", "Domain 1: Participants", etc.
   status: AssessmentStatus;
   reviewer_id: string;
 
-  // Modo cego
+    // Blind mode
   is_blind: boolean;
   can_see_others: boolean;
 
-  // Metadados flexíveis (overall_risk, applicability_concerns, custom fields)
+    // Flexible metadata (overall_risk, applicability_concerns, custom fields)
   metadata: Record<string, unknown>;
 
   created_at: string;
   updated_at: string;
 
-  // Relationships (quando carregadas)
+    // Relationships (when loaded)
   responses?: AssessmentResponseNew[];
   evidence?: AssessmentEvidenceNew[];
 }
 
 /**
- * Resposta individual a um item de avaliação
- * Análogo a ExtractedValue
+ * Individual response to an assessment item
+ * Analogous to ExtractedValue
  *
- * Granularidade total: 1 linha = 1 resposta
+ * Full granularity: 1 row = 1 response
  */
 export interface AssessmentResponseNew {
   id: string;
 
-  // Denormalização intencional (performance + RLS)
+    // Intentional denormalization (performance + RLS)
   project_id: string;
   article_id: string;
 
-  // Vinculação
+    // Links
   assessment_instance_id: string;
   assessment_item_id: string;
 
-  // Resposta
+    // Response
   selected_level: string;  // "Low", "High", "Unclear", etc.
   notes: string | null;
   confidence: number | null;  // 0.0-1.0
 
-  // Origem e rastreabilidade
+    // Source and traceability
   source: AssessmentSource;
-  confidence_score: number | null;  // Score de IA
-  ai_suggestion_id: string | null;  // FK para ai_assessments
+    confidence_score: number | null;  // AI score
+    ai_suggestion_id: string | null;  // FK to ai_assessments
 
   reviewer_id: string;
   is_consensus: boolean;
@@ -615,14 +615,14 @@ export interface AssessmentResponseNew {
   created_at: string;
   updated_at: string;
 
-  // Relationships (quando carregadas)
+    // Relationships (when loaded)
   assessment_instance?: AssessmentInstance;
   evidence?: AssessmentEvidenceNew[];
 }
 
 /**
- * Evidência que suporta resposta ou instance
- * Análogo a ExtractionEvidence
+ * Evidence supporting a response or instance
+ * Analogous to ExtractionEvidence
  */
 export interface AssessmentEvidenceNew {
   id: string;
@@ -630,11 +630,11 @@ export interface AssessmentEvidenceNew {
   project_id: string;
   article_id: string;
 
-  // Alvo polimórfico
+    // Polymorphic target
   target_type: 'response' | 'instance';
   target_id: string;
 
-  // Evidência do PDF
+    // PDF evidence
   article_file_id: string | null;
   page_number: number | null;
   position: {
@@ -652,7 +652,7 @@ export interface AssessmentEvidenceNew {
 // =================== CREATE/UPDATE REQUESTS (NEW API) ===================
 
 /**
- * Request para criar assessment instance
+ * Request to create assessment instance
  */
 export interface CreateAssessmentInstanceRequest {
   project_id: string;
@@ -667,7 +667,7 @@ export interface CreateAssessmentInstanceRequest {
 }
 
 /**
- * Request para criar assessment response
+ * Request to create assessment response
  */
 export interface CreateAssessmentResponseRequest {
   project_id: string;
@@ -682,7 +682,7 @@ export interface CreateAssessmentResponseRequest {
 }
 
 /**
- * Request para criar múltiplas responses em batch
+ * Request to create multiple responses in batch
  */
 export interface BulkCreateAssessmentResponsesRequest {
   project_id: string;
@@ -699,7 +699,7 @@ export interface BulkCreateAssessmentResponsesRequest {
 }
 
 /**
- * Request para atualizar assessment instance
+ * Request to update assessment instance
  */
 export interface UpdateAssessmentInstanceRequest {
   label?: string;
@@ -708,7 +708,7 @@ export interface UpdateAssessmentInstanceRequest {
 }
 
 /**
- * Request para atualizar assessment response
+ * Request to update assessment response
  */
 export interface UpdateAssessmentResponseRequest {
   selected_level?: string;
@@ -718,7 +718,7 @@ export interface UpdateAssessmentResponseRequest {
 }
 
 /**
- * Request para criar evidência
+ * Request to create evidence
  */
 export interface CreateAssessmentEvidenceRequest {
   project_id: string;
@@ -739,7 +739,7 @@ export interface CreateAssessmentEvidenceRequest {
 // =================== QUERY FILTERS ===================
 
 /**
- * Filtros para buscar assessment instances
+ * Filters to query assessment instances
  */
 export interface AssessmentInstanceFilters {
   project_id?: string;
@@ -752,7 +752,7 @@ export interface AssessmentInstanceFilters {
 }
 
 /**
- * Filtros para buscar assessment responses
+ * Filters to query assessment responses
  */
 export interface AssessmentResponseFilters {
   project_id?: string;
@@ -765,7 +765,7 @@ export interface AssessmentResponseFilters {
 }
 
 /**
- * Filtros para buscar evidências
+ * Filters to query evidence
  */
 export interface AssessmentEvidenceFilters {
   project_id?: string;
@@ -777,8 +777,8 @@ export interface AssessmentEvidenceFilters {
 // =================== COMPUTED/DERIVED TYPES ===================
 
 /**
- * Progresso de uma assessment instance
- * Retornado pela função calculate_assessment_instance_progress()
+ * Progress of an assessment instance
+ * Returned by calculate_assessment_instance_progress()
  */
 export interface AssessmentInstanceProgress {
   total_items: number;
@@ -787,8 +787,8 @@ export interface AssessmentInstanceProgress {
 }
 
 /**
- * Assessment instance com responses e progresso carregados
- * Útil para UI
+ * Assessment instance with responses and progress loaded
+ * Useful for UI
  */
 export interface AssessmentInstanceWithProgress extends AssessmentInstance {
   responses: AssessmentResponseNew[];
@@ -796,8 +796,8 @@ export interface AssessmentInstanceWithProgress extends AssessmentInstance {
 }
 
 /**
- * Hierarquia de assessment instances
- * Para renderização em árvore (ex: PROBAST root → Domains)
+ * Assessment instance hierarchy
+ * For tree rendering (e.g. PROBAST root → Domains)
  */
 export interface AssessmentInstanceHierarchy {
   instance: AssessmentInstance;
@@ -808,7 +808,7 @@ export interface AssessmentInstanceHierarchy {
 // =================== ZOD SCHEMAS (NEW API) ===================
 
 /**
- * Schema Zod para criar assessment instance
+ * Zod schema to create assessment instance
  */
 export const CreateAssessmentInstanceSchema = z.object({
   project_id: z.string().uuid(),
@@ -823,7 +823,7 @@ export const CreateAssessmentInstanceSchema = z.object({
 });
 
 /**
- * Schema Zod para criar assessment response
+ * Zod schema to create assessment response
  */
 export const CreateAssessmentResponseSchema = z.object({
   project_id: z.string().uuid(),
@@ -838,7 +838,7 @@ export const CreateAssessmentResponseSchema = z.object({
 });
 
 /**
- * Schema Zod para bulk create responses
+ * Zod schema for bulk create responses
  */
 export const BulkCreateAssessmentResponsesSchema = z.object({
   project_id: z.string().uuid(),
@@ -859,8 +859,8 @@ export const BulkCreateAssessmentResponsesSchema = z.object({
 // =================== PROJECT ASSESSMENT INSTRUMENTS ===================
 
 /**
- * Item de instrumento de avaliação de projeto
- * Clonado de global ou customizado
+ * Project assessment instrument item
+ * Cloned from global or custom
  */
 export interface ProjectAssessmentItem {
   id: string;
@@ -879,8 +879,8 @@ export interface ProjectAssessmentItem {
 }
 
 /**
- * Instrumento de avaliação de projeto
- * Clonado de global (PROBAST, ROBIS) ou customizado
+ * Project assessment instrument
+ * Cloned from global (PROBAST, ROBIS) or custom
  */
 export interface ProjectAssessmentInstrument {
   id: string;
@@ -902,7 +902,7 @@ export interface ProjectAssessmentInstrument {
 }
 
 /**
- * Resumo de instrumento global para seleção
+ * Global instrument summary for selection
  */
 export interface GlobalInstrumentSummary {
   id: string;
@@ -916,7 +916,7 @@ export interface GlobalInstrumentSummary {
 }
 
 /**
- * Request para clonar instrumento global
+ * Request to clone global instrument
  */
 export interface CloneInstrumentRequest {
   projectId: string;
@@ -925,7 +925,7 @@ export interface CloneInstrumentRequest {
 }
 
 /**
- * Response de clone de instrumento
+ * Clone instrument response
  */
 export interface CloneInstrumentResponse {
   projectInstrumentId: string;
@@ -933,7 +933,7 @@ export interface CloneInstrumentResponse {
 }
 
 /**
- * Request para criar instrumento customizado
+ * Request to create custom instrument
  */
 export interface CreateProjectInstrumentRequest {
   projectId: string;
@@ -951,7 +951,7 @@ export interface CreateProjectInstrumentRequest {
 }
 
 /**
- * Request para criar item de instrumento
+ * Request to create instrument item
  */
 export interface CreateProjectItemRequest {
   globalItemId?: string | null;
@@ -966,7 +966,7 @@ export interface CreateProjectItemRequest {
 }
 
 /**
- * Request para atualizar instrumento
+ * Request to update instrument
  */
 export interface UpdateProjectInstrumentRequest {
   name?: string;
@@ -980,7 +980,7 @@ export interface UpdateProjectInstrumentRequest {
 }
 
 /**
- * Request para atualizar item
+ * Request to update item
  */
 export interface UpdateProjectItemRequest {
   domain?: string;
@@ -994,7 +994,7 @@ export interface UpdateProjectItemRequest {
 }
 
 /**
- * Schema Zod para clone instrument request
+ * Zod schema for clone instrument request
  */
 export const CloneInstrumentRequestSchema = z.object({
   projectId: z.string().uuid(),
@@ -1003,7 +1003,7 @@ export const CloneInstrumentRequestSchema = z.object({
 });
 
 /**
- * Schema Zod para create project instrument
+ * Zod schema for create project instrument
  */
 export const CreateProjectInstrumentRequestSchema = z.object({
   projectId: z.string().uuid(),

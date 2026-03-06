@@ -1,9 +1,19 @@
+---
+description: 
+alwaysApply: true
+---
+
 # Project Development Guide for AI Assistants
 
 This guide provides the essential architectural and procedural rules for working on the Review Hub project. Adhere to
 these instructions to ensure your contributions are consistent and correct.
 
-## 1. Core Technologies
+## 1. Language
+
+- **All code and project content must be written in English**: source code, comments, commit messages, documentation,
+  variable/function names, and user-facing copy keys (values may be localized via i18n). No exceptions.
+
+## 2. Core Technologies
 
 - **Backend**: FastAPI with Python 3.11+
 - **ORM**: SQLAlchemy 2.0 (async)
@@ -14,7 +24,7 @@ these instructions to ensure your contributions are consistent and correct.
 - **State Management**: TanStack Query (server state) & Zustand (client state)
 - **Testing**: `pytest` for backend, `vitest` for frontend
 
-## 2. Database & Migrations: A Hybrid Approach
+## 3. Database & Migrations: A Hybrid Approach
 
 This is the most important rule. We use two different migration systems.
 
@@ -33,14 +43,14 @@ This is the most important rule. We use two different migration systems.
 
 **Golden Rule**: If you are changing a SQLAlchemy model in `backend/app/models/`, you MUST use **Alembic**.
 
-## 3. Data Seeding
+## 4. Data Seeding
 
 - Initial data (e.g., default assessment instruments like PROBAST) is **NOT** handled in migrations.
 - **Use the dedicated seed script**: `backend/app/seed.py`.
 - To run it, execute `python -m backend.app.seed` from the project root.
 - The script is idempotent and safe to run multiple times.
 
-## 4. Key File Locations
+## 5. Key File Locations
 
 - **Backend Logic**: `backend/app/`
 - **SQLAlchemy Models**: `backend/app/models/`
@@ -50,7 +60,7 @@ This is the most important rule. We use two different migration systems.
 - **Frontend Components**: `src/components/`
 - **Frontend Pages**: `src/pages/`
 
-## 5. Common Development Commands
+## 6. Common Development Commands
 
 Use the `Makefile` for most tasks.
 

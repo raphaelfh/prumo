@@ -28,15 +28,16 @@ import {
 import {supabase} from '@/integrations/supabase/client';
 import {useToast} from '@/hooks/use-toast';
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
+import {t} from '@/lib/copy';
 import {AssessmentItem} from '@/hooks/assessment/useAssessmentInstruments';
 
 interface AIGlobalConfig {
-  // Configurações de processamento
+    // Processing settings
   parallelMode: boolean;
   concurrency: number;
   delayBetweenBatches: number;
-  
-  // Configurações de IA
+
+    // AI settings
   model: string;
   temperature: number;
   maxTokens: number;
@@ -107,7 +108,7 @@ export const AIAssessmentConfigModal = ({
     if (open) {
       loadConfiguration();
       loadProjectData();
-      // Auto-selecionar todos os artigos e itens por padrão
+        // Auto-select all articles and items by default
       setSelectedArticles(articles.map(article => article.id));
       setSelectedItems(assessmentItems.map(item => item.id));
     }
@@ -116,7 +117,7 @@ export const AIAssessmentConfigModal = ({
   const loadConfiguration = async () => {
     setLoading(true);
     try {
-      // Carregar configurações globais do localStorage
+        // Load global config from localStorage
       const savedConfig = localStorage.getItem('ai-global-config');
       if (savedConfig) {
         const parsedConfig = JSON.parse(savedConfig);
@@ -178,18 +179,18 @@ export const AIAssessmentConfigModal = ({
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Salvar configurações globais no localStorage
+        // Save global config to localStorage
       localStorage.setItem('ai-global-config', JSON.stringify(config));
       
       toast({
-        title: "Configuração salva",
-        description: "Configurações globais de IA atualizadas com sucesso",
+          title: t('assessment', 'aiConfigToastSaved'),
+          description: t('assessment', 'aiConfigToastSavedDesc'),
       });
     } catch (error) {
       console.error('Error saving global configuration:', error);
       toast({
-        title: "Erro ao salvar",
-        description: error instanceof Error ? error.message : 'Erro desconhecido',
+          title: t('assessment', 'aiConfigToastError'),
+          description: error instanceof Error ? error.message : t('assessment', 'aiConfigToastErrorDesc'),
         variant: "destructive",
       });
     } finally {
@@ -215,14 +216,14 @@ export const AIAssessmentConfigModal = ({
       if (error) throw error;
 
       toast({
-        title: "Configuração salva",
-        description: `Configurações da questão "${selectedItem.question}" atualizadas`,
+          title: t('assessment', 'aiConfigToastSaved'),
+          description: t('assessment', 'aiConfigToastSavedDescQuestion').replace('{{question}}', selectedItem.question),
       });
     } catch (error) {
       console.error('Error saving item configuration:', error);
       toast({
-        title: "Erro ao salvar",
-        description: error instanceof Error ? error.message : 'Erro desconhecido',
+          title: t('assessment', 'aiConfigToastError'),
+          description: error instanceof Error ? error.message : t('assessment', 'aiConfigToastErrorDesc'),
         variant: "destructive",
       });
     } finally {
@@ -233,8 +234,8 @@ export const AIAssessmentConfigModal = ({
   const handleReset = () => {
     setConfig(DEFAULT_CONFIG);
     toast({
-      title: "Configuração resetada",
-      description: "Configurações restauradas para os valores padrão",
+        title: t('assessment', 'aiConfigToastReset'),
+        description: t('assessment', 'aiConfigToastResetDesc'),
     });
   };
 
@@ -257,8 +258,8 @@ export const AIAssessmentConfigModal = ({
   const handleStartProcessing = () => {
     if (selectedArticles.length === 0) {
       toast({
-        title: "Seleção necessária",
-        description: "Selecione pelo menos um artigo para processar",
+          title: t('assessment', 'aiConfigSelectionRequired'),
+          description: t('assessment', 'aiConfigSelectOneArticle'),
         variant: "destructive",
       });
       return;
@@ -266,8 +267,8 @@ export const AIAssessmentConfigModal = ({
 
     if (selectedItems.length === 0) {
       toast({
-        title: "Seleção necessária",
-        description: "Selecione pelo menos uma questão para avaliar",
+          title: t('assessment', 'aiConfigSelectionRequired'),
+          description: t('assessment', 'aiConfigSelectOneQuestion'),
         variant: "destructive",
       });
       return;
@@ -298,9 +299,9 @@ export const AIAssessmentConfigModal = ({
     const totalTimePerItem = baseTimePerItem + delayPerItem;
     
     if (config.parallelMode) {
-      return `~${config.concurrency}x mais rápido`;
+        return t('assessment', 'aiConfigPerfFaster').replace('{{n}}', String(config.concurrency));
     } else {
-      return `~${totalTimePerItem.toFixed(1)}s por item`;
+        return t('assessment', 'aiConfigPerfPerItem').replace('{{s}}', totalTimePerItem.toFixed(1));
     }
   };
 
@@ -331,7 +332,7 @@ export const AIAssessmentConfigModal = ({
           <div className="flex items-center justify-center h-full">
             <div className="flex items-center gap-2 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Carregando configurações...
+                {t('assessment', 'loadingConfig')}
             </div>
           </div>
         </DialogContent>
@@ -345,7 +346,7 @@ export const AIAssessmentConfigModal = ({
         <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Settings className="h-5 w-5" />
-            Configuração de IA para Avaliação em Lote
+              {t('assessment', 'aiConfigBatchTitle')}
           </DialogTitle>
         </DialogHeader>
         
@@ -354,33 +355,33 @@ export const AIAssessmentConfigModal = ({
             <TabsList className="grid w-full grid-cols-4 flex-shrink-0">
               <TabsTrigger value="selection" className="flex items-center gap-2">
                 <FileText className="h-4 w-4" />
-                Seleção
+                  {t('assessment', 'aiConfigTabSelection')}
               </TabsTrigger>
               <TabsTrigger value="processing" className="flex items-center gap-2">
                 <Zap className="h-4 w-4" />
-                Processamento
+                  {t('assessment', 'aiConfigTabProcessing')}
               </TabsTrigger>
               <TabsTrigger value="ai" className="flex items-center gap-2">
                 <Cpu className="h-4 w-4" />
-                Configurações IA
+                  {t('assessment', 'aiConfigTabAI')}
               </TabsTrigger>
               <TabsTrigger value="prompts" className="flex items-center gap-2">
                 <Layers className="h-4 w-4" />
-                Prompts por Questão
+                  {t('assessment', 'aiConfigTabPrompts')}
               </TabsTrigger>
             </TabsList>
             
             <ScrollArea className="flex-1 mt-4 min-h-0">
               <TabsContent value="selection" className="space-y-6 p-1">
                 <div className="space-y-6">
-                  {/* Seleção de Artigos */}
+                    {/* Article selection */}
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <FileText className="h-4 w-4 text-blue-500" />
-                        <Label className="text-base font-medium">Artigos Selecionados</Label>
+                          <Label className="text-base font-medium">{t('assessment', 'aiConfigSelectedArticles')}</Label>
                         <Badge variant="outline" className="text-xs">
-                          {selectedArticles.length} de {articles.length}
+                            {selectedArticles.length} of {articles.length}
                         </Badge>
                       </div>
                       <Button
@@ -388,7 +389,7 @@ export const AIAssessmentConfigModal = ({
                         size="sm"
                         onClick={handleSelectAllArticles}
                       >
-                        {selectedArticles.length === articles.length ? 'Desmarcar Todos' : 'Selecionar Todos'}
+                          {selectedArticles.length === articles.length ? t('assessment', 'aiConfigUnselectAll') : t('assessment', 'aiConfigSelectAll')}
                       </Button>
                     </div>
                     
@@ -435,14 +436,15 @@ export const AIAssessmentConfigModal = ({
 
                   <Separator />
 
-                  {/* Seleção de Questões */}
+                    {/* Question selection */}
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Layers className="h-4 w-4 text-green-500" />
-                        <Label className="text-base font-medium">Questões Selecionadas</Label>
+                          <Label
+                              className="text-base font-medium">{t('assessment', 'aiConfigSelectedQuestions')}</Label>
                         <Badge variant="outline" className="text-xs">
-                          {selectedItems.length} de {assessmentItems.length}
+                            {selectedItems.length} of {assessmentItems.length}
                         </Badge>
                       </div>
                       <Button
@@ -450,7 +452,7 @@ export const AIAssessmentConfigModal = ({
                         size="sm"
                         onClick={handleSelectAllItems}
                       >
-                        {selectedItems.length === assessmentItems.length ? 'Desmarcar Todos' : 'Selecionar Todos'}
+                          {selectedItems.length === assessmentItems.length ? t('assessment', 'aiConfigUnselectAll') : t('assessment', 'aiConfigSelectAll')}
                       </Button>
                     </div>
                     
@@ -484,31 +486,31 @@ export const AIAssessmentConfigModal = ({
                     </div>
                   </div>
 
-                  {/* Resumo da Seleção */}
+                    {/* Selection summary */}
                   <div className="rounded-lg border p-4 bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
                     <div className="flex items-center gap-2 mb-3">
                       <div className="h-2 w-2 bg-blue-500 rounded-full"></div>
-                      <h4 className="text-sm font-medium text-blue-900">Resumo da Seleção</h4>
+                        <h4 className="text-sm font-medium text-blue-900">{t('assessment', 'aiConfigSelectionSummary')}</h4>
                     </div>
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div className="flex items-center justify-between p-2 bg-white/60 rounded border">
-                        <span className="text-muted-foreground">Artigos:</span>
+                          <span className="text-muted-foreground">{t('assessment', 'aiConfigArticlesLabel')}:</span>
                         <span className="font-medium">{selectedArticles.length}</span>
                       </div>
                       <div className="flex items-center justify-between p-2 bg-white/60 rounded border">
-                        <span className="text-muted-foreground">Questões:</span>
+                          <span className="text-muted-foreground">{t('assessment', 'aiConfigQuestionsLabel')}:</span>
                         <span className="font-medium">{selectedItems.length}</span>
                       </div>
                       <div className="flex items-center justify-between p-2 bg-white/60 rounded border">
-                        <span className="text-muted-foreground">Total de avaliações:</span>
+                          <span className="text-muted-foreground">{t('assessment', 'aiConfigTotalAssessments')}:</span>
                         <span className="font-medium">{selectedArticles.length * selectedItems.length}</span>
                       </div>
                       <div className="flex items-center justify-between p-2 bg-white/60 rounded border">
-                        <span className="text-muted-foreground">Tempo estimado:</span>
+                          <span className="text-muted-foreground">{t('assessment', 'aiConfigEstTime')}:</span>
                         <span className="font-medium">{getEstimatedTotalTime()}</span>
                       </div>
                       <div className="flex items-center justify-between p-2 bg-white/60 rounded border">
-                        <span className="text-muted-foreground">Custo estimado:</span>
+                          <span className="text-muted-foreground">{t('assessment', 'aiConfigEstCost')}:</span>
                         <span className="font-medium">${getEstimatedCost()}</span>
                       </div>
                     </div>
@@ -518,18 +520,19 @@ export const AIAssessmentConfigModal = ({
 
               <TabsContent value="processing" className="space-y-6 p-1">
                 <div className="space-y-6">
-                  {/* Modo Paralelo */}
+                    {/* Parallel mode */}
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Zap className="h-4 w-4 text-blue-500" />
-                        <Label className="text-base font-medium">Processamento Paralelo</Label>
+                          <Label
+                              className="text-base font-medium">{t('assessment', 'aiConfigParallelProcessing')}</Label>
                         <Tooltip>
                           <TooltipTrigger>
                             <Info className="h-3 w-3 text-muted-foreground" />
                           </TooltipTrigger>
                           <TooltipContent>
-                            <p>Ativa o processamento de múltiplas questões simultaneamente para maior velocidade</p>
+                              <p>{t('assessment', 'aiConfigParallelTooltip')}</p>
                           </TooltipContent>
                         </Tooltip>
                       </div>
@@ -539,12 +542,12 @@ export const AIAssessmentConfigModal = ({
                       />
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      Processa múltiplas questões simultaneamente para maior velocidade. Recomendado para grandes volumes.
+                        {t('assessment', 'aiConfigParallelDesc')}
                     </p>
                     {config.parallelMode && (
                       <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
                         <p className="text-sm text-blue-700">
-                          ⚡ Modo paralelo ativo - {getEstimatedPerformance()}
+                            ⚡ {t('assessment', 'aiConfigParallelActive')} – {getEstimatedPerformance()}
                         </p>
                       </div>
                     )}
@@ -552,14 +555,15 @@ export const AIAssessmentConfigModal = ({
 
                   <Separator />
 
-                  {/* Concorrência */}
+                    {/* Concurrency */}
                   {config.parallelMode && (
                     <div className="space-y-3">
                       <div className="flex items-center gap-2">
                         <Clock className="h-4 w-4 text-green-500" />
-                        <Label className="text-base font-medium">Concorrência: {config.concurrency}</Label>
+                          <Label
+                              className="text-base font-medium">{t('assessment', 'aiConfigConcurrency')}: {config.concurrency}</Label>
                         <Badge variant="outline" className="text-xs">
-                          {config.concurrency} requisições simultâneas
+                            {config.concurrency} {t('assessment', 'aiConfigConcurrencyBadge')}
                         </Badge>
                       </div>
                       <div className="space-y-2">
@@ -572,22 +576,23 @@ export const AIAssessmentConfigModal = ({
                           className="w-full"
                         />
                         <div className="flex justify-between text-xs text-muted-foreground">
-                          <span>1 (Sequencial)</span>
-                          <span>5 (Máx. Paralelo)</span>
+                            <span>{t('assessment', 'aiConfigSequential')}</span>
+                            <span>{t('assessment', 'aiConfigMaxParallel')}</span>
                         </div>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Número de requisições de IA enviadas simultaneamente. Valores mais altos podem ser mais rápidos, mas podem atingir limites de API.
+                          {t('assessment', 'aiConfigConcurrencyDesc')}
                       </p>
                     </div>
                   )}
 
-                  {/* Delay entre lotes */}
+                    {/* Delay between batches */}
                   {config.parallelMode && (
                     <div className="space-y-3">
                       <div className="flex items-center gap-2">
                         <Clock className="h-4 w-4 text-orange-500" />
-                        <Label className="text-base font-medium">Delay entre Lotes: {config.delayBetweenBatches}ms</Label>
+                          <Label
+                              className="text-base font-medium">{t('assessment', 'aiConfigDelayBatches')}: {config.delayBetweenBatches}ms</Label>
                       </div>
                       <div className="space-y-2">
                         <Slider
@@ -599,12 +604,12 @@ export const AIAssessmentConfigModal = ({
                           className="w-full"
                         />
                         <div className="flex justify-between text-xs text-muted-foreground">
-                          <span>500ms (Rápido)</span>
-                          <span>2000ms (Seguro)</span>
+                            <span>{t('assessment', 'aiConfigDelayFast')}</span>
+                            <span>{t('assessment', 'aiConfigDelaySafe')}</span>
                         </div>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Tempo de espera entre lotes para evitar rate limiting da API.
+                          {t('assessment', 'aiConfigDelayDesc')}
                       </p>
                     </div>
                   )}
@@ -613,11 +618,11 @@ export const AIAssessmentConfigModal = ({
 
               <TabsContent value="ai" className="space-y-6 p-1">
                 <div className="space-y-6">
-                  {/* Modelo */}
+                    {/* Model */}
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
                       <Cpu className="h-4 w-4" />
-                      <Label className="text-base font-medium">Modelo de IA</Label>
+                        <Label className="text-base font-medium">{t('assessment', 'aiConfigAIModel')}</Label>
                       <Badge variant="secondary" className="text-xs">
                         {config.model}
                       </Badge>
@@ -626,40 +631,42 @@ export const AIAssessmentConfigModal = ({
                       <div className="flex items-center justify-between">
                         <span className="font-medium text-sm">GPT-4o Mini</span>
                         <Badge variant="outline" className="text-xs">
-                          Otimizado
+                            {t('assessment', 'aiConfigOptimized')}
                         </Badge>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
-                        Modelo otimizado para melhor custo-benefício
+                          {t('assessment', 'aiConfigModelCostBenefit')}
                       </p>
                     </div>
                   </div>
 
                   <Separator />
 
-                  {/* Temperatura */}
+                    {/* Temperature */}
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
                       <Thermometer className="h-4 w-4" />
-                      <Label className="text-base font-medium">Temperatura: {config.temperature}</Label>
+                        <Label
+                            className="text-base font-medium">{t('assessment', 'aiConfigTemperature')}: {config.temperature}</Label>
                       <Badge variant="secondary" className="text-xs bg-green-100 text-green-800 border-green-300">
-                        Máxima Consistência
+                          {t('assessment', 'aiConfigMaxConsistency')}
                       </Badge>
                     </div>
                     <div className="p-3 bg-green-50 rounded-lg border border-green-200">
                       <p className="text-xs text-green-700">
-                        ✓ Configuração otimizada para avaliações científicas com máxima reprodutibilidade
+                          ✓ {t('assessment', 'aiConfigOptimizedScientific')}
                       </p>
                     </div>
                   </div>
 
                   <Separator />
 
-                  {/* Tokens Máximos */}
+                    {/* Max tokens */}
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
                       <Zap className="h-4 w-4" />
-                      <Label className="text-base font-medium">Tokens Máximos: {config.maxTokens.toLocaleString()}</Label>
+                        <Label
+                            className="text-base font-medium">{t('assessment', 'aiConfigMaxTokens')}: {config.maxTokens.toLocaleString()}</Label>
                       <Badge variant="outline" className="text-xs">
                         ~${getTokenCost(config.maxTokens, config.model)}
                       </Badge>
@@ -674,26 +681,26 @@ export const AIAssessmentConfigModal = ({
                         className="w-full"
                       />
                       <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>500 (Econômico)</span>
-                        <span>4000 (Detalhado)</span>
+                          <span>{t('assessment', 'aiConfigTokenEconomy')}</span>
+                          <span>{t('assessment', 'aiConfigTokenDetailed')}</span>
                       </div>
                     </div>
                   </div>
 
                   <Separator />
 
-                  {/* Força File Search */}
+                    {/* Force file search */}
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <FileSearch className="h-4 w-4" />
-                        <Label className="text-base font-medium">Forçar Busca Vetorial (RAG)</Label>
+                          <Label className="text-base font-medium">{t('assessment', 'aiConfigForceRag')}</Label>
                         <Tooltip>
                           <TooltipTrigger>
                             <Info className="h-3 w-3 text-muted-foreground" />
                           </TooltipTrigger>
                           <TooltipContent>
-                            <p>Usa busca vetorial mesmo para PDFs pequenos (mais lento, mais preciso)</p>
+                              <p>{t('assessment', 'aiConfigRagTooltip')}</p>
                           </TooltipContent>
                         </Tooltip>
                       </div>
@@ -705,7 +712,7 @@ export const AIAssessmentConfigModal = ({
                     {config.forceFileSearch && (
                       <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
                         <p className="text-xs text-blue-700">
-                          ⚡ Busca vetorial ativada - Melhor precisão para documentos complexos
+                            ⚡ {t('assessment', 'aiConfigRagActive')}
                         </p>
                       </div>
                     )}
@@ -713,34 +720,34 @@ export const AIAssessmentConfigModal = ({
 
                   <Separator />
 
-                  {/* Prompts Globais */}
+                    {/* Global prompts */}
                   <div className="space-y-4">
                     <div className="flex items-center gap-2 mb-3">
-                      <Label className="text-base font-medium">Prompts Globais</Label>
+                        <Label className="text-base font-medium">{t('assessment', 'aiConfigGlobalPrompts')}</Label>
                     </div>
                     
                     <div className="space-y-3">
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium">Prompt do Sistema</Label>
+                          <Label className="text-sm font-medium">{t('assessment', 'aiConfigSystemPromptLabel')}</Label>
                         <Textarea
                           value={config.systemPrompt}
                           onChange={(e) => handleConfigChange({ systemPrompt: e.target.value })}
-                          placeholder="Defina o papel e expertise da IA..."
+                          placeholder={t('assessment', 'aiPromptSystemPlaceholder')}
                           className="min-h-[80px] font-mono text-xs resize-none"
                         />
                       </div>
 
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium">Template do Prompt do Usuário</Label>
+                          <Label className="text-sm font-medium">{t('assessment', 'aiConfigUserPromptLabel')}</Label>
                         <Textarea
                           value={config.userPromptTemplate}
                           onChange={(e) => handleConfigChange({ userPromptTemplate: e.target.value })}
-                          placeholder="Template para a pergunta específica..."
+                          placeholder={t('assessment', 'aiPromptUserPlaceholder')}
                           className="min-h-[100px] font-mono text-xs resize-none"
                         />
                         <div className="space-y-2">
                           <div className="flex flex-wrap gap-1 text-xs text-muted-foreground">
-                            <span className="font-medium">Variáveis:</span>
+                              <span className="font-medium">{t('assessment', 'aiConfigVariables')}:</span>
                             <code className="px-1 py-0.5 bg-muted rounded text-xs">{'{{question}}'}</code>
                             <code className="px-1 py-0.5 bg-muted rounded text-xs">{'{{levels}}'}</code>
                             <code className="px-1 py-0.5 bg-blue-100 text-blue-800 rounded text-xs">{'{{review_title}}'}</code>
@@ -756,9 +763,9 @@ export const AIAssessmentConfigModal = ({
 
               <TabsContent value="prompts" className="p-1 h-full flex flex-col min-h-0">
                 <div className="flex flex-col h-full space-y-4">
-                  {/* Seletor de Questão */}
+                    {/* Question selector */}
                   <div className="space-y-3 flex-shrink-0">
-                    <Label className="text-base font-medium">Selecionar Questão para Configurar</Label>
+                      <Label className="text-base font-medium">{t('assessment', 'aiConfigSelectQuestion')}</Label>
                     <ScrollArea className="h-32 border rounded-lg">
                       <div className="grid grid-cols-1 gap-2 p-2">
                         {assessmentItems.map((item) => (
@@ -791,7 +798,7 @@ export const AIAssessmentConfigModal = ({
                       <div className="flex-1 flex flex-col min-h-0 space-y-4">
                         <div className="flex items-center justify-between flex-shrink-0">
                           <div>
-                            <h4 className="font-medium">Configuração da Questão</h4>
+                              <h4 className="font-medium">{t('assessment', 'aiConfigQuestionConfig')}</h4>
                             <p className="text-sm text-muted-foreground">{selectedItem.item_code}</p>
                           </div>
                           <Button
@@ -804,42 +811,44 @@ export const AIAssessmentConfigModal = ({
                             ) : (
                               <Save className="mr-2 h-3 w-3" />
                             )}
-                            Salvar Questão
+                              {t('assessment', 'aiConfigSaveQuestion')}
                           </Button>
                         </div>
 
                         <div className="flex-1 flex flex-col min-h-0 space-y-4">
                           <div className="flex-1 flex flex-col space-y-2 min-h-0">
                             <div className="flex items-center justify-between">
-                              <Label className="text-sm font-medium">Prompt do Sistema</Label>
+                                <Label
+                                    className="text-sm font-medium">{t('assessment', 'aiConfigSystemPromptLabel')}</Label>
                               <Badge variant="outline" className="text-xs">
-                                {itemConfig.systemPrompt.length} caracteres
+                                  {itemConfig.systemPrompt.length} {t('assessment', 'aiConfigCharacters')}
                               </Badge>
                             </div>
                             <Textarea
                               value={itemConfig.systemPrompt}
                               onChange={(e) => setItemConfig(prev => ({ ...prev, systemPrompt: e.target.value }))}
-                              placeholder="Defina o papel e expertise da IA..."
+                              placeholder={t('assessment', 'aiPromptSystemPlaceholder')}
                               className="flex-1 font-mono text-xs resize-none min-h-[120px] max-h-[200px]"
                             />
                           </div>
 
                           <div className="flex-1 flex flex-col space-y-2 min-h-0">
                             <div className="flex items-center justify-between">
-                              <Label className="text-sm font-medium">Template do Prompt do Usuário</Label>
+                                <Label
+                                    className="text-sm font-medium">{t('assessment', 'aiConfigUserPromptLabel')}</Label>
                               <Badge variant="outline" className="text-xs">
-                                {itemConfig.userPromptTemplate.length} caracteres
+                                  {itemConfig.userPromptTemplate.length} {t('assessment', 'aiConfigCharacters')}
                               </Badge>
                             </div>
                             <Textarea
                               value={itemConfig.userPromptTemplate}
                               onChange={(e) => setItemConfig(prev => ({ ...prev, userPromptTemplate: e.target.value }))}
-                              placeholder="Template para a pergunta específica..."
+                              placeholder={t('assessment', 'aiPromptUserPlaceholder')}
                               className="flex-1 font-mono text-xs resize-none min-h-[150px] max-h-[250px]"
                             />
                             <div className="space-y-2">
                               <div className="flex flex-wrap gap-1 text-xs text-muted-foreground">
-                                <span className="font-medium">Variáveis disponíveis:</span>
+                                  <span className="font-medium">{t('assessment', 'aiConfigVariablesAvailable')}:</span>
                                 <code className="px-1 py-0.5 bg-muted rounded text-xs">{'{{question}}'}</code>
                                 <code className="px-1 py-0.5 bg-muted rounded text-xs">{'{{levels}}'}</code>
                                 <code className="px-1 py-0.5 bg-blue-100 text-blue-800 rounded text-xs">{'{{review_title}}'}</code>
@@ -855,7 +864,7 @@ export const AIAssessmentConfigModal = ({
                   
                   {!selectedItem && (
                     <div className="flex-1 flex items-center justify-center text-muted-foreground">
-                      <p className="text-sm">Selecione uma questão para configurar seus prompts</p>
+                        <p className="text-sm">{t('assessment', 'aiConfigSelectQuestionPrompt')}</p>
                     </div>
                   )}
                 </div>
@@ -864,7 +873,7 @@ export const AIAssessmentConfigModal = ({
           </Tabs>
         </TooltipProvider>
 
-        {/* Ações */}
+          {/* Actions */}
         <div className="pt-6 border-t flex-shrink-0">
           <div className="flex flex-col sm:flex-row gap-2">
             <Button
@@ -875,12 +884,12 @@ export const AIAssessmentConfigModal = ({
               {saving ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Iniciando...
+                    {t('assessment', 'aiConfigStarting')}
                 </>
               ) : (
                 <>
                   <Play className="mr-2 h-4 w-4" />
-                  Iniciar Processamento em Lote
+                    {t('assessment', 'aiConfigStartBatch')}
                 </>
               )}
             </Button>
@@ -890,7 +899,7 @@ export const AIAssessmentConfigModal = ({
               disabled={saving}
             >
               <Save className="mr-2 h-4 w-4" />
-              Salvar Configurações
+                {t('assessment', 'aiConfigSaveSettings')}
             </Button>
             <Button
               variant="outline"
@@ -898,7 +907,7 @@ export const AIAssessmentConfigModal = ({
               disabled={saving}
             >
               <RotateCcw className="mr-2 h-4 w-4" />
-              Resetar
+                {t('assessment', 'aiConfigReset')}
             </Button>
           </div>
         </div>

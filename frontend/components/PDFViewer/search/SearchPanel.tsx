@@ -1,12 +1,12 @@
 /**
- * SearchPanel - Painel de busca avançada no documento
+ * SearchPanel - Advanced document search panel
  * 
  * Features:
  * - Busca em tempo real
  * - Case sensitive toggle
  * - Whole words toggle
  * - Regex support
- * - Navegação entre resultados
+ * - Navigation between results
  * - Highlight de resultados
  */
 
@@ -20,6 +20,7 @@ import {Label} from '@/components/ui/label';
 import {Collapsible, CollapsibleContent, CollapsibleTrigger,} from '@/components/ui/collapsible';
 import {usePDFStore} from '@/stores/usePDFStore';
 import {searchInDocument, type SearchResult} from '@/services/pdfSearchService';
+import {t} from '@/lib/copy';
 
 interface SearchPanelProps {
   isOpen: boolean;
@@ -46,21 +47,20 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [searchProgress, setSearchProgress] = useState({ current: 0, total: 0 });
-  
-  // Sincronizar query local com store
+
+    // Sync local query with store
   const [query, setQuery] = useState(searchQuery);
-  
-  // Função para scroll fino até resultado (usado como fallback)
+
+    // Fine scroll to result (used as fallback)
   const scrollToSearchResult = useCallback((pageNumber: number, matchIndex: number) => {
-    // Esta função é mantida como fallback, mas o hook usePDFSearchHighlight
-    // deve fazer o trabalho principal
-    // Deixar aqui apenas para garantir que a página seja renderizada
+      // Kept as fallback; usePDFSearchHighlight does the main work
+      // Kept here only to ensure the page is rendered
     goToSearchResult(searchResults.findIndex(r => r.pageNumber === pageNumber && r.matchIndex === matchIndex));
   }, [goToSearchResult, searchResults]);
 
-  // Função de busca real usando PDF.js
+    // Actual search using PDF.js
   const performSearch = useCallback(async () => {
-    const currentQuery = query; // Capturar query atual
+      const currentQuery = query; // Capture current query
     
     if (!currentQuery.trim()) {
       setLocalResults([]);
@@ -73,7 +73,7 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
 
     const pdfDoc = getPdfDocument();
     if (!pdfDoc) {
-      console.warn('⚠️ Documento PDF não disponível para busca');
+        console.warn('PDF document not available for search');
       return;
     }
 
@@ -91,8 +91,8 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
           setSearchProgress({ current, total });
         }
       );
-      
-      console.log(`✅ Busca concluída: ${searchResults.length} página(s) com resultados`);
+
+        console.log(`Search complete: ${searchResults.length} page(s) with results`);
       setLocalResults(searchResults);
       
       // Transformar resultados em formato flat para store
@@ -118,7 +118,7 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
         setCurrentSearchIndex(-1);
       }
     } catch (error) {
-      console.error('❌ Erro na busca:', error);
+        console.error('Search error:', error);
       setLocalResults([]);
       setSearchResults([]);
       setCurrentSearchIndex(-1);
@@ -128,7 +128,7 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
     }
   }, [query, caseSensitive, wholeWords, useRegex, getPdfDocument, setSearchResults, setSearchQuery, setCurrentSearchIndex, goToSearchResult, scrollToSearchResult]);
 
-  // Buscar quando query mudar (debounced)
+    // Search when query changes (debounced)
   // Usar ref para evitar re-execução quando performSearch muda
   const performSearchRef = useRef(performSearch);
   performSearchRef.current = performSearch;
@@ -140,7 +140,7 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
     return () => clearTimeout(timer);
   }, [query]); // Apenas query como dependência
 
-  // Sincronizar query local com store quando mudar externamente
+    // Sync local query with store when it changes externally
   useEffect(() => {
     if (searchQuery !== query) {
       setQuery(searchQuery);
@@ -201,7 +201,7 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               type="text"
-              placeholder="Buscar no documento..."
+              placeholder={t('pdf', 'searchPlaceholder')}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="pl-9 pr-4"
@@ -209,7 +209,7 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
             />
           </div>
 
-          {/* Navegação de resultados */}
+            {/* Results navigation */}
           <div className="flex items-center gap-1">
             <Button
               variant="ghost"
@@ -217,7 +217,7 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
               onClick={goToPrevResult}
               disabled={searchResults.length === 0}
               className="h-9 w-9"
-              title="Resultado Anterior (Shift+Enter)"
+              title={t('pdf', 'searchPrevResult')}
             >
               <ChevronUp className="h-4 w-4" />
             </Button>
@@ -227,7 +227,7 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
               onClick={goToNextResult}
               disabled={searchResults.length === 0}
               className="h-9 w-9"
-              title="Próximo Resultado (Enter)"
+              title={t('pdf', 'searchNextResult')}
             >
               <ChevronDown className="h-4 w-4" />
             </Button>
@@ -247,20 +247,20 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
                 variant="ghost"
                 size="icon"
                 className="h-9 w-9"
-                title="Opções Avançadas"
+                title={t('pdf', 'searchAdvancedOptions')}
               >
                 <Settings2 className="h-4 w-4" />
               </Button>
             </CollapsibleTrigger>
           </Collapsible>
 
-          {/* Fechar */}
+            {/* Close */}
           <Button
             variant="ghost"
             size="icon"
             onClick={onClose}
             className="h-9 w-9"
-            title="Fechar (Esc)"
+            title={t('pdf', 'searchClose')}
           >
             <X className="h-4 w-4" />
           </Button>
@@ -280,7 +280,7 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
                   htmlFor="case-sensitive"
                   className="text-sm font-normal cursor-pointer"
                 >
-                  Diferenciar maiúsculas/minúsculas
+                    {t('pdf', 'searchCaseSensitive')}
                 </Label>
               </div>
 
@@ -294,7 +294,7 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
                   htmlFor="whole-words"
                   className="text-sm font-normal cursor-pointer"
                 >
-                  Palavras inteiras
+                    {t('pdf', 'searchWholeWords')}
                 </Label>
               </div>
 
@@ -308,7 +308,7 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
                   htmlFor="regex"
                   className="text-sm font-normal cursor-pointer"
                 >
-                  Expressão regular
+                    {t('pdf', 'searchRegex')}
                 </Label>
               </div>
             </div>
@@ -318,20 +318,20 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
         {/* Status da busca */}
         {isSearching && searchProgress.total > 0 && (
           <div className="text-xs text-muted-foreground">
-            Buscando... {searchProgress.current}/{searchProgress.total} páginas
+              {t('pdf', 'searchSearching').replace('{{current}}', String(searchProgress.current)).replace('{{total}}', String(searchProgress.total))}
           </div>
         )}
         
         {query && !isSearching && searchResults.length === 0 && (
           <div className="text-xs text-muted-foreground">
-            Nenhum resultado encontrado para "{query}"
+              {t('pdf', 'searchNoResults').replace('{{query}}', query)}
           </div>
         )}
         
         {query && !isSearching && searchResults.length > 0 && (
           <div className="text-xs text-muted-foreground">
-            Encontrado em {localResults.length} página(s) • 
-            Total: {searchResults.length} resultado(s)
+              {t('pdf', 'searchResultsInPages').replace('{{n}}', String(localResults.length))} •
+              {t('pdf', 'searchTotalResults').replace('{{n}}', String(searchResults.length))}
           </div>
         )}
       </div>

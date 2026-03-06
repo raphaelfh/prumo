@@ -1,7 +1,7 @@
 /**
- * PDFToolbar - Wrapper para a nova MainToolbar modular
- * 
- * Mantido para compatibilidade com código existente.
+ * PDFToolbar - Wrapper for the new modular MainToolbar
+ *
+ * Kept for compatibility with existing code.
  * Internamente usa a nova estrutura modular da toolbar.
  */
 

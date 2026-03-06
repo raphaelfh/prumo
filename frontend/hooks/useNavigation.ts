@@ -1,12 +1,13 @@
 /**
- * Hook para gerenciar estado de navegação
- * Centraliza lógica de breadcrumbs, busca e navegação
+ * Hook to manage navigation state
+ * Centralizes breadcrumbs, search and navigation logic
  */
 
 import {useCallback, useEffect, useState} from 'react';
 import {useLocation, useNavigate} from 'react-router-dom';
 import {supabase} from '@/integrations/supabase/client';
 import {useAuth} from '@/contexts/AuthContext';
+import {t} from '@/lib/copy';
 import {BarChart3, File, FileText, Folder, LogIn, Settings} from 'lucide-react';
 import type {BreadcrumbItem, NotificationItem, SearchResult, UserProfile} from '@/types/navigation';
 
@@ -24,7 +25,7 @@ export const useNavigation = () => {
       const pathSegments = location.pathname.split('/').filter(Boolean);
       const items: BreadcrumbItem[] = [];
 
-      // Sempre começar com Home
+        // Always start with Home
       items.push({
         label: 'Dashboard',
         href: '/',
@@ -34,46 +35,46 @@ export const useNavigation = () => {
         pathSegments.forEach((segment, index) => {
           currentPath += `/${segment}`;
           const isLast = index === pathSegments.length - 1;
-          
-          // Mapear segmentos para labels amigáveis
+
+            // Map segments to friendly labels
           let label = segment;
           let icon;
           let shouldSkip = false;
           
           switch (segment) {
             case 'projects':
-              // Não adicionar "Projetos" nos breadcrumbs, pular para o próximo
+                // Do not add "Projects" to breadcrumbs, skip to next
               shouldSkip = true;
               break;
             case 'assessment':
-              label = 'Avaliação';
+                label = 'Assessment';
               icon = BarChart3;
               break;
             case 'articles':
-              label = 'Artigos';
+                label = 'Articles';
               icon = FileText;
               break;
             case 'settings':
-              label = 'Configurações';
+                label = 'Settings';
               icon = Settings;
               break;
             case 'auth':
-              label = 'Autenticação';
+                label = 'Authentication';
               icon = LogIn;
               break;
             default:
               // Se for um ID, tentar buscar o nome do recurso
               if (segment.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-                // Buscar nome do recurso baseado no contexto
+                  // Fetch resource name based on context
                 const previousSegment = pathSegments[index - 1];
                 if (previousSegment === 'projects') {
-                  label = 'Projeto';
+                    label = 'Project';
                   icon = Folder;
                 } else if (previousSegment === 'articles') {
-                  label = 'Artigo';
+                    label = 'Article';
                   icon = FileText;
                 } else {
-                  label = 'Detalhes';
+                    label = 'Details';
                   icon = File;
                 }
               }
@@ -92,12 +93,12 @@ export const useNavigation = () => {
 
       return items;
     } catch (error) {
-      console.error('Erro ao gerar breadcrumbs:', error);
+        console.error('Error generating breadcrumbs:', error);
       return [{ label: 'Dashboard', href: '/', isActive: true }];
     }
   }, [location.pathname]);
 
-  // Atualizar breadcrumbs quando a rota mudar
+    // Update breadcrumbs when route changes
   useEffect(() => {
     setBreadcrumbs(generateBreadcrumbs());
   }, [generateBreadcrumbs]);
@@ -110,7 +111,7 @@ export const useNavigation = () => {
     try {
       const results: SearchResult[] = [];
 
-      // Buscar projetos
+        // Fetch projects
       const { data: projects } = await supabase
         .from('projects')
         .select('id, name, description')
@@ -129,7 +130,7 @@ export const useNavigation = () => {
         });
       });
 
-      // Buscar artigos
+        // Fetch articles
       const { data: articles } = await supabase
         .from('articles')
         .select('id, title, abstract')
@@ -150,7 +151,7 @@ export const useNavigation = () => {
 
       return results;
     } catch (error) {
-      console.error('Erro na busca:', error);
+        console.error('Search error:', error);
       return [];
     } finally {
       setIsSearching(false);
@@ -178,16 +179,16 @@ export const useNotifications = () => {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // Carregar notificações do usuário
+    // Load user notifications
   const loadNotifications = useCallback(async () => {
     try {
-      // Por enquanto, simular notificações
-      // Em produção, buscar do banco de dados
+        // For now, simulate notifications
+        // In production, fetch from database
       const mockNotifications: NotificationItem[] = [
         {
           id: '1',
-          title: 'Nova avaliação disponível',
-          message: 'Você tem uma nova avaliação pendente no projeto "Revisão Sistemática"',
+            title: t('navigation', 'notifNewAssessmentTitle'),
+            message: t('navigation', 'notifNewAssessmentMessage'),
           type: 'info',
           timestamp: new Date(),
           isRead: false,
@@ -195,8 +196,8 @@ export const useNotifications = () => {
         },
         {
           id: '2',
-          title: 'Projeto finalizado',
-          message: 'O projeto "Análise de Qualidade" foi concluído com sucesso',
+            title: t('navigation', 'notifProjectCompletedTitle'),
+            message: t('navigation', 'notifProjectCompletedMessage'),
           type: 'success',
           timestamp: new Date(Date.now() - 3600000),
           isRead: true,
@@ -206,11 +207,11 @@ export const useNotifications = () => {
       setNotifications(mockNotifications);
       setUnreadCount(mockNotifications.filter(n => !n.isRead).length);
     } catch (error) {
-      console.error('Erro ao carregar notificações:', error);
+        console.error('Error loading notifications:', error);
     }
   }, []);
 
-  // Marcar notificação como lida
+    // Mark notification as read
   const markAsRead = useCallback((notificationId: string) => {
     setNotifications(prev => 
       prev.map(n => 
@@ -265,13 +266,13 @@ export const useUserProfile = () => {
         .single();
 
       if (profileError) {
-        console.warn('Erro ao buscar perfil, usando dados básicos:', profileError);
+          console.warn('Error fetching profile, using basic data:', profileError);
         setUser({
           id: authUser.id,
-          name: authUser.user_metadata?.full_name || 'Usuário',
+            name: authUser.user_metadata?.full_name || 'User',
           email: authUser.email || '',
             initials: authUser.email?.charAt(0).toUpperCase() || 'U',
-          role: 'Pesquisador',
+            role: 'Researcher',
         });
         return;
       }
@@ -283,17 +284,17 @@ export const useUserProfile = () => {
 
         setUser({
           id: authUser.id,
-          name: profile.full_name || 'Usuário',
+            name: profile.full_name || 'User',
           email: authUser.email || '',
           avatar: profile.avatar_url || undefined,
           initials,
-          role: 'Pesquisador',
-          organization: 'Instituto de Pesquisa',
+            role: 'Researcher',
+            organization: 'Research Institute',
         });
       }
       } catch (err) {
-          console.error('Erro inesperado ao carregar perfil:', err);
-      setError('Erro ao carregar perfil do usuário');
+          console.error('Unexpected error loading profile:', err);
+          setError(t('common', 'errors_loadProfileFailed'));
       setUser(null);
     } finally {
       setIsLoading(false);

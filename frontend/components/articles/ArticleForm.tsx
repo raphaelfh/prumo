@@ -1,10 +1,10 @@
 /**
- * ArticleForm - Componente Unificado para Adicionar/Editar Artigos
+ * ArticleForm - Unified component for adding/editing articles
  * 
  * Sistema moderno com:
- * - Tela cheia ao invés de modal
- * - Navegação por etapas com submenus laterais
- * - Reutilização de componente para adicionar/editar
+ * - Full screen instead of modal
+ * - Step navigation with lateral submenus
+ * - Component reuse for add/edit
  * - Interface responsiva e intuitiva
  */
 
@@ -47,6 +47,7 @@ import {
 } from "lucide-react";
 import {useAuth} from "@/contexts/AuthContext";
 import {ArticleFileUploadDialogNew} from './ArticleFileUploadDialogNew';
+import {t} from '@/lib/copy';
 
 interface Article {
   id: string;
@@ -135,33 +136,33 @@ interface FormData {
 const STEPS: { id: FormStep; label: string; icon: any; description: string }[] = [
   {
     id: 'basic',
-    label: 'Informações Básicas',
+      label: t('articles', 'basicInfo'),
     icon: FileText,
-    description: 'Título, resumo e autores'
+      description: t('articles', 'basicInfoDesc'),
   },
   {
     id: 'publication',
-    label: 'Publicação',
+      label: t('articles', 'publication'),
     icon: BookOpen,
-    description: 'Revista, volume e páginas'
+      description: t('articles', 'publicationDesc'),
   },
   {
     id: 'identifiers',
-    label: 'Identificadores',
+      label: t('articles', 'identifiersLabel'),
     icon: Hash,
-    description: 'DOI, PMID e outros IDs'
+      description: t('articles', 'identifiersDesc'),
   },
   {
     id: 'additional',
-    label: 'Informações Adicionais',
+      label: t('articles', 'additionalInfo'),
     icon: Tag,
-    description: 'Palavras-chave e metadados'
+      description: t('articles', 'additionalInfoDesc'),
   },
   {
     id: 'files',
-    label: 'Arquivos',
+      label: t('articles', 'filesLabel'),
     icon: Upload,
-    description: 'PDFs e documentos'
+      description: t('articles', 'filesDesc'),
   }
 ];
 
@@ -179,15 +180,15 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
   const [fileToDelete, setFileToDelete] = useState<ArticleFile | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingFile, setDeletingFile] = useState(false);
-  
-  // Estado para erros de validação
+
+    // State for validation errors
   const [validationErrors, setValidationErrors] = useState<{
     publication_year?: string;
     publication_month?: string;
     publication_day?: string;
   }>({});
-  
-  // Formulário
+
+    // Form
   const [formData, setFormData] = useState<FormData>({
     title: '',
     abstract: '',
@@ -220,7 +221,7 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
     license: ''
   });
 
-  // Carregar dados do artigo (modo edição)
+    // Load article data (edit mode)
   useEffect(() => {
     if (mode === 'edit' && articleId) {
       loadArticle();
@@ -242,8 +243,8 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
       if (error) throw error;
       
       setArticle(data);
-      
-      // Preencher formulário
+
+        // Populate form
       setFormData({
         title: data.title || '',
         abstract: data.abstract || '',
@@ -277,7 +278,7 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
       });
     } catch (error: any) {
       console.error("Error loading article:", error);
-      toast.error("Erro ao carregar artigo");
+        toast.error(t('articles', 'errorLoadArticle'));
     } finally {
       setLoading(false);
     }
@@ -300,17 +301,17 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
     }
   };
 
-  // Validação de campos de data
+    // Date field validation
   const validateDateField = (field: 'publication_year' | 'publication_month' | 'publication_day', value: string): string | undefined => {
     if (!value || value.trim() === '') {
-      // Campo vazio é válido (opcional)
+        // Empty field is valid (optional)
       setValidationErrors(prev => ({ ...prev, [field]: undefined }));
       return undefined;
     }
 
     const num = parseInt(value.trim(), 10);
     if (isNaN(num)) {
-      const error = 'Deve ser um número válido';
+        const error = t('articles', 'validNumber');
       setValidationErrors(prev => ({ ...prev, [field]: error }));
       return error;
     }
@@ -318,15 +319,15 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
     let error: string | undefined;
     if (field === 'publication_month') {
       if (num < 1 || num > 12) {
-        error = 'Mês deve estar entre 1 e 12';
+          error = t('articles', 'monthBetween');
       }
     } else if (field === 'publication_day') {
       if (num < 1 || num > 31) {
-        error = 'Dia deve estar entre 1 e 31';
+          error = t('articles', 'dayBetween');
       }
     } else if (field === 'publication_year') {
       if (num < 1600 || num > 2500) {
-        error = 'Ano deve estar entre 1600 e 2500';
+          error = t('articles', 'yearRange');
       }
     }
 
@@ -334,7 +335,7 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
     return error;
   };
 
-  // Handler para mudanças nos campos de data com validação
+    // Handler for date field changes with validation
   const handleDateFieldChange = (field: 'publication_year' | 'publication_month' | 'publication_day', value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     validateDateField(field, value);
@@ -342,25 +343,25 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
 
   const handleSave = async () => {
     if (!formData.title.trim()) {
-      toast.error("O título é obrigatório");
+        toast.error(t('articles', 'titleRequiredToast'));
       setCurrentStep('basic');
       return;
     }
 
-    // Validar todos os campos de data antes de salvar
+      // Validate all date fields before save
     const yearError = validateDateField('publication_year', formData.publication_year);
     const monthError = validateDateField('publication_month', formData.publication_month);
     const dayError = validateDateField('publication_day', formData.publication_day);
 
     if (yearError || monthError || dayError) {
-      toast.error("Por favor, corrija os erros nos campos de data antes de salvar");
+        toast.error(t('articles', 'fixDateErrors'));
       setCurrentStep('publication');
       return;
     }
 
     setSaving(true);
     try {
-      // Helper para validar e converter valores numéricos de data
+        // Helper to validate and convert numeric date values
       const parseDateValue = (value: string | undefined): number | null => {
         if (!value || value.trim() === '') return null;
         const num = parseInt(value.trim(), 10);
@@ -436,18 +437,18 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
         result = data;
       }
 
-      toast.success(`Artigo ${mode === 'add' ? 'criado' : 'atualizado'} com sucesso!`);
+        toast.success(mode === 'add' ? t('articles', 'articleCreatedSuccess') : t('articles', 'articleUpdatedSuccess'));
       
       if (mode === 'add') {
-        // Navegar de volta para a lista de artigos do projeto
+          // Navigate back to project article list
         navigate(`/projects/${projectId}?tab=articles`);
       } else {
         onComplete?.();
       }
     } catch (error: any) {
       console.error("Error saving article:", error);
-      const errorMessage = error?.message || error?.details || `Erro ao ${mode === 'add' ? 'criar' : 'atualizar'} artigo`;
-      toast.error(`Erro ao ${mode === 'add' ? 'criar' : 'atualizar'} artigo: ${errorMessage}`);
+        const errorMessage = error?.message || error?.details || (mode === 'add' ? t('articles', 'errorCreateArticle') : t('articles', 'errorUpdateArticle'));
+        toast.error(`${mode === 'add' ? t('articles', 'errorCreateArticle') : t('articles', 'errorUpdateArticle')}: ${errorMessage}`);
     } finally {
       setSaving(false);
     }
@@ -471,7 +472,7 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
       URL.revokeObjectURL(url);
     } catch (error: any) {
       console.error("Error downloading file:", error);
-      toast.error("Erro ao baixar arquivo");
+        toast.error(t('articles', 'errorDownloadFile'));
     }
   };
 
@@ -480,16 +481,16 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
 
     setDeletingFile(true);
     try {
-      // Deletar arquivo do storage
+        // Delete file from storage
       const { error: storageError } = await supabase.storage
         .from("articles")
         .remove([fileToDelete.storage_key]);
 
       if (storageError) {
-        console.warn("Erro ao deletar arquivo do storage:", storageError);
+          console.warn('Error deleting file from storage:', storageError);
       }
 
-      // Deletar registro do banco
+        // Delete record from DB
       const { error: dbError } = await supabase
         .from("article_files")
         .delete()
@@ -497,13 +498,13 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
 
       if (dbError) throw dbError;
 
-      toast.success("Arquivo removido com sucesso!");
-      loadFiles(); // Recarregar lista de arquivos
+        toast.success(t('articles', 'fileRemovedSuccess'));
+        loadFiles(); // Reload file list
       setDeleteDialogOpen(false);
       setFileToDelete(null);
     } catch (error: any) {
       console.error("Error deleting file:", error);
-      toast.error("Erro ao remover arquivo");
+        toast.error(t('articles', 'errorRemoveFile'));
     } finally {
       setDeletingFile(false);
     }
@@ -532,7 +533,7 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
       setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch (error: any) {
       console.error("Error viewing PDF:", error);
-      toast.error("Erro ao visualizar PDF. Tente fazer o download.");
+        toast.error(t('articles', 'errorViewPdf'));
     }
   };
 
@@ -559,42 +560,42 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
         return (
           <Card>
             <CardHeader>
-              <CardTitle>Informações Básicas</CardTitle>
+                <CardTitle>{t('articles', 'basicInfo')}</CardTitle>
               <CardDescription>
-                Título, resumo e informações dos autores
+                  {t('articles', 'titleAbstractAuthors')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div>
-                <Label htmlFor="title">Título *</Label>
+                  <Label htmlFor="title">{t('articles', 'titleRequired')}</Label>
                 <Textarea
                   id="title"
                   value={formData.title}
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  placeholder="Título completo do artigo"
+                  placeholder={t('articles', 'titlePlaceholder')}
                   className="min-h-[100px]"
                   required
                 />
               </div>
 
               <div>
-                <Label htmlFor="abstract">Resumo</Label>
+                  <Label htmlFor="abstract">{t('articles', 'abstract')}</Label>
                 <Textarea
                   id="abstract"
                   value={formData.abstract}
                   onChange={(e) => setFormData({ ...formData, abstract: e.target.value })}
-                  placeholder="Resumo ou abstract do artigo"
+                  placeholder={t('articles', 'abstractPlaceholder')}
                   rows={6}
                 />
               </div>
 
               <div>
-                <Label htmlFor="authors">Autores</Label>
+                  <Label htmlFor="authors">{t('articles', 'authors')}</Label>
                 <Input
                   id="authors"
                   value={formData.authors}
                   onChange={(e) => setFormData({ ...formData, authors: e.target.value })}
-                  placeholder="Separe os autores por vírgula"
+                  placeholder={t('articles', 'authorsPlaceholderComma')}
                 />
               </div>
             </CardContent>
@@ -605,25 +606,25 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
         return (
           <Card>
             <CardHeader>
-              <CardTitle>Detalhes da Publicação</CardTitle>
+                <CardTitle>{t('articles', 'publicationDetails')}</CardTitle>
               <CardDescription>
-                Informações sobre a revista, volume e páginas
+                  {t('articles', 'publicationDetailsDesc')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div>
-                <Label htmlFor="journal_title">Revista/Jornal</Label>
+                  <Label htmlFor="journal_title">{t('articles', 'journalTitle')}</Label>
                 <Input
                   id="journal_title"
                   value={formData.journal_title}
                   onChange={(e) => setFormData({ ...formData, journal_title: e.target.value })}
-                  placeholder="Nome da revista científica"
+                  placeholder={t('articles', 'journalPlaceholder')}
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="publication_year">Ano de Publicação</Label>
+                    <Label htmlFor="publication_year">{t('articles', 'publicationYear')}</Label>
                   <Input
                     id="publication_year"
                     type="number"
@@ -643,7 +644,7 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
                   )}
                 </div>
                 <div>
-                  <Label htmlFor="publication_month">Mês de Publicação</Label>
+                    <Label htmlFor="publication_month">{t('articles', 'publicationMonth')}</Label>
                   <Input
                     id="publication_month"
                     type="number"
@@ -665,7 +666,7 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
               </div>
               
               <div>
-                <Label htmlFor="publication_day">Dia de Publicação</Label>
+                  <Label htmlFor="publication_day">{t('articles', 'publicationDay')}</Label>
                 <Input
                   id="publication_day"
                   type="number"
@@ -696,7 +697,7 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
                   />
                 </div>
                 <div>
-                  <Label htmlFor="issue">Edição</Label>
+                    <Label htmlFor="issue">{t('articles', 'edition')}</Label>
                   <Input
                     id="issue"
                     value={formData.issue}
@@ -705,7 +706,7 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
                   />
                 </div>
                 <div>
-                  <Label htmlFor="pages">Páginas</Label>
+                    <Label htmlFor="pages">{t('articles', 'pages')}</Label>
                   <Input
                     id="pages"
                     value={formData.pages}
@@ -732,9 +733,9 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
         return (
           <Card>
             <CardHeader>
-              <CardTitle>Identificadores</CardTitle>
+                <CardTitle>{t('articles', 'identifiersLabel')}</CardTitle>
               <CardDescription>
-                DOI, PMID, PMCID e outros identificadores únicos
+                  {t('articles', 'identifiersDesc')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -797,19 +798,19 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
         return (
           <Card>
             <CardHeader>
-              <CardTitle>Informações Adicionais</CardTitle>
+                <CardTitle>{t('articles', 'additionalInfo')}</CardTitle>
               <CardDescription>
-                Palavras-chave, metadados e outras informações
+                  {t('articles', 'keywordsAndMetadata')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div>
-                <Label htmlFor="keywords">Palavras-chave</Label>
+                  <Label htmlFor="keywords">{t('articles', 'keywordsLabel')}</Label>
                 <Input
                   id="keywords"
                   value={formData.keywords}
                   onChange={(e) => setFormData({ ...formData, keywords: e.target.value })}
-                  placeholder="Separe as palavras-chave por vírgula"
+                  placeholder={t('articles', 'keywordsPlaceholder')}
                 />
               </div>
 
@@ -819,7 +820,7 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
                   id="mesh_terms"
                   value={formData.mesh_terms}
                   onChange={(e) => setFormData({ ...formData, mesh_terms: e.target.value })}
-                  placeholder="Termos MeSH separados por vírgula"
+                  placeholder={t('articles', 'meshPlaceholder')}
                 />
               </div>
 
@@ -841,7 +842,7 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
                     id="language"
                     value={formData.language}
                     onChange={(e) => setFormData({ ...formData, language: e.target.value })}
-                    placeholder="Português, Inglês, etc."
+                    placeholder={t('articles', 'languagePlaceholder')}
                   />
                 </div>
                 <div>
@@ -850,7 +851,7 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
                     id="article_type"
                     value={formData.article_type}
                     onChange={(e) => setFormData({ ...formData, article_type: e.target.value })}
-                    placeholder="Artigo original, Revisão, etc."
+                    placeholder={t('articles', 'typePlaceholder')}
                   />
                 </div>
               </div>
@@ -864,9 +865,9 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle>Arquivos do Artigo</CardTitle>
+                    <CardTitle>{t('articles', 'articleFiles')}</CardTitle>
                   <CardDescription>
-                    PDFs e outros documentos relacionados
+                      {t('articles', 'articleFilesDesc')}
                   </CardDescription>
                 </div>
                 <Button
@@ -874,7 +875,7 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
                   disabled={mode === 'add'}
                 >
                   <Plus className="mr-2 h-4 w-4" />
-                  Adicionar Arquivos
+                    {t('articles', 'addFiles')}
                 </Button>
               </div>
             </CardHeader>
@@ -883,7 +884,7 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
                 <Alert>
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
-                    Salve o artigo primeiro para poder adicionar arquivos.
+                      Save the article first to add files.
                   </AlertDescription>
                 </Alert>
               ) : files.length > 0 ? (
@@ -935,7 +936,7 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
                           className="text-destructive hover:text-destructive"
                         >
                           <Trash2 className="mr-2 h-4 w-4" />
-                          Excluir
+                            {t('articles', 'delete')}
                         </Button>
                       </div>
                     </div>
@@ -944,8 +945,8 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
                   <Upload className="mx-auto h-12 w-12 mb-4 opacity-50" />
-                  <p>Nenhum arquivo adicionado ainda</p>
-                  <p className="text-sm">Clique em "Adicionar Arquivos" para começar</p>
+                    <p>{t('articles', 'noFilesAddedYet')}</p>
+                    <p className="text-sm">{t('articles', 'addFilesHint')}</p>
                 </div>
               )}
             </CardContent>
@@ -962,7 +963,7 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
       <div className="flex items-center justify-center h-screen">
         <div className="text-center">
           <Loader2 className="h-6 w-6 animate-spin mx-auto mb-3 text-muted-foreground"/>
-          <p className="text-[13px] text-muted-foreground">Carregando artigo...</p>
+            <p className="text-[13px] text-muted-foreground">{t('articles', 'loadingArticle')}</p>
         </div>
       </div>
     );
@@ -972,7 +973,7 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
     <div className="h-screen flex flex-col bg-background">
       {/* Header */}
       <div className="flex-shrink-0 border-b border-border/40 bg-background/80 backdrop-blur-md">
-        <div className="flex h-14 items-center gap-4 px-6">
+          <div className="flex h-12 items-center gap-4 px-6">
           <Button
             variant="ghost"
             size="sm"
@@ -983,16 +984,16 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
             Voltar
           </Button>
 
-          <div className="h-5 w-px bg-border"/>
+              <div className="h-4 w-px bg-border/40"/>
 
-          <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2">
-            <FileText className="h-5 w-5 text-muted-foreground"/>
-            {mode === 'add' ? 'Adicionar Artigo' : 'Editar Artigo'}
+              <h1 className="text-[13px] font-medium tracking-tight flex items-center gap-2 min-w-0">
+                  <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0"/>
+                  {mode === 'add' ? t('articles', 'addArticle') : t('articles', 'editArticle')}
             {article && (
                 <>
                   <span className="text-muted-foreground font-normal">·</span>
                   <span
-                      className="text-muted-foreground font-normal text-base truncate max-w-xs">{article.title}</span>
+                      className="text-muted-foreground font-normal text-[13px] truncate max-w-xs">{article.title}</span>
                 </>
             )}
           </h1>
@@ -1004,7 +1005,7 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
               className="h-8 px-3 text-[12px]"
               onClick={() => navigate(-1)}
             >
-              Cancelar
+                {t('common', 'cancel')}
             </Button>
             <Button
                 size="sm"
@@ -1015,12 +1016,12 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
               {saving ? (
                 <>
                   <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin"/>
-                  Salvando...
+                    {t('articles', 'saving')}
                 </>
               ) : (
                 <>
                   <Save className="mr-1.5 h-3.5 w-3.5"/>
-                  {mode === 'add' ? 'Criar Artigo' : 'Salvar'}
+                    {mode === 'add' ? t('articles', 'createArticle') : t('common', 'save')}
                 </>
               )}
             </Button>
@@ -1029,12 +1030,12 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar de Navegação */}
+          {/* Navigation sidebar */}
         <div className="w-60 border-r bg-muted/30 flex-shrink-0 py-4 px-3">
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-2">
-            Formulário
+              Form
           </p>
-          <nav role="tablist" aria-label="Etapas do formulário" className="space-y-0.5">
+            <nav role="tablist" aria-label={t('articles', 'formStepsAria')} className="space-y-0.5">
             {STEPS.map((step) => {
               const Icon = step.icon;
               const isActive = step.id === currentStep;
@@ -1065,7 +1066,7 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
           </nav>
         </div>
 
-        {/* Conteúdo Principal */}
+          {/* Main content */}
         <div className="flex-1 overflow-y-auto">
           <div className="p-8">
             <div className="max-w-2xl">
@@ -1075,7 +1076,7 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
         </div>
       </div>
 
-      {/* Modal de Upload de Arquivos */}
+        {/* File upload modal */}
       {showFileUpload && articleId && (
         <ArticleFileUploadDialogNew
           open={showFileUpload}
@@ -1089,24 +1090,23 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
         />
       )}
 
-      {/* Dialog de Confirmação de Exclusão */}
+        {/* Delete confirmation dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Confirmar Remoção</AlertDialogTitle>
+              <AlertDialogTitle>{t('articles', 'confirmRemove')}</AlertDialogTitle>
             <AlertDialogDescription>
-              Tem certeza que deseja remover o arquivo "{fileToDelete?.original_filename}"?
-              Esta ação não pode ser desfeita.
+                {t('articles', 'confirmRemoveFile')} &quot;{fileToDelete?.original_filename}&quot;? {t('articles', 'confirmRemoveDesc')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deletingFile}>Cancelar</AlertDialogCancel>
+              <AlertDialogCancel disabled={deletingFile}>{t('common', 'cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteFile}
               disabled={deletingFile}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {deletingFile ? "Removendo..." : "Remover"}
+                {deletingFile ? t('articles', 'removing') : t('articles', 'remove')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

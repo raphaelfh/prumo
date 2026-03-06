@@ -1,6 +1,6 @@
 /**
- * Mock localStorage para ambiente de teste
- * Deve ser importado ANTES de qualquer módulo que use localStorage (como MSW)
+ * Mock localStorage for test environment
+ * Must be imported BEFORE any module that uses localStorage (e.g. MSW)
  */
 
 const localStorageMock = (() => {
@@ -22,7 +22,7 @@ const localStorageMock = (() => {
   };
 })();
 
-// Atribuir ao global antes de qualquer import
+// Assign to global before any import
 if (typeof global !== 'undefined') {
   (global as any).localStorage = localStorageMock;
 }

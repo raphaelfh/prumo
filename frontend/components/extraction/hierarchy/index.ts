@@ -1,7 +1,7 @@
 /**
  * Hierarchical Extraction Components
- * 
- * Componentes para extração hierárquica de modelos de predição
+ *
+ * Components for hierarchical extraction of prediction models
  */
 
 export { ModelSelector } from './ModelSelector';

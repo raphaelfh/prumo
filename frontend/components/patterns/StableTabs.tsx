@@ -1,11 +1,11 @@
 /**
- * StableTabs - Tabs com altura estável para evitar layout shift
- * 
- * Uso:
+ * StableTabs - Tabs with stable height to avoid layout shift.
+ *
+ * Usage:
  * <StableTabs
  *   tabs={[
- *     { value: "overview", label: "Visão Geral", content: <Overview /> },
- *     { value: "analytics", label: "Análise", content: <Analytics /> },
+ *     { value: "overview", label: "Overview", content: <Overview /> },
+ *     { value: "analytics", label: "Analytics", content: <Analytics /> },
  *   ]}
  *   defaultValue="overview"
  *   minHeight="400px"

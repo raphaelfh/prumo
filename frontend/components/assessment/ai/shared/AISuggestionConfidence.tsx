@@ -1,8 +1,8 @@
 /**
- * Porcentagem de confiança da sugestão de IA (Assessment)
- * Componente compartilhado reutilizável
+ * AI suggestion confidence percentage (Assessment)
+ * Shared reusable component
  *
- * Adaptado de extraction/ai/shared/AISuggestionConfidence.tsx
+ * Adapted from extraction/ai/shared/AISuggestionConfidence.tsx
  */
 
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
@@ -14,9 +14,9 @@ import {calculateConfidencePercent} from '@/lib/assessment-utils';
 
 interface AISuggestionConfidenceProps {
   suggestion: AIAssessmentSuggestion;
-  /** Se true, abre modal de detalhes ao clicar no % */
+    /** If true, open details modal on % click */
   showDetailsOnClick?: boolean;
-  /** Se true, renderiza só o % (para o pai usar como parte do trigger do modal) */
+    /** If true, render only the % (for parent to use as part of modal trigger) */
   asTriggerChild?: boolean;
   className?: string;
 }
@@ -37,7 +37,7 @@ export function AISuggestionConfidence({
   const hasEvidence = suggestion.suggested_value.evidence_passages?.length > 0;
   const hasDetails = hasReasoning || hasEvidence;
 
-  // Quando usado como parte do trigger (valor + % clicáveis), só renderiza o %
+    // When used as part of trigger (value + % clickable), only render the %
   if (asTriggerChild) {
     return (
       <span className={`${confidenceSpanClass} shrink-0 ${className}`}>
@@ -46,7 +46,7 @@ export function AISuggestionConfidence({
     );
   }
 
-  // Se há detalhes e deve mostrar no clique, usar popover só no %
+    // If there are details and should show on click, use popover only on the %
   if (hasDetails && showDetailsOnClick) {
     return (
       <AISuggestionDetailsPopover
@@ -60,7 +60,7 @@ export function AISuggestionConfidence({
     );
   }
 
-  // Caso contrário, apenas tooltip
+    // Otherwise just tooltip
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -69,7 +69,7 @@ export function AISuggestionConfidence({
         </span>
       </TooltipTrigger>
       <TooltipContent>
-        <p className="text-xs">Nível de confiança da sugestão da IA</p>
+          <p className="text-xs">AI suggestion confidence level</p>
       </TooltipContent>
     </Tooltip>
   );

@@ -1,6 +1,6 @@
 /**
- * Componente de navegação do header (Voltar + Breadcrumb + Navegação entre artigos)
- * Reutilizável e responsivo
+ * Header navigation (Back + Breadcrumb + article navigation).
+ * Reusable and responsive.
  */
 
 import {Button} from '@/components/ui/button';
@@ -15,6 +15,7 @@ import {
 import {Tooltip, TooltipContent, TooltipTrigger,} from '@/components/ui/tooltip';
 import {ArrowLeft, ChevronLeft, ChevronRight} from 'lucide-react';
 import {useNavigate} from 'react-router-dom';
+import {t} from '@/lib/copy';
 
 interface Article {
   id: string;
@@ -68,7 +69,7 @@ export function HeaderNavigation({
         className="flex-shrink-0 h-8 px-2 -ml-2 hover:bg-muted/50 transition-colors duration-150"
       >
         <ArrowLeft className={`${showBackText ? 'mr-1.5' : ''} h-4 w-4`} />
-        {showBackText && <span className="text-sm font-medium hidden sm:inline">Voltar</span>}
+          {showBackText && <span className="text-sm font-medium hidden sm:inline">{t('extraction', 'back')}</span>}
       </Button>
       
       <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -114,13 +115,13 @@ export function HeaderNavigation({
                   onClick={() => previousArticle && onNavigateToArticle(previousArticle.id)}
                   disabled={!previousArticle}
                   className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground hover:bg-muted/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-150"
-                  aria-label="Artigo anterior"
+                  aria-label={t('extraction', 'articlePrevious')}
                 >
                   <ChevronLeft className="h-4 w-4 transition-transform duration-150 hover:-translate-x-0.5" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                {previousArticle ? `Artigo anterior: ${previousArticle.title}` : 'Primeiro artigo'}
+                  {previousArticle ? `${t('extraction', 'articlePrevious')}: ${previousArticle.title}` : t('extraction', 'articleFirst')}
               </TooltipContent>
             </Tooltip>
             
@@ -137,13 +138,13 @@ export function HeaderNavigation({
                   onClick={() => nextArticle && onNavigateToArticle(nextArticle.id)}
                   disabled={!nextArticle}
                   className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground hover:bg-muted/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-150"
-                  aria-label="Próximo artigo"
+                  aria-label={t('extraction', 'articleNext')}
                 >
                   <ChevronRight className="h-4 w-4 transition-transform duration-150 hover:translate-x-0.5" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                {nextArticle ? `Próximo artigo: ${nextArticle.title}` : 'Último artigo'}
+                  {nextArticle ? `${t('extraction', 'articleNext')}: ${nextArticle.title}` : t('extraction', 'articleLast')}
               </TooltipContent>
             </Tooltip>
           </div>

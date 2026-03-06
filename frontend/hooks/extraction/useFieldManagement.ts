@@ -1,14 +1,14 @@
 /**
- * Hook para gerenciar CRUD completo de campos de extração
- * 
- * Responsável por:
- * - Verificar permissões do usuário (manager, reviewer, viewer)
- * - Carregar campos de uma seção (entity_type)
- * - Adicionar novos campos com validação
- * - Atualizar campos existentes
- * - Deletar campos (com validação de impacto)
- * - Reordenar campos (batch update de sort_order)
- * 
+ * Hook to manage full CRUD of extraction fields
+ *
+ * Responsible for:
+ * - Checking user permissions (manager, reviewer, viewer)
+ * - Loading section (entity_type) fields
+ * - Adding new fields with validation
+ * - Updating existing fields
+ * - Deleting fields (with impact validation)
+ * - Reordering fields (batch update of sort_order)
+ *
  * @module hooks/extraction/useFieldManagement
  */
 
@@ -16,6 +16,7 @@ import {useCallback, useEffect, useState} from 'react';
 import {supabase} from '@/integrations/supabase/client';
 import {useAuth} from '@/contexts/AuthContext';
 import {toast} from 'sonner';
+import {t} from '@/lib/copy';
 import {
     ExtractionField,
     ExtractionFieldInput,
@@ -48,7 +49,7 @@ export function useFieldManagement({
   });
 
   /**
-   * Verificar permissões do usuário no projeto
+   * Check user permissions in project
    */
   const checkPermissions = useCallback(async (): Promise<PermissionCheckResult> => {
     if (!user) {
@@ -58,7 +59,7 @@ export function useFieldManagement({
         canDelete: false,
         canCreate: false,
         role: null,
-        message: 'Usuário não autenticado',
+          message: t('common', 'errors_userNotAuthenticated'),
       };
     }
 
@@ -71,7 +72,7 @@ export function useFieldManagement({
         .single();
 
       if (error) {
-        console.error('Erro ao verificar permissões:', error);
+          console.error('Error checking permissions:', error);
         throw error;
       }
 
@@ -91,14 +92,14 @@ export function useFieldManagement({
       setPermissions(result);
       return result;
     } catch (err: any) {
-      console.error('Erro ao verificar permissões:', err);
+        console.error('Error checking permissions:', err);
       const errorResult = {
         canView: false,
         canEdit: false,
         canDelete: false,
         canCreate: false,
         role: null,
-        message: 'Erro ao verificar permissões',
+          message: t('extraction', 'errors_checkPermissions'),
       };
       setPermissions(errorResult);
       return errorResult;
@@ -106,11 +107,11 @@ export function useFieldManagement({
   }, [user, projectId]);
 
   /**
-   * Carregar campos da seção
+   * Load section fields
    */
   const loadFields = useCallback(async () => {
     if (!entityTypeId) {
-      console.warn('entityTypeId não fornecido');
+        console.warn('entityTypeId not provided');
       setFields([]);
       return;
     }
@@ -127,8 +128,8 @@ export function useFieldManagement({
 
       setFields((data as ExtractionField[]) || []);
     } catch (err: any) {
-      console.error('Erro ao carregar campos:', err);
-      toast.error(`Erro ao carregar campos: ${err.message}`);
+        console.error('Error loading fields:', err);
+        toast.error(`${t('extraction', 'errors_loadFields')}: ${err.message}`);
       setFields([]);
     } finally {
       setLoading(false);
@@ -136,13 +137,13 @@ export function useFieldManagement({
   }, [entityTypeId]);
 
   /**
-   * Validar campo antes de operações (verificar impacto)
+   * Validate field before operations (check impact)
    */
   const validateField = useCallback(async (
     fieldId: string
   ): Promise<FieldValidationResult> => {
     try {
-      // Contar valores extraídos e artigos afetados
+        // Count extracted values and affected articles
       const { data: valuesData, error: valuesError } = await supabase
         .from('extracted_values')
         .select('id, article_id')
@@ -163,47 +164,49 @@ export function useFieldManagement({
         extractedValuesCount: extractedCount,
         affectedArticles,
         message: hasValues
-          ? `Este campo possui ${extractedCount} valores extraídos em ${affectedArticles.length} artigo(s).`
-          : 'Campo pode ser modificado com segurança.',
+            ? t('extraction', 'fieldExtractedValuesMessage')
+                .replace('{{count}}', String(extractedCount))
+                .replace('{{n}}', String(affectedArticles.length))
+            : t('extraction', 'fieldSafeToModifyMessage'),
       };
     } catch (err: any) {
-      console.error('Erro na validação do campo:', err);
+        console.error('Error validating field:', err);
       return {
         canDelete: false,
         canUpdate: false,
         canChangeType: false,
         extractedValuesCount: 0,
         affectedArticles: [],
-        message: 'Erro ao validar campo',
+          message: t('extraction', 'errors_validateField'),
       };
     }
   }, []);
 
   /**
-   * Adicionar novo campo
+   * Add new field
    */
   const addField = useCallback(async (
     fieldData: ExtractionFieldInput
   ): Promise<ExtractionField | null> => {
-    // Verificar permissões
+      // Check permissions
     const perms = await checkPermissions();
     if (!perms.canCreate) {
-      toast.error('Você não tem permissão para adicionar campos');
+        toast.error(t('extraction', 'errors_noPermissionAddField'));
       return null;
     }
 
     try {
-      // Validar dados com Zod
+        // Validate data with Zod
       const validatedData = ExtractionFieldSchema.parse(fieldData);
 
-      // Verificar se nome já existe nesta seção
+        // Check if name already exists in this section
       const existingField = fields.find(f => f.name === validatedData.name);
       if (existingField) {
-        toast.error(`Já existe um campo com o nome "${validatedData.name}" nesta seção`);
+          toast.error(t('extraction', 'errors_fieldExistsInSection').replace('{{name}}', validatedData.name));
         return null;
       }
 
-      // Calcular próximo sort_order
+        // Calculate next sort_order
       const maxSortOrder = fields.reduce(
         (max, field) => Math.max(max, field.sort_order),
         0
@@ -233,24 +236,24 @@ export function useFieldManagement({
 
       const createdField = data as ExtractionField;
       setFields(prev => [...prev, createdField]);
-      toast.success(`Campo "${createdField.label}" adicionado com sucesso!`);
+        toast.success(t('extraction', 'fieldAddedSuccess').replace('{{label}}', createdField.label));
       
       return createdField;
     } catch (err: any) {
-      // Se for erro de validação Zod
+        // If Zod validation error
       if (err.name === 'ZodError') {
         const firstError = err.errors[0];
-        toast.error(`Validação: ${firstError.message}`);
+          toast.error(t('extraction', 'errors_validationPrefix').replace('{{message}}', firstError.message));
       } else {
-        console.error('Erro ao adicionar campo:', err);
-        toast.error(`Erro ao adicionar campo: ${err.message}`);
+          console.error('Error adding field:', err);
+          toast.error(`${t('extraction', 'errors_addField')}: ${err.message}`);
       }
       return null;
     }
   }, [fields, entityTypeId, checkPermissions]);
 
   /**
-   * Criar campo "Other (specify)" associado a um campo select
+   * Create "Other (specify)" field associated with a select field
    */
   const createOtherSpecifyField = useCallback(async (
     parentFieldName: string,
@@ -259,7 +262,7 @@ export function useFieldManagement({
   ): Promise<ExtractionField | null> => {
     const perms = await checkPermissions();
     if (!perms.canCreate) {
-      toast.error('Você não tem permissão para criar campos');
+        toast.error(t('extraction', 'errors_noPermissionAddField'));
       return null;
     }
 
@@ -267,7 +270,7 @@ export function useFieldManagement({
       const otherFieldName = `${parentFieldName}_other_specify`;
       const otherFieldLabel = `${parentFieldLabel} (Other - Specify)`;
 
-      // Verificar se já existe
+        // Check if already exists
       const existingField = fields.find(f => f.name === otherFieldName);
       if (existingField) {
         return existingField;
@@ -277,7 +280,7 @@ export function useFieldManagement({
         entity_type_id: entityTypeId,
         name: otherFieldName,
         label: otherFieldLabel,
-        description: `Especificar quando "Other (specify)" foi selecionado em ${parentFieldLabel}`,
+          description: `Specify when "Other (specify)" was selected in ${parentFieldLabel}`,
         field_type: 'text',
         is_required: false,
         validation_schema: {
@@ -304,35 +307,33 @@ export function useFieldManagement({
       setFields(prev => [...prev, createdField]);
       return createdField;
     } catch (err: any) {
-      console.error('Erro ao criar campo Other specify:', err);
-      toast.error(`Erro ao criar campo Other specify: ${err.message}`);
+        console.error('Error creating Other specify field:', err);
+        toast.error(`${t('extraction', 'errors_addField')}: ${err.message}`);
       return null;
     }
   }, [fields, entityTypeId, checkPermissions]);
 
   /**
-   * Atualizar campo existente
+   * Update existing field
    */
   const updateField = useCallback(async (
     fieldId: string,
     updates: ExtractionFieldUpdate
   ): Promise<ExtractionField | null> => {
-    // Verificar permissões
+      // Check permissions
     const perms = await checkPermissions();
     if (!perms.canEdit) {
-      toast.error('Você não tem permissão para editar campos');
+        toast.error(t('extraction', 'errors_noPermissionEditField'));
       return null;
     }
 
-    // Se está tentando mudar o tipo, validar
+      // If trying to change type, validate
     if (updates.field_type) {
       const currentField = fields.find(f => f.id === fieldId);
       if (currentField && currentField.field_type !== updates.field_type) {
         const validation = await validateField(fieldId);
         if (!validation.canChangeType) {
-          toast.error(
-            'Não é possível mudar o tipo de campo que já possui dados extraídos'
-          );
+            toast.error(t('extraction', 'errors_cannotChangeFieldType'));
           return null;
         }
       }
@@ -352,33 +353,33 @@ export function useFieldManagement({
       setFields(prev =>
         prev.map(field => (field.id === fieldId ? updatedField : field))
       );
-      toast.success('Campo atualizado com sucesso!');
+        toast.success(t('extraction', 'fieldUpdatedSuccess'));
       
       return updatedField;
     } catch (err: any) {
-      console.error('Erro ao atualizar campo:', err);
-      toast.error(`Erro ao atualizar campo: ${err.message}`);
+        console.error('Error updating field:', err);
+        toast.error(`${t('extraction', 'errors_updateField')}: ${err.message}`);
       return null;
     }
   }, [fields, checkPermissions, validateField]);
 
   /**
-   * Remover campo (com validação de impacto)
+   * Remove field (with impact validation)
    */
   const deleteField = useCallback(async (
     fieldId: string
   ): Promise<boolean> => {
-    // Verificar permissões
+      // Check permissions
     const perms = await checkPermissions();
     if (!perms.canDelete) {
-      toast.error('Você não tem permissão para remover campos');
+        toast.error(t('extraction', 'errors_noPermissionRemoveField'));
       return false;
     }
 
-    // Validar se pode deletar
+      // Validate if can delete
     const validation = await validateField(fieldId);
     if (!validation.canDelete) {
-      toast.error(validation.message || 'Não é possível remover este campo');
+        toast.error(validation.message || t('extraction', 'errors_cannotRemoveField'));
       return false;
     }
 
@@ -391,25 +392,25 @@ export function useFieldManagement({
       if (error) throw error;
 
       setFields(prev => prev.filter(field => field.id !== fieldId));
-      toast.success('Campo removido com sucesso!');
+        toast.success(t('extraction', 'fieldRemovedSuccess'));
       
       return true;
     } catch (err: any) {
-      console.error('Erro ao remover campo:', err);
-      toast.error(`Erro ao remover campo: ${err.message}`);
+        console.error('Error removing field:', err);
+        toast.error(`${t('extraction', 'errors_removeField')}: ${err.message}`);
       return false;
     }
   }, [checkPermissions, validateField]);
 
   /**
-   * Remover campo "Other (specify)" associado
+   * Remove associated "Other (specify)" field
    */
   const removeOtherSpecifyField = useCallback(async (
     parentFieldName: string
   ): Promise<boolean> => {
     const perms = await checkPermissions();
     if (!perms.canDelete) {
-      toast.error('Você não tem permissão para remover campos');
+        toast.error(t('extraction', 'errors_noPermissionRemoveField'));
       return false;
     }
 
@@ -418,14 +419,16 @@ export function useFieldManagement({
       const otherField = fields.find(f => f.name === otherFieldName);
 
       if (!otherField) {
-        return true; // Já não existe
+          return true; // Already does not exist
       }
 
-      // Verificar se tem dados extraídos
+        // Check if has extracted data
       const validation = await validateField(otherField.id);
       if (validation.extractedValuesCount > 0) {
         toast.error(
-          `Não é possível remover campo "${otherField.label}" porque possui ${validation.extractedValuesCount} valores extraídos`
+            t('extraction', 'errors_cannotRemoveFieldWithData')
+                .replace('{{label}}', otherField.label)
+                .replace('{{n}}', String(validation.extractedValuesCount))
         );
         return false;
       }
@@ -433,8 +436,8 @@ export function useFieldManagement({
       const success = await deleteField(otherField.id);
       return success;
     } catch (err: any) {
-      console.error('Erro ao remover campo Other specify:', err);
-      toast.error(`Erro ao remover campo Other specify: ${err.message}`);
+        console.error('Error removing Other specify field:', err);
+        toast.error(`${t('extraction', 'errors_removeField')}: ${err.message}`);
       return false;
     }
   }, [fields, checkPermissions, validateField, deleteField]);
@@ -445,15 +448,15 @@ export function useFieldManagement({
   const reorderFields = useCallback(async (
     reorderedFields: { id: string; sort_order: number }[]
   ): Promise<boolean> => {
-    // Verificar permissões
+      // Check permissions
     const perms = await checkPermissions();
     if (!perms.canEdit) {
-      toast.error('Você não tem permissão para reordenar campos');
+        toast.error(t('extraction', 'errors_noPermissionReorderField'));
       return false;
     }
 
     try {
-      // Atualizar todos os sort_order em batch
+        // Update all sort_order in batch
       const updates = reorderedFields.map(({ id, sort_order }) =>
         supabase
           .from('extraction_fields')
@@ -463,19 +466,19 @@ export function useFieldManagement({
 
       await Promise.all(updates);
 
-      // Recarregar campos para garantir ordem correta
+        // Reload fields to ensure correct order
       await loadFields();
-      toast.success('Ordem dos campos atualizada!');
+        toast.success(t('extraction', 'fieldsReorderSuccess'));
       
       return true;
     } catch (err: any) {
-      console.error('Erro ao reordenar campos:', err);
-      toast.error(`Erro ao reordenar: ${err.message}`);
+        console.error('Error reordering fields:', err);
+        toast.error(`${t('extraction', 'errors_reorderFields')}: ${err.message}`);
       return false;
     }
   }, [checkPermissions, loadFields]);
 
-  // Carregar permissões e campos no mount
+    // Load permissions and fields on mount
   useEffect(() => {
     if (projectId && entityTypeId) {
       checkPermissions();
@@ -493,20 +496,20 @@ export function useFieldManagement({
     canCreate: permissions.canCreate,
     userRole: permissions.role,
 
-    // Operações
+      // Operations
     addField,
     updateField,
     deleteField,
     reorderFields,
 
-    // Validação
+      // Validation
     validateField,
 
     // Campos "Other (specify)"
     createOtherSpecifyField,
     removeOtherSpecifyField,
 
-    // Utilitários
+      // Utilities
     refreshFields: loadFields,
     refreshPermissions: checkPermissions,
   };

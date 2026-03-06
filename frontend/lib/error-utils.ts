@@ -1,14 +1,15 @@
 /**
- * Utilities para Error Handling
+ * Error handling utilities
  *
- * Funções utilitárias centralizadas para tratamento de erros.
- * Padroniza o padrão try/catch que estava duplicado em ~15 lugares.
+ * Centralized utility functions for error handling.
+ * Standardizes the try/catch pattern that was duplicated in ~15 places.
  *
  * @module lib/error-utils
  */
 
 import {toast} from 'sonner';
 import {logger} from './logger';
+import {t} from '@/lib/copy';
 
 // =================== TYPES ===================
 
@@ -21,25 +22,25 @@ export interface ErrorResult<T> {
 }
 
 export interface WithErrorHandlingOptions {
-  /** Contexto para logs (ex: "loadArticles", "saveAssessment") */
+    /** Context for logs (e.g. "loadArticles", "saveAssessment") */
   context: string;
-  /** Mostrar toast de erro ao usuário (default: true) */
+    /** Show error toast to user (default: true) */
   showToast?: boolean;
-  /** Mensagem customizada para toast (usa context se não fornecido) */
+    /** Custom toast message (uses context if not provided) */
   toastMessage?: string;
-  /** Re-lançar erro após tratamento (default: false) */
+    /** Re-throw error after handling (default: false) */
   rethrow?: boolean;
-  /** Callback executado em caso de erro */
+    /** Callback run on error */
   onError?: (error: Error) => void;
 }
 
 // =================== ERROR NORMALIZATION ===================
 
 /**
- * Normaliza qualquer erro para instância de Error
+ * Normalizes any error to an Error instance
  *
- * @param error - Erro capturado (pode ser any)
- * @returns Instância de Error normalizada
+ * @param error - Caught error (can be any)
+ * @returns Normalized Error instance
  */
 export function normalizeError(error: unknown): Error {
   if (error instanceof Error) {
@@ -51,11 +52,11 @@ export function normalizeError(error: unknown): Error {
   if (error && typeof error === 'object' && 'message' in error) {
     return new Error(String((error as { message: unknown }).message));
   }
-  return new Error('Erro desconhecido');
+    return new Error(t('common', 'errors_unknownError'));
 }
 
 /**
- * Extrai mensagem de erro de forma segura
+ * Safely extracts error message
  */
 export function getErrorMessage(error: unknown): string {
   return normalizeError(error).message;
@@ -64,33 +65,14 @@ export function getErrorMessage(error: unknown): string {
 // =================== ERROR HANDLING WRAPPER ===================
 
 /**
- * Wrapper para operações async com tratamento de erro padronizado
+ * Wrapper for async operations with standardized error handling
  *
- * Anteriormente duplicado em ~15 lugares com padrão:
- * ```typescript
- * try {
- *   console.log('🔄 [funcao] Iniciando...');
- *   const result = await operation();
- *   console.log('✅ [funcao] Sucesso');
- *   return result;
- * } catch (err: any) {
- *   console.error('❌ [funcao] Erro:', err);
- *   toast.error(`Erro ao ...: ${err.message}`);
- *   throw err;
- * }
- * ```
+ * Previously duplicated in ~15 places with pattern:
+ * try { ... await operation(); ... } catch { toast.error(...); throw err; }
  *
- * @example
- * ```typescript
- * const articles = await withErrorHandling(
- *   () => fetchArticles(projectId),
- *   { context: 'loadArticles', showToast: true }
- * );
- * ```
- *
- * @param operation - Função async a ser executada
- * @param options - Opções de configuração
- * @returns Resultado da operação ou undefined se falhar
+ * @param operation - Async function to run
+ * @param options - Configuration options
+ * @returns Operation result or undefined on failure
  */
 export async function withErrorHandling<T>(
   operation: () => Promise<T>,
@@ -112,10 +94,10 @@ export async function withErrorHandling<T>(
     return result;
   } catch (err) {
     const error = normalizeError(err);
-    logger.error(`❌ [${context}] Erro:`, error);
+      logger.error(`❌ [${context}] Error:`, error);
 
     if (showToast) {
-      const message = toastMessage || `Erro em ${context}`;
+        const message = toastMessage || t('common', 'errors_inContext').replace('{{context}}', context);
       toast.error(message, {
         description: error.message,
       });
@@ -134,22 +116,8 @@ export async function withErrorHandling<T>(
 }
 
 /**
- * Versão que retorna Result type (ok/error)
- * Útil quando precisa verificar sucesso explicitamente
- *
- * @example
- * ```typescript
- * const result = await withErrorHandlingResult(
- *   () => saveData(data),
- *   { context: 'saveData' }
- * );
- *
- * if (result.ok) {
- *   console.log('Salvo:', result.data);
- * } else {
- *   console.log('Falhou:', result.error.message);
- * }
- * ```
+ * Version that returns Result type (ok/error)
+ * Useful when success must be checked explicitly
  */
 export async function withErrorHandlingResult<T>(
   operation: () => Promise<T>,
@@ -162,18 +130,18 @@ export async function withErrorHandlingResult<T>(
     onError,
   } = options;
 
-  logger.debug(`🔄 [${context}] Iniciando...`);
+    logger.debug(`🔄 [${context}] Starting...`);
 
   try {
     const result = await operation();
-    logger.debug(`✅ [${context}] Sucesso`);
+      logger.debug(`✅ [${context}] Success`);
     return { ok: true, data: result };
   } catch (err) {
     const error = normalizeError(err);
-    logger.error(`❌ [${context}] Erro:`, error);
+      logger.error(`❌ [${context}] Error:`, error);
 
     if (showToast) {
-      const message = toastMessage || `Erro em ${context}`;
+        const message = toastMessage || t('common', 'errors_inContext').replace('{{context}}', context);
       toast.error(message, {
         description: error.message,
       });
@@ -190,7 +158,7 @@ export async function withErrorHandlingResult<T>(
 // =================== SYNC ERROR HANDLING ===================
 
 /**
- * Wrapper para operações síncronas
+ * Wrapper for synchronous operations
  */
 export function tryCatch<T>(
   operation: () => T,
@@ -200,7 +168,7 @@ export function tryCatch<T>(
     return operation();
   } catch (err) {
     const error = normalizeError(err);
-    logger.error(`❌ [${context}] Erro:`, error);
+      logger.error(`❌ [${context}] Error:`, error);
     return undefined;
   }
 }
@@ -208,7 +176,7 @@ export function tryCatch<T>(
 // =================== TOAST HELPERS ===================
 
 /**
- * Mostra toast de erro padronizado
+ * Shows standardized error toast
  */
 export function showErrorToast(
   title: string,
@@ -219,7 +187,7 @@ export function showErrorToast(
 }
 
 /**
- * Mostra toast de sucesso padronizado
+ * Shows standardized success toast
  */
 export function showSuccessToast(
   title: string,
@@ -229,7 +197,7 @@ export function showSuccessToast(
 }
 
 /**
- * Mostra toast de info padronizado
+ * Shows standardized info toast
  */
 export function showInfoToast(
   title: string,
@@ -241,21 +209,21 @@ export function showInfoToast(
 // =================== API ERROR HANDLING ===================
 
 /**
- * Trata erro de resposta de API
+ * Handles API response error
  */
 export function handleApiError(
   response: { ok: boolean; error?: { code?: string; message?: string } },
   context: string
 ): void {
   if (!response.ok && response.error) {
-    const message = response.error.message || 'Erro desconhecido';
+      const message = response.error.message || t('common', 'errors_unknownError');
     logger.error(`❌ [${context}] API Error:`, response.error);
-    toast.error(`Erro: ${context}`, { description: message });
+      toast.error(t('common', 'errors_inContext').replace('{{context}}', context), {description: message});
   }
 }
 
 /**
- * Verifica se erro é de autenticação
+ * Checks if error is an authentication error
  */
 export function isAuthError(error: unknown): boolean {
   const message = getErrorMessage(error).toLowerCase();
@@ -269,7 +237,7 @@ export function isAuthError(error: unknown): boolean {
 }
 
 /**
- * Verifica se erro é de rede
+ * Checks if error is a network error
  */
 export function isNetworkError(error: unknown): boolean {
   const message = getErrorMessage(error).toLowerCase();

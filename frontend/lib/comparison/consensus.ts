@@ -1,60 +1,53 @@
 /**
- * Detecção de consenso e cálculo de concordância
- * 
- * Lógica de negócio para análise de consenso entre múltiplos revisores.
- * Reutilizável em Assessment e Extraction.
- * 
+ * Consensus detection and agreement calculation
+ *
+ * Business logic for consensus analysis across multiple reviewers.
+ * Reusable in Assessment and Extraction.
+ *
  * @module comparison/consensus
  */
 
 import {formatComparisonValue} from './formatters';
 
 /**
- * Resultado da análise de consenso
+ * Result of consensus analysis
  */
 export interface ConsensusResult {
-  value: string | null;          // Valor consensual
-  count: number;                  // Quantos usuários têm esse valor
-  total: number;                  // Total de valores não-vazios
-  percentage: number;             // % de concordância (0-100)
-  hasConsensus: boolean;          // Se atingiu threshold
-  threshold: number;              // Threshold usado (0-100)
+    value: string | null;          // Consensus value
+    count: number;                  // How many users have this value
+    total: number;                  // Total non-empty values
+    percentage: number;             // Agreement % (0-100)
+    hasConsensus: boolean;          // Whether threshold was met
+    threshold: number;              // Threshold used (0-100)
 }
 
 /**
- * Detecta consenso em array de valores
- * 
- * Algoritmo:
- * 1. Filtra valores vazios
- * 2. Agrupa valores iguais (usando formatComparisonValue)
- * 3. Encontra valor mais frequente
- * 4. Verifica se atinge threshold (default: 50%)
- * 
- * @param values - Array de valores de diferentes usuários
- * @param threshold - % mínimo para ser consenso (0-1, default: 0.5)
- * @returns ConsensusResult ou null se não houver valores
- * 
- * @example
- * detectConsensus([150, 150, 152]) 
- * // { value: '150', count: 2, total: 3, percentage: 67, hasConsensus: true }
- * 
- * detectConsensus([150, 200, 300])
- * // { value: '150', count: 1, total: 3, percentage: 33, hasConsensus: false }
+ * Detects consensus in an array of values
+ *
+ * Algorithm:
+ * 1. Filter empty values
+ * 2. Group equal values (using formatComparisonValue)
+ * 3. Find most frequent value
+ * 4. Check if threshold is met (default: 50%)
+ *
+ * @param values - Array of values from different users
+ * @param threshold - Minimum % for consensus (0-1, default: 0.5)
+ * @returns ConsensusResult or null if no values
  */
 export function detectConsensus(
   values: any[],
   threshold: number = 0.5
 ): ConsensusResult | null {
-  // Validação de threshold
+    // Validate threshold
   if (threshold < 0 || threshold > 1) {
-    throw new Error('Threshold deve estar entre 0 e 1');
+      throw new Error('Threshold must be between 0 and 1');
   }
 
-  // NOVO: Verificar se TODOS os valores são vazios (consenso implícito)
+    // Check if ALL values are empty (implicit consensus)
   const allEmpty = values.every(v => v === null || v === undefined || v === '');
   
   if (allEmpty) {
-    // Consenso implícito: todos concordam em deixar vazio
+      // Implicit consensus: all agree to leave empty
     return {
       value: '—',
       count: values.length,
@@ -65,14 +58,14 @@ export function detectConsensus(
     };
   }
 
-  // Filtrar valores vazios
+    // Filter empty values
   const nonEmpty = values.filter(v => 
     v !== null && v !== undefined && v !== ''
   );
 
-  if (nonEmpty.length === 0) return null; // Não deveria chegar aqui após check acima
+    if (nonEmpty.length === 0) return null; // Should not reach here after above check
 
-  // Agrupar por valor formatado (para comparação consistente)
+    // Group by formatted value (for consistent comparison)
   const counts: Record<string, number> = {};
   nonEmpty.forEach(v => {
     const formatted = formatComparisonValue(v);
@@ -105,19 +98,12 @@ export function detectConsensus(
 }
 
 /**
- * Calcula concordância entre dois conjuntos de valores
- * Útil para comparação usuário vs usuário
- * 
- * @param values1 - Primeiro conjunto (key -> value)
- * @param values2 - Segundo conjunto (key -> value)
- * @returns Estatísticas de concordância
- * 
- * @example
- * calculateConcordance(
- *   { field1: '150', field2: 'Yes' },
- *   { field1: '150', field2: 'No' }
- * )
- * // { matches: 1, total: 2, percentage: 50 }
+ * Calculates agreement between two sets of values
+ * Useful for user vs user comparison
+ *
+ * @param values1 - First set (key -> value)
+ * @param values2 - Second set (key -> value)
+ * @returns Agreement statistics
  */
 export function calculateConcordance(
   values1: Record<string, any>,
@@ -139,11 +125,11 @@ export function calculateConcordance(
 }
 
 /**
- * Agrupa valores por usuário
- * Helper para transformar array em Map indexada por userId
- * 
- * @param extractions - Array de extrações/assessments
- * @returns Map de userId -> valores
+ * Groups values by user
+ * Helper to turn array into Map keyed by userId
+ *
+ * @param extractions - Array of extractions/assessments
+ * @returns Map of userId -> values
  */
 export function groupValuesByUser<T extends { userId: string; values: Record<string, any> }>(
   extractions: T[]
@@ -158,12 +144,12 @@ export function groupValuesByUser<T extends { userId: string; values: Record<str
 }
 
 /**
- * Calcula estatísticas de divergência para um conjunto de campos
- * Retorna quantos campos têm consenso vs divergência
- * 
- * @param fieldValues - Map de fieldId -> array de valores
- * @param threshold - Threshold para consenso
- * @returns Estatísticas agregadas
+ * Calculates divergence statistics for a set of fields
+ * Returns how many fields have consensus vs divergence
+ *
+ * @param fieldValues - Map of fieldId -> array of values
+ * @param threshold - Consensus threshold
+ * @returns Aggregated statistics
  */
 export function calculateDivergenceStats(
   fieldValues: Map<string, any[]>,

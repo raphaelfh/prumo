@@ -1,7 +1,7 @@
 /**
- * PDFPagePlaceholder - Placeholder para páginas não renderizadas
- * 
- * Mantém altura estimada para scroll correto sem renderizar a página.
+ * PDFPagePlaceholder - Placeholder for unrendered pages
+ *
+ * Keeps estimated height for correct scroll without rendering the page.
  */
 
 import React from 'react';
@@ -33,7 +33,7 @@ export const PDFPagePlaceholder = React.memo<PDFPagePlaceholderProps>(({
       style={{ height: `${height}px` }}
     >
       <span className="text-sm text-muted-foreground">
-        Página {pageNumber}
+        Page {pageNumber}
       </span>
     </div>
   );

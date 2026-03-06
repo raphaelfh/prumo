@@ -1,10 +1,10 @@
 /**
- * Notification Center - Centro de Notificações no Topbar
- * 
- * Componente minimalista e profissional para exibir notificações de:
- * - Background jobs (importações Zotero, etc)
- * - Alertas do sistema
- * - Updates importantes
+ * Notification Center - Notifications in the Topbar
+ *
+ * Minimal professional component to show notifications for:
+ * - Background jobs (Zotero imports, etc)
+ * - System alerts
+ * - Important updates
  */
 
 import {useMemo, useState} from 'react';
@@ -26,6 +26,7 @@ import {cn} from '@/lib/utils';
 import {toast} from 'sonner';
 import {useNavigate} from 'react-router-dom';
 import type {BackgroundJob, ZoteroImportJob} from '@/types/background-jobs';
+import {t} from '@/lib/copy';
 
 export function NotificationCenter() {
   const navigate = useNavigate();
@@ -33,15 +34,15 @@ export function NotificationCenter() {
   const { jobs, removeJob, clearCompletedJobs, getRecentJobs } = useBackgroundJobs();
   
   const recentJobs = useMemo(() => getRecentJobs(20), [jobs, getRecentJobs]);
-  
-  // Polling para atualizar jobs
+
+    // Polling to update jobs
   useBackgroundJobPolling({
     interval: 2000,
     onJobComplete: (job) => {
       toast.success(getCompletionMessage(job), {
         duration: 5000,
         action: job.type === 'zotero-import' ? {
-          label: 'Ver Projeto',
+            label: t('navigation', 'viewProject'),
           onClick: () => {
             const zoteroJob = job as ZoteroImportJob;
             navigate(`/projects/${zoteroJob.metadata.projectId}`);
@@ -50,13 +51,13 @@ export function NotificationCenter() {
       });
     },
     onJobFailed: (job) => {
-      toast.error(`Erro: ${job.error || 'Falha na operação'}`, {
+        toast.error(`${t('navigation', 'errorPrefix')}: ${job.error || t('navigation', 'operationFailed')}`, {
         duration: 7000,
       });
     },
   });
 
-  // Contar notificações não lidas (jobs que finalizaram recentemente)
+    // Count unread notifications (jobs that finished recently)
   const unreadCount = useMemo(() => {
     const now = Date.now();
     const FIVE_MINUTES = 5 * 60 * 1000;
@@ -77,7 +78,7 @@ export function NotificationCenter() {
 
   const handleClearAll = () => {
     clearCompletedJobs();
-    toast.info('Notificações limpas');
+      toast.info(t('navigation', 'notificationsCleared'));
   };
 
   const handleJobClick = (job: BackgroundJob) => {
@@ -94,10 +95,10 @@ export function NotificationCenter() {
         <Button
           variant="ghost"
           size="icon"
-          className="relative"
-          aria-label="Notificações"
+          className="relative h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors duration-75"
+          aria-label={t('navigation', 'notifications')}
         >
-          <Bell className="h-4 w-4" />
+            <Bell className="h-4 w-4" strokeWidth={1.5}/>
           {unreadCount > 0 && (
             <Badge 
               variant="destructive" 
@@ -111,7 +112,7 @@ export function NotificationCenter() {
       
       <DropdownMenuContent align="end" className="w-[400px]">
         <DropdownMenuLabel className="flex items-center justify-between">
-          <span>Notificações</span>
+            <span>{t('navigation', 'notifications')}</span>
           {recentJobs.some(j => j.status === 'completed' || j.status === 'failed') && (
             <Button
               variant="ghost"
@@ -119,7 +120,7 @@ export function NotificationCenter() {
               onClick={handleClearAll}
               className="h-6 px-2 text-xs"
             >
-              Limpar
+                {t('navigation', 'clear')}
             </Button>
           )}
         </DropdownMenuLabel>
@@ -130,7 +131,7 @@ export function NotificationCenter() {
           {recentJobs.length === 0 ? (
             <div className="py-12 text-center text-sm text-muted-foreground">
               <Bell className="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p>Nenhuma notificação</p>
+                <p>{t('navigation', 'noNotifications')}</p>
             </div>
           ) : (
             <div className="space-y-1 p-1">
@@ -150,7 +151,7 @@ export function NotificationCenter() {
   );
 }
 
-// =================== COMPONENTE ITEM ===================
+// =================== ITEM COMPONENT ===================
 
 interface NotificationItemProps {
   job: BackgroundJob;
@@ -172,12 +173,12 @@ function NotificationItem({ job, onRemove, onClick }: NotificationItemProps) {
       onClick={() => isClickable && onClick(job)}
     >
       <div className="flex items-start gap-3">
-        {/* Ícone */}
+          {/* Icon */}
         <div className="flex-shrink-0 mt-0.5">
           {icon}
         </div>
 
-        {/* Conteúdo */}
+          {/* Content */}
         <div className="flex-1 min-w-0 space-y-1">
           <div className="flex items-start justify-between gap-2">
             <p className="text-sm font-medium leading-tight">
@@ -261,58 +262,58 @@ function getJobIcon(job: BackgroundJob) {
 
 function getJobTitle(job: BackgroundJob): string {
   if (job.type === 'zotero-import') {
-    return `Importação do Zotero`;
+      return t('navigation', 'zoteroImport');
   }
-  return 'Tarefa em background';
+    return t('navigation', 'backgroundTask');
 }
 
 function getJobDescription(job: BackgroundJob): string {
   if (job.type === 'zotero-import') {
     const metadata = (job as ZoteroImportJob).metadata;
     const collectionName = metadata.collectionName || 'Collection';
-    const projectName = metadata.projectName || 'Projeto';
-    
+      const projectName = metadata.projectName || t('navigation', 'defaultProjectName');
+
     if (job.status === 'running' || job.status === 'pending') {
-      return `Importando "${collectionName}" para "${projectName}"`;
+        return `${t('navigation', 'importingTo')} "${collectionName}" → "${projectName}"`;
     } else if (job.status === 'completed') {
-      return `"${collectionName}" importada com sucesso`;
+        return `"${collectionName}" ${t('navigation', 'importedSuccess')}`;
     } else if (job.status === 'failed') {
-      return job.error || 'Erro ao importar collection';
+        return job.error || t('navigation', 'importError');
     }
   }
-  
-  return job.status === 'completed' ? 'Concluída' : job.error || 'Em andamento';
+
+    return job.status === 'completed' ? t('navigation', 'statusCompleted') : job.error || t('navigation', 'statusInProgress');
 }
 
 function getCompletionMessage(job: BackgroundJob): string {
   if (job.type === 'zotero-import') {
     const stats = job.stats || {};
     const parts: string[] = [];
-    
-    if (stats.imported) parts.push(`${stats.imported} importados`);
-    if (stats.updated) parts.push(`${stats.updated} atualizados`);
+
+      if (stats.imported) parts.push(`${stats.imported} ${t('navigation', 'importedCount')}`);
+      if (stats.updated) parts.push(`${stats.updated} ${t('navigation', 'updatedCount')}`);
     if (stats.pdfsDownloaded) parts.push(`${stats.pdfsDownloaded} PDFs`);
-    
-    return `Importação concluída! ${parts.join(', ')}`;
+
+      return `${t('navigation', 'importComplete')} ${parts.join(', ')}`;
   }
-  
-  return 'Tarefa concluída com sucesso!';
+
+    return t('navigation', 'taskCompleteSuccess');
 }
 
 function getJobTimestamp(job: BackgroundJob): string {
   const timestamp = job.completedAt || job.startedAt || job.createdAt;
   const now = Date.now();
   const diff = now - timestamp;
-  
+
   const seconds = Math.floor(diff / 1000);
   const minutes = Math.floor(seconds / 60);
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);
-  
-  if (days > 0) return `há ${days}d`;
-  if (hours > 0) return `há ${hours}h`;
-  if (minutes > 0) return `há ${minutes}min`;
-  if (seconds > 5) return `há ${seconds}s`;
-  return 'agora';
+
+    if (days > 0) return `${days}d ${t('navigation', 'timeAgo')}`;
+    if (hours > 0) return `${hours}h ${t('navigation', 'timeAgo')}`;
+    if (minutes > 0) return `${minutes}min ${t('navigation', 'timeAgo')}`;
+    if (seconds > 5) return `${seconds}s ${t('navigation', 'timeAgo')}`;
+    return t('navigation', 'timeNow');
 }
 

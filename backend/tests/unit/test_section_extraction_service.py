@@ -224,7 +224,7 @@ class TestSectionExtractionEntityTypes:
 
     @pytest.mark.asyncio
     async def test_get_child_entity_types(self, service):
-        """Testa busca de entity types filhos."""
+        """Test fetch of child entity types."""
         template_id = uuid4()
         parent_instance_id = uuid4()
         parent_entity_type_id = uuid4()

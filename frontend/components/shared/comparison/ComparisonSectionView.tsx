@@ -1,7 +1,7 @@
 /**
- * View de Comparação por Seção
- * 
- * Decide estratégia baseada em cardinality e renderiza:
+ * Section comparison view
+ *
+ * Chooses strategy based on cardinality and renders:
  * - cardinality='one': SingleInstanceComparison
  * - cardinality='many': EntitySelectorComparison
  */
@@ -16,10 +16,10 @@ import type {InstanceWithCreator} from '@/lib/comparison/grouping';
 
 export interface ComparisonSectionViewProps {
   entityType: ExtractionEntityType;
-  instances: ExtractionInstance[]; // Minhas instances
+    instances: ExtractionInstance[]; // My instances
   myValues: Record<string, any>;
   otherExtractions: OtherExtraction[];
-  allUserInstances: InstanceWithCreator[]; // NOVO: instances de todos os usuários do banco
+    allUserInstances: InstanceWithCreator[]; // Instances from all users in DB
   currentUser: ComparisonUser;
   onValueUpdate?: (instanceId: string, fieldId: string, value: any) => void;
   editable?: boolean;

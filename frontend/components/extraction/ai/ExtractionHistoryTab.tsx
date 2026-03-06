@@ -1,8 +1,8 @@
 /**
- * Tab de Histórico de Extrações
- * 
- * Lista extraction_runs anteriores (section-extraction pipeline) com suas estatísticas.
- * Funciona para histórico de extrações granulares por seção.
+ * Extraction History tab
+ *
+ * Lists previous extraction_runs (section-extraction pipeline) with their stats.
+ * Used for granular per-section extraction history.
  * 
  * @component
  */
@@ -13,8 +13,9 @@ import {ScrollArea} from "@/components/ui/scroll-area";
 import {Skeleton} from "@/components/ui/skeleton";
 import {CheckCircle, Clock, History, XCircle} from "lucide-react";
 import {format} from "date-fns";
-import {ptBR} from "date-fns/locale";
+import {enUS} from "date-fns/locale";
 import {useExtractionRuns} from "@/hooks/extraction/ai/useExtractionRuns";
+import {t} from '@/lib/copy';
 
 interface ExtractionHistoryTabProps {
   articleId: string;
@@ -50,9 +51,9 @@ export function ExtractionHistoryTab(props: ExtractionHistoryTabProps) {
     return (
       <div className="text-center py-12">
         <History className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-        <h4 className="font-medium mb-2">Nenhuma extração anterior</h4>
+          <h4 className="font-medium mb-2">{t('extraction', 'historyNoRuns')}</h4>
         <p className="text-sm text-muted-foreground">
-          Execute uma extração para começar o histórico
+            {t('extraction', 'historyRunToStart')}
         </p>
       </div>
     );
@@ -75,20 +76,20 @@ export function ExtractionHistoryTab(props: ExtractionHistoryTabProps) {
                       {isCompleted && <CheckCircle className="h-4 w-4 text-green-600" />}
                       {isFailed && <XCircle className="h-4 w-4 text-red-600" />}
                       {isRunning && <Clock className="h-4 w-4 text-blue-600 animate-pulse" />}
-                      Extração #{run.id.substring(0, 8)}
+                        {t('extraction', 'historyExtractionRun')} #{run.id.substring(0, 8)}
                     </CardTitle>
                     <CardDescription className="text-xs mt-1">
-                      {format(new Date(run.startedAt || run.createdAt), "dd MMM yyyy 'às' HH:mm", { locale: ptBR })}
+                        {format(new Date(run.startedAt || run.createdAt), "dd MMM yyyy 'at' HH:mm", {locale: enUS})}
                     </CardDescription>
                   </div>
                   <Badge
                     variant={isCompleted ? "default" : isFailed ? "destructive" : "secondary"}
                     className="text-xs"
                   >
-                    {run.status === "completed" && "Concluída"}
-                    {run.status === "failed" && "Falhou"}
-                    {run.status === "running" && "Em execução"}
-                    {run.status === "pending" && "Pendente"}
+                      {run.status === "completed" && t('extraction', 'historyCompleted')}
+                      {run.status === "failed" && t('extraction', 'historyFailed')}
+                      {run.status === "running" && t('extraction', 'historyRunning')}
+                      {run.status === "pending" && t('extraction', 'historyPending')}
                   </Badge>
                 </div>
               </CardHeader>
@@ -97,17 +98,17 @@ export function ExtractionHistoryTab(props: ExtractionHistoryTabProps) {
                 {isCompleted && run.metadata && (
                   <div className="text-xs space-y-1">
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Sugestões criadas:</span>
+                        <span className="text-muted-foreground">{t('extraction', 'historySuggestionsCreated')}</span>
                       <span className="font-medium">{run.metadata.suggestionsCreated || 0}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Tokens usados:</span>
+                        <span className="text-muted-foreground">{t('extraction', 'historyTokensUsed')}</span>
                       <span className="font-medium tabular-nums">
                         {(run.metadata.tokensTotal || run.metadata.tokensUsed || 0).toLocaleString()}
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Páginas do PDF:</span>
+                        <span className="text-muted-foreground">{t('extraction', 'historyPdfPages')}</span>
                       <span className="font-medium tabular-nums">{run.metadata.pdfPages || 0}</span>
                     </div>
                   </div>
@@ -115,14 +116,14 @@ export function ExtractionHistoryTab(props: ExtractionHistoryTabProps) {
 
                 {isFailed && run.metadata?.errorMessage && (
                   <div className="text-xs text-red-600 dark:text-red-400">
-                    <p className="font-medium mb-1">Erro:</p>
+                      <p className="font-medium mb-1">{t('extraction', 'historyErrorLabel')}</p>
                     <p className="text-muted-foreground">{run.metadata.errorMessage}</p>
                   </div>
                 )}
 
                 {isRunning && (
                   <div className="text-xs text-blue-600 dark:text-blue-400">
-                    <p>Processamento em andamento...</p>
+                      <p>{t('extraction', 'historyProcessing')}</p>
                   </div>
                 )}
               </CardContent>

@@ -1,5 +1,5 @@
 /**
- * Hook para gerenciar integração Zotero do usuário
+ * Hook to manage user Zotero integration
  */
 
 import {useCallback, useEffect, useState} from 'react';
@@ -7,6 +7,7 @@ import {supabase} from '@/integrations/supabase/client';
 import {zoteroService} from '@/services/zoteroImportService';
 import type {ZoteroCredentialsInput, ZoteroIntegration, ZoteroTestConnectionResult} from '@/types/zotero';
 import {toast} from 'sonner';
+import {t} from '@/lib/copy';
 
 export function useZoteroIntegration() {
   const [integration, setIntegration] = useState<ZoteroIntegration | null>(null);
@@ -36,7 +37,7 @@ export function useZoteroIntegration() {
         .maybeSingle();
 
       if (error) {
-        console.error('Erro ao carregar integração Zotero:', error);
+          console.error('Error loading Zotero integration:', error);
         setIntegration(null);
         setIsConfigured(false);
         return;
@@ -45,7 +46,7 @@ export function useZoteroIntegration() {
       setIntegration(data);
       setIsConfigured(!!data);
     } catch (error) {
-      console.error('Erro ao carregar integração:', error);
+        console.error('Error loading integration:', error);
       setIntegration(null);
       setIsConfigured(false);
     } finally {
@@ -60,12 +61,12 @@ export function useZoteroIntegration() {
     setLoading(true);
     try {
       await zoteroService.saveCredentials(credentials);
-      toast.success('Credenciais salvas com sucesso!');
+        toast.success(t('extraction', 'zoteroCredentialsSavedSuccess'));
       await loadIntegration();
       return true;
     } catch (error: any) {
-      console.error('Erro ao salvar credenciais:', error);
-      toast.error(error.message || 'Erro ao salvar credenciais');
+        console.error('Error saving credentials:', error);
+        toast.error(error.message || t('extraction', 'zoteroCredentialsSaveError'));
       return false;
     } finally {
       setLoading(false);
@@ -81,14 +82,14 @@ export function useZoteroIntegration() {
       const result = await zoteroService.testConnection();
       
       if (result.success) {
-        toast.success(`Conexão bem-sucedida! Usuário: ${result.userName}`);
+          toast.success(t('extraction', 'zoteroConnectionSuccess').replace('{{name}}', result.userName || ''));
       } else {
-        toast.error(result.error || 'Falha ao conectar com Zotero');
+          toast.error(result.error || t('extraction', 'zoteroConnectionFailed'));
       }
       
       return result;
     } catch (error: any) {
-      const errorMsg = error.message || 'Erro ao testar conexão';
+        const errorMsg = error.message || t('extraction', 'zoteroTestConnectionError');
       toast.error(errorMsg);
       return {
         success: false,
@@ -106,20 +107,20 @@ export function useZoteroIntegration() {
     setLoading(true);
     try {
       await zoteroService.disconnect();
-      toast.success('Integração Zotero removida');
+        toast.success(t('extraction', 'zoteroDisconnectSuccess'));
       setIntegration(null);
       setIsConfigured(false);
       return true;
     } catch (error: any) {
-      console.error('Erro ao desconectar:', error);
-      toast.error(error.message || 'Erro ao remover integração');
+        console.error('Error disconnecting Zotero:', error);
+        toast.error(error.message || t('extraction', 'zoteroDisconnectError'));
       return false;
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Carregar integração ao montar
+    // Load integration on mount
   useEffect(() => {
     loadIntegration();
   }, [loadIntegration]);

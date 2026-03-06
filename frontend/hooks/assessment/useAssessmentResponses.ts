@@ -1,10 +1,10 @@
 /**
- * Hook para gerenciar respostas de assessment
+ * Hook to manage assessment responses
  *
- * Gerencia estado de respostas { itemId: response } com auto-save.
- * Similar ao useExtractedValues mas para assessment responses.
+ * Manages response state { itemId: response } with auto-save.
+ * Similar to useExtractedValues but for assessment responses.
  *
- * Baseado em useExtractedValues.ts (DRY + KISS)
+ * Based on useExtractedValues.ts (DRY + KISS)
  *
  * @example
  * ```typescript
@@ -24,25 +24,26 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import {t} from '@/lib/copy';
 import type { AssessmentResponse, AssessmentItem, AssessmentInstrumentType } from '@/types/assessment';
 import { calculateAssessmentProgress, normalizeAssessmentResponses } from '@/lib/assessment-utils';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 /**
- * Retorno do hook
+ * Return type of the hook
  */
 export interface UseAssessmentResponsesReturn {
-  // Estado de respostas
+    // Response state
   responses: Record<string, AssessmentResponse>;  // key: item_id
   assessmentId: string | null;
 
-  // Estados
+    // State
   loading: boolean;
   initialized: boolean;
   saving: boolean;
   error: string | null;
 
-  // Funções
+    // Functions
   updateResponse: (itemId: string, response: Partial<AssessmentResponse>) => void;
   getResponse: (itemId: string) => AssessmentResponse | undefined;
   save: () => Promise<void>;
@@ -63,7 +64,7 @@ export interface UseAssessmentResponsesProps {
 }
 
 /**
- * Hook para gerenciar respostas de assessment
+ * Hook to manage assessment responses
  */
 export function useAssessmentResponses({
   projectId,
@@ -84,7 +85,7 @@ export function useAssessmentResponses({
   const { user, loading: authLoading, requireUser } = useCurrentUser();
 
   /**
-   * Carrega assessment existente do usuário
+   * Loads existing user assessment
    */
   const loadResponses = useCallback(async () => {
     if (!enabled || !projectId || !articleId || !instrumentId || authLoading) {
@@ -100,10 +101,10 @@ export function useAssessmentResponses({
 
     try {
       if (!user) {
-        throw new Error('Usuário não autenticado');
+          throw new Error(t('common', 'errors_userNotAuthenticated'));
       }
 
-      // Buscar assessment existente
+        // Fetch existing assessment
       let query = supabase
         .from('assessments')
         .select('*')
@@ -113,7 +114,7 @@ export function useAssessmentResponses({
         .eq('instrument_id', instrumentId)
         .eq('is_current_version', true);
 
-      // Filtrar por extraction_instance_id se fornecido (PROBAST por modelo)
+        // Filter by extraction_instance_id if provided (PROBAST per model)
       if (extractionInstanceId) {
         query = query.eq('extraction_instance_id', extractionInstanceId);
       } else {
@@ -127,7 +128,7 @@ export function useAssessmentResponses({
 
       if (fetchError) {
         console.error('❌ [useAssessmentResponses] Erro ao carregar assessment:', fetchError);
-        throw new Error(`Erro ao carregar assessment: ${fetchError.message}`);
+          throw new Error(`${t('assessment', 'errors_loadAssessment')}: ${fetchError.message}`);
       }
 
       if (data) {
@@ -141,7 +142,7 @@ export function useAssessmentResponses({
           status: data.status,
         });
       } else {
-        // Assessment ainda não existe
+          // Assessment does not exist yet
         setResponses({});
         setAssessmentId(null);
         console.log('ℹ️ [useAssessmentResponses] Nenhum assessment encontrado, iniciando vazio');
@@ -149,10 +150,10 @@ export function useAssessmentResponses({
 
       setInitialized(true);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Erro desconhecido';
+        const errorMessage = err instanceof Error ? err.message : t('common', 'errors_unknownError');
       console.error('❌ [useAssessmentResponses] Erro:', err);
       setError(errorMessage);
-      toast.error(`Erro ao carregar respostas: ${errorMessage}`);
+        toast.error(`${t('assessment', 'errors_loadResponses')}: ${errorMessage}`);
       setInitialized(false);
     } finally {
       setLoading(false);
@@ -160,7 +161,7 @@ export function useAssessmentResponses({
   }, [enabled, projectId, articleId, instrumentId, extractionInstanceId, authLoading, user]);
 
   /**
-   * Atualiza resposta localmente (não persiste imediatamente)
+   * Updates response locally (does not persist immediately)
    */
   const updateResponse = useCallback((itemId: string, partialResponse: Partial<AssessmentResponse>) => {
     setResponses(prev => ({
@@ -179,18 +180,18 @@ export function useAssessmentResponses({
   }, []);
 
   /**
-   * Busca resposta específica
+   * Fetches specific response
    */
   const getResponse = useCallback((itemId: string): AssessmentResponse | undefined => {
     return responses[itemId];
   }, [responses]);
 
   /**
-   * Salva todas as respostas no banco
+   * Save all responses to the database
    */
   const save = useCallback(async () => {
     if (!projectId || !articleId || !instrumentId) {
-      console.warn('⚠️ [useAssessmentResponses] Impossível salvar sem IDs');
+        console.warn('[useAssessmentResponses] Cannot save without IDs');
       return;
     }
 
@@ -206,7 +207,7 @@ export function useAssessmentResponses({
         : totalResponses;
 
       if (assessmentId) {
-        // Atualizar assessment existente
+          // Update existing assessment
         const { error: updateError } = await supabase
           .from('assessments')
           .update({
@@ -217,7 +218,7 @@ export function useAssessmentResponses({
           .eq('id', assessmentId);
 
         if (updateError) {
-          throw new Error(`Erro ao atualizar assessment: ${updateError.message}`);
+            throw new Error(`${t('assessment', 'errors_updateAssessment')}: ${updateError.message}`);
         }
 
         console.log('✅ [useAssessmentResponses] Assessment atualizado:', {
@@ -225,7 +226,7 @@ export function useAssessmentResponses({
           responsesCount: totalResponses,
         });
       } else {
-        // Criar novo assessment
+          // Create new assessment
         const { data: newAssessment, error: insertError } = await supabase
           .from('assessments')
           .insert({
@@ -245,7 +246,7 @@ export function useAssessmentResponses({
           .single();
 
         if (insertError) {
-          throw new Error(`Erro ao criar assessment: ${insertError.message}`);
+            throw new Error(`${t('assessment', 'errors_createAssessment')}: ${insertError.message}`);
         }
 
         setAssessmentId(newAssessment.id);
@@ -256,11 +257,11 @@ export function useAssessmentResponses({
         });
       }
 
-      toast.success('Respostas salvas com sucesso');
+        toast.success(t('assessment', 'headerSaved'));
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Erro desconhecido';
+        const errorMessage = err instanceof Error ? err.message : t('common', 'errors_unknownError');
       console.error('❌ [useAssessmentResponses] Erro ao salvar:', err);
-      toast.error(`Erro ao salvar respostas: ${errorMessage}`);
+        toast.error(`${t('assessment', 'errors_saveResponses')}: ${errorMessage}`);
       throw err;
     } finally {
       setSaving(false);
@@ -274,7 +275,7 @@ export function useAssessmentResponses({
     await loadResponses();
   }, [loadResponses]);
 
-  // Effect para carregar respostas quando deps mudarem
+    // Effect to load responses when deps change
   useEffect(() => {
     loadResponses();
   }, [loadResponses]);

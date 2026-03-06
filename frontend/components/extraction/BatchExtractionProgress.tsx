@@ -1,14 +1,15 @@
 /**
- * Componente de Progresso para Extração em Batch com Chunking
- * 
- * Mostra progresso visual da extração de todas as seções de um modelo,
- * incluindo informações sobre chunks e seções sendo processadas.
+ * Batch extraction progress component with chunking
+ *
+ * Shows visual progress of extracting all sections of a model,
+ * including chunk and section processing info.
  */
 
 import {Progress} from '@/components/ui/progress';
 import {Card, CardContent} from '@/components/ui/card';
 import {Loader2} from 'lucide-react';
 import type {ExtractionProgress} from '@/hooks/extraction/useBatchSectionExtractionChunked';
+import {t} from '@/lib/copy';
 
 interface BatchExtractionProgressProps {
   progress: ExtractionProgress;
@@ -18,8 +19,8 @@ export function BatchExtractionProgress({ progress }: BatchExtractionProgressPro
   const { currentChunk, totalChunks, completedSections, totalSections, currentSectionName } = progress;
   
   // Progresso de chunks: chunks completados (currentChunk - 1) / total
-  // Quando currentChunk = 1, ainda estamos no primeiro chunk (0% completado)
-  // Quando currentChunk = totalChunks + 1, todos os chunks foram completados (100%)
+    // When currentChunk = 1 we are still on the first chunk (0% complete)
+    // When currentChunk = totalChunks + 1, all chunks are complete (100%)
   const chunksProgress = totalChunks > 0 ? ((currentChunk - 1) / totalChunks) * 100 : 0;
   const sectionsProgress = totalSections > 0 ? (completedSections / totalSections) * 100 : 0;
 
@@ -31,7 +32,7 @@ export function BatchExtractionProgress({ progress }: BatchExtractionProgressPro
           <div className="flex items-center gap-2">
             <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
             <h3 className="text-sm font-semibold text-slate-900">
-              Extraindo todas as seções do modelo
+                {t('extraction', 'batchExtractingAllSections')}
             </h3>
           </div>
 
@@ -39,7 +40,7 @@ export function BatchExtractionProgress({ progress }: BatchExtractionProgressPro
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs">
               <span className="text-slate-600">
-                Chunk {currentChunk} de {totalChunks}
+                {t('extraction', 'batchChunkOf').replace('{{current}}', String(currentChunk)).replace('{{total}}', String(totalChunks))}
               </span>
               <span className="text-slate-500">
                 {Math.round(chunksProgress)}%
@@ -48,11 +49,11 @@ export function BatchExtractionProgress({ progress }: BatchExtractionProgressPro
             <Progress value={chunksProgress} className="h-2" />
           </div>
 
-          {/* Progresso de seções */}
+            {/* Section progress */}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs">
               <span className="text-slate-600">
-                Seções: {completedSections} de {totalSections}
+                {t('extraction', 'batchSectionsOf').replace('{{completed}}', String(completedSections)).replace('{{total}}', String(totalSections))}
               </span>
               <span className="text-slate-500">
                 {Math.round(sectionsProgress)}%
@@ -61,10 +62,10 @@ export function BatchExtractionProgress({ progress }: BatchExtractionProgressPro
             <Progress value={sectionsProgress} className="h-2" />
           </div>
 
-          {/* Seção atual */}
+            {/* Current section */}
           {currentSectionName && (
             <div className="text-xs text-slate-500 italic">
-              Processando: {currentSectionName}...
+                {t('extraction', 'batchProcessing').replace('{{name}}', currentSectionName)}
             </div>
           )}
         </div>

@@ -295,12 +295,12 @@ class SectionExtractionService(LoggerMixin):
         total_tokens = 0
         
         try:
-            # 1. Buscar/processar PDF (uma única vez)
+            # 1. Fetch/process PDF (once)
             if not pdf_text:
                 pdf_data = await self._get_pdf(article_id)
                 pdf_text = await self.pdf_processor.extract_text(pdf_data)
-            
-            # 2. Buscar entity types filhos
+
+            # 2. Fetch child entity types
             child_types = await self._get_child_entity_types(
                 template_id=template_id,
                 parent_instance_id=parent_instance_id,
@@ -311,8 +311,8 @@ class SectionExtractionService(LoggerMixin):
             successful = 0
             failed = 0
             total_suggestions = 0
-            
-            # 3. Extrair cada seção sequencialmente com memória
+
+            # 3. Extract each section sequentially with memory
             for entity_type in child_types:
                 try:
                     result = await self._extract_section_with_memory(
@@ -568,13 +568,13 @@ class SectionExtractionService(LoggerMixin):
         section_ids: list[UUID] | None = None,
     ) -> list[Any]:
         """
-        Busca entity types filhos baseado no entity_type da instância pai.
-        
-        O parent_instance_id aponta para uma instância (ex: um modelo).
-        Precisamos buscar o entity_type_id dessa instância e então
-        buscar os entity types que têm esse entity_type como parent.
+        Fetch child entity types based on the parent instance's entity_type.
+
+        parent_instance_id points to an instance (e.g. a model).
+        We need to fetch that instance's entity_type_id and then
+        fetch the entity types that have this entity_type as parent.
         """
-        # 1. Buscar a instância pai para obter seu entity_type_id
+        # 1. Fetch parent instance to get its entity_type_id
         parent_instance = await self._instances.get_by_id(parent_instance_id)
         
         if not parent_instance:
@@ -586,11 +586,11 @@ class SectionExtractionService(LoggerMixin):
             return []
         
         parent_entity_type_id = str(parent_instance.entity_type_id)
-        
-        # 2. Buscar entity types filhos desse parent_entity_type
+
+        # 2. Fetch child entity types of this parent_entity_type
         child_entity_types = await self._entity_types.get_children(
             parent_entity_type_id=parent_entity_type_id,
-            cardinality=None,  # Busca todos, não só 'one'
+            cardinality=None,  # Fetch all, not just 'one'
         )
         
         if not child_entity_types:

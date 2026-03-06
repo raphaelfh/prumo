@@ -1,11 +1,11 @@
 /**
  * Header More Menu - Assessment Module
  *
- * Sub-componente do header responsável por:
- * - Menu dropdown com ações secundárias
- * - Undo/Redo (quando disponível)
- * - Exportar dados (futuro)
- * - Outras ações administrativas
+ * Header sub-component responsible for:
+ * - Dropdown menu with secondary actions
+ * - Undo/Redo (when available)
+ * - Export data (future)
+ * - Other admin actions
  *
  * Baseado em ExtractionHeader/HeaderMoreMenu (DRY + KISS)
  *
@@ -21,6 +21,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {Download, MoreHorizontal, Redo2, Undo2} from 'lucide-react';
+import {t} from '@/lib/copy';
 
 // =================== INTERFACES ===================
 
@@ -31,7 +32,7 @@ export interface HeaderMoreMenuProps {
   onUndo: () => void;
   onRedo: () => void;
 
-  // Futuras ações
+    // Future actions
   onExport?: () => void;
 }
 
@@ -40,7 +41,7 @@ export interface HeaderMoreMenuProps {
 export function HeaderMoreMenu(props: HeaderMoreMenuProps) {
   const { canUndo, canRedo, onUndo, onRedo, onExport } = props;
 
-  // Se não há nenhuma ação disponível, não renderizar
+    // If no action available, do not render
   const hasAnyAction = canUndo || canRedo || onExport;
   if (!hasAnyAction) {
     return null;
@@ -59,11 +60,11 @@ export function HeaderMoreMenu(props: HeaderMoreMenuProps) {
           <>
             <DropdownMenuItem onClick={onUndo} disabled={!canUndo}>
               <Undo2 className="h-4 w-4 mr-2" />
-              Desfazer
+                {t('assessment', 'headerUndo')}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={onRedo} disabled={!canRedo}>
               <Redo2 className="h-4 w-4 mr-2" />
-              Refazer
+                {t('assessment', 'headerRedo')}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
           </>
@@ -73,7 +74,7 @@ export function HeaderMoreMenu(props: HeaderMoreMenuProps) {
         {onExport && (
           <DropdownMenuItem onClick={onExport}>
             <Download className="h-4 w-4 mr-2" />
-            Exportar dados
+              {t('assessment', 'headerExportData')}
           </DropdownMenuItem>
         )}
       </DropdownMenuContent>

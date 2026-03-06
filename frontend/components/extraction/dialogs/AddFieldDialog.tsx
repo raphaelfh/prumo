@@ -1,13 +1,13 @@
 /**
- * Dialog para adicionar novo campo de extração
- * 
+ * Dialog to add a new extraction field
+ *
  * Features:
- * - Formulário com react-hook-form + zod
- * - Geração automática de nome (snake_case) a partir do label
- * - Validação em tempo real
- * - Campos condicionais (unit para number, allowed_values para select)
- * - Feedback visual de erros
- * 
+ * - Form with react-hook-form + zod
+ * - Auto-generated name (snake_case) from label
+ * - Real-time validation
+ * - Conditional fields (unit for number, allowed_values for select)
+ * - Visual error feedback
+ *
  * @component
  */
 
@@ -33,6 +33,7 @@ import {Form, FormControl, FormDescription, FormField, FormItem, FormLabel, Form
 import {ExtractionField, ExtractionFieldInput, ExtractionFieldSchema,} from '@/types/extraction';
 import {AllowedValuesList} from './AllowedValuesList';
 import {AllowedUnitsList} from './AllowedUnitsList';
+import {t} from '@/lib/copy';
 
 interface AddFieldDialogProps {
   open: boolean;
@@ -45,16 +46,16 @@ interface AddFieldDialogProps {
 }
 
 /**
- * Gera nome em snake_case a partir de um label
+ * Generate snake_case name from a label
  */
 function generateSnakeCaseName(label: string): string {
   return label
     .toLowerCase()
-    .normalize('NFD') // Normalizar para decompor acentos
-    .replace(/[\u0300-\u036f]/g, '') // Remover acentos
-    .replace(/[^a-z0-9]+/g, '_') // Substituir não-alfanuméricos por _
-    .replace(/^_+|_+$/g, '') // Remover _ do início/fim
-    .replace(/_+/g, '_'); // Remover _ consecutivos
+      .normalize('NFD') // Normalize to decompose accents
+      .replace(/[\u0300-\u036f]/g, '') // Remove accents
+      .replace(/[^a-z0-9]+/g, '_') // Replace non-alphanumeric with _
+      .replace(/^_+|_+$/g, '') // Remove leading/trailing _
+      .replace(/_+/g, '_'); // Collapse consecutive _
 }
 
 export function AddFieldDialog({
@@ -90,7 +91,7 @@ export function AddFieldDialog({
   const fieldType = form.watch('field_type');
   const label = form.watch('label');
 
-  // Gerar nome automaticamente quando label muda
+    // Auto-generate name when label changes
   useEffect(() => {
     if (autoGenerateName && label) {
       const generatedName = generateSnakeCaseName(label);
@@ -101,18 +102,18 @@ export function AddFieldDialog({
   const handleSubmit = async (data: ExtractionFieldInput) => {
     setLoading(true);
     try {
-      // Configurar suporte a "Outro (especificar)" via flags dedicadas
+        // Configure "Other (specify)" support via dedicated flags
       const finalData = { 
         ...data,
         allow_other: (fieldType === 'select' || fieldType === 'multiselect') ? allowOther : false,
-        other_label: (fieldType === 'select' || fieldType === 'multiselect') && allowOther ? (data as any).other_label || 'Outro (especificar)' : null,
+          other_label: (fieldType === 'select' || fieldType === 'multiselect') && allowOther ? (data as any).other_label || t('extraction', 'otherSpecifyDefault') : null,
         other_placeholder: (fieldType === 'select' || fieldType === 'multiselect') && allowOther ? (data as any).other_placeholder || null : null,
       } as any;
 
       const result = await onSave(finalData);
       if (result) {
-        // Não criar/remover campos auxiliares; "Outro" é inline
-        // Resetar formulário e fechar
+          // Don't create/remove auxiliary fields; "Other" is inline
+          // Reset form and close
         form.reset();
         setAutoGenerateName(true);
         setAllowOther(false);
@@ -133,12 +134,12 @@ export function AddFieldDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Adicionar Novo Campo</DialogTitle>
+            <DialogTitle>{t('extraction', 'addFieldTitle')}</DialogTitle>
           <DialogDescription>
             {sectionName ? (
-              <>Adicione um novo campo para a seção <strong>{sectionName}</strong></>
+                <>{t('extraction', 'addFieldDescInSection')} <strong>{sectionName}</strong></>
             ) : (
-              'Crie um novo campo para coletar dados dos artigos'
+                t('extraction', 'addFieldDescDefault')
             )}
           </DialogDescription>
         </DialogHeader>
@@ -157,12 +158,12 @@ export function AddFieldDialog({
                   <FormControl>
                     <Input
                       {...field}
-                      placeholder="Ex: Idade dos Participantes"
+                      placeholder={t('extraction', 'placeholderLabelExample')}
                       disabled={loading}
                     />
                   </FormControl>
                   <FormDescription>
-                    Nome que aparecerá para os revisores ao extrair dados
+                      Name shown to reviewers when extracting data
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -176,18 +177,18 @@ export function AddFieldDialog({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
-                    Nome Técnico <span className="text-destructive">*</span>
+                      Technical name <span className="text-destructive">*</span>
                   </FormLabel>
                   <div className="flex items-center gap-2">
                     <FormControl>
                       <Input
                         {...field}
-                        placeholder="Ex: idade_participantes"
+                        placeholder={t('extraction', 'placeholderNameExample')}
                         className="font-mono text-sm"
                         disabled={loading}
                         onChange={(e) => {
                           field.onChange(e);
-                          // Desabilitar auto-geração se usuário editar manualmente
+                            // Disable auto-generation if user edits manually
                           if (e.target.value !== generateSnakeCaseName(label)) {
                             setAutoGenerateName(false);
                           }
@@ -208,7 +209,7 @@ export function AddFieldDialog({
                     </Button>
                   </div>
                   <FormDescription>
-                    Nome interno do campo (snake_case). Gerado automaticamente do label.
+                      Internal field name (snake_case). Auto-generated from label.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -221,7 +222,7 @@ export function AddFieldDialog({
               name="field_type"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Tipo de Campo</FormLabel>
+                    <FormLabel>{t('extraction', 'editFieldTypeLabel')}</FormLabel>
                   <Select
                     onValueChange={field.onChange}
                     defaultValue={field.value}
@@ -229,16 +230,16 @@ export function AddFieldDialog({
                   >
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Selecione o tipo" />
+                          <SelectValue placeholder={t('extraction', 'selectTypePlaceholder')}/>
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="text">Texto</SelectItem>
-                      <SelectItem value="number">Número</SelectItem>
-                      <SelectItem value="date">Data</SelectItem>
-                      <SelectItem value="select">Seleção Única</SelectItem>
-                      <SelectItem value="multiselect">Múltipla Escolha</SelectItem>
-                      <SelectItem value="boolean">Sim/Não</SelectItem>
+                        <SelectItem value="text">{t('extraction', 'fieldTypeText')}</SelectItem>
+                        <SelectItem value="number">{t('extraction', 'fieldTypeNumber')}</SelectItem>
+                        <SelectItem value="date">{t('extraction', 'fieldTypeDate')}</SelectItem>
+                        <SelectItem value="select">{t('extraction', 'fieldTypeSelect')}</SelectItem>
+                        <SelectItem value="multiselect">{t('extraction', 'fieldTypeMultiselect')}</SelectItem>
+                        <SelectItem value="boolean">{t('extraction', 'fieldTypeBoolean')}</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -246,67 +247,67 @@ export function AddFieldDialog({
               )}
             />
 
-            {/* Descrição */}
+              {/* Description */}
             <FormField
               control={form.control}
               name="description"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Descrição</FormLabel>
+                    <FormLabel>{t('extraction', 'editFieldDescription')}</FormLabel>
                   <FormControl>
                     <Textarea
                       {...field}
                       value={field.value || ''}
-                      placeholder="Descreva o que deve ser coletado neste campo..."
+                      placeholder={t('extraction', 'fieldDescriptionPlaceholder')}
                       rows={3}
                       disabled={loading}
                     />
                   </FormControl>
                   <FormDescription>
-                    Instruções para ajudar os revisores a preencher corretamente
+                      {t('extraction', 'editFieldDescriptionHint')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
             />
 
-            {/* Instrução para IA */}
+              {/* AI instruction */}
             <FormField
               control={form.control}
               name="llm_description"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Instrução para IA (opcional)</FormLabel>
+                    <FormLabel>{t('extraction', 'editFieldLLMInstruction')}</FormLabel>
                   <FormControl>
                     <Textarea
                       {...field}
                       value={field.value || ''}
-                      placeholder="Exemplo: Extraia o número total de participantes no baseline, antes de exclusões..."
+                      placeholder={t('extraction', 'examplePlaceholder')}
                       rows={3}
                       disabled={loading}
                     />
                   </FormControl>
                   <FormDescription>
-                    Instrução específica para extração automática com IA. Seja claro sobre O QUE extrair e ONDE encontrar no artigo.
+                      {t('extraction', 'editFieldLLMInstructionDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
             />
 
-            {/* Unidades Disponíveis (condicional - apenas para números) */}
+              {/* Available units (conditional - numbers only) */}
             {fieldType === 'number' && (
               <FormField
                 control={form.control}
                 name="allowed_units"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Unidades Disponíveis (opcional)</FormLabel>
+                      <FormLabel>{t('extraction', 'editFieldUnitsAvailable')}</FormLabel>
                     <AllowedUnitsList
                       values={Array.isArray(field.value) ? field.value : []}
                       onChange={(newUnits) => {
                         field.onChange(newUnits.length > 0 ? newUnits : null);
-                        // Sincronizar unit com a primeira unidade
+                          // Sync unit with first unit
                         if (newUnits.length > 0) {
                           form.setValue('unit', newUnits[0]);
                         } else {
@@ -316,8 +317,7 @@ export function AddFieldDialog({
                       disabled={loading}
                     />
                     <FormDescription>
-                      Configure as unidades que o revisor poderá escolher durante a extração.
-                      A primeira unidade é a padrão/sugerida. Deixe vazio para usar sugestões automáticas.
+                        {t('extraction', 'configureUnitsDesc')} {t('extraction', 'firstUnitDefault')}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -325,7 +325,7 @@ export function AddFieldDialog({
               />
             )}
 
-            {/* Valores Permitidos (condicional - para select/multiselect) */}
+              {/* Allowed values (conditional - for select/multiselect) */}
             {(fieldType === 'select' || fieldType === 'multiselect') && (
               <>
                 <FormField
@@ -334,7 +334,7 @@ export function AddFieldDialog({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        Valores Permitidos <span className="text-destructive">*</span>
+                          {t('extraction', 'allowedValuesLabel')} <span className="text-destructive">*</span>
                       </FormLabel>
                       <AllowedValuesList
                         values={Array.isArray(field.value) ? field.value : []}
@@ -348,12 +348,12 @@ export function AddFieldDialog({
                   )}
                 />
 
-                {/* Opção: Permitir "Outro (especificar)" */}
+                  {/* Option: Allow "Other (specify)" */}
                 <div className="space-y-3 rounded-lg border p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <Label className="font-medium">Permitir "Outro (especificar)"</Label>
-                      <p className="text-xs text-muted-foreground mt-1">Mostra opção inline e input contextual</p>
+                        <Label className="font-medium">{t('extraction', 'allowOtherSpecifyLabel')}</Label>
+                        <p className="text-xs text-muted-foreground mt-1">{t('extraction', 'otherOptionInlineHint')}</p>
                     </div>
                   <Switch
                       checked={allowOther}
@@ -369,9 +369,10 @@ export function AddFieldDialog({
                         name={"other_label" as any}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Label do "Outro"</FormLabel>
+                              <FormLabel>{t('extraction', 'otherLabelLabel')}</FormLabel>
                             <FormControl>
-                              <Input {...field} placeholder="Outro (especificar)" disabled={loading} />
+                                <Input {...field} placeholder={t('extraction', 'otherSpecifyDefault')}
+                                       disabled={loading}/>
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -382,9 +383,10 @@ export function AddFieldDialog({
                         name={"other_placeholder" as any}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Placeholder</FormLabel>
+                              <FormLabel>{t('extraction', 'placeholderLabel')}</FormLabel>
                             <FormControl>
-                              <Input {...field} placeholder="Digite aqui" disabled={loading} />
+                                <Input {...field} placeholder={t('extraction', 'placeholderTypeHere')}
+                                       disabled={loading}/>
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -396,16 +398,16 @@ export function AddFieldDialog({
               </>
             )}
 
-            {/* Campo Obrigatório */}
+              {/* Required field */}
             <FormField
               control={form.control}
               name="is_required"
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
                   <div className="space-y-0.5">
-                    <FormLabel className="text-base">Campo Obrigatório</FormLabel>
+                      <FormLabel className="text-base">{t('extraction', 'editFieldRequired')}</FormLabel>
                     <FormDescription>
-                      Marque se este campo deve ser preenchido obrigatoriamente
+                        {t('extraction', 'editFieldRequiredDesc')}
                     </FormDescription>
                   </div>
                   <FormControl>
@@ -424,12 +426,12 @@ export function AddFieldDialog({
               <div className="flex items-start gap-2">
                 <Info className="h-4 w-4 mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="font-medium">Dicas:</p>
+                    <p className="font-medium">{t('extraction', 'addFieldTipsTitle')}</p>
                   <ul className="mt-1 list-disc list-inside space-y-1 text-xs">
-                    <li>O nome técnico é gerado automaticamente do label</li>
-                    <li>Unidades disponíveis: configure as opções que aparecerão para o revisor (a primeira é a padrão)</li>
-                    <li>Deixe as unidades vazias para usar sugestões automáticas baseadas no contexto</li>
-                    <li>Para campos de seleção, defina pelo menos 2 opções</li>
+                      <li>{t('extraction', 'addFieldTipName')}</li>
+                      <li>{t('extraction', 'unitsAvailableHint')}</li>
+                      <li>{t('extraction', 'addFieldTipUnitsEmpty')}</li>
+                      <li>{t('extraction', 'addFieldTipSelectOptions')}</li>
                   </ul>
                 </div>
               </div>
@@ -442,11 +444,11 @@ export function AddFieldDialog({
                 onClick={handleCancel}
                 disabled={loading}
               >
-                Cancelar
+                  {t('common', 'cancel')}
               </Button>
               <Button type="submit" disabled={loading}>
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Adicionar Campo
+                  {t('extraction', 'addFieldButtonLabel')}
               </Button>
             </DialogFooter>
           </form>

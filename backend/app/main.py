@@ -1,12 +1,12 @@
 """
 FastAPI Application Entry Point.
 
-Este módulo configura a aplicação FastAPI principal com:
-- Middleware de CORS, Logging e Request ID
+This module configures the main FastAPI application with:
+- CORS, Logging and Request ID middleware
 - Rate limiting
-- Error handling centralizado
-- Logging estruturado
-- Rotas da API v1
+- Centralized error handling
+- Structured logging
+- API v1 routes
 """
 
 from contextlib import asynccontextmanager
@@ -16,7 +16,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
@@ -24,10 +24,12 @@ from alembic.config import Config as AlembicConfig
 
 from app.api.v1.router import api_router
 from app.core.config import settings
+from app.core.deps import AsyncSessionLocal
 from app.core.error_handler import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import register_middlewares
-from app.models import Base  # Importa todos os modelos para garantir que sejam registrados
+from app.core.security import get_jwks
+from app.models import Base  # Import all models so they are registered
 from app.utils.rate_limiter import limiter
 
 logger = get_logger(__name__)
@@ -35,11 +37,11 @@ logger = get_logger(__name__)
 
 def check_pending_migrations() -> None:
     """
-    Verifica se há migrações pendentes antes de iniciar a aplicação.
+    Check for pending migrations before starting the application.
 
-    Compara a revisão atual do banco com a revisão head do Alembic.
-    Encerra o processo com SystemExit(1) se houver migrações pendentes,
-    impedindo que a aplicação suba com um schema desatualizado.
+    Compares current DB revision with Alembic head revision.
+    Exits with SystemExit(1) if there are pending migrations,
+    preventing the app from starting with an outdated schema.
     """
     alembic_cfg = AlembicConfig("alembic.ini")
     script = ScriptDirectory.from_config(alembic_cfg)
@@ -68,10 +70,10 @@ def check_pending_migrations() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
-    Gerencia o ciclo de vida da aplicação.
+    Manages application lifecycle.
 
-    - Startup: Configura logging, conexões de banco, etc.
-    - Shutdown: Fecha conexões e limpa recursos.
+    - Startup: Configure logging, DB connections, etc.
+    - Shutdown: Close connections and clean up resources.
     """
     # Startup
     configure_logging()
@@ -81,7 +83,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         project_name=settings.PROJECT_NAME,
         debug=settings.DEBUG,
     )
-    
+
+    # Warm-up: avoid first request paying JWKS and DB pool latency
+    try:
+        await get_jwks()
+        logger.debug("jwks_warm_ok")
+    except Exception as e:
+        logger.warning("jwks_warm_skipped", error=str(e))
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+        logger.debug("db_pool_warm_ok")
+    except Exception as e:
+        logger.warning("db_pool_warm_skipped", error=str(e))
+
     yield
     
     # Shutdown
@@ -90,14 +105,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 def create_app() -> FastAPI:
     """
-    Factory function para criar a aplicação FastAPI.
+    Factory function to create the FastAPI application.
 
     Returns:
-        FastAPI: Instância configurada da aplicação.
+        FastAPI: Configured application instance.
     """
     app = FastAPI(
         title=settings.PROJECT_NAME,
-        description="Backend API para Review Hub - Plataforma de Revisão Sistemática",
+        description="Backend API for Review Hub - Systematic Review Platform",
         version="0.1.0",
         openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
         docs_url=f"{settings.API_V1_PREFIX}/docs",
@@ -108,11 +123,11 @@ def create_app() -> FastAPI:
     # Rate Limiter
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-    
-    # Registrar exception handlers customizados
+
+    # Register custom exception handlers
     register_exception_handlers(app)
-    
-    # CORS Middleware (deve vir antes dos outros middlewares)
+
+    # CORS Middleware (must come before other middlewares)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins_list,
@@ -121,8 +136,8 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
         expose_headers=["X-Trace-Id", "X-Response-Time"],
     )
-    
-    # Registrar middlewares customizados (RequestId, Logging, Timing)
+
+    # Register custom middlewares (RequestId, Logging, Timing)
     register_middlewares(app)
     
     # API Routes
@@ -136,8 +151,8 @@ def create_app() -> FastAPI:
     @app.get("/", tags=["Root"])
     async def root() -> dict[str, str]:
         """
-        Root endpoint com informações da API.
-        Para conseguir acessar o doc, visite {settings.API_V1_PREFIX}/docs, como por exemplo http://localhost:8000/api/v1/docs
+        Root endpoint with API info.
+        To access the docs, visit {settings.API_V1_PREFIX}/docs, e.g. http://localhost:8000/api/v1/docs
         """
         return {
             "name": settings.PROJECT_NAME,

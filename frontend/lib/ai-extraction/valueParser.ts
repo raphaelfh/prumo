@@ -1,52 +1,35 @@
 /**
- * Utilitários para parsing e normalização de valores
- * 
- * Funções puras para trabalhar com valores de extração que podem estar
- * em diferentes formatos (objeto {value, unit}, valor direto, etc.)
- * 
- * @example
- * ```typescript
- * // Extrair valor de objeto ou valor direto
- * const value = extractValue({ value: 42, unit: 'kg' }); // 42
- * const simple = extractValue(42); // 42
- * 
- * // Verificar se está vazio
- * if (isEmptyValue(value)) {
- *   console.log('Valor vazio');
- * }
- * 
- * // Validar número
- * if (isValidNumber(value)) {
- *   const num = toNumber(value); // number | null
- * }
- * ```
+ * Utilities for parsing and normalizing values
+ *
+ * Pure functions for extraction values that may be in different formats
+ * (object {value, unit}, raw value, etc.)
  */
 
 /**
- * Extrai o valor de um objeto {value, unit} ou retorna o valor direto
- * 
- * @param value - Valor que pode ser objeto ou valor direto
- * @returns Valor extraído ou valor original
+ * Extracts the value from a {value, unit} object or returns the raw value
+ *
+ * @param value - Value that may be an object or raw value
+ * @returns Extracted value or original value
  */
 export function extractValue(value: any): any {
   if (value === null || value === undefined) {
     return null;
   }
 
-  // Se for objeto com propriedade 'value', extrair o valor
+    // If object with 'value' property, extract it
   if (typeof value === 'object' && 'value' in value) {
     return value.value;
   }
 
-  // Caso contrário, retornar o valor direto
+    // Otherwise return raw value
   return value;
 }
 
 /**
- * Extrai a unidade de um valor (se for objeto {value, unit})
- * 
- * @param value - Valor que pode ser objeto ou valor direto
- * @returns Unidade se disponível, null caso contrário
+ * Extracts the unit from a value (if it is a {value, unit} object)
+ *
+ * @param value - Value that may be an object or raw value
+ * @returns Unit if available, null otherwise
  */
 export function extractUnit(value: any): string | null {
   if (value === null || value === undefined) {
@@ -61,10 +44,10 @@ export function extractUnit(value: any): string | null {
 }
 
 /**
- * Verifica se um valor está vazio (null, undefined ou string vazia)
- * 
- * @param value - Valor a verificar
- * @returns true se o valor está vazio
+ * Checks if a value is empty (null, undefined or empty string)
+ *
+ * @param value - Value to check
+ * @returns true if value is empty
  */
 export function isEmptyValue(value: any): boolean {
   const extracted = extractValue(value);
@@ -72,12 +55,12 @@ export function isEmptyValue(value: any): boolean {
 }
 
 /**
- * Normaliza um valor para formato padrão
- * 
- * Converte valores vazios para null e garante formato consistente.
- * 
- * @param value - Valor a normalizar
- * @returns Valor normalizado
+ * Normalizes a value to standard format
+ *
+ * Converts empty values to null and ensures consistent format.
+ *
+ * @param value - Value to normalize
+ * @returns Normalized value
  */
 export function normalizeValue(value: any): any {
   if (isEmptyValue(value)) {
@@ -88,26 +71,26 @@ export function normalizeValue(value: any): any {
 }
 
 /**
- * Valida se um valor é um número válido
- * 
- * @param value - Valor a validar
- * @returns true se for um número válido
+ * Validates whether a value is a valid number
+ *
+ * @param value - Value to validate
+ * @returns true if it is a valid number
  */
 export function isValidNumber(value: any): boolean {
   const extracted = extractValue(value);
   
   if (extracted === null || extracted === undefined || extracted === '') {
-    return false; // Valores vazios não são números válidos
+      return false; // Empty values are not valid numbers
   }
 
   return !isNaN(Number(extracted));
 }
 
 /**
- * Converte valor para número, retornando null se inválido
- * 
- * @param value - Valor a converter
- * @returns Número ou null se inválido
+ * Converts value to number, returning null if invalid
+ *
+ * @param value - Value to convert
+ * @returns Number or null if invalid
  */
 export function toNumber(value: any): number | null {
   if (!isValidNumber(value)) {
@@ -118,11 +101,11 @@ export function toNumber(value: any): number | null {
 }
 
 /**
- * Converte valor para string, tratando valores nulos/vazios
- * 
- * @param value - Valor a converter
- * @param emptyPlaceholder - Texto para exibir quando vazio (padrão: '')
- * @returns String representando o valor
+ * Converts value to string, handling null/empty values
+ *
+ * @param value - Value to convert
+ * @param emptyPlaceholder - Text to show when empty (default: '')
+ * @returns String representing the value
  */
 export function toString(value: any, emptyPlaceholder: string = ''): string {
   const extracted = extractValue(value);

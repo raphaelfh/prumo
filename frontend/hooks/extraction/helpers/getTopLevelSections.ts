@@ -1,11 +1,11 @@
 /**
- * Helper para buscar seções de nível superior (study-level)
- * 
- * Seções de nível superior são entity_types que:
- * - Têm parent_entity_type_id = null (não são filhas de outros entity_types)
- * - NÃO são prediction_models (name != 'prediction_models')
- * - Podem ter cardinality = 'one' ou 'many'
- * - São vinculadas diretamente ao artigo (sem parentInstanceId)
+ * Helper to fetch top-level (study-level) sections
+ *
+ * Top-level sections are entity_types that:
+ * - Have parent_entity_type_id = null (not children of other entity_types)
+ * - Are NOT prediction_models (name != 'prediction_models')
+ * - May have cardinality = 'one' or 'many'
+ * - Are linked directly to the article (no parentInstanceId)
  */
 
 import {queryEntityTypesWithFallback} from './queryEntityTypes';
@@ -18,10 +18,10 @@ export interface TopLevelSection {
 }
 
 /**
- * Busca todas as seções de nível superior do template
- * 
- * @param templateId - ID do template
- * @returns Array de seções de nível superior ordenadas por sort_order
+ * Fetches all top-level sections of the template
+ *
+ * @param templateId - Template ID
+ * @returns Array of top-level sections ordered by sort_order
  */
 export async function getTopLevelSections(
   templateId: string,

@@ -10,15 +10,15 @@ from httpx import AsyncClient
 
 
 class TestSectionExtractionEndpoints:
-    """Testes de integração para endpoints de extração de seções."""
+    """Integration tests for section extraction endpoints."""
     
     @pytest.mark.asyncio
     async def test_section_extraction_validation_single_mode(
         self,
         client: AsyncClient,
     ) -> None:
-        """Test validação no modo de seção única."""
-        # Sem entityTypeId no modo de seção única
+        """Test validation in single-section mode."""
+        # No entityTypeId in single-section mode
         response = await client.post(
             "/api/v1/extraction/sections",
             json={
@@ -36,7 +36,7 @@ class TestSectionExtractionEndpoints:
         self,
         client: AsyncClient,
     ) -> None:
-        """Test validação no modo batch."""
+        """Test validation in batch mode."""
         # extractAllSections=true sem parentInstanceId
         response = await client.post(
             "/api/v1/extraction/sections",
@@ -56,7 +56,7 @@ class TestSectionExtractionEndpoints:
         self,
         client: AsyncClient,
     ) -> None:
-        """Test extração com request válida."""
+        """Test extraction with valid request."""
         from app.services.section_extraction_service import SectionExtractionResult
         
         with patch(
@@ -94,7 +94,7 @@ class TestSectionExtractionEndpoints:
         self,
         client: AsyncClient,
     ) -> None:
-        """Test extração em batch com request válida."""
+        """Test batch extraction with valid request."""
         from app.services.section_extraction_service import BatchExtractionResult
         
         with patch(
@@ -131,15 +131,15 @@ class TestSectionExtractionEndpoints:
 
 
 class TestModelExtractionEndpoints:
-    """Testes de integração para endpoints de extração de modelos."""
+    """Integration tests for model extraction endpoints."""
     
     @pytest.mark.asyncio
     async def test_model_extraction_validation(
         self,
         client: AsyncClient,
     ) -> None:
-        """Test validação de model extraction."""
-        # Sem campos obrigatórios
+        """Test model extraction validation."""
+        # No required fields
         response = await client.post(
             "/api/v1/extraction/models",
             json={},
@@ -152,7 +152,7 @@ class TestModelExtractionEndpoints:
         self,
         client: AsyncClient,
     ) -> None:
-        """Test extração de modelos com request válida."""
+        """Test model extraction with valid request."""
         from app.services.model_extraction_service import ModelExtractionResult
         
         with patch(

@@ -1,12 +1,13 @@
 /**
- * Botões de ação para sugestões de IA (Aceitar/Rejeitar)
- * Componente compartilhado entre extraction e assessment
+ * Action buttons for AI suggestions (Accept/Reject)
+ * Shared component between extraction and assessment
  */
 
 import {Button} from '@/components/ui/button';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {Check, Loader2, X} from 'lucide-react';
 import {cn} from '@/lib/utils';
+import {t} from '@/lib/copy';
 
 interface AISuggestionActionsProps {
   onAccept?: () => void;
@@ -50,7 +51,7 @@ export function AISuggestionActions({
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            <p>{isAccepted ? 'Sugestão aceita' : 'Aceitar sugestão'}</p>
+              <p>{isAccepted ? t('shared', 'suggestionAccepted') : t('shared', 'acceptSuggestion')}</p>
           </TooltipContent>
         </Tooltip>
       )}
@@ -74,7 +75,7 @@ export function AISuggestionActions({
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            <p>{isRejected ? 'Sugestão rejeitada' : 'Rejeitar sugestão'}</p>
+              <p>{isRejected ? t('shared', 'suggestionRejected') : t('shared', 'rejectSuggestion')}</p>
           </TooltipContent>
         </Tooltip>
       )}

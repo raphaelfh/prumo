@@ -3,8 +3,8 @@ import {z} from 'zod';
 // =================== CONSTANTS ===================
 
 /**
- * Valor especial usado internamente no Select para representar opção "Outro"
- * Não é salvo no banco, apenas usado para controle de UI
+ * Special value used internally in Select for the "Other" option
+ * Not stored in DB, only used for UI control
  */
 export const OTHER_OPTION_VALUE = '__OTHER__';
 
@@ -25,8 +25,8 @@ export const MultiWithOtherSchema = z.union([
 // =================== TYPE GUARDS ===================
 
 /**
- * Verifica se um valor é do tipo "outro" (single select)
- * Aceita other_text vazio para permitir detecção imediata ao selecionar "Other"
+ * Checks if a value is "other" type (single select)
+ * Accepts empty other_text to allow immediate detection when selecting "Other"
  */
 export function isSingleOtherValue(value: any): value is { selected: 'other'; other_text: string } {
   return (
@@ -39,8 +39,8 @@ export function isSingleOtherValue(value: any): value is { selected: 'other'; ot
 }
 
 /**
- * Verifica se um valor é um objeto "outro" (mesmo com other_text vazio)
- * Usado para detectar quando usuário acabou de selecionar "Other"
+ * Checks if a value is an "other" object (even with empty other_text)
+ * Used to detect when user has just selected "Other"
  */
 export function isOtherObject(value: any): boolean {
   return (
@@ -52,7 +52,7 @@ export function isOtherObject(value: any): boolean {
 }
 
 /**
- * Verifica se um valor é do tipo "outro" (multi select)
+ * Checks if a value is "other" type (multi select)
  */
 export function isMultiOtherValue(value: any): value is { selected: string[]; other_texts: string[] } {
   return (
@@ -66,20 +66,20 @@ export function isMultiOtherValue(value: any): value is { selected: string[]; ot
 }
 
 /**
- * Verifica se um valor é do tipo "outro" (single ou multi)
+ * Checks if a value is "other" type (single or multi)
  */
 export function isOtherValue(value: any): boolean {
   return isSingleOtherValue(value) || isMultiOtherValue(value);
 }
 
 /**
- * Verifica se um valor do banco (jsonb) é do tipo "outro"
- * O valor pode estar em { value: {...} } ou diretamente
+ * Checks if a DB value (jsonb) is "other" type
+ * Value may be in { value: {...} } or directly
  */
 export function isOtherValueFromDb(dbValue: any): boolean {
   if (!dbValue || typeof dbValue !== 'object') return false;
-  
-  // Se está em wrapper { value: {...} }
+
+    // If inside wrapper { value: {...} }
   const actualValue = 'value' in dbValue ? dbValue.value : dbValue;
   
   return isOtherValue(actualValue);
@@ -108,21 +108,21 @@ export function serializeMulti(value: any): string[] | { selected: string[]; oth
 // =================== VALUE EXTRACTION (DRY) ===================
 
 /**
- * Extrai valor e unit de um valueData, preservando valores "outro"
- * Usado ao salvar extracted_values no banco
+ * Extracts value and unit from valueData, preserving "other" values
+ * Used when saving extracted_values to DB
  */
 export interface ExtractedValueResult {
-  value: any; // Valor a salvar (pode ser objeto "outro" ou valor simples)
+    value: any; // Value to save (can be "other" object or simple value)
   unit: string | null;
   isOther: boolean;
 }
 
 export function extractValueForSave(valueData: any): ExtractedValueResult {
-  // Detectar se é valor "outro"
+    // Detect if it is "other" value
   const isOther = isOtherValue(valueData);
 
   if (isOther) {
-    // Preservar estrutura completa
+      // Preserve full structure
     return {
       value: valueData,
       unit: null,
@@ -130,7 +130,7 @@ export function extractValueForSave(valueData: any): ExtractedValueResult {
     };
   }
 
-  // Verificar se é objeto com unit (number field)
+    // Check if object with unit (number field)
   if (typeof valueData === 'object' && valueData !== null && 'value' in valueData) {
     return {
       value: valueData.value,
@@ -139,7 +139,7 @@ export function extractValueForSave(valueData: any): ExtractedValueResult {
     };
   }
 
-  // Valor simples
+    // Simple value
   return {
     value: valueData,
     unit: null,
@@ -148,25 +148,25 @@ export function extractValueForSave(valueData: any): ExtractedValueResult {
 }
 
 /**
- * Extrai valor de um item do banco (jsonb), preservando valores "outro"
- * Usado ao carregar extracted_values do banco
+ * Extracts value from a DB item (jsonb), preserving "other" values
+ * Used when loading extracted_values from DB
  */
 export function extractValueFromDb(item: { value: any; unit?: string | null }): any {
   const dbValue = item.value;
-  
-  // Verificar se já é objeto com "outro"
+
+    // Check if already "other" object
   if (isOtherValueFromDb(dbValue)) {
-    // Extrair do wrapper se necessário
+      // Extract from wrapper if needed
     const actualValue = 'value' in dbValue ? dbValue.value : dbValue;
-    return actualValue; // Preservar objeto "outro"
+      return actualValue; // Preserve "other" object
   }
 
-  // Extrair valor do wrapper { value: X } se existir
+    // Extract value from wrapper { value: X } if present
   const extractedValue = dbValue && typeof dbValue === 'object' && 'value' in dbValue
     ? dbValue.value
     : dbValue;
 
-  // Se tiver unit (number field), retornar objeto { value, unit }
+    // If has unit (number field), return object { value, unit }
   if (item.unit) {
     return { value: extractedValue, unit: item.unit };
   }

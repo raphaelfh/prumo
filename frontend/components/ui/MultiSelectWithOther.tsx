@@ -6,6 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { isMultiOtherValue } from '@/lib/validations/selectOther';
+import {t} from '@/lib/copy';
 
 interface MultiSelectWithOtherProps {
   options: string[];
@@ -20,7 +21,19 @@ interface MultiSelectWithOtherProps {
 }
 
 export function MultiSelectWithOther(props: MultiSelectWithOtherProps) {
-  const { options, value, onChange, allowOther = false, otherLabel = 'Outro (especificar)', otherPlaceholder, disabled, placeholder = 'Selecione...', className } = props;
+    const {
+        options,
+        value,
+        onChange,
+        allowOther = false,
+        otherLabel,
+        otherPlaceholder,
+        disabled,
+        placeholder,
+        className
+    } = props;
+    const resolvedOtherLabel = otherLabel ?? t('ui', 'multiSelectOtherLabel');
+    const resolvedPlaceholder = placeholder ?? t('ui', 'multiSelectPlaceholder');
 
   const [open, setOpen] = useState(false);
   const [internalSelected, setInternalSelected] = useState<string[]>([]);
@@ -39,7 +52,7 @@ export function MultiSelectWithOther(props: MultiSelectWithOtherProps) {
       setInternalSelected(value.selected || []);
       setInternalOthers(value.other_texts || []);
     } else {
-      // Fallback para compatibilidade
+        // Fallback for compatibility
       setInternalSelected([]);
       setInternalOthers([]);
     }
@@ -48,17 +61,17 @@ export function MultiSelectWithOther(props: MultiSelectWithOtherProps) {
   const summary = useMemo(() => {
     const parts = [...internalSelected];
     if (allowOther && internalOthers.length > 0) {
-      parts.push(...internalOthers.map((t) => `${otherLabel}: ${t}`));
+        parts.push(...internalOthers.map((txt) => `${resolvedOtherLabel}: ${txt}`));
     }
     return parts.length > 0 ? parts.join(', ') : '';
-  }, [internalSelected, internalOthers, allowOther, otherLabel]);
+  }, [internalSelected, internalOthers, allowOther, resolvedOtherLabel]);
 
   const toggleOption = (opt: string) => {
     const set = new Set(internalSelected);
     if (set.has(opt)) set.delete(opt); else set.add(opt);
     const next = Array.from(set);
     setInternalSelected(next);
-    // Sempre usar formato objeto se allowOther está habilitado (mesmo sem "outros" ainda)
+      // Always use object format if allowOther is enabled (even without "other" yet)
     onChange(allowOther ? { selected: next, other_texts: internalOthers } : next);
   };
 
@@ -83,7 +96,7 @@ export function MultiSelectWithOther(props: MultiSelectWithOtherProps) {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button variant="outline" className={cn('w-full justify-between', className)} disabled={disabled}>
-          <span className="truncate text-left">{summary || placeholder}</span>
+            <span className="truncate text-left">{summary || resolvedPlaceholder}</span>
           <span className="text-muted-foreground">▾</span>
         </Button>
       </PopoverTrigger>
@@ -101,13 +114,15 @@ export function MultiSelectWithOther(props: MultiSelectWithOtherProps) {
           {allowOther && (
             <div className="space-y-2 pt-2 border-t">
               <div className="flex items-center justify-between">
-                <Label className="text-xs text-muted-foreground">{otherLabel || 'Outro (especificar)'}</Label>
-                <Button type="button" variant="ghost" size="sm" onClick={addOther} disabled={disabled}>Adicionar</Button>
+                  <Label className="text-xs text-muted-foreground">{resolvedOtherLabel}</Label>
+                  <Button type="button" variant="ghost" size="sm" onClick={addOther}
+                          disabled={disabled}>{t('ui', 'multiSelectAdd')}</Button>
               </div>
               <div className="space-y-2">
                 {internalOthers.map((txt, idx) => (
                   <div key={idx} className="flex items-center gap-2">
-                    <Input value={txt} placeholder={otherPlaceholder || 'Digite aqui'} onChange={(e) => updateOther(idx, e.target.value)} disabled={disabled} />
+                      <Input value={txt} placeholder={otherPlaceholder ?? t('ui', 'multiSelectTypeHere')}
+                             onChange={(e) => updateOther(idx, e.target.value)} disabled={disabled}/>
                     <Button type="button" variant="ghost" size="icon" onClick={() => removeOther(idx)} disabled={disabled}>×</Button>
                   </div>
                 ))}

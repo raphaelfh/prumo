@@ -1,5 +1,6 @@
 import {Progress} from "@/components/ui/progress";
 import {Badge} from "@/components/ui/badge";
+import {t} from "@/lib/copy";
 
 interface AssessmentProgressProps {
   completionPercentage: number;
@@ -25,22 +26,22 @@ export const AssessmentProgress = ({ completionPercentage, status }: AssessmentP
   const getStatusLabel = () => {
     switch (status) {
       case "submitted":
-        return "Completo";
+          return t('assessment', 'statusCompleteLabel');
       case "reviewed":
-        return "Revisado";
+          return t('assessment', 'statusReviewed');
       case "locked":
-        return "Bloqueado";
+          return t('assessment', 'statusLocked');
       case "archived":
-        return "Arquivado";
+          return t('assessment', 'statusArchived');
       default:
-        return "Em progresso";
+          return t('assessment', 'statusInProgressLabel');
     }
   };
 
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-medium">Progresso</span>
+          <span className="text-sm font-medium">{t('assessment', 'progressLabel')}</span>
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">{completionPercentage}%</span>
           <Badge variant="outline" className={getStatusColor()}>

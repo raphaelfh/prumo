@@ -1,13 +1,13 @@
 /**
- * Sistema de Observabilidade para Extração
- * 
- * Fornece logging estruturado, métricas e tracking para facilitar
- * debug, monitoramento e análise de performance do módulo de extração.
- * 
+ * Observability system for Extraction
+ *
+ * Provides structured logging, metrics and tracking for debugging,
+ * monitoring and performance analysis of the extraction module.
+ *
  * @module lib/extraction/observability
  */
 
-// =================== TIPOS ===================
+// =================== TYPES ===================
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -29,19 +29,19 @@ export interface PerformanceMetric {
   metadata?: Record<string, any>;
 }
 
-// =================== CONFIGURAÇÃO ===================
+// =================== CONFIG ===================
 
 const CONFIG = {
-  // Habilitar logs no console (desabilitar em produção se necessário)
+    // Enable console logs (disable in production if needed)
   enableConsole: import.meta.env.DEV,
-  
-  // Nível mínimo de log
+
+    // Minimum log level
   minLevel: import.meta.env.DEV ? 'debug' : 'info',
-  
-  // Habilitar métricas de performance
+
+    // Enable performance metrics
   enableMetrics: true,
-  
-  // Enviar para analytics (Sentry, etc)
+
+    // Send to analytics (Sentry, etc.)
   enableAnalytics: false,
 };
 
@@ -49,7 +49,7 @@ const CONFIG = {
 
 class LogStorage {
   private logs: LogEntry[] = [];
-  private maxSize = 100; // Manter últimas 100 entradas
+    private maxSize = 100; // Keep last 100 entries
 
   add(entry: LogEntry) {
     this.logs.push(entry);
@@ -134,35 +134,35 @@ export class ExtractionLogger {
   }
 
   /**
-   * Log com nível debug
+   * Log at debug level
    */
   debug(operation: string, message: string, context?: Record<string, any>) {
     this.log('debug', operation, message, context);
   }
 
   /**
-   * Log com nível info
+   * Log at info level
    */
   info(operation: string, message: string, context?: Record<string, any>) {
     this.log('info', operation, message, context);
   }
 
   /**
-   * Log com nível warn
+   * Log at warn level
    */
   warn(operation: string, message: string, context?: Record<string, any>) {
     this.log('warn', operation, message, context);
   }
 
   /**
-   * Log com nível error
+   * Log at error level
    */
   error(operation: string, message: string, error?: Error, context?: Record<string, any>) {
     this.log('error', operation, message, { ...context, error: error?.message, stack: error?.stack }, error);
   }
 
   /**
-   * Log genérico
+   * Generic log
    */
   private log(
     level: LogLevel,
@@ -180,22 +180,22 @@ export class ExtractionLogger {
       error
     };
 
-    // Armazenar no storage
+      // Store in storage
     logStorage.add(entry);
 
-    // Log no console se habilitado
+      // Log to console if enabled
     if (CONFIG.enableConsole) {
       this.consoleLog(entry);
     }
 
-    // Enviar para analytics se erro e habilitado
+      // Send to analytics if error and enabled
     if (level === 'error' && CONFIG.enableAnalytics && error) {
       this.sendToAnalytics(entry);
     }
   }
 
   /**
-   * Formata e exibe log no console
+   * Format and output log to console
    */
   private consoleLog(entry: LogEntry) {
     const emoji = {
@@ -219,7 +219,7 @@ export class ExtractionLogger {
   }
 
   /**
-   * Envia erro para sistema de analytics (Sentry, etc)
+   * Sends error to analytics system (Sentry, etc)
    */
   private sendToAnalytics(entry: LogEntry) {
     // TODO: Integrar com Sentry ou similar
@@ -238,7 +238,7 @@ export class PerformanceTracker {
   private activeMetrics = new Map<string, PerformanceMetric>();
 
   /**
-   * Inicia tracking de uma operação
+   * Starts tracking an operation
    */
   start(operation: string, metadata?: Record<string, any>): string {
     const id = `${operation}-${Date.now()}-${Math.random()}`;
@@ -253,13 +253,13 @@ export class PerformanceTracker {
   }
 
   /**
-   * Finaliza tracking de uma operação
+   * Ends tracking of an operation
    */
   end(id: string): number | null {
     const metric = this.activeMetrics.get(id);
     
     if (!metric) {
-      console.warn('⚠️ [PerformanceTracker] Métrica não encontrada:', id);
+        console.warn('[PerformanceTracker] Metric not found:', id);
       return null;
     }
 
@@ -278,10 +278,10 @@ export class PerformanceTracker {
 
     this.activeMetrics.delete(id);
 
-    // Log se operação demorou muito (> 1s)
+      // Log if operation took too long (> 1s)
     if (duration > 1000) {
       console.warn(
-        `⏱️ [Performance] ${metric.operation} demorou ${duration.toFixed(0)}ms`,
+          `⏱️ [Performance] ${metric.operation} took ${duration.toFixed(0)}ms`,
         metric.metadata
       );
     }
@@ -290,7 +290,7 @@ export class PerformanceTracker {
   }
 
   /**
-   * Helper para medir função assíncrona
+   * Helper to measure async function
    */
   async measure<T>(
     operation: string,
@@ -315,17 +315,17 @@ export class PerformanceTracker {
   }
 
   /**
-   * Obter estatísticas de uma operação
+   * Get stats for an operation
    */
   getStats(operation: string) {
     return metricsStorage.getStats(operation);
   }
 }
 
-// =================== API PÚBLICA ===================
+// =================== PUBLIC API ===================
 
 /**
- * Logger singleton para extração
+ * Logger singleton for extraction
  */
 export const extractionLogger = new ExtractionLogger({ module: 'extraction' });
 
@@ -335,49 +335,49 @@ export const extractionLogger = new ExtractionLogger({ module: 'extraction' });
 export const performanceTracker = new PerformanceTracker();
 
 /**
- * Criar logger com contexto específico
+ * Create logger with specific context
  */
 export function createLogger(context: Record<string, any>): ExtractionLogger {
   return new ExtractionLogger(context);
 }
 
 /**
- * Obter todos os logs (útil para debug)
+ * Get all logs (useful for debug)
  */
 export function getLogs(): LogEntry[] {
   return logStorage.getAll();
 }
 
 /**
- * Obter logs de uma operação específica
+ * Get logs for a specific operation
  */
 export function getLogsByOperation(operation: string): LogEntry[] {
   return logStorage.getByOperation(operation);
 }
 
 /**
- * Obter todos os erros
+ * Get all errors
  */
 export function getErrors(): LogEntry[] {
   return logStorage.getErrors();
 }
 
 /**
- * Obter métricas de performance
+ * Get performance metrics
  */
 export function getMetrics(): PerformanceMetric[] {
   return metricsStorage.getAll();
 }
 
 /**
- * Obter estatísticas de performance
+ * Get performance stats
  */
 export function getPerformanceStats(operation: string) {
   return metricsStorage.getStats(operation);
 }
 
 /**
- * Limpar logs e métricas (útil para testes)
+ * Clear logs and metrics (useful for tests)
  */
 export function clearObservability() {
   logStorage.clear();
@@ -385,7 +385,7 @@ export function clearObservability() {
 }
 
 /**
- * Exportar logs como JSON (útil para análise)
+ * Export logs as JSON (useful for analysis)
  */
 export function exportLogs(): string {
   return JSON.stringify({

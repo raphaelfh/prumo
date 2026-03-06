@@ -1,4 +1,4 @@
-// Barrel export para todos os tipos da aplicação
+// Barrel export for all application types
 export * from './article';
 export * from './article-files';
 export * from './annotations-new';

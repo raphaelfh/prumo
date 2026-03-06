@@ -13,15 +13,16 @@ import {Clock, Cpu, FileSearch, Info, Layers, Loader2, RotateCcw, Save, Settings
 import {supabase} from '@/integrations/supabase/client';
 import {useToast} from '@/hooks/use-toast';
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
+import {t} from '@/lib/copy';
 import {AssessmentItem} from '@/hooks/assessment/useAssessmentInstruments';
 
 interface AIGlobalConfig {
-  // Configurações de processamento
+    // Processing settings
   parallelMode: boolean;
   concurrency: number;
   delayBetweenBatches: number;
-  
-  // Configurações de IA
+
+    // AI settings
   model: string;
   temperature: number;
   maxTokens: number;
@@ -39,12 +40,12 @@ interface AIGlobalConfigModalProps {
 }
 
 const DEFAULT_CONFIG: AIGlobalConfig = {
-  // Processamento
+    // Processing
   parallelMode: false,
   concurrency: 3,
   delayBetweenBatches: 1000,
-  
-  // IA
+
+    // AI
   model: 'gpt-4o-mini',
   temperature: 0.0,
   maxTokens: 2000,
@@ -81,7 +82,7 @@ export const AIGlobalConfigModal = ({
   const loadConfiguration = async () => {
     setLoading(true);
     try {
-      // Carregar configurações globais do localStorage
+        // Load global config from localStorage
       const savedConfig = localStorage.getItem('ai-global-config');
       if (savedConfig) {
         const parsedConfig = JSON.parse(savedConfig);
@@ -144,18 +145,18 @@ export const AIGlobalConfigModal = ({
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Salvar configurações globais no localStorage
+        // Save global config to localStorage
       localStorage.setItem('ai-global-config', JSON.stringify(config));
       
       toast({
-        title: "Configuração salva",
-        description: "Configurações globais de IA atualizadas com sucesso",
+          title: t('assessment', 'aiConfigToastSaved'),
+          description: t('assessment', 'aiConfigToastSavedDesc'),
       });
     } catch (error) {
       console.error('Error saving global configuration:', error);
       toast({
-        title: "Erro ao salvar",
-        description: error instanceof Error ? error.message : 'Erro desconhecido',
+          title: t('assessment', 'aiConfigToastError'),
+          description: error instanceof Error ? error.message : t('assessment', 'aiConfigToastErrorDesc'),
         variant: "destructive",
       });
     } finally {
@@ -181,14 +182,14 @@ export const AIGlobalConfigModal = ({
       if (error) throw error;
 
       toast({
-        title: "Configuração salva",
-        description: `Configurações da questão "${selectedItem.question}" atualizadas`,
+          title: t('assessment', 'aiConfigToastSaved'),
+          description: t('assessment', 'aiConfigToastSavedDescQuestion').replace('{{question}}', selectedItem.question),
       });
     } catch (error) {
       console.error('Error saving item configuration:', error);
       toast({
-        title: "Erro ao salvar",
-        description: error instanceof Error ? error.message : 'Erro desconhecido',
+          title: t('assessment', 'aiConfigToastError'),
+          description: error instanceof Error ? error.message : t('assessment', 'aiConfigToastErrorDesc'),
         variant: "destructive",
       });
     } finally {
@@ -200,8 +201,8 @@ export const AIGlobalConfigModal = ({
     setConfig(DEFAULT_CONFIG);
     onConfigChange(DEFAULT_CONFIG);
     toast({
-      title: "Configuração resetada",
-      description: "Configurações restauradas para os valores padrão",
+        title: t('assessment', 'aiConfigToastReset'),
+        description: t('assessment', 'aiConfigToastResetDesc'),
     });
   };
 
@@ -221,9 +222,9 @@ export const AIGlobalConfigModal = ({
     const totalTimePerItem = baseTimePerItem + delayPerItem;
     
     if (config.parallelMode) {
-      return `~${config.concurrency}x mais rápido`;
+        return t('assessment', 'aiConfigPerfFaster').replace('{{n}}', String(config.concurrency));
     } else {
-      return `~${totalTimePerItem.toFixed(1)}s por item`;
+        return t('assessment', 'aiConfigPerfPerItem').replace('{{s}}', totalTimePerItem.toFixed(1));
     }
   };
 
@@ -234,7 +235,7 @@ export const AIGlobalConfigModal = ({
           <div className="flex items-center justify-center h-full">
             <div className="flex items-center gap-2 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Carregando configurações...
+                {t('assessment', 'loadingConfig')}
             </div>
           </div>
         </DialogContent>
@@ -248,7 +249,7 @@ export const AIGlobalConfigModal = ({
         <DialogHeader className="flex-shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Settings className="h-5 w-5" />
-            Configurações Globais de IA
+              Global AI settings
           </DialogTitle>
         </DialogHeader>
         
@@ -257,15 +258,15 @@ export const AIGlobalConfigModal = ({
             <TabsList className="grid w-full grid-cols-3 flex-shrink-0">
               <TabsTrigger value="processing" className="flex items-center gap-2">
                 <Zap className="h-4 w-4" />
-                Processamento
+                  {t('assessment', 'aiConfigTabProcessing')}
               </TabsTrigger>
               <TabsTrigger value="ai" className="flex items-center gap-2">
                 <Cpu className="h-4 w-4" />
-                Configurações IA
+                  {t('assessment', 'aiConfigTabAI')}
               </TabsTrigger>
               <TabsTrigger value="prompts" className="flex items-center gap-2">
                 <Layers className="h-4 w-4" />
-                Prompts por Questão
+                  {t('assessment', 'aiConfigTabPrompts')}
               </TabsTrigger>
             </TabsList>
             
@@ -277,13 +278,14 @@ export const AIGlobalConfigModal = ({
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Zap className="h-4 w-4 text-blue-500" />
-                        <Label className="text-base font-medium">Processamento Paralelo</Label>
+                          <Label
+                              className="text-base font-medium">{t('assessment', 'aiConfigParallelProcessing')}</Label>
                         <Tooltip>
                           <TooltipTrigger>
                             <Info className="h-3 w-3 text-muted-foreground" />
                           </TooltipTrigger>
                           <TooltipContent>
-                            <p>Ativa o processamento de múltiplas questões simultaneamente para maior velocidade</p>
+                              <p>{t('assessment', 'aiConfigParallelTooltip')}</p>
                           </TooltipContent>
                         </Tooltip>
                       </div>
@@ -293,12 +295,12 @@ export const AIGlobalConfigModal = ({
                       />
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      Processa múltiplas questões simultaneamente para maior velocidade. Recomendado para grandes volumes.
+                        {t('assessment', 'aiConfigParallelDesc')}
                     </p>
                     {config.parallelMode && (
                       <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
                         <p className="text-sm text-blue-700">
-                          ⚡ Modo paralelo ativo - {getEstimatedPerformance()}
+                            ⚡ {t('assessment', 'aiConfigParallelActive')} – {getEstimatedPerformance()}
                         </p>
                       </div>
                     )}
@@ -306,14 +308,15 @@ export const AIGlobalConfigModal = ({
 
                   <Separator />
 
-                  {/* Concorrência */}
+                    {/* Concurrency */}
                   {config.parallelMode && (
                     <div className="space-y-3">
                       <div className="flex items-center gap-2">
                         <Clock className="h-4 w-4 text-green-500" />
-                        <Label className="text-base font-medium">Concorrência: {config.concurrency}</Label>
+                          <Label
+                              className="text-base font-medium">{t('assessment', 'aiConfigConcurrency')}: {config.concurrency}</Label>
                         <Badge variant="outline" className="text-xs">
-                          {config.concurrency} requisições simultâneas
+                            {config.concurrency} {t('assessment', 'aiConfigConcurrencyBadge')}
                         </Badge>
                       </div>
                       <div className="space-y-2">
@@ -326,12 +329,12 @@ export const AIGlobalConfigModal = ({
                           className="w-full"
                         />
                         <div className="flex justify-between text-xs text-muted-foreground">
-                          <span>1 (Sequencial)</span>
-                          <span>5 (Máx. Paralelo)</span>
+                            <span>{t('assessment', 'aiConfigSequential')}</span>
+                            <span>{t('assessment', 'aiConfigMaxParallel')}</span>
                         </div>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Número de requisições de IA enviadas simultaneamente. Valores mais altos podem ser mais rápidos, mas podem atingir limites de API.
+                          {t('assessment', 'aiConfigConcurrencyDesc')}
                       </p>
                     </div>
                   )}
@@ -341,7 +344,8 @@ export const AIGlobalConfigModal = ({
                     <div className="space-y-3">
                       <div className="flex items-center gap-2">
                         <Clock className="h-4 w-4 text-orange-500" />
-                        <Label className="text-base font-medium">Delay entre Lotes: {config.delayBetweenBatches}ms</Label>
+                          <Label
+                              className="text-base font-medium">{t('assessment', 'aiConfigDelayBatches')}: {config.delayBetweenBatches}ms</Label>
                       </div>
                       <div className="space-y-2">
                         <Slider
@@ -353,33 +357,34 @@ export const AIGlobalConfigModal = ({
                           className="w-full"
                         />
                         <div className="flex justify-between text-xs text-muted-foreground">
-                          <span>500ms (Rápido)</span>
-                          <span>2000ms (Seguro)</span>
+                            <span>{t('assessment', 'aiConfigDelayFast')}</span>
+                            <span>{t('assessment', 'aiConfigDelaySafe')}</span>
                         </div>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Tempo de espera entre lotes para evitar rate limiting da API.
+                          {t('assessment', 'aiConfigDelayDesc')}
                       </p>
                     </div>
                   )}
 
-                  {/* Resumo de Performance */}
+                    {/* Performance summary */}
                   <div className="rounded-lg border p-4 bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
                     <div className="flex items-center gap-2 mb-3">
                       <div className="h-2 w-2 bg-blue-500 rounded-full"></div>
-                      <h4 className="text-sm font-medium text-blue-900">Estimativa de Performance</h4>
+                        <h4 className="text-sm font-medium text-blue-900">{t('assessment', 'aiConfigPerfEstimate')}</h4>
                     </div>
                     <div className="space-y-2 text-sm">
                       <div className="flex items-center justify-between p-2 bg-white/60 rounded border">
-                        <span className="text-muted-foreground">Modo:</span>
-                        <span className="font-medium">{config.parallelMode ? 'Paralelo' : 'Sequencial'}</span>
+                          <span className="text-muted-foreground">{t('assessment', 'aiConfigMode')}:</span>
+                          <span
+                              className="font-medium">{config.parallelMode ? t('assessment', 'aiConfigParallel') : t('assessment', 'aiConfigSequentialMode')}</span>
                       </div>
                       <div className="flex items-center justify-between p-2 bg-white/60 rounded border">
-                        <span className="text-muted-foreground">Performance:</span>
+                          <span className="text-muted-foreground">{t('assessment', 'aiConfigPerformance')}:</span>
                         <span className="font-medium">{getEstimatedPerformance()}</span>
                       </div>
                       <div className="flex items-center justify-between p-2 bg-white/60 rounded border">
-                        <span className="text-muted-foreground">Questões pendentes:</span>
+                          <span className="text-muted-foreground">{t('assessment', 'aiConfigPendingQuestions')}:</span>
                         <span className="font-medium">{items.length}</span>
                       </div>
                     </div>
@@ -393,7 +398,7 @@ export const AIGlobalConfigModal = ({
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
                       <Cpu className="h-4 w-4" />
-                      <Label className="text-base font-medium">Modelo de IA</Label>
+                        <Label className="text-base font-medium">{t('assessment', 'aiConfigAIModel')}</Label>
                       <Badge variant="secondary" className="text-xs">
                         {config.model}
                       </Badge>
@@ -402,11 +407,11 @@ export const AIGlobalConfigModal = ({
                       <div className="flex items-center justify-between">
                         <span className="font-medium text-sm">GPT-4o Mini</span>
                         <Badge variant="outline" className="text-xs">
-                          Otimizado
+                            {t('assessment', 'aiConfigOptimized')}
                         </Badge>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
-                        Modelo otimizado para melhor custo-benefício
+                          {t('assessment', 'aiConfigModelCostBenefit')}
                       </p>
                     </div>
                   </div>
@@ -417,25 +422,27 @@ export const AIGlobalConfigModal = ({
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
                       <Thermometer className="h-4 w-4" />
-                      <Label className="text-base font-medium">Temperatura: {config.temperature}</Label>
+                        <Label
+                            className="text-base font-medium">{t('assessment', 'aiConfigTemperature')}: {config.temperature}</Label>
                       <Badge variant="secondary" className="text-xs bg-green-100 text-green-800 border-green-300">
-                        Máxima Consistência
+                          {t('assessment', 'aiConfigMaxConsistency')}
                       </Badge>
                     </div>
                     <div className="p-3 bg-green-50 rounded-lg border border-green-200">
                       <p className="text-xs text-green-700">
-                        ✓ Configuração otimizada para avaliações científicas com máxima reprodutibilidade
+                          ✓ {t('assessment', 'aiConfigOptimizedScientific')}
                       </p>
                     </div>
                   </div>
 
                   <Separator />
 
-                  {/* Tokens Máximos */}
+                    {/* Max tokens */}
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
                       <Zap className="h-4 w-4" />
-                      <Label className="text-base font-medium">Tokens Máximos: {config.maxTokens.toLocaleString()}</Label>
+                        <Label
+                            className="text-base font-medium">{t('assessment', 'aiConfigMaxTokens')}: {config.maxTokens.toLocaleString()}</Label>
                       <Badge variant="outline" className="text-xs">
                         ~${getTokenCost(config.maxTokens, config.model)}
                       </Badge>
@@ -450,26 +457,26 @@ export const AIGlobalConfigModal = ({
                         className="w-full"
                       />
                       <div className="flex justify-between text-xs text-muted-foreground">
-                        <span>500 (Econômico)</span>
-                        <span>4000 (Detalhado)</span>
+                          <span>{t('assessment', 'aiConfigTokenEconomy')}</span>
+                          <span>{t('assessment', 'aiConfigTokenDetailed')}</span>
                       </div>
                     </div>
                   </div>
 
                   <Separator />
 
-                  {/* Força File Search */}
+                    {/* Force file search */}
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <FileSearch className="h-4 w-4" />
-                        <Label className="text-base font-medium">Forçar Busca Vetorial (RAG)</Label>
+                          <Label className="text-base font-medium">{t('assessment', 'aiConfigForceRag')}</Label>
                         <Tooltip>
                           <TooltipTrigger>
                             <Info className="h-3 w-3 text-muted-foreground" />
                           </TooltipTrigger>
                           <TooltipContent>
-                            <p>Usa busca vetorial mesmo para PDFs pequenos (mais lento, mais preciso)</p>
+                              <p>{t('assessment', 'aiConfigRagTooltip')}</p>
                           </TooltipContent>
                         </Tooltip>
                       </div>
@@ -481,7 +488,7 @@ export const AIGlobalConfigModal = ({
                     {config.forceFileSearch && (
                       <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
                         <p className="text-xs text-blue-700">
-                          ⚡ Busca vetorial ativada - Melhor precisão para documentos complexos
+                            ⚡ {t('assessment', 'aiConfigRagActive')}
                         </p>
                       </div>
                     )}
@@ -492,31 +499,31 @@ export const AIGlobalConfigModal = ({
                   {/* Prompts Globais */}
                   <div className="space-y-4">
                     <div className="flex items-center gap-2 mb-3">
-                      <Label className="text-base font-medium">Prompts Globais</Label>
+                        <Label className="text-base font-medium">{t('assessment', 'aiConfigGlobalPrompts')}</Label>
                     </div>
                     
                     <div className="space-y-3">
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium">Prompt do Sistema</Label>
+                          <Label className="text-sm font-medium">{t('assessment', 'aiConfigSystemPromptLabel')}</Label>
                         <Textarea
                           value={config.systemPrompt}
                           onChange={(e) => handleConfigChange({ systemPrompt: e.target.value })}
-                          placeholder="Defina o papel e expertise da IA..."
+                          placeholder={t('assessment', 'aiPromptSystemPlaceholder')}
                           className="min-h-[80px] font-mono text-xs resize-none"
                         />
                       </div>
 
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium">Template do Prompt do Usuário</Label>
+                          <Label className="text-sm font-medium">{t('assessment', 'aiConfigUserPromptLabel')}</Label>
                         <Textarea
                           value={config.userPromptTemplate}
                           onChange={(e) => handleConfigChange({ userPromptTemplate: e.target.value })}
-                          placeholder="Template para a pergunta específica..."
+                          placeholder={t('assessment', 'aiPromptUserPlaceholder')}
                           className="min-h-[100px] font-mono text-xs resize-none"
                         />
                         <div className="space-y-2">
                           <div className="flex flex-wrap gap-1 text-xs text-muted-foreground">
-                            <span className="font-medium">Variáveis:</span>
+                              <span className="font-medium">{t('assessment', 'aiConfigVariables')}:</span>
                             <code className="px-1 py-0.5 bg-muted rounded text-xs">{'{{question}}'}</code>
                             <code className="px-1 py-0.5 bg-muted rounded text-xs">{'{{levels}}'}</code>
                             <code className="px-1 py-0.5 bg-blue-100 text-blue-800 rounded text-xs">{'{{review_title}}'}</code>
@@ -532,9 +539,9 @@ export const AIGlobalConfigModal = ({
 
               <TabsContent value="prompts" className="space-y-6 p-1">
                 <div className="space-y-6">
-                  {/* Seletor de Questão */}
+                    {/* Question selector */}
                   <div className="space-y-3">
-                    <Label className="text-base font-medium">Selecionar Questão para Configurar</Label>
+                      <Label className="text-base font-medium">{t('assessment', 'aiConfigSelectQuestion')}</Label>
                     <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto">
                       {items.map((item) => (
                         <Button
@@ -565,7 +572,7 @@ export const AIGlobalConfigModal = ({
                       <div className="space-y-4">
                         <div className="flex items-center justify-between">
                           <div>
-                            <h4 className="font-medium">Configuração da Questão</h4>
+                              <h4 className="font-medium">{t('assessment', 'aiConfigQuestionConfig')}</h4>
                             <p className="text-sm text-muted-foreground">{selectedItem.item_code}</p>
                           </div>
                           <Button
@@ -578,27 +585,29 @@ export const AIGlobalConfigModal = ({
                             ) : (
                               <Save className="mr-2 h-3 w-3" />
                             )}
-                            Salvar Questão
+                              {t('assessment', 'aiConfigSaveQuestion')}
                           </Button>
                         </div>
 
                         <div className="space-y-3">
                           <div className="space-y-2">
-                            <Label className="text-sm font-medium">Prompt do Sistema</Label>
+                              <Label
+                                  className="text-sm font-medium">{t('assessment', 'aiConfigSystemPromptLabel')}</Label>
                             <Textarea
                               value={itemConfig.systemPrompt}
                               onChange={(e) => setItemConfig(prev => ({ ...prev, systemPrompt: e.target.value }))}
-                              placeholder="Defina o papel e expertise da IA..."
+                              placeholder={t('assessment', 'aiPromptSystemPlaceholder')}
                               className="min-h-[80px] font-mono text-xs resize-none"
                             />
                           </div>
 
                           <div className="space-y-2">
-                            <Label className="text-sm font-medium">Template do Prompt do Usuário</Label>
+                              <Label
+                                  className="text-sm font-medium">{t('assessment', 'aiConfigUserPromptLabel')}</Label>
                             <Textarea
                               value={itemConfig.userPromptTemplate}
                               onChange={(e) => setItemConfig(prev => ({ ...prev, userPromptTemplate: e.target.value }))}
-                              placeholder="Template para a pergunta específica..."
+                              placeholder={t('assessment', 'aiPromptUserPlaceholder')}
                               className="min-h-[100px] font-mono text-xs resize-none"
                             />
                           </div>
@@ -612,7 +621,7 @@ export const AIGlobalConfigModal = ({
           </Tabs>
         </TooltipProvider>
 
-        {/* Ações */}
+          {/* Actions */}
         <div className="pt-6 border-t flex-shrink-0">
           <div className="flex flex-col sm:flex-row gap-2">
             <Button
@@ -623,12 +632,12 @@ export const AIGlobalConfigModal = ({
               {saving ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Salvando...
+                    {t('assessment', 'aiConfigSaving')}
                 </>
               ) : (
                 <>
                   <Save className="mr-2 h-4 w-4" />
-                  Salvar Configurações
+                    {t('assessment', 'aiConfigSaveSettings')}
                 </>
               )}
             </Button>
@@ -638,7 +647,7 @@ export const AIGlobalConfigModal = ({
               disabled={saving}
             >
               <RotateCcw className="mr-2 h-4 w-4" />
-              Resetar
+                {t('assessment', 'aiConfigReset')}
             </Button>
           </div>
         </div>

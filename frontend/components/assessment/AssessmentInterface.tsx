@@ -1,14 +1,15 @@
 /**
- * Interface principal para avaliação de artigos
- * 
- * Componente que gerencia todo o fluxo de avaliação de artigos
- * para um projeto específico, incluindo instrumentos, avaliações e IA.
+ * Main interface for article assessment
+ *
+ * Component that manages the full assessment flow for a project,
+ * including instruments, assessments and AI.
  */
 
 import {useEffect, useState} from "react";
 import {useSearchParams} from "react-router-dom";
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from "@/components/ui/card";
 import {Tabs, TabsContent, TabsList, TabsTrigger} from "@/components/ui/tabs";
+import {Skeleton} from "@/components/ui/skeleton";
 import {AlertCircle, BarChart3, CheckCircle, FileText, Settings} from "lucide-react";
 import {supabase} from "@/integrations/supabase/client";
 import {useHasConfiguredInstrument} from "@/hooks/assessment";
@@ -20,6 +21,7 @@ import type {Assessment, AssessmentInstrument} from "@/types/assessment";
 import type {Article as ArticleRow} from "@/types/article";
 import {getAssessmentStatus} from "@/lib/assessment-utils";
 import {useCurrentUser} from "@/hooks/useCurrentUser";
+import {t} from '@/lib/copy';
 
 // =================== INTERFACES ===================
 
@@ -27,7 +29,7 @@ interface AssessmentInterfaceProps {
   projectId: string;
 }
 
-/** Artigo simplificado para listagem */
+/** Simplified article for listing */
 type ArticleSummary = Pick<ArticleRow, 'id' | 'title' | 'doi' | 'created_at'>;
 
 type AssessmentTab = 'assessment' | 'dashboard' | 'configuration';
@@ -36,7 +38,7 @@ const ASSESSMENT_TABS = ['assessment', 'dashboard', 'configuration'] as const;
 export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => {
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Ler aba da URL ou usar padrão
+    // Read tab from URL or use default
   const tabFromUrl = searchParams.get('assessmentTab');
   const initialTab: AssessmentTab = ASSESSMENT_TABS.includes(tabFromUrl as AssessmentTab)
     ? (tabFromUrl as AssessmentTab)
@@ -54,17 +56,17 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
   });
   const { user, loading: authLoading } = useCurrentUser();
 
-  // Hook para gerenciar instrumentos de projeto
+    // Hook to manage project instruments
   const {
     hasInstrument,
     isLoading: instrumentsLoading,
     instruments: projectInstruments,
   } = useHasConfiguredInstrument(projectId);
 
-  // Carregar instrumento ativo quando instrumentos de projeto sao carregados
+    // Load active instrument when project instruments are loaded
   useEffect(() => {
     if (projectInstruments && projectInstruments.length > 0 && !activeInstrument) {
-      // Converter ProjectAssessmentInstrument para o formato esperado
+        // Convert ProjectAssessmentInstrument to expected format
       const defaultInstrument = projectInstruments[0];
       setActiveInstrument({
         id: defaultInstrument.id,
@@ -80,19 +82,19 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
     }
   }, [projectInstruments, activeInstrument]);
 
-  // Sincronizar aba ativa com URL
+    // Sync active tab with URL
   useEffect(() => {
     const newParams = new URLSearchParams(searchParams);
     newParams.set('assessmentTab', activeTab);
     setSearchParams(newParams, { replace: true });
   }, [activeTab, searchParams, setSearchParams]);
 
-  // Função para mudar aba e atualizar URL
+    // Change tab and update URL
   const handleTabChange = (tab: AssessmentTab) => {
     setActiveTab(tab);
   };
 
-  // Carregar artigos e avaliações
+    // Load articles and assessments
   useEffect(() => {
     if (projectId && activeInstrument) {
       loadArticles();
@@ -100,7 +102,7 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
     }
   }, [projectId, activeInstrument, user, authLoading]);
 
-  // Calcular estatísticas quando dados mudam
+    // Calculate stats when data changes
   useEffect(() => {
     if (articles.length > 0 && activeInstrument) {
       calculateStats();
@@ -118,7 +120,7 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
       if (error) throw error;
       setArticles(data || []);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Erro ao carregar artigos";
+        const message = error instanceof Error ? error.message : t('assessment', 'errorLoadArticles');
       console.error("Error loading articles:", error);
       toast.error(message);
     }
@@ -170,68 +172,69 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
     });
   };
 
-  // Renderizar aba Dashboard
+    // Render Dashboard tab
   const renderDashboard = () => (
-    <div className="space-y-6">
-      {/* Estatísticas Principais */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Artigos</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
+      <div className="space-y-4">
+          {/* Main statistics */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              <Card className="border-border/40 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
+                      <CardTitle className="text-[13px] font-medium">{t('assessment', 'dashboardArticles')}</CardTitle>
+                      <FileText className="h-4 w-4 text-muted-foreground" strokeWidth={1.5}/>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.totalArticles}</div>
-            <p className="text-xs text-muted-foreground">
-              no projeto
+                  <CardContent className="px-4 pb-4">
+                      <div className="text-xl font-bold">{stats.totalArticles}</div>
+                      <p className="text-[13px] text-muted-foreground">
+                          {t('assessment', 'dashboardInProject')}
             </p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Avaliações Completas</CardTitle>
-            <CheckCircle className="h-4 w-4 text-muted-foreground" />
+              <Card className="border-border/40 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
+                      <CardTitle className="text-[13px] font-medium">{t('assessment', 'dashboardCompleted')}</CardTitle>
+                      <CheckCircle className="h-4 w-4 text-muted-foreground" strokeWidth={1.5}/>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
+                  <CardContent className="px-4 pb-4">
+                      <div className="text-xl font-bold">
               {stats.completedAssessments}
               {stats.inProgressAssessments > 0 && (
-                <span className="text-sm text-muted-foreground ml-2">
+                  <span className="text-[13px] text-muted-foreground ml-2">
                   (+{stats.inProgressAssessments})
                 </span>
               )}
             </div>
-            <p className="text-xs text-muted-foreground">
-              artigos avaliados
+                      <p className="text-[13px] text-muted-foreground">
+                          {t('assessment', 'dashboardAssessed')}
             </p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Progresso Geral</CardTitle>
-            <BarChart3 className="h-4 w-4 text-muted-foreground" />
+              <Card className="border-border/40 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
+                      <CardTitle
+                          className="text-[13px] font-medium">{t('assessment', 'dashboardOverallProgress')}</CardTitle>
+                      <BarChart3 className="h-4 w-4 text-muted-foreground" strokeWidth={1.5}/>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.progressPercentage}%</div>
-            <p className="text-xs text-muted-foreground">
-              completude média
+                  <CardContent className="px-4 pb-4">
+                      <div className="text-xl font-bold">{stats.progressPercentage}%</div>
+                      <p className="text-[13px] text-muted-foreground">
+                          {t('assessment', 'dashboardAverageCompleteness')}
             </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Mensagem se não houver instrumento */}
+          {/* Message when no instrument */}
       {!activeInstrument && !instrumentsLoading && (
-        <Card className="border-yellow-200 bg-yellow-50">
-          <CardContent className="pt-6">
+          <Card className="border-border/40 border-yellow-200 bg-yellow-50">
+              <CardContent className="pt-4 pb-4 px-4">
             <div className="flex items-center space-x-3">
-              <AlertCircle className="h-5 w-5 text-yellow-600" />
+                <AlertCircle className="h-4 w-4 text-yellow-600" strokeWidth={1.5}/>
               <div>
-                <p className="font-medium text-yellow-900">Nenhum instrumento configurado</p>
-                <p className="text-sm text-yellow-700 mt-1">
-                  Configure um instrumento de avaliação nas configurações do projeto.
+                  <p className="text-[13px] font-medium text-yellow-900">{t('assessment', 'dashboardNoInstrument')}</p>
+                  <p className="text-[13px] text-yellow-700 mt-1">
+                      {t('assessment', 'dashboardNoInstrumentDesc')}
                 </p>
               </div>
             </div>
@@ -241,8 +244,11 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
     </div>
   );
 
-  // Renderizar conteúdo das abas
+    // Render tab content (only when not loading instruments)
   const renderTabContent = () => {
+      if (instrumentsLoading) {
+          return null; // Loading is shown in TabsContent
+      }
     switch (activeTab) {
       case 'assessment':
         return activeInstrument ? (
@@ -262,14 +268,14 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
 
       case 'configuration':
         return (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Settings className="h-5 w-5" />
-                Configuracao de Instrumentos
+            <Card className="border-border/40 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center gap-2 text-[13px] font-medium">
+                        <Settings className="h-4 w-4" strokeWidth={1.5}/>
+                        {t('assessment', 'configInstrumentsTitle')}
               </CardTitle>
-              <CardDescription>
-                Gerencie instrumentos de avaliacao do projeto
+                    <CardDescription className="text-[13px]">
+                        {t('assessment', 'configInstrumentsDesc')}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -279,13 +285,12 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
         );
 
       default:
-        // Fallback para tab assessment
         return null;
     }
   };
 
   return (
-    <div className="space-y-6">
+      <div className="space-y-4">
       {/* Tabs */}
       <Tabs
         value={activeTab}
@@ -295,32 +300,51 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
           }
         }}
       >
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="assessment">
-            Avaliacao
+          <TabsList className="grid w-full grid-cols-3 h-10 text-[13px] border-border/40">
+              <TabsTrigger value="assessment" className="data-[state=active]:bg-muted/50">
+                  {t('assessment', 'tabAssessment')}
           </TabsTrigger>
-          <TabsTrigger value="dashboard" disabled={!hasInstrument}>
-            Dashboard
+              <TabsTrigger value="dashboard" disabled={!hasInstrument} className="data-[state=active]:bg-muted/50">
+                  {t('assessment', 'tabDashboard')}
           </TabsTrigger>
-          <TabsTrigger value="configuration">
-            Configuracao
+              <TabsTrigger value="configuration" className="data-[state=active]:bg-muted/50">
+                  {t('assessment', 'tabConfiguration')}
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value={activeTab} className="mt-6">
-          {renderTabContent()}
+            {instrumentsLoading ? (
+                <div className="space-y-4" aria-busy="true" aria-label={t('assessment', 'loadingInstruments')}>
+                    <div className="flex items-center gap-2">
+                        <Skeleton className="h-9 flex-1 max-w-sm"/>
+                        <Skeleton className="h-4 w-24"/>
+                    </div>
+                    <div className="rounded-lg border border-border/40">
+                        <div className="border-b border-border/40 px-4 py-2 flex gap-4">
+                            <Skeleton className="h-4 w-[30%]"/>
+                            <Skeleton className="h-4 w-[15%]"/>
+                            <Skeleton className="h-4 w-[10%]"/>
+                            <Skeleton className="h-4 w-[15%]"/>
+                            <Skeleton className="h-4 w-[10%]"/>
+                            <Skeleton className="h-4 w-[15%]"/>
+                        </div>
+                        {[1, 2, 3, 4, 5, 6].map((i) => (
+                            <div key={i} className="flex gap-4 px-4 py-2 border-b border-border/40 last:border-b-0">
+                                <Skeleton className="h-4 flex-1 max-w-[30%]"/>
+                                <Skeleton className="h-4 w-[15%]"/>
+                                <Skeleton className="h-4 w-[10%]"/>
+                                <Skeleton className="h-4 w-[15%]"/>
+                                <Skeleton className="h-4 w-[10%]"/>
+                                <Skeleton className="h-8 w-20"/>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            ) : (
+                renderTabContent()
+            )}
         </TabsContent>
       </Tabs>
-
-      {/* Loading state */}
-      {instrumentsLoading && (
-        <div className="flex items-center justify-center py-12">
-          <div className="text-center">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4"></div>
-            <p className="text-muted-foreground">Carregando instrumentos...</p>
-          </div>
-        </div>
-      )}
 
       {/* Note: Error handling is done within InstrumentManager component */}
     </div>

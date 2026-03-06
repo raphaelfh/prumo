@@ -1,12 +1,12 @@
 /**
- * View Principal de Comparação para Extraction
- * 
- * Orquestra comparação em 2 níveis hierárquicos:
- * 1. Study-level: Campos únicos compartilhados (Participants, Outcome, etc)
- * 2. Model-level: Comparação 1:1 de modelos preditivos
- * 
- * Usa ComparisonTable genérico e delega complexidade para sub-componentes.
- * 
+ * Main comparison view for Extraction
+ *
+ * Orchestrates comparison at 2 hierarchy levels:
+ * 1. Study-level: Shared unique fields (Participants, Outcome, etc)
+ * 2. Model-level: 1:1 comparison of predictive models
+ *
+ * Uses generic ComparisonTable and delegates complexity to sub-components.
+ *
  * @component
  */
 
@@ -17,6 +17,7 @@ import {Badge} from '@/components/ui/badge';
 import {Alert, AlertDescription} from '@/components/ui/alert';
 import {BarChart, GitBranch, Info, Users} from 'lucide-react';
 import {type ComparisonColumn, ComparisonTable, type ComparisonUser} from '@/components/shared/comparison';
+import {t} from '@/lib/copy';
 import {ModelLevelComparison} from './ModelLevelComparison';
 import type {ExtractionEntityType, ExtractionField, ExtractionInstance} from '@/types/extraction';
 import type {OtherExtraction} from '@/hooks/extraction/colaboracao/useOtherExtractions';
@@ -46,7 +47,7 @@ export function ExtractionComparisonView(props: ExtractionComparisonViewProps) {
 
   const [activeLevel, setActiveLevel] = useState<'study' | 'models'>('study');
 
-  // Separar entity types por nível hierárquico
+    // Split entity types by hierarchy level
   const studyLevelTypes = useMemo(() => 
     entityTypes.filter(et => !et.parent_entity_type_id),
     [entityTypes]
@@ -57,12 +58,12 @@ export function ExtractionComparisonView(props: ExtractionComparisonViewProps) {
     [entityTypes]
   );
 
-  // Preparar colunas para study-level (fields flat)
+    // Prepare columns for study-level (flat fields)
   const studyColumns = useMemo<ComparisonColumn[]>(() => {
     const columns: ComparisonColumn[] = [];
 
     studyLevelTypes.forEach(entityType => {
-      // Assumindo que entity types têm fields carregados
+        // Assume entity types have fields loaded
       const fields = entityTypes
         .filter(et => et.id === entityType.id)
         .flatMap(et => (et as any).fields || []);
@@ -72,7 +73,7 @@ export function ExtractionComparisonView(props: ExtractionComparisonViewProps) {
           id: field.id,
           label: `${entityType.label} > ${field.label}`,
           getValue: (fieldId: string, userData: Record<string, any>) => {
-            // Para study-level, valores são diretos (sem instance prefix)
+              // For study-level, values are direct (no instance prefix)
             return userData[fieldId];
           },
           isRequired: field.is_required
@@ -83,14 +84,14 @@ export function ExtractionComparisonView(props: ExtractionComparisonViewProps) {
     return columns;
   }, [studyLevelTypes, entityTypes]);
 
-  // Preparar dados para ComparisonTable
+    // Prepare data for ComparisonTable
   const comparisonData = useMemo(() => {
     const data: Record<string, Record<string, any>> = {};
-    
-    // Dados do usuário atual
+
+      // Current user data
     data[currentUserId] = myValues;
 
-    // Dados de outros usuários
+      // Other users' data
     otherExtractions.forEach(ext => {
       data[ext.userId] = ext.values;
     });
@@ -98,7 +99,7 @@ export function ExtractionComparisonView(props: ExtractionComparisonViewProps) {
     return data;
   }, [currentUserId, myValues, otherExtractions]);
 
-  // Preparar lista de usuários
+    // Prepare user list
   const currentUser: ComparisonUser = {
     userId: currentUserId,
     userName: currentUserName,
@@ -112,7 +113,7 @@ export function ExtractionComparisonView(props: ExtractionComparisonViewProps) {
     isCurrentUser: false
   }));
 
-  // Agrupar instances do usuário atual por entity type
+    // Group current user instances by entity type
   const myInstancesByType = useMemo(() => {
     const grouped: Record<string, ExtractionInstance[]> = {};
     myInstances.forEach(instance => {
@@ -130,10 +131,10 @@ export function ExtractionComparisonView(props: ExtractionComparisonViewProps) {
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2">
             <Users className="h-5 w-5" />
-            Comparação de Extrações
+              Extraction comparison
           </CardTitle>
           <Badge variant="outline">
-            {otherExtractions.length} outro{otherExtractions.length !== 1 ? 's' : ''} revisor{otherExtractions.length !== 1 ? 'es' : ''}
+              {otherExtractions.length} other reviewer{otherExtractions.length !== 1 ? 's' : ''}
           </Badge>
         </div>
       </CardHeader>
@@ -143,7 +144,7 @@ export function ExtractionComparisonView(props: ExtractionComparisonViewProps) {
           <Alert>
             <Info className="h-4 w-4" />
             <AlertDescription>
-              Configure o template de extração para habilitar comparação.
+                Configure the extraction template to enable comparison.
             </AlertDescription>
           </Alert>
         ) : (
@@ -169,7 +170,7 @@ export function ExtractionComparisonView(props: ExtractionComparisonViewProps) {
               </TabsTrigger>
             </TabsList>
 
-            {/* Study-level: Grid tradicional com ComparisonTable genérico */}
+              {/* Study-level: Traditional grid with generic ComparisonTable */}
             <TabsContent value="study" className="mt-4">
               {studyColumns.length > 0 ? (
                 <ComparisonTable
@@ -185,13 +186,13 @@ export function ExtractionComparisonView(props: ExtractionComparisonViewProps) {
                 <Alert>
                   <Info className="h-4 w-4" />
                   <AlertDescription>
-                    Nenhum campo study-level configurado no template.
+                      {t('extraction', 'noStudyLevelFields')}
                   </AlertDescription>
                 </Alert>
               )}
             </TabsContent>
 
-            {/* Model-level: Comparação 1:1 com seletores */}
+              {/* Model-level: 1:1 comparison with selectors */}
             <TabsContent value="models" className="mt-4">
               {modelParentType ? (
                 <ModelLevelComparison
@@ -206,7 +207,7 @@ export function ExtractionComparisonView(props: ExtractionComparisonViewProps) {
                 <Alert>
                   <Info className="h-4 w-4" />
                   <AlertDescription>
-                    Este template não possui entidade de modelos preditivos.
+                      This template has no predictive models entity.
                   </AlertDescription>
                 </Alert>
               )}

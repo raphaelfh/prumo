@@ -1,11 +1,10 @@
 /**
- * Dialog para criar template personalizado
- * 
- * Permite que o usuário crie um template vazio e depois
- * adicione seções e campos manualmente através da UI de configuração.
+ * Dialog to create a custom template.
+ * Lets the user create an empty template and then add sections and fields
+ * manually via the configuration UI.
  */
 
-import {useState} from 'react';
+import {useState, useMemo} from 'react';
 import {useForm} from 'react-hook-form';
 import {zodResolver} from '@hookform/resolvers/zod';
 import {z} from 'zod';
@@ -26,22 +25,23 @@ import {Loader2, PlusCircle} from 'lucide-react';
 import {supabase} from '@/integrations/supabase/client';
 import {useAuth} from '@/contexts/AuthContext';
 import {toast} from 'sonner';
+import {t} from '@/lib/copy';
 
-// Schema de validação
-const CustomTemplateSchema = z.object({
+// Schema built with copy for validation messages
+const buildCustomTemplateSchema = () => z.object({
   name: z.string()
-    .min(3, 'Nome deve ter pelo menos 3 caracteres')
-    .max(100, 'Nome deve ter no máximo 100 caracteres'),
+      .min(3, t('extraction', 'createValidationNameMin'))
+      .max(100, t('extraction', 'createValidationNameMax')),
   description: z.string()
-    .max(500, 'Descrição deve ter no máximo 500 caracteres')
+      .max(500, t('extraction', 'createValidationDescMax'))
     .optional()
     .nullable(),
   framework: z.enum(['CUSTOM', 'CHARMS', 'PICOS'], {
-    errorMap: () => ({ message: 'Selecione um framework' })
+      errorMap: () => ({message: t('extraction', 'createValidationFramework')})
   })
 });
 
-type CustomTemplateInput = z.infer<typeof CustomTemplateSchema>;
+type CustomTemplateInput = z.infer<ReturnType<typeof buildCustomTemplateSchema>>;
 
 interface CreateCustomTemplateDialogProps {
   projectId: string;
@@ -58,6 +58,7 @@ export function CreateCustomTemplateDialog({
 }: CreateCustomTemplateDialogProps) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
+    const CustomTemplateSchema = useMemo(() => buildCustomTemplateSchema(), []);
 
   const form = useForm<CustomTemplateInput>({
     resolver: zodResolver(CustomTemplateSchema),
@@ -70,7 +71,7 @@ export function CreateCustomTemplateDialog({
 
   const handleSubmit = async (data: CustomTemplateInput) => {
     if (!user) {
-      toast.error('Você precisa estar autenticado');
+        toast.error(t('extraction', 'createAuthRequired'));
       return;
     }
 
@@ -97,16 +98,16 @@ export function CreateCustomTemplateDialog({
 
       if (error) throw error;
 
-      toast.success(`Template "${data.name}" criado com sucesso!`);
-      toast.info('Agora adicione seções e campos na aba Configuração');
+        toast.success(`"${data.name}" ${t('extraction', 'createSuccessCreated')}`);
+        toast.info(t('extraction', 'createInfoAddSections'));
       
       form.reset();
       onTemplateCreated(template.id);
       onOpenChange(false);
 
     } catch (err: any) {
-      console.error('Erro ao criar template:', err);
-      toast.error(`Erro ao criar template: ${err.message}`);
+        console.error('Error creating template:', err);
+        toast.error(`${t('extraction', 'createErrorCreate')}: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -121,56 +122,56 @@ export function CreateCustomTemplateDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Criar Template Personalizado</DialogTitle>
+            <DialogTitle>{t('extraction', 'createTitle')}</DialogTitle>
           <DialogDescription>
-            Crie um template vazio e adicione seções e campos personalizados
+              {t('extraction', 'createDesc')}
           </DialogDescription>
         </DialogHeader>
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-            {/* Nome */}
+              {/* Name */}
             <FormField
               control={form.control}
               name="name"
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
-                    Nome do Template <span className="text-destructive">*</span>
+                      {t('extraction', 'createNameLabel')} <span className="text-destructive">*</span>
                   </FormLabel>
                   <FormControl>
                     <Input
                       {...field}
-                      placeholder="Ex: Extração Personalizada - Diabetes"
+                      placeholder={t('extraction', 'createNamePlaceholder')}
                       disabled={loading}
                     />
                   </FormControl>
                   <FormDescription>
-                    Nome descritivo para identificar este template
+                      {t('extraction', 'createNameDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
             />
 
-            {/* Descrição */}
+              {/* Description */}
             <FormField
               control={form.control}
               name="description"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Descrição</FormLabel>
+                    <FormLabel>{t('extraction', 'createDescriptionLabel')}</FormLabel>
                   <FormControl>
                     <Textarea
                       {...field}
                       value={field.value || ''}
-                      placeholder="Descreva o propósito deste template..."
+                      placeholder={t('extraction', 'createDescriptionPlaceholder')}
                       rows={3}
                       disabled={loading}
                     />
                   </FormControl>
                   <FormDescription>
-                    Explique quais dados serão extraídos e para qual finalidade
+                      {t('extraction', 'createDescriptionDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -183,7 +184,7 @@ export function CreateCustomTemplateDialog({
               name="framework"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Framework Base</FormLabel>
+                    <FormLabel>{t('extraction', 'createFrameworkLabel')}</FormLabel>
                   <Select
                     onValueChange={field.onChange}
                     defaultValue={field.value}
@@ -191,17 +192,17 @@ export function CreateCustomTemplateDialog({
                   >
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Selecione um framework" />
+                          <SelectValue placeholder={t('extraction', 'createFrameworkPlaceholder')}/>
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="CUSTOM">Personalizado</SelectItem>
-                      <SelectItem value="CHARMS">CHARMS (customizado)</SelectItem>
-                      <SelectItem value="PICOS">PICOS (customizado)</SelectItem>
+                        <SelectItem value="CUSTOM">{t('extraction', 'createFrameworkCustom')}</SelectItem>
+                        <SelectItem value="CHARMS">{t('extraction', 'createFrameworkCharms')}</SelectItem>
+                        <SelectItem value="PICOS">{t('extraction', 'createFrameworkPicos')}</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormDescription>
-                    Base conceitual do template (pode ser CUSTOM se totalmente personalizado)
+                      {t('extraction', 'createFrameworkDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -215,18 +216,18 @@ export function CreateCustomTemplateDialog({
                 onClick={handleCancel}
                 disabled={loading}
               >
-                Cancelar
+                  {t('common', 'cancel')}
               </Button>
               <Button type="submit" disabled={loading}>
                 {loading ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Criando...
+                      {t('extraction', 'createCreating')}
                   </>
                 ) : (
                   <>
                     <PlusCircle className="h-4 w-4 mr-2" />
-                    Criar Template
+                      {t('extraction', 'createTemplateButton')}
                   </>
                 )}
               </Button>

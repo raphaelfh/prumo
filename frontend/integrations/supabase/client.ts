@@ -1,10 +1,10 @@
 /**
  * Supabase Client Configuration
- * 
- * Suporta múltiplas fontes de env vars para compatibilidade com:
- * - Dev local (VITE_SUPABASE_*)
+ *
+ * Supports multiple env var sources for compatibility with:
+ * - Local dev (VITE_SUPABASE_*)
  * - Vercel + Supabase Integration (SUPABASE_*, NEXT_PUBLIC_SUPABASE_*)
- * - Preview branches (env vars injetados automaticamente)
+ * - Preview branches (env vars injected automatically)
  */
 import {createClient} from '@supabase/supabase-js';
 import type {Database} from './types';
@@ -16,7 +16,7 @@ import {
     SUPABASE_URL,
 } from '@/config/supabase-env';
 
-// Validação em dev para facilitar debugging
+// Dev validation to aid debugging
 if (import.meta.env.DEV && (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY)) {
   console.warn(
     '[Supabase] Missing environment variables. Expected one of:\n' +
@@ -41,7 +41,7 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-    // Limpar sessão inválida automaticamente
+      // Clear invalid session automatically
     flowType: 'pkce',
   },
 });

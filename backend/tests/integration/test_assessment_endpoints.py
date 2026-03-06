@@ -10,15 +10,15 @@ from httpx import AsyncClient
 
 
 class TestAIAssessmentEndpoints:
-    """Testes de integração para endpoints de AI assessment."""
-    
+    """Integration tests for AI assessment endpoints."""
+
     @pytest.mark.asyncio
     async def test_ai_assessment_validation(
         self,
         client: AsyncClient,
     ) -> None:
-        """Test validação de AI assessment."""
-        # Sem campos obrigatórios
+        """Test AI assessment validation."""
+        # No required fields
         response = await client.post(
             "/api/v1/assessment/ai",
             json={},
@@ -31,7 +31,7 @@ class TestAIAssessmentEndpoints:
         self,
         client: AsyncClient,
     ) -> None:
-        """Test AI assessment com request válida."""
+        """Test AI assessment with valid request."""
         from app.services.ai_assessment_service import AssessmentResult
         
         with patch(
@@ -71,7 +71,7 @@ class TestAIAssessmentEndpoints:
         self,
         client: AsyncClient,
     ) -> None:
-        """Test AI assessment especificando fonte do PDF."""
+        """Test AI assessment specifying PDF source."""
         from app.services.ai_assessment_service import AssessmentResult
         
         with patch(
@@ -110,7 +110,7 @@ class TestAIAssessmentEndpoints:
         self,
         client: AsyncClient,
     ) -> None:
-        """Test AI assessment com force_file_search."""
+        """Test AI assessment with force_file_search."""
         from app.services.ai_assessment_service import AssessmentResult
         
         with patch(
@@ -146,14 +146,14 @@ class TestAIAssessmentEndpoints:
 
 
 class TestResponseHeaders:
-    """Testes para headers de resposta."""
-    
+    """Tests for response headers."""
+
     @pytest.mark.asyncio
     async def test_trace_id_header(
         self,
         client: AsyncClient,
     ) -> None:
-        """Test que X-Trace-Id está presente nas respostas."""
+        """Test that X-Trace-Id is present in responses."""
         response = await client.get("/health")
         
         assert response.status_code == 200
@@ -164,13 +164,13 @@ class TestResponseHeaders:
         self,
         client: AsyncClient,
     ) -> None:
-        """Test que X-Response-Time está presente nas respostas."""
+        """Test that X-Response-Time is present in responses."""
         response = await client.get("/health")
-        
+
         assert response.status_code == 200
         assert "x-response-time" in response.headers
-        
-        # Deve ser um valor numérico em ms
+
+        # Should be a numeric value in ms
         time_str = response.headers["x-response-time"]
         assert "ms" in time_str
 

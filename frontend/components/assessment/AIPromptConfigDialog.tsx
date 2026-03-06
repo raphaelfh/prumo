@@ -14,6 +14,7 @@ import {Textarea} from '@/components/ui/textarea';
 import {Loader2, Settings} from 'lucide-react';
 import {supabase} from '@/integrations/supabase/client';
 import {useToast} from '@/hooks/use-toast';
+import {t} from '@/lib/copy';
 
 interface AIPromptConfigDialogProps {
   assessmentItemId: string;
@@ -79,15 +80,15 @@ export const AIPromptConfigDialog = ({
       if (error) throw error;
 
       toast({
-        title: "Configuração salva",
-        description: "Template de prompt atualizado com sucesso",
+          title: t('assessment', 'aiPromptToastSaved'),
+          description: t('assessment', 'aiPromptToastSavedDesc'),
       });
       setOpen(false);
     } catch (error) {
       console.error('Error saving prompt config:', error);
       toast({
-        title: "Erro ao salvar",
-        description: error instanceof Error ? error.message : 'Erro desconhecido',
+          title: t('assessment', 'aiPromptToastError'),
+          description: error instanceof Error ? error.message : t('assessment', 'aiPromptToastErrorDesc'),
         variant: "destructive",
       });
     } finally {
@@ -103,16 +104,16 @@ export const AIPromptConfigDialog = ({
           variant="ghost"
           size="icon"
           className="h-8 w-8"
-          title="Configurar prompt da IA"
+          title={t('assessment', 'aiPromptTriggerTitle')}
         >
           <Settings className="h-4 w-4" />
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Configurar Prompt da IA</DialogTitle>
+            <DialogTitle>{t('assessment', 'aiPromptDialogTitle')}</DialogTitle>
           <DialogDescription>
-            Customize como a IA avalia esta questão: "{itemQuestion}"
+              {t('assessment', 'aiPromptDialogDesc')}: "{itemQuestion}"
           </DialogDescription>
         </DialogHeader>
 
@@ -123,46 +124,50 @@ export const AIPromptConfigDialog = ({
         ) : (
           <div className="space-y-6 py-4">
             <div className="space-y-2">
-              <Label htmlFor="system-prompt">Instrução do Sistema</Label>
+                <Label htmlFor="system-prompt">{t('assessment', 'aiPromptSystemLabel')}</Label>
               <Textarea
                 id="system-prompt"
                 value={systemPrompt}
                 onChange={(e) => setSystemPrompt(e.target.value)}
-                placeholder="Descreva o papel e expertise da IA..."
+                placeholder={t('assessment', 'aiPromptSystemPlaceholder')}
                 className="min-h-[100px] font-mono text-sm"
               />
               <p className="text-xs text-muted-foreground">
-                Define o contexto e expertise da IA para a avaliação
+                  {t('assessment', 'aiPromptSystemDesc')}
               </p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="user-prompt">Template do Prompt do Usuário</Label>
+                <Label htmlFor="user-prompt">{t('assessment', 'aiPromptUserLabel')}</Label>
               <Textarea
                 id="user-prompt"
                 value={userPromptTemplate}
                 onChange={(e) => setUserPromptTemplate(e.target.value)}
-                placeholder="Template para a pergunta específica..."
+                placeholder={t('assessment', 'aiPromptUserPlaceholder')}
                 className="min-h-[150px] font-mono text-sm"
               />
               <div className="text-xs text-muted-foreground space-y-1">
-                <p>Variáveis disponíveis:</p>
+                  <p>{t('assessment', 'aiPromptVariablesTitle')}</p>
                 <ul className="list-disc list-inside ml-2">
-                  <li><code className="bg-muted px-1 rounded">{'{{question}}'}</code> - A pergunta do item de avaliação</li>
-                  <li><code className="bg-muted px-1 rounded">{'{{levels}}'}</code> - Os níveis de resposta permitidos</li>
+                    <li><code
+                        className="bg-muted px-1 rounded">{'{{question}}'}</code> – {t('assessment', 'aiPromptVarQuestion')}
+                    </li>
+                    <li><code
+                        className="bg-muted px-1 rounded">{'{{levels}}'}</code> – {t('assessment', 'aiPromptVarLevels')}
+                    </li>
                 </ul>
               </div>
             </div>
 
             <div className="rounded-lg border p-4 bg-muted/50">
-              <h4 className="text-sm font-medium mb-2">Preview do Prompt Final:</h4>
+                <h4 className="text-sm font-medium mb-2">{t('assessment', 'aiPromptPreviewTitle')}</h4>
               <div className="text-xs space-y-2 font-mono">
                 <div>
-                  <strong>Sistema:</strong>
+                    <strong>{t('assessment', 'aiPromptPreviewSystem')}</strong>
                   <p className="mt-1 text-muted-foreground">{systemPrompt}</p>
                 </div>
                 <div>
-                  <strong>Usuário:</strong>
+                    <strong>{t('assessment', 'aiPromptPreviewUser')}</strong>
                   <p className="mt-1 text-muted-foreground">
                     {userPromptTemplate
                       .replace('{{question}}', itemQuestion)
@@ -181,7 +186,7 @@ export const AIPromptConfigDialog = ({
             onClick={() => setOpen(false)}
             disabled={saving}
           >
-            Cancelar
+              {t('common', 'cancel')}
           </Button>
           <Button
             type="button"
@@ -191,10 +196,10 @@ export const AIPromptConfigDialog = ({
             {saving ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Salvando...
+                  {t('assessment', 'aiPromptSaving')}
               </>
             ) : (
-              'Salvar Configuração'
+                t('assessment', 'aiPromptSaveConfig')
             )}
           </Button>
         </DialogFooter>
