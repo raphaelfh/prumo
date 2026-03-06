@@ -1,0 +1,33 @@
+# review-ai-hub Development Guidelines
+
+Auto-generated from all feature plans. Last updated: 2026-03-04
+
+## Active Technologies
+
+- TypeScript (strict), React 18.3 + Vite, TanStack Query, Zustand, shadcn/Radix, react-hook-form, Zod; **i18n/copy**:
+  módulo customizado em `frontend/lib/copy/` (namespaces por área, sem lib externa); ver research.md (004-frontend-i18n)
+
+## Project Structure
+
+```text
+src/
+tests/
+```
+
+## Commands
+
+npm test && npm run lint
+
+## Code Style
+
+- **Language**: All code, comments, commit messages, docs, and project text must be written in **English**.
+- TypeScript (strict), React 18.3: Follow standard conventions
+
+## Recent Changes
+
+- 004-frontend-i18n: Added TypeScript (strict), React 18.3 + Vite, TanStack Query, Zustand, shadcn/Radix,
+  react-hook-form, Zod; **i18n/copy**: módulo customizado em `frontend/lib/copy/` (namespaces por área, sem lib
+  externa); ver research.md
+
+<!-- MANUAL ADDITIONS START -->
+<!-- MANUAL ADDITIONS END -->
