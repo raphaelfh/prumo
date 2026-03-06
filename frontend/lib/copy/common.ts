@@ -91,6 +91,11 @@ export const common = {
     loadingEllipsis: 'Loading…',
     unknownError: 'Unknown error',
     loadingPdf: 'Loading PDF…',
+    // List filter (shared panel)
+    listFilterFrom: 'From',
+    listFilterTo: 'To',
+    listFilterAny: 'Any',
+    listFilterClearAll: 'Clear all',
 } as const;
 
 export type CommonCopy = typeof common;

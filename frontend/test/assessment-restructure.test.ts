@@ -10,25 +10,27 @@
 
 import {describe, expect, it} from 'vitest';
 import {
-    type AssessmentEvidenceNew,
-    type AssessmentInstance,
-    type AssessmentInstanceWithProgress,
-    type AssessmentResponseNew,
-    type AssessmentResponseStats,
-    AssessmentSource,
-    CreateAssessmentInstanceSchema,
-    CreateAssessmentResponseSchema,
-    UpdateAssessmentResponseSchema,
+  ASSESSMENT_SOURCE_VALUES,
+  type AssessmentEvidenceNew,
+  type AssessmentInstance,
+  type AssessmentInstanceWithProgress,
+  type AssessmentResponseNew,
+  type AssessmentResponseStats,
+  AssessmentSource,
+  CreateAssessmentInstanceSchema,
+  CreateAssessmentResponseSchema,
+  UpdateAssessmentResponseSchema,
 } from '../types/assessment';
 
 describe('Assessment Restructure - Type Validation', () => {
   describe('AssessmentSource Enum', () => {
     it('should have correct enum values', () => {
-      expect(AssessmentSource).toBeDefined();
+        expect(ASSESSMENT_SOURCE_VALUES).toBeDefined();
+        expect(ASSESSMENT_SOURCE_VALUES).toEqual(['human', 'ai', 'consensus']);
 
       const sources: AssessmentSource[] = ['human', 'ai', 'consensus'];
       sources.forEach(source => {
-        expect(['human', 'ai', 'consensus']).toContain(source);
+          expect(ASSESSMENT_SOURCE_VALUES).toContain(source);
       });
     });
 
@@ -413,8 +415,10 @@ describe('Assessment Restructure - Zod Schema Validation', () => {
   describe('CreateAssessmentResponseSchema', () => {
     it('should accept valid response creation data', () => {
       const validData = {
-        assessment_instance_id: '123e4567-e89b-12d3-a456-426614174000',
-        assessment_item_id: '123e4567-e89b-12d3-a456-426614174001',
+          project_id: '123e4567-e89b-12d3-a456-426614174000',
+          article_id: '123e4567-e89b-12d3-a456-426614174001',
+          assessment_instance_id: '123e4567-e89b-12d3-a456-426614174002',
+          assessment_item_id: '123e4567-e89b-12d3-a456-426614174003',
         selected_level: 'yes',
         notes: 'Test notes',
         confidence: 0.95,
@@ -427,8 +431,10 @@ describe('Assessment Restructure - Zod Schema Validation', () => {
 
     it('should reject invalid source value', () => {
       const invalidData = {
-        assessment_instance_id: '123e4567-e89b-12d3-a456-426614174000',
-        assessment_item_id: '123e4567-e89b-12d3-a456-426614174001',
+          project_id: '123e4567-e89b-12d3-a456-426614174000',
+          article_id: '123e4567-e89b-12d3-a456-426614174001',
+          assessment_instance_id: '123e4567-e89b-12d3-a456-426614174002',
+          assessment_item_id: '123e4567-e89b-12d3-a456-426614174003',
         selected_level: 'yes',
         source: 'invalid_source',
       };
@@ -439,8 +445,10 @@ describe('Assessment Restructure - Zod Schema Validation', () => {
 
     it('should reject confidence outside 0-1 range', () => {
       const invalidData = {
-        assessment_instance_id: '123e4567-e89b-12d3-a456-426614174000',
-        assessment_item_id: '123e4567-e89b-12d3-a456-426614174001',
+          project_id: '123e4567-e89b-12d3-a456-426614174000',
+          article_id: '123e4567-e89b-12d3-a456-426614174001',
+          assessment_instance_id: '123e4567-e89b-12d3-a456-426614174002',
+          assessment_item_id: '123e4567-e89b-12d3-a456-426614174003',
         selected_level: 'yes',
         confidence: 1.5,
         source: 'ai',

@@ -1,43 +1,40 @@
-import {useEffect, useMemo, useRef, useState} from "react";
 import type {CSSProperties} from "react";
+import {useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {useNavigate} from "react-router-dom";
-import {Input} from "@/components/ui/input";
 import {Button} from "@/components/ui/button";
 import {Badge} from "@/components/ui/badge";
 import {Checkbox} from "@/components/ui/checkbox";
 import {
-  ChevronDown,
-    ChevronRight,
-  ChevronsUpDown,
-  ChevronUp,
-  FileText,
-  Filter,
+    ChevronDown,
+    ChevronsUpDown,
+    ChevronUp,
+    FileText,
     LayoutGrid,
-  MoreHorizontal,
-  Plus,
-  Search,
+    MoreHorizontal,
+    Plus,
+    Search,
     SlidersHorizontal,
-  Trash2,
+    Trash2,
     Upload,
     X
 } from "lucide-react";
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from "@/components/ui/table";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle
 } from "@/components/ui/alert-dialog";
 import {Popover, PopoverContent, PopoverTrigger} from "@/components/ui/popover";
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/components/ui/select";
@@ -45,6 +42,17 @@ import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "@/compon
 import {supabase} from "@/integrations/supabase/client";
 import {toast} from "sonner";
 import {t} from "@/lib/copy";
+import {TABLE_CELL_CLASS} from "@/lib/table-constants";
+import {useListKeyboardShortcuts} from "@/hooks/useListKeyboardShortcuts";
+import type {FilterFieldConfig, FilterValues} from "@/components/shared/list";
+import {
+    DataTableWrapper,
+    EmptyListState,
+    FilterButtonWithPopover,
+    ListCount,
+    ListFilterPanel,
+    ListToolbarSearch,
+} from "@/components/shared/list";
 import {ArticleFileUploadDialogNew} from "./ArticleFileUploadDialogNew";
 import {ZoteroImportDialog} from "./ZoteroImportDialog";
 import {useZoteroIntegration} from "@/hooks/useZoteroIntegration";
@@ -75,15 +83,35 @@ interface ArticlesListProps {
 type SortField = 'title' | 'authors' | 'journal_title' | 'publication_year' | 'created_at' | 'has_main_file';
 type SortDirection = 'asc' | 'desc';
 
-interface ColumnFilter {
-  title: string;
-  authors: string;
-  journal_title: string;
-  publication_year: string;
-  keywords: string;
-    /** 'yes' = has PDF, 'no' = no PDF, '' = any */
-    has_main_file: '' | 'yes' | 'no';
-}
+const ARTICLES_FILTER_FIELDS: FilterFieldConfig[] = [
+    {id: 'title', label: 'Title', type: 'text', placeholder: t('articles', 'listSearchTitlePlaceholder')},
+    {id: 'authors', label: 'Authors', type: 'text', placeholder: t('articles', 'listSearchAuthorPlaceholder')},
+    {id: 'journal_title', label: 'Journal', type: 'text', placeholder: t('articles', 'listSearchJournalPlaceholder')},
+    {
+        id: 'publication_year',
+        label: 'Year',
+        type: 'numericRange',
+        minBound: 1990,
+        maxBound: new Date().getFullYear(),
+        step: 1
+    },
+    {id: 'keywords', label: 'Keywords', type: 'text', placeholder: t('articles', 'listSearchKeywordPlaceholder')},
+    {
+        id: 'has_main_file', label: 'PDF', type: 'categorical', options: [
+            {value: 'yes', label: t('articles', 'listHasPdf')},
+            {value: 'no', label: t('articles', 'listNoPdf')},
+        ]
+    },
+];
+
+const INITIAL_ARTICLES_FILTER_VALUES: FilterValues = {
+    title: '',
+    authors: '',
+    journal_title: '',
+    publication_year: {},
+    keywords: '',
+    has_main_file: [],
+};
 
 interface VisibleColumns {
   title: boolean;
@@ -96,15 +124,12 @@ interface VisibleColumns {
   abstract: boolean;
 }
 
-/** Minimum padding in cells (Linear / frontend-ux) — compact. */
-const TABLE_CELL_CLASS = 'px-2 py-1';
-
 /** Data column configuration for header (DRY). id = key in columnWidths. */
 const TABLE_COLUMNS: Array<{
     id: string;
     label: string;
     sortField?: SortField;
-    filterKey?: keyof ColumnFilter;
+    filterKey?: string;
     visibleKey?: keyof VisibleColumns;
     flexible?: boolean;
 }> = [
@@ -144,27 +169,6 @@ export function ArticlesList({
     // Hook to check if user has Zotero integration configured
   const { isConfigured: hasZoteroConfigured } = useZoteroIntegration();
 
-    // Shortcut ⌘K / Ctrl+K to focus search; F to open filter (when not in input/textarea)
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-                e.preventDefault();
-                searchInputRef.current?.focus();
-                return;
-            }
-            if (e.key === 'f' && !e.metaKey && !e.ctrlKey && !e.altKey) {
-                const target = e.target as HTMLElement;
-                const inInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
-                if (!inInput) {
-                    e.preventDefault();
-                    setFilterPopoverOpen(prev => !prev);
-                }
-            }
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, []);
-
     // Fetch articles that have MAIN PDF file
   useEffect(() => {
     const fetchMainFiles = async () => {
@@ -192,18 +196,8 @@ export function ArticlesList({
     // State for sort and filters
   const [sortField, setSortField] = useState<SortField>('publication_year');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
-  const [columnFilters, setColumnFilters] = useState<ColumnFilter>({
-    title: '',
-    authors: '',
-    journal_title: '',
-    publication_year: '',
-      keywords: '',
-      has_main_file: ''
-  });
+    const [filterValues, setFilterValues] = useState<FilterValues>(INITIAL_ARTICLES_FILTER_VALUES);
     const [filterPopoverOpen, setFilterPopoverOpen] = useState(false);
-    const [filterCategoryOpen, setFilterCategoryOpen] = useState<keyof ColumnFilter | null>(null);
-    /** Which column has the filter popover in header open (one at a time) */
-    const [openColumnFilter, setOpenColumnFilter] = useState<keyof ColumnFilter | null>(null);
     const [displayPopoverOpen, setDisplayPopoverOpen] = useState(false);
 
     // Visible columns
@@ -322,28 +316,20 @@ export function ArticlesList({
     }
   };
 
-    // Update column filter
-  const updateColumnFilter = (column: keyof ColumnFilter, value: string) => {
-    setColumnFilters(prev => ({
+    // Clear single filter field (for chip clear)
+    const clearFilterField = useCallback((fieldId: string) => {
+        const field = ARTICLES_FILTER_FIELDS.find(f => f.id === fieldId);
+        if (!field) return;
+        setFilterValues(prev => ({
       ...prev,
-        [column]: column === 'has_main_file' ? (value as '' | 'yes' | 'no') : value
+            [fieldId]: field.type === 'categorical' ? [] : field.type === 'numericRange' ? {} : ''
     }));
-  };
+    }, []);
 
-    // Clear all column filters
-    const clearAllColumnFilters = () => {
-        setColumnFilters({
-            title: '',
-            authors: '',
-            journal_title: '',
-            publication_year: '',
-            keywords: '',
-            has_main_file: ''
-        });
-    };
-
-    const hasColumnFilter = (col: keyof ColumnFilter): boolean =>
-        col === 'has_main_file' ? !!columnFilters.has_main_file : columnFilters[col].trim() !== '';
+    const clearAllFilters = useCallback(() => {
+        setSearchTerm('');
+        setFilterValues(INITIAL_ARTICLES_FILTER_VALUES);
+    }, []);
 
     // Faceted values for Filter suggestions (derived from articles)
     const facetedValues = useMemo(() => {
@@ -392,285 +378,37 @@ export function ArticlesList({
     };
     }, [articles]);
 
-    // List of active filters to show in chip bar (derived from columnFilters)
+    // List of active filters to show in chip bar (derived from filterValues)
     const activeFiltersList = useMemo(() => {
-        const labels: Record<keyof ColumnFilter, string> = {
+        const labels: Record<string, string> = {
             title: 'Title',
             authors: 'Authors',
             journal_title: 'Journal',
             publication_year: 'Year',
             keywords: 'Keywords',
             has_main_file: 'PDF'
-    };
-        const list: { column: keyof ColumnFilter; label: string; value: string }[] = [];
-        (Object.keys(columnFilters) as (keyof ColumnFilter)[]).forEach(col => {
-            if (col === 'has_main_file') {
-                if (columnFilters.has_main_file === 'yes') list.push({
-                    column: 'has_main_file',
-                    label: labels.has_main_file,
-                    value: 'Has PDF'
+        };
+        const list: { column: string; label: string; value: string }[] = [];
+        ARTICLES_FILTER_FIELDS.forEach((f) => {
+            const v = filterValues[f.id];
+            if (f.type === 'categorical' && Array.isArray(v) && v.length > 0) {
+                v.forEach((val) => {
+                    const opt = f.options?.find(o => o.value === val);
+                    list.push({column: f.id, label: labels[f.id] ?? f.id, value: opt?.label ?? val});
                 });
-                else if (columnFilters.has_main_file === 'no') list.push({
-                    column: 'has_main_file',
-                    label: labels.has_main_file,
-                    value: 'No PDF'
-                });
-            } else if (columnFilters[col].trim() !== '') {
-                list.push({column: col, label: labels[col], value: columnFilters[col].trim()});
+            } else if (f.type === 'numericRange' && v != null && typeof v === 'object' && !Array.isArray(v)) {
+                const r = v as { min?: number; max?: number };
+                if (r.min != null || r.max != null) {
+                    const from = r.min != null ? String(r.min) : '?';
+                    const to = r.max != null ? String(r.max) : '?';
+                    list.push({column: f.id, label: labels[f.id] ?? f.id, value: `${from}–${to}`});
+                }
+            } else if (typeof v === 'string' && v.trim() !== '') {
+                list.push({column: f.id, label: labels[f.id] ?? f.id, value: v.trim()});
             }
         });
         return list;
-    }, [columnFilters]);
-
-    /** Filter panel content for a column (reused in global Filter and header popover) */
-    const renderColumnFilterPanelContent = (col: keyof ColumnFilter) => {
-        if (col === 'title') {
-            return (
-                <div className="space-y-2">
-                    <label
-                        className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Title</label>
-                    <Input
-                        placeholder={t('articles', 'listSearchTitlePlaceholder')}
-                        value={columnFilters.title}
-                        onChange={(e) => updateColumnFilter('title', e.target.value)}
-                        className="h-8 text-[13px]"
-                    />
-                    <p className="text-[11px] text-muted-foreground">{t('articles', 'listMatchesTextInTitle')}</p>
-                </div>
-            );
-        }
-        if (col === 'authors') {
-            return (
-                <div className="space-y-2">
-                    <label
-                        className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Authors</label>
-                    <Input
-                        placeholder={t('articles', 'listSearchAuthorPlaceholder')}
-                        value={columnFilters.authors}
-                        onChange={(e) => updateColumnFilter('authors', e.target.value)}
-                        className="h-8 text-[13px]"
-                    />
-                    {facetedValues.authors.length > 0 && (
-                        <div className="space-y-1 pt-1">
-                            <p className="text-[11px] text-muted-foreground">{t('articles', 'listSuggestions')}</p>
-                            <div className="flex flex-wrap gap-1">
-                                {facetedValues.authors.slice(0, 12).map(({value, count}) => (
-                                    <button
-                                        key={value}
-                                        type="button"
-                                        onClick={() => updateColumnFilter('authors', value)}
-                                        className="rounded-md border border-border/40 bg-muted/30 px-2 py-1 text-[12px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                                    >
-                                        {value} ({count})
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-                </div>
-            );
-        }
-        if (col === 'journal_title') {
-            return (
-                <div className="space-y-2">
-                    <label
-                        className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Journal</label>
-                    <Input
-                        placeholder={t('articles', 'listSearchJournalPlaceholder')}
-                        value={columnFilters.journal_title}
-                        onChange={(e) => updateColumnFilter('journal_title', e.target.value)}
-                        className="h-8 text-[13px]"
-                    />
-                    {facetedValues.journals.length > 0 && (
-                        <div className="space-y-1 pt-1">
-                            <p className="text-[11px] text-muted-foreground">{t('articles', 'listSuggestions')}</p>
-                            <div className="flex flex-wrap gap-1 max-h-40 overflow-y-auto">
-                                {facetedValues.journals.slice(0, 15).map(({value, count}) => (
-                                    <button
-                                        key={value}
-                                        type="button"
-                                        onClick={() => updateColumnFilter('journal_title', value)}
-                                        className="rounded-md border border-border/40 bg-muted/30 px-2 py-1 text-[12px] text-muted-foreground hover:bg-muted/60 hover:text-foreground truncate max-w-full"
-                                    >
-                                        {value} ({count})
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-                </div>
-            );
-        }
-        if (col === 'publication_year') {
-            const bounds = getYearFilterBounds(columnFilters.publication_year);
-            const yearOptions = (() => {
-                const fromData = facetedValues.years.length > 0
-                    ? facetedValues.years.map(({value}) => value)
-                    : [];
-                const currentYear = new Date().getFullYear();
-                const defaultYears = Array.from({length: currentYear - 1990 + 2}, (_, i) => String(1990 + i));
-                const combined = Array.from(new Set([...fromData, ...defaultYears])).sort((a, b) => parseInt(b, 10) - parseInt(a, 10));
-                return combined;
-            })();
-            return (
-                <div className="space-y-3">
-                    <label
-                        className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Year</label>
-                    <div className="space-y-2">
-                        <p className="text-[11px] text-muted-foreground">{t('articles', 'listYearFilterHint')}</p>
-                        <div className="flex gap-2 items-center flex-wrap">
-                            <div className="space-y-1">
-                                <span
-                                    className="text-[11px] text-muted-foreground">{t('articles', 'listFromYear')}</span>
-                                <Select
-                                    value={bounds.from || '_none'}
-                                    onValueChange={(from) => {
-                                        if (from === '_none') updateColumnFilter('publication_year', bounds.to ? `max:${bounds.to}` : '');
-                                        else updateColumnFilter('publication_year', bounds.to ? `${from}-${bounds.to}` : `min:${from}`);
-                                    }}
-                                >
-                                    <SelectTrigger className="h-8 text-[13px] w-[100px]">
-                                        <SelectValue placeholder={t('articles', 'listAny')}/>
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="_none">{t('articles', 'listAny')}</SelectItem>
-                                        {yearOptions.map((y) => (
-                                            <SelectItem key={y} value={y}>{y}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <span className="text-[11px] text-muted-foreground pt-5">to</span>
-                            <div className="space-y-1">
-                                <span className="text-[11px] text-muted-foreground">{t('articles', 'listToYear')}</span>
-                                <Select
-                                    value={bounds.to || '_none'}
-                                    onValueChange={(to) => {
-                                        if (to === '_none') updateColumnFilter('publication_year', bounds.from ? `min:${bounds.from}` : '');
-                                        else updateColumnFilter('publication_year', bounds.from ? `${bounds.from}-${to}` : `max:${to}`);
-                                    }}
-                                >
-                                    <SelectTrigger className="h-8 text-[13px] w-[100px]">
-                                        <SelectValue placeholder={t('articles', 'listAny')}/>
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="_none">{t('articles', 'listAny')}</SelectItem>
-                                        {yearOptions.map((y) => (
-                                            <SelectItem key={y} value={y}>{y}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        </div>
-                    </div>
-                    {facetedValues.years.length > 0 && (
-                        <>
-                            <div className="space-y-1 pt-1 border-t border-border/40">
-                                <p className="text-[11px] text-muted-foreground">{t('articles', 'listQuick')}</p>
-                                <div className="flex flex-wrap gap-1">
-                                    {(() => {
-                                        const minYear = facetedValues.years[facetedValues.years.length - 1].value;
-                                        const maxYear = facetedValues.years[0].value;
-                                        return (
-                                            <>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => updateColumnFilter('publication_year', `max:${parseInt(minYear, 10) - 1}`)}
-                                                    className={`rounded-md border px-2 py-1 text-[12px] transition-colors ${columnFilters.publication_year === `max:${parseInt(minYear, 10) - 1}` ? 'border-primary bg-primary/10 text-primary' : 'border-border/40 bg-muted/30 text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
-                                                >
-                                                    {t('articles', 'listBeforeYear').replace('{{year}}', minYear)}
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => updateColumnFilter('publication_year', `min:${parseInt(maxYear, 10) + 1}`)}
-                                                    className={`rounded-md border px-2 py-1 text-[12px] transition-colors ${columnFilters.publication_year === `min:${parseInt(maxYear, 10) + 1}` ? 'border-primary bg-primary/10 text-primary' : 'border-border/40 bg-muted/30 text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}
-                                                >
-                                                    {t('articles', 'listAfterYear').replace('{{year}}', maxYear)}
-                                                </button>
-                                            </>
-                                        );
-                                    })()}
-                                </div>
-                            </div>
-                            <div className="space-y-1 pt-1">
-                                <p className="text-[11px] text-muted-foreground">{t('articles', 'listSingleYear')}</p>
-                                <div className="flex flex-wrap gap-1">
-                                    {facetedValues.years.slice(0, 10).map(({value, count}) => (
-                                        <button
-                                            key={value}
-                                            type="button"
-                                            onClick={() => updateColumnFilter('publication_year', `${value}-${value}`)}
-                                            className="rounded-md border border-border/40 bg-muted/30 px-2 py-1 text-[12px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                                        >
-                                            {value} ({count})
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        </>
-                    )}
-                </div>
-            );
-        }
-        if (col === 'keywords') {
-            return (
-                <div className="space-y-2">
-                    <label
-                        className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Keywords</label>
-                    <Input
-                        placeholder={t('articles', 'listSearchKeywordPlaceholder')}
-                        value={columnFilters.keywords}
-                        onChange={(e) => updateColumnFilter('keywords', e.target.value)}
-                        className="h-8 text-[13px]"
-                    />
-                    {facetedValues.keywords.length > 0 && (
-                        <div className="space-y-1 pt-1">
-                            <p className="text-[11px] text-muted-foreground">{t('articles', 'listSuggestions')}</p>
-                            <div className="flex flex-wrap gap-1 max-h-40 overflow-y-auto">
-                                {facetedValues.keywords.slice(0, 15).map(({value, count}) => (
-                                    <button
-                                        key={value}
-                                        type="button"
-                                        onClick={() => updateColumnFilter('keywords', value)}
-                                        className="rounded-md border border-border/40 bg-muted/30 px-2 py-1 text-[12px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                                    >
-                                        {value} ({count})
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-                </div>
-            );
-        }
-        if (col === 'has_main_file') {
-            return (
-                <div className="space-y-2">
-                    <label
-                        className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">PDF</label>
-                    <div className="flex gap-2">
-                        <Button
-                            variant={columnFilters.has_main_file === 'yes' ? 'secondary' : 'ghost'}
-                            size="sm"
-                            className="text-[12px]"
-                            onClick={() => updateColumnFilter('has_main_file', columnFilters.has_main_file === 'yes' ? '' : 'yes')}
-                        >
-                            {t('articles', 'listHasPdf')}
-                        </Button>
-                        <Button
-                            variant={columnFilters.has_main_file === 'no' ? 'secondary' : 'ghost'}
-                            size="sm"
-                            className="text-[12px]"
-                            onClick={() => updateColumnFilter('has_main_file', columnFilters.has_main_file === 'no' ? '' : 'no')}
-                        >
-                            {t('articles', 'listNoPdf')}
-                        </Button>
-          </div>
-                </div>
-            );
-        }
-        return null;
-  };
+    }, [filterValues]);
 
     // Visible columns toggle
   const toggleColumn = (column: keyof VisibleColumns) => {
@@ -793,49 +531,6 @@ export function ArticlesList({
     setUploadDialogOpen(true);
   };
 
-    // Helper: interpreta filtro de ano (exato, faixa, before, after, min, max) e retorna se o ano do artigo passa
-    const publicationYearMatchesFilter = (year: number | null, filterValue: string): boolean => {
-        if (!filterValue.trim()) return true;
-        if (year == null) return false;
-        const v = filterValue.trim();
-        const beforeMatch = v.match(/^before:(\d{4})$/i);
-        if (beforeMatch) return year < parseInt(beforeMatch[1], 10);
-        const afterMatch = v.match(/^after:(\d{4})$/i);
-        if (afterMatch) return year > parseInt(afterMatch[1], 10);
-        const minOnlyMatch = v.match(/^min:(\d{4})$/i);
-        if (minOnlyMatch) return year >= parseInt(minOnlyMatch[1], 10);
-        const maxOnlyMatch = v.match(/^max:(\d{4})$/i);
-        if (maxOnlyMatch) return year <= parseInt(maxOnlyMatch[1], 10);
-        const rangeMatch = v.match(/^(\d{4})-(\d{4})$/);
-        if (rangeMatch) {
-            const min = parseInt(rangeMatch[1], 10);
-            const max = parseInt(rangeMatch[2], 10);
-            return year >= min && year <= max;
-        }
-        const exact = v.match(/^\d{4}$/);
-        if (exact) return year === parseInt(v, 10);
-        return year.toString().includes(v);
-    };
-
-    /** Parse do filtro de ano para exibir nos dropdowns Min/Max (retorna { from, to } em string ou '') */
-    const getYearFilterBounds = (filterValue: string): { from: string; to: string } => {
-        const v = filterValue.trim();
-        if (!v) return {from: '', to: ''};
-        const rangeMatch = v.match(/^(\d{4})-(\d{4})$/);
-        if (rangeMatch) return {from: rangeMatch[1], to: rangeMatch[2]};
-        const minMatch = v.match(/^min:(\d{4})$/i);
-        if (minMatch) return {from: minMatch[1], to: ''};
-        const maxMatch = v.match(/^max:(\d{4})$/i);
-        if (maxMatch) return {from: '', to: maxMatch[1]};
-        const beforeMatch = v.match(/^before:(\d{4})$/i);
-        if (beforeMatch) return {from: '', to: String(parseInt(beforeMatch[1], 10) - 1)};
-        const afterMatch = v.match(/^after:(\d{4})$/i);
-        if (afterMatch) return {from: String(parseInt(afterMatch[1], 10) + 1), to: ''};
-        const exactMatch = v.match(/^\d{4}$/);
-        if (exactMatch) return {from: v, to: v};
-        return {from: '', to: ''};
-    };
-
   // Filtrar e ordenar artigos com useMemo
   const filteredArticles = useMemo(() => {
     const filtered = articles.filter(article => {
@@ -852,39 +547,51 @@ export function ArticlesList({
         if (!matchesSearch) return false;
       }
 
-      // Filtros por coluna
-        if (columnFilters.title && !(article.title ?? '').toLowerCase().includes(columnFilters.title.toLowerCase())) {
+        // Panel filters (FilterValues)
+        const titleFilter = filterValues.title as string | undefined;
+        if (titleFilter?.trim() && !(article.title ?? '').toLowerCase().includes(titleFilter.toLowerCase())) {
         return false;
       }
 
-        if (columnFilters.authors) {
+        const authorsFilter = filterValues.authors as string | undefined;
+        if (authorsFilter?.trim()) {
             const authorMatch = article.authors?.some(author =>
-          author.toLowerCase().includes(columnFilters.authors.toLowerCase())
+                author.toLowerCase().includes(authorsFilter.toLowerCase())
         );
         if (!authorMatch) return false;
       }
 
-        if (columnFilters.journal_title) {
-            if (!article.journal_title || !article.journal_title.toLowerCase().includes(columnFilters.journal_title.toLowerCase())) {
+        const journalFilter = filterValues.journal_title as string | undefined;
+        if (journalFilter?.trim()) {
+            if (!article.journal_title || !article.journal_title.toLowerCase().includes(journalFilter.toLowerCase())) {
           return false;
         }
       }
 
-        if (columnFilters.publication_year) {
-            if (!publicationYearMatchesFilter(article.publication_year ?? null, columnFilters.publication_year)) {
-          return false;
-        }
+        const yearRange = filterValues.publication_year as { min?: number; max?: number } | undefined;
+        if (yearRange && (yearRange.min != null || yearRange.max != null)) {
+            const y = article.publication_year ?? null;
+            if (y == null) return false;
+            if (yearRange.min != null && y < yearRange.min) return false;
+            if (yearRange.max != null && y > yearRange.max) return false;
       }
 
-        if (columnFilters.keywords) {
+        const keywordsFilter = filterValues.keywords as string | undefined;
+        if (keywordsFilter?.trim()) {
             const keywordMatch = article.keywords?.some(keyword =>
-          keyword.toLowerCase().includes(columnFilters.keywords.toLowerCase())
+                keyword.toLowerCase().includes(keywordsFilter.toLowerCase())
         );
         if (!keywordMatch) return false;
       }
 
-        if (columnFilters.has_main_file === 'yes' && !articlesWithMainFile.has(article.id)) return false;
-        if (columnFilters.has_main_file === 'no' && articlesWithMainFile.has(article.id)) return false;
+        const hasMainFileFilter = filterValues.has_main_file as string[] | undefined;
+        if (hasMainFileFilter?.length) {
+            const hasPdf = articlesWithMainFile.has(article.id);
+            const wantYes = hasMainFileFilter.includes('yes');
+            const wantNo = hasMainFileFilter.includes('no');
+            if (wantYes && !wantNo && !hasPdf) return false;
+            if (wantNo && !wantYes && hasPdf) return false;
+        }
 
       return true;
     });
@@ -925,7 +632,7 @@ export function ArticlesList({
     });
 
     return filtered;
-  }, [articles, searchTerm, columnFilters, sortField, sortDirection, articlesWithMainFile]);
+  }, [articles, searchTerm, filterValues, sortField, sortDirection, articlesWithMainFile]);
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
@@ -935,308 +642,88 @@ export function ArticlesList({
     }
   };
 
-  return (
-      <div className="space-y-3">
-          {/* Single toolbar: search + Filter + Display + count/selection (Linear) */}
-          <div className="flex flex-col gap-2">
-              <div className="flex flex-wrap items-center gap-2 w-full">
-                  {/* Busca */}
-                  <div className="flex-1 min-w-[200px] group">
-                      <div className="relative">
-                          <Search
-                              className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground transition-colors group-focus-within:text-foreground"/>
-                          <Input
-                              ref={searchInputRef}
-                              placeholder="Search... (⌘K)"
-                              value={searchTerm}
-                              onChange={(e) => setSearchTerm(e.target.value)}
-                              className="pl-8 h-8 bg-muted/40 border-transparent focus:bg-background focus:ring-0 focus:border-border/60 focus:shadow-sm transition-all text-sm rounded-md"
-                          />
-                      </div>
-                  </div>
+    const hasActiveListFilters = activeFiltersList.length > 0 || !!searchTerm.trim();
+    useListKeyboardShortcuts({
+        searchInputRef,
+        setFilterPopoverOpen,
+        filterPopoverOpen,
+        deselectAll: () => setSelectedArticles(new Set()),
+        selectedCount: selectedArticles.size,
+        hasActiveFilters: hasActiveListFilters,
+        selectAll: () => setSelectedArticles(new Set(filteredArticles.map(a => a.id))),
+        selectFiltered: () => setSelectedArticles(new Set(filteredArticles.map(a => a.id))),
+    });
 
-                  <div className="flex items-center gap-1.5 shrink-0">
-                      <Popover open={filterPopoverOpen} onOpenChange={setFilterPopoverOpen} modal={false}>
-                          <Tooltip>
-                              <TooltipTrigger asChild>
-                                  <PopoverTrigger asChild>
-                                      <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className={`h-8 w-8 p-0 rounded-md hover:bg-muted/50 transition-colors relative ${activeFiltersList.length > 0 ? 'text-primary' : 'text-muted-foreground'}`}
-                                          aria-label="Filter"
-                                      >
-                                          <Filter className="h-4 w-4"/>
-                                          {activeFiltersList.length > 0 && (
-                                              <span
-                                                  className="absolute -top-0.5 -right-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary/15 px-0.5 text-[10px] font-semibold text-primary">
-                          {activeFiltersList.length}
-                        </span>
-                                          )}
-                                      </Button>
-                                  </PopoverTrigger>
-                              </TooltipTrigger>
-                              <TooltipContent side="bottom">Filter (F)</TooltipContent>
-                          </Tooltip>
-                          <PopoverContent
-                              className="w-[420px] p-0 border-border/50 shadow-[0_8px_30px_rgb(0,0,0,0.04)]"
-                              align="end"
-                              sideOffset={6}
-                              onOpenAutoFocus={(e) => e.preventDefault()}
-                          >
-                              <div className="flex">
-                                  <div className="w-44 border-r border-border/40 py-1">
-                                      <div className="px-3 py-2">
-                                          <p className="text-[13px] font-medium text-muted-foreground">{t('articles', 'listAddFilter')}</p>
-                                      </div>
-                                      {(['title', 'authors', 'journal_title', 'publication_year', 'keywords', 'has_main_file'] as const).map(col => {
-                                          const labels: Record<keyof ColumnFilter, string> = {
-                                              title: 'Title',
-                                              authors: 'Authors',
-                                              journal_title: 'Journal',
-                                              publication_year: 'Year',
-                                              keywords: 'Keywords',
-                                              has_main_file: 'PDF'
-                                          };
-                                          const hasActive = col === 'has_main_file'
-                                              ? !!columnFilters.has_main_file
-                                              : columnFilters[col].trim() !== '';
-                                          return (
-                                              <button
-                                                  key={col}
-                                                  type="button"
-                                                  onClick={() => setFilterCategoryOpen(filterCategoryOpen === col ? null : col)}
-                                                  className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-[13px] transition-colors hover:bg-muted/50 ${filterCategoryOpen === col ? 'bg-muted/60' : ''} ${hasActive ? 'text-primary font-medium' : 'text-foreground'}`}
-                                              >
-                                                  {labels[col]}
-                                                  <ChevronRight
-                                                      className={`h-3.5 w-3.5 shrink-0 ${filterCategoryOpen === col ? 'rotate-90' : ''}`}/>
-                                              </button>
-                                          );
-                                      })}
-                                  </div>
-                                  <div className="flex-1 min-w-0 py-2 px-3 max-h-[320px] overflow-y-auto">
-                                      {filterCategoryOpen === null && (
-                                          <p className="text-[13px] text-muted-foreground">{t('articles', 'listSelectFilterAbove')}</p>
-                                      )}
-                                      {filterCategoryOpen && renderColumnFilterPanelContent(filterCategoryOpen)}
-                                  </div>
-                              </div>
-                          </PopoverContent>
-                      </Popover>
+    const showEmpty = filteredArticles.length === 0 && articles.length === 0;
+    const emptyContent = showEmpty ? (
+        <div
+            className="flex flex-col items-center justify-center py-24 px-4 bg-muted/10 rounded-lg border border-dashed border-border/40">
+            <FileText className="h-10 w-10 text-muted-foreground/30 mb-4" strokeWidth={1.2}/>
+            <h3 className="text-base font-medium text-foreground mb-1.5 text-center">{t('articles', 'listNoArticlesYet')}</h3>
+            <p className="text-[13px] text-muted-foreground text-center mb-8 max-w-xs mx-auto">
+                {t('articles', 'listStartByImporting')}
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+                <Button
+                    onClick={() => navigate(`/projects/${projectId}/articles/add`)}
+                    className="h-10 px-6 text-[13px] font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors shadow-sm"
+                >
+                    <Plus className="mr-2 h-4 w-4"/>
+                    {t('articles', 'listAddFirstArticle')}
+                </Button>
+                {useImportCallbacks ? (
+                    <>
+                        {onOpenRisDialog && (
+                            <Button
+                                variant="outline"
+                                onClick={onOpenRisDialog}
+                                className="h-10 px-6 text-[13px] font-medium rounded-lg border-border/50 hover:bg-muted/50 transition-colors"
+                            >
+                                <FileText className="mr-2 h-4 w-4"/>
+                                {t('articles', 'listImportFromRis')}
+                            </Button>
+                        )}
+                        <Button
+                            variant="outline"
+                            onClick={() =>
+                                hasZoteroConfigured
+                                    ? onOpenZoteroDialog?.()
+                                    : navigate('/settings?tab=integrations')
+                            }
+                            className="h-10 px-6 text-[13px] font-medium rounded-lg border-border/50 hover:bg-muted/50 transition-colors"
+                        >
+                            <Upload className="mr-2 h-4 w-4"/>
+                            {onOpenRisDialog ? t('articles', 'listFromZotero') : t('articles', 'listImportArticles')}
+                        </Button>
+                    </>
+                ) : (
+                    hasZoteroConfigured ? (
+                        <Button
+                            variant="outline"
+                            onClick={() => setZoteroImportOpen(true)}
+                            className="h-10 px-6 text-[13px] font-medium rounded-lg border-border/50 hover:bg-muted/50 transition-colors"
+                        >
+                            <Upload className="mr-2 h-4 w-4"/>
+                            {t('articles', 'listImportArticles')}
+                        </Button>
+                    ) : (
+                        <Button
+                            variant="outline"
+                            onClick={() => navigate("/settings?tab=integrations")}
+                            className="h-10 px-6 text-[13px] font-medium rounded-lg border-border/50 hover:bg-muted/50 transition-colors"
+                        >
+                            <Upload className="mr-2 h-4 w-4"/>
+                            {t('articles', 'listImportArticles')}
+                        </Button>
+                    )
+                )}
+            </div>
+        </div>
+    ) : null;
 
-                      <Popover open={displayPopoverOpen} onOpenChange={setDisplayPopoverOpen}>
-                          <Tooltip>
-                              <TooltipTrigger asChild>
-                                  <PopoverTrigger asChild>
-                                      <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="h-8 w-8 p-0 rounded-md hover:bg-muted/50 transition-colors text-muted-foreground"
-                                          aria-label={t('articles', 'listDisplayOptions')}
-                                      >
-                                          <SlidersHorizontal className="h-4 w-4"/>
-                                      </Button>
-                                  </PopoverTrigger>
-                              </TooltipTrigger>
-                              <TooltipContent side="bottom">{t('articles', 'listDisplayAndSort')}</TooltipContent>
-                          </Tooltip>
-                          <PopoverContent className="w-72 p-0" align="end">
-                              <div className="p-3 space-y-4">
-                                  <div className="space-y-2">
-                                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                                          <ChevronsUpDown className="h-3.5 w-3.5"/>
-                                          {t('articles', 'listOrdering')}
-                                      </p>
-                                      <div className="flex gap-2 items-center">
-                                          <Select value={sortField} onValueChange={(v) => setSortField(v as SortField)}>
-                                              <SelectTrigger className="h-8 text-[13px] flex-1">
-                                                  <SelectValue/>
-                                              </SelectTrigger>
-                                              <SelectContent>
-                                                  <SelectItem value="title">Title</SelectItem>
-                                                  <SelectItem value="authors">Authors</SelectItem>
-                                                  <SelectItem value="journal_title">Journal</SelectItem>
-                                                  <SelectItem value="publication_year">Year</SelectItem>
-                                                  <SelectItem value="has_main_file">PDF</SelectItem>
-                                              </SelectContent>
-                                          </Select>
-                                          <Button
-                                              variant="outline"
-                                              size="sm"
-                                              className="h-8 w-8 p-0 shrink-0"
-                                              onClick={() => setSortDirection(d => d === 'asc' ? 'desc' : 'asc')}
-                                          >
-                                              {sortDirection === 'asc' ? <ChevronUp className="h-3.5 w-3.5"/> :
-                                                  <ChevronDown className="h-3.5 w-3.5"/>}
-                                          </Button>
-                                      </div>
-                                  </div>
-                                  <div className="space-y-2">
-                                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                                          <LayoutGrid className="h-3.5 w-3.5"/>
-                                          {t('articles', 'listDisplayProperties')}
-                                      </p>
-                                      <div className="flex flex-wrap gap-1.5">
-                                          {[
-                                              {key: 'title' as const, label: 'Title'},
-                                              {key: 'pdf' as const, label: 'PDF'},
-                                              {key: 'authors' as const, label: 'Authors'},
-                                              {key: 'journal' as const, label: 'Journal'},
-                                              {key: 'year' as const, label: 'Year'},
-                                              {key: 'keywords' as const, label: 'Keywords'},
-                                              {key: 'doi' as const, label: 'DOI'},
-                                              {key: 'abstract' as const, label: 'Abstract'},
-                                          ].map(({key, label}) => (
-                                              <button
-                                                  key={key}
-                                                  type="button"
-                                                  disabled={key === 'title'}
-                                                  onClick={() => key !== 'title' && toggleColumn(key)}
-                                                  className={`rounded-md border px-2 py-1 text-[12px] transition-colors disabled:opacity-60 disabled:cursor-default ${
-                                                      visibleColumns[key]
-                                                          ? 'border-primary/50 bg-primary/10 text-foreground'
-                                                          : 'border-border/40 bg-muted/30 text-muted-foreground hover:bg-muted/50'
-                                                  }`}
-                                              >
-                                                  {label}
-                                              </button>
-                                          ))}
-                                      </div>
-                                  </div>
-                              </div>
-                          </PopoverContent>
-                      </Popover>
-                  </div>
-
-                  {/* Count + selection actions (same line, right) */}
-                  <div className="flex items-center gap-2 shrink-0 ml-auto">
-                      <span className="text-[11px] text-muted-foreground tabular-nums">
-                          {filteredArticles.length} {t('articles', 'listOfArticles')} {articles.length} {articles.length === 1 ? t('articles', 'listArticle') : t('articles', 'listArticles')}
-                      </span>
-                      {selectedArticles.size > 0 && (
-                          <div className="flex items-center gap-2 animate-in fade-in duration-200">
-                              <span className="text-[11px] font-medium text-foreground">
-                                  {selectedArticles.size} {t('articles', 'listSelected')}
-                              </span>
-                              <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => setBulkDeleteDialogOpen(true)}
-                                  disabled={deleting}
-                                  className="h-6 text-[11px] text-destructive hover:text-destructive hover:bg-destructive/10"
-                              >
-                                  <Trash2 className="mr-1 h-3 w-3"/>
-                                  {t('articles', 'listDelete')}
-                              </Button>
-                          </div>
-                      )}
-                  </div>
-              </div>
-
-              {/* Chips de filtros ativos — compactos */}
-              {activeFiltersList.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1 px-0.5 py-1">
-                      {activeFiltersList.map(({column, label, value}) => (
-                          <span
-                              key={column}
-                              className="inline-flex items-center gap-0.5 rounded border border-border/40 bg-muted/50 text-[11px] text-muted-foreground pl-1.5 pr-0.5 py-0.5 max-w-[180px]"
-                          >
-                              <span className="truncate" title={`${label}: ${value}`}>
-                                  {label}: &quot;{value.length > 18 ? `${value.slice(0, 18)}…` : value}&quot;
-                              </span>
-                              <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-4 w-4 p-0 shrink-0 hover:bg-muted rounded"
-                                  onClick={() => updateColumnFilter(column, '')}
-                                  aria-label={t('articles', 'listRemoveFilter').replace('{{label}}', label)}
-                              >
-                                  <X className="h-2.5 w-2.5"/>
-                              </Button>
-                          </span>
-                      ))}
-                      <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-[11px] text-muted-foreground hover:text-foreground h-6 px-1.5"
-                          onClick={clearAllColumnFilters}
-                      >
-                          {t('articles', 'listClearAll')}
-                      </Button>
-                  </div>
-              )}
-          </div>
-
-      {/* Articles Table */}
-      {filteredArticles.length === 0 && articles.length === 0 ? (
-          <div
-              className="flex flex-col items-center justify-center py-24 px-4 bg-muted/10 rounded-lg border border-dashed border-border/40">
-              <FileText className="h-10 w-10 text-muted-foreground/30 mb-4" strokeWidth={1.2}/>
-              <h3 className="text-base font-medium text-foreground mb-1.5 text-center">{t('articles', 'listNoArticlesYet')}</h3>
-              <p className="text-[13px] text-muted-foreground text-center mb-8 max-w-xs mx-auto">
-                  {t('articles', 'listStartByImporting')}
-              </p>
-              <div className="flex flex-wrap items-center justify-center gap-3">
-                  <Button
-                      onClick={() => navigate(`/projects/${projectId}/articles/add`)}
-                      className="h-10 px-6 text-[13px] font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors shadow-sm"
-                  >
-                      <Plus className="mr-2 h-4 w-4"/>
-                      {t('articles', 'listAddFirstArticle')}
-                  </Button>
-                  {useImportCallbacks ? (
-                      <>
-                          {onOpenRisDialog && (
-                              <Button
-                                  variant="outline"
-                                  onClick={onOpenRisDialog}
-                                  className="h-10 px-6 text-[13px] font-medium rounded-lg border-border/50 hover:bg-muted/50 transition-colors"
-                              >
-                                  <FileText className="mr-2 h-4 w-4"/>
-                                  {t('articles', 'listImportFromRis')}
-                              </Button>
-                          )}
-                          <Button
-                              variant="outline"
-                              onClick={() =>
-                                  hasZoteroConfigured
-                                      ? onOpenZoteroDialog?.()
-                                      : navigate('/settings?tab=integrations')
-                              }
-                              className="h-10 px-6 text-[13px] font-medium rounded-lg border-border/50 hover:bg-muted/50 transition-colors"
-                          >
-                              <Upload className="mr-2 h-4 w-4"/>
-                              {onOpenRisDialog ? t('articles', 'listFromZotero') : t('articles', 'listImportArticles')}
-                          </Button>
-                      </>
-                  ) : (
-                      hasZoteroConfigured ? (
-                          <Button
-                              variant="outline"
-                              onClick={() => setZoteroImportOpen(true)}
-                              className="h-10 px-6 text-[13px] font-medium rounded-lg border-border/50 hover:bg-muted/50 transition-colors"
-                          >
-                              <Upload className="mr-2 h-4 w-4"/>
-                              {t('articles', 'listImportArticles')}
-                          </Button>
-                      ) : (
-                          <Button
-                              variant="outline"
-                              onClick={() => navigate("/settings?tab=integrations")}
-                              className="h-10 px-6 text-[13px] font-medium rounded-lg border-border/50 hover:bg-muted/50 transition-colors"
-                          >
-                              <Upload className="mr-2 h-4 w-4"/>
-                              {t('articles', 'listImportArticles')}
-                          </Button>
-                      )
-                  )}
-              </div>
-          </div>
-      ) : (
-          <div className="rounded-md overflow-hidden w-full border-b border-border/40">
-              <div className="overflow-x-auto scrollbar-horizontal w-full min-w-0">
-                  <Table className="table-fixed w-full">
+    const tableContent = (
+        <DataTableWrapper>
+            <Table className="table-fixed w-full">
                       <TableHeader className="bg-transparent">
                           <TableRow className="hover:bg-transparent border-b border-border/40 h-8">
                               <TableHead className="w-[40px] min-w-[40px] px-2 py-1.5 text-left align-middle">
@@ -1270,28 +757,6 @@ export function ArticlesList({
                                           {col.sortField != null && sortField === col.sortField && (sortDirection === 'asc' ?
                                               <ChevronUp className="h-3 w-3 text-foreground shrink-0"/> :
                                               <ChevronDown className="h-3 w-3 text-foreground shrink-0"/>)}
-                                          {col.filterKey != null && (
-                                              <Popover open={openColumnFilter === col.filterKey}
-                                                       onOpenChange={(open) => setOpenColumnFilter(open ? col.filterKey! : null)}
-                                                       modal={false}>
-                                                  <PopoverTrigger asChild>
-                                                      <Button
-                                                          variant="ghost"
-                                                          size="sm"
-                                                          className={`h-5 w-5 p-0 shrink-0 opacity-0 group-hover/head:opacity-100 transition-opacity ${hasColumnFilter(col.filterKey!) ? 'opacity-100 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
-                                                          aria-label={t('articles', 'listFilterBy').replace('{{label}}', col.label)}
-                                                      >
-                                                          <Filter className="h-3 w-3"/>
-                                                      </Button>
-                                                  </PopoverTrigger>
-                                                  <PopoverContent
-                                                      className="w-[320px] max-h-[320px] overflow-y-auto p-3 border-border/50 shadow-[0_8px_30px_rgb(0,0,0,0.04)]"
-                                                      align="start" sideOffset={6}
-                                                      onOpenAutoFocus={(e) => e.preventDefault()}>
-                                                      {renderColumnFilterPanelContent(col.filterKey!)}
-                                                  </PopoverContent>
-                                              </Popover>
-                                          )}
                                       </div>
                                       <div
                                           role="separator"
@@ -1559,36 +1024,193 @@ export function ArticlesList({
                           ))}
                       </TableBody>
                   </Table>
-              </div>
-          </div>
-      )
-      }
+        </DataTableWrapper>
+    );
 
-          {/* Empty state after filters */}
-      {filteredArticles.length === 0 && articles.length > 0 && (
-          <div className="text-center py-16 border rounded-lg bg-muted/10 border-dashed">
-              <Search className="h-8 w-8 mx-auto mb-3 text-muted-foreground/30" strokeWidth={1.2}/>
-              <p className="text-sm font-semibold">{t('articles', 'listNoMatchSearch')}</p>
-              <p className="text-xs text-muted-foreground mt-1 max-w-xs mx-auto">{t('articles', 'listAdjustSearchOrClearFilters')}</p>
-          <Button
-              variant="ghost"
-            size="sm"
-            onClick={() => {
-              setSearchTerm('');
-                setColumnFilters({
-                    title: '',
-                    authors: '',
-                    journal_title: '',
-                    publication_year: '',
-                    keywords: '',
-                    has_main_file: ''
-              });
-            }}
-              className="mt-6 text-xs font-semibold underline underline-offset-4 hover:bg-transparent"
-          >
-              {t('articles', 'listClearAllFiltersButton')}
-          </Button>
-        </div>
+    const bodyContent = showEmpty ? emptyContent : tableContent;
+
+    return (
+        <>
+            <div className="space-y-3">
+                <div className="flex flex-col gap-2">
+                    <div className="flex flex-wrap items-center gap-2 w-full">
+                        <ListToolbarSearch
+                            ref={searchInputRef}
+                            placeholder="Search... (⌘K)"
+                            value={searchTerm}
+                            onChange={setSearchTerm}
+                        />
+                        <FilterButtonWithPopover
+                            open={filterPopoverOpen}
+                            onOpenChange={setFilterPopoverOpen}
+                            activeCount={activeFiltersList.length + (searchTerm.trim() ? 1 : 0)}
+                            tooltipLabel="Filter (F)"
+                            ariaLabel="Filter (F)"
+                        >
+                            <ListFilterPanel
+                                fields={ARTICLES_FILTER_FIELDS}
+                                values={filterValues}
+                                onChange={setFilterValues}
+                                facetedValues={{
+                                    authors: facetedValues.authors,
+                                    journal_title: facetedValues.journals,
+                                    publication_year: facetedValues.years,
+                                }}
+                            />
+                        </FilterButtonWithPopover>
+                        <Popover open={displayPopoverOpen} onOpenChange={setDisplayPopoverOpen}>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <PopoverTrigger asChild>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-8 w-8 p-0 rounded-md hover:bg-muted/50 transition-colors text-muted-foreground"
+                                            aria-label={t('articles', 'listDisplayOptions')}
+                                        >
+                                            <SlidersHorizontal className="h-4 w-4"/>
+                                        </Button>
+                                    </PopoverTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom">{t('articles', 'listDisplayAndSort')}</TooltipContent>
+                            </Tooltip>
+                            <PopoverContent className="w-72 p-0" align="end">
+                                <div className="p-3 space-y-4">
+                                    <div className="space-y-2">
+                                        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                                            <ChevronsUpDown className="h-3.5 w-3.5"/>
+                                            {t('articles', 'listOrdering')}
+                                        </p>
+                                        <div className="flex gap-2 items-center">
+                                            <Select value={sortField}
+                                                    onValueChange={(v) => setSortField(v as SortField)}>
+                                                <SelectTrigger className="h-8 text-[13px] flex-1">
+                                                    <SelectValue/>
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="title">Title</SelectItem>
+                                                    <SelectItem value="authors">Authors</SelectItem>
+                                                    <SelectItem value="journal_title">Journal</SelectItem>
+                                                    <SelectItem value="publication_year">Year</SelectItem>
+                                                    <SelectItem value="has_main_file">PDF</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="h-8 w-8 p-0 shrink-0"
+                                                onClick={() => setSortDirection(d => d === 'asc' ? 'desc' : 'asc')}
+                                            >
+                                                {sortDirection === 'asc' ? <ChevronUp className="h-3.5 w-3.5"/> :
+                                                    <ChevronDown className="h-3.5 w-3.5"/>}
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                                            <LayoutGrid className="h-3.5 w-3.5"/>
+                                            {t('articles', 'listDisplayProperties')}
+                                        </p>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {[
+                                                {key: 'title' as const, label: 'Title'},
+                                                {key: 'pdf' as const, label: 'PDF'},
+                                                {key: 'authors' as const, label: 'Authors'},
+                                                {key: 'journal' as const, label: 'Journal'},
+                                                {key: 'year' as const, label: 'Year'},
+                                                {key: 'keywords' as const, label: 'Keywords'},
+                                                {key: 'doi' as const, label: 'DOI'},
+                                                {key: 'abstract' as const, label: 'Abstract'},
+                                            ].map(({key, label}) => (
+                                                <button
+                                                    key={key}
+                                                    type="button"
+                                                    disabled={key === 'title'}
+                                                    onClick={() => key !== 'title' && toggleColumn(key)}
+                                                    className={`rounded-md border px-2 py-1 text-[12px] transition-colors disabled:opacity-60 disabled:cursor-default ${
+                                                        visibleColumns[key]
+                                                            ? 'border-primary/50 bg-primary/10 text-foreground'
+                                                            : 'border-border/40 bg-muted/30 text-muted-foreground hover:bg-muted/50'
+                                                    }`}
+                                                >
+                                                    {label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </PopoverContent>
+                        </Popover>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 ml-auto">
+                        <ListCount
+                            visible={filteredArticles.length}
+                            total={articles.length}
+                            label={articles.length === 1 ? t('articles', 'listArticle') : t('articles', 'listArticles')}
+                        />
+                        {selectedArticles.size > 0 && (
+                            <div className="flex items-center gap-2 animate-in fade-in duration-200">
+                          <span className="text-[11px] font-medium text-foreground">
+                              {selectedArticles.size} {t('articles', 'listSelected')}
+                          </span>
+                                <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => setBulkDeleteDialogOpen(true)}
+                                    disabled={deleting}
+                                    className="h-6 text-[11px] text-destructive hover:text-destructive hover:bg-destructive/10"
+                                >
+                                    <Trash2 className="mr-1 h-3 w-3"/>
+                                    {t('articles', 'listDelete')}
+                                </Button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                    {activeFiltersList.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                            {activeFiltersList.map(({column, label, value}) => (
+                                <span
+                                    key={column}
+                                    className="inline-flex items-center gap-1 rounded-md border border-border/50 bg-muted/40 px-2 py-1 text-[11px] text-foreground"
+                                >
+                              <span className="truncate max-w-[120px]">{label}: {value}</span>
+                              <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-4 w-4 p-0 shrink-0 hover:bg-muted rounded"
+                                  onClick={() => clearFilterField(column)}
+                                  aria-label={t('articles', 'listRemoveFilter').replace('{{label}}', label)}
+                              >
+                                  <X className="h-2.5 w-2.5"/>
+                              </Button>
+                          </span>
+                            ))}
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-[11px] text-muted-foreground hover:text-foreground h-6 px-1.5"
+                                onClick={clearAllFilters}
+                            >
+                                {t('articles', 'listClearAll')}
+                            </Button>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {bodyContent}
+
+            {/* Empty state after filters */}
+            {filteredArticles.length === 0 && articles.length > 0 && (
+                <EmptyListState
+                    icon={Search}
+                    title={t('articles', 'listNoMatchSearch')}
+                    description={t('articles', 'listAdjustSearchOrClearFilters')}
+                    actionLabel={t('articles', 'listClearAllFiltersButton')}
+                    onAction={clearAllFilters}
+                />
       )}
 
       {/* Delete Confirmation Dialog */}
@@ -1660,6 +1282,6 @@ export function ArticlesList({
                   }}
               />
           )}
-    </div>
+        </>
   );
 }

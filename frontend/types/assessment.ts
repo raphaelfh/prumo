@@ -551,6 +551,9 @@ export const SaveAssessmentRequestSchema = z.object({
  */
 export type AssessmentSource = 'human' | 'ai' | 'consensus';
 
+/** Runtime array of valid source values (for validation/tests) */
+export const ASSESSMENT_SOURCE_VALUES: AssessmentSource[] = ['human', 'ai', 'consensus'];
+
 /**
  * Assessment instance (PROBAST per article or per model)
  * Analogous to ExtractionInstance
@@ -854,6 +857,16 @@ export const BulkCreateAssessmentResponsesSchema = z.object({
       ai_suggestion_id: z.string().uuid().nullable().optional(),
     })
   ).min(1),
+});
+
+/**
+ * Zod schema to update assessment response (partial)
+ */
+export const UpdateAssessmentResponseSchema = z.object({
+    selected_level: z.string().min(1).optional(),
+    notes: z.string().nullable().optional(),
+    confidence: z.number().min(0).max(1).nullable().optional(),
+    is_consensus: z.boolean().optional(),
 });
 
 // =================== PROJECT ASSESSMENT INSTRUMENTS ===================

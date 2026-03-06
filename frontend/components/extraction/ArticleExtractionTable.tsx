@@ -2,8 +2,7 @@
  * Table for article data extraction
  *
  * Displays articles in table format with:
- * - Global text filter
- * - Per-column filters (hidden until activated)
+ * - Global text search and centralized filter panel (status, year, title, authors)
  * - Column sorting
  * - Minimal progress display
  * - Contextual actions
@@ -15,8 +14,6 @@ import {supabase} from '@/integrations/supabase/client';
 import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
 import {Progress} from '@/components/ui/progress';
-import {Input} from '@/components/ui/input';
-import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '@/components/ui/select';
 import {
     AlertCircle,
     Calendar,
@@ -28,22 +25,42 @@ import {
     Database,
     Edit,
     FileText,
-    Filter,
     Loader2,
+    MoreHorizontal,
     PlayCircle,
     Search,
-    User
+    Sparkles,
+    User,
+    X
 } from 'lucide-react';
 import {toast} from 'sonner';
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow,} from "@/components/ui/table";
 import {Skeleton} from "@/components/ui/skeleton";
-import {Popover, PopoverContent, PopoverTrigger,} from "@/components/ui/popover";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {Checkbox} from "@/components/ui/checkbox";
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "@/components/ui/tooltip";
 import {useArticleSelection} from "@/hooks/extraction/useArticleSelection";
-import {ArticleSelectionActions} from "./ArticleSelectionActions";
 import {useFullAIExtraction} from "@/hooks/extraction/useFullAIExtraction";
+import {useListKeyboardShortcuts} from "@/hooks/useListKeyboardShortcuts";
 import {t} from '@/lib/copy';
+import {TABLE_CELL_CLASS} from '@/lib/table-constants';
+import type {FilterFieldConfig, FilterValues} from '@/components/shared/list';
+import {
+    DataTableWrapper,
+    EmptyListState,
+    FilterButtonWithPopover,
+    isFilterValueEmpty,
+    ListCount,
+    ListFilterPanel,
+    ListToolbarSearch,
+} from '@/components/shared/list';
 
 interface Article {
   id: string;
@@ -85,17 +102,47 @@ interface ArticleExtractionTableProps {
 type SortField = 'title' | 'publication_year' | 'extraction_progress' | 'status' | 'created_at';
 type SortDirection = 'asc' | 'desc';
 
-interface ColumnFilter {
-  title: string;
-  publication_year: string;
-  extraction_progress: string;
-  status: string;
-  authors: string;
-}
+const EXTRACTION_FILTER_FIELDS: FilterFieldConfig[] = [
+    {
+        id: 'status', label: t('extraction', 'tableColumnStatus'), type: 'categorical', options: [
+            {value: 'not_started', label: t('extraction', 'listStatusNotStarted')},
+            {value: 'in_progress', label: t('extraction', 'listStatusInProgress')},
+            {value: 'complete', label: t('extraction', 'listStatusComplete')},
+        ]
+    },
+    {
+        id: 'publication_year',
+        label: t('extraction', 'tableColumnYear'),
+        type: 'numericRange',
+        minBound: 1990,
+        maxBound: new Date().getFullYear(),
+        step: 1
+    },
+    {
+        id: 'title',
+        label: t('extraction', 'tableColumnTitle'),
+        type: 'text',
+        placeholder: t('extraction', 'tableSearchTitle')
+    },
+    {
+        id: 'authors',
+        label: t('extraction', 'tableColumnAuthors'),
+        type: 'text',
+        placeholder: t('extraction', 'tableSearchAuthor')
+    },
+];
+
+const INITIAL_EXTRACTION_FILTER_VALUES: FilterValues = {
+    status: [],
+    publication_year: {},
+    title: '',
+    authors: '',
+};
 
 export function ArticleExtractionTable({ projectId, templateId }: ArticleExtractionTableProps) {
   const navigate = useNavigate();
   const location = useLocation();
+    const searchInputRef = useRef<HTMLInputElement>(null);
   const [articles, setArticles] = useState<ArticleWithExtraction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -103,16 +150,10 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
 
     // Filter and sort state
   const [globalFilter, setGlobalFilter] = useState('');
-  const [columnFilters, setColumnFilters] = useState<ColumnFilter>({
-    title: '',
-    publication_year: '',
-    extraction_progress: '',
-    status: 'all',
-    authors: ''
-  });
+    const [filterPopoverOpen, setFilterPopoverOpen] = useState(false);
+    const [filterValues, setFilterValues] = useState<FilterValues>(INITIAL_EXTRACTION_FILTER_VALUES);
   const [sortField, setSortField] = useState<SortField>('created_at');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
-  const [activeFilterColumn, setActiveFilterColumn] = useState<keyof ColumnFilter | null>(null);
 
     // Ref to track last visited route (avoid unnecessary refresh)
   const lastPathRef = useRef<string>('');
@@ -296,64 +337,46 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
       if (globalFilter) {
         const searchText = globalFilter.toLowerCase();
         const matchesTitle = article.title.toLowerCase().includes(searchText);
-        const matchesAuthors = article.authors?.some(author => 
+          const matchesAuthors = article.authors?.some(author =>
           author.toLowerCase().includes(searchText)
         ) || false;
         const matchesYear = article.publication_year?.toString().includes(searchText) || false;
-        
+
         if (!matchesTitle && !matchesAuthors && !matchesYear) {
           return false;
         }
       }
 
-        // Column filters
-      if (columnFilters.title && !article.title.toLowerCase().includes(columnFilters.title.toLowerCase())) {
-        return false;
-      }
-      
-      if (columnFilters.publication_year && article.publication_year) {
-        if (!article.publication_year.toString().includes(columnFilters.publication_year)) {
-          return false;
+        // Panel filters (FilterValues)
+        const titleFilter = filterValues.title as string | undefined;
+        if (titleFilter?.trim() && !article.title.toLowerCase().includes(titleFilter.toLowerCase())) {
+            return false;
         }
+
+        const authorsFilter = filterValues.authors as string | undefined;
+        if (authorsFilter?.trim() && article.authors) {
+            const match = article.authors.some(author =>
+                author.toLowerCase().includes(authorsFilter.toLowerCase())
+            );
+            if (!match) return false;
       }
 
-      if (columnFilters.extraction_progress) {
-        const progress = calculateExtractionProgress(article);
-        const filterValue = columnFilters.extraction_progress.toLowerCase();
-
-          // Text filters
-          if (filterValue.includes('complete') && progress < 100) return false;
-          if (filterValue.includes('progress') && (progress === 0 || progress >= 100)) return false;
-          if (filterValue.includes('not started') && progress > 0) return false;
-
-          // Numeric filter (percentage)
-        if (!isNaN(Number(filterValue))) {
-          const targetProgress = Number(filterValue);
-            if (Math.abs(progress - targetProgress) > 5) return false; // 5% tolerance
-        }
-      }
-
-        // Status filter
-      if (columnFilters.status && columnFilters.status !== 'all') {
+        const statusFilter = filterValues.status as string[] | undefined;
+        if (statusFilter?.length) {
         const progress = calculateExtractionProgress(article);
         const hasInstances = article.instances.length > 0;
         const isComplete = progress >= 100;
         const isInProgress = hasInstances && progress > 0 && progress < 100;
         const isNotStarted = !hasInstances;
-        
-        const filterValue = columnFilters.status.toLowerCase();
-
-          if (filterValue === 'complete' && !isComplete) return false;
-          if (filterValue === 'in_progress' && !isInProgress) return false;
-          if (filterValue === 'not_started' && !isNotStarted) return false;
+            const articleStatus = isComplete ? 'complete' : isInProgress ? 'in_progress' : 'not_started';
+            if (!statusFilter.includes(articleStatus)) return false;
       }
 
-        // Authors filter
-      if (columnFilters.authors && article.authors) {
-        const authorMatch = article.authors.some(author => 
-          author.toLowerCase().includes(columnFilters.authors.toLowerCase())
-        );
-        if (!authorMatch) return false;
+        const yearRange = filterValues.publication_year as { min?: number; max?: number } | undefined;
+        if (yearRange && (yearRange.min != null || yearRange.max != null) && article.publication_year != null) {
+            const y = article.publication_year;
+            if (yearRange.min != null && y < yearRange.min) return false;
+            if (yearRange.max != null && y > yearRange.max) return false;
       }
 
       return true;
@@ -409,7 +432,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     });
 
     return filtered;
-  }, [articles, globalFilter, columnFilters, sortField, sortDirection]);
+  }, [articles, globalFilter, filterValues, sortField, sortDirection]);
 
     // Article selection
   const allArticleIds = useMemo(() => articles.map(a => a.id), [articles]);
@@ -516,11 +539,11 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
 
   const getSortIcon = (field: SortField) => {
     if (sortField !== field) {
-      return <ChevronsUpDown className="h-4 w-4 text-muted-foreground opacity-50" />;
+        return <ChevronsUpDown className="h-3 w-3 text-muted-foreground opacity-50"/>;
     }
-    return sortDirection === 'asc' 
-      ? <ChevronUp className="h-4 w-4 text-primary" />
-      : <ChevronDown className="h-4 w-4 text-primary" />;
+      return sortDirection === 'asc'
+          ? <ChevronUp className="h-3 w-3 text-foreground shrink-0"/>
+          : <ChevronDown className="h-3 w-3 text-foreground shrink-0"/>;
   };
 
   const handleStartExtraction = (articleId: string) => {
@@ -561,108 +584,40 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     );
   };
 
-  const updateColumnFilter = (column: keyof ColumnFilter, value: string) => {
-    setColumnFilters(prev => ({
-      ...prev,
-      [column]: value
-    }));
-  };
+    const clearListFilters = useCallback(() => {
+        setGlobalFilter('');
+        setFilterValues(INITIAL_EXTRACTION_FILTER_VALUES);
+    }, []);
 
-  const ColumnFilterButton = ({ column }: { column: keyof ColumnFilter }) => {
-    const isActive = activeFilterColumn === column;
-    const hasFilter = column === 'status' 
-      ? (columnFilters[column].length > 0 && columnFilters[column] !== 'all')
-      : columnFilters[column].length > 0;
+    const activeFiltersCount = useMemo(() => {
+        let n = globalFilter.trim() ? 1 : 0;
+        EXTRACTION_FILTER_FIELDS.forEach((f) => {
+            if (!isFilterValueEmpty(filterValues[f.id])) n += 1;
+        });
+        return n;
+    }, [globalFilter, filterValues]);
 
-    const statusOptions = [
-        {value: 'all', label: t('extraction', 'tableFilterAllStatus')},
-        {value: 'not_started', label: t('extraction', 'listStatusNotStarted')},
-        {value: 'in_progress', label: t('extraction', 'listStatusInProgress')},
-        {value: 'complete', label: t('extraction', 'listStatusComplete')}
-    ];
+    useListKeyboardShortcuts({
+        searchInputRef,
+        setFilterPopoverOpen,
+        filterPopoverOpen,
+        deselectAll,
+        selectedCount,
+        hasActiveFilters: hasActiveFilters || activeFiltersCount > 0,
+        selectAll,
+        selectFiltered,
+    });
 
-    return (
-      <Popover open={isActive} onOpenChange={(open) => setActiveFilterColumn(open ? column : null)}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            className={`h-6 w-6 p-0 ${hasFilter ? 'text-primary' : 'text-muted-foreground'}`}
-          >
-            <Filter className="h-3 w-3" />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-64 p-3" align="start">
-          <div className="space-y-2">
-            <label className="text-sm font-medium">
-                {t('common', 'filterBy')}{' '}{
-                column === 'title' ? t('extraction', 'tableColumnTitle') :
-                    column === 'publication_year' ? t('extraction', 'tableColumnYear') :
-                        column === 'extraction_progress' ? t('extraction', 'tableColumnProgress') :
-                            column === 'status' ? t('extraction', 'tableColumnStatus') :
-                                column === 'authors' ? t('extraction', 'tableColumnAuthors') :
-                                    t('extraction', 'tableColumnField')
-              }
-            </label>
-            
-            {column === 'status' ? (
-              <Select 
-                value={columnFilters[column] || 'all'} 
-                onValueChange={(value) => updateColumnFilter(column, value)}
-              >
-                <SelectTrigger className="h-8">
-                    <SelectValue placeholder={t('extraction', 'tableFilterSelectStatus')}/>
-                </SelectTrigger>
-                <SelectContent>
-                  {statusOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <Input
-                autoFocus
-                placeholder={
-                    column === 'title' ? t('extraction', 'tableSearchTitle') :
-                        column === 'publication_year' ? t('extraction', 'tableSearchYearPlaceholder') :
-                            column === 'extraction_progress' ? t('extraction', 'tableSearchProgressPlaceholder') :
-                                column === 'authors' ? t('extraction', 'tableSearchAuthor') :
-                                    t('extraction', 'tableSearchPlaceholder')
-                }
-                value={columnFilters[column]}
-                onChange={(e) => updateColumnFilter(column, e.target.value)}
-                onKeyDown={(e) => e.stopPropagation()}
-                className="h-8"
-              />
-            )}
-            
-            {hasFilter && columnFilters[column] !== 'all' && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => updateColumnFilter(column, column === 'status' ? 'all' : '')}
-                className="h-6 text-xs"
-              >
-                  {t('extraction', 'tableClearFilter')}
-              </Button>
-            )}
-          </div>
-        </PopoverContent>
-      </Popover>
-    );
-  };
-
-    // Loading state — skeleton matching table layout
+    // Loading state — skeleton matching table layout (frontend-ux compact)
   if (loading) {
     return (
-        <div className="space-y-4">
-            <div className="flex items-center gap-2">
-                <Skeleton className="h-9 flex-1 max-w-sm"/>
+        <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+                <Skeleton className="h-8 flex-1 min-w-[200px] rounded-md"/>
+                <Skeleton className="h-8 w-8 rounded-md"/>
                 <Skeleton className="h-4 w-24"/>
             </div>
-            <div className="rounded-lg border border-border/40">
+            <div className="rounded-md overflow-hidden border-b border-border/40">
                 <Table>
                     <TableHeader>
                         <TableRow>
@@ -721,57 +676,96 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     );
   }
 
-    // Empty state
+    // Empty state — no articles in project (match ArticlesList pattern)
   if (articles.length === 0) {
     return (
-      <div className="text-center text-muted-foreground py-12">
-        <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-          <p className="font-medium">{t('extraction', 'listNoArticles')}</p>
-          <p className="text-sm mt-2">{t('extraction', 'listNoArticlesDesc')}</p>
+        <div
+            className="flex flex-col items-center justify-center py-24 px-4 bg-muted/10 rounded-lg border border-dashed border-border/40">
+            <FileText className="h-10 w-10 text-muted-foreground/30 mb-4" strokeWidth={1.2}/>
+            <h3 className="text-base font-medium text-foreground mb-1.5 text-center">{t('extraction', 'listNoArticles')}</h3>
+            <p className="text-[13px] text-muted-foreground text-center max-w-xs mx-auto">{t('extraction', 'listNoArticlesDesc')}</p>
       </div>
     );
   }
 
     // Ready state — render table
-  const selectedArticleIds = Array.from(selectedIds);
-  const selectedArticleTitles = filteredAndSortedArticles
-    .filter(a => selectedIds.has(a.id))
-    .map(a => a.title);
-
   return (
-    <div className="space-y-4">
-        {/* Selection actions bar */}
-      <ArticleSelectionActions
-        selectedCount={selectedCount}
-        selectedArticleIds={selectedArticleIds}
-        selectedArticleTitles={selectedArticleTitles}
-        onClearSelection={deselectAll}
-        onBatchAIExtraction={handleBatchAIExtraction}
-        isExtracting={isExtracting}
-      />
-
-        {/* Global filter */}
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-              placeholder={t('extraction', 'tableSearchAllFields')}
+      <div className="space-y-3">
+          {/* Single toolbar: search + Filter + count/selection (Linear-style) */}
+          <div className="flex flex-col gap-2">
+              <div className="flex flex-wrap items-center gap-2 w-full">
+                  <ListToolbarSearch
+                      ref={searchInputRef}
+                      placeholder={t('extraction', 'tableSearchPlaceholderShortcut')}
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
-            className="pl-10 h-9"
-          />
-        </div>
-          <div className="text-[13px] text-muted-foreground">
-              {filteredAndSortedArticles.length} {t('common', 'of')} {articles.length} {t('extraction', 'tableArticlesCount')}
+                  />
+                  <FilterButtonWithPopover
+                      open={filterPopoverOpen}
+                      onOpenChange={setFilterPopoverOpen}
+                      activeCount={activeFiltersCount}
+                      tooltipLabel={t('extraction', 'tableShortcutFilter')}
+                      ariaLabel={t('extraction', 'tableShortcutFilter')}
+                  >
+                      <ListFilterPanel
+                          fields={EXTRACTION_FILTER_FIELDS}
+                          values={filterValues}
+                          onChange={setFilterValues}
+                      />
+                  </FilterButtonWithPopover>
+                  <div className="flex items-center gap-2 shrink-0 ml-auto">
+                      <ListCount
+                          visible={filteredAndSortedArticles.length}
+                          total={articles.length}
+                          label={t('extraction', 'tableArticlesCount')}
+                      />
+                      {selectedCount > 0 && (
+                          <div className="flex items-center gap-2 animate-in fade-in duration-200">
+                <span className="text-[11px] font-medium text-foreground">
+                  {selectedCount} {selectedCount === 1 ? t('extraction', 'tableArticleSelected') : t('extraction', 'tableArticlesSelected')}
+                </span>
+                              <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                      <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-[12px]"
+                                              disabled={isExtracting}>
+                                          <MoreHorizontal className="h-3.5 w-3.5"/>
+                                          {t('extraction', 'tableActions')}
+                                      </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end"
+                                                       className="w-56 border-border/50 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                                      <DropdownMenuLabel>{t('extraction', 'tableBatchActionsLabel')}</DropdownMenuLabel>
+                                      <DropdownMenuSeparator/>
+                                      <DropdownMenuItem onClick={handleBatchAIExtraction} disabled={isExtracting}
+                                                        className="gap-2">
+                                          <Sparkles className="h-4 w-4"/>
+                                          <span className="text-[13px]">{t('extraction', 'tableAIExtraction')}</span>
+                                      </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                              </DropdownMenu>
+                              <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={deselectAll}
+                                  disabled={isExtracting}
+                                  className="h-6 text-[11px] text-muted-foreground hover:text-foreground"
+                                  aria-label={t('extraction', 'tableClearSelection')}
+                              >
+                                  <X className="h-3 w-3 mr-0.5"/>
+                                  {t('extraction', 'tableClearSelection')}
+                              </Button>
+                          </div>
+                      )}
+                  </div>
         </div>
       </div>
 
         {/* Table */}
-        <div className="rounded-lg border border-border/40">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[40px]">
+          <DataTableWrapper>
+              <Table className="table-fixed w-full">
+                  <TableHeader className="bg-transparent">
+                      <TableRow className="hover:bg-transparent border-b border-border/40 h-8">
+                          <TableHead className={`w-[40px] min-w-[40px] ${TABLE_CELL_CLASS} text-left align-middle`}>
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -804,69 +798,48 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                   </Tooltip>
                 </TooltipProvider>
               </TableHead>
-              <TableHead className="w-[30%]">
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleSort('title')}
-                    className="h-auto p-0 font-semibold hover:bg-transparent"
-                  >
-                      {t('extraction', 'tableColumnTitle')}
+                          <TableHead className={`w-[30%] ${TABLE_CELL_CLASS}`}>
+                              <div className="flex items-center gap-1 pr-4 min-w-0">
+                                  <Button variant="ghost" size="sm" onClick={() => handleSort('title')}
+                                          className="h-auto p-0 min-w-0 text-[11px] font-medium text-muted-foreground uppercase tracking-wider hover:bg-transparent hover:text-foreground transition-colors">
+                                      {t('extraction', 'tableColumnTitle')}
                   </Button>
                   {getSortIcon('title')}
-                  <ColumnFilterButton column="title" />
                 </div>
               </TableHead>
-              <TableHead className="w-[12%]">
-                <div className="flex items-center gap-2">
-                    <span className="font-semibold">{t('extraction', 'tableColumnAuthors')}</span>
-                  <ColumnFilterButton column="authors" />
-                </div>
+                          <TableHead className={`w-[12%] ${TABLE_CELL_CLASS}`}>
+                              <span
+                                  className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{t('extraction', 'tableColumnAuthors')}</span>
               </TableHead>
-              <TableHead className="w-[10%]">
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleSort('publication_year')}
-                    className="h-auto p-0 font-semibold hover:bg-transparent"
-                  >
-                      {t('extraction', 'tableColumnYear')}
+                          <TableHead className={`w-[10%] ${TABLE_CELL_CLASS}`}>
+                              <div className="flex items-center gap-1">
+                                  <Button variant="ghost" size="sm" onClick={() => handleSort('publication_year')}
+                                          className="h-auto p-0 min-w-0 text-[11px] font-medium text-muted-foreground uppercase tracking-wider hover:bg-transparent hover:text-foreground transition-colors">
+                                      {t('extraction', 'tableColumnYear')}
                   </Button>
                   {getSortIcon('publication_year')}
-                  <ColumnFilterButton column="publication_year" />
                 </div>
               </TableHead>
-              <TableHead className="w-[18%]">
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleSort('extraction_progress')}
-                    className="h-auto p-0 font-semibold hover:bg-transparent"
-                  >
-                      {t('extraction', 'tableColumnProgress')}
+                          <TableHead className={`w-[18%] ${TABLE_CELL_CLASS}`}>
+                              <div className="flex items-center gap-1">
+                                  <Button variant="ghost" size="sm" onClick={() => handleSort('extraction_progress')}
+                                          className="h-auto p-0 min-w-0 text-[11px] font-medium text-muted-foreground uppercase tracking-wider hover:bg-transparent hover:text-foreground transition-colors">
+                                      {t('extraction', 'tableColumnProgress')}
                   </Button>
                   {getSortIcon('extraction_progress')}
-                  <ColumnFilterButton column="extraction_progress" />
                 </div>
               </TableHead>
-              <TableHead className="w-[10%]">
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleSort('status')}
-                    className="h-auto p-0 font-semibold hover:bg-transparent"
-                  >
-                      {t('extraction', 'tableColumnStatus')}
+                          <TableHead className={`w-[10%] ${TABLE_CELL_CLASS}`}>
+                              <div className="flex items-center gap-1">
+                                  <Button variant="ghost" size="sm" onClick={() => handleSort('status')}
+                                          className="h-auto p-0 min-w-0 text-[11px] font-medium text-muted-foreground uppercase tracking-wider hover:bg-transparent hover:text-foreground transition-colors">
+                                      {t('extraction', 'tableColumnStatus')}
                   </Button>
                   {getSortIcon('status')}
-                  <ColumnFilterButton column="status" />
                 </div>
               </TableHead>
-                <TableHead className="w-[15%] text-center">{t('extraction', 'tableActions')}</TableHead>
+                          <TableHead
+                              className={`w-[15%] ${TABLE_CELL_CLASS} text-right`}>{t('extraction', 'tableActions')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -876,20 +849,19 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
               const hasInstances = article.instances.length > 0;
 
               return (
-                  <TableRow key={article.id} className="hover:bg-muted/50 transition-[background-color] duration-75">
-                  <TableCell className="w-[40px]">
+                  <TableRow key={article.id}
+                            className="border-b border-border/40 hover:bg-muted/50 transition-colors duration-75 group h-8">
+                      <TableCell className={`w-[40px] ${TABLE_CELL_CLASS}`}>
                     <Checkbox
                       checked={isSelected(article.id)}
                       onCheckedChange={() => toggleArticle(article.id)}
                       aria-label={`Select article: ${article.title}`}
                     />
                   </TableCell>
-                      <TableCell className="text-[13px]">
-                          <div className="font-medium leading-tight">
-                      {article.title}
-                    </div>
+                      <TableCell className={`${TABLE_CELL_CLASS} font-medium text-[13px]`}>
+                          <div className="line-clamp-1 leading-tight text-foreground font-medium">{article.title}</div>
                   </TableCell>
-                      <TableCell className="max-w-[120px] text-[13px]">
+                      <TableCell className={`max-w-[120px] ${TABLE_CELL_CLASS} text-[13px] text-muted-foreground`}>
                     {article.authors && article.authors.length > 0 ? (
                       <div
                           className="flex items-center gap-1 cursor-help group relative"
@@ -911,13 +883,13 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                         <span className="text-muted-foreground">N/A</span>
                     )}
                   </TableCell>
-                      <TableCell className="text-[13px]">
+                      <TableCell className={`${TABLE_CELL_CLASS} text-[13px]`}>
                           <div className="flex items-center gap-1">
                       <Calendar className="h-3 w-3 text-muted-foreground" />
                       {article.publication_year || 'N/A'}
                     </div>
                   </TableCell>
-                      <TableCell className="text-[13px]">
+                      <TableCell className={`${TABLE_CELL_CLASS} text-[13px]`}>
                     {hasInstances ? (
                       <div className="space-y-1">
                           <div className="flex items-center justify-between">
@@ -933,10 +905,10 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                       </div>
                     )}
                   </TableCell>
-                      <TableCell className="text-[13px]">
+                      <TableCell className={`${TABLE_CELL_CLASS} text-[13px]`}>
                     {getStatusBadge(article)}
                   </TableCell>
-                      <TableCell className="text-center text-[13px]">
+                      <TableCell className={`${TABLE_CELL_CLASS} text-right text-[13px]`}>
                     {!hasInstances ? (
                       <Button 
                         onClick={() => handleStartExtraction(article.id)}
@@ -972,26 +944,17 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
             })}
           </TableBody>
         </Table>
-      </div>
+          </DataTableWrapper>
 
-        {/* Empty state after filters */}
+          {/* Empty state after filters (match ArticlesList) */}
       {filteredAndSortedArticles.length === 0 && articles.length > 0 && (
-        <div className="text-center text-muted-foreground py-8">
-          <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
-            <p className="font-medium">{t('extraction', 'tableNoArticles')}</p>
-            <p className="text-sm mt-1">{t('extraction', 'tableAdjustFilters')}</p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setGlobalFilter('');
-              setColumnFilters({ title: '', publication_year: '', extraction_progress: '', status: 'all', authors: '' });
-            }}
-            className="mt-2"
-          >
-              {t('extraction', 'tableClearFilters')}
-          </Button>
-        </div>
+          <EmptyListState
+              icon={Search}
+              title={t('extraction', 'tableNoArticles')}
+              description={t('extraction', 'tableAdjustFilters')}
+              actionLabel={t('extraction', 'tableClearFilters')}
+              onAction={clearListFilters}
+          />
       )}
     </div>
   );

@@ -1,22 +1,19 @@
 /**
  * Table for article assessment
- * 
- * Exibe artigos em formato de tabela com:
- * - Global text filter
- * - Per-column filters (discrete until activated)
- * - Per-column sorting
- * - Minimalist visual progress
+ *
+ * Displays articles in table format with:
+ * - Global search and centralized filter panel (status, year, completion %, title, authors)
+ * - Column sorting
+ * - Minimal progress display
  * - Contextual actions
  */
 
-import {useEffect, useMemo, useState} from 'react';
+import {useEffect, useMemo, useRef, useState} from 'react';
 import {useNavigate} from 'react-router-dom';
 import {supabase} from '@/integrations/supabase/client';
 import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
 import {Progress} from '@/components/ui/progress';
-import {Input} from '@/components/ui/input';
-import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '@/components/ui/select';
 import {
     AlertCircle,
     BarChart3,
@@ -28,7 +25,6 @@ import {
     Clock,
     Edit,
     FileText,
-    Filter,
     Loader2,
     PlayCircle,
     Search,
@@ -37,11 +33,22 @@ import {
 import {toast} from 'sonner';
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow,} from "@/components/ui/table";
 import {Skeleton} from "@/components/ui/skeleton";
-import {Popover, PopoverContent, PopoverTrigger,} from "@/components/ui/popover";
 import type {Article as ArticleRow} from '@/types/article';
 import {getAssessmentStatus, getStatusColor, getStatusLabel} from '@/lib/assessment-utils';
 import {useCurrentUser} from '@/hooks/useCurrentUser';
+import {useListKeyboardShortcuts} from '@/hooks/useListKeyboardShortcuts';
 import {t} from '@/lib/copy';
+import {TABLE_CELL_CLASS} from '@/lib/table-constants';
+import type {FilterFieldConfig, FilterValues} from '@/components/shared/list';
+import {
+    DataTableWrapper,
+    EmptyListState,
+    FilterButtonWithPopover,
+    isFilterValueEmpty,
+    ListCount,
+    ListFilterPanel,
+    ListToolbarSearch,
+} from '@/components/shared/list';
 
 type Article = Pick<ArticleRow, 'id' | 'title' | 'authors' | 'publication_year' | 'created_at'>;
 
@@ -67,13 +74,48 @@ interface ArticleAssessmentTableProps {
 type SortField = 'title' | 'publication_year' | 'completion_percentage' | 'status' | 'created_at';
 type SortDirection = 'asc' | 'desc';
 
-interface ColumnFilter {
-  title: string;
-  publication_year: string;
-  completion_percentage: string;
-  status: string;
-  authors: string;
-}
+const ASSESSMENT_FILTER_FIELDS: FilterFieldConfig[] = [
+    {
+        id: 'status', type: 'categorical', label: t('assessment', 'tableColumnStatus'), options: [
+            {value: 'not_started', label: t('assessment', 'statusNotStarted')},
+            {value: 'in_progress', label: t('assessment', 'statusInProgress')},
+            {value: 'complete', label: t('assessment', 'statusComplete')},
+        ]
+    },
+    {
+        id: 'publication_year',
+        type: 'numericRange',
+        label: t('assessment', 'tableColumnYear'),
+        minBound: 1900,
+        maxBound: new Date().getFullYear() + 2
+    },
+    {
+        id: 'completion_percentage',
+        type: 'numericRange',
+        label: t('assessment', 'tableColumnProgress'),
+        minBound: 0,
+        maxBound: 100
+    },
+    {
+        id: 'title',
+        type: 'text',
+        label: t('assessment', 'tableColumnTitle'),
+        placeholder: t('assessment', 'tableFilterTitlePlaceholder')
+    },
+    {
+        id: 'authors',
+        type: 'text',
+        label: t('assessment', 'tableColumnAuthors'),
+        placeholder: t('assessment', 'tableFilterAuthorsPlaceholder')
+    },
+];
+
+const INITIAL_ASSESSMENT_FILTER_VALUES: FilterValues = Object.fromEntries(
+    ASSESSMENT_FILTER_FIELDS.map(f => [f.id, f.type === 'categorical' ? [] : f.type === 'numericRange' ? {
+        min: undefined,
+        max: undefined
+    } : ''])
+) as FilterValues;
 
 export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAssessmentTableProps) {
   const navigate = useNavigate();
@@ -84,17 +126,12 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
   const currentUserId = user?.id ?? null;
 
     // State for filters and sort
-  const [globalFilter, setGlobalFilter] = useState('');
-  const [columnFilters, setColumnFilters] = useState<ColumnFilter>({
-    title: '',
-    publication_year: '',
-    completion_percentage: '',
-    status: 'all',
-    authors: ''
-  });
+    const [searchQuery, setSearchQuery] = useState('');
+    const [filterValues, setFilterValues] = useState<FilterValues>(INITIAL_ASSESSMENT_FILTER_VALUES);
+    const [filterPopoverOpen, setFilterPopoverOpen] = useState(false);
+    const searchInputRef = useRef<HTMLInputElement>(null);
   const [sortField, setSortField] = useState<SortField>('created_at');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
-  const [activeFilterColumn, setActiveFilterColumn] = useState<keyof ColumnFilter | null>(null);
 
   // Carregar artigos do projeto
   useEffect(() => {
@@ -160,72 +197,54 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
     }
   };
 
-    // Function to filter and sort articles
+    // Filter and sort articles from filterValues + searchQuery
   const filteredAndSortedArticles = useMemo(() => {
     const filtered = articles.filter(article => {
-      // Filtro global
-      if (globalFilter) {
-        const searchText = globalFilter.toLowerCase();
-        const matchesTitle = article.title.toLowerCase().includes(searchText);
-        const matchesAuthors = article.authors?.some(author => 
-          author.toLowerCase().includes(searchText)
-        ) || false;
-        const matchesYear = article.publication_year?.toString().includes(searchText) || false;
-        
-        if (!matchesTitle && !matchesAuthors && !matchesYear) {
-          return false;
+        // Global search (toolbar)
+        if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase().trim();
+            const matchesTitle = article.title.toLowerCase().includes(q);
+            const matchesAuthors = article.authors?.some(a => a.toLowerCase().includes(q)) ?? false;
+            const matchesYear = article.publication_year?.toString().includes(q) ?? false;
+            if (!matchesTitle && !matchesAuthors && !matchesYear) return false;
         }
+
+        const titleVal = filterValues.title;
+        if (typeof titleVal === 'string' && titleVal.trim() && !article.title.toLowerCase().includes(titleVal.toLowerCase().trim())) return false;
+
+        const authorsVal = filterValues.authors;
+        if (typeof authorsVal === 'string' && authorsVal.trim() && article.authors?.length) {
+            const match = article.authors.some(a => a.toLowerCase().includes((authorsVal as string).toLowerCase().trim()));
+            if (!match) return false;
       }
 
-      // Filtros por coluna
-      if (columnFilters.title && !article.title.toLowerCase().includes(columnFilters.title.toLowerCase())) {
-        return false;
-      }
-      
-      if (columnFilters.publication_year && article.publication_year) {
-        if (!article.publication_year.toString().includes(columnFilters.publication_year)) {
-          return false;
-        }
+        const yearVal = filterValues.publication_year;
+        if (typeof yearVal === 'object' && yearVal && (yearVal.min !== undefined || yearVal.max !== undefined)) {
+            const y = article.publication_year ?? 0;
+            if (yearVal.min !== undefined && y < yearVal.min) return false;
+            if (yearVal.max !== undefined && y > yearVal.max) return false;
       }
 
-      if (columnFilters.completion_percentage) {
-        const progress = article.assessment?.completion_percentage || 0;
-        const filterValue = columnFilters.completion_percentage.toLowerCase();
-
-          if (filterValue.includes('complete') && progress < 100) return false;
-          if (filterValue.includes('progress') && (progress === 0 || progress >= 100)) return false;
-          if (filterValue.includes('not started') && progress > 0) return false;
-        if (!isNaN(Number(filterValue)) && !progress.toString().includes(filterValue)) return false;
+        const completionVal = filterValues.completion_percentage;
+        if (typeof completionVal === 'object' && completionVal && (completionVal.min !== undefined || completionVal.max !== undefined)) {
+            const p = article.assessment?.completion_percentage ?? 0;
+            if (completionVal.min !== undefined && p < completionVal.min) return false;
+            if (completionVal.max !== undefined && p > completionVal.max) return false;
       }
 
-      // Filtro por status
-      if (columnFilters.status && columnFilters.status !== 'all') {
-        const progress = article.assessment?.completion_percentage || 0;
+        const statusVal = filterValues.status;
+        if (Array.isArray(statusVal) && statusVal.length > 0) {
+            const progress = article.assessment?.completion_percentage ?? 0;
         const statusType = getAssessmentStatus(article.assessment?.status, progress);
-        
-        const filterValue = columnFilters.status.toLowerCase();
-
-          if (filterValue === 'complete' && statusType !== 'complete') return false;
-          if (filterValue === 'in_progress' && statusType !== 'in_progress') return false;
-          if (filterValue === 'not_started' && statusType !== 'not_started') return false;
-      }
-
-      // Filtro por autores
-      if (columnFilters.authors && article.authors) {
-        const authorMatch = article.authors.some(author => 
-          author.toLowerCase().includes(columnFilters.authors.toLowerCase())
-        );
-        if (!authorMatch) return false;
+            if (!statusVal.includes(statusType)) return false;
       }
 
       return true;
     });
 
-      // Sort
     filtered.sort((a, b) => {
       let aValue: string | number;
       let bValue: string | number;
-
       switch (sortField) {
         case 'title':
           aValue = a.title.toLowerCase();
@@ -240,18 +259,11 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
           bValue = b.assessment?.completion_percentage || 0;
           break;
         case 'status': {
-            // Sort by status: not started (0), in progress (1), complete (2)
           const aProgress = a.assessment?.completion_percentage || 0;
           const bProgress = b.assessment?.completion_percentage || 0;
           const aStatus = getAssessmentStatus(a.assessment?.status, aProgress);
           const bStatus = getAssessmentStatus(b.assessment?.status, bProgress);
-
-          const toOrder = (status: string) => {
-            if (status === 'complete') return 2;
-            if (status === 'in_progress') return 1;
-            return 0;
-          };
-
+            const toOrder = (s: string) => (s === 'complete' ? 2 : s === 'in_progress' ? 1 : 0);
           aValue = toOrder(aStatus);
           bValue = toOrder(bStatus);
           break;
@@ -263,21 +275,18 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
         default:
           return 0;
       }
-
-        // Corrected sort logic
       if (sortDirection === 'asc') {
         if (aValue < bValue) return -1;
         if (aValue > bValue) return 1;
         return 0;
-      } else {
+      }
         if (aValue > bValue) return -1;
         if (aValue < bValue) return 1;
         return 0;
-      }
     });
 
     return filtered;
-  }, [articles, globalFilter, columnFilters, sortField, sortDirection]);
+  }, [articles, searchQuery, filterValues, sortField, sortDirection]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -329,97 +338,20 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
     );
   };
 
-  const updateColumnFilter = (column: keyof ColumnFilter, value: string) => {
-    setColumnFilters(prev => ({
-      ...prev,
-      [column]: value
-    }));
+    const clearListFilters = () => {
+        setSearchQuery('');
+        setFilterValues(INITIAL_ASSESSMENT_FILTER_VALUES);
   };
 
-  const ColumnFilterButton = ({ column }: { column: keyof ColumnFilter }) => {
-    const isActive = activeFilterColumn === column;
-    const hasFilter = column === 'status' 
-      ? (columnFilters[column].length > 0 && columnFilters[column] !== 'all')
-      : columnFilters[column].length > 0;
+    const activeFiltersCount = ASSESSMENT_FILTER_FIELDS.filter(
+        f => !isFilterValueEmpty(filterValues[f.id])
+    ).length;
 
-    const statusOptions = [
-        {value: 'all', label: t('assessment', 'statusAll')},
-        {value: 'not_started', label: t('assessment', 'statusNotStarted')},
-        {value: 'in_progress', label: t('assessment', 'statusInProgress')},
-        {value: 'complete', label: t('assessment', 'statusComplete')}
-    ];
-
-    return (
-      <Popover open={isActive} onOpenChange={(open) => setActiveFilterColumn(open ? column : null)}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            className={`h-6 w-6 p-0 ${hasFilter ? 'text-primary' : 'text-muted-foreground'}`}
-          >
-            <Filter className="h-3 w-3" />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-64 p-3" align="start">
-          <div className="space-y-2">
-            <label className="text-sm font-medium">
-                {t('assessment', 'tableFilterLabel')}{' '}
-                {column === 'title' ? t('assessment', 'tableColumnTitle') :
-                    column === 'publication_year' ? t('assessment', 'tableColumnYear') :
-                        column === 'completion_percentage' ? t('assessment', 'tableColumnProgress') :
-                            column === 'status' ? t('assessment', 'tableColumnStatus') :
-                                column === 'authors' ? t('assessment', 'tableColumnAuthors') :
-                                    t('assessment', 'filterColumnField')}
-            </label>
-            
-            {column === 'status' ? (
-              <Select 
-                value={columnFilters[column] || 'all'} 
-                onValueChange={(value) => updateColumnFilter(column, value)}
-              >
-                <SelectTrigger className="h-8">
-                    <SelectValue placeholder={t('assessment', 'tableFilterStatusPlaceholder')}/>
-                </SelectTrigger>
-                <SelectContent>
-                  {statusOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <Input
-                autoFocus
-                placeholder={
-                    column === 'title' ? t('assessment', 'tableFilterTitlePlaceholder') :
-                        column === 'publication_year' ? t('assessment', 'tableFilterYearPlaceholder') :
-                            column === 'completion_percentage' ? t('assessment', 'tableFilterProgressPlaceholder') :
-                                column === 'authors' ? t('assessment', 'tableFilterAuthorsPlaceholder') :
-                                    t('assessment', 'tableFilterSearchPlaceholder')
-                }
-                value={columnFilters[column]}
-                onChange={(e) => updateColumnFilter(column, e.target.value)}
-                onKeyDown={(e) => e.stopPropagation()}
-                className="h-8"
-              />
-            )}
-            
-            {hasFilter && columnFilters[column] !== 'all' && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => updateColumnFilter(column, column === 'status' ? 'all' : '')}
-                className="h-6 text-xs"
-              >
-                  {t('assessment', 'tableFilterClear')}
-              </Button>
-            )}
-          </div>
-        </PopoverContent>
-      </Popover>
-    );
-  };
+    useListKeyboardShortcuts({
+        searchInputRef,
+        setFilterPopoverOpen,
+        filterPopoverOpen,
+    });
 
     // Estado: Loading — skeleton que espelha o layout da tabela
   if (loading) {
@@ -478,42 +410,53 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
     );
   }
 
-  // Estado: Empty
+    // Estado: Empty (no articles in project)
   if (articles.length === 0) {
     return (
-      <div className="text-center text-muted-foreground py-12">
-        <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-          <p className="font-medium">{t('assessment', 'tableNoArticlesInProject')}</p>
-          <p className="text-sm mt-2">{t('assessment', 'tableNoArticlesDesc')}</p>
-      </div>
+        <EmptyListState
+            icon={FileText}
+            title={t('assessment', 'tableNoArticlesInProject')}
+            description={t('assessment', 'tableNoArticlesDesc')}
+        />
     );
   }
 
-  // Estado: Ready - Renderizar tabela
+    // Estado: Ready — toolbar + table
   return (
     <div className="space-y-4">
-      {/* Filtro Global */}
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-              placeholder={t('assessment', 'tableSearchPlaceholder')}
-            value={globalFilter}
-            onChange={(e) => setGlobalFilter(e.target.value)}
-            className="pl-10 h-9"
-          />
-        </div>
-          <div className="text-[13px] text-muted-foreground">
-              {filteredAndSortedArticles.length} / {articles.length} {t('assessment', 'tableArticlesCount')}
-        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+            <ListToolbarSearch
+                ref={searchInputRef}
+                value={searchQuery}
+                onChange={setSearchQuery}
+                placeholder={t('assessment', 'tableSearchPlaceholder')}
+            />
+            <FilterButtonWithPopover
+                open={filterPopoverOpen}
+                onOpenChange={setFilterPopoverOpen}
+                activeCount={activeFiltersCount}
+                tooltipLabel={t('assessment', 'tableFilterLabel')}
+                ariaLabel={t('assessment', 'tableFilterLabel')}
+            >
+                <ListFilterPanel
+                    fields={ASSESSMENT_FILTER_FIELDS}
+                    values={filterValues}
+                    onChange={setFilterValues}
+                />
+            </FilterButtonWithPopover>
+            <ListCount
+                visible={filteredAndSortedArticles.length}
+                total={articles.length}
+                label={t('assessment', 'tableArticlesCount')}
+            />
       </div>
 
-      {/* Tabela */}
-        <div className="rounded-lg border border-border/40">
+        <DataTableWrapper>
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead className="w-[30%]">
+              <TableRow className="border-b border-border/40">
+                  <TableHead
+                      className="w-[30%] h-8 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
                 <div className="flex items-center gap-2">
                   <Button
                     variant="ghost"
@@ -524,16 +467,14 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
                       {t('assessment', 'tableColumnTitle')}
                   </Button>
                   {getSortIcon('title')}
-                  <ColumnFilterButton column="title" />
                 </div>
               </TableHead>
-              <TableHead className="w-[15%]">
-                <div className="flex items-center gap-2">
-                    <span className="font-semibold">{t('assessment', 'tableColumnAuthors')}</span>
-                  <ColumnFilterButton column="authors" />
-                </div>
+                  <TableHead
+                      className="w-[15%] h-8 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                      {t('assessment', 'tableColumnAuthors')}
               </TableHead>
-              <TableHead className="w-[10%]">
+                  <TableHead
+                      className="w-[10%] h-8 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
                 <div className="flex items-center gap-2">
                   <Button
                     variant="ghost"
@@ -544,10 +485,10 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
                       {t('assessment', 'tableColumnYear')}
                   </Button>
                   {getSortIcon('publication_year')}
-                  <ColumnFilterButton column="publication_year" />
                 </div>
               </TableHead>
-              <TableHead className="w-[15%]">
+                  <TableHead
+                      className="w-[15%] h-8 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
                 <div className="flex items-center gap-2">
                   <Button
                     variant="ghost"
@@ -558,10 +499,10 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
                       {t('assessment', 'tableColumnProgress')}
                   </Button>
                   {getSortIcon('completion_percentage')}
-                  <ColumnFilterButton column="completion_percentage" />
                 </div>
               </TableHead>
-              <TableHead className="w-[10%]">
+                  <TableHead
+                      className="w-[10%] h-8 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
                 <div className="flex items-center gap-2">
                   <Button
                     variant="ghost"
@@ -572,10 +513,12 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
                       {t('assessment', 'tableColumnStatus')}
                   </Button>
                   {getSortIcon('status')}
-                  <ColumnFilterButton column="status" />
                 </div>
               </TableHead>
-                <TableHead className="w-[15%] text-center">{t('assessment', 'tableActions')}</TableHead>
+                  <TableHead
+                      className="w-[15%] text-center h-8 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                      {t('assessment', 'tableActions')}
+                  </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -585,12 +528,12 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
 
               return (
                   <TableRow key={article.id} className="hover:bg-muted/50 transition-[background-color] duration-75">
-                      <TableCell className="text-[13px]">
-                          <div className="font-medium leading-tight">
+                      <TableCell className={TABLE_CELL_CLASS}>
+                          <div className="font-medium leading-tight text-[13px]">
                       {article.title}
                     </div>
                   </TableCell>
-                      <TableCell className="text-[13px]">
+                      <TableCell className={TABLE_CELL_CLASS}>
                     {article.authors && article.authors.length > 0 ? (
                       <div className="text-sm flex items-center gap-1 max-w-full overflow-hidden">
                         <User className="h-3 w-3 text-muted-foreground flex-shrink-0" />
@@ -603,13 +546,13 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
                         <span className="text-muted-foreground">N/A</span>
                     )}
                   </TableCell>
-                      <TableCell className="text-[13px]">
+                      <TableCell className={TABLE_CELL_CLASS}>
                           <div className="flex items-center gap-1">
                       <Calendar className="h-3 w-3 text-muted-foreground" />
                       {article.publication_year || 'N/A'}
                     </div>
                   </TableCell>
-                      <TableCell className="text-[13px]">
+                      <TableCell className={TABLE_CELL_CLASS}>
                     {article.assessment ? (
                       <div className="space-y-1">
                           <div className="flex items-center justify-between text-[13px]">
@@ -625,10 +568,10 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
                       </div>
                     )}
                   </TableCell>
-                      <TableCell className="text-[13px]">
+                      <TableCell className={TABLE_CELL_CLASS}>
                     {getStatusBadge(article)}
                   </TableCell>
-                      <TableCell className="text-center text-[13px]">
+                      <TableCell className={`text-center ${TABLE_CELL_CLASS}`}>
                     {!article.assessment ? (
                       <Button 
                         onClick={() => handleStartAssessment(article.id)}
@@ -664,26 +607,16 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
             })}
           </TableBody>
         </Table>
-      </div>
+        </DataTableWrapper>
 
-        {/* Empty state after filters */}
       {filteredAndSortedArticles.length === 0 && articles.length > 0 && (
-        <div className="text-center text-muted-foreground py-8">
-          <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
-            <p className="font-medium">{t('assessment', 'tableNoArticlesFilter')}</p>
-            <p className="text-sm mt-1">{t('assessment', 'tableAdjustFilters')}</p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setGlobalFilter('');
-              setColumnFilters({ title: '', publication_year: '', completion_percentage: '', status: 'all', authors: '' });
-            }}
-            className="mt-2"
-          >
-              {t('assessment', 'tableClearFilters')}
-          </Button>
-        </div>
+          <EmptyListState
+              icon={Search}
+              title={t('assessment', 'tableNoArticlesFilter')}
+              description={t('assessment', 'tableAdjustFilters')}
+              actionLabel={t('assessment', 'tableClearFilters')}
+              onAction={clearListFilters}
+          />
       )}
     </div>
   );
