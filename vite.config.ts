@@ -12,6 +12,8 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
         "@": path.resolve(__dirname, "./frontend"),
+        // Resolve directory import to index so Vite/Rollup load the file (fixes ENOENT on Vercel)
+        "@/lib/copy": path.resolve(__dirname, "./frontend/lib/copy/index.ts"),
     },
   },
 }));
