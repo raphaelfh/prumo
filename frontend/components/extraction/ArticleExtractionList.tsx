@@ -1,10 +1,10 @@
 /**
- * Lista de artigos com opção de iniciar/continuar extração
- * 
- * Exibe todos os artigos do projeto e permite:
- * - Iniciar extração para artigos sem extração
- * - Continuar extração para artigos em andamento
- * - Ver detalhes de extração completa
+ * Article list with option to start/continue extraction
+ *
+ * Shows all project articles and allows:
+ * - Start extraction for articles without extraction
+ * - Continue extraction for in-progress articles
+ * - View full extraction details
  */
 
 import {useEffect, useState} from 'react';
@@ -14,9 +14,11 @@ import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/compo
 import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
 import {Progress} from '@/components/ui/progress';
+import {Skeleton} from '@/components/ui/skeleton';
 import {CheckCircle, Clock, Edit, FileText, Loader2, PlayCircle} from 'lucide-react';
 import {type ExtractionProgress, useExtractionSetup} from '@/hooks/extraction';
 import {toast} from 'sonner';
+import {t} from '@/lib/copy';
 
 interface Article {
   id: string;
@@ -50,7 +52,7 @@ export function ArticleExtractionList({ projectId, templateId }: ArticleExtracti
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Carregar artigos do projeto
+    // Load project articles
   useEffect(() => {
     if (projectId && templateId) {
       loadArticles();
@@ -58,12 +60,12 @@ export function ArticleExtractionList({ projectId, templateId }: ArticleExtracti
   }, [projectId, templateId]);
 
   const loadArticles = async () => {
-    console.log('ArticleExtractionList - loadArticles chamado:', { projectId, templateId });
+      console.log('ArticleExtractionList - loadArticles called:', {projectId, templateId});
     setLoading(true);
     setError(null);
 
     try {
-      // 1. Buscar artigos do projeto
+        // 1. Fetch project articles
       const { data: articlesData, error: articlesError } = await supabase
         .from('articles')
         .select('id, title, authors, publication_year, created_at')
@@ -71,18 +73,18 @@ export function ArticleExtractionList({ projectId, templateId }: ArticleExtracti
         .order('created_at', { ascending: false });
 
       if (articlesError) {
-        console.error('Erro ao buscar artigos:', articlesError);
+          console.error('Error fetching articles:', articlesError);
         throw articlesError;
       }
 
-      console.log('Artigos carregados:', articlesData?.length || 0);
+        console.log('Articles loaded:', articlesData?.length || 0);
 
       if (!articlesData || articlesData.length === 0) {
         setArticles([]);
         return;
       }
 
-      // 2. Para cada artigo, verificar status de extração
+        // 2. For each article, check extraction status
       const articlesWithExtraction = await Promise.all(
         articlesData.map(async (article) => {
           try {
@@ -91,7 +93,7 @@ export function ArticleExtractionList({ projectId, templateId }: ArticleExtracti
 
             if (initialized) {
               progress = await calculateProgress(article.id, templateId);
-              console.log(`Progresso do artigo ${article.title}:`, progress);
+                console.log(`Article progress ${article.title}:`, progress);
             }
 
             return {
@@ -101,7 +103,7 @@ export function ArticleExtractionList({ projectId, templateId }: ArticleExtracti
               isLoading: false,
             };
           } catch (err) {
-            console.error(`Erro ao processar artigo ${article.title}:`, err);
+              console.error(`Error processing article ${article.title}:`, err);
             return {
               ...article,
               extractionInitialized: false,
@@ -112,19 +114,19 @@ export function ArticleExtractionList({ projectId, templateId }: ArticleExtracti
         })
       );
 
-      console.log('Artigos processados:', articlesWithExtraction.length);
+        console.log('Articles processed:', articlesWithExtraction.length);
       setArticles(articlesWithExtraction);
     } catch (err: any) {
-      console.error('Erro ao carregar artigos:', err);
+        console.error('Error loading articles:', err);
       setError(err.message);
-      toast.error(`Erro ao carregar artigos: ${err.message}`);
+        toast.error(`${t('extraction', 'listErrorLoadArticles')}: ${err.message}`);
     } finally {
       setLoading(false);
     }
   };
 
   const handleStartExtraction = async (articleId: string) => {
-    // Atualizar estado para mostrar loading
+      // Update state to show loading
     setArticles(prev => prev.map(a => 
       a.id === articleId ? { ...a, isLoading: true } : a
     ));
@@ -133,19 +135,19 @@ export function ArticleExtractionList({ projectId, templateId }: ArticleExtracti
       const result = await initializeArticleExtraction(articleId, projectId, templateId);
 
       if (result.success) {
-        // Recarregar lista para atualizar status
+          // Reload list to update status
         await loadArticles();
-        
-        // Navegar para tela de extração
+
+          // Navigate to extraction screen
         navigate(`/projects/${projectId}/extraction/${articleId}`);
       } else {
-        // Resetar loading em caso de erro
+          // Reset loading on error
         setArticles(prev => prev.map(a => 
           a.id === articleId ? { ...a, isLoading: false } : a
         ));
       }
     } catch (err: any) {
-      console.error('Erro ao iniciar extração:', err);
+        console.error('Error starting extraction:', err);
       setArticles(prev => prev.map(a => 
         a.id === articleId ? { ...a, isLoading: false } : a
       ));
@@ -161,7 +163,7 @@ export function ArticleExtractionList({ projectId, templateId }: ArticleExtracti
       return (
         <Badge variant="secondary" className="gap-1">
           <Clock className="h-3 w-3" />
-          Não iniciada
+            {t('extraction', 'listStatusNotStarted')}
         </Badge>
       );
     }
@@ -172,7 +174,7 @@ export function ArticleExtractionList({ projectId, templateId }: ArticleExtracti
       return (
         <Badge variant="default" className="gap-1 bg-green-500">
           <CheckCircle className="h-3 w-3" />
-          Completa
+            {t('extraction', 'listStatusComplete')}
         </Badge>
       );
     }
@@ -180,29 +182,48 @@ export function ArticleExtractionList({ projectId, templateId }: ArticleExtracti
     return (
       <Badge variant="default" className="gap-1 bg-blue-500">
         <Edit className="h-3 w-3" />
-        Em andamento
+          {t('extraction', 'listStatusInProgress')}
       </Badge>
     );
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        <span className="ml-2 text-muted-foreground">Carregando artigos...</span>
+        <div className="space-y-4">
+            {[1, 2, 3, 4, 5].map((i) => (
+                <Card key={i} className="border-border/40">
+                    <CardHeader className="pb-2">
+                        <div className="flex justify-between gap-4">
+                            <div className="flex-1 space-y-2">
+                                <Skeleton className="h-4 w-full max-w-[80%]"/>
+                                <Skeleton className="h-3 w-48"/>
+                            </div>
+                            <Skeleton className="h-6 w-24"/>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                        <div className="flex items-center justify-between">
+                            <Skeleton className="h-3 w-40"/>
+                            <Skeleton className="h-3 w-10"/>
+                        </div>
+                        <Skeleton className="h-2 w-full"/>
+                        <Skeleton className="h-8 w-32"/>
+                    </CardContent>
+                </Card>
+            ))}
       </div>
     );
   }
 
   if (error) {
     return (
-      <Card>
+        <Card className="border-border/40">
         <CardContent className="pt-6">
           <div className="text-center text-red-500">
-            <p>Erro ao carregar artigos</p>
-            <p className="text-sm text-muted-foreground mt-2">{error}</p>
+              <p className="text-[13px]">{t('extraction', 'listErrorLoadArticles')}</p>
+              <p className="text-[13px] text-muted-foreground mt-2">{error}</p>
             <Button onClick={loadArticles} variant="outline" className="mt-4">
-              Tentar novamente
+                {t('extraction', 'listTryAgain')}
             </Button>
           </div>
         </CardContent>
@@ -212,12 +233,12 @@ export function ArticleExtractionList({ projectId, templateId }: ArticleExtracti
 
   if (articles.length === 0) {
     return (
-      <Card>
+        <Card className="border-border/40">
         <CardContent className="pt-6">
           <div className="text-center text-muted-foreground">
-            <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-            <p>Nenhum artigo encontrado neste projeto</p>
-            <p className="text-sm mt-2">Adicione artigos primeiro para iniciar a extração de dados.</p>
+              <FileText className="h-10 w-10 mx-auto mb-4 opacity-50" strokeWidth={1.5}/>
+              <p className="text-[13px] font-medium">{t('extraction', 'listNoArticles')}</p>
+              <p className="text-[13px] mt-2">{t('extraction', 'listNoArticlesDesc')}</p>
           </div>
         </CardContent>
       </Card>
@@ -232,14 +253,15 @@ export function ArticleExtractionList({ projectId, templateId }: ArticleExtracti
         const completedFields = article.extractionProgress?.completedRequiredFields || 0;
 
         return (
-          <Card key={article.id}>
-            <CardHeader>
+            <Card key={article.id}
+                  className="border-border/40 hover:bg-muted/30 transition-[background-color] duration-75">
+                <CardHeader className="pb-2">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
-                  <CardTitle className="text-lg">{article.title}</CardTitle>
-                  <CardDescription className="mt-1">
+                    <CardTitle className="text-[13px] font-medium leading-tight">{article.title}</CardTitle>
+                    <CardDescription className="mt-1 text-[13px]">
                     {article.authors && article.authors.length > 0 && `${article.authors.join(', ')} • `}
-                    {article.publication_year || 'Ano não especificado'}
+                        {article.publication_year || t('extraction', 'listYearNotSpecified')}
                   </CardDescription>
                 </div>
                 <div className="ml-4">
@@ -249,12 +271,11 @@ export function ArticleExtractionList({ projectId, templateId }: ArticleExtracti
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {/* Progresso */}
                 {article.extractionInitialized && (
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between text-sm">
+                      <div className="flex items-center justify-between text-[13px]">
                       <span className="text-muted-foreground">
-                        Progresso: {completedFields} / {requiredFields} campos obrigatórios
+                        Progress: {completedFields} / {requiredFields} {t('extraction', 'listProgressRequiredFields')}
                       </span>
                       <span className="font-medium">{progress.toFixed(1)}%</span>
                     </div>
@@ -262,23 +283,23 @@ export function ArticleExtractionList({ projectId, templateId }: ArticleExtracti
                   </div>
                 )}
 
-                {/* Ações */}
                 <div className="flex gap-2">
                   {!article.extractionInitialized ? (
                     <Button 
                       onClick={() => handleStartExtraction(article.id)}
                       disabled={article.isLoading || setupLoading}
-                      className="gap-2"
+                      size="sm"
+                      className="gap-2 h-8 text-[13px]"
                     >
                       {article.isLoading ? (
                         <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Iniciando...
+                            <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.5}/>
+                            {t('extraction', 'listStarting')}
                         </>
                       ) : (
                         <>
-                          <PlayCircle className="h-4 w-4" />
-                          Iniciar Extração
+                            <PlayCircle className="h-4 w-4" strokeWidth={1.5}/>
+                            {t('extraction', 'listStartExtraction')}
                         </>
                       )}
                     </Button>
@@ -286,17 +307,18 @@ export function ArticleExtractionList({ projectId, templateId }: ArticleExtracti
                     <Button 
                       onClick={() => handleContinueExtraction(article.id)}
                       variant={progress >= 100 ? "outline" : "default"}
-                      className="gap-2"
+                      size="sm"
+                      className="gap-2 h-8 text-[13px]"
                     >
                       {progress >= 100 ? (
                         <>
-                          <CheckCircle className="h-4 w-4" />
-                          Ver Extração
+                            <CheckCircle className="h-4 w-4" strokeWidth={1.5}/>
+                            {t('extraction', 'listViewExtraction')}
                         </>
                       ) : (
                         <>
-                          <Edit className="h-4 w-4" />
-                          Continuar Extração
+                            <Edit className="h-4 w-4" strokeWidth={1.5}/>
+                            {t('extraction', 'listContinueExtraction')}
                         </>
                       )}
                     </Button>

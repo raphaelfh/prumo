@@ -1,10 +1,10 @@
 /**
  * Header Finalize Button - Assessment Module
  *
- * Sub-componente do header responsável por:
- * - Botão de finalização da avaliação
+ * Header sub-component responsible for:
+ * - Assessment finalize button
  * - Indicador de submitting
- * - Desabilitado quando incompleto ou salvando
+ * - Disabled when incomplete or saving
  *
  * Baseado em ExtractionHeader/HeaderFinalizeButton (DRY + KISS)
  *
@@ -14,6 +14,7 @@
 import {Button} from '@/components/ui/button';
 import {Tooltip, TooltipContent, TooltipTrigger,} from '@/components/ui/tooltip';
 import {CheckCircle, Loader2} from 'lucide-react';
+import {t} from '@/lib/copy';
 
 // =================== INTERFACES ===================
 
@@ -32,12 +33,12 @@ export function HeaderFinalizeButton(props: HeaderFinalizeButtonProps) {
   const isDisabled = !isComplete || isSaving || submitting;
 
   const tooltipMessage = !isComplete
-    ? 'Complete todos os items obrigatórios'
+      ? t('assessment', 'headerCompleteRequired')
     : isSaving
-    ? 'Aguarde o salvamento automático'
+          ? t('assessment', 'headerWaitSave')
     : submitting
-    ? 'Finalizando...'
-    : 'Finalizar e submeter avaliação';
+              ? t('assessment', 'headerFinalizing')
+              : t('assessment', 'headerFinalizeSubmit');
 
   return (
     <Tooltip>
@@ -52,12 +53,12 @@ export function HeaderFinalizeButton(props: HeaderFinalizeButtonProps) {
           {submitting ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
-              Finalizando...
+                {t('assessment', 'headerFinalizing')}
             </>
           ) : (
             <>
               <CheckCircle className="h-4 w-4" />
-              Concluir Avaliação
+                {t('assessment', 'headerCompleteAssessment')}
             </>
           )}
         </Button>

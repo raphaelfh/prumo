@@ -1,13 +1,13 @@
 /**
- * Dialog para editar campo de extração existente
- * 
+ * Dialog to edit an existing extraction field
+ *
  * Features:
- * - Edição completa de todos os atributos
- * - Validação de mudança de tipo (não permitir se houver dados)
- * - Editor de unit com sugestões
- * - Editor de allowed_values com drag-drop
- * - Validação em tempo real
- * 
+ * - Full edit of all attributes
+ * - Type change validation (disallow if field has extracted data)
+ * - Unit editor with suggestions
+ * - allowed_values editor with drag-drop
+ * - Real-time validation
+ *
  * @component
  */
 
@@ -39,6 +39,7 @@ import {
 } from '@/types/extraction';
 import {AllowedValuesList} from './AllowedValuesList';
 import {AllowedUnitsList} from './AllowedUnitsList';
+import {t} from '@/lib/copy';
 
 interface EditFieldDialogProps {
   field: ExtractionField | null;
@@ -78,7 +79,7 @@ export function EditFieldDialog({
 
   const fieldType = form.watch('field_type');
 
-  // Carregar dados do campo quando abrir
+    // Load field data when opening
   useEffect(() => {
     if (field && open) {
       form.reset({
@@ -95,8 +96,8 @@ export function EditFieldDialog({
         other_label: field.other_label || null,
         other_placeholder: field.other_placeholder || null,
       });
-      
-      // Buscar validação do campo
+
+        // Fetch field validation
       loadValidation();
     }
   }, [field, open, form]);
@@ -108,35 +109,35 @@ export function EditFieldDialog({
       const result = await onValidate(field.id);
       setValidation(result);
     } catch (err) {
-      console.error('Erro ao validar campo:', err);
+        console.error('Error validating field:', err);
     }
   };
 
   const handleTypeChange = async (newType: string) => {
     if (!field || !validation) return;
 
-    // Se está mudando tipo e campo tem dados extraídos
+      // If changing type and field has extracted data
     if (newType !== field.field_type && !validation.canChangeType) {
       setValidatingType(true);
-      // Revalidar para ter certeza
+        // Revalidate to be sure
       const freshValidation = await onValidate(field.id);
       setValidation(freshValidation);
       setValidatingType(false);
 
       if (!freshValidation.canChangeType) {
-        form.setValue('field_type', field.field_type); // Reverter
+          form.setValue('field_type', field.field_type); // Revert
         return;
       }
     }
 
     form.setValue('field_type', newType as any);
-    
-    // Limpar allowed_values se não for select/multiselect
+
+      // Clear allowed_values if not select/multiselect
     if (newType !== 'select' && newType !== 'multiselect') {
       form.setValue('allowed_values', null);
     }
-    
-    // Limpar unit e allowed_units se não for number
+
+      // Clear unit and allowed_units if not number
     if (newType !== 'number') {
       form.setValue('unit', null);
       form.setValue('allowed_units', null);
@@ -168,12 +169,12 @@ export function EditFieldDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[95vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Editar Campo</DialogTitle>
+            <DialogTitle>{t('extraction', 'editFieldTitle')}</DialogTitle>
           <DialogDescription>
             {sectionName ? (
-              <>Editando campo <strong>{field.label}</strong> da seção <strong>{sectionName}</strong></>
+                <>{t('extraction', 'editFieldDescInSection').replace('{{label}}', field.label).replace('{{section}}', sectionName)}</>
             ) : (
-              <>Edite as configurações do campo <strong>{field.label}</strong></>
+                <>{t('extraction', 'editFieldDescDefault').replace('{{label}}', field.label)}</>
             )}
           </DialogDescription>
         </DialogHeader>
@@ -181,10 +182,10 @@ export function EditFieldDialog({
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Coluna Esquerda - Informações Básicas */}
+                {/* Left column - Basic info */}
               <div className="space-y-4">
                 <div>
-                  <h3 className="text-lg font-medium mb-4">Informações Básicas</h3>
+                    <h3 className="text-lg font-medium mb-4">{t('extraction', 'editFieldBasicInfo')}</h3>
                   
                   {/* Label */}
                   <FormField
@@ -202,16 +203,16 @@ export function EditFieldDialog({
                   />
                 </div>
 
-                {/* Nome (readonly, apenas para referência) */}
+                  {/* Name (readonly, for reference) */}
                 <div>
-                  <Label>Nome Técnico</Label>
+                    <Label>{t('extraction', 'editFieldTechnicalName')}</Label>
                   <Input
                     value={field.name}
                     disabled
                     className="font-mono text-sm bg-muted"
                   />
                   <p className="text-xs text-muted-foreground mt-1">
-                    Nome interno (não pode ser alterado após criação)
+                      {t('extraction', 'editFieldTechnicalNameHint')}
                   </p>
                 </div>
 
@@ -221,7 +222,7 @@ export function EditFieldDialog({
                   name="field_type"
                   render={({ field: formField }) => (
                     <FormItem>
-                      <FormLabel>Tipo de Campo</FormLabel>
+                        <FormLabel>{t('extraction', 'editFieldTypeLabel')}</FormLabel>
                       <Select
                         onValueChange={handleTypeChange}
                         defaultValue={formField.value}
@@ -233,19 +234,19 @@ export function EditFieldDialog({
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="text">Texto</SelectItem>
-                          <SelectItem value="number">Número</SelectItem>
-                          <SelectItem value="date">Data</SelectItem>
-                          <SelectItem value="select">Seleção Única</SelectItem>
-                          <SelectItem value="multiselect">Múltipla Escolha</SelectItem>
-                          <SelectItem value="boolean">Sim/Não</SelectItem>
+                            <SelectItem value="text">{t('extraction', 'fieldTypeText')}</SelectItem>
+                            <SelectItem value="number">{t('extraction', 'fieldTypeNumber')}</SelectItem>
+                            <SelectItem value="date">{t('extraction', 'fieldTypeDate')}</SelectItem>
+                            <SelectItem value="select">{t('extraction', 'fieldTypeSelect')}</SelectItem>
+                            <SelectItem value="multiselect">{t('extraction', 'fieldTypeMultiselect')}</SelectItem>
+                            <SelectItem value="boolean">{t('extraction', 'fieldTypeBoolean')}</SelectItem>
                         </SelectContent>
                       </Select>
                       {validation && !validation.canChangeType && (
                         <Alert className="mt-2">
                           <AlertTriangle className="h-4 w-4" />
                           <AlertDescription>
-                            Não é possível mudar o tipo deste campo porque possui {validation.extractedValuesCount} valores extraídos.
+                              {t('extraction', 'cannotChangeTypeValues').replace('{{count}}', String(validation.extractedValuesCount))}
                           </AlertDescription>
                         </Alert>
                       )}
@@ -254,13 +255,13 @@ export function EditFieldDialog({
                   )}
                 />
 
-                {/* Descrição */}
+                  {/* Description */}
                 <FormField
                   control={form.control}
                   name="description"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Descrição</FormLabel>
+                        <FormLabel>{t('extraction', 'editFieldDescription')}</FormLabel>
                       <FormControl>
                         <Textarea
                           {...field}
@@ -270,47 +271,47 @@ export function EditFieldDialog({
                         />
                       </FormControl>
                       <FormDescription>
-                        Instruções para ajudar os revisores
+                          {t('extraction', 'editFieldDescriptionHint')}
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
 
-                {/* Instrução para IA */}
+                  {/* AI instruction */}
                 <FormField
                   control={form.control}
                   name="llm_description"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Instrução para IA (opcional)</FormLabel>
+                        <FormLabel>{t('extraction', 'editFieldLLMInstruction')}</FormLabel>
                       <FormControl>
                         <Textarea
                           {...field}
                           value={field.value || ''}
-                          placeholder="Exemplo: Extraia o número total de participantes no baseline, antes de exclusões..."
+                          placeholder={t('extraction', 'examplePlaceholder')}
                           rows={4}
                           disabled={loading}
                         />
                       </FormControl>
                       <FormDescription>
-                        Instrução específica para extração automática com IA. Descreva O QUE extrair e ONDE encontrar no artigo.
+                          {t('extraction', 'editFieldLLMInstructionDesc')}
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
 
-                {/* Campo Obrigatório */}
+                  {/* Required field */}
                 <FormField
                   control={form.control}
                   name="is_required"
                   render={({ field }) => (
                     <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
                       <div className="space-y-0.5">
-                        <FormLabel className="text-base">Campo Obrigatório</FormLabel>
+                          <FormLabel className="text-base">{t('extraction', 'editFieldRequired')}</FormLabel>
                         <FormDescription>
-                          Marque se este campo deve ser preenchido obrigatoriamente
+                            {t('extraction', 'editFieldRequiredDesc')}
                         </FormDescription>
                       </div>
                       <FormControl>
@@ -325,24 +326,24 @@ export function EditFieldDialog({
                 />
               </div>
 
-              {/* Coluna Direita - Configurações Específicas */}
+                {/* Right column - Specific settings */}
               <div className="space-y-4">
                 <div>
-                  <h3 className="text-lg font-medium mb-4">Configurações Específicas</h3>
+                    <h3 className="text-lg font-medium mb-4">{t('extraction', 'editFieldSpecificSettings')}</h3>
 
-                  {/* Unidades Disponíveis (condicional - para números) */}
+                    {/* Available units (conditional - for numbers) */}
                   {fieldType === 'number' && (
                     <FormField
                       control={form.control}
                       name="allowed_units"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Unidades Disponíveis (opcional)</FormLabel>
+                            <FormLabel>{t('extraction', 'editFieldUnitsAvailable')}</FormLabel>
                           <AllowedUnitsList
                             values={Array.isArray(field.value) ? field.value : []}
                             onChange={(newUnits) => {
                               field.onChange(newUnits.length > 0 ? newUnits : null);
-                              // Sincronizar unit com a primeira unidade
+                                // Sync unit with first unit
                               if (newUnits.length > 0) {
                                 form.setValue('unit', newUnits[0]);
                               } else {
@@ -352,11 +353,10 @@ export function EditFieldDialog({
                             disabled={loading}
                           />
                           <FormDescription>
-                            Configure as unidades que o revisor poderá escolher durante a extração.
-                            A primeira unidade é a padrão. Deixe vazio para usar sugestões automáticas.
+                              {t('extraction', 'configureUnitsDesc')} {t('extraction', 'firstUnitDefaultShort')}
                             {validation && validation.extractedValuesCount > 0 && (
                               <span className="block mt-1 text-amber-600">
-                                ⚠️ Mudanças afetarão apenas novas extrações ({validation.extractedValuesCount} valores existentes).
+                                ⚠️ {t('extraction', 'changesAffectNewOnly').replace('{{count}}', String(validation.extractedValuesCount))}
                               </span>
                             )}
                           </FormDescription>
@@ -366,7 +366,7 @@ export function EditFieldDialog({
                     />
                   )}
 
-                  {/* Valores Permitidos (condicional - para select) */}
+                    {/* Allowed values (conditional - for select) */}
                   {(fieldType === 'select' || fieldType === 'multiselect') && (
                     <>
                     <FormField
@@ -375,7 +375,7 @@ export function EditFieldDialog({
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>
-                            Valores Permitidos <span className="text-destructive">*</span>
+                              Allowed values <span className="text-destructive">*</span>
                           </FormLabel>
                           <AllowedValuesList
                             values={Array.isArray(field.value) ? field.value : []}
@@ -390,12 +390,12 @@ export function EditFieldDialog({
                       )}
                     />
 
-                      {/* Opção: Permitir "Outro (especificar)" */}
+                        {/* Option: Allow "Other (specify)" */}
                       <div className="space-y-3 rounded-lg border p-4">
                         <div className="flex items-center justify-between">
                           <div>
-                            <Label className="font-medium">Permitir "Outro (especificar)"</Label>
-                            <p className="text-xs text-muted-foreground mt-1">Mostra opção inline e input contextual</p>
+                              <Label className="font-medium">{t('extraction', 'allowOtherSpecifyLabel')}</Label>
+                              <p className="text-xs text-muted-foreground mt-1">{t('extraction', 'otherOptionInlineHint')}</p>
                           </div>
                           <FormField
                             control={form.control}
@@ -419,12 +419,12 @@ export function EditFieldDialog({
                               name="other_label"
                               render={({ field }) => (
                                 <FormItem>
-                                  <FormLabel>Label do "Outro"</FormLabel>
+                                    <FormLabel>{t('extraction', 'otherLabelLabel')}</FormLabel>
                                   <FormControl>
                                     <Input 
                                       {...field} 
                                       value={field.value || ''}
-                                      placeholder="Outro (especificar)" 
+                                      placeholder={t('extraction', 'otherSpecifyDefault')} 
                                       disabled={loading} 
                                     />
                                   </FormControl>
@@ -437,12 +437,12 @@ export function EditFieldDialog({
                               name="other_placeholder"
                               render={({ field }) => (
                                 <FormItem>
-                                  <FormLabel>Placeholder</FormLabel>
+                                    <FormLabel>{t('extraction', 'placeholderLabel')}</FormLabel>
                                   <FormControl>
                                     <Input 
                                       {...field} 
                                       value={field.value || ''}
-                                      placeholder="Digite aqui" 
+                                      placeholder={t('extraction', 'placeholderTypeHere')} 
                                       disabled={loading} 
                                     />
                                   </FormControl>
@@ -459,13 +459,14 @@ export function EditFieldDialog({
               </div>
             </div>
 
-            {/* Info sobre impacto (se houver dados extraídos) */}
+              {/* Info about impact (if field has extracted data) */}
             {validation && validation.extractedValuesCount > 0 && (
               <Alert>
                 <Info className="h-4 w-4" />
                 <AlertDescription>
-                  <strong>Atenção:</strong> Este campo possui {validation.extractedValuesCount} valores extraídos
-                  em {validation.affectedArticles.length} artigo(s). Algumas alterações podem não ser permitidas.
+                    {t('extraction', 'editFieldWarningExtracted')
+                        .replace('{{count}}', String(validation.extractedValuesCount))
+                        .replace('{{n}}', String(validation.affectedArticles.length))}
                 </AlertDescription>
               </Alert>
             )}
@@ -477,11 +478,11 @@ export function EditFieldDialog({
                 onClick={handleCancel}
                 disabled={loading}
               >
-                Cancelar
+                  {t('extraction', 'editFieldCancel')}
               </Button>
               <Button type="submit" disabled={loading}>
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Salvar Alterações
+                  {t('extraction', 'editFieldSaveChanges')}
               </Button>
             </DialogFooter>
           </form>

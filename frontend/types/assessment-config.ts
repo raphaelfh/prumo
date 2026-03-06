@@ -1,9 +1,9 @@
 /**
- * Tipos para configuração de assessment em projetos
+ * Types for assessment configuration in projects
  * 
  * Suporta dois modos:
- * - 'article': Um assessment por artigo (modo legado/padrão)
- * - 'extraction_instance': Um assessment por instância de extraction (ex: por modelo)
+ * - 'article': One assessment per article (legacy/default mode)
+ * - 'extraction_instance': One assessment per extraction instance (e.g. per model)
  */
 
 import {ExtractionEntityType} from './extraction';

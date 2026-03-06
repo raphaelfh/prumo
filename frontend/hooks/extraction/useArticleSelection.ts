@@ -1,78 +1,78 @@
 /**
- * Hook para gerenciar seleção de artigos na tabela
- * 
- * Fornece lógica reutilizável para seleção individual, seleção de todos,
- * seleção de artigos filtrados e gerenciamento de estado.
+ * Hook to manage article selection in the table
+ *
+ * Provides reusable logic for single selection, select all,
+ * filtered selection and state management.
  */
 
 import {useCallback, useMemo, useState} from 'react';
 
 interface UseArticleSelectionOptions {
   /**
-   * IDs de todos os artigos disponíveis (não filtrados)
+   * IDs of all available articles (unfiltered)
    */
   allArticleIds: string[];
   
   /**
-   * IDs dos artigos atualmente visíveis (após filtros/ordenação)
+   * IDs of currently visible articles (after filters/sort)
    */
   visibleArticleIds: string[];
 }
 
 interface UseArticleSelectionReturn {
   /**
-   * Set de IDs dos artigos selecionados
+   * Set of selected article IDs
    */
   selectedIds: Set<string>;
   
   /**
-   * Se todos os artigos visíveis estão selecionados
+   * Whether all visible articles are selected
    */
   isAllSelected: boolean;
   
   /**
-   * Se alguns (mas não todos) artigos visíveis estão selecionados
+   * Whether some (but not all) visible articles are selected
    */
   isIndeterminate: boolean;
   
   /**
-   * Número de artigos selecionados
+   * Number of selected articles
    */
   selectedCount: number;
   
   /**
-   * Alterna seleção de um artigo específico
+   * Toggle selection of a specific article
    */
   toggleArticle: (articleId: string) => void;
   
   /**
-   * Seleciona todos os artigos visíveis
+   * Select all visible articles
    */
   selectAll: () => void;
   
   /**
-   * Seleciona apenas os artigos visíveis (filtrados)
+   * Select only visible (filtered) articles
    */
   selectFiltered: () => void;
   
   /**
-   * Remove seleção de todos os artigos
+   * Clear selection of all articles
    */
   deselectAll: () => void;
   
   /**
-   * Verifica se um artigo específico está selecionado
+   * Check if a specific article is selected
    */
   isSelected: (articleId: string) => boolean;
   
   /**
-   * Verifica se há filtros ativos (diferença entre all e visible)
+   * Whether there are active filters (difference between all and visible)
    */
   hasActiveFilters: boolean;
 }
 
 /**
- * Hook para gerenciar seleção de artigos
+ * Hook to manage article selection
  */
 export function useArticleSelection({
   allArticleIds,
@@ -80,7 +80,7 @@ export function useArticleSelection({
 }: UseArticleSelectionOptions): UseArticleSelectionReturn {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  // Verifica se há filtros ativos
+    // Check for active filters
   const hasActiveFilters = useMemo(() => {
     return allArticleIds.length !== visibleArticleIds.length ||
            !visibleArticleIds.every(id => allArticleIds.includes(id));
@@ -99,7 +99,7 @@ export function useArticleSelection({
 
   const selectedCount = selectedIds.size;
 
-  // Alterna seleção de um artigo
+    // Toggle selection of an article
   const toggleArticle = useCallback((articleId: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -112,22 +112,22 @@ export function useArticleSelection({
     });
   }, []);
 
-  // Seleciona todos os artigos visíveis
+    // Select all visible articles
   const selectAll = useCallback(() => {
     setSelectedIds(new Set(visibleArticleIds));
   }, [visibleArticleIds]);
 
-  // Seleciona apenas os artigos visíveis (filtrados)
+    // Select only visible (filtered) articles
   const selectFiltered = useCallback(() => {
     setSelectedIds(new Set(visibleArticleIds));
   }, [visibleArticleIds]);
 
-  // Remove seleção de todos
+    // Clear all selection
   const deselectAll = useCallback(() => {
     setSelectedIds(new Set());
   }, []);
 
-  // Verifica se um artigo está selecionado
+    // Check if an article is selected
   const isSelected = useCallback((articleId: string) => {
     return selectedIds.has(articleId);
   }, [selectedIds]);

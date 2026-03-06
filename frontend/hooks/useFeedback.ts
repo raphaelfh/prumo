@@ -1,26 +1,27 @@
 /**
- * Hook para gerenciar envio de feedback de usuários
- * Captura automaticamente contexto técnico e da aplicação
+ * Hook to manage user feedback submission
+ * Automatically captures technical and application context
  */
 
 import {useState} from 'react';
 import {supabase} from '@/integrations/supabase/client';
 import {useAuth} from '@/contexts/AuthContext';
 import {useToast} from '@/hooks/use-toast';
+import {t} from '@/lib/copy';
 import type {FeedbackContext, FeedbackFormData} from '@/types/feedback';
 
 /**
- * Captura contexto técnico e da aplicação automaticamente
+ * Captures technical and application context automatically
  */
 function getCurrentContext(): FeedbackContext {
   const url = window.location.href;
   const pathname = window.location.pathname;
-  
-  // Extrair project_id da URL se estiver em /projects/:id
+
+    // Extract project_id from URL if on /projects/:id
   const projectMatch = pathname.match(/\/projects\/([a-f0-9-]+)/);
   const project_id = projectMatch ? projectMatch[1] : null;
-  
-  // Extrair article_id da URL se estiver em query params ou path
+
+    // Extract article_id from URL (query params or path)
   const urlParams = new URLSearchParams(window.location.search);
   const articleFromQuery = urlParams.get('article');
   const articleMatch = pathname.match(/\/articles\/([a-f0-9-]+)/);
@@ -49,9 +50,9 @@ export function useFeedback() {
     setError(null);
 
     try {
-      // Validação básica
+        // Basic validation
       if (!data.description || data.description.trim().length < 10) {
-        throw new Error('A descrição deve ter pelo menos 10 caracteres');
+          throw new Error(t('common', 'feedbackDescriptionMinLength'));
       }
 
       const context = getCurrentContext();
@@ -75,17 +76,17 @@ export function useFeedback() {
       }
 
       toast({
-        title: 'Feedback enviado com sucesso!',
-        description: 'Obrigado pelo seu feedback. Vamos analisar em breve.',
+          title: t('common', 'feedbackSuccessTitle'),
+          description: t('common', 'feedbackSuccessDesc'),
       });
 
       return true;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Erro ao enviar feedback';
+        const errorMessage = err instanceof Error ? err.message : t('common', 'errors_sendFeedbackFailed');
       setError(errorMessage);
       
       toast({
-        title: 'Erro ao enviar feedback',
+          title: t('common', 'errors_sendFeedbackFailed'),
         description: errorMessage,
         variant: 'destructive',
       });

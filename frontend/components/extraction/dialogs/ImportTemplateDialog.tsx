@@ -1,17 +1,17 @@
 /**
- * Dialog para importar template global para o projeto
+ * Dialog to import global template into the project
  * 
  * Features:
- * - Lista templates globais disponíveis
- * - Preview de seções e campos do template
- * - Importação com feedback visual
- * - Validação antes de importar
+ * - Lists available global templates
+ * - Preview of template sections and fields
+ * - Import with visual feedback
+ * - Validation before import
  * - Loading states apropriados
  * 
  * @component
  */
 
-import {useState} from 'react';
+import {useEffect, useState} from 'react';
 import {
     Dialog,
     DialogContent,
@@ -30,6 +30,7 @@ import {AlertTriangle, CheckCircle2, Download, FileText, Layers, Loader2} from '
 import {useGlobalTemplates} from '@/hooks/extraction/useGlobalTemplates';
 import {importGlobalTemplate} from '@/services/templateImportService';
 import {toast} from 'sonner';
+import {t} from '@/lib/copy';
 
 // =================== INTERFACES ===================
 
@@ -38,6 +39,8 @@ interface ImportTemplateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onTemplateImported: (templateId?: string) => void;
+    /** When set, this template is pre-selected when the dialog opens. */
+    initialTemplateId?: string | null;
 }
 
 // =================== COMPONENT ===================
@@ -47,6 +50,7 @@ export function ImportTemplateDialog({
   open,
   onOpenChange,
   onTemplateImported,
+                                         initialTemplateId,
 }: ImportTemplateDialogProps) {
   const { templates, loading: loadingTemplates } = useGlobalTemplates();
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
@@ -54,9 +58,19 @@ export function ImportTemplateDialog({
 
   const selectedTemplate = templates.find(t => t.id === selectedTemplateId);
 
+    // Sync selection when dialog opens with initialTemplateId (e.g. from config page list)
+    useEffect(() => {
+        if (!open) return;
+        if (initialTemplateId && templates.some(t => t.id === initialTemplateId)) {
+            setSelectedTemplateId(initialTemplateId);
+        } else if (!initialTemplateId) {
+            setSelectedTemplateId(null);
+        }
+    }, [open, initialTemplateId, templates]);
+
   const handleImport = async () => {
     if (!selectedTemplate) {
-      toast.error('Selecione um template para importar');
+        toast.error(t('extraction', 'importErrorSelect'));
       return;
     }
 
@@ -69,17 +83,17 @@ export function ImportTemplateDialog({
 
       if (result.success) {
         toast.success(
-          `Template "${selectedTemplate.name}" importado com sucesso! ${result.details?.entityTypesAdded} seções, ${result.details?.fieldsAdded} campos.`
+            `${t('extraction', 'importSuccess')}: "${selectedTemplate.name}". ${result.details?.entityTypesAdded} ${t('extraction', 'importSections')}, ${result.details?.fieldsAdded} fields.`
         );
         onOpenChange(false);
         onTemplateImported(result.templateId);
       } else {
-        throw new Error(result.error || 'Erro desconhecido');
+          throw new Error(result.error || 'Unknown error');
       }
 
     } catch (error: any) {
       console.error('Erro ao importar template:', error);
-      toast.error(`Erro ao importar template: ${error.message}`);
+        toast.error(`${t('extraction', 'importErrorImport')}: ${error.message}`);
     } finally {
       setImporting(false);
     }
@@ -98,23 +112,23 @@ export function ImportTemplateDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Download className="h-5 w-5" />
-            Importar Template Global
+              {t('extraction', 'importTitle')}
           </DialogTitle>
           <DialogDescription>
-            Selecione um template padronizado para usar no seu projeto.
+              {t('extraction', 'importDesc')}
           </DialogDescription>
         </DialogHeader>
 
         {loadingTemplates ? (
           <div className="flex items-center justify-center p-8">
             <Loader2 className="h-6 w-6 animate-spin mr-2" />
-            <span>Carregando templates...</span>
+              <span>{t('extraction', 'importLoadingTemplates')}</span>
           </div>
         ) : templates.length === 0 ? (
           <Alert>
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>
-              Nenhum template global disponível no momento.
+                {t('extraction', 'importNoTemplates')}
             </AlertDescription>
           </Alert>
         ) : (
@@ -156,7 +170,7 @@ export function ImportTemplateDialog({
                       <div className="flex items-center gap-4 text-sm text-muted-foreground group-hover:text-white">
                         <div className="flex items-center gap-1">
                           <Layers className="h-4 w-4 group-hover:text-white" />
-                          <span>{template.entityTypesCount} seções</span>
+                            <span>{template.entityTypesCount} {t('extraction', 'importSections')}</span>
                         </div>
                         <div className="flex items-center gap-1">
                           <FileText className="h-4 w-4 group-hover:text-white" />
@@ -174,10 +188,9 @@ export function ImportTemplateDialog({
               <Alert>
                 <CheckCircle2 className="h-4 w-4" />
                 <AlertDescription>
-                  <div className="font-medium mb-1">Template selecionado:</div>
+                    <div className="font-medium mb-1">{t('extraction', 'importTemplateSelected')}</div>
                   <div className="text-sm">
-                    <strong>{selectedTemplate.name}</strong> com {selectedTemplate.entityTypesCount} seções pré-configuradas.
-                    Todas as seções e campos serão importados para o seu projeto.
+                      <strong>{selectedTemplate.name}</strong> — {selectedTemplate.entityTypesCount} {t('extraction', 'importSections')}. {t('extraction', 'importTemplateSelectedDetail')}
                   </div>
                 </AlertDescription>
               </Alert>
@@ -192,7 +205,7 @@ export function ImportTemplateDialog({
             onClick={handleClose}
             disabled={importing}
           >
-            Cancelar
+              {t('common', 'cancel')}
           </Button>
           <Button 
             onClick={handleImport}
@@ -201,12 +214,12 @@ export function ImportTemplateDialog({
             {importing ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                Importando...
+                  {t('extraction', 'importImporting')}
               </>
             ) : (
               <>
                 <Download className="h-4 w-4 mr-2" />
-                Importar Template
+                  {t('extraction', 'importImportButton')}
               </>
             )}
           </Button>

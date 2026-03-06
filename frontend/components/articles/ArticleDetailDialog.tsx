@@ -9,6 +9,7 @@ import {Download, ExternalLink, Eye, FileText, Trash2, Upload} from "lucide-reac
 import {ArticleFileUploadDialogNew} from "./ArticleFileUploadDialogNew";
 import {formatFileSize} from "@/lib/file-validation";
 import {FILE_ROLE_LABELS} from "@/lib/file-constants";
+import {t} from "@/lib/copy";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -43,7 +44,7 @@ interface Article {
 interface ArticleFile {
   id: string;
   file_type: string;   // Formato: PDF, DOC, etc.
-  file_role?: string | null;  // Função: MAIN, SUPPLEMENT, etc.
+    file_role?: string | null;  // Role: MAIN, SUPPLEMENT, etc.
   storage_key: string;
   original_filename: string | null;
   bytes: number | null;
@@ -84,7 +85,7 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
       setArticle(data);
     } catch (error: any) {
       console.error("Error loading article:", error);
-      toast.error("Erro ao carregar artigo");
+        toast.error(t('articles', 'errorLoadArticle'));
     }
   };
 
@@ -123,7 +124,7 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
       URL.revokeObjectURL(url);
     } catch (error: any) {
       console.error("Error downloading file:", error);
-      toast.error("Erro ao baixar arquivo");
+        toast.error(t('articles', 'errorDownloadFile'));
     }
   };
 
@@ -148,7 +149,7 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
       setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch (error: any) {
       console.error("Error viewing PDF:", error);
-      toast.error("Erro ao visualizar PDF. Tente fazer o download.");
+        toast.error(t('articles', 'errorViewPdf'));
     }
   };
 
@@ -157,16 +158,16 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
 
     setDeleting(true);
     try {
-      // Deletar arquivo do storage
+        // Delete file from storage
       const { error: storageError } = await supabase.storage
         .from("articles")
         .remove([fileToDelete.storage_key]);
 
       if (storageError) {
-        console.warn("Erro ao deletar arquivo do storage:", storageError);
+          console.warn("Error deleting file from storage:", storageError);
       }
 
-      // Deletar registro do banco
+        // Delete record from database
       const { error: dbError } = await supabase
         .from("article_files")
         .delete()
@@ -174,11 +175,11 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
 
       if (dbError) throw dbError;
 
-      toast.success("Arquivo removido com sucesso!");
-      loadFiles(); // Recarregar lista de arquivos
+        toast.success(t('articles', 'fileRemovedSuccess'));
+        loadFiles(); // Reload file list
     } catch (error: any) {
       console.error("Error deleting file:", error);
-      toast.error("Erro ao remover arquivo");
+        toast.error(t('articles', 'errorRemoveFile'));
     } finally {
       setDeleting(false);
       setDeleteDialogOpen(false);
@@ -187,7 +188,7 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
   };
 
   const getFileRoleLabel = (fileRole: string | null | undefined): string => {
-    if (!fileRole) return 'Não especificado';
+      if (!fileRole) return t('articles', 'notSpecified');
     return FILE_ROLE_LABELS[fileRole as keyof typeof FILE_ROLE_LABELS] || fileRole;
   };
 
@@ -208,7 +209,7 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
             {/* Authors */}
             {article.authors && article.authors.length > 0 && (
               <div>
-                <h3 className="text-sm font-semibold mb-2">Autores</h3>
+                  <h3 className="text-sm font-semibold mb-2">Authors</h3>
                 <p className="text-sm text-muted-foreground">
                   {article.authors.join(", ")}
                 </p>
@@ -219,7 +220,7 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
             <div className="flex flex-wrap gap-4">
               {article.journal_title && (
                 <div>
-                  <h3 className="text-sm font-semibold mb-1">Revista</h3>
+                    <h3 className="text-sm font-semibold mb-1">Journal</h3>
                   <p className="text-sm text-muted-foreground italic">
                     {article.journal_title}
                   </p>
@@ -228,7 +229,7 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
 
               {article.publication_year && (
                 <div>
-                  <h3 className="text-sm font-semibold mb-1">Ano</h3>
+                    <h3 className="text-sm font-semibold mb-1">Year</h3>
                   <Badge variant="secondary">{article.publication_year}</Badge>
                 </div>
               )}
@@ -242,14 +243,14 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
 
               {article.issue && (
                 <div>
-                  <h3 className="text-sm font-semibold mb-1">Edição</h3>
+                    <h3 className="text-sm font-semibold mb-1">{t('articles', 'edition')}</h3>
                   <p className="text-sm text-muted-foreground">{article.issue}</p>
                 </div>
               )}
 
               {article.pages && (
                 <div>
-                  <h3 className="text-sm font-semibold mb-1">Páginas</h3>
+                    <h3 className="text-sm font-semibold mb-1">{t('articles', 'pages')}</h3>
                   <p className="text-sm text-muted-foreground">{article.pages}</p>
                 </div>
               )}
@@ -338,7 +339,7 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
                   onClick={() => setUploadDialogOpen(true)}
                 >
                   <Upload className="mr-2 h-4 w-4" />
-                  Adicionar Arquivo
+                    {t('articles', 'addFile')}
                 </Button>
               </div>
               
@@ -383,7 +384,7 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
                           size="sm"
                           variant="outline"
                           onClick={() => downloadFile(file)}
-                          title="Baixar arquivo"
+                          title={t('articles', 'downloadFile')}
                         >
                           <Download className="h-4 w-4" />
                         </Button>
@@ -394,7 +395,7 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
                             setFileToDelete(file);
                             setDeleteDialogOpen(true);
                           }}
-                          title="Remover arquivo"
+                          title={t('articles', 'removeFile')}
                         >
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
@@ -406,7 +407,7 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
                 <div className="text-center py-8 border rounded-lg border-dashed">
                   <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
                   <p className="text-sm text-muted-foreground mb-4">
-                    Nenhum arquivo vinculado a este artigo
+                      {t('articles', 'noFilesLinked')}
                   </p>
                   <Button
                     size="sm"
@@ -414,7 +415,7 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
                     onClick={() => setUploadDialogOpen(true)}
                   >
                     <Upload className="mr-2 h-4 w-4" />
-                    Adicionar Primeiro Arquivo
+                      {t('articles', 'addFirstFile')}
                   </Button>
                 </div>
               )}
@@ -456,20 +457,19 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Confirmar Remoção</AlertDialogTitle>
+              <AlertDialogTitle>{t('articles', 'confirmRemove')}</AlertDialogTitle>
             <AlertDialogDescription>
-              Tem certeza que deseja remover o arquivo "{fileToDelete?.original_filename}"?
-              Esta ação não pode ser desfeita.
+                {t('articles', 'confirmRemoveFile')} "{fileToDelete?.original_filename}"? {t('articles', 'confirmRemoveDesc')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+              <AlertDialogCancel disabled={deleting}>{t('common', 'cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteFile}
               disabled={deleting}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {deleting ? "Removendo..." : "Remover"}
+                {deleting ? t('articles', 'removing') : t('articles', 'remove')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

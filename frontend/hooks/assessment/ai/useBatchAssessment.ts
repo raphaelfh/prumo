@@ -11,6 +11,7 @@
 
 import {useCallback, useState} from 'react';
 import {toast} from 'sonner';
+import {t} from '@/lib/copy';
 import {AssessmentService} from '@/services/assessmentService';
 import type {AssessmentItem, AssessmentResponse} from '@/types/assessment';
 
@@ -57,7 +58,7 @@ export function useBatchAssessment(options?: {
       });
 
       if (itemsToAssess.length === 0) {
-        toast.info('Todos os items já possuem respostas. Nenhuma avaliação necessária.');
+          toast.info(t('assessment', 'batchAllItemsHaveResponses'));
         return;
       }
 
@@ -85,7 +86,7 @@ export function useBatchAssessment(options?: {
         });
 
         if (!result.ok || !result.data) {
-          throw new Error(result.error?.message || 'Erro ao avaliar em batch');
+            throw new Error(result.error?.message || t('assessment', 'errors_assessBatch'));
         }
 
         setProgress({
@@ -97,15 +98,17 @@ export function useBatchAssessment(options?: {
         const failed = result.data.totalItems - result.data.successfulItems;
         if (failed > 0) {
           toast.warning(
-            `Avaliação em lote concluída com ${failed} falha(s)`,
+              t('assessment', 'assessmentBatchPartialSuccess').replace('{{n}}', String(failed)),
             {
-              description: `${result.data.successfulItems} de ${result.data.totalItems} items avaliados com sucesso`,
+                description: t('assessment', 'assessmentBatchPartialDesc')
+                    .replace('{{success}}', String(result.data.successfulItems))
+                    .replace('{{total}}', String(result.data.totalItems)),
               duration: 6000,
             }
           );
         } else {
           toast.success(
-            `Avaliação em lote concluída! ${result.data.successfulItems} sugestões criadas`,
+              t('assessment', 'assessmentBatchSuccess').replace('{{n}}', String(result.data.successfulItems)),
             { duration: 5000 }
           );
         }
@@ -120,7 +123,7 @@ export function useBatchAssessment(options?: {
         console.error('❌ [useBatchAssessment] Erro:', err);
         const message = err instanceof Error ? err.message : String(err);
         setError(message);
-        toast.error('Erro na avaliação em lote', {
+          toast.error(t('assessment', 'errors_batchAssessment'), {
           description: message,
           duration: 6000,
         });

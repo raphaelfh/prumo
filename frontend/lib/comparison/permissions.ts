@@ -1,77 +1,59 @@
 /**
- * Regras de permissão para comparação
- * 
- * Centraliza todas as regras de permissão relacionadas a comparação
- * de extrações/assessments entre usuários.
- * 
- * Garante consistência entre Assessment e Extraction.
- * 
+ * Permission rules for comparison
+ *
+ * Centralizes all permission rules for comparing extractions/assessments across users.
+ * Keeps Assessment and Extraction consistent.
+ *
  * @module comparison/permissions
  */
 
 /**
- * Roles disponíveis para membros de projeto
- * Baseado no enum project_member_role do banco
+ * Roles available for project members
+ * Based on project_member_role enum in DB
  */
 export type UserRole = 'manager' | 'reviewer' | 'viewer' | 'consensus';
 
 /**
- * Conjunto completo de permissões de um usuário
+ * Full set of permissions for a user
  */
 export interface PermissionRules {
-  canSeeOthers: boolean;         // Ver extrações/assessments de outros
-  canResolveConflicts: boolean;  // Resolver divergências e criar consenso
-  canManageBlindMode: boolean;   // Ativar/desativar blind mode
-  canExport: boolean;            // Exportar dados e relatórios
-  canEditTemplate: boolean;      // Editar template de extração
+    canSeeOthers: boolean;         // See other users' extractions/assessments
+    canResolveConflicts: boolean;  // Resolve conflicts and create consensus
+    canManageBlindMode: boolean;   // Enable/disable blind mode
+    canExport: boolean;            // Export data and reports
+    canEditTemplate: boolean;      // Edit extraction template
 }
 
 /**
- * Determina se usuário pode ver extrações/assessments de outros
- * 
- * Regras de negócio:
- * 1. Se blind_mode = ON → Ninguém vê outros (nem manager)
- *    Rationale: Blind mode força independência total
- * 
- * 2. Se blind_mode = OFF → Apenas manager e consensus veem
- *    Rationale: Manager coordena, consensus resolve conflitos
- * 
- * 3. Reviewers e viewers NUNCA veem (mesmo sem blind mode)
- *    Rationale: Evita viés de confirmação
- * 
- * @param role - Role do usuário no projeto
- * @param isBlindMode - Se blind mode está ativo
- * @returns true se pode ver outros
+ * Determines whether user can see other users' extractions/assessments
+ *
+ * Business rules:
+ * 1. If blind_mode = ON → Nobody sees others (not even manager)
+ * 2. If blind_mode = OFF → Only manager and consensus see others
+ * 3. Reviewers and viewers NEVER see others (even without blind mode)
+ *
+ * @param role - User's role in the project
+ * @param isBlindMode - Whether blind mode is active
+ * @returns true if can see others
  */
 export function canUserSeeOthers(
   role: UserRole,
   isBlindMode: boolean
 ): boolean {
-  // Blind mode bloqueia todos (regra 1)
+    // Blind mode blocks everyone (rule 1)
   if (isBlindMode) return false;
-  
-  // Apenas manager e consensus (regra 2 e 3)
+
+    // Only manager and consensus (rules 2 and 3)
   return role === 'manager' || role === 'consensus';
 }
 
 /**
- * Retorna todas as permissões baseadas no role
- * 
- * Matriz de permissões completa:
- * 
- * | Permissão           | Manager | Consensus | Reviewer | Viewer |
- * |---------------------|---------|-----------|----------|--------|
- * | canSeeOthers        | Sim*    | Sim*      | Não      | Não    |
- * | canResolveConflicts | Sim     | Sim       | Não      | Não    |
- * | canManageBlindMode  | Sim     | Não       | Não      | Não    |
- * | canExport           | Sim     | Sim       | Não      | Não    |
- * | canEditTemplate     | Sim     | Não       | Não      | Não    |
- * 
- * * Somente se blind_mode = OFF
- * 
- * @param role - Role do usuário
- * @param isBlindMode - Estado do blind mode
- * @returns Objeto com todas as permissões
+ * Returns all permissions for a role.
+ * * Only when blind_mode = OFF for canSeeOthers.
+ *
+ * @param role - User role
+ * @param isBlindMode - Blind mode state
+ * @returns Object with all permissions
  */
 export function getRolePermissions(
   role: UserRole,
@@ -93,7 +75,7 @@ export function getRolePermissions(
       canEditTemplate: false
     },
     reviewer: {
-      canSeeOthers: false,  // Nunca vê outros (evita viés)
+        canSeeOthers: false,  // Never sees others (avoids bias)
       canResolveConflicts: false,
       canManageBlindMode: false,
       canExport: false,
@@ -112,28 +94,28 @@ export function getRolePermissions(
 }
 
 /**
- * Valida se role é válido
- * Type guard para runtime validation
- * 
- * @param role - String a ser validada
- * @returns true se é UserRole válido
+ * Validates that role is valid
+ * Type guard for runtime validation
+ *
+ * @param role - String to validate
+ * @returns true if valid UserRole
  */
 export function isValidUserRole(role: string): role is UserRole {
   return ['manager', 'reviewer', 'viewer', 'consensus'].includes(role);
 }
 
 /**
- * Retorna label legível para role
- * 
- * @param role - Role do usuário
- * @returns Label em português com emoji
+ * Returns readable label for role
+ *
+ * @param role - User role
+ * @returns English label with emoji
  */
 export function getRoleLabel(role: UserRole): string {
   const labels: Record<UserRole, string> = {
-    manager: '👑 Gerente',
-    consensus: '⚖️ Consenso',
-    reviewer: '✍️ Revisor',
-    viewer: '👁️ Visualizador'
+      manager: '👑 Manager',
+      consensus: '⚖️ Consensus',
+      reviewer: '✍️ Reviewer',
+      viewer: '👁️ Viewer'
   };
   return labels[role];
 }

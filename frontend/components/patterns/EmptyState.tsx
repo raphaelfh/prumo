@@ -1,12 +1,12 @@
 /**
- * EmptyState - Estado vazio padronizado
- * 
- * Uso:
+ * EmptyState - Standard empty state.
+ *
+ * Usage:
  * <EmptyState
  *   icon={<FileTextIcon className="h-12 w-12" />}
- *   title="Nenhum artigo encontrado"
- *   description="Comece adicionando seu primeiro artigo"
- *   action={{ label: "Adicionar", onClick: handleAdd }}
+ *   title="No articles found"
+ *   description="Start by adding your first article"
+ *   action={{ label: "Add", onClick: handleAdd }}
  * />
  */
 

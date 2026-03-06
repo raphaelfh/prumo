@@ -1,5 +1,5 @@
 /**
- * Hook para carregar tipos de entidades (Entity Types)
+ * Hook to load entity types (Entity Types)
  * 
  * Separa responsabilidade de carregar entity types do useExtractionInstances.
  * Segue SRP: uma responsabilidade por hook.
@@ -24,7 +24,7 @@ interface UseEntityTypesProps {
 }
 
 /**
- * Hook para carregar entity types de um template
+ * Hook to load entity types for a template
  */
 export function useEntityTypes({
   templateId,
@@ -34,7 +34,7 @@ export function useEntityTypes({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Carregar entity types
+    // Load entity types
   const loadEntityTypes = useCallback(async () => {
     if (!enabled || !templateId) {
       setEntityTypes([]);
@@ -64,12 +64,12 @@ export function useEntityTypes({
     }
   }, [templateId, enabled]);
 
-  // Carregar dados iniciais
+    // Load initial data
   useEffect(() => {
     loadEntityTypes();
   }, [loadEntityTypes]);
 
-  // Função de refresh
+    // Refresh function
   const refresh = useCallback(async () => {
     await loadEntityTypes();
   }, [loadEntityTypes]);

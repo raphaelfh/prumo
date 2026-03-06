@@ -1,9 +1,8 @@
 /**
- * Utilities para Assessment
+ * Assessment utilities
  *
- * Funções utilitárias centralizadas para cálculos e operações
- * comuns do módulo de assessment. Elimina duplicação de código
- * encontrada em 4+ arquivos.
+ * Centralized utility functions for calculations and common operations
+ * in the assessment module. Eliminates code duplication found in 4+ files.
  *
  * @module lib/assessment-utils
  */
@@ -36,17 +35,17 @@ export interface ProgressResult {
 }
 
 /**
- * Calcula progresso de assessment baseado em items e responses
+ * Calculates assessment progress from items and responses
  *
- * Anteriormente duplicada em:
- * - AssessmentInterface.tsx (linhas 146-170)
- * - ArticleAssessmentTable.tsx (linhas 189-303)
- * - DomainAccordion.tsx (linhas 72-82)
- * - useAssessmentData.ts (linha 204)
+ * Previously duplicated in:
+ * - AssessmentInterface.tsx (lines 146-170)
+ * - ArticleAssessmentTable.tsx (lines 189-303)
+ * - DomainAccordion.tsx (lines 72-82)
+ * - useAssessmentData.ts (line 204)
  *
- * @param items - Lista de items do instrumento
- * @param responses - Record de respostas (key: item_id)
- * @returns Objeto com métricas de progresso
+ * @param items - Instrument items list
+ * @param responses - Record of responses (key: item_id)
+ * @returns Object with progress metrics
  */
 export function calculateAssessmentProgress(
   items: AssessmentItem[],
@@ -80,11 +79,11 @@ export function calculateAssessmentProgress(
 }
 
 /**
- * Calcula progresso simplificado (apenas percentual)
+ * Calculates simplified progress (percentage only)
  *
- * @param completed - Número de items completados
- * @param total - Total de items
- * @returns Percentual (0-100)
+ * @param completed - Number of completed items
+ * @param total - Total items
+ * @returns Percentage (0-100)
  */
 export function calculateProgressPercentage(completed: number, total: number): number {
   if (total <= 0) return 0;
@@ -94,14 +93,14 @@ export function calculateProgressPercentage(completed: number, total: number): n
 // =================== CONFIDENCE CALCULATION ===================
 
 /**
- * Calcula porcentagem de confiança (0-1 → 0-100%)
- * Retorna 0 se o valor for undefined ou inválido
+ * Calculates confidence percentage (0-1 → 0-100%)
+ * Returns 0 if value is undefined or invalid
  *
- * Anteriormente duplicada em:
- * - AISuggestionConfidence.tsx (linhas 26-31)
+ * Previously duplicated in:
+ * - AISuggestionConfidence.tsx (lines 26-31)
  *
- * @param confidence - Score de confiança (0 a 1)
- * @returns Percentual (0-100)
+ * @param confidence - Confidence score (0 to 1)
+ * @returns Percentage (0-100)
  */
 export function calculateConfidencePercent(
   confidence: number | undefined | null
@@ -113,10 +112,10 @@ export function calculateConfidencePercent(
 }
 
 /**
- * Formata porcentagem de confiança para exibição
+ * Formats confidence percentage for display
  *
- * @param confidence - Score de confiança (0 a 1)
- * @returns String formatada (ex: "85%")
+ * @param confidence - Confidence score (0 to 1)
+ * @returns Formatted string (e.g. "85%")
  */
 export function formatConfidencePercent(
   confidence: number | undefined | null
@@ -127,29 +126,26 @@ export function formatConfidencePercent(
 // =================== LEVEL FORMATTING ===================
 
 /**
- * Mapa de traduções para níveis de assessment
+ * Map of assessment level labels (English display)
  */
-const LEVEL_TRANSLATIONS: Record<string, string> = {
-  Low: 'Baixo risco',
-  High: 'Alto risco',
-  Unclear: 'Não claro',
-  'Some concerns': 'Algumas preocupações',
-  Yes: 'Sim',
-  Partially: 'Parcialmente',
-  No: 'Não',
-  'Low risk': 'Baixo risco',
-  'High risk': 'Alto risco',
-  'Not applicable': 'Não aplicável',
+const LEVEL_LABELS: Record<string, string> = {
+    Low: 'Low risk',
+    High: 'High risk',
+    Unclear: 'Unclear',
+    'Some concerns': 'Some concerns',
+    Yes: 'Yes',
+    Partially: 'Partially',
+    No: 'No',
+    'Low risk': 'Low risk',
+    'High risk': 'High risk',
+    'Not applicable': 'Not applicable',
 };
 
 /**
- * Formata nível de assessment para exibição em português
- *
- * @param level - Nível original (ex: "Low", "High")
- * @returns Texto traduzido ou original se não encontrado
+ * Format assessment level for display (English)
  */
 export function formatAssessmentLevel(level: AssessmentLevel | string): string {
-  return LEVEL_TRANSLATIONS[level] || level;
+    return LEVEL_LABELS[level] || level;
 }
 
 // =================== STATUS HELPERS ===================
@@ -157,11 +153,11 @@ export function formatAssessmentLevel(level: AssessmentLevel | string): string {
 export type AssessmentStatusType = 'complete' | 'in_progress' | 'not_started';
 
 /**
- * Determina status de assessment baseado em progresso e status do banco
+ * Determines assessment status from progress and DB status
  *
- * @param status - Status do banco (optional)
- * @param progressPercentage - Percentual de completude
- * @returns Tipo de status normalizado
+ * @param status - DB status (optional)
+ * @param progressPercentage - Completion percentage
+ * @returns Normalized status type
  */
 export function getAssessmentStatus(
   status: string | undefined | null,
@@ -177,19 +173,19 @@ export function getAssessmentStatus(
 }
 
 /**
- * Retorna label em português para status
+ * Returns display label for status
  */
 export function getStatusLabel(status: AssessmentStatusType): string {
   const labels: Record<AssessmentStatusType, string> = {
-    complete: 'Completa',
-    in_progress: 'Em andamento',
-    not_started: 'Não iniciada',
+      complete: 'Complete',
+      in_progress: 'In progress',
+      not_started: 'Not started',
   };
   return labels[status];
 }
 
 /**
- * Retorna cor do badge para status
+ * Returns badge color for status
  */
 export function getStatusColor(status: AssessmentStatusType): string {
   const colors: Record<AssessmentStatusType, string> = {
@@ -203,14 +199,14 @@ export function getStatusColor(status: AssessmentStatusType): string {
 // =================== AI SUGGESTION HELPERS ===================
 
 /**
- * Gera chave única para sugestão
+ * Generates unique key for suggestion
  */
 export function getAssessmentSuggestionKey(itemId: string): string {
   return `ai_suggestion_${itemId}`;
 }
 
 /**
- * Normaliza sugestão raw do backend
+ * Normalizes raw suggestion from backend
  */
 export function normalizeAIAssessmentSuggestion(
   raw: AIAssessmentSuggestionRaw
@@ -248,7 +244,7 @@ export function normalizeAIAssessmentSuggestion(
 }
 
 /**
- * Verifica status da sugestão
+ * Checks suggestion status
  */
 export function isAssessmentSuggestionAccepted(
   suggestion: AIAssessmentSuggestion | undefined
@@ -277,16 +273,16 @@ export function isAssessmentSuggestionStatus(
 // =================== DOMAIN HELPERS ===================
 
 /**
- * Agrupa items por domínio
+ * Groups items by domain
  *
- * @param items - Lista de items
- * @returns Record agrupado por nome do domínio
+ * @param items - Items list
+ * @returns Record grouped by domain name
  */
 export function groupItemsByDomain(
   items: AssessmentItem[]
 ): Record<string, AssessmentItem[]> {
   return items.reduce((acc, item) => {
-    const domain = item.domain || 'Sem domínio';
+      const domain = item.domain || 'No domain';
     if (!acc[domain]) {
       acc[domain] = [];
     }
@@ -296,10 +292,10 @@ export function groupItemsByDomain(
 }
 
 /**
- * Ordena domínios por sort_order dos items
+ * Sorts domains by items' sort_order
  *
- * @param domains - Record de domínios
- * @returns Array de tuplas [domainName, items] ordenado
+ * @param domains - Domains record
+ * @returns Sorted array of [domainName, items] tuples
  */
 export function sortDomains(
   domains: Record<string, AssessmentItem[]>
@@ -314,14 +310,14 @@ export function sortDomains(
 // =================== VALIDATION ===================
 
 /**
- * Verifica se response é válido
+ * Checks if response is valid
  */
 export function isValidResponse(response: AssessmentResponse | null | undefined): boolean {
   return Boolean(response?.selected_level?.trim());
 }
 
 /**
- * Conta responses válidos
+ * Counts valid responses
  */
 export function countValidResponses(
   responses: Record<string, AssessmentResponse>

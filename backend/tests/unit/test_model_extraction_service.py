@@ -1,10 +1,10 @@
 """
 Unit tests for ModelExtractionService.
 
-Testa funcionalidades de extração de modelos:
-- Identificação de modelos com LLM
-- Criação de instâncias
-- Hierarquia de child instances
+Tests model extraction features:
+- Model identification with LLM
+- Instance creation
+- Child instance hierarchy
 """
 
 import json
@@ -20,13 +20,13 @@ from app.infrastructure.storage import StorageAdapter
 
 @pytest.fixture
 def mock_db():
-    """Mock da sessão de banco."""
+    """Mock database session."""
     return AsyncMock(spec=AsyncSession)
 
 
 @pytest.fixture
 def mock_storage():
-    """Mock do StorageAdapter."""
+    """Mock StorageAdapter."""
     mock = MagicMock(spec=StorageAdapter)
     mock.download = AsyncMock(return_value=b"%PDF-1.4 test content")
     return mock
@@ -34,7 +34,7 @@ def mock_storage():
 
 @pytest.fixture
 def service(mock_db, mock_storage):
-    """Fixture do ModelExtractionService com mocks."""
+    """ModelExtractionService fixture with mocks."""
     with patch("app.services.model_extraction_service.PDFProcessor") as mock_pdf, \
          patch("app.services.model_extraction_service.OpenAIService") as mock_openai, \
          patch("app.services.model_extraction_service.ArticleFileRepository") as mock_article_repo, \
@@ -88,11 +88,11 @@ def service(mock_db, mock_storage):
 
 
 class TestModelExtractionPDF:
-    """Testes de busca e download de PDFs."""
+    """Tests for PDF fetch and download."""
 
     @pytest.mark.asyncio
     async def test_get_pdf_success(self, service, mock_storage):
-        """Testa busca de PDF com sucesso."""
+        """Test successful PDF fetch."""
         article_id = uuid4()
         pdf_content = b"%PDF-1.4 test content"
         
@@ -112,7 +112,7 @@ class TestModelExtractionPDF:
 
     @pytest.mark.asyncio
     async def test_get_pdf_not_found(self, service, mock_storage):
-        """Testa erro quando PDF não encontrado."""
+        """Test error when PDF not found."""
         article_id = uuid4()
         
         # Mock article_files repository returns None
@@ -123,11 +123,11 @@ class TestModelExtractionPDF:
 
 
 class TestModelExtractionTemplate:
-    """Testes de busca de templates."""
+    """Tests for template lookup."""
 
     @pytest.mark.asyncio
     async def test_get_template_project_template(self, service):
-        """Testa busca de template de projeto."""
+        """Test project template lookup."""
         template_id = uuid4()
         
         # Mock project template
@@ -149,7 +149,7 @@ class TestModelExtractionTemplate:
 
     @pytest.mark.asyncio
     async def test_get_template_global_fallback(self, service):
-        """Testa fallback para template global."""
+        """Test fallback to global template."""
         template_id = uuid4()
         
         # Mock project template returns None (not found)
@@ -169,7 +169,7 @@ class TestModelExtractionTemplate:
 
     @pytest.mark.asyncio
     async def test_get_template_not_found(self, service):
-        """Testa erro quando template não encontrado."""
+        """Test error when template not found."""
         template_id = uuid4()
         
         # Mock both repos return None
@@ -181,11 +181,11 @@ class TestModelExtractionTemplate:
 
 
 class TestModelIdentification:
-    """Testes de identificação de modelos."""
+    """Tests for model identification."""
 
     @pytest.mark.asyncio
     async def test_identify_models_success(self, service):
-        """Testa identificação de modelos com sucesso."""
+        """Test successful model identification."""
         from app.services.openai_service import OpenAIResponse, OpenAIUsage
         
         mock_response = OpenAIResponse(
@@ -233,7 +233,7 @@ class TestModelIdentification:
 
     @pytest.mark.asyncio
     async def test_identify_models_no_models_found(self, service):
-        """Testa quando nenhum modelo é encontrado."""
+        """Test when no model is found."""
         from app.services.openai_service import OpenAIResponse, OpenAIUsage
         
         mock_response = OpenAIResponse(
@@ -257,11 +257,11 @@ class TestModelIdentification:
 
 
 class TestEntityTypeLookup:
-    """Testes de busca de entity types."""
+    """Tests for entity type lookup."""
 
     @pytest.mark.asyncio
     async def test_get_prediction_models_entity_type_id(self, service):
-        """Testa busca de entity type para prediction_models."""
+        """Test entity type lookup for prediction_models."""
         template_id = uuid4()
         entity_type_id = uuid4()
         
@@ -278,7 +278,7 @@ class TestEntityTypeLookup:
 
     @pytest.mark.asyncio
     async def test_get_child_entity_types(self, service):
-        """Testa busca de entity types filhos."""
+        """Test child entity types lookup."""
         template_id = uuid4()
         parent_id = str(uuid4())
         
@@ -305,11 +305,11 @@ class TestEntityTypeLookup:
 
 
 class TestFullExtractionFlow:
-    """Testes do fluxo completo de extração."""
+    """Tests for full extraction flow."""
 
     @pytest.mark.asyncio
     async def test_extract_full_flow(self, service, mock_storage):
-        """Testa fluxo completo de extração de modelos."""
+        """Test full model extraction flow."""
         project_id = uuid4()
         article_id = uuid4()
         template_id = uuid4()
@@ -390,7 +390,7 @@ class TestFullExtractionFlow:
 
     @pytest.mark.asyncio
     async def test_extract_no_models_found(self, service, mock_storage):
-        """Testa quando nenhum modelo é encontrado."""
+        """Test when no model is found."""
         project_id = uuid4()
         article_id = uuid4()
         template_id = uuid4()

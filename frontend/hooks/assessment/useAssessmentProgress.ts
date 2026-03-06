@@ -1,10 +1,10 @@
 /**
- * Hook para calcular progresso da avaliação (assessment)
+ * Hook to compute assessment progress
  *
- * Calcula quantos itens obrigatórios foram respondidos
- * e retorna porcentagem de completude.
+ * Computes how many required items were answered
+ * and returns completion percentage.
  *
- * Baseado em useExtractionProgress.ts (DRY + KISS)
+ * Based on useExtractionProgress.ts (DRY + KISS)
  *
  * @hook
  */
@@ -25,11 +25,11 @@ export interface UseAssessmentProgressReturn {
 // =================== HOOK ===================
 
 /**
- * Hook para calcular progresso da avaliação
+ * Hook to compute assessment progress
  *
- * @param responses - Respostas do assessment { itemId: response }
- * @param items - Lista de items do instrumento
- * @returns Progresso da avaliação (items completados, total, porcentagem, isComplete)
+ * @param responses - Assessment responses { itemId: response }
+ * @param items - Instrument items list
+ * @returns Assessment progress (completed items, total, percentage, isComplete)
  *
  * @example
  * ```tsx

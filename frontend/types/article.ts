@@ -1,7 +1,7 @@
 /**
  * Tipos TypeScript para Articles
- * 
- * Baseado nos tipos gerados do Supabase para garantir consistência
+ *
+ * Based on Supabase generated types for consistency
  * e type safety em toda a aplicação.
  */
 
@@ -14,7 +14,7 @@ import type {Database} from '@/integrations/supabase/types';
 export type Article = Database['public']['Tables']['articles']['Row'];
 
 /**
- * Tipo para inserção de Article
+ * Type for Article insert
  */
 export type ArticleInsert = Database['public']['Tables']['articles']['Insert'];
 
@@ -39,7 +39,7 @@ export interface ArticleListItem {
 }
 
 /**
- * Helper para criar ArticleListItem a partir de Article
+ * Helper to create ArticleListItem from Article
  */
 export function toArticleListItem(article: Article): ArticleListItem {
   return {

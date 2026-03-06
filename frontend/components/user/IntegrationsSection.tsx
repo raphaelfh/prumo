@@ -1,30 +1,27 @@
 /**
- * Seção de Integrações
- * Gerenciar integrações com serviços externos (Zotero, APIs de IA, etc.)
+ * Integrations section: API keys and Zotero.
  */
 
-import {Plug} from 'lucide-react';
-import {ZoteroIntegrationSection} from '@/components/project/settings/ZoteroIntegrationSection';
+import {SettingsSection} from '@/components/settings';
 import {ApiKeysSection} from '@/components/user/ApiKeysSection';
+import {ZoteroIntegrationSection} from '@/components/project/settings/ZoteroIntegrationSection';
+import {t} from '@/lib/copy';
 
 export function IntegrationsSection() {
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold mb-2 flex items-center gap-2">
-          <Plug className="h-5 w-5" />
-          Integrações
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Configure integrações com serviços externos para importar e sincronizar dados.
-        </p>
-      </div>
-
-      {/* API Keys de IA (BYOK) */}
-      <ApiKeysSection />
-
-      {/* Integração Zotero */}
-      <ZoteroIntegrationSection />
+      <div className="space-y-8">
+          <SettingsSection
+              title={t('user', 'integrationsApiKeysTitle')}
+              description={t('user', 'integrationsApiKeysDescription')}
+          >
+              <ApiKeysSection/>
+          </SettingsSection>
+          <SettingsSection
+              title={t('user', 'integrationsZoteroTitle')}
+              description={t('user', 'integrationsZoteroDescription')}
+          >
+              <ZoteroIntegrationSection/>
+          </SettingsSection>
     </div>
   );
 }

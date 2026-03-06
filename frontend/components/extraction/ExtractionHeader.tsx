@@ -1,9 +1,9 @@
 /**
- * Header unificado da interface de extração
- * 
- * Componente refatorado seguindo princípios DRY, KISS, unificado e responsivo.
- * Usa componentes menores extraídos para melhor manutenibilidade.
- * 
+ * Unified extraction interface header
+ *
+ * Refactored component following DRY, KISS, unified and responsive principles.
+ * Uses smaller extracted components for better maintainability.
+ *
  * @component
  */
 
@@ -27,57 +27,57 @@ interface Article {
 }
 
 interface ExtractionHeaderProps {
-  // Navegação
+    // Navigation
   projectId: string;
   projectName: string;
   articleTitle: string;
   onBack: () => void;
-  
-  // Navegação entre artigos
+
+    // Article navigation
   articles: Article[];
   currentArticleId: string;
   onNavigateToArticle: (articleId: string) => void;
-  
-  // Progresso
+
+    // Progress
   completedFields: number;
   totalFields: number;
   completionPercentage: number;
-  
-  // Controles de view
+
+    // View controls
   showPDF: boolean;
   onTogglePDF: () => void;
   viewMode: 'extract' | 'compare';
   onViewModeChange: (mode: 'extract' | 'compare') => void;
   hasOtherExtractions: boolean;
-  
-  // Permissões e role (opcional)
+
+    // Permissions and role (optional)
   userRole?: UserRole;
   isBlindMode?: boolean;
-  
-  // Status e ações
+
+    // Status and actions
   isSaving?: boolean;
   lastSaved?: Date | null;
   isComplete: boolean;
   onFinalize: () => void;
   submitting?: boolean;
-  
-  // AI Extraction (opcional - mantido para compatibilidade)
+
+    // AI Extraction (optional - kept for compatibility)
   templateId?: string;
   templateName?: string;
   onExtractionComplete?: (runId?: string) => void | Promise<void>;
-  
-  // Sugestões de IA (para badge na Zona 4)
+
+    // AI suggestions (for Zone 4 badge)
   aiSuggestions?: Record<string, AISuggestion>;
   onAISuggestionsClick?: () => void;
-  
-  // Dados para export (Zona 4 - Menu Mais)
+
+    // Data for export (Zone 4 - More menu)
   template?: ProjectExtractionTemplate | null;
   instances?: ExtractionInstance[];
   values?: ExtractedValue[];
-  
-  // Callback para refresh após extração
+
+    // Callback to refresh after extraction
   onRefreshInstances?: () => Promise<void>;
-  // Callback para expor estado de extração IA
+    // Callback to expose AI extraction state
   onExtractionStateChange?: (state: { loading: boolean; progress: any }) => void;
 }
 
@@ -122,7 +122,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
         {isMobile ? (
           /* Mobile Layout: Minimalista e organizado */
           <div className="flex flex-col px-4 py-2.5 gap-2.5">
-            {/* Linha 1: Navegação + Status + Finalizar */}
+              {/* Row 1: Navigation + Status + Finalize */}
             <div className="flex items-center gap-3">
               <div className="flex-1 min-w-0">
                 <HeaderNavigation
@@ -162,7 +162,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
               </div>
             </div>
 
-            {/* Linha 2: Controles PDF + Ações Secundárias */}
+              {/* Row 2: PDF controls + Secondary actions */}
             <div className="flex items-center justify-between pt-2 border-t border-border/40">
               <HeaderPDFControls
                 showPDF={showPDF}
@@ -175,8 +175,8 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                 hasOtherExtractions={hasOtherExtractions}
                 compact={true}
               />
-              
-              {/* Zona 4: Ações Secundárias (Mobile) */}
+
+                {/* Zone 4: Secondary actions (Mobile) */}
               <div className="flex items-center gap-2">
                 <HeaderAIActions
                   suggestions={aiSuggestions}
@@ -198,9 +198,9 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
             </div>
           </div>
         ) : (
-          /* Desktop Layout: 5 Zonas conforme análise UX */
-          <div className="flex items-center justify-between gap-6 px-6 py-3.5">
-            {/* Zona 1: Navegação Contextual (Extrema Esquerda) */}
+            /* Desktop layout: 5 zones per UX - header h-12 */
+            <div className="flex h-12 items-center justify-between gap-6 px-6">
+                {/* Zone 1: Contextual navigation (far left) */}
             <div className="flex-1 min-w-0">
               <HeaderNavigation
                 projectId={projectId}
@@ -215,7 +215,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
               />
             </div>
 
-            {/* Zona 2: Controles de Visualização (Centro-Esquerda) */}
+                {/* Zone 2: View controls (center-left) */}
             <div className="flex items-center gap-1 flex-shrink-0">
               <HeaderPDFControls
                 showPDF={showPDF}
@@ -244,7 +244,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
               />
             </div>
 
-            {/* Zona 4: Ações Secundárias (Centro-Direita) */}
+                {/* Zone 4: Secondary actions (center-right) */}
             <div className="flex items-center gap-2 flex-shrink-0">
               <HeaderAIActions
                 suggestions={aiSuggestions}
@@ -264,7 +264,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
               />
             </div>
 
-            {/* Zona 5: Ação Principal (Extrema Direita) */}
+                {/* Zone 5: Primary action (far right) */}
             <div className="flex items-center gap-2 flex-shrink-0">
               <HeaderFinalizeButton
                 isComplete={isComplete}

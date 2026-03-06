@@ -1,6 +1,7 @@
 import {useEffect, useState} from 'react';
 import {supabase} from '@/integrations/supabase/client';
 import {getResponseLevel} from '@/lib/assessment-utils';
+import {t} from '@/lib/copy';
 
 export interface DiscordanceData {
   articleId: string;
@@ -73,7 +74,7 @@ export const useBlindReview = (projectId: string, userId: string) => {
       }
 
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Erro ao carregar modo blind';
+        const message = error instanceof Error ? error.message : t('assessment', 'errors_loadBlindMode');
       console.error('Error loading blind review state:', error);
       setBlindState({
         isBlindMode: false,
@@ -188,7 +189,7 @@ export const useBlindReview = (projectId: string, userId: string) => {
 
   const toggleBlindMode = async () => {
     if (!blindState.canManageBlindMode) {
-      throw new Error('Apenas managers podem alterar o modo blind');
+        throw new Error(t('assessment', 'errors_onlyManagersCanToggleBlind'));
     }
 
     try {

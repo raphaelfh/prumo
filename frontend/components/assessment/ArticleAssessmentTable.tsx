@@ -1,12 +1,12 @@
 /**
- * Tabela elegante para avaliação de artigos
+ * Table for article assessment
  * 
  * Exibe artigos em formato de tabela com:
- * - Filtro global por texto
- * - Filtros por coluna (discretos até ativados)
- * - Ordenação por coluna
- * - Progresso visual minimalista
- * - Ações contextuais
+ * - Global text filter
+ * - Per-column filters (discrete until activated)
+ * - Per-column sorting
+ * - Minimalist visual progress
+ * - Contextual actions
  */
 
 import {useEffect, useMemo, useState} from 'react';
@@ -36,10 +36,12 @@ import {
 } from 'lucide-react';
 import {toast} from 'sonner';
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow,} from "@/components/ui/table";
+import {Skeleton} from "@/components/ui/skeleton";
 import {Popover, PopoverContent, PopoverTrigger,} from "@/components/ui/popover";
 import type {Article as ArticleRow} from '@/types/article';
 import {getAssessmentStatus, getStatusColor, getStatusLabel} from '@/lib/assessment-utils';
 import {useCurrentUser} from '@/hooks/useCurrentUser';
+import {t} from '@/lib/copy';
 
 type Article = Pick<ArticleRow, 'id' | 'title' | 'authors' | 'publication_year' | 'created_at'>;
 
@@ -80,8 +82,8 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
   const [error, setError] = useState<string | null>(null);
   const { user, loading: authLoading } = useCurrentUser();
   const currentUserId = user?.id ?? null;
-  
-  // Estados para filtros e ordenação
+
+    // State for filters and sort
   const [globalFilter, setGlobalFilter] = useState('');
   const [columnFilters, setColumnFilters] = useState<ColumnFilter>({
     title: '',
@@ -106,7 +108,7 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
     setError(null);
 
     try {
-      // 1. Buscar artigos do projeto
+        // 1. Fetch project articles
       const { data: articlesData, error: articlesError } = await supabase
         .from('articles')
         .select('id, title, authors, publication_year, created_at')
@@ -114,7 +116,7 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
         .order('created_at', { ascending: false });
 
       if (articlesError) {
-        console.error('Erro ao buscar artigos:', articlesError);
+          console.error('Error fetching articles:', articlesError);
         throw articlesError;
       }
 
@@ -123,7 +125,7 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
         return;
       }
 
-      // 2. Buscar avaliações do usuário atual para esses artigos
+        // 2. Fetch current user assessments for those articles
       const { data: assessmentsData, error: assessmentsError } = await supabase
         .from('assessments')
         .select('*')
@@ -133,11 +135,11 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
         .eq('is_current_version', true);
 
       if (assessmentsError) {
-        console.error('Erro ao buscar avaliações:', assessmentsError);
+          console.error('Error fetching assessments:', assessmentsError);
         throw assessmentsError;
       }
 
-      // 3. Combinar artigos com suas avaliações
+        // 3. Combine articles with their assessments
       const articlesWithAssessment: ArticleWithAssessment[] = articlesData.map(article => {
         const assessment = assessmentsData?.find(a => a.article_id === article.id) || null;
         return {
@@ -149,16 +151,16 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
 
       setArticles(articlesWithAssessment);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Erro ao carregar artigos';
-      console.error('Erro ao carregar artigos:', err);
+        const message = err instanceof Error ? err.message : t('assessment', 'tableErrorLoad');
+        console.error('Error loading articles:', err);
       setError(message);
-      toast.error(`Erro ao carregar artigos: ${message}`);
+        toast.error(`${t('assessment', 'tableErrorLoad')}: ${message}`);
     } finally {
       setLoading(false);
     }
   };
 
-  // Função para filtrar e ordenar artigos
+    // Function to filter and sort articles
   const filteredAndSortedArticles = useMemo(() => {
     const filtered = articles.filter(article => {
       // Filtro global
@@ -189,10 +191,10 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
       if (columnFilters.completion_percentage) {
         const progress = article.assessment?.completion_percentage || 0;
         const filterValue = columnFilters.completion_percentage.toLowerCase();
-        
-        if (filterValue.includes('completo') && progress < 100) return false;
-        if (filterValue.includes('andamento') && (progress === 0 || progress >= 100)) return false;
-        if (filterValue.includes('não iniciado') && progress > 0) return false;
+
+          if (filterValue.includes('complete') && progress < 100) return false;
+          if (filterValue.includes('progress') && (progress === 0 || progress >= 100)) return false;
+          if (filterValue.includes('not started') && progress > 0) return false;
         if (!isNaN(Number(filterValue)) && !progress.toString().includes(filterValue)) return false;
       }
 
@@ -202,10 +204,10 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
         const statusType = getAssessmentStatus(article.assessment?.status, progress);
         
         const filterValue = columnFilters.status.toLowerCase();
-        
-        if (filterValue === 'completo' && statusType !== 'complete') return false;
-        if (filterValue === 'em andamento' && statusType !== 'in_progress') return false;
-        if (filterValue === 'não iniciado' && statusType !== 'not_started') return false;
+
+          if (filterValue === 'complete' && statusType !== 'complete') return false;
+          if (filterValue === 'in_progress' && statusType !== 'in_progress') return false;
+          if (filterValue === 'not_started' && statusType !== 'not_started') return false;
       }
 
       // Filtro por autores
@@ -219,7 +221,7 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
       return true;
     });
 
-    // Ordenação
+      // Sort
     filtered.sort((a, b) => {
       let aValue: string | number;
       let bValue: string | number;
@@ -238,7 +240,7 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
           bValue = b.assessment?.completion_percentage || 0;
           break;
         case 'status': {
-          // Ordenar por status: não iniciado (0), em andamento (1), completo (2)
+            // Sort by status: not started (0), in progress (1), complete (2)
           const aProgress = a.assessment?.completion_percentage || 0;
           const bProgress = b.assessment?.completion_percentage || 0;
           const aStatus = getAssessmentStatus(a.assessment?.status, aProgress);
@@ -262,7 +264,7 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
           return 0;
       }
 
-      // Lógica de ordenação corrigida
+        // Corrected sort logic
       if (sortDirection === 'asc') {
         if (aValue < bValue) return -1;
         if (aValue > bValue) return 1;
@@ -340,12 +342,11 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
       ? (columnFilters[column].length > 0 && columnFilters[column] !== 'all')
       : columnFilters[column].length > 0;
 
-    // Status options para o dropdown
     const statusOptions = [
-      { value: 'all', label: 'Todos os status' },
-      { value: 'não iniciado', label: 'Não iniciado' },
-      { value: 'em andamento', label: 'Em andamento' },
-      { value: 'completo', label: 'Completo' }
+        {value: 'all', label: t('assessment', 'statusAll')},
+        {value: 'not_started', label: t('assessment', 'statusNotStarted')},
+        {value: 'in_progress', label: t('assessment', 'statusInProgress')},
+        {value: 'complete', label: t('assessment', 'statusComplete')}
     ];
 
     return (
@@ -362,14 +363,13 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
         <PopoverContent className="w-64 p-3" align="start">
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              Filtrar por {
-                column === 'title' ? 'Título' : 
-                column === 'publication_year' ? 'Ano' : 
-                column === 'completion_percentage' ? 'Progresso' :
-                column === 'status' ? 'Status' :
-                column === 'authors' ? 'Autores' :
-                'Campo'
-              }
+                {t('assessment', 'tableFilterLabel')}{' '}
+                {column === 'title' ? t('assessment', 'tableColumnTitle') :
+                    column === 'publication_year' ? t('assessment', 'tableColumnYear') :
+                        column === 'completion_percentage' ? t('assessment', 'tableColumnProgress') :
+                            column === 'status' ? t('assessment', 'tableColumnStatus') :
+                                column === 'authors' ? t('assessment', 'tableColumnAuthors') :
+                                    t('assessment', 'filterColumnField')}
             </label>
             
             {column === 'status' ? (
@@ -378,7 +378,7 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
                 onValueChange={(value) => updateColumnFilter(column, value)}
               >
                 <SelectTrigger className="h-8">
-                  <SelectValue placeholder="Selecionar status..." />
+                    <SelectValue placeholder={t('assessment', 'tableFilterStatusPlaceholder')}/>
                 </SelectTrigger>
                 <SelectContent>
                   {statusOptions.map((option) => (
@@ -392,11 +392,11 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
               <Input
                 autoFocus
                 placeholder={
-                  column === 'title' ? 'Buscar no título...' :
-                  column === 'publication_year' ? 'Ex: 2023, 2020-2024...' :
-                  column === 'completion_percentage' ? 'Ex: completo, andamento, 50...' :
-                  column === 'authors' ? 'Buscar autor...' :
-                  'Buscar...'
+                    column === 'title' ? t('assessment', 'tableFilterTitlePlaceholder') :
+                        column === 'publication_year' ? t('assessment', 'tableFilterYearPlaceholder') :
+                            column === 'completion_percentage' ? t('assessment', 'tableFilterProgressPlaceholder') :
+                                column === 'authors' ? t('assessment', 'tableFilterAuthorsPlaceholder') :
+                                    t('assessment', 'tableFilterSearchPlaceholder')
                 }
                 value={columnFilters[column]}
                 onChange={(e) => updateColumnFilter(column, e.target.value)}
@@ -412,7 +412,7 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
                 onClick={() => updateColumnFilter(column, column === 'status' ? 'all' : '')}
                 className="h-6 text-xs"
               >
-                Limpar
+                  {t('assessment', 'tableFilterClear')}
               </Button>
             )}
           </div>
@@ -421,12 +421,41 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
     );
   };
 
-  // Estado: Loading
+    // Estado: Loading — skeleton que espelha o layout da tabela
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        <span className="ml-2 text-muted-foreground">Carregando artigos...</span>
+        <div className="space-y-4">
+            <div className="flex items-center gap-2">
+                <Skeleton className="h-9 flex-1 max-w-sm"/>
+                <Skeleton className="h-4 w-24"/>
+            </div>
+            <div className="rounded-lg border border-border/40">
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead className="w-[30%]"><Skeleton className="h-4 w-20"/></TableHead>
+                            <TableHead className="w-[15%]"><Skeleton className="h-4 w-14"/></TableHead>
+                            <TableHead className="w-[10%]"><Skeleton className="h-4 w-10"/></TableHead>
+                            <TableHead className="w-[15%]"><Skeleton className="h-4 w-16"/></TableHead>
+                            <TableHead className="w-[10%]"><Skeleton className="h-4 w-12"/></TableHead>
+                            <TableHead className="w-[15%] text-center"><Skeleton
+                                className="h-4 w-12 mx-auto"/></TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {[1, 2, 3, 4, 5, 6, 7].map((i) => (
+                            <TableRow key={i}>
+                                <TableCell><Skeleton className="h-4 w-full max-w-[280px]"/></TableCell>
+                                <TableCell><Skeleton className="h-4 w-24"/></TableCell>
+                                <TableCell><Skeleton className="h-4 w-12"/></TableCell>
+                                <TableCell><Skeleton className="h-5 w-16"/></TableCell>
+                                <TableCell><Skeleton className="h-5 w-20"/></TableCell>
+                                <TableCell className="text-center"><Skeleton className="h-8 w-16 mx-auto"/></TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            </div>
       </div>
     );
   }
@@ -438,12 +467,12 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
         <div className="flex items-center space-x-3 text-destructive">
           <AlertCircle className="h-5 w-5" />
           <div>
-            <p className="font-medium">Erro ao carregar artigos</p>
+              <p className="font-medium">{t('assessment', 'tableErrorLoad')}</p>
             <p className="text-sm mt-1">{error}</p>
           </div>
         </div>
         <Button onClick={loadArticles} variant="outline" className="mt-4">
-          Tentar novamente
+            {t('assessment', 'tableTryAgain')}
         </Button>
       </div>
     );
@@ -454,8 +483,8 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
     return (
       <div className="text-center text-muted-foreground py-12">
         <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-        <p className="font-medium">Nenhum artigo encontrado neste projeto</p>
-        <p className="text-sm mt-2">Adicione artigos primeiro para iniciar as avaliações.</p>
+          <p className="font-medium">{t('assessment', 'tableNoArticlesInProject')}</p>
+          <p className="text-sm mt-2">{t('assessment', 'tableNoArticlesDesc')}</p>
       </div>
     );
   }
@@ -468,19 +497,19 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Buscar em todos os campos..."
+              placeholder={t('assessment', 'tableSearchPlaceholder')}
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
             className="pl-10 h-9"
           />
         </div>
-        <div className="text-sm text-muted-foreground">
-          {filteredAndSortedArticles.length} de {articles.length} artigos
+          <div className="text-[13px] text-muted-foreground">
+              {filteredAndSortedArticles.length} / {articles.length} {t('assessment', 'tableArticlesCount')}
         </div>
       </div>
 
       {/* Tabela */}
-      <div className="rounded-lg border">
+        <div className="rounded-lg border border-border/40">
         <Table>
           <TableHeader>
             <TableRow>
@@ -492,7 +521,7 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
                     onClick={() => handleSort('title')}
                     className="h-auto p-0 font-semibold hover:bg-transparent"
                   >
-                    Título
+                      {t('assessment', 'tableColumnTitle')}
                   </Button>
                   {getSortIcon('title')}
                   <ColumnFilterButton column="title" />
@@ -500,7 +529,7 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
               </TableHead>
               <TableHead className="w-[15%]">
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold">Autores</span>
+                    <span className="font-semibold">{t('assessment', 'tableColumnAuthors')}</span>
                   <ColumnFilterButton column="authors" />
                 </div>
               </TableHead>
@@ -512,7 +541,7 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
                     onClick={() => handleSort('publication_year')}
                     className="h-auto p-0 font-semibold hover:bg-transparent"
                   >
-                    Ano
+                      {t('assessment', 'tableColumnYear')}
                   </Button>
                   {getSortIcon('publication_year')}
                   <ColumnFilterButton column="publication_year" />
@@ -526,7 +555,7 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
                     onClick={() => handleSort('completion_percentage')}
                     className="h-auto p-0 font-semibold hover:bg-transparent"
                   >
-                    Progresso
+                      {t('assessment', 'tableColumnProgress')}
                   </Button>
                   {getSortIcon('completion_percentage')}
                   <ColumnFilterButton column="completion_percentage" />
@@ -540,13 +569,13 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
                     onClick={() => handleSort('status')}
                     className="h-auto p-0 font-semibold hover:bg-transparent"
                   >
-                    Status
+                      {t('assessment', 'tableColumnStatus')}
                   </Button>
                   {getSortIcon('status')}
                   <ColumnFilterButton column="status" />
                 </div>
               </TableHead>
-              <TableHead className="w-[15%] text-center">Ações</TableHead>
+                <TableHead className="w-[15%] text-center">{t('assessment', 'tableActions')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -555,13 +584,13 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
               const isComplete = getAssessmentStatus(article.assessment?.status, progress) === 'complete';
 
               return (
-                <TableRow key={article.id} className="hover:bg-muted/50">
-                  <TableCell>
-                    <div className="font-medium text-sm leading-tight">
+                  <TableRow key={article.id} className="hover:bg-muted/50 transition-[background-color] duration-75">
+                      <TableCell className="text-[13px]">
+                          <div className="font-medium leading-tight">
                       {article.title}
                     </div>
                   </TableCell>
-                  <TableCell>
+                      <TableCell className="text-[13px]">
                     {article.authors && article.authors.length > 0 ? (
                       <div className="text-sm flex items-center gap-1 max-w-full overflow-hidden">
                         <User className="h-3 w-3 text-muted-foreground flex-shrink-0" />
@@ -571,35 +600,35 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
                         </span>
                       </div>
                     ) : (
-                      <span className="text-sm text-muted-foreground">N/A</span>
+                        <span className="text-muted-foreground">N/A</span>
                     )}
                   </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1 text-sm">
+                      <TableCell className="text-[13px]">
+                          <div className="flex items-center gap-1">
                       <Calendar className="h-3 w-3 text-muted-foreground" />
                       {article.publication_year || 'N/A'}
                     </div>
                   </TableCell>
-                  <TableCell>
+                      <TableCell className="text-[13px]">
                     {article.assessment ? (
                       <div className="space-y-1">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-muted-foreground">Progresso</span>
+                          <div className="flex items-center justify-between text-[13px]">
+                              <span className="text-muted-foreground">{t('assessment', 'tableColumnProgress')}</span>
                           <span className="font-medium">{progress.toFixed(0)}%</span>
                         </div>
                         <Progress value={progress} className="h-1.5" />
                       </div>
                     ) : (
-                      <div className="text-xs text-muted-foreground flex items-center gap-1">
+                        <div className="text-muted-foreground flex items-center gap-1">
                         <BarChart3 className="h-3 w-3" />
-                        Não iniciada
+                            {t('assessment', 'tableNotStarted')}
                       </div>
                     )}
                   </TableCell>
-                  <TableCell>
+                      <TableCell className="text-[13px]">
                     {getStatusBadge(article)}
                   </TableCell>
-                  <TableCell className="text-center">
+                      <TableCell className="text-center text-[13px]">
                     {!article.assessment ? (
                       <Button 
                         onClick={() => handleStartAssessment(article.id)}
@@ -612,7 +641,7 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
                         ) : (
                           <PlayCircle className="h-3 w-3" />
                         )}
-                        Iniciar
+                          {t('assessment', 'tableStart')}
                       </Button>
                     ) : (
                       <Button 
@@ -626,7 +655,7 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
                         ) : (
                           <Edit className="h-3 w-3" />
                         )}
-                        {isComplete ? 'Ver' : 'Continuar'}
+                          {isComplete ? t('assessment', 'tableView') : t('assessment', 'tableContinue')}
                       </Button>
                     )}
                   </TableCell>
@@ -637,12 +666,12 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
         </Table>
       </div>
 
-      {/* Estado vazio após filtros */}
+        {/* Empty state after filters */}
       {filteredAndSortedArticles.length === 0 && articles.length > 0 && (
         <div className="text-center text-muted-foreground py-8">
           <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
-          <p className="font-medium">Nenhum artigo encontrado</p>
-          <p className="text-sm mt-1">Tente ajustar os filtros de busca.</p>
+            <p className="font-medium">{t('assessment', 'tableNoArticlesFilter')}</p>
+            <p className="text-sm mt-1">{t('assessment', 'tableAdjustFilters')}</p>
           <Button
             variant="outline"
             size="sm"
@@ -652,7 +681,7 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
             }}
             className="mt-2"
           >
-            Limpar filtros
+              {t('assessment', 'tableClearFilters')}
           </Button>
         </div>
       )}

@@ -7,6 +7,7 @@ import {Textarea} from "@/components/ui/textarea";
 import {supabase} from "@/integrations/supabase/client";
 import {toast} from "sonner";
 import {Upload} from "lucide-react";
+import {t} from "@/lib/copy";
 import {FILE_ROLES} from "@/lib/file-constants";
 import {detectFileFormat, validateFile} from "@/lib/file-validation";
 
@@ -44,7 +45,7 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
     publication_month?: string;
   }>({});
 
-  // Validação de campos de data
+    // Date field validation
   const validateDateField = (field: 'publication_year' | 'publication_month', value: string): string | undefined => {
       if (!value || value.trim() === '') {
         setValidationErrors(prev => ({ ...prev, [field]: undefined }));
@@ -53,7 +54,7 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
 
       const num = parseInt(value.trim(), 10);
       if (isNaN(num)) {
-        const error = 'Deve ser um número válido';
+          const error = t('articles', 'validNumber');
         setValidationErrors(prev => ({ ...prev, [field]: error }));
         return error;
       }
@@ -61,11 +62,11 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
       let error: string | undefined;
       if (field === 'publication_month') {
         if (num < 1 || num > 12) {
-          error = 'Mês deve estar entre 1 e 12';
+            error = t('articles', 'monthBetween');
         }
       } else if (field === 'publication_year') {
         if (num < 1600 || num > 2500) {
-          error = 'Ano deve estar entre 1600 e 2500';
+            error = t('articles', 'yearRange');
         }
       }
 
@@ -76,7 +77,7 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.title.trim()) {
-      toast.error("O título é obrigatório");
+        toast.error(t('articles', 'titleRequiredToast'));
       return;
     }
 
@@ -85,13 +86,13 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
     const monthError = validateDateField('publication_month', formData.publication_month);
 
     if (yearError || monthError) {
-      toast.error("Por favor, corrija os erros nos campos de data antes de salvar");
+        toast.error(t('articles', 'fixDateErrors'));
       return;
     }
 
     setLoading(true);
     try {
-      // Helper para validar e converter valores numéricos de data
+        // Helper to validate and convert numeric date values
       const parseDateValue = (value: string | undefined): number | null => {
         if (!value || value.trim() === '') return null;
         const num = parseInt(value.trim(), 10);
@@ -138,10 +139,10 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
 
       // Upload PDF if provided
       if (pdfFile && article) {
-        // Validar arquivo antes do upload
+          // Validate file before upload
         const validation = validateFile(pdfFile);
         if (!validation.valid) {
-          toast.error(validation.error || "Arquivo inválido");
+            toast.error(validation.error || t('articles', 'invalidFile'));
           return;
         }
 
@@ -155,7 +156,7 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
         if (uploadError) {
           // Rollback: deletar artigo criado
           await supabase.from("articles").delete().eq("id", article.id);
-          throw new Error("Erro ao fazer upload do arquivo: " + uploadError.message);
+            throw new Error(t('articles', 'errorUploadFile') + ': ' + uploadError.message);
         }
 
         // Detectar formato do arquivo automaticamente
@@ -176,7 +177,7 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
           // Rollback: deletar arquivo do storage e artigo
           await supabase.storage.from("articles").remove([fileName]);
           await supabase.from("articles").delete().eq("id", article.id);
-          throw new Error("Erro ao registrar arquivo: " + insertError.message);
+            throw new Error(t('articles', 'errorRegisterFile') + ': ' + insertError.message);
         }
       }
 
@@ -186,7 +187,7 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
       resetForm();
     } catch (error: any) {
       console.error("Error adding article:", error);
-      toast.error(error.message || "Erro ao adicionar artigo");
+        toast.error(error.message || t('articles', 'errorAddArticle'));
     } finally {
       setLoading(false);
     }
@@ -217,9 +218,9 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Adicionar Artigo</DialogTitle>
+            <DialogTitle>{t('articles', 'addArticle')}</DialogTitle>
           <DialogDescription>
-            Preencha as informações bibliográficas do artigo
+              {t('articles', 'addArticleDesc')}
           </DialogDescription>
         </DialogHeader>
 
@@ -227,34 +228,34 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
           {/* Required Fields */}
           <div className="space-y-4">
             <div>
-              <Label htmlFor="title">Título *</Label>
+                <Label htmlFor="title">{t('articles', 'titleRequired')}</Label>
               <Input
                 id="title"
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                placeholder="Título do artigo"
+                placeholder={t('articles', 'titlePlaceholder')}
                 required
               />
             </div>
 
             <div>
-              <Label htmlFor="abstract">Resumo</Label>
+                <Label htmlFor="abstract">{t('articles', 'abstract')}</Label>
               <Textarea
                 id="abstract"
                 value={formData.abstract}
                 onChange={(e) => setFormData({ ...formData, abstract: e.target.value })}
-                placeholder="Resumo ou abstract do artigo"
+                placeholder={t('articles', 'abstractPlaceholder')}
                 rows={4}
               />
             </div>
 
             <div>
-              <Label htmlFor="authors">Autores (separados por vírgula)</Label>
+                <Label htmlFor="authors">{t('articles', 'authors')}</Label>
               <Input
                 id="authors"
                 value={formData.authors}
                 onChange={(e) => setFormData({ ...formData, authors: e.target.value })}
-                placeholder="Silva A, Santos B, Oliveira C"
+                placeholder={t('articles', 'authorsPlaceholder')}
               />
             </div>
           </div>
@@ -262,7 +263,7 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
           {/* Publication Details */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="publication_year">Ano de Publicação</Label>
+                <Label htmlFor="publication_year">{t('articles', 'publicationYear')}</Label>
               <Input
                 id="publication_year"
                 type="number"
@@ -284,7 +285,7 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
               )}
             </div>
             <div>
-              <Label htmlFor="publication_month">Mês de Publicação</Label>
+                <Label htmlFor="publication_month">{t('articles', 'publicationMonth')}</Label>
               <Input
                 id="publication_month"
                 type="number"
@@ -310,12 +311,12 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
           {/* Journal Details */}
           <div className="space-y-4">
             <div>
-              <Label htmlFor="journal_title">Revista/Jornal</Label>
+                <Label htmlFor="journal_title">{t('articles', 'journalTitle')}</Label>
               <Input
                 id="journal_title"
                 value={formData.journal_title}
                 onChange={(e) => setFormData({ ...formData, journal_title: e.target.value })}
-                placeholder="Nome da revista científica"
+                placeholder={t('articles', 'journalPlaceholder')}
               />
             </div>
 
@@ -330,7 +331,7 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
                 />
               </div>
               <div>
-                <Label htmlFor="issue">Edição</Label>
+                  <Label htmlFor="issue">{t('articles', 'edition')}</Label>
                 <Input
                   id="issue"
                   value={formData.issue}
@@ -339,7 +340,7 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
                 />
               </div>
               <div>
-                <Label htmlFor="pages">Páginas</Label>
+                  <Label htmlFor="pages">{t('articles', 'pages')}</Label>
                 <Input
                   id="pages"
                   value={formData.pages}
@@ -394,17 +395,17 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
           {/* Additional Fields */}
           <div className="space-y-4">
             <div>
-              <Label htmlFor="keywords">Palavras-chave (separadas por vírgula)</Label>
+                <Label htmlFor="keywords">{t('articles', 'keywords')}</Label>
               <Input
                 id="keywords"
                 value={formData.keywords}
                 onChange={(e) => setFormData({ ...formData, keywords: e.target.value })}
-                placeholder="revisão sistemática, meta-análise, saúde"
+                placeholder={t('articles', 'keywordsPlaceholder')}
               />
             </div>
 
             <div>
-              <Label htmlFor="url_landing">URL do Artigo</Label>
+                <Label htmlFor="url_landing">{t('articles', 'articleUrl')}</Label>
               <Input
                 id="url_landing"
                 type="url"
@@ -417,7 +418,7 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
 
           {/* PDF Upload */}
           <div>
-            <Label htmlFor="pdf">Upload PDF (opcional)</Label>
+              <Label htmlFor="pdf">{t('articles', 'uploadPdfOptional')}</Label>
             <div className="mt-2">
               <Input
                 id="pdf"
@@ -441,10 +442,10 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
               onClick={() => onOpenChange(false)}
               disabled={loading}
             >
-              Cancelar
+                {t('common', 'cancel')}
             </Button>
             <Button type="submit" disabled={loading}>
-              {loading ? "Salvando..." : "Adicionar Artigo"}
+                {loading ? t('articles', 'saving') : t('articles', 'addArticle')}
             </Button>
           </div>
         </form>

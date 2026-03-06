@@ -1,5 +1,5 @@
 /**
- * Tipos para targets de assessment
+ * Types for assessment targets
  * 
  * Usa Discriminated Union para type safety completo:
  * - AssessmentArticleTarget: assessment do artigo inteiro

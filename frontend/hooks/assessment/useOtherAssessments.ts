@@ -1,5 +1,6 @@
 import {useCallback, useEffect, useState} from 'react';
 import {supabase} from '@/integrations/supabase/client';
+import {t} from '@/lib/copy';
 import type {AssessmentResponseValue} from '@/types/assessment';
 
 export interface OtherAssessment {
@@ -12,7 +13,7 @@ export interface OtherAssessment {
   completion_percentage: number;
   user_name?: string;
   user_email?: string;
-  extraction_instance_id?: string | null; // Novo: para assessment por instância
+    extraction_instance_id?: string | null; // For per-instance assessment
 }
 
 export const useOtherAssessments = (
@@ -29,7 +30,7 @@ export const useOtherAssessments = (
       setLoading(true);
       setError(null);
 
-      // Busca assessments de outros usuários (excluindo o usuário atual)
+        // Fetch assessments from other users (excluding current user)
       const { data, error } = await supabase
         .from('assessments')
         .select(`
@@ -53,7 +54,7 @@ export const useOtherAssessments = (
 
       if (error) throw error;
 
-      // Transforma os dados para incluir informações do usuário
+        // Transform data to include user info
       const transformedData: OtherAssessment[] = data.map(assessment => ({
         id: assessment.id,
         article_id: assessment.article_id,
@@ -63,14 +64,14 @@ export const useOtherAssessments = (
         status: assessment.status,
         completion_percentage: assessment.completion_percentage,
         extraction_instance_id: assessment.extraction_instance_id,
-        user_name: assessment.profiles?.full_name || 'Usuário',
+          user_name: assessment.profiles?.full_name || t('project', 'teamUserFallback'),
         user_email: assessment.profiles?.email || ''
       }));
 
       setOtherAssessments(transformedData);
     } catch (error: unknown) {
       console.error('Error loading other assessments:', error);
-      setError(error instanceof Error ? error.message : 'Erro desconhecido');
+        setError(error instanceof Error ? error.message : t('common', 'errors_unknownError'));
     } finally {
       setLoading(false);
     }
@@ -105,13 +106,13 @@ export const useOtherAssessments = (
     return articleAssessments
       .filter(assessment => assessment.responses?.[itemId])
       .map(assessment => ({
-        user_name: assessment.user_name || 'Usuário',
+          user_name: assessment.user_name || t('project', 'teamUserFallback'),
         response: assessment.responses[itemId]
       }));
   };
 
   /**
-   * Novo: Buscar assessments de outros usuários para uma instância específica
+   * Fetch other users' assessments for a specific instance
    */
   const getOtherAssessmentsForInstance = (
     extractionInstanceId: string,
@@ -125,7 +126,7 @@ export const useOtherAssessments = (
   };
 
   /**
-   * Novo: Buscar respostas de outros para um item específico de uma instância
+   * Fetch other users' responses for a specific item of an instance
    */
   const getOtherAssessmentsForInstanceItem = (
     extractionInstanceId: string,
@@ -137,7 +138,7 @@ export const useOtherAssessments = (
     return instanceAssessments
       .filter(assessment => assessment.responses?.[itemId])
       .map(assessment => ({
-        user_name: assessment.user_name || 'Usuário',
+          user_name: assessment.user_name || t('project', 'teamUserFallback'),
         response: assessment.responses[itemId]
       }));
   };

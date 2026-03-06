@@ -2,6 +2,7 @@ import {useCallback, useEffect, useState} from 'react';
 import {supabase} from '@/integrations/supabase/client';
 import {Tables} from '@/integrations/supabase/types';
 import {useErrorTracking} from '@/services/errorTracking';
+import {t} from '@/lib/copy';
 
 export type AIConfiguration = Tables<'ai_assessment_configs'>;
 
@@ -51,7 +52,7 @@ export const useAIAssessmentConfig = ({
 
       setConfig(data);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Erro desconhecido';
+        const errorMessage = err instanceof Error ? err.message : t('common', 'unknownError');
       setError(errorMessage);
       captureError(err instanceof Error ? err : new Error(errorMessage), {
         component: 'useAIAssessmentConfig',
@@ -83,7 +84,7 @@ export const useAIAssessmentConfig = ({
 
       setConfig(data);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Erro ao salvar configuração';
+        const errorMessage = err instanceof Error ? err.message : t('assessment', 'errors_saveConfig');
       setError(errorMessage);
       captureError(err instanceof Error ? err : new Error(errorMessage), {
         component: 'useAIAssessmentConfig',
@@ -97,7 +98,7 @@ export const useAIAssessmentConfig = ({
 
   const updateConfig = useCallback(async (updates: Partial<AIConfiguration>) => {
     if (!config) {
-      throw new Error('Nenhuma configuração encontrada para atualizar');
+        throw new Error(t('assessment', 'errors_configNotFoundUpdate'));
     }
 
     try {
@@ -114,7 +115,7 @@ export const useAIAssessmentConfig = ({
 
       setConfig(data);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Erro ao atualizar configuração';
+        const errorMessage = err instanceof Error ? err.message : t('assessment', 'errors_updateConfig');
       setError(errorMessage);
       captureError(err instanceof Error ? err : new Error(errorMessage), {
         component: 'useAIAssessmentConfig',
@@ -128,7 +129,7 @@ export const useAIAssessmentConfig = ({
 
   const deleteConfig = useCallback(async () => {
     if (!config) {
-      throw new Error('Nenhuma configuração encontrada para deletar');
+        throw new Error(t('assessment', 'errors_configNotFoundDelete'));
     }
 
     try {
@@ -143,7 +144,7 @@ export const useAIAssessmentConfig = ({
 
       setConfig(null);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Erro ao deletar configuração';
+        const errorMessage = err instanceof Error ? err.message : t('assessment', 'errors_deleteConfig');
       setError(errorMessage);
       captureError(err instanceof Error ? err : new Error(errorMessage), {
         component: 'useAIAssessmentConfig',

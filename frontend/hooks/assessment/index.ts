@@ -1,5 +1,5 @@
 /**
- * Exportações centralizadas dos hooks de assessment (avaliação de qualidade)
+ * Centralized exports for assessment (quality assessment) hooks
  *
  * Baseado em hooks/extraction/index.ts (DRY + KISS)
  */

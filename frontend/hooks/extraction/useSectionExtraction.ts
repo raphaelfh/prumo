@@ -1,16 +1,16 @@
 /**
- * Hook para Extração de Seção Específica
- * 
- * Hook React para gerenciar extração de IA de uma seção (entity type) específica.
- * 
- * FOCO: Extração granular por seção (section-extraction pipeline).
- * Permite ao usuário extrair dados de uma seção específica do template por vez.
- * 
+ * Hook for specific section extraction
+ *
+ * React hook to manage AI extraction of a specific section (entity type).
+ *
+ * FOCUS: Granular per-section extraction (section-extraction pipeline).
+ * Allows user to extract data from one template section at a time.
+ *
  * FEATURES:
- * - Estado de loading e error
- * - Toast notifications automáticas
- * - Callback para refresh de sugestões após extração
- * - Tratamento de erros amigável
+ * - Loading and error state
+ * - Automatic toast notifications
+ * - Callback to refresh suggestions after extraction
+ * - User-friendly error handling
  */
 
 import {useCallback, useState} from "react";
@@ -24,6 +24,7 @@ import {
     NoInstancesError,
     PDFNotFoundError,
 } from "@/lib/ai-extraction/errors";
+import {t} from "@/lib/copy";
 
 /**
  * Tipo de retorno do hook
@@ -35,13 +36,13 @@ export interface UseSectionExtractionReturn {
 }
 
 /**
- * Hook para extração de seção específica
- * 
- * USO:
+ * Hook for specific section extraction
+ *
+ * USAGE:
  * ```tsx
  * const { extractSection, loading, error } = useSectionExtraction({
  *   onSuccess: (runId) => {
- *     // Refresh sugestões ou navegar
+ *     // Refresh suggestions or navigate
  *   }
  * });
  * 
@@ -52,9 +53,9 @@ export interface UseSectionExtractionReturn {
  *   entityTypeId
  * });
  * ```
- * 
- * @param options - Opções do hook (callback de sucesso)
- * @returns Função de extração, estado de loading e error
+ *
+ * @param options - Hook options (success callback)
+ * @returns Extract function, loading state and error
  */
 export function useSectionExtraction(options?: {
   onSuccess?: (runId: string, suggestionsCreated: number) => void;
@@ -63,18 +64,17 @@ export function useSectionExtraction(options?: {
   const [error, setError] = useState<string | null>(null);
 
   /**
-   * Extrai dados de uma seção específica
-   * 
-   * @param request - Parâmetros da extração
+   * Extracts data from a specific section
+   * @param request - Extraction parameters
    */
   const extractSection = useCallback(
     async (request: SectionExtractionRequest) => {
-      console.log('[useSectionExtraction] Iniciando extração', request);
+        console.log('[useSectionExtraction] Starting extraction', request);
       setLoading(true);
       setError(null);
 
       try {
-        // Chamar service para executar extração
+          // Call service to run extraction
         console.log('[useSectionExtraction] Chamando service...');
         const result = await SectionExtractionService.extractSection(request);
         console.log('[useSectionExtraction] Service retornou', {
@@ -86,36 +86,33 @@ export function useSectionExtraction(options?: {
           throw new Error("No data returned from extraction");
         }
 
-        // Verificar se há sugestões criadas
+          // Check if suggestions were created
         if (result.data.suggestionsCreated === 0) {
-          // Avisar que nenhuma sugestão foi criada
-          toast.warning("Extração concluída sem sugestões", {
-            description: "A extração foi concluída, mas nenhuma sugestão foi criada. Verifique se os nomes dos campos correspondem exatamente ou se o PDF contém os dados esperados.",
+            toast.warning(t('extraction', 'sectionExtractionNoSuggestionsTitle'), {
+                description: t('extraction', 'sectionExtractionNoSuggestionsDesc'),
             duration: 6000,
           });
         } else {
-        // Toast de sucesso com informações úteis
-        // Backend FastAPI envia tokensTotal direto, não em metadata
         const tokensUsed = result.data.tokensTotal || result.data.metadata?.tokensTotal || 0;
         toast.success(
-            `Extração concluída! ${result.data.suggestionsCreated} sugestão(ões) criada(s) para esta seção.`,
+            t('extraction', 'sectionExtractionSuccessTitle').replace('{{n}}', String(result.data.suggestionsCreated)),
           {
-            description: `${tokensUsed} tokens usados`,
+              description: t('extraction', 'sectionExtractionTokensUsed').replace('{{n}}', String(tokensUsed)),
           },
         );
         }
 
         // Chamar callback de sucesso se fornecido
-        // Útil para refresh de sugestões após extração
-        // IMPORTANTE: Não fazer await - callback não deve bloquear o reset do loading
+          // Useful to refresh suggestions after extraction
+          // IMPORTANT: Do not await - callback must not block loading reset
         if (options?.onSuccess) {
           // Executar callback sem bloquear (pode ser async)
-          // O loading será resetado no finally independentemente do callback
+            // Loading will be reset in finally regardless of callback
           Promise.resolve(
             options.onSuccess(result.data.runId, result.data.suggestionsCreated)
           ).catch(err => {
             console.error('[useSectionExtraction] Erro no callback onSuccess:', err);
-            // Não bloquear o reset do loading por erro no callback
+              // Do not block loading reset on callback error
           });
         }
       } catch (err: any) {
@@ -125,7 +122,7 @@ export function useSectionExtraction(options?: {
           stack: err instanceof Error ? err.stack : undefined,
         });
 
-        // Tratar erro de forma amigável usando classes de erro customizadas
+          // Handle error in a user-friendly way using custom error classes
         const message = getErrorMessage(err);
         const code = getErrorCode(err);
         setError(message);
@@ -133,33 +130,32 @@ export function useSectionExtraction(options?: {
         // Toast de erro com mensagem clara baseada no tipo de erro
         const errorCode = code || '';
         if (err instanceof NoInstancesError || errorCode === 'NO_INSTANCES') {
-          toast.error("Erro na extração", {
+            toast.error(t('extraction', 'sectionExtractionErrorTitle'), {
             description: message,
             duration: 6000,
           });
         } else if (err instanceof PDFNotFoundError || errorCode === 'PDF_NOT_FOUND') {
-          toast.error("Erro na extração", {
+            toast.error(t('extraction', 'sectionExtractionErrorTitle'), {
             description: message,
           });
         } else if (err instanceof FieldNameMismatchError || errorCode === 'FIELD_NAME_MISMATCH') {
-          toast.error("Erro: Campos não correspondem", {
+            toast.error(t('extraction', 'sectionExtractionErrorFieldMismatch'), {
             description: message,
             duration: 8000,
           });
         } else if (err instanceof AuthenticationError || errorCode === 'AUTH_ERROR') {
-          toast.error("Erro de autenticação", {
-            description: "Por favor, faça login novamente.",
+            toast.error(t('extraction', 'sectionExtractionErrorAuth'), {
+                description: t('extraction', 'sectionExtractionErrorAuthDesc'),
           });
         } else {
-          // Verificar se a mensagem de erro do backend indica field mismatch
           const errorMessage = message.toLowerCase();
           if (errorMessage.includes('field name') || errorMessage.includes('mismatch') || errorMessage.includes('no mapping')) {
-            toast.error("Erro: Campos não correspondem", {
-              description: "Os campos extraídos não correspondem aos campos esperados. Verifique os logs para mais detalhes.",
+              toast.error(t('extraction', 'sectionExtractionErrorFieldMismatch'), {
+                  description: t('extraction', 'sectionExtractionErrorFieldMismatchDesc'),
               duration: 8000,
-          });
-        } else {
-          toast.error(`Erro na extração: ${message}`);
+              });
+          } else {
+              toast.error(`${t('extraction', 'sectionExtractionErrorTitle')}: ${message}`);
           }
         }
 

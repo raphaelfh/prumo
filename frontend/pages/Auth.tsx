@@ -5,6 +5,7 @@ import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {Label} from "@/components/ui/label";
 import {toast} from "sonner";
+import {t, auth} from "@/lib/copy";
 import {
     AlertCircle,
     BarChart3,
@@ -19,33 +20,35 @@ import {
 
 // ─── Error mapping ────────────────────────────────────────────────────────────
 
-const AUTH_ERRORS: Record<string, string> = {
-    "Invalid login credentials": "Email ou senha incorretos",
-    "Email not confirmed": "Por favor, confirme seu email antes de entrar",
-    "User already registered": "Este email já está cadastrado",
-    "Password should be at least 6 characters": "A senha deve ter pelo menos 6 caracteres",
-    "rate limited": "Muitas tentativas. Aguarde alguns minutos",
+const AUTH_ERROR_KEYS: Record<string, keyof typeof auth> = {
+    "Invalid login credentials": "errorInvalidCredentials",
+    "Email not confirmed": "errorEmailNotConfirmed",
+    "User already registered": "errorAlreadyRegistered",
+    "Password should be at least 6 characters": "errorPasswordMinLength",
+    "rate limited": "errorRateLimited",
 };
 
 const mapAuthError = (msg: string): string => {
-    const key = Object.keys(AUTH_ERRORS).find((k) =>
+    const key = Object.keys(AUTH_ERROR_KEYS).find((k) =>
         msg.toLowerCase().includes(k.toLowerCase())
     );
-    return key ? AUTH_ERRORS[key] : msg;
+    return key ? t("auth", AUTH_ERROR_KEYS[key]) : msg;
 };
 
 // ─── Password helpers ─────────────────────────────────────────────────────────
 
 function validatePassword(password: string): string | null {
-    if (password.length < 8) return "A senha deve ter no mínimo 8 caracteres";
-    if (!/[A-Z]/.test(password)) return "A senha deve conter pelo menos uma letra maiúscula";
-    if (!/[a-z]/.test(password)) return "A senha deve conter pelo menos uma letra minúscula";
-    if (!/[0-9]/.test(password)) return "A senha deve conter pelo menos um número";
+    if (password.length < 8) return t("auth", "passwordMinLength");
+    if (!/[A-Z]/.test(password)) return t("auth", "passwordUppercase");
+    if (!/[a-z]/.test(password)) return t("auth", "passwordLowercase");
+    if (!/[0-9]/.test(password)) return t("auth", "passwordNumber");
     return null;
 }
 
-function getPasswordStrength(password: string) {
-    if (!password) return {strength: 0, label: "", color: ""};
+type StrengthKey = "strengthWeak" | "strengthMedium" | "strengthStrong";
+
+function getPasswordStrength(password: string): { strength: number; labelKey: StrengthKey; color: string } {
+    if (!password) return {strength: 0, labelKey: "strengthWeak", color: ""};
     let strength = 0;
     if (password.length >= 8) strength++;
     if (password.length >= 12) strength++;
@@ -53,9 +56,9 @@ function getPasswordStrength(password: string) {
     if (/[a-z]/.test(password)) strength++;
     if (/[0-9]/.test(password)) strength++;
     if (/[^A-Za-z0-9]/.test(password)) strength++;
-    if (strength <= 2) return {strength, label: "Fraca", color: "bg-red-500"};
-    if (strength <= 4) return {strength, label: "Média", color: "bg-yellow-500"};
-    return {strength, label: "Forte", color: "bg-green-500"};
+    if (strength <= 2) return {strength, labelKey: "strengthWeak", color: "bg-red-500"};
+    if (strength <= 4) return {strength, labelKey: "strengthMedium", color: "bg-yellow-500"};
+    return {strength, labelKey: "strengthStrong", color: "bg-green-500"};
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -88,48 +91,48 @@ function LeftPanel() {
             <div className="space-y-8">
                 <div>
                     <h1 className="text-3xl font-bold leading-tight text-white">
-                        Revisões Sistemáticas<br/>com precisão e eficiência
+                        {t("auth", "tagline")}
                     </h1>
                     <p className="mt-3 text-indigo-200 text-sm leading-relaxed">
-                        Gerencie suas revisões científicas do início ao fim, com ferramentas colaborativas e
-                        rastreamento completo.
+                        {t("auth", "taglineDesc")}
                     </p>
                 </div>
                 <div className="space-y-4">
                     <FeatureItem
                         icon={FileText}
-                        title="Gestão de Artigos"
-                        desc="Importe, organize e rastreie todos os artigos do seu protocolo"
+                        title={t("auth", "featureArticlesTitle")}
+                        desc={t("auth", "featureArticlesDesc")}
                     />
                     <FeatureItem
                         icon={ClipboardCheck}
-                        title="Avaliação de Qualidade"
-                        desc="Aplique instrumentos padronizados como PROBAST e CHARMS"
+                        title={t("auth", "featureQualityTitle")}
+                        desc={t("auth", "featureQualityDesc")}
                     />
                     <FeatureItem
                         icon={BarChart3}
-                        title="Extração de Dados"
-                        desc="Extraia e harmonize dados com rastreabilidade completa"
+                        title={t("auth", "featureExtractionTitle")}
+                        desc={t("auth", "featureExtractionDesc")}
                     />
                 </div>
             </div>
 
             <p className="text-xs text-indigo-300">
-                © {new Date().getFullYear()} Review Hub · Todos os direitos reservados
+                © {new Date().getFullYear()} Review Hub · {t("auth", "rightsReserved")}
             </p>
         </div>
     );
 }
 
 function PasswordStrengthBar({password}: { password: string }) {
-    const {strength, label, color} = getPasswordStrength(password);
+    const {strength, labelKey, color} = getPasswordStrength(password);
     if (!password) return null;
+    const label = t("auth", labelKey);
     return (
         <div className="space-y-1.5">
             <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Força da senha:</span>
+                <span className="text-muted-foreground">{t("auth", "passwordStrengthLabel")}</span>
                 <span className={`font-medium ${
-                    label === "Fraca" ? "text-red-500" : label === "Média" ? "text-yellow-500" : "text-green-500"
+                    labelKey === "strengthWeak" ? "text-red-500" : labelKey === "strengthMedium" ? "text-yellow-500" : "text-green-500"
                 }`}>{label}</span>
             </div>
             <div className="flex gap-1">
@@ -152,12 +155,12 @@ function PasswordMatchIndicator({password, confirm}: { password: string; confirm
             {match ? (
                 <>
                     <CheckCircle2 className="h-3 w-3 text-green-500"/>
-                    <span className="text-green-500">As senhas coincidem</span>
+                    <span className="text-green-500">{t("auth", "passwordsMatch")}</span>
                 </>
             ) : (
                 <>
                     <AlertCircle className="h-3 w-3 text-red-500"/>
-                    <span className="text-red-500">As senhas não coincidem</span>
+                    <span className="text-red-500">{t("auth", "passwordsDoNotMatch")}</span>
                 </>
             )}
         </div>
@@ -189,10 +192,10 @@ function LoginForm({
           password: form.password,
       });
       if (error) throw error;
-      toast.success("Login realizado com sucesso!");
+        toast.success(t("auth", "loginSuccess"));
       navigate("/");
     } catch (err: any) {
-        setError(mapAuthError(err.message || "Erro ao fazer login"));
+        setError(mapAuthError(err.message || t("auth", "errorLogin")));
     } finally {
       setLoading(false);
     }
@@ -209,11 +212,11 @@ function LoginForm({
             )}
 
             <div className="space-y-1.5">
-                <Label htmlFor="login-email">Email</Label>
+                <Label htmlFor="login-email">{t("auth", "email")}</Label>
                 <Input
                     id="login-email"
                     type="email"
-                    placeholder="seu@email.com"
+                    placeholder={t("auth", "emailPlaceholder")}
                     value={form.email}
                     onChange={(e) => setForm({...form, email: e.target.value})}
                     required
@@ -223,13 +226,13 @@ function LoginForm({
 
             <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                    <Label htmlFor="login-password">Senha</Label>
+                    <Label htmlFor="login-password">{t("auth", "password")}</Label>
                     <button
                         type="button"
                         onClick={onForgotPassword}
                         className="text-xs text-primary hover:underline"
                     >
-                        Esqueceu sua senha?
+                        {t("auth", "forgotPassword")}
                     </button>
                 </div>
                 <div className="relative">
@@ -257,21 +260,21 @@ function LoginForm({
                 {loading ? (
                     <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin"/>
-                        Entrando...
+                        {t("auth", "signingIn")}
                     </>
                 ) : (
-                    "Entrar"
+                    t("auth", "signIn")
                 )}
             </Button>
 
             <p className="text-center text-sm text-muted-foreground">
-                Não tem uma conta?{" "}
+                {t("auth", "noAccount")}{" "}
                 <button
                     type="button"
                     onClick={onSwitchToRegister}
                     className="font-medium text-primary hover:underline"
                 >
-                    Criar conta
+                    {t("auth", "createAccount")}
                 </button>
             </p>
         </form>
@@ -302,7 +305,7 @@ function RegisterForm({onSwitchToLogin}: { onSwitchToLogin: () => void }) {
             return;
         }
         if (form.password !== form.confirmPassword) {
-            setError("As senhas não coincidem");
+            setError(t("auth", "passwordsDoNotMatch"));
             return;
         }
 
@@ -319,7 +322,7 @@ function RegisterForm({onSwitchToLogin}: { onSwitchToLogin: () => void }) {
       if (error) throw error;
         setEmailSent(true);
     } catch (err: any) {
-        setError(mapAuthError(err.message || "Erro ao criar conta"));
+        setError(mapAuthError(err.message || t("auth", "errorCreateAccount")));
     } finally {
       setLoading(false);
     }
@@ -333,14 +336,13 @@ function RegisterForm({onSwitchToLogin}: { onSwitchToLogin: () => void }) {
                     <CheckCircle2 className="h-7 w-7 text-green-600 dark:text-green-400"/>
                 </div>
                 <div>
-                    <p className="font-semibold">Verifique seu email</p>
+                    <p className="font-semibold">{t("auth", "checkEmailTitle")}</p>
                     <p className="mt-1 text-sm text-muted-foreground">
-                        Enviamos um link de confirmação para <strong>{form.email}</strong>.
-                        Clique no link para ativar sua conta.
+                        {t("auth", "checkEmailDesc")} <strong>{form.email}</strong>. {t("auth", "checkEmailAction")}
                     </p>
                 </div>
                 <Button variant="outline" className="w-full" onClick={onSwitchToLogin}>
-                    Voltar ao login
+                    {t("auth", "backToLogin")}
                 </Button>
             </div>
         );
@@ -357,11 +359,11 @@ function RegisterForm({onSwitchToLogin}: { onSwitchToLogin: () => void }) {
             )}
 
             <div className="space-y-1.5">
-                <Label htmlFor="reg-name">Nome Completo</Label>
+                <Label htmlFor="reg-name">{t("auth", "fullName")}</Label>
                 <Input
                     id="reg-name"
                     type="text"
-                    placeholder="Seu nome"
+                    placeholder={t("auth", "fullNamePlaceholder")}
                     value={form.fullName}
                     onChange={(e) => setForm({...form, fullName: e.target.value})}
                     required
@@ -370,11 +372,11 @@ function RegisterForm({onSwitchToLogin}: { onSwitchToLogin: () => void }) {
             </div>
 
             <div className="space-y-1.5">
-                <Label htmlFor="reg-email">Email</Label>
+                <Label htmlFor="reg-email">{t("auth", "email")}</Label>
                 <Input
                     id="reg-email"
                     type="email"
-                    placeholder="seu@email.com"
+                    placeholder={t("auth", "emailPlaceholder")}
                     value={form.email}
                     onChange={(e) => setForm({...form, email: e.target.value})}
                     required
@@ -383,12 +385,12 @@ function RegisterForm({onSwitchToLogin}: { onSwitchToLogin: () => void }) {
             </div>
 
             <div className="space-y-1.5">
-                <Label htmlFor="reg-password">Senha</Label>
+                <Label htmlFor="reg-password">{t("auth", "password")}</Label>
                 <div className="relative">
                     <Input
                         id="reg-password"
                         type={show.password ? "text" : "password"}
-                        placeholder="Mínimo 8 caracteres"
+                        placeholder={t("auth", "passwordPlaceholder")}
                         value={form.password}
                         onChange={(e) => setForm({...form, password: e.target.value})}
                         required
@@ -408,12 +410,12 @@ function RegisterForm({onSwitchToLogin}: { onSwitchToLogin: () => void }) {
             </div>
 
             <div className="space-y-1.5">
-                <Label htmlFor="reg-confirm">Confirmar Senha</Label>
+                <Label htmlFor="reg-confirm">{t("auth", "confirmPassword")}</Label>
                 <div className="relative">
                     <Input
                         id="reg-confirm"
                         type={show.confirm ? "text" : "password"}
-                        placeholder="Repita a senha"
+                        placeholder={t("auth", "confirmPasswordPlaceholder")}
                         value={form.confirmPassword}
                         onChange={(e) => setForm({...form, confirmPassword: e.target.value})}
                         required
@@ -436,21 +438,21 @@ function RegisterForm({onSwitchToLogin}: { onSwitchToLogin: () => void }) {
                 {loading ? (
                     <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin"/>
-                        Criando conta...
+                        {t("auth", "creatingAccount")}
                     </>
                 ) : (
-                    "Criar Conta"
+                    t("auth", "createAccountButton")
                 )}
             </Button>
 
             <p className="text-center text-sm text-muted-foreground">
-                Já tem uma conta?{" "}
+                {t("auth", "alreadyHaveAccount")}{" "}
                 <button
                     type="button"
                     onClick={onSwitchToLogin}
                     className="font-medium text-primary hover:underline"
                 >
-                    Entrar
+                    {t("auth", "signIn")}
                 </button>
             </p>
         </form>
@@ -476,7 +478,7 @@ function ForgotPasswordForm({onBack}: { onBack: () => void }) {
             if (error) throw error;
             setSent(true);
         } catch (err: any) {
-            setError(mapAuthError(err.message || "Erro ao enviar email"));
+            setError(mapAuthError(err.message || t("auth", "errorSendEmail")));
         } finally {
             setLoading(false);
         }
@@ -490,14 +492,13 @@ function ForgotPasswordForm({onBack}: { onBack: () => void }) {
                     <CheckCircle2 className="h-7 w-7 text-green-600 dark:text-green-400"/>
                 </div>
                 <div>
-                    <p className="font-semibold">Email enviado!</p>
+                    <p className="font-semibold">{t("auth", "emailSentTitle")}</p>
                     <p className="mt-1 text-sm text-muted-foreground">
-                        Verifique sua caixa de entrada em <strong>{email}</strong> e clique
-                        no link para redefinir sua senha.
+                        {t("auth", "emailSentDesc")} <strong>{email}</strong>. {t("auth", "emailSentAction")}
                     </p>
                 </div>
                 <Button variant="outline" className="w-full" onClick={onBack}>
-                    Voltar ao login
+                    {t("auth", "backToLogin")}
                 </Button>
             </div>
         );
@@ -514,15 +515,15 @@ function ForgotPasswordForm({onBack}: { onBack: () => void }) {
             )}
 
             <p className="text-sm text-muted-foreground">
-                Digite seu email e enviaremos um link para redefinir sua senha.
+                {t("auth", "enterEmailDesc")}
             </p>
 
             <div className="space-y-1.5">
-                <Label htmlFor="forgot-email">Email</Label>
+                <Label htmlFor="forgot-email">{t("auth", "email")}</Label>
                 <Input
                     id="forgot-email"
                     type="email"
-                    placeholder="seu@email.com"
+                    placeholder={t("auth", "emailPlaceholder")}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
@@ -534,10 +535,10 @@ function ForgotPasswordForm({onBack}: { onBack: () => void }) {
                 {loading ? (
                     <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin"/>
-                        Enviando...
+                        {t("auth", "sending")}
                     </>
                 ) : (
-                    "Enviar link de recuperação"
+                    t("auth", "sendRecoveryLink")
                 )}
             </Button>
 
@@ -546,7 +547,7 @@ function ForgotPasswordForm({onBack}: { onBack: () => void }) {
                 onClick={onBack}
                 className="w-full text-center text-sm text-muted-foreground hover:text-foreground"
             >
-                ← Voltar ao login
+                {t("auth", "backToLoginArrow")}
             </button>
         </form>
     );
@@ -554,11 +555,11 @@ function ForgotPasswordForm({onBack}: { onBack: () => void }) {
 
 // ─── View state headings ──────────────────────────────────────────────────────
 
-const VIEW_HEADINGS = {
-    login: {title: "Bem-vindo de volta", subtitle: "Entre com sua conta para continuar"},
-    register: {title: "Criar conta", subtitle: "Cadastre-se para começar a usar o Review Hub"},
-    forgotPassword: {title: "Redefinir senha", subtitle: "Informe seu email para recuperar o acesso"},
-} as const;
+const VIEW_HEADINGS: Record<ViewState, { title: string; subtitle: string }> = {
+    login: {title: t("auth", "welcomeBack"), subtitle: t("auth", "welcomeBackSubtitle")},
+    register: {title: t("auth", "createAccountTitle"), subtitle: t("auth", "createAccountSubtitle")},
+    forgotPassword: {title: t("auth", "resetPasswordTitle"), subtitle: t("auth", "resetPasswordSubtitle")},
+};
 
 type ViewState = "login" | "register" | "forgotPassword";
 

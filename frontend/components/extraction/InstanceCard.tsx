@@ -1,15 +1,15 @@
 /**
- * Card de Instância de Extração
- * 
- * Componente usado para seções com cardinality='many'.
- * Cada card representa uma instância (ex: "Model 1", "Model 2").
- * 
+ * Extraction instance card
+ *
+ * Used for sections with cardinality='many'.
+ * Each card represents one instance (e.g. "Model 1", "Model 2").
+ *
  * Features:
- * - Label editável inline
- * - Campos da instância
- * - Botão remover
- * - Badge com número
- * 
+ * - Inline editable label
+ * - Instance fields
+ * - Remove button
+ * - Number badge
+ *
  * @component
  */
 
@@ -19,8 +19,9 @@ import {Input} from '@/components/ui/input';
 import {Badge} from '@/components/ui/badge';
 import {Edit2, Save, Trash2, X} from 'lucide-react';
 import {toast} from 'sonner';
+import {t} from '@/lib/copy';
 import {supabase} from '@/integrations/supabase/client';
-import MemoizedFieldInput from './FieldInput'; // Usar versão memoizada
+import MemoizedFieldInput from './FieldInput'; // Use memoized version
 import type {ExtractionField, ExtractionInstance} from '@/types/extraction';
 import type {OtherExtraction} from '@/hooks/extraction/colaboracao/useOtherExtractions';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
@@ -71,14 +72,14 @@ export function InstanceCard(props: InstanceCardProps) {
 
       if (error) throw error;
 
-      instance.label = editedLabel.trim(); // Atualizar local
+        instance.label = editedLabel.trim(); // Update local
       setIsEditingLabel(false);
-      toast.success('Label atualizado com sucesso');
+        toast.success(t('extraction', 'labelUpdatedSuccess'));
 
     } catch (error: any) {
-      console.error('Erro ao atualizar label:', error);
-      toast.error('Erro ao atualizar label');
-      setEditedLabel(instance.label); // Reverter
+        console.error('Error updating label:', error);
+        toast.error(t('extraction', 'errors_updateLabel'));
+        setEditedLabel(instance.label); // Revert
     } finally {
       setSaving(false);
     }
@@ -91,11 +92,11 @@ export function InstanceCard(props: InstanceCardProps) {
 
   return (
     <div className="bg-slate-50 rounded-lg border border-slate-200 shadow-sm">
-      {/* Header da instância */}
+        {/* Instance header */}
       <div className="px-8 py-5 border-b border-slate-200">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 flex-1">
-            {/* Badge com número */}
+              {/* Number badge */}
             <Badge variant="outline" className="text-xs shrink-0 bg-white">
               #{index}
             </Badge>
@@ -144,7 +145,7 @@ export function InstanceCard(props: InstanceCardProps) {
             )}
           </div>
 
-          {/* Botão remover */}
+            {/* Remove button */}
           {canRemove && onRemove && (
             <Button
               variant="ghost"
@@ -158,20 +159,20 @@ export function InstanceCard(props: InstanceCardProps) {
         </div>
       </div>
 
-      {/* Campos da instância */}
+        {/* Instance fields */}
       <div className="bg-white rounded-b-lg px-2">
         {fields.map(field => {
           const key = `${instance.id}_${field.id}`;
           const suggestion = props.aiSuggestions?.[key];
-          
-          // Debug: log quando sugestão não é encontrada mas deveria existir
+
+            // Debug: log when suggestion is not found but should exist
           if (process.env.NODE_ENV === 'development' && !suggestion) {
-            // Verificar se há sugestões para outras instâncias do mesmo campo
+              // Check if there are suggestions for other instances of the same field
             const hasSuggestionsForField = Object.keys(props.aiSuggestions || {}).some(
               k => k.endsWith(`_${field.id}`)
             );
             if (hasSuggestionsForField) {
-              console.warn(`⚠️ [InstanceCard] Sugestão não encontrada para ${key}, mas há sugestões para o campo ${field.id} em outras instâncias`, {
+                console.warn(`[InstanceCard] Suggestion not found for ${key}, but there are suggestions for field ${field.id} in other instances`, {
                 instanceId: instance.id,
                 fieldId: field.id,
                 fieldName: field.name,
@@ -193,16 +194,16 @@ export function InstanceCard(props: InstanceCardProps) {
               otherExtractions={props.otherExtractions}
               aiSuggestion={suggestion}
               onAcceptAI={() => {
-                // Wrapper para passar instanceId junto com fieldId
+                  // Wrapper to pass instanceId with fieldId
                 if (props.onAcceptAI) {
-                  // onAcceptAI espera (instanceId, fieldId)
+                    // onAcceptAI expects (instanceId, fieldId)
                   props.onAcceptAI(instance.id, field.id);
                 }
               }}
               onRejectAI={() => {
-                // Wrapper para passar instanceId junto com fieldId
+                  // Wrapper to pass instanceId with fieldId
                 if (props.onRejectAI) {
-                  // onRejectAI espera (instanceId, fieldId)
+                    // onRejectAI expects (instanceId, fieldId)
                   props.onRejectAI(instance.id, field.id);
                 }
               }}

@@ -1,5 +1,5 @@
 /**
- * Exportações centralizadas dos hooks de extração
+ * Centralized exports for extraction hooks
  */
 
 export { useExtractionTemplates } from './useExtractionTemplates';

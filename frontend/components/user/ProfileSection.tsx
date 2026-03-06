@@ -1,29 +1,23 @@
 /**
- * Seção de Perfil do Usuário
- * Exibir e editar informações do perfil
+ * User profile section: view and edit profile information.
  */
 
-import {useEffect, useState} from 'react';
+import {useEffect, useMemo, useState} from 'react';
 import {useForm} from 'react-hook-form';
 import {zodResolver} from '@hookform/resolvers/zod';
 import {z} from 'zod';
-import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
-import {Form, FormControl, FormField, FormItem, FormLabel, FormMessage,} from '@/components/ui/form';
+import {Form, FormControl, FormField, FormItem, FormMessage} from '@/components/ui/form';
 import {Input} from '@/components/ui/input';
+import {Skeleton} from '@/components/ui/skeleton';
 import {Avatar, AvatarFallback, AvatarImage} from '@/components/ui/avatar';
-import {CheckCircle2, Loader2, Mail, User} from 'lucide-react';
+import {SettingsSection, SettingsCard, SettingsField} from '@/components/settings';
+import {CheckCircle2, Loader2, User} from 'lucide-react';
 import {supabase} from '@/integrations/supabase/client';
 import {toast} from 'sonner';
+import {t} from '@/lib/copy';
 
-const schema = z.object({
-    full_name: z
-        .string()
-        .min(1, 'Nome é obrigatório')
-        .max(100, 'Nome muito longo (máximo 100 caracteres)'),
-});
-
-type FormValues = z.infer<typeof schema>;
+type FormValues = { full_name: string };
 
 const getInitials = (name: string) =>
     name
@@ -38,6 +32,17 @@ export function ProfileSection() {
   const [saving, setSaving] = useState(false);
     const [email, setEmail] = useState('');
     const [avatarUrl, setAvatarUrl] = useState('');
+
+    const schema = useMemo(
+        () =>
+            z.object({
+                full_name: z
+                    .string()
+                    .min(1, t('user', 'profileNameRequired'))
+                    .max(100, t('user', 'profileNameMaxLength')),
+            }),
+        []
+    );
 
     const form = useForm<FormValues>({
         resolver: zodResolver(schema),
@@ -54,7 +59,7 @@ export function ProfileSection() {
         const {data: {user}} = await supabase.auth.getUser();
 
       if (!user) {
-        toast.error('Usuário não autenticado');
+          toast.error(t('user', 'profileErrorNotAuthenticated'));
         return;
       }
 
@@ -64,14 +69,14 @@ export function ProfileSection() {
         .eq('id', user.id)
         .maybeSingle();
 
-        if (error) console.error('Erro ao carregar perfil:', error);
+        if (error) console.error('Error loading profile:', error);
 
         setEmail(user.email ?? '');
         setAvatarUrl(profileData?.avatar_url ?? '');
         form.reset({full_name: profileData?.full_name ?? ''});
     } catch (err) {
-        console.error('Erro ao carregar perfil:', err);
-      toast.error('Erro ao carregar perfil');
+        console.error('Error loading profile:', err);
+        toast.error(t('user', 'profileErrorLoading'));
     } finally {
       setLoading(false);
     }
@@ -82,7 +87,7 @@ export function ProfileSection() {
     try {
         const {data: {user}} = await supabase.auth.getUser();
 
-        if (!user) throw new Error('Usuário não autenticado');
+        if (!user) throw new Error('User not authenticated');
 
         const {error} = await supabase
         .from('profiles')
@@ -91,10 +96,10 @@ export function ProfileSection() {
 
       if (error) throw error;
 
-      toast.success('Perfil atualizado com sucesso!');
+        toast.success(t('user', 'profileUpdated'));
     } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Erro ao salvar perfil';
-        console.error('Erro ao salvar perfil:', err);
+        const message = err instanceof Error ? err.message : t('user', 'profileErrorSaving');
+        console.error('Error saving profile:', err);
         toast.error(message);
     } finally {
       setSaving(false);
@@ -105,94 +110,104 @@ export function ProfileSection() {
 
   if (loading) {
     return (
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <SettingsSection title={t('user', 'profileTitle')} description={t('user', 'profileDescription')}>
+            <SettingsCard title={t('user', 'profileCardTitle')} description={t('user', 'profileCardDescription')}>
+                <div className="space-y-4">
+                    <div className="flex items-center gap-4">
+                        <Skeleton className="h-16 w-16 rounded-full"/>
+                        <div className="space-y-1">
+                            <Skeleton className="h-[13px] w-24"/>
+                            <Skeleton className="h-3 w-32"/>
+                        </div>
+                    </div>
+                    <Skeleton className="h-9 w-full"/>
+                    <Skeleton className="h-9 w-full"/>
+                    <div className="flex justify-end pt-4 border-t border-border/40">
+                        <Skeleton className="h-9 w-28"/>
+                    </div>
           </div>
-        </CardContent>
-      </Card>
+            </SettingsCard>
+        </SettingsSection>
     );
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <User className="h-5 w-5" />
-          Perfil
-        </CardTitle>
-          <CardDescription>Gerencie suas informações pessoais</CardDescription>
-      </CardHeader>
-
-      <CardContent className="space-y-6">
-        {/* Avatar */}
-        <div className="flex items-center gap-4">
+      <SettingsSection title={t('user', 'profileTitle')} description={t('user', 'profileDescription')}>
+          <SettingsCard title={t('user', 'profileCardTitle')} description={t('user', 'profileCardDescription')}>
+              <div className="space-y-4">
+                  <div className="flex items-center gap-4">
             <Avatar className="h-16 w-16">
                 <AvatarImage src={avatarUrl} alt={fullName}/>
                 <AvatarFallback className="text-base bg-primary/10 text-primary">
                     {fullName ? getInitials(fullName) : <User className="h-6 w-6"/>}
-            </AvatarFallback>
-          </Avatar>
+                </AvatarFallback>
+            </Avatar>
             <div>
-            <p className="text-sm font-medium">Foto de perfil</p>
-                <p className="text-sm text-muted-foreground">Upload em breve disponível</p>
-          </div>
-        </div>
+                <p className="text-[13px] font-medium">{t('user', 'profilePicture')}</p>
+                <p className="text-[12px] text-muted-foreground">{t('user', 'profileUploadComingSoon')}</p>
+            </div>
+                  </div>
 
-          <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                  {/* Email (read-only) */}
-                  <div className="space-y-2">
-                      <div className="flex items-center gap-1.5 text-sm font-medium">
-                          <Mail className="h-4 w-4 text-muted-foreground"/>
-                          Email
-                      </div>
+                  <SettingsField
+                      label={t('user', 'profileEmailLabel')}
+                      htmlFor="profile-email"
+                      hint={t('user', 'profileEmailHint')}
+                  >
                       <Input
+                          id="profile-email"
                           type="email"
                           value={email}
                           disabled
-                          className="bg-muted text-muted-foreground"
-                          aria-label="Email (somente leitura)"
+                          className="h-9 text-[13px] bg-muted text-muted-foreground"
+                          aria-label={t('user', 'profileEmailAria')}
                       />
-                      <p className="text-xs text-muted-foreground">
-                          Gerenciado pelo sistema de autenticação — não pode ser alterado.
-                      </p>
-                  </div>
+                  </SettingsField>
 
-                  {/* Nome completo */}
-                  <FormField
-                      control={form.control}
-                      name="full_name"
-                      render={({field}) => (
-                          <FormItem>
-                              <FormLabel>Nome Completo</FormLabel>
-                              <FormControl>
-                                  <Input {...field} placeholder="Seu nome completo"/>
-                              </FormControl>
-                              <FormMessage/>
-                          </FormItem>
-                      )}
-                  />
+                  <Form {...form}>
+                      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                          <FormField
+                              control={form.control}
+                              name="full_name"
+                              render={({field}) => (
+                                  <FormItem>
+                                      <SettingsField
+                                          label={t('user', 'profileFullNameLabel')}
+                                          htmlFor="profile-fullname"
+                                          hint={t('user', 'profileFullNameHint')}
+                                      >
+                                          <FormControl>
+                                              <Input
+                                                  id="profile-fullname"
+                                                  {...field}
+                                                  placeholder={t('user', 'profileFullNamePlaceholder')}
+                                                  className="h-9 text-[13px]"
+                                              />
+                                          </FormControl>
+                                      </SettingsField>
+                                      <FormMessage/>
+                                  </FormItem>
+                              )}
+                          />
 
-                  <div className="flex justify-end pt-4 border-t">
-                      <Button type="submit" disabled={saving}>
-                          {saving ? (
-                              <>
-                                  <Loader2 className="mr-2 h-4 w-4 animate-spin"/>
-                                  Salvando...
-                              </>
-                          ) : (
-                              <>
-                                  <CheckCircle2 className="mr-2 h-4 w-4"/>
-                                  Salvar Alterações
-                              </>
-                          )}
-                      </Button>
-                  </div>
-              </form>
+                          <div className="flex justify-end pt-4 border-t border-border/40">
+                              <Button type="submit" disabled={saving}>
+                                  {saving ? (
+                                      <>
+                                          <Loader2 className="mr-2 h-4 w-4 animate-spin" strokeWidth={1.5}/>
+                                          {t('user', 'profileSaving')}
+                                      </>
+                                  ) : (
+                                      <>
+                                          <CheckCircle2 className="mr-2 h-4 w-4" strokeWidth={1.5}/>
+                                          {t('user', 'profileSaveChanges')}
+                                      </>
+                                  )}
+                              </Button>
+                          </div>
+                      </form>
           </Form>
-      </CardContent>
-    </Card>
+              </div>
+          </SettingsCard>
+      </SettingsSection>
   );
 }

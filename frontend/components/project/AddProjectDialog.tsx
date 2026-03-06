@@ -1,30 +1,23 @@
 /**
- * Diálogo para Criar Novo Projeto
+ * Dialog for creating a new project.
  */
 
+import {useMemo} from "react";
 import {useForm} from "react-hook-form";
 import {zodResolver} from "@hookform/resolvers/zod";
 import {z} from "zod";
 import {AppDialog} from "@/components/patterns/AppDialog";
-import {Form, FormControl, FormField, FormItem, FormLabel, FormMessage,} from "@/components/ui/form";
+import {Form, FormControl, FormField, FormItem, FormLabel, FormMessage} from "@/components/ui/form";
 import {Input} from "@/components/ui/input";
 import {Textarea} from "@/components/ui/textarea";
 import {Alert, AlertDescription} from "@/components/ui/alert";
 import {Info} from "lucide-react";
+import {t} from "@/lib/copy";
 
-const schema = z.object({
-    name: z
-        .string()
-        .min(1, "Nome do projeto é obrigatório")
-        .min(3, "Nome deve ter pelo menos 3 caracteres")
-        .max(100, "Nome muito longo (máximo 100 caracteres)"),
-    description: z
-        .string()
-        .max(500, "Descrição muito longa (máximo 500 caracteres)")
-        .optional(),
-});
-
-type FormValues = z.infer<typeof schema>;
+type FormValues = {
+    name: string;
+    description?: string;
+};
 
 interface AddProjectDialogProps {
   open: boolean;
@@ -39,6 +32,22 @@ export function AddProjectDialog({
   onProjectCreate,
                                      isCreating = false,
 }: AddProjectDialogProps) {
+    const schema = useMemo(
+        () =>
+            z.object({
+                name: z
+                    .string()
+                    .min(1, t("project", "addDialogNameRequired"))
+                    .min(3, t("project", "addDialogNameMinLength"))
+                    .max(100, t("project", "addDialogNameMaxLength")),
+                description: z
+                    .string()
+                    .max(500, t("project", "addDialogDescriptionMaxLength"))
+                    .optional(),
+            }),
+        []
+    );
+
     const form = useForm<FormValues>({
         resolver: zodResolver(schema),
         defaultValues: {name: "", description: ""},
@@ -63,12 +72,12 @@ export function AddProjectDialog({
       <AppDialog
           open={open}
           onOpenChange={handleOpenChange}
-          title="Criar Novo Projeto"
-          description="Configure seu projeto de revisão sistemática"
+          title={t("project", "addDialogTitle")}
+          description={t("project", "addDialogDescription")}
           size="md"
           onConfirm={form.handleSubmit(onSubmit)}
-          confirmLabel={isCreating ? "Criando..." : "Criar Projeto"}
-          cancelLabel="Cancelar"
+          confirmLabel={isCreating ? t("project", "addDialogCreating") : t("project", "addDialogCreateProject")}
+          cancelLabel={t("common", "cancel")}
           isLoading={isCreating}
       >
           <Form {...form}>
@@ -79,12 +88,12 @@ export function AddProjectDialog({
                       render={({field}) => (
                           <FormItem>
                               <FormLabel>
-                                  Nome do Projeto <span className="text-destructive">*</span>
+                                  {t("project", "addDialogNameLabel")} <span className="text-destructive">*</span>
                               </FormLabel>
                               <FormControl>
                                   <Input
                                       {...field}
-                                      placeholder="Ex: Revisão Sistemática sobre Diabetes Tipo 2"
+                                      placeholder={t("project", "addDialogNamePlaceholder")}
                                       disabled={isCreating}
                                       autoFocus
                                       maxLength={100}
@@ -101,13 +110,14 @@ export function AddProjectDialog({
                       render={({field}) => (
                           <FormItem>
                               <FormLabel>
-                                  Descrição{" "}
-                                  <span className="text-muted-foreground text-xs">(opcional)</span>
+                                  {t("project", "addDialogDescriptionLabel")}{" "}
+                                  <span
+                                      className="text-muted-foreground text-xs">({t("project", "addDialogOptional")})</span>
                               </FormLabel>
                               <FormControl>
                                   <Textarea
                                       {...field}
-                                      placeholder="Breve descrição sobre o objetivo desta revisão..."
+                                      placeholder={t("project", "addDialogDescriptionPlaceholder")}
                                       rows={3}
                                       disabled={isCreating}
                                       className="resize-none"
@@ -125,7 +135,7 @@ export function AddProjectDialog({
                   <Alert>
                       <Info className="h-4 w-4"/>
                       <AlertDescription className="text-sm">
-                          Você poderá adicionar mais detalhes nas configurações do projeto após a criação.
+                          {t("project", "addDialogMoreDetailsAfter")}
                       </AlertDescription>
                   </Alert>
         </form>

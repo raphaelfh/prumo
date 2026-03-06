@@ -1,5 +1,5 @@
 /**
- * Barrel export para componentes de comparação
+ * Barrel export for comparison components
  */
 
 export { ComparisonTable } from './ComparisonTable';

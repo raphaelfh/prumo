@@ -1,8 +1,8 @@
 /**
- * Componente para Exibir Evidence de Sugestão de IA
- * 
- * Mostra o trecho do texto citado pelo LLM como evidência para a extração,
- * incluindo número da página (se disponível).
+ * Component to display AI suggestion evidence
+ *
+ * Shows the text passage cited by the LLM as evidence for extraction,
+ * including page number (if available).
  * 
  * @component
  */
@@ -12,6 +12,7 @@ import {Button} from '@/components/ui/button';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {useState} from 'react';
 import {cn} from '@/lib/utils';
+import {t} from '@/lib/copy';
 
 // =================== INTERFACES ===================
 
@@ -43,14 +44,14 @@ export function AISuggestionEvidence(props: AISuggestionEvidenceProps) {
 
   return (
     <div className={cn("flex flex-col gap-4 p-4 bg-muted/50 rounded-lg border", className)}>
-      {/* Header com ícone e página */}
+        {/* Header with icon and page */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
           <FileText className="h-4 w-4 shrink-0" />
-          <span className="font-medium">Evidência citada</span>
+            <span className="font-medium">{t('extraction', 'evidenceCited')}</span>
           {evidence.pageNumber !== null && evidence.pageNumber !== undefined && (
             <span className="px-2 py-1 bg-background rounded text-xs shrink-0">
-              Página {evidence.pageNumber}
+              {t('extraction', 'pageLabel').replace('{{n}}', String(evidence.pageNumber))}
             </span>
           )}
         </div>
@@ -69,7 +70,7 @@ export function AISuggestionEvidence(props: AISuggestionEvidenceProps) {
                 }}
                 onMouseEnter={() => setShowTooltip(true)}
                 onMouseLeave={() => setShowTooltip(false)}
-                aria-label={copied ? 'Copiado!' : 'Copiar trecho'}
+                aria-label={copied ? t('extraction', 'copyCopied') : t('extraction', 'copySnippet')}
               >
                 {copied ? (
                   <Check className="h-4 w-4 text-green-600" />
@@ -79,7 +80,7 @@ export function AISuggestionEvidence(props: AISuggestionEvidenceProps) {
               </Button>
             </TooltipTrigger>
             <TooltipContent side="top" onPointerDownOutside={() => setShowTooltip(false)}>
-              <p>Copiar trecho</p>
+                <p>{t('extraction', 'copySnippet')}</p>
             </TooltipContent>
           </Tooltip>
         )}

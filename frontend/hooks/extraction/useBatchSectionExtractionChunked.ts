@@ -1,28 +1,29 @@
 /**
- * Hook para Extração de Todas as Seções de um Modelo com Chunking
- * 
- * Hook React para gerenciar extração de IA de todas as seções de um modelo
- * usando chunking (dividindo em grupos menores) para evitar timeout.
- * 
- * FOCO: Chunking no frontend para processar seções em grupos de 2-3,
- * evitando timeout de 150s do Supabase Edge Functions.
- * 
- * FEATURES:
- * - Chunking automático (2-3 seções por chunk)
- * - Cache de PDF (processa uma vez, reutiliza texto)
- * - Progresso em tempo real
- * - Tratamento de erros (pula seções que falharam)
+ * Hook for extracting all sections of a model with chunking
+ *
+ * React hook to manage AI extraction of all sections of a model
+ * using chunking (smaller groups) to avoid timeout.
+ *
+ * Focus: Frontend chunking to process sections in groups of 2-3,
+ * avoiding 150s Supabase Edge Functions timeout.
+ *
+ * Features:
+ * - Auto chunking (2-3 sections per chunk)
+ * - PDF cache (process once, reuse text)
+ * - Real-time progress
+ * - Error handling (skip failed sections)
  */
 
 import {useCallback, useState} from "react";
 import {toast} from "sonner";
+import {t} from "@/lib/copy";
 import type {BatchSectionExtractionRequest} from "@/types/ai-extraction";
 import {AuthenticationError, getErrorCode, getErrorMessage, PDFNotFoundError,} from "@/lib/ai-extraction/errors";
 import {getModelChildSections} from "./helpers/getModelChildSections";
 import {processSectionsInChunks} from "./helpers/processSectionsInChunks";
 
 /**
- * Progresso da extração em chunks
+ * Chunked extraction progress
  */
 export interface ExtractionProgress {
   currentChunk: number;
@@ -43,17 +44,17 @@ export interface UseBatchSectionExtractionChunkedReturn {
 }
 
 /**
- * Hook para extração de todas as seções com chunking
- * 
- * USO:
+ * Hook for extracting all sections with chunking
+ *
+ * Usage:
  * ```tsx
  * const { extractAllSections, loading, progress } = useBatchSectionExtractionChunked({
- *   onProgress: (p) => console.log('Progresso:', p),
+ *   onProgress: (p) => console.log('Progress:', p),
  *   onSuccess: (result) => {
- *     // Refresh sugestões
+ *     // Refresh suggestions
  *   }
  * });
- * 
+ *
  * await extractAllSections({
  *   projectId,
  *   articleId,
@@ -62,14 +63,14 @@ export interface UseBatchSectionExtractionChunkedReturn {
  *   extractAllSections: true
  * });
  * ```
- * 
- * @param options - Opções do hook
- * @returns Função de extração, estado de loading, error e progresso
+ *
+ * @param options - Hook options
+ * @returns Extraction function, loading state, error and progress
  */
 export function useBatchSectionExtractionChunked(options?: {
   onProgress?: (progress: ExtractionProgress) => void;
   onSuccess?: (result: { totalSections: number; successfulSections: number; failedSections: number; totalSuggestionsCreated: number }) => void;
-  chunkSize?: number; // Padrão: 2
+    chunkSize?: number; // Default: 2
 }): UseBatchSectionExtractionChunkedReturn {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,33 +80,33 @@ export function useBatchSectionExtractionChunked(options?: {
   const chunkSize = options?.chunkSize || 2;
 
   /**
-   * Extrai todas as seções de um modelo usando chunking
-   * 
-   * @param request - Parâmetros da extração (sem sectionIds e pdfText - serão gerados)
+   * Extracts all sections of a model using chunking
+   *
+   * @param request - Extraction params (sectionIds and pdfText are generated)
    */
   const extractAllSections = useCallback(
     async (request: Omit<BatchSectionExtractionRequest, 'sectionIds' | 'pdfText'>) => {
-      console.log('[useBatchSectionExtractionChunked] Iniciando extração com chunking', request);
+        console.log('[useBatchSectionExtractionChunked] Starting extraction with chunking', request);
       setLoading(true);
       setError(null);
       setProgress(null);
 
       try {
-        // 1. Buscar lista de seções do modelo
-        console.log('[useBatchSectionExtractionChunked] Buscando seções do modelo...');
+          // 1. Fetch model section list
+          console.log('[useBatchSectionExtractionChunked] Fetching model sections...');
         const sections = await getModelChildSections(
           request.parentInstanceId,
           request.templateId,
         );
 
         if (sections.length === 0) {
-          toast.warning("Nenhuma seção encontrada para este modelo");
+            toast.warning(t('extraction', 'noSectionsForModel'));
           return;
         }
 
-        console.log('[useBatchSectionExtractionChunked] Seções encontradas:', sections.length);
+          console.log('[useBatchSectionExtractionChunked] Sections found:', sections.length);
 
-        // 2. Processar seções em chunks usando helper
+          // 2. Process sections in chunks using helper
         const result = await processSectionsInChunks({
           sections,
           baseRequest: request,
@@ -117,11 +118,11 @@ export function useBatchSectionExtractionChunked(options?: {
           },
         });
 
-        // 3. Consolidar resultados finais
+          // 3. Consolidate final results
         const { totalSuggestionsCreated, successfulSections, failedSections, totalTokensUsed, totalDurationMs } = result;
         const totalSections = sections.length;
 
-        console.log('[useBatchSectionExtractionChunked] Extração concluída', {
+          console.log('[useBatchSectionExtractionChunked] Extraction completed', {
           totalSections,
           successfulSections,
           failedSections,
@@ -130,21 +131,27 @@ export function useBatchSectionExtractionChunked(options?: {
           totalDurationMs,
         });
 
-        // Toast de sucesso com informações agregadas
+          // Success toast with aggregated info
         const durationSecs = (totalDurationMs / 1000).toFixed(1);
         if (failedSections === 0) {
           toast.success(
-            `Extração concluída! ${successfulSections} seção(ões) extraída(s) com sucesso.`,
+              t('extraction', 'batchChunkedSuccessTitle').replace('{{n}}', String(successfulSections)),
             {
-              description: `${totalSuggestionsCreated} sugestão(ões) criada(s). ${totalTokensUsed} tokens usados em ${durationSecs}s`,
+                description: t('extraction', 'batchChunkedSuccessDesc')
+                    .replace('{{suggestions}}', String(totalSuggestionsCreated))
+                    .replace('{{tokens}}', String(totalTokensUsed))
+                    .replace('{{duration}}', durationSecs),
               duration: 8000,
             },
           );
         } else {
           toast.warning(
-            `Extração parcialmente concluída: ${successfulSections}/${totalSections} seção(ões) extraída(s) com sucesso.`,
+              t('extraction', 'batchChunkedPartialTitle').replace('{{success}}', String(successfulSections)).replace('{{total}}', String(totalSections)),
             {
-              description: `${totalSuggestionsCreated} sugestão(ões) criada(s). ${failedSections} seção(ões) falharam. ${totalTokensUsed} tokens usados.`,
+                description: t('extraction', 'batchChunkedPartialDesc')
+                    .replace('{{suggestions}}', String(totalSuggestionsCreated))
+                    .replace('{{failed}}', String(failedSections))
+                    .replace('{{tokens}}', String(totalTokensUsed)),
               duration: 10000,
             },
           );
@@ -173,7 +180,7 @@ export function useBatchSectionExtractionChunked(options?: {
           stack: err instanceof Error ? err.stack : undefined,
         });
 
-        // Tratar erro de forma amigável
+          // Handle error in a user-friendly way
         const message = getErrorMessage(err);
         const code = getErrorCode(err);
         setError(message);
@@ -181,15 +188,15 @@ export function useBatchSectionExtractionChunked(options?: {
         // Toast de erro
         const errorCode = code || '';
         if (err instanceof PDFNotFoundError || errorCode === 'PDF_NOT_FOUND') {
-          toast.error("Erro na extração", {
+            toast.error(t('extraction', 'sectionExtractionErrorTitle'), {
             description: message,
           });
         } else if (err instanceof AuthenticationError || errorCode === 'AUTH_ERROR') {
-          toast.error("Erro de autenticação", {
-            description: "Por favor, faça login novamente.",
+            toast.error(t('extraction', 'sectionExtractionErrorAuth'), {
+                description: t('extraction', 'sectionExtractionErrorAuthDesc'),
           });
         } else {
-          toast.error(`Erro na extração: ${message}`, {
+            toast.error(`${t('extraction', 'sectionExtractionErrorTitle')}: ${message}`, {
             duration: 8000,
           });
         }

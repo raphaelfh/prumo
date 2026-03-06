@@ -1,19 +1,20 @@
 /**
- * Hook para auto-save de respostas de assessment
+ * Hook for auto-saving assessment responses
  *
  * Features:
- * - Debounce de 3 segundos após última mudança
- * - Uso do hook useAssessmentResponses para salvar
- * - Tracking de último save
+ * - 3-second debounce after last change
+ * - Uses useAssessmentResponses save function
+ * - Last save tracking
  * - Error handling
  *
- * Baseado em useExtractionAutoSave.ts (DRY + KISS)
+ * Based on useExtractionAutoSave.ts (DRY + KISS)
  *
  * @hook
  */
 
 import {useEffect, useRef, useState} from 'react';
 import {toast} from 'sonner';
+import {t} from '@/lib/copy';
 import type {AssessmentResponse} from '@/types/assessment';
 import {countValidResponses} from '@/lib/assessment-utils';
 
@@ -21,7 +22,7 @@ import {countValidResponses} from '@/lib/assessment-utils';
 
 interface UseAssessmentAutoSaveProps {
   responses: Record<string, AssessmentResponse>; // { itemId: response }
-  save: () => Promise<void>; // Função save do useAssessmentResponses
+    save: () => Promise<void>; // save function from useAssessmentResponses
   enabled?: boolean;
 }
 
@@ -35,13 +36,13 @@ export interface UseAssessmentAutoSaveReturn {
 // =================== HOOK ===================
 
 /**
- * Hook para auto-save de respostas de assessment
+ * Hook for auto-saving assessment responses
  *
- * Monitora mudanças em `responses` e salva automaticamente após 3 segundos de inatividade.
- * Usa a função `save()` fornecida pelo useAssessmentResponses.
+ * Watches `responses` and saves automatically after 3 seconds of inactivity.
+ * Uses the `save()` function provided by useAssessmentResponses.
  *
- * @param props - Configurações do auto-save
- * @returns Estado de saving, último save, erro e função para salvar manualmente
+ * @param props - Auto-save options
+ * @returns Saving state, last save time, error and manual save function
  *
  * @example
  * ```tsx
@@ -64,26 +65,26 @@ export function useAssessmentAutoSave(
   const saveTimeoutRef = useRef<NodeJS.Timeout>();
   const previousValuesRef = useRef<string>('');
 
-  // Auto-save com debounce de 3 segundos
+    // Auto-save with 3-second debounce
   useEffect(() => {
     if (!enabled || !save) return;
 
-    // Converter valores para string para comparar mudanças
+      // Serialize values to string to compare changes
     const currentValuesStr = JSON.stringify(responses);
 
-    // Se não mudou, não fazer nada
+      // If unchanged, do nothing
     if (currentValuesStr === previousValuesRef.current) {
       return;
     }
 
     previousValuesRef.current = currentValuesStr;
 
-    // Cancelar save anterior agendado
+      // Cancel previous scheduled save
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
 
-    // Agendar novo save após 3 segundos
+      // Schedule new save after 3 seconds
     saveTimeoutRef.current = setTimeout(() => {
       saveResponses();
     }, 3000);
@@ -97,49 +98,49 @@ export function useAssessmentAutoSave(
   }, [responses, enabled, save]);
 
   /**
-   * Salva respostas usando a função save fornecida
+   * Save responses using the provided save function
    */
   const saveResponses = async () => {
     setIsSaving(true);
     setError(null);
 
     try {
-      // Verificar se há respostas para salvar
+        // Check if there are responses to save
       const responsesToSave = countValidResponses(responses);
 
       if (responsesToSave === 0) {
-        console.log('⚠️ [useAssessmentAutoSave] Nenhuma resposta para salvar (todas vazias)');
+          console.log('⚠️ [useAssessmentAutoSave] No responses to save (all empty)');
         setIsSaving(false);
         return;
       }
 
-      console.log(`💾 [useAssessmentAutoSave] Auto-saving ${responsesToSave} resposta(s)...`);
+        console.log(`💾 [useAssessmentAutoSave] Auto-saving ${responsesToSave} response(s)...`);
 
-      // Chamar função save fornecida (do useAssessmentResponses)
+        // Call provided save function (from useAssessmentResponses)
       await save();
 
       setLastSaved(new Date());
-      console.log(`✅ [useAssessmentAutoSave] Auto-save concluído: ${responsesToSave} resposta(s) salva(s)`);
+        console.log(`✅ [useAssessmentAutoSave] Auto-save done: ${responsesToSave} response(s) saved`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Erro ao salvar';
-      console.error('❌ [useAssessmentAutoSave] Erro no auto-save:', err);
+        const message = err instanceof Error ? err.message : t('common', 'errors_saveFailed');
+        console.error('❌ [useAssessmentAutoSave] Auto-save error:', err);
       setError(message);
-      toast.error('Erro ao salvar dados automaticamente');
+        toast.error(t('assessment', 'errors_autoSaveFailed'));
     } finally {
       setIsSaving(false);
     }
   };
 
   /**
-   * Salva imediatamente (sem debounce)
+   * Save immediately (no debounce)
    */
   const saveNow = async () => {
-    // Cancelar save agendado
+      // Cancel scheduled save
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
 
-    // Salvar imediatamente
+      // Save immediately
     await saveResponses();
   };
 

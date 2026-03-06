@@ -1,14 +1,12 @@
 /**
- * SettingsDialog - Dialog de configurações do PDF Viewer
- * 
- * Features:
- * - Configurações de visualização
- * - Atalhos de teclado
+ * SettingsDialog - PDF Viewer settings dialog
+ * Features: view settings, keyboard shortcuts
  */
 
 import {Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,} from '@/components/ui/dialog';
 import {Tabs, TabsContent, TabsList, TabsTrigger} from '@/components/ui/tabs';
 import {Keyboard} from 'lucide-react';
+import {t} from '@/lib/copy';
 
 interface SettingsDialogProps {
   open: boolean;
@@ -17,39 +15,39 @@ interface SettingsDialogProps {
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const shortcuts = [
-    { keys: 'PageDown / PageUp', action: 'Navegar entre páginas' },
-    { keys: 'Home / End', action: 'Primeira / Última página' },
-    { keys: 'Ctrl + / Ctrl -', action: 'Zoom In / Out' },
-    { keys: 'Ctrl 0', action: 'Resetar zoom' },
-    { keys: 'Ctrl F', action: 'Buscar no documento' },
-    { keys: 'Escape', action: 'Fechar diálogos' },
+      {keys: 'PageDown / PageUp', action: t('pdf', 'settingsShortcutNavigatePages')},
+      {keys: 'Home / End', action: t('pdf', 'settingsShortcutFirstLastPage')},
+      {keys: 'Ctrl + / Ctrl -', action: t('pdf', 'settingsShortcutZoomInOut')},
+      {keys: 'Ctrl 0', action: t('pdf', 'settingsShortcutResetZoom')},
+      {keys: 'Ctrl F', action: t('pdf', 'settingsShortcutFind')},
+      {keys: 'Escape', action: t('pdf', 'settingsShortcutCloseDialogs')},
   ];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
-          <DialogTitle>Configurações do PDF Viewer</DialogTitle>
+            <DialogTitle>{t('pdf', 'settingsTitle')}</DialogTitle>
           <DialogDescription>
-            Personalize sua experiência de visualização de PDFs
+              {t('pdf', 'settingsDesc')}
           </DialogDescription>
         </DialogHeader>
 
         <Tabs defaultValue="general" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="general">Geral</TabsTrigger>
-            <TabsTrigger value="shortcuts">Atalhos</TabsTrigger>
+              <TabsTrigger value="general">{t('pdf', 'settingsTabGeneral')}</TabsTrigger>
+              <TabsTrigger value="shortcuts">{t('pdf', 'settingsTabShortcuts')}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="general" className="space-y-4 pt-4">
             <div className="space-y-4">
               <div className="space-y-2">
-                <h4 className="text-sm font-medium">Sobre</h4>
+                  <h4 className="text-sm font-medium">{t('pdf', 'settingsAboutTitle')}</h4>
                 <div className="text-sm text-muted-foreground space-y-1">
-                  <p>PDF Viewer v2.0</p>
-                  <p>Baseado em PDF.js e React-PDF</p>
+                    <p>{t('pdf', 'settingsAboutVersion')}</p>
+                    <p>{t('pdf', 'settingsAboutBased')}</p>
                   <p className="text-xs mt-2">
-                    © 2025 Review Hub - Sistema de Revisão Sistemática
+                      {t('pdf', 'settingsAboutCopyright')}
                   </p>
                 </div>
               </div>
@@ -60,7 +58,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
             <div className="space-y-4">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Keyboard className="h-4 w-4" />
-                <span>Atalhos de Teclado Disponíveis</span>
+                  <span>{t('pdf', 'settingsShortcutsAvailable')}</span>
               </div>
 
               <div className="space-y-2 max-h-[400px] overflow-y-auto">
@@ -78,7 +76,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               </div>
 
               <p className="text-xs text-muted-foreground mt-4">
-                Dica: Pressione <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">?</kbd> para ver esta lista
+                  {t('pdf', 'settingsTipShortcutBefore')}<kbd
+                  className="px-1 py-0.5 bg-muted rounded text-[10px]">?</kbd>{t('pdf', 'settingsTipShortcutAfter')}
               </p>
             </div>
           </TabsContent>

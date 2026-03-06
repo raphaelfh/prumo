@@ -1,5 +1,5 @@
 /**
- * EditArticle - Página para Editar Artigo Existente
+ * EditArticle - Page to edit existing article
  * 
  * Usa o componente unificado ArticleForm em modo 'edit'
  */
@@ -19,7 +19,7 @@ function EditArticle() {
   }
 
   const handleComplete = () => {
-    // Navegar de volta para a lista de artigos do projeto
+      // Navigate back to project article list
     navigate(`/projects/${projectId}?tab=articles`);
   };
 

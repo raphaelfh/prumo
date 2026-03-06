@@ -1,28 +1,24 @@
 /**
- * Formatação consistente de valores para comparação
- * 
- * Funções utilitárias para formatar valores de forma consistente
- * em toda a aplicação (Assessment e Extraction).
- * 
+ * Consistent value formatting for comparison
+ *
+ * Utility functions to format values consistently across the app (Assessment and Extraction).
+ *
  * @module comparison/formatters
  */
 
+import {t} from '@/lib/copy';
+
 /**
- * Formata valor para exibição em comparação
- * Lida com diferentes tipos de dados de forma consistente
- * 
- * @param value - Valor a ser formatado (any type)
- * @returns String formatada para exibição
- * 
- * @example
- * formatComparisonValue(null) // '—'
- * formatComparisonValue(true) // 'Sim'
- * formatComparisonValue(['a', 'b']) // 'a, b'
+ * Formats value for comparison display
+ * Handles different data types consistently
+ *
+ * @param value - Value to format (any type)
+ * @returns Formatted string for display
  */
 export function formatComparisonValue(value: any): string {
   if (value === null || value === undefined || value === '') return '—';
-  
-  if (typeof value === 'boolean') return value ? 'Sim' : 'Não';
+
+    if (typeof value === 'boolean') return value ? t('extraction', 'yes') : t('extraction', 'no');
   
   if (Array.isArray(value)) {
     if (value.length === 0) return '—';
@@ -30,7 +26,7 @@ export function formatComparisonValue(value: any): string {
   }
   
   if (typeof value === 'object') {
-    // ✅ NOVO: Tratar valores numéricos com unidade
+      // Handle numeric values with unit
     if ('value' in value && 'unit' in value) {
       const numVal = value.value !== null && value.value !== undefined && value.value !== '' 
         ? String(value.value) 
@@ -38,11 +34,11 @@ export function formatComparisonValue(value: any): string {
       const unit = value.unit || '';
       return unit ? `${numVal} ${unit}` : numVal;
     }
-    
-    // Tratar JSONBs especiais que encapsulam valor
+
+      // Handle special JSONBs that wrap a value
     if ('value' in value) return formatComparisonValue(value.value);
-    
-    // Objetos genéricos: JSON stringified (mas limitado)
+
+      // Generic objects: JSON stringified (with length limit)
     const str = JSON.stringify(value);
     return str.length > 100 ? str.substring(0, 97) + '...' : str;
   }
@@ -51,29 +47,29 @@ export function formatComparisonValue(value: any): string {
 }
 
 /**
- * Formata tipo de campo para label legível
- * 
- * @param type - Tipo do campo (text, number, etc)
- * @returns Label em português
+ * Formats field type to readable label
+ *
+ * @param type - Field type (text, number, etc.)
+ * @returns English label
  */
 export function formatFieldType(type: string): string {
   const labels: Record<string, string> = {
-    text: 'Texto',
-    number: 'Número',
-    date: 'Data',
-    select: 'Seleção',
-    multiselect: 'Múltipla Escolha',
-    boolean: 'Sim/Não'
+      text: t('extraction', 'fieldTypeText'),
+      number: t('extraction', 'fieldTypeNumber'),
+      date: t('extraction', 'fieldTypeDate'),
+      select: t('extraction', 'fieldTypeSelect'),
+      multiselect: t('extraction', 'fieldTypeMultiselect'),
+      boolean: t('extraction', 'fieldTypeBoolean'),
   };
   return labels[type] || type;
 }
 
 /**
- * Trunca valor longo para exibição em tabela
- * 
- * @param value - String a ser truncada
- * @param maxLength - Tamanho máximo (default: 50)
- * @returns String truncada com '...'
+ * Truncates long value for table display
+ *
+ * @param value - String to truncate
+ * @param maxLength - Max length (default: 50)
+ * @returns Truncated string with '...'
  */
 export function truncateValue(value: string, maxLength: number = 50): string {
   if (value.length <= maxLength) return value;
@@ -81,11 +77,11 @@ export function truncateValue(value: string, maxLength: number = 50): string {
 }
 
 /**
- * Formata timestamp para exibição relativa
- * Usado para mostrar quando foi a última extração
- * 
- * @param timestamp - Data/hora da extração
- * @returns String formatada (ex: "há 2 horas")
+ * Formats timestamp for relative display
+ * Used to show when the last extraction was
+ *
+ * @param timestamp - Extraction date/time
+ * @returns Formatted string (e.g. "2 min ago")
  */
 export function formatRelativeTime(timestamp: Date | string): string {
   const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
@@ -95,11 +91,11 @@ export function formatRelativeTime(timestamp: Date | string): string {
   const diffHours = Math.floor(diffMs / 3600000);
   const diffDays = Math.floor(diffMs / 86400000);
 
-  if (diffMins < 1) return 'agora mesmo';
-  if (diffMins < 60) return `há ${diffMins} min`;
-  if (diffHours < 24) return `há ${diffHours}h`;
-  if (diffDays < 7) return `há ${diffDays}d`;
-  
-  return date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+    if (diffMins < 1) return t('common', 'timeJustNow');
+    if (diffMins < 60) return t('common', 'timeAgoMin').replace('{{n}}', String(diffMins));
+    if (diffHours < 24) return t('common', 'timeAgoH').replace('{{n}}', String(diffHours));
+    if (diffDays < 7) return t('common', 'timeAgoD').replace('{{n}}', String(diffDays));
+
+    return date.toLocaleDateString('en-US', {day: '2-digit', month: 'short'});
 }
 

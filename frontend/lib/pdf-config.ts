@@ -21,7 +21,7 @@ export const PDF_OPTIONS = {
 // Performance settings for large PDFs
 export const LARGE_PDF_THRESHOLD = 50; // Pages
 
-// Função para obter device pixel ratio de forma lazy
+// Lazy getter for device pixel ratio
 const getDevicePixelRatio = (): number => {
   if (typeof window === 'undefined') return 1;
   return Math.min(window.devicePixelRatio || 1, 2);
@@ -29,28 +29,28 @@ const getDevicePixelRatio = (): number => {
 
 export const PERFORMANCE_CONFIG = {
   // Lazy loading settings
-  preloadPages: 3, // Number of pages to preload ahead/behind (aumentado para scroll)
-  unloadDistance: 7, // Unload pages this far from current page (aumentado para scroll contínuo)
-  
-  // Rendering settings - mais conservador para evitar OOM
-  maxCanvasPixels: 8388608, // 8MP max canvas size (mais conservador)
-  devicePixelRatio: getDevicePixelRatio, // Função lazy para evitar execução no módulo
-  
-  // Memory management - menos agressivo
+    preloadPages: 3, // Number of pages to preload ahead/behind
+    unloadDistance: 7, // Unload pages this far from current page (for continuous scroll)
+
+    // Rendering settings - conservative to avoid OOM
+    maxCanvasPixels: 8388608, // 8MP max canvas size
+    devicePixelRatio: getDevicePixelRatio, // Lazy function to avoid execution at module load
+
+    // Memory management - less aggressive
   enableMemoryOptimization: true,
-  gcInterval: 60000, // Garbage collection interval (60s - menos agressivo)
-  
-  // Novas configurações de performance
-  maxConcurrentRenders: 3, // Máximo de renders simultâneos
-  renderTimeout: 10000, // Timeout para renderização (10s)
-  enableWebGL: true, // Usar WebGL quando disponível
-  useOnlyCssZoom: false, // Permitir canvas scaling para melhor qualidade
+    gcInterval: 60000, // Garbage collection interval (60s)
+
+    // Performance settings
+    maxConcurrentRenders: 3, // Max concurrent renders
+    renderTimeout: 10000, // Render timeout (10s)
+    enableWebGL: true, // Use WebGL when available
+    useOnlyCssZoom: false, // Allow canvas scaling for better quality
 };
 
-// Configurações específicas para scroll contínuo
+// Settings for continuous scroll
 export const CONTINUOUS_SCROLL_CONFIG = {
-  virtualizationBuffer: 2, // Páginas antes/depois visíveis para pré-carregar
-  scrollThrottle: 100, // ms - throttle para eventos de scroll
-  intersectionRootMargin: '200px', // Margem do Intersection Observer
-  placeholderHeight: 1100, // px - altura estimada de uma página (ajustar baseado no scale)
+    virtualizationBuffer: 2, // Pages before/after visible to preload
+    scrollThrottle: 100, // ms - throttle for scroll events
+    intersectionRootMargin: '200px', // Intersection Observer margin
+    placeholderHeight: 1100, // px - estimated page height (adjust based on scale)
 };

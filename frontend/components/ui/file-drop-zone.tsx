@@ -1,16 +1,17 @@
 /**
  * FileDropZone Component
- * 
- * Componente reutilizável para drag & drop de arquivos com:
- * - Suporte a múltiplos arquivos
- * - Preview visual
- * - Validação customizável
- * - Estados visuais (hover, dragging, error)
- * - Acessibilidade (keyboard navigation)
+ *
+ * Reusable drag & drop file component with:
+ * - Multiple file support
+ * - Visual preview
+ * - Customizable validation
+ * - Visual states (hover, dragging, error)
+ * - Accessibility (keyboard navigation)
  */
 
 import React, {useCallback, useRef, useState} from 'react';
 import {cn} from '@/lib/utils';
+import {t} from '@/lib/copy';
 import {AlertCircle, File, FileIcon, Upload, X} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Alert, AlertDescription} from '@/components/ui/alert';
@@ -22,68 +23,68 @@ export interface FileWithPreview extends File {
 
 export interface FileDropZoneProps {
   /**
-   * Callback quando arquivos são selecionados
+   * Callback when files are selected
    */
   onFilesSelected: (files: FileWithPreview[]) => void;
   
   /**
-   * Arquivos atualmente selecionados
+   * Currently selected files
    */
   selectedFiles?: FileWithPreview[];
   
   /**
-   * Callback para remover arquivo
+   * Callback to remove file
    */
   onFileRemove?: (fileId: string) => void;
   
   /**
-   * Número máximo de arquivos
+   * Maximum number of files
    */
   maxFiles?: number;
   
   /**
-   * Tamanho máximo por arquivo (em bytes)
+   * Maximum size per file (bytes)
    */
   maxFileSize?: number;
   
   /**
-   * Tipos MIME aceitos
+   * Accepted MIME types
    */
   acceptedTypes?: string[];
   
   /**
-   * Extensões aceitas (ex: ['.pdf', '.doc'])
+   * Accepted extensions (e.g. ['.pdf', '.doc'])
    */
   acceptedExtensions?: string[];
   
   /**
-   * Texto customizado
+   * Custom label/description
    */
   label?: string;
   description?: string;
   
   /**
-   * Estado de loading
+   * Loading state
    */
   isUploading?: boolean;
   
   /**
-   * Desabilitar dropzone
+   * Disable dropzone
    */
   disabled?: boolean;
   
   /**
-   * Classe CSS customizada
+   * Custom CSS class
    */
   className?: string;
   
   /**
-   * Mostrar preview dos arquivos
+   * Show file previews
    */
   showPreview?: boolean;
   
   /**
-   * Callback de erro
+   * Error callback
    */
   onError?: (error: string) => void;
 }
@@ -96,8 +97,8 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
   maxFileSize = 50 * 1024 * 1024, // 50MB
   acceptedTypes = [],
   acceptedExtensions = [],
-  label = "Arraste arquivos aqui",
-  description = "ou clique para selecionar",
+                                                              label,
+                                                              description,
   isUploading = false,
   disabled = false,
   className,
@@ -117,18 +118,18 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
     if (file.size > maxFileSize) {
       return {
         valid: false,
-        error: `${file.name} excede o tamanho máximo de ${(maxFileSize / 1024 / 1024).toFixed(0)}MB`
+          error: t('ui', 'fileSizeExceedsMax').replace('{{name}}', file.name).replace('{{size}}', (maxFileSize / 1024 / 1024).toFixed(0))
       };
     }
 
     // Validar tipo MIME
     if (acceptedTypes.length > 0 && !acceptedTypes.includes(file.type)) {
-      // Verificar extensão como fallback
+        // Check extension as fallback
       const extension = `.${file.name.split('.').pop()?.toLowerCase()}`;
       if (acceptedExtensions.length > 0 && !acceptedExtensions.includes(extension)) {
         return {
           valid: false,
-          error: `${file.name} não é um tipo de arquivo aceito`
+            error: t('ui', 'fileTypeNotAccepted').replace('{{name}}', file.name)
         };
       }
     }
@@ -143,10 +144,10 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
     if (!fileList) return;
 
     const files = Array.from(fileList);
-    
-    // Validar número máximo de arquivos
+
+      // Validate max number of files
     if (selectedFiles.length + files.length > maxFiles) {
-      const errorMsg = `Você pode adicionar no máximo ${maxFiles} arquivos`;
+        const errorMsg = t('ui', 'maxFilesReached').replace('{{count}}', String(maxFiles));
       setError(errorMsg);
       onError?.(errorMsg);
       return;
@@ -159,7 +160,7 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
     files.forEach(file => {
       const validation = validateFile(file);
       if (validation.valid) {
-        // Gerar ID único e preview se for imagem
+          // Generate unique ID and preview if image
         const fileWithMetadata: FileWithPreview = Object.assign(file, {
           id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined
@@ -179,7 +180,7 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
       setError(null);
     }
 
-    // Notificar arquivos válidos
+      // Notify valid files
     if (validFiles.length > 0) {
       onFilesSelected(validFiles);
     }
@@ -199,8 +200,8 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    
-    // Só remove o estado se realmente saiu da dropzone
+
+      // Only clear state if actually left the dropzone
     if (dropZoneRef.current && !dropZoneRef.current.contains(e.relatedTarget as Node)) {
       setIsDragging(false);
     }
@@ -223,7 +224,7 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
   }, [disabled, isUploading, processFiles]);
 
   /**
-   * Handler para seleção por clique
+   * Handler for click selection
    */
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     processFiles(e.target.files);
@@ -276,7 +277,7 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
         )}
         role="button"
         tabIndex={disabled || isUploading ? -1 : 0}
-        aria-label="Área de upload de arquivos"
+        aria-label={t('ui', 'uploadAreaAria')}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
@@ -306,15 +307,15 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
           </div>
 
           <div>
-            <p className="text-lg font-medium mb-1">{label}</p>
-            <p className="text-sm text-muted-foreground">{description}</p>
+              <p className="text-lg font-medium mb-1">{label ?? t('ui', 'fileDropLabel')}</p>
+              <p className="text-sm text-muted-foreground">{description ?? t('ui', 'fileDropDescription')}</p>
           </div>
 
-          {/* Informações sobre limites */}
+            {/* Info about limits */}
           <div className="text-xs text-muted-foreground space-y-1">
-            <p>Máximo: {maxFiles} arquivo{maxFiles > 1 ? 's' : ''} • Tamanho máximo: {(maxFileSize / 1024 / 1024).toFixed(0)}MB por arquivo</p>
+              <p>{t('ui', 'fileDropMaxFiles').replace('{{n}}', String(maxFiles)).replace('{{size}}', (maxFileSize / 1024 / 1024).toFixed(0))}</p>
             {acceptedExtensions.length > 0 && (
-              <p>Tipos aceitos: {acceptedExtensions.join(', ')}</p>
+                <p>{t('ui', 'fileDropAcceptedTypes')} {acceptedExtensions.join(', ')}</p>
             )}
           </div>
         </div>
@@ -324,7 +325,7 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
           <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center rounded-lg">
             <div className="flex items-center gap-2">
               <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
-              <p className="text-sm font-medium">Enviando arquivos...</p>
+                <p className="text-sm font-medium">{t('ui', 'fileDropUploading')}</p>
             </div>
           </div>
         )}
@@ -389,15 +390,15 @@ const FilePreviewCard: React.FC<FilePreviewCardProps> = ({ file, onRemove, disab
         )}
       </div>
 
-      {/* Informações */}
+        {/* Info */}
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">{file.name}</p>
         <p className="text-xs text-muted-foreground">
-          {formatBytes(file.size)} • {file.type || 'Arquivo'}
+            {formatBytes(file.size)} • {file.type || t('ui', 'fileLabel')}
         </p>
       </div>
 
-      {/* Botão remover */}
+        {/* Remove button */}
       <Button
         variant="ghost"
         size="icon"
@@ -407,7 +408,7 @@ const FilePreviewCard: React.FC<FilePreviewCardProps> = ({ file, onRemove, disab
         }}
         disabled={disabled}
         className="flex-shrink-0"
-        aria-label={`Remover ${file.name}`}
+        aria-label={t('ui', 'removeFileAria').replace('{{name}}', file.name)}
       >
         <X className="h-4 w-4" />
       </Button>

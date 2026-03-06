@@ -1,14 +1,25 @@
 import {useEffect, useState} from "react";
-import {useNavigate, useParams} from "react-router-dom";
+import {useNavigate, useParams, useSearchParams} from "react-router-dom";
 import {supabase} from "@/integrations/supabase/client";
 import {Button} from "@/components/ui/button";
-import {Plus} from "lucide-react";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {Plus, ChevronDown, Upload, FileText} from "lucide-react";
 import {toast} from "sonner";
 import {ArticlesList} from "@/components/articles/ArticlesList";
 import {ProjectSettings} from "@/components/project/ProjectSettings";
 import {AssessmentInterface} from "@/components/assessment/AssessmentInterface";
 import {ExtractionInterface} from "@/components/extraction/ExtractionInterface";
+import {ZoteroImportDialog} from "@/components/articles/ZoteroImportDialog";
+import {RISImportDialog} from "@/components/articles/RISImportDialog";
 import {useProject} from "@/contexts/ProjectContext";
+import {useZoteroIntegration} from "@/hooks/useZoteroIntegration";
+import {useProjectMemberRole} from "@/hooks/useProjectMemberRole";
+import {t} from "@/lib/copy";
 
 interface Article {
   id: string;
@@ -23,19 +34,35 @@ interface Article {
 }
 
 const TAB_DESCRIPTIONS: Record<string, string> = {
-  extraction: 'Extraia dados estruturados usando templates padronizados',
-  assessment: 'Avalie a qualidade metodológica dos artigos',
+    extraction: 'Extract structured data using standard templates',
+    assessment: 'Assess methodological quality of articles',
 };
 
 export default function ProjectView() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
-  
-  // Usar contexto para estado do projeto e navegação
+    const [searchParams, setSearchParams] = useSearchParams();
+
+    // Use context for project state and navigation
   const { project, setProject: setContextProject, activeTab } = useProject();
+
+    const {isManager} = useProjectMemberRole(activeTab === 'extraction' ? projectId || '' : '');
+    const extractionTab = searchParams.get('extractionTab') as 'extraction' | 'dashboard' | 'configuration' | null;
+    const currentExtractionTab = (extractionTab && ['extraction', 'dashboard', 'configuration'].includes(extractionTab))
+        ? extractionTab
+        : 'extraction';
+
+    const setExtractionTab = (tab: 'extraction' | 'dashboard' | 'configuration') => {
+        const next = new URLSearchParams(searchParams);
+        next.set('extractionTab', tab);
+        setSearchParams(next, {replace: true});
+    };
   
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
+    const [zoteroDialogOpen, setZoteroDialogOpen] = useState(false);
+    const [risDialogOpen, setRisDialogOpen] = useState(false);
+    const {isConfigured: hasZoteroConfigured} = useZoteroIntegration();
 
   useEffect(() => {
     if (projectId) {
@@ -62,7 +89,7 @@ export default function ProjectView() {
       if (error) throw error;
       setContextProject(data);
     } catch (error: any) {
-      toast.error("Erro ao carregar projeto");
+        toast.error("Error loading project");
       console.error(error);
     } finally {
       setLoading(false);
@@ -95,7 +122,7 @@ export default function ProjectView() {
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Carregando projeto...</p>
+            <p className="text-muted-foreground">Loading project...</p>
         </div>
       </div>
     );
@@ -104,12 +131,12 @@ export default function ProjectView() {
   if (!project) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <p>Projeto não encontrado</p>
+          <p>Project not found</p>
       </div>
     );
   }
 
-  // Renderizar conteúdo baseado na aba ativa
+    // Render content based on active tab
   const renderContent = () => {
     switch (activeTab) {
       case 'articles':
@@ -119,6 +146,8 @@ export default function ProjectView() {
                 onArticleClick={(articleId) => navigate(`/projects/${projectId}/articles/${articleId}/edit`)}
                 projectId={projectId || ''}
                 onArticlesChange={loadArticles}
+                onOpenZoteroDialog={() => setZoteroDialogOpen(true)}
+                onOpenRisDialog={() => setRisDialogOpen(true)}
             />
         );
 
@@ -142,21 +171,92 @@ export default function ProjectView() {
         {/* Sticky action bar — outside scroll container for edge-to-edge sticking */}
         {activeTab !== 'settings' && (
             <div
-                className="flex-shrink-0 h-11 flex items-center justify-between border-b border-border/30 bg-background/80 backdrop-blur-sm px-6 lg:px-10">
-          <span className="text-[12px] text-muted-foreground/70">
+                className="flex-shrink-0 h-12 flex items-center justify-between border-b border-border/40 bg-background/80 backdrop-blur-sm px-6 lg:px-10">
+          <span className="text-[13px] text-muted-foreground/70">
             {activeTab === 'articles'
-                ? `${articles.length} artigo${articles.length !== 1 ? 's' : ''}`
+                ? 'Articles'
                 : (TAB_DESCRIPTIONS[activeTab] ?? '')}
           </span>
+                {activeTab === 'extraction' && (
+                    <div className="flex items-center gap-0.5" role="tablist" aria-label="Extraction views">
+                        {[
+                            {value: 'extraction' as const, label: t('extraction', 'tabExtraction')},
+                            {value: 'dashboard' as const, label: t('extraction', 'tabDashboard')},
+                            ...(isManager ? [{
+                                value: 'configuration' as const,
+                                label: t('extraction', 'tabConfiguration')
+                            }] : []),
+                        ].map(({value, label}) => (
+                            <Button
+                                key={value}
+                                variant="ghost"
+                                size="sm"
+                                className={`h-8 px-3 text-[13px] font-medium rounded-md transition-colors duration-75 ${
+                                    currentExtractionTab === value ? 'bg-muted/50 text-foreground' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                                }`}
+                                onClick={() => setExtractionTab(value)}
+                                aria-selected={currentExtractionTab === value}
+                                role="tab"
+                            >
+                                {label}
+                            </Button>
+                        ))}
+                    </div>
+                )}
               {activeTab === 'articles' && (
-                  <Button
-                      size="sm"
-                      onClick={() => navigate(`/projects/${projectId}/articles/add`)}
-                      className="h-7 px-3 text-[12px] font-medium rounded-md"
-                  >
-                    <Plus className="mr-1.5 h-3.5 w-3.5"/>
-                    Adicionar Artigo
-                  </Button>
+                  <div className="flex items-center gap-2">
+                      <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                              <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 px-4 text-[13px] font-medium rounded-lg border-border/50 hover:bg-muted/50 hover:border-border transition-colors"
+                              >
+                                  <Upload className="mr-2 h-4 w-4"/>
+                                  Import articles
+                                  <ChevronDown className="ml-1.5 h-4 w-4 opacity-70"/>
+                              </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent
+                              align="end"
+                              sideOffset={6}
+                              className="min-w-[180px] rounded-lg border border-border/50 bg-popover/95 backdrop-blur-sm py-1.5 px-1 shadow-[0_4px_20px_rgba(0,0,0,0.08)]"
+                          >
+                              <DropdownMenuItem
+                                  onClick={() =>
+                                      hasZoteroConfigured
+                                          ? setZoteroDialogOpen(true)
+                                          : navigate('/settings?tab=integrations')
+                                  }
+                                  className="flex items-center gap-2.5 rounded-md py-2 px-2.5 cursor-pointer focus:bg-muted/60"
+                              >
+                          <span
+                              className="h-5 w-5 rounded bg-primary/10 flex items-center justify-center flex-shrink-0 border border-primary/15">
+                            <span className="text-[9px] font-semibold text-primary leading-none">Z</span>
+                          </span>
+                                  From Zotero
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                  onClick={() => setRisDialogOpen(true)}
+                                  className="flex items-center gap-2.5 rounded-md py-2 px-2.5 cursor-pointer focus:bg-muted/60"
+                              >
+                          <span
+                              className="h-5 w-5 rounded bg-primary/10 flex items-center justify-center flex-shrink-0 border border-primary/15">
+                            <FileText className="h-2.5 w-2.5 text-primary"/>
+                          </span>
+                                  From RIS file
+                              </DropdownMenuItem>
+                          </DropdownMenuContent>
+                      </DropdownMenu>
+                      <Button
+                          size="sm"
+                          onClick={() => navigate(`/projects/${projectId}/articles/add`)}
+                          className="h-8 px-4 text-[13px] font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors"
+                      >
+                          <Plus className="mr-2 h-4 w-4"/>
+                          Add article
+                      </Button>
+                  </div>
               )}
             </div>
         )}
@@ -164,12 +264,25 @@ export default function ProjectView() {
       {activeTab === 'settings' ? (
           <div className="flex-1 overflow-y-auto">{renderContent()}</div>
       ) : (
-          <div className="flex-1 overflow-y-auto px-6 py-6 lg:px-10">
-            <div className="w-full max-w-[1400px] mx-auto">
+          <div className="flex-1 overflow-y-auto px-6 py-4 lg:px-10">
+              <div className="w-full max-w-[1800px] mx-auto">
             {renderContent()}
           </div>
         </div>
       )}
+
+          <ZoteroImportDialog
+              open={zoteroDialogOpen}
+              onOpenChange={setZoteroDialogOpen}
+              projectId={projectId || ''}
+              onImportComplete={loadArticles}
+          />
+          <RISImportDialog
+              open={risDialogOpen}
+              onOpenChange={setRisDialogOpen}
+              projectId={projectId || ''}
+              onImportComplete={loadArticles}
+          />
     </div>
   );
 }

@@ -1,9 +1,9 @@
 /**
- * Orquestrador de Comparação
- * 
- * Estratégia simplificada:
- * - cardinality='one': Tabela simples (todos os fields, todos os usuários)
- * - cardinality='many': Seletor de entidade + tabela comparando essa entidade entre usuários
+ * Comparison orchestrator
+ *
+ * Simplified strategy:
+ * - cardinality='one': Simple table (all fields, all users)
+ * - cardinality='many': Entity selector + table comparing that entity across users
  */
 
 import type {ExtractionEntityType} from '@/types/extraction';

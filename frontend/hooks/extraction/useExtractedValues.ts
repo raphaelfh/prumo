@@ -1,8 +1,8 @@
 /**
- * Hook para gerenciar valores extraídos
+ * Hook to manage extracted values
  * 
  * Responsabilidades:
- * - Carregar valores existentes do banco
+ * - Load existing values from DB
  * - Gerenciar estado local de valores
  * - Fornecer função de update
  * - Fornecer função de save
@@ -14,6 +14,7 @@ import {useCallback, useEffect, useState} from 'react';
 import {supabase} from '@/integrations/supabase/client';
 import {extractValueForSave, extractValueFromDb} from '@/lib/validations/selectOther';
 import {toast} from 'sonner';
+import {t} from '@/lib/copy';
 
 // =================== INTERFACES ===================
 
@@ -53,7 +54,7 @@ export function useExtractedValues(props: UseExtractedValuesProps): UseExtracted
   const [initialized, setInitialized] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Carregar valores existentes
+    // Load existing values
   useEffect(() => {
     if (!enabled || !articleId) return;
     loadValues();
@@ -64,12 +65,12 @@ export function useExtractedValues(props: UseExtractedValuesProps): UseExtracted
     setError(null);
 
     try {
-      console.log('📥 Carregando valores extraídos para artigo:', articleId);
+        console.log('Loading extracted values for article:', articleId);
 
-      // Buscar valores existentes do usuário atual
+        // Fetch existing values for current user
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        console.log('⚠️ Usuário não autenticado');
+          console.log('User not authenticated');
         setValues({});
         return;
       }
@@ -109,8 +110,8 @@ export function useExtractedValues(props: UseExtractedValuesProps): UseExtracted
 
     } catch (err: any) {
       console.error('❌ Erro ao carregar valores:', err);
-      setError(err.message || 'Erro ao carregar valores');
-      toast.error('Erro ao carregar valores extraídos');
+        setError(err.message || t('extraction', 'errors_loadExtractedValues'));
+        toast.error(t('extraction', 'errors_loadExtractedValues'));
     } finally {
       setLoading(false);
     }
@@ -127,9 +128,9 @@ export function useExtractedValues(props: UseExtractedValuesProps): UseExtracted
   const save = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Usuário não autenticado');
+        if (!user) throw new Error(t('common', 'errors_userNotAuthenticated'));
 
-      // Preparar batch de upserts
+        // Prepare batch of upserts
       const upserts = Object.entries(values).map(([key, valueData]) => {
         const [instanceId, fieldId] = key.split('_');
 
@@ -154,7 +155,7 @@ export function useExtractedValues(props: UseExtractedValuesProps): UseExtracted
         return;
       }
 
-      // Verificar quais valores já existem (batch SELECT)
+        // Check which values already exist (batch SELECT)
       const { data: existingValues, error: selectError } = await supabase
         .from('extracted_values' as any)
         .select('id, instance_id, field_id, reviewer_id')
@@ -197,7 +198,11 @@ export function useExtractedValues(props: UseExtractedValuesProps): UseExtracted
         const updateResults = await Promise.all(updatePromises);
         const updateErrors = updateResults.filter(r => r.error).map(r => r.error);
         if (updateErrors.length > 0) {
-          throw new Error(`Erro ao atualizar ${updateErrors.length} valores: ${updateErrors[0]?.message}`);
+            throw new Error(
+                t('extraction', 'errors_autoSaveUpdateValues')
+                    .replace('{{n}}', String(updateErrors.length))
+                    .replace('{{message}}', updateErrors[0]?.message ?? '')
+            );
         }
       }
 

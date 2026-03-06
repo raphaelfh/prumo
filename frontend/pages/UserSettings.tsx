@@ -1,13 +1,14 @@
 /**
- * Página de Configurações do Usuário
- * Layout com tabs para Perfil, Segurança e Integrações
+ * User Settings page
+ * Layout with tabs for Profile, Security and Integrations
  */
 
-import {useState} from 'react';
-import {useNavigate} from 'react-router-dom';
+import {useEffect, useState} from 'react';
+import {useNavigate, useSearchParams} from 'react-router-dom';
 import {Button} from '@/components/ui/button';
 import {cn} from '@/lib/utils';
-import {ArrowLeft, Plug, Settings as SettingsIcon, Shield, User} from 'lucide-react';
+import {PageHeader} from '@/components/patterns/PageHeader';
+import {ArrowLeft, Plug, Shield, User} from 'lucide-react';
 import {ProfileSection} from '@/components/user/ProfileSection';
 import {SecuritySection} from '@/components/user/SecuritySection';
 import {IntegrationsSection} from '@/components/user/IntegrationsSection';
@@ -24,27 +25,48 @@ interface Tab {
 const TABS: Tab[] = [
   {
     id: 'profile',
-    label: 'Perfil',
+      label: 'Profile',
     icon: User,
-    description: 'Informações pessoais e avatar',
+      description: 'Personal information and avatar',
   },
   {
     id: 'security',
-    label: 'Segurança',
+      label: 'Security',
     icon: Shield,
-    description: 'Senha e autenticação',
+      description: 'Password and authentication',
   },
   {
     id: 'integrations',
-    label: 'Integrações',
+      label: 'Integrations',
     icon: Plug,
-    description: 'Serviços externos e APIs',
+      description: 'External services and APIs',
   },
 ];
 
+const VALID_TAB_IDS: TabId[] = ['profile', 'security', 'integrations'];
+
 export default function UserSettings() {
-  const [activeTab, setActiveTab] = useState<TabId>('profile');
+    const [searchParams, setSearchParams] = useSearchParams();
+    const tabFromUrl = searchParams.get('tab');
+    const initialTab: TabId =
+        tabFromUrl && VALID_TAB_IDS.includes(tabFromUrl as TabId)
+            ? (tabFromUrl as TabId)
+            : 'profile';
+    const [activeTab, setActiveTab] = useState<TabId>(initialTab);
   const navigate = useNavigate();
+
+    // Sync tab when URL changes (e.g. direct link to ?tab=integrations)
+    useEffect(() => {
+        const tab = searchParams.get('tab');
+        if (tab && VALID_TAB_IDS.includes(tab as TabId)) {
+            setActiveTab(tab as TabId);
+        }
+    }, [searchParams]);
+
+    const handleTabChange = (tabId: TabId) => {
+        setActiveTab(tabId);
+        setSearchParams({tab: tabId}, {replace: true});
+    };
 
   const renderTabContent = () => {
     switch (activeTab) {
@@ -61,83 +83,52 @@ export default function UserSettings() {
 
   return (
     <div className="h-screen flex flex-col bg-background">
-      {/* Header */}
-      <div className="flex-shrink-0 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="px-6 py-3">
-          <div className="flex items-center gap-4 max-w-[1920px] mx-auto">
-            <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => navigate(-1)}
-                aria-label="Voltar para a página anterior"
-            >
-              <ArrowLeft className="h-4 w-4 mr-2"/>
-              Voltar
-            </Button>
-            <div className="h-5 w-px bg-border"/>
-            <div>
-              <h1 className="text-xl font-semibold tracking-tight flex items-center gap-2">
-                <SettingsIcon className="h-5 w-5 text-muted-foreground"/>
-                Configurações
-                <span className="text-muted-foreground font-normal">·</span>
-                <span className="text-muted-foreground font-normal">{activeTabMeta.label}</span>
-              </h1>
-            </div>
-          </div>
-        </div>
-      </div>
+        <PageHeader
+            leading={
+                <Button variant="ghost" size="sm" onClick={() => navigate(-1)} aria-label="Go back">
+                    <ArrowLeft className="h-4 w-4 mr-2"/>
+                    Back
+                </Button>
+            }
+            title="Settings"
+            description={activeTabMeta.description}
+        />
 
-      {/* Content area com tabs laterais */}
-      <div className="flex-1 overflow-hidden">
-        <div className="h-full max-w-[1920px] mx-auto flex">
-          {/* Sidebar com tabs */}
-          <div className="w-60 border-r bg-muted/30 py-4 px-3 flex-shrink-0">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-3 mb-2">
-              Configurações
-            </p>
-            <nav role="tablist" aria-label="Seções de configurações" className="space-y-0.5">
+        <div className="flex-1 overflow-hidden flex w-full">
+            <aside
+                className="w-56 flex-shrink-0 border-r border-border/40 bg-[#fafafa] dark:bg-[#0c0c0c] overflow-y-auto">
+                <nav role="tablist" aria-label="Settings sections" className="py-4 px-2 space-y-0.5">
               {TABS.map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
-
                 return (
                   <button
                     key={tab.id}
                     role="tab"
                     aria-selected={isActive}
-                    onClick={() => setActiveTab(tab.id)}
+                    onClick={() => handleTabChange(tab.id)}
+                    type="button"
                     className={cn(
-                        'w-full flex items-start gap-3 px-3 py-2.5 rounded-md text-left transition-colors',
-                        isActive
-                            ? 'bg-primary/10 text-primary'
-                            : 'text-foreground hover:bg-muted'
+                        'w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-[13px] font-medium transition-colors duration-75',
+                        'hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 focus-visible:ring-offset-1',
+                        isActive ? 'bg-muted text-foreground' : 'text-muted-foreground'
                     )}
                   >
-                    <Icon
-                        className={cn('h-4 w-4 mt-0.5 flex-shrink-0', isActive ? 'text-primary' : 'text-muted-foreground')}/>
-                    <div className="min-w-0">
-                      <p className={cn('text-sm', isActive ? 'font-medium' : 'font-normal')}>
-                        {tab.label}
-                      </p>
-                      <p className="text-xs text-muted-foreground leading-snug mt-0.5 truncate">
-                        {tab.description}
-                      </p>
-                    </div>
+                      <Icon className="h-4 w-4 flex-shrink-0" strokeWidth={1.5}/>
+                      {tab.label}
                   </button>
                 );
               })}
             </nav>
-          </div>
+            </aside>
 
-          {/* Main content */}
-          <div className="flex-1 overflow-y-auto">
-            <div className="p-8">
-              <div className="max-w-2xl">
+            <main className="flex-1 overflow-y-auto bg-background min-w-0">
+                <div className="w-full mx-auto px-4 py-6 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
+                    <div className="w-full max-w-3xl lg:max-w-4xl">
                 {renderTabContent()}
               </div>
             </div>
-          </div>
-        </div>
+            </main>
       </div>
     </div>
   );

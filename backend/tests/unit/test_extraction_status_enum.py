@@ -1,7 +1,7 @@
 """
-Testes para o enum ExtractionInstanceStatus.
+Tests for ExtractionInstanceStatus enum.
 
-Verifica que o enum Python está alinhado com o enum PostgreSQL.
+Verifies that the Python enum is aligned with the PostgreSQL enum.
 """
 
 import pytest
@@ -10,64 +10,64 @@ from app.models.extraction import ExtractionInstanceStatus
 
 
 class TestExtractionInstanceStatusEnum:
-    """Testes para o enum de status de instância de extração."""
+    """Tests for extraction instance status enum."""
 
     def test_enum_values_exist(self):
-        """Verifica que todos os valores esperados existem."""
+        """Verifies that all expected values exist."""
         expected_values = {"pending", "in_progress", "completed", "reviewed", "archived"}
         actual_values = {status.value for status in ExtractionInstanceStatus}
         
         assert actual_values == expected_values
 
     def test_pending_is_default(self):
-        """Verifica que PENDING é o valor padrão."""
+        """Verifies that PENDING is the default value."""
         assert ExtractionInstanceStatus.PENDING.value == "pending"
 
     def test_enum_is_string_compatible(self):
-        """Verifica que o enum pode ser usado como string."""
+        """Verifies that the enum can be used as string."""
         status = ExtractionInstanceStatus.COMPLETED
-        
-        # Deve ser comparável com string (herda de str)
+
+        # Should be comparable with string (inherits from str)
         assert status == "completed"
         assert status.value == "completed"
-        
-        # O .value é a forma correta de obter a string
+
+        # .value is the correct way to get the string
         assert status.value == "completed"
-        
-        # Pode ser usado em comparações de string
+
+        # Can be used in string comparisons
         assert f"{status.value}" == "completed"
 
     def test_enum_from_string(self):
-        """Verifica que podemos criar enum a partir de string."""
+        """Verifies that we can create enum from string."""
         status = ExtractionInstanceStatus("pending")
         assert status == ExtractionInstanceStatus.PENDING
 
     def test_enum_invalid_value_raises(self):
-        """Verifica que valor inválido levanta exceção."""
+        """Verifies that invalid value raises exception."""
         with pytest.raises(ValueError):
             ExtractionInstanceStatus("invalid_status")
 
     def test_all_status_values_are_snake_case(self):
-        """Verifica que todos os valores seguem snake_case (convenção PostgreSQL)."""
+        """Verifies that all values follow snake_case (PostgreSQL convention)."""
         for status in ExtractionInstanceStatus:
-            # Deve ser lowercase
+            # Should be lowercase
             assert status.value == status.value.lower()
-            # Palavras separadas por underscore (ou palavra única)
+            # Words separated by underscore (or single word)
             assert status.value.replace("_", "").isalpha()
 
     def test_status_workflow_progression(self):
-        """Testa fluxo lógico de progressão de status."""
-        # Ordem lógica esperada do workflow
+        """Tests logical status progression flow."""
+        # Expected logical workflow order
         workflow = [
             ExtractionInstanceStatus.PENDING,
             ExtractionInstanceStatus.IN_PROGRESS,
             ExtractionInstanceStatus.COMPLETED,
             ExtractionInstanceStatus.REVIEWED,
         ]
-        
-        # Todos devem ser únicos
+
+        # All must be unique
         assert len(workflow) == len(set(workflow))
-        
-        # ARCHIVED é um estado especial (não faz parte do workflow principal)
+
+        # ARCHIVED is a special state (not part of main workflow)
         assert ExtractionInstanceStatus.ARCHIVED not in workflow
 

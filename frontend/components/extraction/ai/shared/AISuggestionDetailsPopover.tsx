@@ -1,8 +1,8 @@
 /**
- * Modal de detalhes da sugestão de IA (justificativa + evidência) - Extraction
+ * AI suggestion details modal (rationale + evidence) - Extraction
  *
- * Usa Dialog centralizado na viewport para nunca cortar o conteúdo
- * (mesma estratégia do Assessment). Responsivo, com scroll interno.
+ * Uses viewport-centered Dialog so content is never clipped
+ * Same strategy as Assessment. Responsive, with internal scroll.
  */
 
 import {useState} from 'react';
@@ -10,6 +10,7 @@ import {Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,} from '
 import {ScrollArea} from '@/components/ui/scroll-area';
 import {Sparkles} from 'lucide-react';
 import {AISuggestionEvidence} from '../AISuggestionEvidence';
+import {t} from '@/lib/copy';
 import type {AISuggestion} from '@/hooks/extraction/ai/useAISuggestions';
 
 // -----------------------------------------------------------------------------
@@ -68,7 +69,7 @@ export function AISuggestionDetailsPopover({
         <DialogHeader className="p-4 pr-12 pb-3 border-b shrink-0 space-y-0">
           <DialogTitle className="flex items-center gap-2 text-base">
             <Sparkles className="h-4 w-4 text-purple-600 shrink-0" />
-            Detalhes da Sugestão
+              Suggestion details
           </DialogTitle>
         </DialogHeader>
 
@@ -86,7 +87,7 @@ export function AISuggestionDetailsPopover({
             )}
 
             {evidence?.text?.trim() && (
-              <section className="space-y-2" aria-label="Evidência citada">
+                <section className="space-y-2" aria-label={t('extraction', 'evidenceCitedAria')}>
                 <AISuggestionEvidence
                   evidence={{
                     text: evidence.text,

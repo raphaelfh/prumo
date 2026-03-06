@@ -3,7 +3,7 @@
  * 
  * Responsabilidades:
  * - Gerenciar o ciclo de vida do documento PDF
- * - Carregar PDF do Supabase
+ * - Load PDF from Supabase
  * - Estados de loading e error
  */
 
@@ -17,6 +17,7 @@ import {PDFCanvas} from './PDFCanvas';
 import {LoadingState} from '../LoadingState';
 import {ErrorState} from '../ErrorState';
 import {ArticleFileUploadDialogNew} from '@/components/articles/ArticleFileUploadDialogNew';
+import {t} from '@/lib/copy';
 import {cn} from '@/lib/utils';
 
 interface PDFViewerCoreProps {
@@ -43,8 +44,8 @@ export function PDFViewerCore({ articleId, projectId, className }: PDFViewerCore
 
   const viewMode = ui?.viewMode || 'continuous';
   const isContinuousMode = viewMode === 'continuous';
-  
-  // Carregar PDF
+
+    // Load PDF
   useEffect(() => {
     loadPDF();
   }, [articleId]);
@@ -57,7 +58,7 @@ export function PDFViewerCore({ articleId, projectId, className }: PDFViewerCore
       // Definir articleId no store
       setArticleId(articleId);
 
-      // Buscar arquivo MAIN (principal)
+        // Fetch MAIN (primary) file
       const { data: files, error: filesError } = await supabase
         .from('article_files')
         .select('storage_key, file_role, original_filename')
@@ -66,13 +67,13 @@ export function PDFViewerCore({ articleId, projectId, className }: PDFViewerCore
         .maybeSingle();
 
       if (filesError) {
-        console.error('❌ Erro ao buscar arquivo:', filesError);
+          console.error('❌ Error fetching file:', filesError);
         throw filesError;
       }
       
       if (!files) {
-        console.warn('⚠️ Nenhum arquivo MAIN encontrado para article_id:', articleId);
-        setError('PDF principal não encontrado para este artigo');
+          console.warn('⚠️ No MAIN file found for article_id:', articleId);
+          setError(t('extraction', 'pdfMainNotFound'));
         return;
       }
 
@@ -85,13 +86,12 @@ export function PDFViewerCore({ articleId, projectId, className }: PDFViewerCore
 
       setUrl(urlData.signedUrl);
     } catch (err: any) {
-      console.error('❌ Erro ao carregar PDF:', err);
-      const errorMessage = err.message || 'Erro ao carregar PDF';
+        console.error('❌ Error loading PDF:', err);
+        const errorMessage = err.message || t('extraction', 'pdfLoadErrorTitle');
       setError(errorMessage);
-      // Só mostra toast para erros reais (não para arquivo não encontrado)
-      if (!errorMessage.includes('não encontrado')) {
+        if (!errorMessage.toLowerCase().includes('not found')) {
         toast({
-          title: 'Erro ao carregar PDF',
+            title: t('extraction', 'pdfLoadErrorTitle'),
           description: errorMessage,
           variant: 'destructive',
         });
@@ -102,14 +102,14 @@ export function PDFViewerCore({ articleId, projectId, className }: PDFViewerCore
   };
 
   const handleLoadSuccess = useCallback((pdf: any) => {
-    console.log('📄 PDF carregado com sucesso:', pdf.numPages, 'páginas');
+      console.log('PDF loaded successfully:', pdf.numPages, 'pages');
     setNumPages(pdf.numPages);
     setPdfDocument(pdf);
   }, [setNumPages, setPdfDocument]);
 
   const handleLoadError = useCallback((error: Error) => {
-    console.error('❌ Erro ao carregar documento:', error);
-    setError('Erro ao carregar documento PDF');
+      console.error('❌ Error loading document:', error);
+      setError(t('extraction', 'pdfLoadDocumentError'));
   }, []);
 
   const handleUploadSuccess = useCallback(() => {
@@ -118,7 +118,7 @@ export function PDFViewerCore({ articleId, projectId, className }: PDFViewerCore
     loadPDF();
   }, []);
 
-  const isFileNotFound = error?.includes('não encontrado');
+    const isFileNotFound = error?.toLowerCase().includes('not found');
 
   if (isLoading) return <LoadingState />;
   if (error || !url) {
@@ -154,12 +154,12 @@ export function PDFViewerCore({ articleId, projectId, className }: PDFViewerCore
       <div
         className={cn(
           'flex',
-          isContinuousMode 
-            ? 'justify-start min-w-full' // Usar justify-start para evitar corte da borda esquerda
+          isContinuousMode
+              ? 'justify-start min-w-full' // justify-start to avoid cutting left edge
             : 'justify-center'
         )}
         style={isContinuousMode ? {
-          paddingLeft: '2rem', // Padding maior à esquerda para evitar corte mesmo com zoom alto
+            paddingLeft: '2rem', // Extra left padding to avoid cut-off at high zoom
           paddingRight: '1rem',
           paddingTop: '1rem',
           paddingBottom: '1rem',
@@ -173,7 +173,7 @@ export function PDFViewerCore({ articleId, projectId, className }: PDFViewerCore
           onLoadError={handleLoadError}
           options={PDF_OPTIONS}
           loading={<LoadingState />}
-          error={<ErrorState message="Erro ao carregar documento" />}
+          error={<ErrorState message={t('extraction', 'pdfLoadDocumentError')}/>}
           className="flex"
         >
           <PDFCanvas />

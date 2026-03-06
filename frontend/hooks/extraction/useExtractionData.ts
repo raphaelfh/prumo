@@ -1,17 +1,18 @@
 /**
- * Hook para carregar dados de extração
- * 
- * Centraliza toda a lógica de carregamento de dados do ExtractionFullScreen:
- * - Artigo, projeto, template
- * - Entity types com fields
- * - Instâncias
- * 
- * Reduz complexidade do componente principal seguindo princípio SRP.
+ * Hook to load extraction data
+ *
+ * Centralizes all ExtractionFullScreen data loading:
+ * - Article, project, template
+ * - Entity types with fields
+ * - Instances
+ *
+ * Reduces main component complexity (SRP).
  */
 
 import {useCallback, useEffect, useState} from 'react';
 import {supabase} from '@/integrations/supabase/client';
 import {toast} from 'sonner';
+import {t} from '@/lib/copy';
 import {extractionInstanceService} from '@/services/extractionInstanceService';
 import type {Article} from '@/types/article';
 import type {Project} from '@/types/project';
@@ -28,19 +29,19 @@ export interface EntityTypeWithFields extends ExtractionEntityType {
 }
 
 interface UseExtractionDataReturn {
-  // Dados carregados
+    // Loaded data
   article: Article | null;
   project: Project | null;
   template: ProjectExtractionTemplate | null;
   entityTypes: EntityTypeWithFields[];
   instances: ExtractionInstance[];
   articles: Article[];
-  
-  // Estados
+
+    // State
   loading: boolean;
   error: string | null;
-  
-  // Funções
+
+    // Functions
   refresh: () => Promise<void>;
   refreshInstances: () => Promise<void>;
 }
@@ -52,7 +53,7 @@ interface UseExtractionDataProps {
 }
 
 /**
- * Hook para carregar todos os dados necessários para extração
+ * Hook to load all data needed for extraction
  */
 export function useExtractionData({
   projectId,
@@ -68,7 +69,7 @@ export function useExtractionData({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Carregar ou criar instâncias (usando service para inicialização automática)
+    // Load or create instances (using service for auto-init)
   const loadOrCreateInstances = useCallback(async (
     templateId: string,
     entityTypesList: EntityTypeWithFields[]
@@ -81,10 +82,10 @@ export function useExtractionData({
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        throw new Error('Usuário não autenticado');
+          throw new Error(t('common', 'errors_userNotAuthenticated'));
       }
 
-      // Delegar para o service (inicialização automática)
+        // Delegate to service (auto-init)
       const instances = await extractionInstanceService.initializeArticleInstances(
         articleId,
         projectId,
@@ -99,13 +100,13 @@ export function useExtractionData({
         metadata: instance.metadata as unknown,
       })));
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Erro ao carregar instâncias';
-      console.error('Erro ao carregar/criar instâncias:', err);
+        const message = err instanceof Error ? err.message : t('extraction', 'errors_loadInstances');
+        console.error('Error loading/creating instances:', err);
       toast.error(message);
     }
   }, [articleId, projectId]);
 
-  // Carregar instâncias existentes (sem criar)
+    // Load existing instances (without creating)
   const loadInstances = useCallback(async (templateId: string) => {
     if (!articleId || !templateId) {
       setInstances([]);
@@ -124,13 +125,13 @@ export function useExtractionData({
         metadata: instance.metadata as unknown,
       })));
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Erro ao carregar instâncias';
-      console.error('Erro ao carregar instâncias:', err);
+        const message = err instanceof Error ? err.message : t('extraction', 'errors_loadInstances');
+        console.error('Error loading instances:', err);
       toast.error(message);
     }
   }, [articleId]);
 
-  // Carregar todos os dados
+    // Load all data
   const loadData = useCallback(async () => {
     if (!enabled || !projectId || !articleId) {
       setLoading(false);
@@ -141,7 +142,7 @@ export function useExtractionData({
       setLoading(true);
       setError(null);
 
-      // 1. Carregar artigo
+        // 1. Load article
       const { data: articleData, error: articleError } = await supabase
         .from('articles')
         .select('*')
@@ -151,7 +152,7 @@ export function useExtractionData({
       if (articleError) throw articleError;
       setArticle(articleData);
 
-      // 2. Carregar projeto
+        // 2. Load project
       const { data: projectData, error: projectError } = await supabase
         .from('projects')
         .select('*')
@@ -161,7 +162,7 @@ export function useExtractionData({
       if (projectError) throw projectError;
       setProject(projectData);
 
-      // 3. Carregar template ativo
+        // 3. Load active template
       const { data: templateData, error: templateError } = await supabase
         .from('project_extraction_templates')
         .select('*')
@@ -170,11 +171,11 @@ export function useExtractionData({
         .single();
 
       if (templateError) throw templateError;
-      if (!templateData) throw new Error('Template de extração não configurado');
+        if (!templateData) throw new Error(t('common', 'errors_templateNotFound'));
       
       setTemplate(templateData as ProjectExtractionTemplate);
 
-      // 4. Carregar entity types com fields
+        // 4. Load entity types with fields
       const { data: entityTypesData, error: entityTypesError } = await supabase
         .from('extraction_entity_types')
         .select(`
@@ -199,10 +200,10 @@ export function useExtractionData({
 
       setEntityTypes(typesWithFields);
 
-      // 5. Carregar ou criar instâncias (usando service para inicialização automática)
+        // 5. Load or create instances (using service for auto-init)
       await loadOrCreateInstances(templateData.id, typesWithFields);
 
-      // 6. Carregar lista de artigos (para navegação)
+        // 6. Load article list (for navigation)
       const { data: articlesData, error: articlesError } = await supabase
         .from('articles')
         .select('id, title')
@@ -213,8 +214,8 @@ export function useExtractionData({
       setArticles(articlesData as Article[]);
 
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Erro ao carregar dados';
-      console.error('Erro ao carregar dados de extração:', err);
+        const message = err instanceof Error ? err.message : t('extraction', 'errors_loadExtractionData');
+        console.error('Error loading extraction data:', err);
       setError(message);
       toast.error(message);
       setLoading(false);
@@ -223,17 +224,17 @@ export function useExtractionData({
     }
   }, [projectId, articleId, enabled, loadOrCreateInstances]);
 
-  // Carregar dados iniciais
+    // Load initial data
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  // Função de refresh
+    // Refresh function
   const refresh = useCallback(async () => {
     await loadData();
   }, [loadData]);
 
-  // Função de refresh apenas de instâncias (sem criar novas)
+    // Refresh instances only (no new creation)
   const refreshInstances = useCallback(async () => {
     if (template?.id) {
       await loadInstances(template.id);

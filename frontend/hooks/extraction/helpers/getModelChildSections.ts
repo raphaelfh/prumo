@@ -1,8 +1,8 @@
 /**
- * Helper para buscar seções filhas de um modelo
- * 
- * Busca todas as entity_types filhas de um modelo (parent instance).
- * Usado para chunking de extração em batch.
+ * Helper to fetch child sections of a model
+ *
+ * Fetches all child entity_types of a model (parent instance).
+ * Used for batch extraction chunking.
  */
 
 import {supabase} from '@/integrations/supabase/client';
@@ -16,18 +16,18 @@ export interface ModelChildSection {
 }
 
 /**
- * Busca todas as seções filhas de um modelo
- * 
- * @param parentInstanceId - ID da instância do modelo
- * @param templateId - ID do template
- * @returns Array de seções filhas ordenadas por sort_order
+ * Fetches all child sections of a model
+ *
+ * @param parentInstanceId - Model instance ID
+ * @param templateId - Template ID
+ * @returns Array of child sections ordered by sort_order
  */
 export async function getModelChildSections(
   parentInstanceId: string,
   templateId: string,
 ): Promise<ModelChildSection[]> {
-  // 1. Buscar a instância do modelo para obter seu entity_type_id
-  // Não filtrar por template_id aqui, pois a instância pode estar associada a project_template_id ou template_id
+    // 1. Fetch model instance to get its entity_type_id
+    // Do not filter by template_id here; instance may be linked to project_template_id or template_id
   const { data: instance, error: instanceError } = await supabase
     .from('extraction_instances')
     .select('entity_type_id')
@@ -42,7 +42,7 @@ export async function getModelChildSections(
     throw new Error(`Model instance not found: ${parentInstanceId}`);
   }
 
-  // 2. Buscar entity_types filhas usando helper reutilizável
+    // 2. Fetch child entity_types using reusable helper
   return queryEntityTypesWithFallback<ModelChildSection>({
     templateId,
     select: 'id, name, label, sort_order',

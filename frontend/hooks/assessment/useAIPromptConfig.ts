@@ -2,6 +2,7 @@ import {useCallback, useEffect, useState} from 'react';
 import {supabase} from '@/integrations/supabase/client';
 import {Tables} from '@/integrations/supabase/types';
 import {useErrorTracking} from '@/services/errorTracking';
+import {t} from '@/lib/copy';
 
 export type AIPromptConfig = Tables<'ai_assessment_prompts'>;
 
@@ -68,7 +69,7 @@ export const useAIPromptConfig = ({
 
       setPromptConfig(data);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Erro desconhecido';
+        const errorMessage = err instanceof Error ? err.message : t('common', 'errors_unknownError');
       setError(errorMessage);
       captureError(err instanceof Error ? err : new Error(errorMessage), {
         component: 'useAIPromptConfig',
@@ -98,7 +99,7 @@ export const useAIPromptConfig = ({
 
       setPromptConfig(data);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Erro ao salvar configuração de prompt';
+        const errorMessage = err instanceof Error ? err.message : t('assessment', 'errors_savePromptConfig');
       setError(errorMessage);
       captureError(err instanceof Error ? err : new Error(errorMessage), {
         component: 'useAIPromptConfig',
@@ -111,7 +112,7 @@ export const useAIPromptConfig = ({
 
   const updatePromptConfig = useCallback(async (updates: Partial<AIPromptConfig>) => {
     if (!promptConfig) {
-      throw new Error('Nenhuma configuração de prompt encontrada para atualizar');
+        throw new Error(t('assessment', 'errors_promptConfigNotFoundUpdate'));
     }
 
     try {
@@ -128,7 +129,7 @@ export const useAIPromptConfig = ({
 
       setPromptConfig(data);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Erro ao atualizar configuração de prompt';
+        const errorMessage = err instanceof Error ? err.message : t('assessment', 'errors_updatePromptConfig');
       setError(errorMessage);
       captureError(err instanceof Error ? err : new Error(errorMessage), {
         component: 'useAIPromptConfig',
@@ -141,7 +142,7 @@ export const useAIPromptConfig = ({
 
   const deletePromptConfig = useCallback(async () => {
     if (!promptConfig) {
-      throw new Error('Nenhuma configuração de prompt encontrada para deletar');
+        throw new Error(t('assessment', 'errors_promptConfigNotFoundDelete'));
     }
 
     try {
@@ -156,7 +157,7 @@ export const useAIPromptConfig = ({
 
       setPromptConfig(null);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Erro ao deletar configuração de prompt';
+        const errorMessage = err instanceof Error ? err.message : t('assessment', 'errors_deletePromptConfig');
       setError(errorMessage);
       captureError(err instanceof Error ? err : new Error(errorMessage), {
         component: 'useAIPromptConfig',
@@ -183,7 +184,7 @@ export const useAIPromptConfig = ({
         });
       }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Erro ao resetar para padrões';
+        const errorMessage = err instanceof Error ? err.message : t('assessment', 'errors_resetPromptConfig');
       setError(errorMessage);
       captureError(err instanceof Error ? err : new Error(errorMessage), {
         component: 'useAIPromptConfig',

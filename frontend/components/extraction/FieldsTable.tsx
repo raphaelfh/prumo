@@ -1,8 +1,8 @@
 /**
- * Tabela de Campos de Extração
- * 
- * Componente responsável por exibir a lista de campos em formato de tabela
- * com funcionalidades de edição inline e ações.
+ * Extraction fields table
+ *
+ * Component that displays the field list in table format
+ * with inline edit and actions.
  * 
  * @component
  */
@@ -23,6 +23,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {Edit2, Loader2, Lock, MoreVertical, Save, Settings, Trash2, X} from 'lucide-react';
+import {t} from '@/lib/copy';
 import type {ExtractionField} from '@/types/extraction';
 
 interface FieldsTableProps {
@@ -59,14 +60,14 @@ export const FieldsTable = memo(function FieldsTable({
   getFieldTypeLabel,
 }: FieldsTableProps) {
   return (
-    <Table role="table" aria-label="Lista de campos de extração">
+      <Table role="table" aria-label={t('extraction', 'fieldsListAria')}>
       <TableHeader>
         <TableRow>
-          <TableHead className="w-[50px]" scope="col" aria-label="Número do campo">#</TableHead>
-          <TableHead scope="col">Campo</TableHead>
-          <TableHead scope="col">Tipo</TableHead>
-          <TableHead className="text-center" scope="col">Obrigatório</TableHead>
-          <TableHead className="text-right" scope="col">Ações</TableHead>
+            <TableHead className="w-[50px]" scope="col" aria-label={t('extraction', 'fieldNumberAria')}>#</TableHead>
+            <TableHead scope="col">{t('extraction', 'fieldColumn')}</TableHead>
+            <TableHead scope="col">{t('extraction', 'typeColumn')}</TableHead>
+            <TableHead className="text-center" scope="col">{t('extraction', 'requiredColumn')}</TableHead>
+            <TableHead className="text-right" scope="col">{t('extraction', 'tableActions')}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -81,19 +82,19 @@ export const FieldsTable = memo(function FieldsTable({
                   <Input
                     value={editData.label || ''}
                     onChange={(e) => onUpdateEditData({ label: e.target.value })}
-                    placeholder="Label do campo"
+                    placeholder={t('extraction', 'fieldLabelPlaceholder')}
                     disabled={savingEdit}
-                    aria-label={`Editar label do campo ${field.label}`}
+                    aria-label={t('extraction', 'editFieldLabelAria').replace('{{label}}', field.label)}
                     aria-describedby={`field-${field.id}-label-help`}
                   />
                   <Textarea
                     value={editData.description || ''}
                     onChange={(e) => onUpdateEditData({ description: e.target.value })}
-                    placeholder="Descrição"
+                    placeholder={t('extraction', 'fieldDescriptionPlaceholder')}
                     rows={2}
                     className="text-sm"
                     disabled={savingEdit}
-                    aria-label={`Editar descrição do campo ${field.label}`}
+                    aria-label={t('extraction', 'editFieldDescriptionAria').replace('{{label}}', field.label)}
                     aria-describedby={`field-${field.id}-description-help`}
                   />
                 </div>
@@ -107,7 +108,7 @@ export const FieldsTable = memo(function FieldsTable({
                   )}
                   {field.unit && (
                     <div className="text-xs text-muted-foreground mt-1">
-                      Unidade: <span className="font-mono">{field.unit}</span>
+                        {t('extraction', 'unitLabel')}: <span className="font-mono">{field.unit}</span>
                     </div>
                   )}
                 </div>
@@ -126,11 +127,11 @@ export const FieldsTable = memo(function FieldsTable({
                     onUpdateEditData({ is_required: checked })
                   }
                   disabled={savingEdit}
-                  aria-label={`Campo ${field.label} é obrigatório`}
+                  aria-label={t('extraction', 'fieldRequiredAria').replace('{{label}}', field.label)}
                 />
               ) : (
                 <Badge variant={field.is_required ? 'default' : 'outline'}>
-                  {field.is_required ? 'Sim' : 'Não'}
+                    {field.is_required ? t('extraction', 'yes') : t('extraction', 'no')}
                 </Badge>
               )}
             </TableCell>
@@ -142,7 +143,7 @@ export const FieldsTable = memo(function FieldsTable({
                     onClick={() => onSaveEdit(field.id)}
                     disabled={savingEdit}
                     className="gap-1"
-                    aria-label={`Salvar alterações do campo ${field.label}`}
+                    aria-label={t('extraction', 'saveFieldChangesAria').replace('{{label}}', field.label)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
@@ -155,7 +156,7 @@ export const FieldsTable = memo(function FieldsTable({
                     ) : (
                       <Save className="h-3 w-3" aria-hidden="true" />
                     )}
-                    Salvar
+                      {t('common', 'save')}
                   </Button>
                   <Button
                     size="sm"
@@ -163,7 +164,7 @@ export const FieldsTable = memo(function FieldsTable({
                     onClick={onCancelEdit}
                     disabled={savingEdit}
                     className="gap-1"
-                    aria-label={`Cancelar edição do campo ${field.label}`}
+                    aria-label={t('extraction', 'cancelFieldEditAria').replace('{{label}}', field.label)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
@@ -172,7 +173,7 @@ export const FieldsTable = memo(function FieldsTable({
                     }}
                   >
                     <X className="h-3 w-3" aria-hidden="true" />
-                    Cancelar
+                      {t('common', 'cancel')}
                   </Button>
                 </div>
               ) : (
@@ -184,7 +185,7 @@ export const FieldsTable = memo(function FieldsTable({
                           size="sm"
                           variant="ghost"
                           className="h-8 w-8 p-0"
-                          aria-label={`Ações para o campo ${field.label}`}
+                          aria-label={t('extraction', 'actionsForFieldAria').replace('{{label}}', field.label)}
                         >
                           <MoreVertical className="h-4 w-4" />
                         </Button>
@@ -197,14 +198,14 @@ export const FieldsTable = memo(function FieldsTable({
                               className="gap-2"
                             >
                               <Edit2 className="h-4 w-4" />
-                              Edição Rápida
+                                {t('extraction', 'quickEdit')}
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onClick={() => onOpenEditDialog(field)}
                               className="gap-2"
                             >
                               <Settings className="h-4 w-4" />
-                              Edição Completa
+                                {t('extraction', 'fullEdit')}
                             </DropdownMenuItem>
                           </>
                         )}
@@ -220,7 +221,7 @@ export const FieldsTable = memo(function FieldsTable({
                             ) : (
                               <Trash2 className="h-4 w-4" />
                             )}
-                            Excluir Campo
+                              {t('extraction', 'deleteFieldButton')}
                           </DropdownMenuItem>
                         )}
                       </DropdownMenuContent>
@@ -239,7 +240,7 @@ export const FieldsTable = memo(function FieldsTable({
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent>
-                          <p>Apenas managers podem editar ou excluir</p>
+                            <p>{t('extraction', 'onlyManagersEditDelete')}</p>
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>

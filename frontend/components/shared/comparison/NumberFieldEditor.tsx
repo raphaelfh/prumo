@@ -1,20 +1,20 @@
 /**
- * Editor inline para campos numéricos com suporte a unidades
- * 
- * Componente de apresentação puro - gerencia apenas a UI do editor.
- * 
+ * Inline editor for numeric fields with unit support
+ *
+ * Pure presentation component - only manages editor UI.
+ *
  * Features:
- * - Layout 50/50 entre input e select
- * - Navegação por Tab: Input → Select → Shift+Tab volta
- * - Estado controlado do Select (notifica pai quando abre/fecha)
- * - StopPropagation para evitar conflitos de clique
- * 
- * ARQUITETURA (Separation of Concerns):
- * - NumberFieldEditor: Apenas renderiza e notifica mudanças
- * - ComparisonCell (pai): Gerencia ciclo de vida (abrir/fechar/salvar)
- * - Blur do Input: Silencioso (não salva)
- * - Clique fora: Detectado pelo pai via handleClickOutside
- * - Enter/Escape: Notifica pai via onSave/onCancel
+ * - 50/50 layout between input and select
+ * - Tab navigation: Input → Select → Shift+Tab back
+ * - Controlled Select state (notifies parent when open/close)
+ * - StopPropagation to avoid click conflicts
+ *
+ * ARCHITECTURE (Separation of Concerns):
+ * - NumberFieldEditor: Only renders and notifies changes
+ * - ComparisonCell (parent): Manages lifecycle (open/close/save)
+ * - Input blur: Silent (does not save)
+ * - Click outside: Detected by parent via handleClickOutside
+ * - Enter/Escape: Notifies parent via onSave/onCancel
  */
 
 import {useEffect, useRef, useState} from 'react';
@@ -25,19 +25,19 @@ import {getRelatedUnits} from '@/lib/unitConversions';
 import type {ExtractionField} from '@/types/extraction';
 
 interface NumberFieldEditorProps {
-  value: any; // Pode ser "100" ou { value: "100", unit: "years" }
+    value: any; // Can be "100" or { value: "100", unit: "years" }
   field: ExtractionField;
   onChange: (newValue: any) => void;
   onSave: () => void;
   onCancel: () => void;
-  onSelectOpenChange?: (open: boolean) => void; // ✅ Callback para estado do Select
+    onSelectOpenChange?: (open: boolean) => void; // Callback for Select open state
   autoFocus?: boolean;
 }
 
 export function NumberFieldEditor(props: NumberFieldEditorProps) {
   const { value, field, onChange, onSave, onCancel, onSelectOpenChange, autoFocus } = props;
 
-  // Parse valor inicial
+    // Parse initial value
   const initialNumValue = typeof value === 'object' && value !== null && 'value' in value
     ? value.value
     : value;
@@ -48,10 +48,10 @@ export function NumberFieldEditor(props: NumberFieldEditorProps) {
 
   const [numValue, setNumValue] = useState(initialNumValue || '');
   const [currentUnit, setCurrentUnit] = useState(initialUnit || '');
-  const [isSelectOpen, setIsSelectOpen] = useState(false); // ✅ State interno para rastrear Select
+    const [isSelectOpen, setIsSelectOpen] = useState(false); // Internal state to track Select
   const selectTriggerRef = useRef<HTMLButtonElement>(null);
 
-  // Determinar unidades disponíveis
+    // Determine available units
   const availableUnits = field.allowed_units && field.allowed_units.length > 0
     ? field.allowed_units
     : (field.unit ? getRelatedUnits(field.unit) : []);
@@ -59,7 +59,7 @@ export function NumberFieldEditor(props: NumberFieldEditorProps) {
   const hasMultipleUnits = availableUnits.length > 1;
   const hasSingleUnit = availableUnits.length === 1;
 
-  // Atualizar valor no onChange
+    // Update value on onChange
   useEffect(() => {
     if (availableUnits.length > 0) {
       onChange({ value: numValue, unit: currentUnit });
@@ -91,9 +91,9 @@ export function NumberFieldEditor(props: NumberFieldEditorProps) {
     void e;
   };
 
-  // ✅ Callback para estado do Select
+    // Callback for Select state
   const handleSelectOpenChange = (open: boolean) => {
-    setIsSelectOpen(open); // ✅ Atualizar state interno
+      setIsSelectOpen(open); // Update internal state
     onSelectOpenChange?.(open); // ✅ Propagar para ComparisonCell
   };
 

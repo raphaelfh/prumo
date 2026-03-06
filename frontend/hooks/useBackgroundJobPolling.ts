@@ -2,7 +2,7 @@
  * Hook para polling de Background Jobs
  * 
  * Monitora jobs ativos e atualiza seu status automaticamente.
- * Sincroniza com serviços em execução para refletir progresso em tempo real.
+ * Syncs with running services to reflect progress in real time.
  */
 
 import { useEffect, useRef, useCallback } from 'react';
@@ -10,13 +10,13 @@ import { useBackgroundJobs } from '@/stores/useBackgroundJobs';
 import type { BackgroundJob } from '@/types/background-jobs';
 
 interface UseBackgroundJobPollingOptions {
-  interval?: number; // Intervalo de polling em ms (padrão: 2000)
+    interval?: number; // Polling interval in ms (default: 2000)
   onJobComplete?: (job: BackgroundJob) => void;
   onJobFailed?: (job: BackgroundJob) => void;
 }
 
 /**
- * Hook que faz polling de jobs ativos e atualiza notificações
+ * Hook that polls active jobs and updates notifications
  */
 export function useBackgroundJobPolling(options: UseBackgroundJobPollingOptions = {}) {
   const { interval = 2000, onJobComplete, onJobFailed } = options;
@@ -26,8 +26,8 @@ export function useBackgroundJobPolling(options: UseBackgroundJobPollingOptions 
 
   const checkJobStatus = useCallback(() => {
     const activeJobs = getActiveJobs();
-    
-    // Verificar mudanças de estado
+
+      // Check for state changes
     activeJobs.forEach((job) => {
       const previousStatus = previousJobStatesRef.current.get(job.id);
       
@@ -40,12 +40,12 @@ export function useBackgroundJobPolling(options: UseBackgroundJobPollingOptions 
       if (previousStatus === 'running' && job.status === 'failed') {
         onJobFailed?.(job);
       }
-      
-      // Atualizar estado anterior
+
+        // Update previous state
       previousJobStatesRef.current.set(job.id, job.status);
     });
 
-    // Limpar jobs que não existem mais
+      // Clear jobs that no longer exist
     const activeJobIds = new Set(activeJobs.map(j => j.id));
     for (const [jobId] of previousJobStatesRef.current) {
       if (!activeJobIds.has(jobId)) {
@@ -56,8 +56,8 @@ export function useBackgroundJobPolling(options: UseBackgroundJobPollingOptions 
 
   useEffect(() => {
     const activeJobs = getActiveJobs();
-    
-    // Se não há jobs ativos, não fazer polling
+
+      // If no active jobs, do not poll
     if (activeJobs.length === 0) {
       return;
     }

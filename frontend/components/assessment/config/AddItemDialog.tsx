@@ -1,15 +1,15 @@
 /**
- * Dialog para adicionar novo item ao instrumento de avaliacao
+ * Dialog to add a new item to the assessment instrument
  *
- * Segue o pattern de AddSectionDialog (Extracao):
- * - react-hook-form + zodResolver para validacao
+ * Follows AddSectionDialog (Extraction) pattern:
+ * - react-hook-form + zodResolver for validation
  * - shadcn Form components
- * - Loading state durante submit
- * - form.reset() ao fechar
- * - toast.success() / toast.error() para feedback
+ * - Loading state during submit
+ * - form.reset() on close
+ * - toast.success() / toast.error() for feedback
  *
- * Reutiliza AllowedValuesList do modulo de Extracao para
- * o campo allowedLevels (multi-value string[]).
+ * Reuses AllowedValuesList from Extraction module for
+ * allowedLevels field (multi-value string[]).
  */
 
 import {useState} from 'react';
@@ -34,6 +34,7 @@ import {Loader2, Plus} from 'lucide-react';
 import {toast} from 'sonner';
 import {addItem} from '@/services/projectAssessmentInstrumentService';
 import {AllowedValuesList} from '@/components/extraction/dialogs/AllowedValuesList';
+import {t} from '@/lib/copy';
 
 // =================== CONSTANTS ===================
 
@@ -42,19 +43,19 @@ const NEW_DOMAIN_SENTINEL = '__novo_dominio__';
 // =================== SCHEMAS ===================
 
 const AddItemSchema = z.object({
-  domain: z.string().min(1, 'Dominio e obrigatorio'),
+    domain: z.string().min(1, 'Domain is required'),
   customDomain: z.string().optional(),
   itemCode: z
     .string()
-    .min(1, 'Codigo e obrigatorio')
-    .max(50, 'Codigo deve ter no maximo 50 caracteres'),
+      .min(1, 'Code is required')
+      .max(50, 'Code must be at most 50 characters'),
   question: z
     .string()
-    .min(1, 'Questao e obrigatoria')
-    .max(2000, 'Questao deve ter no maximo 2000 caracteres'),
+      .min(1, 'Question is required')
+      .max(2000, 'Question must be at most 2000 characters'),
   description: z
     .string()
-    .max(2000, 'Descricao deve ter no maximo 2000 caracteres')
+      .max(2000, 'Description must be at most 2000 characters')
     .optional()
     .nullable(),
   required: z.boolean().default(true),
@@ -66,7 +67,7 @@ const AddItemSchema = z.object({
     return true;
   },
   {
-    message: 'Nome do novo dominio e obrigatorio',
+      message: 'New domain name is required',
     path: ['customDomain'],
   }
 );
@@ -114,7 +115,7 @@ export function AddItemDialog({
 
   const handleSubmit = async (data: AddItemInput) => {
     if (allowedLevels.length === 0) {
-      toast.error('Adicione pelo menos um nivel permitido');
+        toast.error(t('assessment', 'addItemAddOneLevel'));
       return;
     }
 
@@ -134,15 +135,15 @@ export function AddItemDialog({
         allowedLevels,
       });
 
-      toast.success('Item adicionado com sucesso');
+        toast.success(t('assessment', 'addItemSuccess'));
 
       form.reset();
       setAllowedLevels(defaultAllowedLevels);
       onOpenChange(false);
       onItemAdded();
     } catch (error: any) {
-      console.error('Erro ao adicionar item:', error);
-      toast.error(`Erro ao adicionar item: ${error.message || 'Erro desconhecido'}`);
+        console.error('Error adding item:', error);
+        toast.error(`${t('assessment', 'addItemError')}: ${error.message || t('assessment', 'addItemErrorUnknown')}`);
     } finally {
       setLoading(false);
     }
@@ -162,10 +163,10 @@ export function AddItemDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Plus className="h-5 w-5" />
-            Adicionar Item
+              {t('assessment', 'addItemTitle')}
           </DialogTitle>
           <DialogDescription>
-            Crie um novo item de avaliacao para o instrumento.
+              {t('assessment', 'addItemDesc')}
           </DialogDescription>
         </DialogHeader>
 
@@ -177,11 +178,11 @@ export function AddItemDialog({
               name="domain"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Dominio *</FormLabel>
+                    <FormLabel>{t('assessment', 'addItemDomainLabel')}</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Selecione o dominio" />
+                          <SelectValue placeholder={t('assessment', 'addItemDomainPlaceholder')}/>
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
@@ -191,7 +192,7 @@ export function AddItemDialog({
                         </SelectItem>
                       ))}
                       <SelectItem value={NEW_DOMAIN_SENTINEL}>
-                        Novo dominio...
+                          {t('assessment', 'addItemNewDomainOption')}
                       </SelectItem>
                     </SelectContent>
                   </Select>
@@ -207,10 +208,10 @@ export function AddItemDialog({
                 name="customDomain"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Nome do Novo Dominio *</FormLabel>
+                      <FormLabel>{t('assessment', 'addItemNewDomainLabel')}</FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="ex: D5, Novo Dominio"
+                          placeholder={t('assessment', 'addItemNewDomainPlaceholder')}
                         {...field}
                       />
                     </FormControl>
@@ -226,15 +227,15 @@ export function AddItemDialog({
               name="itemCode"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Codigo do Item *</FormLabel>
+                    <FormLabel>{t('assessment', 'addItemCodeLabel')}</FormLabel>
                   <FormControl>
                     <Input
-                      placeholder="ex: 1.4, C1"
+                        placeholder={t('assessment', 'addItemCodePlaceholder')}
                       {...field}
                     />
                   </FormControl>
                   <FormDescription>
-                    Codigo curto para identificar o item
+                      {t('assessment', 'addItemCodeDesc')}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -247,10 +248,10 @@ export function AddItemDialog({
               name="question"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Questao *</FormLabel>
+                    <FormLabel>{t('assessment', 'addItemQuestionLabel')}</FormLabel>
                   <FormControl>
                     <Textarea
-                      placeholder="A questao de avaliacao que o revisor deve responder"
+                        placeholder={t('assessment', 'addItemQuestionPlaceholder')}
                       rows={3}
                       {...field}
                     />
@@ -266,10 +267,10 @@ export function AddItemDialog({
               name="description"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Descricao (Opcional)</FormLabel>
+                    <FormLabel>{t('assessment', 'addItemDescriptionLabel')}</FormLabel>
                   <FormControl>
                     <Textarea
-                      placeholder="Orientacao adicional para o avaliador"
+                        placeholder={t('assessment', 'addItemDescriptionPlaceholder')}
                       rows={2}
                       {...field}
                       value={field.value || ''}
@@ -282,7 +283,7 @@ export function AddItemDialog({
 
             {/* Allowed Levels */}
             <div className="space-y-2">
-              <FormLabel>Niveis Permitidos *</FormLabel>
+                <FormLabel>{t('assessment', 'addItemAllowedLevelsLabel')}</FormLabel>
               <AllowedValuesList
                 values={allowedLevels}
                 onChange={setAllowedLevels}
@@ -290,7 +291,7 @@ export function AddItemDialog({
               />
               {allowedLevels.length === 0 && (
                 <p className="text-xs text-destructive">
-                  Adicione pelo menos um nivel permitido
+                    {t('assessment', 'addItemAddOneLevel')}
                 </p>
               )}
             </div>
@@ -302,9 +303,9 @@ export function AddItemDialog({
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
                   <div className="space-y-0.5">
-                    <FormLabel className="text-base">Item Obrigatorio</FormLabel>
+                      <FormLabel className="text-base">{t('assessment', 'addItemRequiredLabel')}</FormLabel>
                     <FormDescription>
-                      Se ativado, este item deve ser respondido para todos os artigos
+                        {t('assessment', 'addItemRequiredDesc')}
                     </FormDescription>
                   </div>
                   <FormControl>
@@ -324,18 +325,18 @@ export function AddItemDialog({
                 onClick={handleClose}
                 disabled={loading}
               >
-                Cancelar
+                  {t('common', 'cancel')}
               </Button>
               <Button type="submit" disabled={loading}>
                 {loading ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    Adicionando...
+                      {t('assessment', 'addItemAdding')}
                   </>
                 ) : (
                   <>
                     <Plus className="h-4 w-4 mr-2" />
-                    Adicionar Item
+                      {t('assessment', 'addItemSubmit')}
                   </>
                 )}
               </Button>

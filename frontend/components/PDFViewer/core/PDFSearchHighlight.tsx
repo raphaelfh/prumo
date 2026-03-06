@@ -39,21 +39,21 @@ export const PDFSearchHighlight: React.FC<PDFSearchHighlightProps> = ({
   const [viewport, setViewport] = useState<{ width: number; height: number } | null>(null);
   const overlayRef = useRef<SVGSVGElement>(null);
 
-  // Extrair matches com coordenadas
+    // Extract matches with coordinates
   useEffect(() => {
     if (!pageProxy || !searchQuery.trim()) {
-      console.debug(`[PDFSearchHighlight] Página ${pageNumber}: sem pageProxy ou query vazia`);
+        console.debug(`[PDFSearchHighlight] Page ${pageNumber}: no pageProxy or empty query`);
       setMatches([]);
       return;
     }
 
     const extractMatches = async () => {
       try {
-        console.debug(`[PDFSearchHighlight] Página ${pageNumber}: extraindo matches para "${searchQuery}"`);
+          console.debug(`[PDFSearchHighlight] Page ${pageNumber}: extracting matches for "${searchQuery}"`);
         const textContent = await pageProxy.getTextContent();
         const viewportData = pageProxy.getViewport({ scale: 1 });
-        
-        console.debug(`[PDFSearchHighlight] Página ${pageNumber}: viewport=${viewportData.width}x${viewportData.height}, ${textContent.items.length} items`);
+
+          console.debug(`[PDFSearchHighlight] Page ${pageNumber}: viewport=${viewportData.width}x${viewportData.height}, ${textContent.items.length} items`);
         setViewport({ width: viewportData.width, height: viewportData.height });
 
         const escapedQuery = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -61,12 +61,12 @@ export const PDFSearchHighlight: React.FC<PDFSearchHighlightProps> = ({
         const foundMatches: TextMatch[] = [];
         let matchIndex = 0;
 
-        // Buscar matches item por item para obter coordenadas precisas
+          // Find matches item by item to get precise coordinates
         textContent.items.forEach((item: any, itemIndex: number) => {
           const itemText = item.str || '';
           if (!itemText) return;
 
-          // Buscar matches neste item
+            // Find matches in this item
           let match;
           pattern.lastIndex = 0;
           while ((match = pattern.exec(itemText)) !== null) {
@@ -78,22 +78,22 @@ export const PDFSearchHighlight: React.FC<PDFSearchHighlightProps> = ({
             const itemY = transform[5];
             
             // Tamanho da fonte (altura do item)
-            const fontSize = item.height || Math.abs(transform[0]) || 12; // transform[0] é a escala horizontal
+              const fontSize = item.height || Math.abs(transform[0]) || 12; // transform[0] is horizontal scale
             const fontWidth = item.width || fontSize * 0.6; // Largura aproximada
-            
-            // Calcular posição do match dentro do item
+
+              // Compute match position within item
             const matchStart = match.index;
             const matchLength = match[0].length;
             
             // Largura do caractere (assumindo fonte proporcional)
             const charWidth = itemText.length > 0 ? (fontWidth / itemText.length) : fontSize * 0.6;
-            
-            // Posição X do início do match
+
+              // X position of match start
             const matchX = itemX + (matchStart * charWidth);
             
             // Em PDF.js, o sistema de coordenadas tem Y invertido (0,0 no canto inferior esquerdo)
             // Precisamos converter para o sistema de coordenadas do SVG (0,0 no canto superior esquerdo)
-            // O transform[5] é o Y do baseline, então subtraímos a altura para obter o topo
+              // transform[5] is baseline Y, so we subtract height to get top
             const viewportHeight = viewportData.height;
             const svgY = viewportHeight - itemY; // Inverter Y (PDF tem Y=0 no bottom)
             
@@ -117,10 +117,10 @@ export const PDFSearchHighlight: React.FC<PDFSearchHighlightProps> = ({
           }
         });
 
-        console.debug(`[PDFSearchHighlight] Página ${pageNumber}: encontrados ${foundMatches.length} matches`);
+          console.debug(`[PDFSearchHighlight] Page ${pageNumber}: found ${foundMatches.length} matches`);
         setMatches(foundMatches);
       } catch (error) {
-        console.error(`[PDFSearchHighlight] Erro ao extrair coordenadas de busca na página ${pageNumber}:`, error);
+          console.error(`[PDFSearchHighlight] Error extracting search coordinates on page ${pageNumber}:`, error);
         setMatches([]);
       }
     };
@@ -128,10 +128,10 @@ export const PDFSearchHighlight: React.FC<PDFSearchHighlightProps> = ({
     extractMatches();
   }, [pageProxy, searchQuery, pageNumber]);
 
-  // Debug: verificar se está renderizando
+    // Debug: check if rendering
   useEffect(() => {
     if (searchQuery && pageProxy) {
-      console.debug(`[PDFSearchHighlight] Renderizando overlay para página ${pageNumber}:`, {
+        console.debug(`[PDFSearchHighlight] Rendering overlay for page ${pageNumber}:`, {
         viewport,
         matchesCount: matches.length,
         isHighlighted,
@@ -141,12 +141,12 @@ export const PDFSearchHighlight: React.FC<PDFSearchHighlightProps> = ({
   }, [pageNumber, searchQuery, viewport, matches.length, isHighlighted, currentMatchIndex, pageProxy]);
 
   if (!viewport) {
-    console.debug(`[PDFSearchHighlight] Página ${pageNumber}: sem viewport`);
+      console.debug(`[PDFSearchHighlight] Page ${pageNumber}: no viewport`);
     return null;
   }
 
   if (matches.length === 0) {
-    console.debug(`[PDFSearchHighlight] Página ${pageNumber}: sem matches`);
+      console.debug(`[PDFSearchHighlight] Page ${pageNumber}: no matches`);
     return null;
   }
 

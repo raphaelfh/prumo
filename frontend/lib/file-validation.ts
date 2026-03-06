@@ -15,26 +15,26 @@ export interface FileValidationResult {
 }
 
 /**
- * Detecta o formato do arquivo baseado no MIME type e extensão
+ * Detects file format from MIME type and extension
  */
 export function detectFileFormat(file: File): FileFormat {
-  // Tentar pelo MIME type primeiro
+    // Try MIME type first
   if (file.type && MIME_TYPE_TO_FORMAT[file.type]) {
     return MIME_TYPE_TO_FORMAT[file.type];
   }
 
-  // Fallback: detectar pela extensão
+    // Fallback: detect by extension
   const extension = `.${file.name.split('.').pop()?.toLowerCase()}`;
   if (EXTENSION_TO_FORMAT[extension]) {
     return EXTENSION_TO_FORMAT[extension];
   }
 
-  // Se não detectar, retornar OTHER
+    // If not detected, return OTHER
   return FILE_FORMATS.OTHER;
 }
 
 /**
- * Valida um arquivo antes do upload
+ * Validates a file before upload
  */
 export function validateFile(file: File | null): FileValidationResult {
   if (!file) {
@@ -44,7 +44,7 @@ export function validateFile(file: File | null): FileValidationResult {
     };
   }
 
-  // Validar tamanho
+    // Validate size
   if (file.size > FILE_UPLOAD_CONFIG.MAX_SIZE_BYTES) {
     return {
       valid: false,
@@ -52,23 +52,23 @@ export function validateFile(file: File | null): FileValidationResult {
     };
   }
 
-  // Validar tipo MIME
+    // Validate MIME type
   let isValidType = FILE_UPLOAD_CONFIG.ALLOWED_MIME_TYPES.includes(file.type);
   
   if (!isValidType) {
-    // Validar por extensão como fallback
+      // Validate by extension as fallback
     const extension = `.${file.name.split('.').pop()?.toLowerCase()}`;
     isValidType = FILE_UPLOAD_CONFIG.ALLOWED_EXTENSIONS.includes(extension);
     
     if (!isValidType) {
       return {
         valid: false,
-        error: `${FILE_ERROR_MESSAGES.INVALID_TYPE}. Tipos permitidos: ${FILE_UPLOAD_CONFIG.ALLOWED_EXTENSIONS.join(', ')}`
+          error: `${FILE_ERROR_MESSAGES.INVALID_TYPE}. Allowed types: ${FILE_UPLOAD_CONFIG.ALLOWED_EXTENSIONS.join(', ')}`
       };
     }
   }
 
-  // Detectar formato automaticamente
+    // Detect format automatically
   const detectedFormat = detectFileFormat(file);
 
   return {
@@ -79,7 +79,7 @@ export function validateFile(file: File | null): FileValidationResult {
 }
 
 /**
- * Valida múltiplos arquivos
+ * Validates multiple files
  */
 export function validateFiles(files: File[]): {
   valid: File[];
@@ -101,7 +101,7 @@ export function validateFiles(files: File[]): {
 }
 
 /**
- * Gera uma chave de storage única e segura
+ * Generates a unique, safe storage key
  */
 export function generateStorageKey(
   projectId: string,
@@ -117,7 +117,7 @@ export function generateStorageKey(
 }
 
 /**
- * Formata o tamanho do arquivo para exibição
+ * Formats file size for display
  */
 export function formatFileSize(bytes: number): string {
   if (bytes === 0) return '0 Bytes';

@@ -1,8 +1,8 @@
 """
 Supabase Storage Adapter.
 
-Implementação do StorageAdapter para Supabase Storage.
-Gerencia PDFs e outros arquivos de artigos.
+Implements StorageAdapter for Supabase Storage.
+Manages PDFs and other article files.
 """
 
 from typing import Any
@@ -15,46 +15,46 @@ from app.infrastructure.storage.base import StorageAdapter, StorageError
 
 class SupabaseStorageAdapter(StorageAdapter, LoggerMixin):
     """
-    Adapter para Supabase Storage.
-    
-    Encapsula todas as operações de storage do Supabase.
-    
+    Adapter for Supabase Storage.
+
+    Encapsulates all Supabase storage operations.
+
     Usage:
         adapter = SupabaseStorageAdapter(supabase_client)
         pdf_bytes = await adapter.download("articles", "project-1/article.pdf")
     """
-    
+
     def __init__(self, client: Client):
         """
-        Inicializa adapter com cliente Supabase.
-        
+        Initialize adapter with Supabase client.
+
         Args:
-            client: Cliente Supabase autenticado.
+            client: Authenticated Supabase client.
         """
         self.client = client
     
     async def download(self, bucket: str, path: str) -> bytes:
         """
-        Faz download de um arquivo do Supabase Storage.
-        
+        Download a file from Supabase Storage.
+
         Args:
-            bucket: Nome do bucket (ex: "articles").
-            path: Caminho do arquivo.
-            
+            bucket: Bucket name (e.g. "articles").
+            path: File path.
+
         Returns:
-            Conteúdo em bytes.
-            
+            Content in bytes.
+
         Raises:
-            FileNotFoundError: Se arquivo não existir.
-            StorageError: Se erro de conexão.
+            FileNotFoundError: If file does not exist.
+            StorageError: On connection error.
         """
         try:
             response = self.client.storage.from_(bucket).download(path)
             
             if not response:
                 raise FileNotFoundError(f"File not found: {bucket}/{path}")
-            
-            # Supabase retorna bytes diretamente
+
+            # Supabase returns bytes directly
             return bytes(response)
             
         except FileNotFoundError:
@@ -76,19 +76,19 @@ class SupabaseStorageAdapter(StorageAdapter, LoggerMixin):
         content_type: str = "application/octet-stream",
     ) -> str:
         """
-        Faz upload de um arquivo para Supabase Storage.
-        
+        Upload a file to Supabase Storage.
+
         Args:
-            bucket: Nome do bucket.
-            path: Caminho de destino.
-            data: Conteúdo do arquivo.
+            bucket: Bucket name.
+            path: Destination path.
+            data: File content.
             content_type: MIME type.
-            
+
         Returns:
-            Path do arquivo criado.
-            
+            Path of created file.
+
         Raises:
-            StorageError: Se erro de upload.
+            StorageError: On upload error.
         """
         try:
             response = self.client.storage.from_(bucket).upload(
@@ -117,14 +117,14 @@ class SupabaseStorageAdapter(StorageAdapter, LoggerMixin):
     
     async def delete(self, bucket: str, path: str) -> bool:
         """
-        Remove um arquivo do Supabase Storage.
-        
+        Remove a file from Supabase Storage.
+
         Args:
-            bucket: Nome do bucket.
-            path: Caminho do arquivo.
-            
+            bucket: Bucket name.
+            path: File path.
+
         Returns:
-            True se removido.
+            True if removed.
         """
         try:
             self.client.storage.from_(bucket).remove([path])
@@ -148,17 +148,17 @@ class SupabaseStorageAdapter(StorageAdapter, LoggerMixin):
     
     async def exists(self, bucket: str, path: str) -> bool:
         """
-        Verifica se arquivo existe no Supabase Storage.
-        
+        Check if file exists in Supabase Storage.
+
         Args:
-            bucket: Nome do bucket.
-            path: Caminho do arquivo.
-            
+            bucket: Bucket name.
+            path: File path.
+
         Returns:
-            True se existe.
+            True if exists.
         """
         try:
-            # Tenta listar o arquivo específico
+            # Try to list the specific file
             folder = "/".join(path.split("/")[:-1]) or ""
             filename = path.split("/")[-1]
             
@@ -174,14 +174,14 @@ class SupabaseStorageAdapter(StorageAdapter, LoggerMixin):
     
     async def get_public_url(self, bucket: str, path: str) -> str:
         """
-        Obtém URL pública de um arquivo.
-        
+        Get public URL of a file.
+
         Args:
-            bucket: Nome do bucket.
-            path: Caminho do arquivo.
-            
+            bucket: Bucket name.
+            path: File path.
+
         Returns:
-            URL pública.
+            Public URL.
         """
         try:
             response = self.client.storage.from_(bucket).get_public_url(path)
@@ -196,15 +196,15 @@ class SupabaseStorageAdapter(StorageAdapter, LoggerMixin):
         expires_in: int = 3600,
     ) -> str:
         """
-        Obtém URL assinada com expiração.
-        
+        Get signed URL with expiration.
+
         Args:
-            bucket: Nome do bucket.
-            path: Caminho do arquivo.
-            expires_in: Tempo de expiração em segundos.
-            
+            bucket: Bucket name.
+            path: File path.
+            expires_in: Expiration time in seconds.
+
         Returns:
-            URL assinada.
+            Signed URL.
         """
         try:
             response = self.client.storage.from_(bucket).create_signed_url(
@@ -221,15 +221,15 @@ class SupabaseStorageAdapter(StorageAdapter, LoggerMixin):
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """
-        Lista arquivos em um bucket/path.
-        
+        List files in a bucket/path.
+
         Args:
-            bucket: Nome do bucket.
-            prefix: Prefixo/pasta para filtrar.
-            limit: Máximo de resultados.
-            
+            bucket: Bucket name.
+            prefix: Prefix/folder to filter.
+            limit: Maximum results.
+
         Returns:
-            Lista de metadados dos arquivos.
+            List of file metadata.
         """
         try:
             response = self.client.storage.from_(bucket).list(
@@ -255,15 +255,15 @@ class SupabaseStorageAdapter(StorageAdapter, LoggerMixin):
         to_path: str,
     ) -> bool:
         """
-        Move um arquivo dentro do bucket.
-        
+        Move a file within the bucket.
+
         Args:
-            bucket: Nome do bucket.
-            from_path: Caminho origem.
-            to_path: Caminho destino.
-            
+            bucket: Bucket name.
+            from_path: Source path.
+            to_path: Destination path.
+
         Returns:
-            True se movido com sucesso.
+            True if moved successfully.
         """
         try:
             self.client.storage.from_(bucket).move(from_path, to_path)
@@ -294,15 +294,15 @@ class SupabaseStorageAdapter(StorageAdapter, LoggerMixin):
         to_path: str,
     ) -> bool:
         """
-        Copia um arquivo dentro do bucket.
-        
+        Copy a file within the bucket.
+
         Args:
-            bucket: Nome do bucket.
-            from_path: Caminho origem.
-            to_path: Caminho destino.
-            
+            bucket: Bucket name.
+            from_path: Source path.
+            to_path: Destination path.
+
         Returns:
-            True se copiado com sucesso.
+            True if copied successfully.
         """
         try:
             self.client.storage.from_(bucket).copy(from_path, to_path)

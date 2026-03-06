@@ -1,8 +1,8 @@
 /**
- * Helper para dividir array em chunks
- * 
- * Utilitário reutilizável para dividir arrays em grupos menores.
- * Usado para chunking de extração em batch.
+ * Helper to split array into chunks
+ *
+ * Reusable utility to split arrays into smaller groups.
+ * Used for batch extraction chunking.
  */
 
 /**

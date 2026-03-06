@@ -1,14 +1,14 @@
 /**
- * Service para Avaliação com IA (Assessment)
+ * AI Assessment service
  *
- * Integração com backend FastAPI para assessment de qualidade.
- * Chama endpoints de AI assessment (/api/v1/ai-assessment).
+ * Integrates with FastAPI backend for quality assessment.
+ * Calls AI assessment endpoints (/api/v1/ai-assessment).
  *
- * Usa apiClient (Constitution Principle VI) para todas as chamadas.
+ * Uses apiClient (Constitution Principle VI) for all calls.
  *
  * @example
  * ```typescript
- * // Avaliar item único
+ * // Assess single item
  * const response = await AssessmentService.assessSingleItem({
  *   projectId: '...',
  *   articleId: '...',
@@ -16,7 +16,7 @@
  *   instrumentId: '...',
  * });
  *
- * // Avaliar em batch
+ * // Assess in batch
  * const batchResponse = await AssessmentService.assessBatch({
  *   projectId: '...',
  *   articleId: '...',
@@ -41,17 +41,17 @@ import {apiClient} from '@/integrations/api/client';
 const ASSESSMENT_ENDPOINT = '/api/v1/ai-assessment';
 
 /**
- * Service para operações de assessment com IA
+ * Service for AI assessment operations
  */
 export class AssessmentService {
   /**
-   * Avalia um item de assessment único com IA
+   * Assesses a single assessment item with AI
    *
-   * Chama o backend FastAPI para processar PDF e gerar sugestão.
+   * Calls FastAPI backend to process PDF and generate suggestion.
    *
-   * @param request - Parâmetros da avaliação
-   * @returns Response com sugestão criada
-   * @throws {ApiError} Se houver erro na requisição
+   * @param request - Assessment parameters
+   * @returns Response with created suggestion
+   * @throws {ApiError} On request error
    */
   static async assessSingleItem(
     request: Omit<AIAssessmentRequest, 'projectId' | 'articleId' | 'assessmentItemId' | 'instrumentId'> & {
@@ -61,7 +61,7 @@ export class AssessmentService {
       instrumentId: string;
     }
   ): Promise<AIAssessmentResponse> {
-    console.log('🤖 [assessSingleItem] Iniciando avaliação AI:', {
+      console.log('[assessSingleItem] Starting AI assessment:', {
       projectId: request.projectId,
       articleId: request.articleId,
       itemId: request.assessmentItemId,
@@ -93,7 +93,7 @@ export class AssessmentService {
       );
 
       if (data) {
-        console.log('✅ [assessSingleItem] Avaliação concluída:', {
+          console.log('[assessSingleItem] Assessment completed:', {
           suggestionId: data.id,
           level: data.selectedLevel,
           confidence: data.confidenceScore,
@@ -103,24 +103,24 @@ export class AssessmentService {
 
       return { ok: true, data };
     } catch (error) {
-      console.error('❌ [assessSingleItem] Erro ao avaliar item:', error);
+        console.error('[assessSingleItem] Error assessing item:', error);
       throw error;
     }
   }
 
   /**
-   * Avalia múltiplos itens em batch com IA
+   * Assesses multiple items in batch with AI
    *
-   * Otimiza processamento ao reutilizar PDF e construir contexto de memória.
+   * Optimizes by reusing PDF and building memory context.
    *
-   * @param request - Parâmetros do batch
-   * @returns Response com lista de sugestões criadas
-   * @throws {ApiError} Se houver erro na requisição
+   * @param request - Batch parameters
+   * @returns Response with list of created suggestions
+   * @throws {ApiError} On request error
    */
   static async assessBatch(
     request: BatchAIAssessmentRequest
   ): Promise<BatchAIAssessmentResponse> {
-    console.log('🤖 [assessBatch] Iniciando avaliação AI em batch:', {
+      console.log('[assessBatch] Starting AI batch assessment:', {
       projectId: request.projectId,
       articleId: request.articleId,
       itemsCount: request.itemIds.length,
@@ -148,7 +148,7 @@ export class AssessmentService {
       );
 
       if (data) {
-        console.log('✅ [assessBatch] Batch concluído:', {
+          console.log('[assessBatch] Batch completed:', {
           totalItems: data.totalItems,
           successfulItems: data.successfulItems,
           failedItems: data.totalItems - data.successfulItems,
@@ -157,22 +157,22 @@ export class AssessmentService {
 
       return { ok: true, data };
     } catch (error) {
-      console.error('❌ [assessBatch] Erro ao avaliar batch:', error);
+        console.error('[assessBatch] Error assessing batch:', error);
       throw error;
     }
   }
 
   /**
-   * Lista sugestões de IA pendentes de revisão
+   * Lists AI suggestions pending review
    *
-   * @param request - Filtros de busca
-   * @returns Lista de sugestões
-   * @throws {ApiError} Se houver erro na requisição
+   * @param request - Search filters
+   * @returns List of suggestions
+   * @throws {ApiError} On request error
    */
   static async listSuggestions(
     request: ListSuggestionsRequest
   ): Promise<ListSuggestionsResponse> {
-    console.log('📋 [listSuggestions] Listando sugestões:', {
+      console.log('[listSuggestions] Listing suggestions:', {
       projectId: request.projectId,
       articleId: request.articleId,
       instrumentId: request.instrumentId,
@@ -205,31 +205,31 @@ export class AssessmentService {
       );
 
       if (data) {
-        console.log('✅ [listSuggestions] Sugestões carregadas:', {
+          console.log('[listSuggestions] Suggestions loaded:', {
           total: data.total,
         });
       }
 
       return { ok: true, data };
     } catch (error) {
-      console.error('❌ [listSuggestions] Erro ao listar sugestões:', error);
+        console.error('[listSuggestions] Error listing suggestions:', error);
       throw error;
     }
   }
 
   /**
-   * Revisa uma sugestão de IA (aceita/rejeita/modifica)
+   * Reviews an AI suggestion (accept/reject/modify)
    *
-   * @param suggestionId - ID da sugestão
-   * @param request - Ação de revisão
-   * @returns Response com resultado da revisão
-   * @throws {ApiError} Se houver erro na requisição
+   * @param suggestionId - Suggestion ID
+   * @param request - Review action
+   * @returns Response with review result
+   * @throws {ApiError} On request error
    */
   static async reviewSuggestion(
     suggestionId: string,
     request: ReviewAISuggestionRequest
   ): Promise<ReviewAISuggestionResponse> {
-    console.log('✏️ [reviewSuggestion] Revisando sugestão:', {
+      console.log('[reviewSuggestion] Reviewing suggestion:', {
       suggestionId,
       action: request.action,
     });
@@ -248,7 +248,7 @@ export class AssessmentService {
       );
 
       if (data) {
-        console.log('✅ [reviewSuggestion] Revisão concluída:', {
+          console.log('[reviewSuggestion] Review completed:', {
           action: data.action,
           assessmentCreated: data.assessmentCreated,
           assessmentId: data.assessmentId,
@@ -257,7 +257,7 @@ export class AssessmentService {
 
       return { ok: true, data };
     } catch (error) {
-      console.error('❌ [reviewSuggestion] Erro ao revisar sugestão:', error);
+        console.error('[reviewSuggestion] Error reviewing suggestion:', error);
       throw error;
     }
   }

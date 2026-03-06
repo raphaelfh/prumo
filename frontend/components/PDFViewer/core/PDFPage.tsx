@@ -1,7 +1,7 @@
 /**
- * PDFPage - Componente otimizado para renderizar uma página individual
- * 
- * Usa React.memo para evitar re-renders desnecessários.
+ * PDFPage - Optimized component to render a single page
+ *
+ * Uses React.memo to avoid unnecessary re-renders.
  */
 
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
@@ -21,7 +21,7 @@ interface PDFPageProps {
   onLoadingChange?: (pageNumber: number, isLoading: boolean) => void;
   searchQuery?: string;
   isHighlighted?: boolean;
-  currentMatchIndex?: number; // Índice do match atual nesta página
+    currentMatchIndex?: number; // Index of current match on this page
 }
 
 export const PDFPage = React.memo<PDFPageProps>(({
@@ -42,19 +42,19 @@ export const PDFPage = React.memo<PDFPageProps>(({
   const matchCounterRef = useRef(0);
   const [pageProxy, setPageProxy] = useState<PDFPageProxy | null>(null);
 
-  // Debug: verificar se props estão chegando
+    // Debug: check if props are received
   useEffect(() => {
     if (searchQuery) {
       console.debug(`[PDFPage ${pageNumber}] Props recebidas: searchQuery="${searchQuery}", isHighlighted=${isHighlighted}, currentMatchIndex=${currentMatchIndex}`);
     }
   }, [pageNumber, searchQuery, isHighlighted, currentMatchIndex]);
 
-  // Resetar contador quando query ou página mudar
+    // Reset counter when query or page changes
   useEffect(() => {
     matchCounterRef.current = 0;
   }, [searchQuery, pageNumber]);
 
-  // Função para destacar texto encontrado
+    // Function to highlight found text
   const customTextRenderer = useMemo(() => {
     if (!searchQuery || !searchQuery.trim()) {
       console.debug(`[PDFPage ${pageNumber}] customTextRenderer: query vazia, retornando undefined`);
@@ -63,24 +63,24 @@ export const PDFPage = React.memo<PDFPageProps>(({
 
     console.debug(`[PDFPage ${pageNumber}] customTextRenderer criado para query: "${searchQuery}"`);
 
-    // Criar regex para busca (case insensitive por padrão)
+      // Create regex for search (case insensitive by default)
     const escapedQuery = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const pattern = new RegExp(`(${escapedQuery})`, 'gi');
 
     return (textItem: { str: string }) => {
       const text = textItem.str;
       const parts = text.split(pattern);
-      
-      // Debug: verificar se está processando
+
+        // Debug: check if processing
       if (parts.length > 1) {
         console.debug(`[PDFPage ${pageNumber}] customTextRenderer processando texto com ${parts.length - 1} match(es)`);
       }
       
       return parts.map((part, index) => {
-        // Verificar se a parte corresponde ao padrão
+          // Check if part matches pattern
         // Usar matchAll para evitar problemas com lastIndex
         const matches = Array.from(part.matchAll(pattern));
-        pattern.lastIndex = 0; // Resetar após cada exec
+          pattern.lastIndex = 0; // Reset after each exec
         
         if (matches.length > 0 && matches[0][0] === part) {
           const matchIndex = matchCounterRef.current++;
@@ -103,8 +103,8 @@ export const PDFPage = React.memo<PDFPageProps>(({
     };
   }, [searchQuery, pageNumber, isHighlighted, currentMatchIndex]);
 
-  // Hook para scroll automático quando highlight mudar
-  // Este hook detecta quando os marks são renderizados e faz scroll fino
+    // Hook for auto scroll when highlight changes
+    // Detects when marks are rendered and does fine scroll
   usePDFSearchHighlight({
     pageNumber,
     searchQuery,
@@ -136,7 +136,7 @@ export const PDFPage = React.memo<PDFPageProps>(({
     isLoadingRef.current = false;
     
     // Guardar pageProxy para usar no overlay de highlights
-    // Tentar múltiplas formas de acessar o pageProxy
+      // Try multiple ways to access pageProxy
     let pdfPage = null;
     if (page?._pdfPage) {
       pdfPage = page._pdfPage;
@@ -153,7 +153,7 @@ export const PDFPage = React.memo<PDFPageProps>(({
       console.debug(`[PDFPage ${pageNumber}] pageProxy definido:`, pdfPage);
       setPageProxy(pdfPage);
     } else {
-      console.warn(`[PDFPage ${pageNumber}] Não foi possível obter pageProxy do objeto page:`, page);
+        console.warn(`[PDFPage ${pageNumber}] Could not get pageProxy from page object:`, page);
     }
     
     if (onLoadSuccess) {
@@ -163,8 +163,8 @@ export const PDFPage = React.memo<PDFPageProps>(({
     if (onLoadingChange) {
       onLoadingChange(pageNumber, false);
     }
-    
-    // Medir altura real da página após carregar
+
+      // Measure actual page height after load
     if (pageRef.current && onHeightMeasured) {
       // Usar requestAnimationFrame para garantir que o DOM foi atualizado
       requestAnimationFrame(() => {
@@ -176,13 +176,13 @@ export const PDFPage = React.memo<PDFPageProps>(({
     }
   }, [onLoadSuccess, onHeightMeasured, onLoadingChange, pageNumber]);
 
-  // Forçar re-render quando searchQuery ou highlight mudar para garantir que customTextRenderer seja aplicado
+    // Force re-render when searchQuery or highlight changes so customTextRenderer is applied
   useEffect(() => {
-    // Isso força o react-pdf a re-renderizar com o novo customTextRenderer
+      // This forces react-pdf to re-render with the new customTextRenderer
     if (searchQuery && searchQuery.trim()) {
       // Pequeno delay para garantir que o texto layer foi renderizado
       const timer = setTimeout(() => {
-        // Trigger re-render se necessário
+          // Trigger re-render if needed
       }, 100);
       return () => clearTimeout(timer);
     }
@@ -202,7 +202,7 @@ export const PDFPage = React.memo<PDFPageProps>(({
     >
       <div className="relative">
         <Page
-          key={`page-${pageNumber}-${searchQuery || 'no-search'}`} // Forçar re-render quando searchQuery mudar
+            key={`page-${pageNumber}-${searchQuery || 'no-search'}`} // Force re-render when searchQuery changes
           pageNumber={pageNumber}
           scale={scale}
           rotate={rotation}
@@ -231,8 +231,8 @@ export const PDFPage = React.memo<PDFPageProps>(({
     </div>
   );
 }, (prevProps, nextProps) => {
-  // Comparação customizada para evitar re-renders desnecessários
-  // IMPORTANTE: Se searchQuery mudar, DEVE re-renderizar para aplicar customTextRenderer
+    // Custom comparison to avoid unnecessary re-renders
+    // IMPORTANT: If searchQuery changes, MUST re-render to apply customTextRenderer
   const shouldUpdate = 
     prevProps.pageNumber !== nextProps.pageNumber ||
     prevProps.scale !== nextProps.scale ||

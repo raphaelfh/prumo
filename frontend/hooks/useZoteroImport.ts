@@ -6,6 +6,7 @@ import {useCallback, useState} from 'react';
 import {zoteroService} from '@/services/zoteroImportService';
 import type {ImportOptions, ImportProgress, ImportResult, ZoteroCollection} from '@/types/zotero';
 import {toast} from 'sonner';
+import {t} from '@/lib/copy';
 
 export function useZoteroImport() {
   const [collections, setCollections] = useState<ZoteroCollection[]>([]);
@@ -25,7 +26,7 @@ export function useZoteroImport() {
       return collections;
     } catch (error: any) {
       console.error('Erro ao listar collections:', error);
-      toast.error(error.message || 'Erro ao buscar collections do Zotero');
+        toast.error(error.message || t('extraction', 'errors_zoteroFetch'));
       return [];
     } finally {
       setLoadingCollections(false);
@@ -51,7 +52,7 @@ export function useZoteroImport() {
       phase: 'fetching',
       current: 0,
       total: 0,
-      message: 'Iniciando importação...',
+        message: t('extraction', 'zoteroImportStarting'),
       stats: {
         imported: 0,
         updated: 0,
@@ -76,26 +77,28 @@ export function useZoteroImport() {
       );
 
       if (result.success) {
-        const pdfMsg = result.stats.pdfsDownloaded 
-          ? `, ${result.stats.pdfsDownloaded} PDFs baixados` 
+        const pdfMsg = result.stats.pdfsDownloaded
+            ? t('extraction', 'zoteroImportPdfsDownloaded').replace('{{n}}', String(result.stats.pdfsDownloaded))
           : '';
         toast.success(
-          `Importação concluída! ${result.stats.imported} importados, ${result.stats.updated} atualizados${pdfMsg}`
+            t('extraction', 'zoteroImportCompleteSuccess')
+                .replace('{{imported}}', String(result.stats.imported))
+                .replace('{{updated}}', String(result.stats.updated)) + pdfMsg
         );
       } else {
-        toast.error('Importação concluída com erros');
+          toast.error(t('extraction', 'zoteroImportCompletedWithErrors'));
       }
 
       return result;
     } catch (error: any) {
-      console.error('Erro na importação:', error);
-      toast.error(error.message || 'Erro ao importar artigos');
+        console.error('Import error:', error);
+        toast.error(error.message || t('extraction', 'errors_zoteroImport'));
       
       const errorProgress: ImportProgress = {
         phase: 'error',
         current: 0,
         total: 0,
-        message: error.message || 'Erro na importação',
+          message: error.message || t('extraction', 'errors_zoteroImport'),
         stats: {
           imported: 0,
           updated: 0,
@@ -122,7 +125,7 @@ export function useZoteroImport() {
     setImporting(false);
     setProgress(null);
     setCurrentJobId(null);
-    toast.info('Importação cancelada');
+      toast.info(t('extraction', 'zoteroImportCancelled'));
   }, []);
 
   /**

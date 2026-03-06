@@ -1,25 +1,26 @@
 /**
- * Hook para Avaliação de Item Específico com IA
+ * Hook for single-item AI assessment
  *
- * Hook React para gerenciar avaliação de IA de um item de assessment específico.
+ * React hook to manage AI assessment of a single assessment item.
  *
- * FOCO: Avaliação granular por item (assessment pipeline).
- * Permite ao usuário avaliar um item específico do instrumento por vez.
+ * FOCUS: Granular per-item assessment (assessment pipeline).
+ * Lets the user assess one instrument item at a time.
  *
  * FEATURES:
- * - Estado de loading e error
- * - Toast notifications automáticas
- * - Callback para refresh de sugestões após avaliação
- * - Tratamento de erros amigável
- * - Suporte para BYOK (Bring Your Own Key)
+ * - Loading and error state
+ * - Automatic toast notifications
+ * - Callback to refresh suggestions after assessment
+ * - Friendly error handling
+ * - BYOK (Bring Your Own Key) support
  *
- * Baseado em useSectionExtraction.ts (DRY + KISS)
+ * Based on useSectionExtraction.ts (DRY + KISS)
  *
  * @hook
  */
 
 import {useCallback, useState} from 'react';
 import {toast} from 'sonner';
+import {t} from '@/lib/copy';
 import {type AIAssessmentRequest, type AIAssessmentResponse, AssessmentService,} from '@/services/assessmentService';
 import {
     APIError,
@@ -30,7 +31,7 @@ import {
 } from '@/lib/ai-extraction/errors';
 
 /**
- * Tipo de retorno do hook
+ * Hook return type
  */
 export interface UseSingleAssessmentReturn {
   assessItem: (request: Omit<AIAssessmentRequest, 'projectId' | 'articleId' | 'assessmentItemId' | 'instrumentId'> & {
@@ -44,15 +45,15 @@ export interface UseSingleAssessmentReturn {
 }
 
 /**
- * Hook para avaliação de item específico
+ * Hook for single-item assessment
  *
- * USO:
-* ```tsx
-* const { assessItem, loading, error } = useSingleAssessment({
-*   onSuccess: (suggestionId) => {
-*     // Refresh sugestões
-*   }
-* });
+ * USAGE:
+ * ```tsx
+ * const { assessItem, loading, error } = useSingleAssessment({
+ *   onSuccess: (suggestionId) => {
+ *     // Refresh suggestions
+ *   }
+ * });
  *
  * await assessItem({
  *   projectId,
@@ -60,13 +61,13 @@ export interface UseSingleAssessmentReturn {
  *   instrumentId,
  *   assessmentItemId,
  *   pdfStorageKey,
- *   openaiApiKey, // Opcional (BYOK)
+ *   openaiApiKey, // Optional (BYOK)
  *   model: 'gpt-4o-mini',
  * });
  * ```
  *
- * @param options - Opções do hook (callback de sucesso)
- * @returns Função de avaliação, estado de loading e error
+ * @param options - Hook options (success callback)
+ * @returns Assessment function, loading and error state
  */
 export function useSingleAssessment(options?: {
   onSuccess?: (suggestionId: string) => void;
@@ -75,9 +76,9 @@ export function useSingleAssessment(options?: {
   const [error, setError] = useState<string | null>(null);
 
   /**
-   * Avalia um item de assessment específico com IA
+   * Assess a single assessment item with AI
    *
-   * @param request - Parâmetros da avaliação
+   * @param request - Assessment parameters
    */
   const assessItem = useCallback(
     async (request: Omit<AIAssessmentRequest, 'projectId' | 'articleId' | 'assessmentItemId' | 'instrumentId'> & {
@@ -93,17 +94,19 @@ export function useSingleAssessment(options?: {
         const result: AIAssessmentResponse = await AssessmentService.assessSingleItem(request);
 
         if (!result.ok || !result.data) {
-          throw new APIError(result.error?.message || 'Erro ao avaliar item');
+            throw new APIError(result.error?.message || t('assessment', 'errors_assessItem'));
         }
 
-        // Toast de sucesso com informações úteis
+          // Success toast with useful info
         const tokensUsed = (result.data.metadata.tokensPrompt || 0) + (result.data.metadata.tokensCompletion || 0);
         const confidence = Math.round((result.data.confidenceScore || 0) * 100);
 
         toast.success(
-          `Avaliação concluída! Sugestão criada: ${result.data.selectedLevel}`,
+            t('assessment', 'assessmentItemSuccess').replace('{{level}}', result.data.selectedLevel),
           {
-            description: `Confiança: ${confidence}% • ${tokensUsed} tokens usados`,
+              description: t('assessment', 'assessmentItemConfidence')
+                  .replace('{{n}}', String(confidence))
+                  .replace('{{tokens}}', String(tokensUsed)),
             duration: 5000,
           }
         );
@@ -128,21 +131,21 @@ export function useSingleAssessment(options?: {
 
         // Toast de erro com mensagem clara baseada no tipo de erro
         if (err instanceof PDFNotFoundError || code === 'PDF_NOT_FOUND') {
-          toast.error('Erro na avaliação', {
-            description: 'PDF não encontrado. Verifique se o artigo possui um arquivo PDF anexado.',
+            toast.error(t('assessment', 'errors_assessment'), {
+                description: t('assessment', 'assessmentPdfNotFoundDesc'),
             duration: 6000,
           });
         } else if (err instanceof AuthenticationError || code === 'AUTH_ERROR') {
-          toast.error('Erro de autenticação', {
-            description: 'Por favor, faça login novamente.',
+            toast.error(t('assessment', 'errors_assessmentAuth'), {
+                description: t('assessment', 'assessmentAuthDesc'),
           });
         } else if (message.toLowerCase().includes('api key') || message.toLowerCase().includes('openai')) {
-          toast.error('Erro na API da OpenAI', {
-            description: 'Verifique sua chave de API da OpenAI ou utilize a chave fornecida pelo projeto.',
+            toast.error(t('assessment', 'errors_assessmentOpenAI'), {
+                description: t('assessment', 'assessmentOpenAIDesc'),
             duration: 6000,
           });
         } else {
-          toast.error('Erro na avaliação', {
+            toast.error(t('assessment', 'errors_assessment'), {
             description: message,
             duration: 5000,
           });

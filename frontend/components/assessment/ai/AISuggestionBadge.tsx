@@ -1,8 +1,8 @@
 /**
- * Componente de Badge de Sugestão de IA - Assessment
+ * AI suggestion badge component - Assessment
  *
- * Componente vazio - funcionalidade de detalhes movida para AISuggestionInline
- * Mantido apenas para compatibilidade com código existente
+ * Empty component - detail functionality moved to AISuggestionInline
+ * Kept only for compatibility with existing code
  *
  * @component
  */
@@ -18,7 +18,7 @@ interface AISuggestionBadgeProps {
 // =================== COMPONENT ===================
 
 export function AISuggestionBadge(_props: AISuggestionBadgeProps) {
-  // Componente vazio - funcionalidade movida para AISuggestionInline
-  // onde a porcentagem abre os detalhes ao clicar
+    // Empty component - functionality moved to AISuggestionInline
+    // where clicking the percentage opens details
   return null;
 }

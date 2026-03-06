@@ -1,8 +1,8 @@
 /**
- * Painel de Formulário para Assessment (Avaliação de Qualidade)
+ * Assessment form panel (quality assessment)
  *
- * Componente isolado que gerencia o formulário de assessment.
- * Extraído do AssessmentFullScreen para modularidade e reutilização (SRP).
+ * Isolated component that manages the assessment form.
+ * Extracted from AssessmentFullScreen for modularity and reuse (SRP).
  *
  * Baseado em ExtractionFormPanel.tsx (DRY + KISS)
  *
@@ -22,8 +22,8 @@ export interface AssessmentFormPanelProps {
 // =================== COMPONENT ===================
 
 /**
- * Painel de formulário de assessment
- * Simplifica o AssessmentFullScreen ao extrair lógica de renderização
+ * Assessment form panel
+ * Simplifies AssessmentFullScreen by extracting render logic
  */
 export function AssessmentFormPanel({ formViewProps }: AssessmentFormPanelProps) {
   if (!formViewProps) {

@@ -1,11 +1,11 @@
 /**
- * Hook para gerenciar instâncias de extração
- * 
- * Gerencia APENAS instâncias (criação, atualização, exclusão).
- * Entity types são carregados separadamente usando useEntityTypes.
- * 
- * REFATORADO (Fase 5): Separado de entity types para seguir SRP.
- * Agora usa extractionInstanceService para centralizar lógica.
+ * Hook to manage extraction instances
+ *
+ * Manages ONLY instances (create, update, delete).
+ * Entity types loaded separately via useEntityTypes.
+ *
+ * Refactored (Phase 5): Separated from entity types (SRP).
+ * Uses extractionInstanceService to centralize logic.
  */
 
 import {useCallback, useEffect, useMemo, useState} from 'react';
@@ -14,6 +14,7 @@ import {toast} from 'sonner';
 import {extractionInstanceService} from '@/services/extractionInstanceService';
 import {useEntityTypes} from './useEntityTypes';
 import {ExtractionInstance} from '@/types/extraction';
+import {t} from '@/lib/copy';
 
 interface UseExtractionInstancesProps {
   projectId: string;
@@ -30,16 +31,16 @@ export function useExtractionInstances({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Carregar entity types usando hook dedicado (SRP)
+    // Load entity types via dedicated hook (SRP)
   const { entityTypes, loading: entityTypesLoading } = useEntityTypes({
     templateId,
     enabled: !!templateId,
   });
 
-  // Memoizar service (singleton, mas garantir estabilidade)
+    // Memoize service (singleton, ensure stability)
   const service = useMemo(() => extractionInstanceService, []);
 
-  // Carregar instâncias do artigo
+    // Load article instances
   const loadInstances = useCallback(async () => {
     if (!articleId || !templateId) {
       setInstances([]);
@@ -61,13 +62,13 @@ export function useExtractionInstances({
 
       setInstances(data || []);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Erro desconhecido ao carregar instâncias';
-      console.error('Erro ao carregar instâncias:', err);
+        const message = err instanceof Error ? err.message : t('extraction', 'errors_loadInstances');
+        console.error('Error loading instances:', err);
       setError(message);
     }
   }, [articleId, templateId]);
 
-  // Carregar dados iniciais (apenas instâncias)
+    // Load initial data (instances only)
   useEffect(() => {
     if (!articleId || !templateId) {
       setInstances([]);
@@ -82,8 +83,8 @@ export function useExtractionInstances({
       try {
         await loadInstances();
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Erro ao carregar instâncias';
-        console.error('Erro ao carregar dados de instâncias:', err);
+          const message = err instanceof Error ? err.message : t('extraction', 'errors_loadInstances');
+          console.error('Error loading instance data:', err);
         setError(message);
       } finally {
         setLoading(false);
@@ -93,7 +94,7 @@ export function useExtractionInstances({
     loadData();
   }, [articleId, templateId, loadInstances]);
 
-  // Criar nova instância (usando service)
+    // Create new instance (using service)
   const createInstance = useCallback(async (
     entityTypeId: string,
     label: string,
@@ -101,16 +102,16 @@ export function useExtractionInstances({
   ): Promise<ExtractionInstance | null> => {
     try {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) throw new Error('Usuário não autenticado');
+        if (userError || !user) throw new Error(t('common', 'errors_userNotAuthenticated'));
 
-      // Buscar entity type
+        // Fetch entity type
       const entityType = entityTypes.find(et => et.id === entityTypeId);
       if (!entityType) {
-        toast.error('Tipo de entidade não encontrado');
+          toast.error(t('extraction', 'entityTypeNotFound'));
         return null;
       }
 
-      // Delegar para o service
+        // Delegate to service
       const result = await service.createInstance({
         projectId,
         articleId,
@@ -122,24 +123,24 @@ export function useExtractionInstances({
         userId: user.id
       });
 
-      // Atualizar estado local
+        // Update local state
       if (result.wasCreated) {
         setInstances(prev => [...prev, result.instance]);
-        toast.success(`Instância "${result.instance.label}" criada com sucesso!`);
+          toast.success(t('extraction', 'instanceCreatedSuccess').replace('{{label}}', result.instance.label));
       } else {
-        toast.info('Instância já existe');
+          toast.info(t('extraction', 'instanceAlreadyExists'));
       }
 
       return result.instance;
 
     } catch (err: any) {
-      console.error('Erro ao criar instância:', err);
-      toast.error(`Erro ao criar instância: ${err.message}`);
+        console.error('Error creating instance:', err);
+        toast.error(`${t('extraction', 'errors_createInstance')}: ${err.message}`);
       return null;
     }
   }, [projectId, articleId, templateId, entityTypes, service]);
 
-  // Atualizar instância
+    // Update instance
   const updateInstance = useCallback(async (
     instanceId: string,
     updates: Partial<ExtractionInstance>
@@ -160,27 +161,27 @@ export function useExtractionInstances({
 
       if (error) throw error;
 
-      // Atualizar estado local
+        // Update local state
       setInstances(prev => 
         prev.map(instance => 
           instance.id === instanceId ? data : instance
         )
       );
 
-      toast.success('Instância atualizada com sucesso!');
+        toast.success(t('extraction', 'instanceUpdatedSuccess'));
       return data;
 
     } catch (err: any) {
-      console.error('Erro ao atualizar instância:', err);
-      toast.error(`Erro ao atualizar instância: ${err.message}`);
+        console.error('Error updating instance:', err);
+        toast.error(`${t('extraction', 'errors_updateInstance')}: ${err.message}`);
       return null;
     }
   }, []);
 
-  // Excluir instância (usando service)
+    // Delete instance (using service)
   const deleteInstance = useCallback(async (instanceId: string): Promise<boolean> => {
     try {
-      // Verificar se há valores associados (validação local)
+        // Check for associated values (local validation)
       const { data: values, error: valuesError } = await supabase
         .from('extracted_values')
         .select('id')
@@ -190,33 +191,33 @@ export function useExtractionInstances({
       if (valuesError) throw valuesError;
 
       if (values && values.length > 0) {
-        toast.error('Não é possível excluir instância que possui valores extraídos');
+          toast.error(t('extraction', 'cannotDeleteInstanceWithValues'));
         return false;
       }
 
-      // Delegar para o service (CASCADE automático)
+        // Delegate to service (automatic CASCADE)
       await service.removeInstance(instanceId);
 
-      // Atualizar estado local
+        // Update local state
       setInstances(prev => prev.filter(instance => instance.id !== instanceId));
 
-      toast.success('Instância excluída com sucesso!');
+        toast.success(t('extraction', 'instanceDeletedSuccess'));
       return true;
 
     } catch (err: any) {
-      console.error('Erro ao excluir instância:', err);
-      toast.error(`Erro ao excluir instância: ${err.message}`);
+        console.error('Error deleting instance:', err);
+        toast.error(`${t('extraction', 'errors_deleteInstance')}: ${err.message}`);
       return false;
     }
   }, [service]);
 
-  // Reordenar instâncias
+    // Reorder instances
   const reorderInstances = useCallback(async (
     entityTypeId: string,
     newOrder: { id: string; sort_order: number }[]
   ): Promise<boolean> => {
     try {
-      // Atualizar todas as instâncias em uma transação
+        // Update all instances in a transaction
       const updates = newOrder.map(item => 
         supabase
           .from('extraction_instances')
@@ -226,35 +227,35 @@ export function useExtractionInstances({
 
       await Promise.all(updates);
 
-      // Recarregar instâncias
+        // Reload instances
       await loadInstances();
 
-      toast.success('Ordem das instâncias atualizada!');
+        toast.success(t('extraction', 'instancesReorderSuccess'));
       return true;
 
     } catch (err: any) {
-      console.error('Erro ao reordenar instâncias:', err);
-      toast.error(`Erro ao reordenar: ${err.message}`);
+        console.error('Error reordering instances:', err);
+        toast.error(`${t('extraction', 'errors_reorderInstances')}: ${err.message}`);
       return false;
     }
   }, [loadInstances]);
 
-  // Obter instâncias por tipo de entidade
+    // Get instances by entity type
   const getInstancesByEntityType = useCallback((entityTypeId: string): ExtractionInstance[] => {
     return instances.filter(instance => instance.entity_type_id === entityTypeId);
   }, [instances]);
 
-  // Obter instâncias filhas
+    // Get child instances
   const getChildInstances = useCallback((parentInstanceId: string): ExtractionInstance[] => {
     return instances.filter(instance => instance.parent_instance_id === parentInstanceId);
   }, [instances]);
 
-  // Verificar se pode criar instância
+    // Check if can create instance
   const canCreateInstance = useCallback((entityTypeId: string): boolean => {
     const entityType = entityTypes.find(et => et.id === entityTypeId);
     if (!entityType) return false;
 
-    // Se cardinalidade é 'one', verificar se já existe instância
+      // If cardinality is 'one', check if instance already exists
     if (entityType.cardinality === 'one') {
       const existingInstance = instances.find(
         instance => instance.entity_type_id === entityTypeId
@@ -262,14 +263,14 @@ export function useExtractionInstances({
       return !existingInstance;
     }
 
-    // Se cardinalidade é 'many', sempre pode criar
+      // If cardinality is 'many', can always create
     return true;
   }, [entityTypes, instances]);
 
-  // Gerar próximo label para instância
+    // Generate next label for instance
   const generateNextLabel = useCallback((entityTypeId: string): string => {
     const entityType = entityTypes.find(et => et.id === entityTypeId);
-    if (!entityType) return 'Nova Instância';
+      if (!entityType) return t('extraction', 'newInstanceLabel');
 
     const existingInstances = getInstancesByEntityType(entityTypeId);
     const baseLabel = entityType.label;
@@ -278,7 +279,7 @@ export function useExtractionInstances({
       return `${baseLabel} 1`;
     }
 
-    // Encontrar próximo número
+      // Find next number
     let nextNumber = 1;
     const existingNumbers = existingInstances
       .map(instance => {
@@ -298,24 +299,24 @@ export function useExtractionInstances({
     return `${baseLabel} ${nextNumber}`;
   }, [entityTypes, getInstancesByEntityType]);
 
-  // Loading combinado (instâncias OU entity types)
+    // Combined loading (instances OR entity types)
   const combinedLoading = loading || entityTypesLoading;
 
   return {
-    // Estado
+      // State
     instances,
-    entityTypes, // Mantido para compatibilidade, mas carregado via hook dedicado
+      entityTypes, // Kept for compatibility, loaded via dedicated hook
     loading: combinedLoading,
     error,
 
-    // Ações
+      // Actions
     createInstance,
     updateInstance,
     deleteInstance,
     reorderInstances,
     refreshInstances: loadInstances,
 
-    // Utilitários
+      // Utilities
     getInstancesByEntityType,
     getChildInstances,
     canCreateInstance,

@@ -1,14 +1,14 @@
 /**
- * Dialog para adicionar nova seção ao template
- * 
+ * Dialog to add a new section to the template
+ *
  * Features:
- * - Formulário com react-hook-form + zod
- * - Geração automática de nome (snake_case) a partir do label
- * - Validação em tempo real
- * - Campos condicionais para cardinalidade
- * - Feedback visual de erros
- * - Integração com supabase
- * 
+ * - Form with react-hook-form + zod
+ * - Auto-generated name (snake_case) from label
+ * - Real-time validation
+ * - Conditional fields for cardinality
+ * - Visual error feedback
+ * - Supabase integration
+ *
  * @component
  */
 
@@ -33,33 +33,31 @@ import {Form, FormControl, FormDescription, FormField, FormItem, FormLabel, Form
 import {Info, Loader2, Plus} from 'lucide-react';
 import {supabase} from '@/integrations/supabase/client';
 import {toast} from 'sonner';
+import {t} from '@/lib/copy';
 
 // =================== SCHEMAS ===================
 
-const AddSectionSchema = z.object({
+const getAddSectionSchema = () => z.object({
   name: z.string()
-    .min(1, 'Nome é obrigatório')
-    .min(2, 'Nome deve ter pelo menos 2 caracteres')
-    .max(50, 'Nome deve ter no máximo 50 caracteres')
-    .regex(
-      /^[a-zA-Z_][a-zA-Z0-9_]*$/,
-      'Nome deve começar com letra e conter apenas letras, números e _'
-    ),
+      .min(1, t('extraction', 'nameRequired'))
+      .min(2, t('extraction', 'nameMin2'))
+      .max(50, t('extraction', 'nameMax50'))
+      .regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/, t('extraction', 'nameFormat')),
   label: z.string()
-    .min(1, 'Label é obrigatório')
-    .min(2, 'Label deve ter pelo menos 2 caracteres')
-    .max(100, 'Label deve ter no máximo 100 caracteres'),
+      .min(1, t('extraction', 'labelRequired'))
+      .min(2, t('extraction', 'labelMin2'))
+      .max(100, t('extraction', 'labelMax100')),
   description: z.string()
-    .max(500, 'Descrição deve ter no máximo 500 caracteres')
+      .max(500, t('extraction', 'descriptionMax500'))
     .optional()
     .nullable(),
   cardinality: z.enum(['one', 'many'], {
-    required_error: 'Cardinalidade é obrigatória'
+      required_error: t('extraction', 'cardinalityRequired'),
   }),
-  is_required: z.boolean().default(false)
+    is_required: z.boolean().default(false),
 });
 
-type AddSectionInput = z.infer<typeof AddSectionSchema>;
+type AddSectionInput = z.infer<ReturnType<typeof getAddSectionSchema>>;
 
 // =================== INTERFACES ===================
 
@@ -74,16 +72,16 @@ interface AddSectionDialogProps {
 // =================== UTILS ===================
 
 /**
- * Converte label para snake_case
+ * Convert label to snake_case
  */
 const generateSnakeCaseName = (label: string): string => {
   return label
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // Remove acentos
-    .replace(/[^a-z0-9\s]/g, '') // Remove caracteres especiais
+      .replace(/[\u0300-\u036f]/g, '') // Remove accents
+      .replace(/[^a-z0-9\s]/g, '') // Remove special characters
     .trim()
-    .replace(/\s+/g, '_'); // Substitui espaços por _
+      .replace(/\s+/g, '_'); // Replace spaces with _
 };
 
 // =================== COMPONENT ===================
@@ -99,7 +97,7 @@ export function AddSectionDialog({
   const [autoGenerateName, setAutoGenerateName] = useState(true);
 
   const form = useForm<AddSectionInput>({
-    resolver: zodResolver(AddSectionSchema),
+      resolver: zodResolver(getAddSectionSchema()),
     defaultValues: {
       name: '',
       label: '',
@@ -111,7 +109,7 @@ export function AddSectionDialog({
 
   const label = form.watch('label');
 
-  // Gerar nome automaticamente quando label muda
+    // Auto-generate name when label changes
   useEffect(() => {
     if (autoGenerateName && label) {
       const generatedName = generateSnakeCaseName(label);
@@ -123,9 +121,9 @@ export function AddSectionDialog({
     setLoading(true);
     
     try {
-      console.log('🆕 Criando nova seção:', data);
+        console.log('Creating new section:', data);
 
-      // 1. Buscar próximo sort_order dos entity_types existentes
+        // 1. Fetch next sort_order from existing entity_types
       const { data: existingEntityTypes, error: orderError } = await supabase
         .from('extraction_entity_types')
         .select('sort_order')
@@ -134,13 +132,13 @@ export function AddSectionDialog({
         .limit(1);
 
       if (orderError) {
-        console.error('Erro ao buscar sort_order:', orderError);
+          console.error('Error fetching sort_order:', orderError);
         throw orderError;
       }
 
       const nextSortOrder = (existingEntityTypes?.[0]?.sort_order || 0) + 1;
 
-      // 2. Criar entity type
+        // 2. Create entity type
       const { data: newEntityType, error: entityError } = await supabase
         .from('extraction_entity_types')
         .insert({
@@ -151,28 +149,28 @@ export function AddSectionDialog({
           cardinality: data.cardinality,
           sort_order: nextSortOrder,
           is_required: data.is_required,
-          parent_entity_type_id: null // Nova seção sempre é ROOT
+            parent_entity_type_id: null // New section is always ROOT
         })
         .select()
         .single();
 
       if (entityError) {
-        console.error('Erro ao criar entity type:', entityError);
+          console.error('Error creating entity type:', entityError);
         throw entityError;
       }
 
-      console.log('✅ Entity type criado:', newEntityType.id);
+        console.log('Entity type created:', newEntityType.id);
 
-      toast.success(`Seção "${data.label}" criada com sucesso!`);
-      
-      // Limpar formulário e fechar dialog
+        toast.success(t('extraction', 'sectionCreatedSuccess').replace('{{label}}', data.label));
+
+        // Reset form and close dialog
       form.reset();
       onOpenChange(false);
       onSectionAdded();
 
     } catch (error: any) {
-      console.error('Erro ao criar seção:', error);
-      toast.error(`Erro ao criar seção: ${error.message}`);
+        console.error('Error creating section:', error);
+        toast.error(`${t('extraction', 'sectionCreateError')}: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -191,10 +189,10 @@ export function AddSectionDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Plus className="h-5 w-5" />
-            Adicionar Nova Seção
+              {t('extraction', 'addNewSection')}
           </DialogTitle>
           <DialogDescription>
-            Crie uma nova seção personalizada para extrair dados específicos do seu projeto.
+              Create a custom section to extract project-specific data.
           </DialogDescription>
         </DialogHeader>
 
@@ -207,29 +205,29 @@ export function AddSectionDialog({
               name="label"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Label da Seção *</FormLabel>
+                    <FormLabel>{t('extraction', 'sectionLabelLabel')}</FormLabel>
                   <FormControl>
-                    <Input 
-                      placeholder="ex: Critérios de Exclusão" 
+                    <Input
+                        placeholder={t('extraction', 'placeholderSectionLabel')}
                       {...field}
                     />
                   </FormControl>
                   <FormDescription>
-                    Nome que aparecerá na interface para os usuários
+                      Name shown in the UI for users
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
             />
 
-            {/* Nome Técnico */}
+              {/* Technical name */}
             <FormField
               control={form.control}
               name="name"
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="flex items-center gap-2">
-                    Nome Técnico *
+                      Technical name *
                     <div className="flex items-center gap-1">
                       <Switch
                         checked={autoGenerateName}
@@ -240,37 +238,37 @@ export function AddSectionDialog({
                     </div>
                   </FormLabel>
                   <FormControl>
-                    <Input 
-                      placeholder="ex: exclusion_criteria" 
+                    <Input
+                        placeholder={t('extraction', 'placeholderSectionNameExample')}
                       {...field}
                       disabled={autoGenerateName}
                     />
                   </FormControl>
                   <FormDescription>
-                    Nome único usado internamente (snake_case). {autoGenerateName && 'Gerado automaticamente.'}
+                      Unique internal name (snake_case). {autoGenerateName && 'Auto-generated.'}
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
             />
 
-            {/* Descrição */}
+              {/* Description */}
             <FormField
               control={form.control}
               name="description"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Descrição (Opcional)</FormLabel>
+                    <FormLabel>{t('extraction', 'sectionDescriptionOptional')}</FormLabel>
                   <FormControl>
-                    <Textarea 
-                      placeholder="Descreva o que esta seção deve coletar e como deve ser preenchida..."
+                    <Textarea
+                        placeholder={t('extraction', 'placeholderSectionDescription')}
                       rows={3}
                       {...field}
                       value={field.value || ''}
                     />
                   </FormControl>
                   <FormDescription>
-                    Explicação detalhada que aparecerá como tooltip na interface
+                      Detailed explanation shown as a tooltip in the UI
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -283,27 +281,27 @@ export function AddSectionDialog({
               name="cardinality"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Tipo de Seção *</FormLabel>
+                    <FormLabel>{t('extraction', 'sectionTypeLabel')}</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Selecione o tipo" />
+                          <SelectValue placeholder={t('extraction', 'selectTypePlaceholder')}/>
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
                       <SelectItem value="one">
                         <div className="flex flex-col items-start">
-                          <span className="font-medium">Seção Única</span>
+                            <span className="font-medium">{t('extraction', 'sectionTypeSingle')}</span>
                           <span className="text-xs text-muted-foreground">
-                            Uma ocorrência por artigo (ex: Resumo, Conclusão)
+                            One occurrence per article (e.g. Summary, Conclusion)
                           </span>
                         </div>
                       </SelectItem>
                       <SelectItem value="many">
                         <div className="flex flex-col items-start">
-                          <span className="font-medium">Seção Múltipla</span>
+                            <span className="font-medium">{t('extraction', 'sectionTypeMultiple')}</span>
                           <span className="text-xs text-muted-foreground">
-                            Várias ocorrências por artigo (ex: Autores, Grupos)
+                            Multiple occurrences per article (e.g. Authors, Groups)
                           </span>
                         </div>
                       </SelectItem>
@@ -312,8 +310,8 @@ export function AddSectionDialog({
                   <FormDescription className="flex items-start gap-2">
                     <Info className="h-4 w-4 mt-0.5 text-blue-500 flex-shrink-0" />
                     <span>
-                      Seção única para dados que aparecem uma vez no artigo.
-                      Seção múltipla permite criar várias instâncias (como uma lista ou tabela).
+                      Single section for data that appears once per article.
+                      Multiple section allows several instances (e.g. a list or table).
                     </span>
                   </FormDescription>
                   <FormMessage />
@@ -321,16 +319,16 @@ export function AddSectionDialog({
               )}
             />
 
-            {/* Obrigatória */}
+              {/* Required */}
             <FormField
               control={form.control}
               name="is_required"
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
                   <div className="space-y-0.5">
-                    <FormLabel className="text-base">Seção Obrigatória</FormLabel>
+                      <FormLabel className="text-base">{t('extraction', 'sectionRequiredLabel')}</FormLabel>
                     <FormDescription>
-                      Se ativado, esta seção deve ser preenchida para todos os artigos
+                        When enabled, this section must be filled for all articles
                     </FormDescription>
                   </div>
                   <FormControl>
@@ -350,18 +348,18 @@ export function AddSectionDialog({
                 onClick={handleClose}
                 disabled={loading}
               >
-                Cancelar
+                  {t('common', 'cancel')}
               </Button>
               <Button type="submit" disabled={loading}>
                 {loading ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    Criando...
+                      Creating...
                   </>
                 ) : (
                   <>
                     <Plus className="h-4 w-4 mr-2" />
-                    Criar Seção
+                      {t('extraction', 'createSection')}
                   </>
                 )}
               </Button>

@@ -1,10 +1,11 @@
 /**
- * Contexto para gerenciar estado do projeto e navegação
- * Single Source of Truth para activeTab
+ * Context for project state and navigation
+ * Single source of truth for activeTab
  */
 
 import React, {createContext, ReactNode, useCallback, useContext, useEffect, useState} from 'react';
 import {useSearchParams} from 'react-router-dom';
+import {t} from '@/lib/copy';
 import type {ProjectSummary} from '@/types/project';
 
 export interface ProjectContextType {
@@ -24,8 +25,8 @@ interface ProjectProviderProps {
 export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) => {
   const [searchParams, setSearchParams] = useSearchParams();
     const [project, setProject] = useState<ProjectSummary | null>(null);
-  
-  // Ler tab da URL ou usar padrão
+
+    // Read tab from URL or use default
   const tabFromUrl = searchParams.get('tab');
   const initialTab = (tabFromUrl && ['articles', 'extraction', 'assessment', 'settings'].includes(tabFromUrl)) 
     ? tabFromUrl 
@@ -33,33 +34,33 @@ export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) =>
   
   const [activeTab, setActiveTab] = useState<string>(initialTab);
 
-  // Sincronizar activeTab quando URL mudar (vindo de outras páginas)
+    // Sync activeTab when URL changes (coming from other pages)
   useEffect(() => {
     const tabFromUrl = searchParams.get('tab');
     if (tabFromUrl && ['articles', 'extraction', 'assessment', 'settings'].includes(tabFromUrl)) {
-      // Atualizar apenas se for diferente para evitar loops
+        // Update only if different to avoid loops
       setActiveTab(prevTab => {
         return prevTab !== tabFromUrl ? tabFromUrl : prevTab;
       });
     }
-  }, [searchParams]); // Só observar mudanças na URL, não criar loop com activeTab
+  }, [searchParams]); // Only watch URL changes, do not create loop with activeTab
 
-  // Sincronizar URL quando activeTab mudar (navegação interna)
+    // Sync URL when activeTab changes (internal navigation)
   useEffect(() => {
     const newParams = new URLSearchParams(searchParams);
     newParams.set('tab', activeTab);
     setSearchParams(newParams, { replace: true });
   }, [activeTab, searchParams, setSearchParams]);
 
-  // Função centralizada para mudança de tabs
-  // Preparada para adicionar analytics, validações, etc.
+    // Centralized tab change handler
+    // Ready for analytics, validations, etc.
   const changeTab = useCallback((tab: string) => {
     setActiveTab(tab);
-    
-    // Analytics (futuro)
+
+      // Analytics (future)
     // trackEvent('tab_change', { tab, projectId: project?.id });
-    
-    // Validações (futuro)
+
+      // Validations (future)
     // if (hasUnsavedChanges) showConfirmDialog();
   }, []);
 
@@ -81,7 +82,7 @@ export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) =>
 export const useProject = () => {
   const context = useContext(ProjectContext);
   if (context === undefined) {
-    throw new Error('useProject deve ser usado dentro de um ProjectProvider');
+      throw new Error(t('common', 'errors_useProject'));
   }
   return context;
 };

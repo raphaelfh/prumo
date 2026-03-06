@@ -1,6 +1,5 @@
 /**
- * Dialog para coleta de feedback dos usuários
- * Formulário minimalista para reportar bugs, sugestões e dúvidas
+ * Feedback dialog — minimal form for bugs, suggestions, questions.
  */
 
 import {useState} from 'react';
@@ -17,9 +16,10 @@ import {Button} from '@/components/ui/button';
 import {Label} from '@/components/ui/label';
 import {Textarea} from '@/components/ui/textarea';
 import {RadioGroup, RadioGroupItem} from '@/components/ui/radio-group';
-import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue,} from '@/components/ui/select';
+import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '@/components/ui/select';
 import {useFeedback} from '@/hooks/useFeedback';
 import type {FeedbackSeverity, FeedbackType} from '@/types/feedback';
+import {t} from '@/lib/copy';
 
 interface FeedbackDialogProps {
   open: boolean;
@@ -64,71 +64,68 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <MessageSquare className="h-5 w-5" />
-              Enviar Feedback
+                {t('navigation', 'feedbackTitle')}
             </DialogTitle>
             <DialogDescription>
-              Encontrou um bug ou tem uma sugestão? Adoramos ouvir você!
+                {t('navigation', 'feedbackDescription')}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
-            {/* Tipo de Feedback */}
             <div className="space-y-2">
-              <Label>Tipo de feedback</Label>
+                <Label>{t('navigation', 'feedbackTypeLabel')}</Label>
               <RadioGroup value={type} onValueChange={(v) => setType(v as FeedbackType)}>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="bug" id="bug" />
                   <Label htmlFor="bug" className="font-normal cursor-pointer">
-                    🐛 Bug / Problema
+                      🐛 {t('navigation', 'feedbackTypeBug')}
                   </Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="suggestion" id="suggestion" />
                   <Label htmlFor="suggestion" className="font-normal cursor-pointer">
-                    💡 Sugestão de melhoria
+                      💡 {t('navigation', 'feedbackTypeSuggestion')}
                   </Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="question" id="question" />
                   <Label htmlFor="question" className="font-normal cursor-pointer">
-                    ❓ Dúvida / Pergunta
+                      ❓ {t('navigation', 'feedbackTypeQuestion')}
                   </Label>
                 </div>
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="other" id="other" />
                   <Label htmlFor="other" className="font-normal cursor-pointer">
-                    💬 Outro
+                      💬 {t('navigation', 'feedbackTypeOther')}
                   </Label>
                 </div>
               </RadioGroup>
             </div>
 
-            {/* Severidade (apenas para bugs) */}
             {type === 'bug' && (
               <div className="space-y-2">
-                <Label htmlFor="severity">Severidade (opcional)</Label>
+                  <Label htmlFor="severity">{t('navigation', 'feedbackSeverityLabel')}</Label>
                 <Select value={severity} onValueChange={(v) => setSeverity(v as FeedbackSeverity)}>
                   <SelectTrigger id="severity">
-                    <SelectValue placeholder="Selecione a severidade" />
+                      <SelectValue placeholder={t('navigation', 'feedbackSeverityPlaceholder')}/>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="low">Baixa - Problema cosmético</SelectItem>
-                    <SelectItem value="medium">Média - Funcionalidade afetada</SelectItem>
-                    <SelectItem value="high">Alta - Não consigo usar</SelectItem>
-                    <SelectItem value="critical">Crítica - App travou/quebrou</SelectItem>
+                      <SelectItem value="low">{t('navigation', 'feedbackSeverityLow')}</SelectItem>
+                      <SelectItem value="medium">{t('navigation', 'feedbackSeverityMedium')}</SelectItem>
+                      <SelectItem value="high">{t('navigation', 'feedbackSeverityHigh')}</SelectItem>
+                      <SelectItem value="critical">{t('navigation', 'feedbackSeverityCritical')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             )}
 
-            {/* Descrição */}
             <div className="space-y-2">
               <Label htmlFor="description">
-                Descrição <span className="text-destructive">*</span>
+                  {t('navigation', 'feedbackDescriptionLabel')} <span className="text-destructive">*</span>
               </Label>
               <Textarea
                 id="description"
-                placeholder="Descreva o problema ou sugestão em detalhes..."
+                placeholder={t('navigation', 'feedbackDescriptionPlaceholder')}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={5}
@@ -137,9 +134,9 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
               />
               <p className="text-xs text-muted-foreground">
                 {description.length < 10 ? (
-                  <>Mínimo 10 caracteres ({10 - description.length} restantes)</>
+                    <>{t('navigation', 'feedbackDescriptionMin')} ({10 - description.length} {t('navigation', 'feedbackDescriptionRemaining')})</>
                 ) : (
-                  <>✓ Descrição válida. Contexto técnico será capturado automaticamente.</>
+                    <>✓ {t('navigation', 'feedbackDescriptionValid')}</>
                 )}
               </p>
             </div>
@@ -152,10 +149,10 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
               onClick={() => onOpenChange(false)}
               disabled={submitting}
             >
-              Cancelar
+                {t('common', 'cancel')}
             </Button>
             <Button type="submit" disabled={submitting || !isDescriptionValid}>
-              {submitting ? 'Enviando...' : 'Enviar Feedback'}
+                {submitting ? t('navigation', 'feedbackSubmitting') : t('navigation', 'feedbackSubmit')}
             </Button>
           </DialogFooter>
         </form>

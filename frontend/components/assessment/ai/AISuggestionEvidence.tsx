@@ -1,7 +1,7 @@
 /**
  * Componente para Exibir Evidence de Sugestão de IA - Assessment
  *
- * Mostra o trecho do texto citado pelo LLM como evidência para a avaliação,
+ * Shows the text passage cited by the LLM as evidence for assessment,
  * incluindo número da página (se disponível).
  *
  * Adaptado de extraction/ai/AISuggestionEvidence.tsx
@@ -14,6 +14,7 @@ import {Button} from '@/components/ui/button';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {useState} from 'react';
 import {cn} from '@/lib/utils';
+import {t} from '@/lib/copy';
 
 const COPY_FEEDBACK_MS = 2000;
 
@@ -54,7 +55,7 @@ export function AISuggestionEvidence(props: AISuggestionEvidenceProps) {
           <span className="font-medium">Evidência citada</span>
           {evidence.pageNumber !== null && evidence.pageNumber !== undefined && (
             <span className="px-2 py-1 bg-background rounded text-xs shrink-0">
-              Página {evidence.pageNumber}
+              {t('assessment', 'aiEvidencePage')} {evidence.pageNumber}
             </span>
           )}
         </div>

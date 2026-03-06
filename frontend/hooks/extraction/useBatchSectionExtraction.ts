@@ -1,26 +1,27 @@
 /**
- * Hook para Extração de Todas as Seções de um Modelo
- * 
- * Hook React para gerenciar extração de IA de todas as seções de um modelo de uma vez.
- * 
- * FOCO: Extração em batch com memória resumida (section-extraction pipeline com extractAllSections=true).
- * Permite ao usuário extrair todas as seções de um modelo sequencialmente em uma única operação.
- * 
+ * Hook for extraction of all sections of a model
+ *
+ * React hook to manage AI extraction of all sections of a model in one go.
+ *
+ * FOCUS: Batch extraction with summarized memory (section-extraction pipeline with extractAllSections=true).
+ * Lets the user extract all sections of a model sequentially in a single operation.
+ *
  * FEATURES:
- * - Estado de loading e error
- * - Toast notifications automáticas com resultados agregados
- * - Callback para refresh de sugestões após extração
- * - Tratamento de erros amigável
+ * - Loading and error state
+ * - Automatic toast notifications with aggregated results
+ * - Callback to refresh suggestions after extraction
+ * - Friendly error handling
  */
 
 import {useCallback, useState} from "react";
 import {toast} from "sonner";
+import {t} from "@/lib/copy";
 import {SectionExtractionService,} from "@/services/sectionExtractionService";
 import type {BatchSectionExtractionRequest} from "@/types/ai-extraction";
 import {AuthenticationError, getErrorCode, getErrorMessage, PDFNotFoundError,} from "@/lib/ai-extraction/errors";
 
 /**
- * Tipo de retorno do hook
+ * Hook return type
  */
 export interface UseBatchSectionExtractionReturn {
   extractAllSections: (request: BatchSectionExtractionRequest) => Promise<void>;
@@ -29,16 +30,16 @@ export interface UseBatchSectionExtractionReturn {
 }
 
 /**
- * Hook para extração de todas as seções de um modelo
- * 
- * USO:
+ * Hook for extraction of all sections of a model
+ *
+ * USAGE:
  * ```tsx
  * const { extractAllSections, loading, error } = useBatchSectionExtraction({
  *   onSuccess: (result) => {
- *     // Refresh sugestões ou navegar
+ *     // Refresh suggestions or navigate
  *   }
  * });
- * 
+ *
  * await extractAllSections({
  *   projectId,
  *   articleId,
@@ -47,9 +48,9 @@ export interface UseBatchSectionExtractionReturn {
  *   extractAllSections: true
  * });
  * ```
- * 
- * @param options - Opções do hook (callback de sucesso)
- * @returns Função de extração, estado de loading e error
+ *
+ * @param options - Hook options (success callback)
+ * @returns Extraction function, loading and error state
  */
 export function useBatchSectionExtraction(options?: {
   onSuccess?: (result: { totalSections: number; successfulSections: number; failedSections: number; totalSuggestionsCreated: number }) => void;
@@ -58,21 +59,21 @@ export function useBatchSectionExtraction(options?: {
   const [error, setError] = useState<string | null>(null);
 
   /**
-   * Extrai todas as seções de um modelo
-   * 
-   * @param request - Parâmetros da extração
+   * Extract all sections of a model
+   *
+   * @param request - Extraction parameters
    */
   const extractAllSections = useCallback(
     async (request: BatchSectionExtractionRequest) => {
-      console.log('[useBatchSectionExtraction] Iniciando extração de todas as seções', request);
+        console.log('[useBatchSectionExtraction] Starting extraction of all sections', request);
       setLoading(true);
       setError(null);
 
       try {
-        // Chamar service para executar extração
-        console.log('[useBatchSectionExtraction] Chamando service...');
+          // Call service to run extraction
+          console.log('[useBatchSectionExtraction] Calling service...');
         const result = await SectionExtractionService.extractAllSections(request);
-        console.log('[useBatchSectionExtraction] Service retornou', {
+          console.log('[useBatchSectionExtraction] Service returned', {
           hasData: !!result.data,
           totalSections: result.data?.totalSections,
           successfulSections: result.data?.successfulSections,
@@ -86,26 +87,33 @@ export function useBatchSectionExtraction(options?: {
 
         const { totalSections, successfulSections, failedSections, totalSuggestionsCreated, totalTokensUsed, durationMs } = result.data;
 
-        // Toast de sucesso com informações agregadas
+          // Success toast with aggregated info
         if (failedSections === 0) {
           toast.success(
-            `Extração concluída! ${successfulSections} seção(ões) extraída(s) com sucesso.`,
+              t('extraction', 'batchSectionExtractionSuccess').replace('{{n}}', String(successfulSections)),
             {
-              description: `${totalSuggestionsCreated} sugestão(ões) criada(s). ${totalTokensUsed} tokens usados em ${(durationMs / 1000).toFixed(1)}s`,
+                description: t('extraction', 'batchSectionExtractionSuccessDesc')
+                    .replace('{{suggestions}}', String(totalSuggestionsCreated))
+                    .replace('{{tokens}}', String(totalTokensUsed))
+                    .replace('{{duration}}', (durationMs / 1000).toFixed(1)),
               duration: 8000,
             },
           );
         } else {
           toast.warning(
-            `Extração parcialmente concluída: ${successfulSections}/${totalSections} seção(ões) extraída(s) com sucesso.`,
+              t('extraction', 'batchSectionExtractionPartial')
+                  .replace('{{success}}', String(successfulSections))
+                  .replace('{{total}}', String(totalSections)),
             {
-              description: `${totalSuggestionsCreated} sugestão(ões) criada(s). ${failedSections} seção(ões) falharam. Verifique os logs para mais detalhes.`,
+                description: t('extraction', 'batchSectionExtractionPartialDesc')
+                    .replace('{{suggestions}}', String(totalSuggestionsCreated))
+                    .replace('{{failed}}', String(failedSections)),
               duration: 10000,
             },
           );
         }
 
-        // Chamar callback de sucesso se fornecido
+          // Call success callback if provided
         if (options?.onSuccess) {
           Promise.resolve(
             options.onSuccess({
@@ -115,43 +123,43 @@ export function useBatchSectionExtraction(options?: {
               totalSuggestionsCreated,
             })
           ).catch(err => {
-            console.error('[useBatchSectionExtraction] Erro no callback onSuccess:', err);
+              console.error('[useBatchSectionExtraction] Error in onSuccess callback:', err);
           });
         }
       } catch (err: any) {
-        console.error('[useBatchSectionExtraction] Erro capturado', {
+          console.error('[useBatchSectionExtraction] Error caught', {
           error: err instanceof Error ? err.message : String(err),
           name: err instanceof Error ? err.name : 'Unknown',
           stack: err instanceof Error ? err.stack : undefined,
         });
 
-        // Tratar erro de forma amigável usando classes de erro customizadas
+          // Handle error in a friendly way using custom error classes
         const message = getErrorMessage(err);
         const code = getErrorCode(err);
         setError(message);
 
-        // Toast de erro com mensagem clara baseada no tipo de erro
+          // Error toast with clear message based on error type
         const errorCode = code || '';
         if (err instanceof PDFNotFoundError || errorCode === 'PDF_NOT_FOUND') {
-          toast.error("Erro na extração", {
+            toast.error(t('extraction', 'sectionExtractionErrorTitle'), {
             description: message,
           });
         } else if (err instanceof AuthenticationError || errorCode === 'AUTH_ERROR') {
-          toast.error("Erro de autenticação", {
-            description: "Por favor, faça login novamente.",
+            toast.error(t('extraction', 'sectionExtractionErrorAuth'), {
+                description: t('extraction', 'sectionExtractionErrorAuthDesc'),
           });
         } else if (errorCode === 'TIMEOUT' || message.includes('timeout') || message.includes('cancelada')) {
-          toast.error("Extração cancelada por timeout", {
-            description: "A extração demorou muito tempo. Tente novamente com um PDF menor ou extraia as seções individualmente.",
+            toast.error(t('extraction', 'sectionExtractionErrorTitle'), {
+                description: t('extraction', 'sectionExtractionTimeoutDesc'),
             duration: 10000,
           });
         } else {
-          toast.error(`Erro na extração de todas as seções: ${message}`, {
+            toast.error(`${t('extraction', 'errors_allSectionsExtraction')}: ${message}`, {
             duration: 8000,
           });
         }
 
-        // Re-throw para permitir tratamento adicional pelo componente
+          // Re-throw to allow further handling by the component
         throw err;
       } finally {
         setLoading(false);

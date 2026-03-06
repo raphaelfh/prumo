@@ -1,6 +1,6 @@
 /**
- * Serviço de Error Tracking e Observabilidade
- * Centraliza o tratamento de erros e métricas da aplicação
+ * Error tracking and observability service
+ * Centralizes error handling and application metrics
  */
 
 export interface ErrorContext {
@@ -55,10 +55,10 @@ class ErrorTrackingService {
       severity: this.determineSeverity(error, context),
     };
 
-    // Adicionar à lista local
+      // Add to local list
     this.errors.push(errorReport);
 
-    // Log no console em desenvolvimento
+      // Log to console in development
     if (this.isDevelopment) {
       console.group(`🚨 Error Captured: ${errorId}`);
       console.error('Error:', error);
@@ -67,7 +67,7 @@ class ErrorTrackingService {
       console.groupEnd();
     }
 
-    // Em produção, enviar para serviço de monitoramento
+      // In production, send to monitoring service
     if (!this.isDevelopment) {
       this.sendToMonitoring(errorReport);
     }
@@ -76,7 +76,7 @@ class ErrorTrackingService {
   }
 
   /**
-   * Captura métricas de performance
+   * Captures performance metrics
    */
   captureMetric(metric: PerformanceMetric): void {
     this.metrics.push(metric);
@@ -85,14 +85,14 @@ class ErrorTrackingService {
       console.log(`📊 Metric: ${metric.name} = ${metric.value}${metric.unit}`);
     }
 
-    // Em produção, enviar para serviço de métricas
+      // In production, send to metrics service
     if (!this.isDevelopment) {
       this.sendMetric(metric);
     }
   }
 
   /**
-   * Inicia medição de performance
+   * Starts performance measurement
    */
   startPerformanceMeasurement(name: string, context?: ErrorContext): () => void {
     const startTime = performance.now();
@@ -111,7 +111,7 @@ class ErrorTrackingService {
   }
 
   /**
-   * Captura uso de memória
+   * Captures memory usage
    */
   captureMemoryUsage(context?: ErrorContext): void {
     if ('memory' in performance && (performance as any).memory) {
@@ -134,7 +134,7 @@ class ErrorTrackingService {
   }
 
   /**
-   * Captura métricas de IA
+   * Captures AI metrics
    */
   captureAIUsage(model: string, tokens: number, duration: number, context?: ErrorContext): void {
     this.captureMetric({
@@ -153,7 +153,7 @@ class ErrorTrackingService {
   }
 
   /**
-   * Captura métricas de PDF
+   * Captures PDF metrics
    */
   capturePDFMetrics(pages: number, loadTime: number, fileSize: number, context?: ErrorContext): void {
     this.captureMetric({
@@ -179,7 +179,7 @@ class ErrorTrackingService {
   }
 
   /**
-   * Obtém relatório de erros
+   * Gets error report
    */
   getErrorReport(): { errors: ErrorReport[]; metrics: PerformanceMetric[] } {
     return {
@@ -189,7 +189,7 @@ class ErrorTrackingService {
   }
 
   /**
-   * Limpa dados locais
+   * Clears local data
    */
   clear(): void {
     this.errors = [];
@@ -201,7 +201,7 @@ class ErrorTrackingService {
   }
 
   private determineSeverity(error: Error, context: ErrorContext): ErrorReport['severity'] {
-    // Lógica para determinar severidade baseada no erro e contexto
+      // Logic to determine severity from error and context
     if (error.message.includes('Network') || error.message.includes('fetch')) {
       return 'medium';
     }
@@ -219,11 +219,11 @@ class ErrorTrackingService {
 
   private async sendToMonitoring(errorReport: ErrorReport): Promise<void> {
     try {
-      // Aqui você integraria com serviços como Sentry, LogRocket, etc.
-      // Por enquanto, apenas simular envio
+        // Here you would integrate with Sentry, LogRocket, etc.
+        // For now, just simulate send
       console.log('Sending error to monitoring service:', errorReport);
-      
-      // Exemplo de integração com API própria
+
+        // Example integration with your own API
       // await fetch('/api/errors', {
       //   method: 'POST',
       //   headers: { 'Content-Type': 'application/json' },
@@ -236,10 +236,10 @@ class ErrorTrackingService {
 
   private async sendMetric(metric: PerformanceMetric): Promise<void> {
     try {
-      // Aqui você integraria com serviços de métricas como DataDog, New Relic, etc.
+        // Here you would integrate with DataDog, New Relic, etc.
       console.log('Sending metric to monitoring service:', metric);
-      
-      // Exemplo de integração com API própria
+
+        // Example integration with your own API
       // await fetch('/api/metrics', {
       //   method: 'POST',
       //   headers: { 'Content-Type': 'application/json' },
@@ -251,10 +251,10 @@ class ErrorTrackingService {
   }
 }
 
-// Instância singleton
+// Singleton instance
 export const errorTracker = new ErrorTrackingService();
 
-// Hook para usar no React
+// Hook for use in React
 export const useErrorTracking = () => {
   const captureError = (error: Error, context: ErrorContext = {}) => {
     return errorTracker.captureError(error, context);

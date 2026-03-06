@@ -1,12 +1,12 @@
 /**
- * Dialog de confirmação para excluir campo
- * 
+ * Confirmation dialog to delete field
+ *
  * Features:
- * - Mostra impacto da exclusão (valores extraídos, artigos afetados)
- * - Bloqueia exclusão se houver dados
- * - Avisos visuais claros com cores apropriadas
- * - Loading state durante operação
- * 
+ * - Shows impact of deletion (extracted values, affected articles)
+ * - Blocks deletion if there is data
+ * - Clear visual warnings with appropriate colors
+ * - Loading state during operation
+ *
  * @component
  */
 
@@ -23,6 +23,7 @@ import {
 import { AlertCircle, Loader2, AlertTriangle } from 'lucide-react';
 import { ExtractionField, FieldValidationResult } from '@/types/extraction';
 import { Badge } from '@/components/ui/badge';
+import {t} from '@/lib/copy';
 
 interface DeleteFieldConfirmProps {
   field: ExtractionField | null;
@@ -62,28 +63,28 @@ export function DeleteFieldConfirm({
             {canDelete ? (
               <>
                 <AlertTriangle className="h-5 w-5 text-orange-500" />
-                Confirmar Exclusão
+                  {t('extraction', 'confirmDeleteTitle')}
               </>
             ) : (
               <>
                 <AlertCircle className="h-5 w-5 text-destructive" />
-                Não é Possível Excluir
+                  {t('extraction', 'cannotDelete')}
               </>
             )}
           </AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="space-y-4 pt-2">
-              {/* Informações do campo */}
+                {/* Field information */}
               <div>
                 <p className="text-foreground">
-                  Você está tentando excluir o campo:
+                    {t('extraction', 'youAreTryingToDelete')}
                 </p>
                 <div className="mt-2 rounded-lg bg-muted p-3">
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium text-foreground">{field.label}</p>
                       <p className="text-sm text-muted-foreground mt-1">
-                        {field.description || 'Sem descrição'}
+                          {field.description || t('extraction', 'noDescription')}
                       </p>
                     </div>
                     <Badge variant="secondary" className="font-mono text-xs">
@@ -99,12 +100,12 @@ export function DeleteFieldConfirm({
                   <div className="flex items-start gap-2">
                     <AlertTriangle className="h-5 w-5 text-orange-600 mt-0.5 flex-shrink-0" />
                     <div className="flex-1">
-                      <p className="font-medium text-orange-900">Atenção:</p>
+                        <p className="font-medium text-orange-900">{t('common', 'attention')}</p>
                       <ul className="mt-2 list-disc list-inside space-y-1 text-sm text-orange-800">
-                        <li>Esta ação não pode ser desfeita</li>
-                        <li>O campo será removido permanentemente da seção</li>
-                        <li>Novos artigos não terão mais este campo disponível</li>
-                        <li>Artigos já iniciados não serão afetados (mantêm estrutura)</li>
+                          <li>{t('extraction', 'deleteFieldWarningUndo')}</li>
+                          <li>{t('extraction', 'deleteFieldWarningRemoved')}</li>
+                          <li>{t('extraction', 'deleteFieldWarningNewArticles')}</li>
+                          <li>{t('extraction', 'deleteFieldWarningExisting')}</li>
                       </ul>
                     </div>
                   </div>
@@ -114,24 +115,24 @@ export function DeleteFieldConfirm({
                   <div className="flex items-start gap-2">
                     <AlertCircle className="h-5 w-5 text-destructive mt-0.5 flex-shrink-0" />
                     <div className="flex-1">
-                      <p className="font-medium text-destructive">Impossível excluir:</p>
+                        <p className="font-medium text-destructive">{t('extraction', 'impossibleToDelete')}</p>
                       <ul className="mt-2 list-disc list-inside space-y-1 text-sm text-destructive/90">
                         <li>
-                          Este campo possui <strong>{extractedCount} valores extraídos</strong>
+                            {t('extraction', 'cannotDeleteReason').replace('{{count}}', String(extractedCount))}
                         </li>
                         <li>
-                          Afeta <strong>{affectedArticlesCount} artigo(s)</strong> em extração
+                            {t('extraction', 'cannotDeleteAffects').replace('{{count}}', String(affectedArticlesCount))}
                         </li>
                         <li>
-                          Excluir causaria perda de dados e inconsistências
+                            {t('extraction', 'cannotDeleteWouldLose')}
                         </li>
                       </ul>
                       <div className="mt-3 p-2 bg-muted rounded text-xs">
-                        <p className="font-medium">💡 Alternativas:</p>
+                          <p className="font-medium">💡 {t('extraction', 'alternativesTip')}</p>
                         <ul className="mt-1 list-disc list-inside">
-                          <li>Marque como "não obrigatório" em vez de excluir</li>
-                          <li>Delete os valores extraídos primeiro (com cuidado)</li>
-                          <li>Entre em contato com o administrador</li>
+                            <li>{t('extraction', 'markNotRequired')}</li>
+                            <li>{t('extraction', 'deleteValuesFirst')}</li>
+                            <li>{t('extraction', 'contactAdmin')}</li>
                         </ul>
                       </div>
                     </div>
@@ -143,7 +144,7 @@ export function DeleteFieldConfirm({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={loading}>
-            {canDelete ? 'Cancelar' : 'Entendi'}
+              {canDelete ? t('common', 'cancel') : t('extraction', 'understood')}
           </AlertDialogCancel>
           {canDelete && (
             <AlertDialogAction
@@ -152,7 +153,7 @@ export function DeleteFieldConfirm({
               className="bg-destructive hover:bg-destructive/90"
             >
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Excluir Campo
+                {t('extraction', 'deleteField')}
             </AlertDialogAction>
           )}
         </AlertDialogFooter>

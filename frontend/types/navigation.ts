@@ -1,7 +1,7 @@
 import type {LucideIcon} from 'lucide-react';
 
 /**
- * Item de breadcrumb na navegação superior
+ * Breadcrumb item in top navigation
  */
 export interface BreadcrumbItem {
   label: string;
@@ -24,7 +24,7 @@ export interface SearchResult {
 }
 
 /**
- * Notificação do sistema
+ * System notification
  */
 export interface NotificationItem {
   id: string;
@@ -37,7 +37,7 @@ export interface NotificationItem {
 }
 
 /**
- * Perfil do usuário
+ * User profile
  */
 export interface UserProfile {
   id: string;
@@ -63,7 +63,7 @@ export interface TopbarProps {
 }
 
 /**
- * Configuração de navegação de projeto
+ * Project navigation config
  */
 export interface ProjectNavigationConfig {
   activeTab: string;
@@ -71,7 +71,7 @@ export interface ProjectNavigationConfig {
 }
 
 /**
- * Tab de navegação
+ * Navigation tab
  */
 export interface NavigationTab {
   id: string;

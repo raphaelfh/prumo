@@ -1,12 +1,12 @@
 /**
- * Tabela elegante para extração de dados de artigos
- * 
- * Exibe artigos em formato de tabela com:
- * - Filtro global por texto
- * - Filtros por coluna (discretos até ativados)
- * - Ordenação por coluna
- * - Progresso visual minimalista
- * - Ações contextuais
+ * Table for article data extraction
+ *
+ * Displays articles in table format with:
+ * - Global text filter
+ * - Per-column filters (hidden until activated)
+ * - Column sorting
+ * - Minimal progress display
+ * - Contextual actions
  */
 
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
@@ -36,12 +36,14 @@ import {
 } from 'lucide-react';
 import {toast} from 'sonner';
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow,} from "@/components/ui/table";
+import {Skeleton} from "@/components/ui/skeleton";
 import {Popover, PopoverContent, PopoverTrigger,} from "@/components/ui/popover";
 import {Checkbox} from "@/components/ui/checkbox";
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "@/components/ui/tooltip";
 import {useArticleSelection} from "@/hooks/extraction/useArticleSelection";
 import {ArticleSelectionActions} from "./ArticleSelectionActions";
 import {useFullAIExtraction} from "@/hooks/extraction/useFullAIExtraction";
+import {t} from '@/lib/copy';
 
 interface Article {
   id: string;
@@ -98,8 +100,8 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  
-  // Estados para filtros e ordenação
+
+    // Filter and sort state
   const [globalFilter, setGlobalFilter] = useState('');
   const [columnFilters, setColumnFilters] = useState<ColumnFilter>({
     title: '',
@@ -112,20 +114,20 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [activeFilterColumn, setActiveFilterColumn] = useState<keyof ColumnFilter | null>(null);
 
-  // Ref para rastrear última rota visitada (evitar refresh desnecessário)
+    // Ref to track last visited route (avoid unnecessary refresh)
   const lastPathRef = useRef<string>('');
   const loadArticlesRef = useRef<() => Promise<void>>();
 
-  // Hook para extração IA em batch
+    // Hook for batch AI extraction
   const { extractFullAI, loading: isExtracting } = useFullAIExtraction({
     onSuccess: async () => {
-      // Recarregar artigos após extração
+        // Reload articles after extraction
       await loadArticles();
-      toast.success('Extração concluída com sucesso!');
+        toast.success(t('extraction', 'tableExtractionSuccess'));
     },
   });
 
-  // Declarar loadCurrentUser antes de qualquer uso para evitar TDZ
+    // Declare loadCurrentUser before any use to avoid TDZ
   const loadCurrentUser = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -133,11 +135,11 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
         setCurrentUserId(user.id);
       }
     } catch (error: any) {
-      console.error('Erro ao carregar usuário:', error);
+        console.error('Error loading user:', error);
     }
   }, []);
 
-  // Declarar loadArticles antes de qualquer uso para evitar TDZ
+    // Declare loadArticles before any use to avoid TDZ
   const loadArticles = useCallback(async () => {
     if (!projectId || !templateId || !currentUserId) {
       return;
@@ -147,7 +149,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     setError(null);
 
     try {
-      // 1. Buscar artigos do projeto
+        // 1. Fetch project articles
       const { data: articlesData, error: articlesError } = await supabase
         .from('articles')
         .select('id, title, authors, publication_year, created_at')
@@ -155,7 +157,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
         .order('created_at', { ascending: false });
 
       if (articlesError) {
-        console.error('Erro ao buscar artigos:', articlesError);
+          console.error('Error fetching articles:', articlesError);
         throw articlesError;
       }
 
@@ -164,7 +166,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
         return;
       }
 
-      // 2. Buscar instâncias de extração para o template
+        // 2. Fetch extraction instances for template
       const { data: instancesData, error: instancesError } = await supabase
         .from('extraction_instances')
         .select('*')
@@ -172,11 +174,11 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
         .eq('template_id', templateId);
 
       if (instancesError) {
-        console.error('Erro ao buscar instâncias:', instancesError);
+          console.error('Error fetching instances:', instancesError);
         throw instancesError;
       }
 
-      // 3. Buscar valores extraídos pelo usuário atual
+        // 3. Fetch extracted values for current user
       const { data: valuesData, error: valuesError } = await supabase
         .from('extracted_values')
         .select('*')
@@ -184,11 +186,11 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
         .eq('reviewer_id', currentUserId);
 
       if (valuesError) {
-        console.error('Erro ao buscar valores extraídos:', valuesError);
+          console.error('Error fetching extracted values:', valuesError);
         throw valuesError;
       }
 
-      // 4. Combinar artigos com suas extrações
+        // 4. Combine articles with their extractions
       const articlesWithExtraction: ArticleWithExtraction[] = articlesData.map(article => {
         const articleInstances = instancesData?.filter(i => i.article_id === article.id) || [];
         const articleValues = valuesData?.filter(v => 
@@ -205,44 +207,44 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
 
       setArticles(articlesWithExtraction);
     } catch (err: any) {
-      console.error('Erro ao carregar artigos:', err);
+        console.error('Error loading articles:', err);
       setError(err.message);
-      toast.error(`Erro ao carregar artigos: ${err.message}`);
+        toast.error(`${t('extraction', 'tableErrorLoadArticles')}: ${err.message}`);
     } finally {
       setLoading(false);
     }
   }, [projectId, templateId, currentUserId]);
 
-  // Atualizar ref da função loadArticles quando ela mudar (deve vir antes de qualquer uso)
+    // Update loadArticles ref when it changes (must be before any use)
   useEffect(() => {
     loadArticlesRef.current = loadArticles;
   }, [loadArticles]);
 
-  // Carregar ID do usuário atual
+    // Load current user ID
   useEffect(() => {
     loadCurrentUser();
   }, [loadCurrentUser]);
 
-  // Carregar artigos do projeto
+    // Load project articles
   useEffect(() => {
     if (projectId && templateId && currentUserId) {
-      // Usar loadArticles diretamente para evitar problemas de timing com o ref
+        // Use loadArticles directly to avoid timing issues with ref
       loadArticles();
     }
   }, [projectId, templateId, currentUserId, loadArticles]);
 
-  // Refresh automático quando voltar para a página (após finalizar extração)
-  // Isso garante que os dados sejam atualizados após mudanças feitas em outras páginas
+    // Auto-refresh when returning to page (after finishing extraction)
+    // Ensures data is updated after changes made on other pages
   useEffect(() => {
     const currentPath = location.pathname;
-    
-    // Só recarregar se:
-    // 1. Estamos na rota de projetos (mas não na rota de extração fullscreen)
-    // 2. A rota mudou (não é a primeira renderização)
-    // 3. Voltamos de uma página de extração fullscreen (tinha articleId antes, não tem agora)
-    const isProjectExtractionRoute = currentPath.includes('/projects/') && 
-                                     !currentPath.match(/\/extraction\/[^/]+$/); // Não está na rota de extração específica
-    const cameFromExtractionFullscreen = lastPathRef.current.match(/\/extraction\/[^/]+$/); // Veio de uma rota de extração específica
+
+      // Only reload if:
+      // 1. We're on project route (but not extraction fullscreen)
+      // 2. Route changed (not first render)
+      // 3. We came back from extraction fullscreen (had articleId before, don't now)
+    const isProjectExtractionRoute = currentPath.includes('/projects/') &&
+        !currentPath.match(/\/extraction\/[^/]+$/); // Not on specific extraction route
+      const cameFromExtractionFullscreen = lastPathRef.current.match(/\/extraction\/[^/]+$/); // Came from specific extraction route
     
     if (
       projectId && 
@@ -254,8 +256,8 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
       loadArticlesRef.current
     ) {
       lastPathRef.current = currentPath;
-      
-      // Pequeno delay para garantir que a navegação foi completada
+
+        // Short delay to ensure navigation completed
       const timer = setTimeout(() => {
         if (loadArticlesRef.current) {
           loadArticlesRef.current();
@@ -264,22 +266,22 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
       
       return () => clearTimeout(timer);
     } else if (currentPath !== lastPathRef.current) {
-      // Atualizar ref mesmo se não recarregar
+        // Update ref even if not reloading
       lastPathRef.current = currentPath;
     }
-  }, [location.pathname, projectId, templateId, currentUserId]); // Recarregar quando a rota mudar
+  }, [location.pathname, projectId, templateId, currentUserId]); // Reload when route changes
 
-  // Função para calcular progresso de extração
+    // Compute extraction progress
   const calculateExtractionProgress = (article: ArticleWithExtraction) => {
     if (article.instances.length === 0) return 0;
-    
-    // Verificar se todas as instâncias estão com status 'completed'
+
+      // Check if all instances have status 'completed'
     const allCompleted = article.instances.every(instance => instance.status === 'completed');
     if (allCompleted && article.instances.length > 0) {
       return 100;
     }
-    
-    // Contar instâncias com pelo menos um valor extraído
+
+      // Count instances with at least one extracted value
     const instancesWithValues = article.instances.filter(instance =>
       article.extractedValues.some(value => value.instance_id === instance.id)
     ).length;
@@ -287,10 +289,10 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     return Math.round((instancesWithValues / article.instances.length) * 100);
   };
 
-  // Função para filtrar e ordenar artigos
+    // Filter and sort articles
   const filteredAndSortedArticles = useMemo(() => {
     const filtered = articles.filter(article => {
-      // Filtro global
+        // Global filter
       if (globalFilter) {
         const searchText = globalFilter.toLowerCase();
         const matchesTitle = article.title.toLowerCase().includes(searchText);
@@ -304,7 +306,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
         }
       }
 
-      // Filtros por coluna
+        // Column filters
       if (columnFilters.title && !article.title.toLowerCase().includes(columnFilters.title.toLowerCase())) {
         return false;
       }
@@ -318,20 +320,20 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
       if (columnFilters.extraction_progress) {
         const progress = calculateExtractionProgress(article);
         const filterValue = columnFilters.extraction_progress.toLowerCase();
-        
-        // Filtros por texto
-        if (filterValue.includes('completo') && progress < 100) return false;
-        if (filterValue.includes('andamento') && (progress === 0 || progress >= 100)) return false;
-        if (filterValue.includes('não iniciado') && progress > 0) return false;
-        
-        // Filtro por número (percentual)
+
+          // Text filters
+          if (filterValue.includes('complete') && progress < 100) return false;
+          if (filterValue.includes('progress') && (progress === 0 || progress >= 100)) return false;
+          if (filterValue.includes('not started') && progress > 0) return false;
+
+          // Numeric filter (percentage)
         if (!isNaN(Number(filterValue))) {
           const targetProgress = Number(filterValue);
-          if (Math.abs(progress - targetProgress) > 5) return false; // Tolerância de 5%
+            if (Math.abs(progress - targetProgress) > 5) return false; // 5% tolerance
         }
       }
 
-      // Filtro por status
+        // Status filter
       if (columnFilters.status && columnFilters.status !== 'all') {
         const progress = calculateExtractionProgress(article);
         const hasInstances = article.instances.length > 0;
@@ -340,13 +342,13 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
         const isNotStarted = !hasInstances;
         
         const filterValue = columnFilters.status.toLowerCase();
-        
-        if (filterValue === 'completo' && !isComplete) return false;
-        if (filterValue === 'em andamento' && !isInProgress) return false;
-        if (filterValue === 'não iniciado' && !isNotStarted) return false;
+
+          if (filterValue === 'complete' && !isComplete) return false;
+          if (filterValue === 'in_progress' && !isInProgress) return false;
+          if (filterValue === 'not_started' && !isNotStarted) return false;
       }
 
-      // Filtro por autores
+        // Authors filter
       if (columnFilters.authors && article.authors) {
         const authorMatch = article.authors.some(author => 
           author.toLowerCase().includes(columnFilters.authors.toLowerCase())
@@ -357,7 +359,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
       return true;
     });
 
-    // Ordenação
+      // Sort
     filtered.sort((a, b) => {
       let aValue: any;
       let bValue: any;
@@ -376,7 +378,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
           bValue = calculateExtractionProgress(b);
           break;
         case 'status': {
-          // Ordenar por status: não iniciado (0), em andamento (1), completo (2)
+            // Sort by status: not started (0), in progress (1), complete (2)
           const aProgress = calculateExtractionProgress(a);
           const bProgress = calculateExtractionProgress(b);
           const aHasInstances = a.instances.length > 0;
@@ -394,7 +396,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
           return 0;
       }
 
-      // Lógica de ordenação corrigida
+        // Sort logic
       if (sortDirection === 'asc') {
         if (aValue < bValue) return -1;
         if (aValue > bValue) return 1;
@@ -409,7 +411,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     return filtered;
   }, [articles, globalFilter, columnFilters, sortField, sortDirection]);
 
-  // Hook para gerenciar seleção de artigos
+    // Article selection
   const allArticleIds = useMemo(() => articles.map(a => a.id), [articles]);
   const visibleArticleIds = useMemo(() => filteredAndSortedArticles.map(a => a.id), [filteredAndSortedArticles]);
   
@@ -429,24 +431,24 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     visibleArticleIds,
   });
 
-  // Handler para extração IA em batch
+    // Batch AI extraction handler
   const handleBatchAIExtraction = useCallback(async () => {
     if (selectedIds.size === 0) {
-      toast.error('Selecione pelo menos um artigo');
+        toast.error(t('extraction', 'tableSelectAtLeastOne'));
       return;
     }
 
     const selectedArticles = filteredAndSortedArticles.filter(a => selectedIds.has(a.id));
-    
-    toast.info(`Iniciando extração IA para ${selectedArticles.length} artigo(s)...`, {
-      description: 'Isso pode levar alguns minutos',
+
+      toast.info(t('extraction', 'tableBatchAIStarting').replace('{{count}}', String(selectedArticles.length)), {
+          description: t('extraction', 'extractionMayTakeMinutes'),
     });
 
     try {
-      // Processar artigos sequencialmente para evitar sobrecarga
+        // Process articles sequentially to avoid overload
       for (let i = 0; i < selectedArticles.length; i++) {
         const article = selectedArticles[i];
-        toast.info(`Processando artigo ${i + 1}/${selectedArticles.length}: ${article.title}`);
+          toast.info(t('extraction', 'processingArticle').replace('{{current}}', String(i + 1)).replace('{{total}}', String(selectedArticles.length)).replace('{{title}}', article.title || ''));
         
         await extractFullAI({
           projectId,
@@ -455,17 +457,17 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
         });
       }
 
-      // Limpar seleção após sucesso
+        // Clear selection after success
       deselectAll();
     } catch (error: any) {
-      console.error('Erro na extração IA em batch:', error);
-      toast.error('Erro ao processar extração IA', {
-        description: error.message || 'Erro desconhecido',
+        console.error('Error in batch AI extraction:', error);
+        toast.error(t('extraction', 'tableErrorProcessAI'), {
+            description: error.message || t('extraction', 'tableErrorUnknown'),
       });
     }
   }, [selectedIds, filteredAndSortedArticles, projectId, templateId, extractFullAI, deselectAll]);
 
-  // Componente de checkbox do header com suporte a indeterminate
+    // Header checkbox component with indeterminate support
   const HeaderCheckbox = React.memo(({ 
     checked, 
     indeterminate, 
@@ -481,7 +483,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
 
     useEffect(() => {
       if (checkboxRef.current) {
-        // Acessar o elemento DOM subjacente do Radix UI
+          // Access underlying Radix UI DOM element
         const element = checkboxRef.current as unknown as { 
           querySelector?: (selector: string) => HTMLElement | null;
         };
@@ -508,7 +510,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
     } else {
       setSortField(field);
-      setSortDirection('desc'); // Mudança: começar com desc para mostrar os mais recentes primeiro
+        setSortDirection('desc'); // Start with desc to show most recent first
     }
   };
 
@@ -537,7 +539,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
       return (
         <Badge variant="secondary" className="gap-1 text-xs">
           <Clock className="h-3 w-3" />
-          Não iniciada
+            {t('extraction', 'listStatusNotStarted')}
         </Badge>
       );
     }
@@ -546,7 +548,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
       return (
         <Badge variant="default" className="gap-1 bg-green-500 text-xs">
           <CheckCircle className="h-3 w-3" />
-          Completa
+            {t('extraction', 'listStatusComplete')}
         </Badge>
       );
     }
@@ -554,7 +556,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     return (
       <Badge variant="default" className="gap-1 bg-blue-500 text-xs">
         <Edit className="h-3 w-3" />
-        Em andamento
+          {t('extraction', 'listStatusInProgress')}
       </Badge>
     );
   };
@@ -572,12 +574,11 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
       ? (columnFilters[column].length > 0 && columnFilters[column] !== 'all')
       : columnFilters[column].length > 0;
 
-    // Status options para o dropdown
     const statusOptions = [
-      { value: 'all', label: 'Todos os status' },
-      { value: 'não iniciado', label: 'Não iniciado' },
-      { value: 'em andamento', label: 'Em andamento' },
-      { value: 'completo', label: 'Completo' }
+        {value: 'all', label: t('extraction', 'tableFilterAllStatus')},
+        {value: 'not_started', label: t('extraction', 'listStatusNotStarted')},
+        {value: 'in_progress', label: t('extraction', 'listStatusInProgress')},
+        {value: 'complete', label: t('extraction', 'listStatusComplete')}
     ];
 
     return (
@@ -594,13 +595,13 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
         <PopoverContent className="w-64 p-3" align="start">
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              Filtrar por {
-                column === 'title' ? 'Título' : 
-                column === 'publication_year' ? 'Ano' : 
-                column === 'extraction_progress' ? 'Progresso' :
-                column === 'status' ? 'Status' :
-                column === 'authors' ? 'Autores' :
-                'Campo'
+                {t('common', 'filterBy')}{' '}{
+                column === 'title' ? t('extraction', 'tableColumnTitle') :
+                    column === 'publication_year' ? t('extraction', 'tableColumnYear') :
+                        column === 'extraction_progress' ? t('extraction', 'tableColumnProgress') :
+                            column === 'status' ? t('extraction', 'tableColumnStatus') :
+                                column === 'authors' ? t('extraction', 'tableColumnAuthors') :
+                                    t('extraction', 'tableColumnField')
               }
             </label>
             
@@ -610,7 +611,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                 onValueChange={(value) => updateColumnFilter(column, value)}
               >
                 <SelectTrigger className="h-8">
-                  <SelectValue placeholder="Selecionar status..." />
+                    <SelectValue placeholder={t('extraction', 'tableFilterSelectStatus')}/>
                 </SelectTrigger>
                 <SelectContent>
                   {statusOptions.map((option) => (
@@ -624,11 +625,11 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
               <Input
                 autoFocus
                 placeholder={
-                  column === 'title' ? 'Buscar no título...' :
-                  column === 'publication_year' ? 'Ex: 2023, 2020-2024...' :
-                  column === 'extraction_progress' ? 'Ex: completo, andamento, 50...' :
-                  column === 'authors' ? 'Buscar autor...' :
-                  'Buscar...'
+                    column === 'title' ? t('extraction', 'tableSearchTitle') :
+                        column === 'publication_year' ? t('extraction', 'tableSearchYearPlaceholder') :
+                            column === 'extraction_progress' ? t('extraction', 'tableSearchProgressPlaceholder') :
+                                column === 'authors' ? t('extraction', 'tableSearchAuthor') :
+                                    t('extraction', 'tableSearchPlaceholder')
                 }
                 value={columnFilters[column]}
                 onChange={(e) => updateColumnFilter(column, e.target.value)}
@@ -644,7 +645,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                 onClick={() => updateColumnFilter(column, column === 'status' ? 'all' : '')}
                 className="h-6 text-xs"
               >
-                Limpar
+                  {t('extraction', 'tableClearFilter')}
               </Button>
             )}
           </div>
@@ -653,24 +654,55 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     );
   };
 
-  // Estado: Loading
+    // Loading state — skeleton matching table layout
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        <span className="ml-2 text-muted-foreground">Carregando artigos...</span>
+        <div className="space-y-4">
+            <div className="flex items-center gap-2">
+                <Skeleton className="h-9 flex-1 max-w-sm"/>
+                <Skeleton className="h-4 w-24"/>
+            </div>
+            <div className="rounded-lg border border-border/40">
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead className="w-[40px]"><Skeleton className="h-4 w-4"/></TableHead>
+                            <TableHead className="w-[30%]"><Skeleton className="h-4 w-20"/></TableHead>
+                            <TableHead className="w-[12%]"><Skeleton className="h-4 w-14"/></TableHead>
+                            <TableHead className="w-[10%]"><Skeleton className="h-4 w-10"/></TableHead>
+                            <TableHead className="w-[18%]"><Skeleton className="h-4 w-16"/></TableHead>
+                            <TableHead className="w-[10%]"><Skeleton className="h-4 w-12"/></TableHead>
+                            <TableHead className="w-[15%] text-center"><Skeleton
+                                className="h-4 w-12 mx-auto"/></TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {[1, 2, 3, 4, 5, 6, 7].map((i) => (
+                            <TableRow key={i}>
+                                <TableCell><Skeleton className="h-4 w-4"/></TableCell>
+                                <TableCell><Skeleton className="h-4 w-full max-w-[280px]"/></TableCell>
+                                <TableCell><Skeleton className="h-4 w-24"/></TableCell>
+                                <TableCell><Skeleton className="h-4 w-12"/></TableCell>
+                                <TableCell><Skeleton className="h-5 w-16"/></TableCell>
+                                <TableCell><Skeleton className="h-5 w-20"/></TableCell>
+                                <TableCell className="text-center"><Skeleton className="h-8 w-16 mx-auto"/></TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            </div>
       </div>
     );
   }
 
-  // Estado: Error
+    // Error state
   if (error) {
     return (
       <div className="rounded-lg border border-destructive bg-destructive/10 p-6">
         <div className="flex items-center space-x-3 text-destructive">
           <AlertCircle className="h-5 w-5" />
           <div>
-            <p className="font-medium">Erro ao carregar artigos</p>
+              <p className="font-medium">{t('extraction', 'tableErrorLoadArticles')}</p>
             <p className="text-sm mt-1">{error}</p>
           </div>
         </div>
@@ -683,24 +715,24 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
           variant="outline" 
           className="mt-4"
         >
-          Tentar novamente
+            {t('extraction', 'listTryAgain')}
         </Button>
       </div>
     );
   }
 
-  // Estado: Empty
+    // Empty state
   if (articles.length === 0) {
     return (
       <div className="text-center text-muted-foreground py-12">
         <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-        <p className="font-medium">Nenhum artigo encontrado neste projeto</p>
-        <p className="text-sm mt-2">Adicione artigos primeiro para iniciar as extrações.</p>
+          <p className="font-medium">{t('extraction', 'listNoArticles')}</p>
+          <p className="text-sm mt-2">{t('extraction', 'listNoArticlesDesc')}</p>
       </div>
     );
   }
 
-  // Estado: Ready - Renderizar tabela
+    // Ready state — render table
   const selectedArticleIds = Array.from(selectedIds);
   const selectedArticleTitles = filteredAndSortedArticles
     .filter(a => selectedIds.has(a.id))
@@ -708,7 +740,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
 
   return (
     <div className="space-y-4">
-      {/* Barra de ações de seleção */}
+        {/* Selection actions bar */}
       <ArticleSelectionActions
         selectedCount={selectedCount}
         selectedArticleIds={selectedArticleIds}
@@ -718,24 +750,24 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
         isExtracting={isExtracting}
       />
 
-      {/* Filtro Global */}
+        {/* Global filter */}
       <div className="flex items-center gap-2">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Buscar em todos os campos..."
+              placeholder={t('extraction', 'tableSearchAllFields')}
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
             className="pl-10 h-9"
           />
         </div>
-        <div className="text-sm text-muted-foreground">
-          {filteredAndSortedArticles.length} de {articles.length} artigos
+          <div className="text-[13px] text-muted-foreground">
+              {filteredAndSortedArticles.length} {t('common', 'of')} {articles.length} {t('extraction', 'tableArticlesCount')}
         </div>
       </div>
 
-      {/* Tabela */}
-      <div className="rounded-lg border">
+        {/* Table */}
+        <div className="rounded-lg border border-border/40">
         <Table>
           <TableHeader>
             <TableRow>
@@ -758,15 +790,15 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                               deselectAll();
                             }
                           }}
-                          aria-label={hasActiveFilters ? 'Selecionar artigos filtrados' : 'Selecionar todos os artigos'}
+                          aria-label={hasActiveFilters ? t('extraction', 'tableSelectFiltered') : t('extraction', 'tableSelectAll')}
                         />
                       </div>
                     </TooltipTrigger>
                     <TooltipContent>
                       <p>
-                        {hasActiveFilters 
-                          ? 'Selecionar artigos filtrados' 
-                          : 'Selecionar todos os artigos'}
+                        {hasActiveFilters
+                            ? t('extraction', 'tableSelectFiltered')
+                            : t('extraction', 'tableSelectAll')}
                       </p>
                     </TooltipContent>
                   </Tooltip>
@@ -780,7 +812,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                     onClick={() => handleSort('title')}
                     className="h-auto p-0 font-semibold hover:bg-transparent"
                   >
-                    Título
+                      {t('extraction', 'tableColumnTitle')}
                   </Button>
                   {getSortIcon('title')}
                   <ColumnFilterButton column="title" />
@@ -788,7 +820,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
               </TableHead>
               <TableHead className="w-[12%]">
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold">Autores</span>
+                    <span className="font-semibold">{t('extraction', 'tableColumnAuthors')}</span>
                   <ColumnFilterButton column="authors" />
                 </div>
               </TableHead>
@@ -800,7 +832,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                     onClick={() => handleSort('publication_year')}
                     className="h-auto p-0 font-semibold hover:bg-transparent"
                   >
-                    Ano
+                      {t('extraction', 'tableColumnYear')}
                   </Button>
                   {getSortIcon('publication_year')}
                   <ColumnFilterButton column="publication_year" />
@@ -814,7 +846,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                     onClick={() => handleSort('extraction_progress')}
                     className="h-auto p-0 font-semibold hover:bg-transparent"
                   >
-                    Progresso
+                      {t('extraction', 'tableColumnProgress')}
                   </Button>
                   {getSortIcon('extraction_progress')}
                   <ColumnFilterButton column="extraction_progress" />
@@ -828,13 +860,13 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                     onClick={() => handleSort('status')}
                     className="h-auto p-0 font-semibold hover:bg-transparent"
                   >
-                    Status
+                      {t('extraction', 'tableColumnStatus')}
                   </Button>
                   {getSortIcon('status')}
                   <ColumnFilterButton column="status" />
                 </div>
               </TableHead>
-              <TableHead className="w-[15%] text-center">Ações</TableHead>
+                <TableHead className="w-[15%] text-center">{t('extraction', 'tableActions')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -844,23 +876,23 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
               const hasInstances = article.instances.length > 0;
 
               return (
-                <TableRow key={article.id} className="hover:bg-muted/50">
+                  <TableRow key={article.id} className="hover:bg-muted/50 transition-[background-color] duration-75">
                   <TableCell className="w-[40px]">
                     <Checkbox
                       checked={isSelected(article.id)}
                       onCheckedChange={() => toggleArticle(article.id)}
-                      aria-label={`Selecionar artigo: ${article.title}`}
+                      aria-label={`Select article: ${article.title}`}
                     />
                   </TableCell>
-                  <TableCell>
-                    <div className="font-medium text-sm leading-tight">
+                      <TableCell className="text-[13px]">
+                          <div className="font-medium leading-tight">
                       {article.title}
                     </div>
                   </TableCell>
-                  <TableCell className="max-w-[120px]">
+                      <TableCell className="max-w-[120px] text-[13px]">
                     {article.authors && article.authors.length > 0 ? (
-                      <div 
-                        className="text-sm flex items-center gap-1 cursor-help group relative"
+                      <div
+                          className="flex items-center gap-1 cursor-help group relative"
                         title={article.authors.join(', ')}
                       >
                         <User className="h-3 w-3 text-muted-foreground flex-shrink-0" />
@@ -868,7 +900,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                           {article.authors.slice(0, 1).join(', ')}
                           {article.authors.length > 1 && ` +${article.authors.length - 1}`}
                         </span>
-                        {/* Tooltip no hover */}
+                          {/* Tooltip on hover */}
                         <div className="absolute left-0 top-full mt-1 z-10 hidden group-hover:block bg-popover border rounded-md shadow-lg p-2 max-w-xs">
                           <div className="text-xs text-popover-foreground">
                             {article.authors.join(', ')}
@@ -876,35 +908,35 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                         </div>
                       </div>
                     ) : (
-                      <span className="text-sm text-muted-foreground">N/A</span>
+                        <span className="text-muted-foreground">N/A</span>
                     )}
                   </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1 text-sm">
+                      <TableCell className="text-[13px]">
+                          <div className="flex items-center gap-1">
                       <Calendar className="h-3 w-3 text-muted-foreground" />
                       {article.publication_year || 'N/A'}
                     </div>
                   </TableCell>
-                  <TableCell>
+                      <TableCell className="text-[13px]">
                     {hasInstances ? (
                       <div className="space-y-1">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-muted-foreground">Progresso</span>
+                          <div className="flex items-center justify-between">
+                              <span className="text-muted-foreground">{t('extraction', 'tableColumnProgress')}</span>
                           <span className="font-medium">{progress.toFixed(0)}%</span>
                         </div>
                         <Progress value={progress} className="h-1.5" />
                       </div>
                     ) : (
-                      <div className="text-xs text-muted-foreground flex items-center gap-1">
+                        <div className="text-muted-foreground flex items-center gap-1">
                         <Database className="h-3 w-3" />
-                        Não iniciada
+                            {t('extraction', 'listStatusNotStarted')}
                       </div>
                     )}
                   </TableCell>
-                  <TableCell>
+                      <TableCell className="text-[13px]">
                     {getStatusBadge(article)}
                   </TableCell>
-                  <TableCell className="text-center">
+                      <TableCell className="text-center text-[13px]">
                     {!hasInstances ? (
                       <Button 
                         onClick={() => handleStartExtraction(article.id)}
@@ -917,7 +949,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                         ) : (
                           <PlayCircle className="h-3 w-3" />
                         )}
-                        Iniciar
+                          {t('extraction', 'tableStart')}
                       </Button>
                     ) : (
                       <Button 
@@ -931,7 +963,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                         ) : (
                           <Edit className="h-3 w-3" />
                         )}
-                        {isComplete ? 'Ver' : 'Continuar'}
+                          {isComplete ? t('extraction', 'tableView') : t('extraction', 'tableContinue')}
                       </Button>
                     )}
                   </TableCell>
@@ -942,12 +974,12 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
         </Table>
       </div>
 
-      {/* Estado vazio após filtros */}
+        {/* Empty state after filters */}
       {filteredAndSortedArticles.length === 0 && articles.length > 0 && (
         <div className="text-center text-muted-foreground py-8">
           <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
-          <p className="font-medium">Nenhum artigo encontrado</p>
-          <p className="text-sm mt-1">Tente ajustar os filtros de busca.</p>
+            <p className="font-medium">{t('extraction', 'tableNoArticles')}</p>
+            <p className="text-sm mt-1">{t('extraction', 'tableAdjustFilters')}</p>
           <Button
             variant="outline"
             size="sm"
@@ -957,7 +989,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
             }}
             className="mt-2"
           >
-            Limpar filtros
+              {t('extraction', 'tableClearFilters')}
           </Button>
         </div>
       )}

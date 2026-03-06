@@ -1,24 +1,25 @@
 /**
- * Hook para Extração de Seções de Nível Superior
- * 
- * Extrai todas as seções de nível superior (study-level) que não são subseções de modelos.
- * Essas seções são vinculadas diretamente ao artigo (sem parentInstanceId).
- * 
+ * Hook for top-level section extraction
+ *
+ * Extracts all top-level (study-level) sections that are not model subsections.
+ * These sections are linked directly to the article (no parentInstanceId).
+ *
  * FEATURES:
- * - Extração sequencial de seções de nível superior
- * - Progresso individual por seção
- * - Tratamento de erros (continua mesmo se algumas seções falharem)
- * - Resultados agregados
+ * - Sequential extraction of top-level sections
+ * - Per-section progress
+ * - Error handling (continues even if some sections fail)
+ * - Aggregated results
  */
 
 import {useCallback, useState} from "react";
 import {toast} from "sonner";
+import {t} from "@/lib/copy";
 import {SectionExtractionService} from "@/services/sectionExtractionService";
 import {getTopLevelSections} from "./helpers/getTopLevelSections";
 import type {SectionExtractionRequest} from "@/types/ai-extraction";
 
 /**
- * Progresso da extração de seções de nível superior
+ * Progress of top-level section extraction
  */
 export interface TopLevelSectionsProgress {
   currentSection: number;
@@ -50,10 +51,10 @@ export interface UseTopLevelSectionsExtractionReturn {
 }
 
 /**
- * Hook para extração de seções de nível superior
- * 
- * @param options - Opções do hook
- * @returns Função de extração, estado de loading, error e progresso
+ * Hook for top-level section extraction
+ *
+ * @param options - Hook options
+ * @returns Extract function, loading state, error and progress
  */
 export function useTopLevelSectionsExtraction(options?: {
   onProgress?: (progress: TopLevelSectionsProgress) => void;
@@ -77,7 +78,7 @@ export function useTopLevelSectionsExtraction(options?: {
         model?: 'gpt-4o-mini' | 'gpt-4o' | 'gpt-5';
       };
     }) => {
-      console.log('[useTopLevelSectionsExtraction] Iniciando extração de seções de nível superior', params);
+        console.log('[useTopLevelSectionsExtraction] Starting top-level sections extraction', params);
       setLoading(true);
       setError(null);
       setProgress(null);
@@ -85,13 +86,13 @@ export function useTopLevelSectionsExtraction(options?: {
       try {
         const { projectId, articleId, templateId, options: extractionOptions } = params;
 
-        // 1. Buscar lista de seções de nível superior
-        console.log('[useTopLevelSectionsExtraction] Buscando seções de nível superior...');
+          // 1. Fetch top-level sections list
+          console.log('[useTopLevelSectionsExtraction] Fetching top-level sections...');
         const sections = await getTopLevelSections(templateId);
 
         if (sections.length === 0) {
-          console.log('[useTopLevelSectionsExtraction] Nenhuma seção de nível superior encontrada');
-          toast.info("Nenhuma seção de nível superior encontrada para extrair");
+            console.log('[useTopLevelSectionsExtraction] No top-level sections found');
+            toast.info(t('extraction', 'noTopLevelSectionsFound'));
           return {
             totalSections: 0,
             successfulSections: 0,
@@ -100,9 +101,9 @@ export function useTopLevelSectionsExtraction(options?: {
           };
         }
 
-        console.log('[useTopLevelSectionsExtraction] Seções encontradas:', sections.length);
+          console.log('[useTopLevelSectionsExtraction] Sections found:', sections.length);
 
-        // 2. Processar cada seção sequencialmente
+          // 2. Process each section sequentially
         let totalSuggestionsCreated = 0;
         let successfulSections = 0;
         let failedSections = 0;
@@ -118,11 +119,11 @@ export function useTopLevelSectionsExtraction(options?: {
               articleId,
               templateId,
               entityTypeId: section.id,
-              // SEM parentInstanceId - seções de nível superior são vinculadas diretamente ao artigo
+                // NO parentInstanceId - top-level sections are linked directly to the article
               options: extractionOptions,
             };
 
-            // Atualizar progresso antes de processar (com nome da seção)
+              // Update progress before processing (with section name)
             const progressBefore: TopLevelSectionsProgress = {
               currentSection: sectionIndex,
               totalSections,
@@ -137,18 +138,18 @@ export function useTopLevelSectionsExtraction(options?: {
             if (result.data) {
               totalSuggestionsCreated += result.data.suggestionsCreated || 0;
               successfulSections++;
-              console.log(`[useTopLevelSectionsExtraction] Seção ${sectionIndex}/${totalSections} extraída com sucesso: ${section.label}`);
+                console.log(`[useTopLevelSectionsExtraction] Section ${sectionIndex}/${totalSections} extracted successfully: ${section.label}`);
             } else {
               failedSections++;
-              console.error(`[useTopLevelSectionsExtraction] Seção ${sectionIndex}/${totalSections} falhou: ${section.label}`);
+                console.error(`[useTopLevelSectionsExtraction] Section ${sectionIndex}/${totalSections} failed: ${section.label}`);
             }
           } catch (sectionError: any) {
-            console.error(`[useTopLevelSectionsExtraction] Erro na seção ${sectionIndex}/${totalSections}:`, sectionError);
+              console.error(`[useTopLevelSectionsExtraction] Error in section ${sectionIndex}/${totalSections}:`, sectionError);
             failedSections++;
-            // Continuar com próxima seção
+              // Continue with next section
           }
 
-          // Atualizar progresso após processar seção (sem nome, apenas contador)
+            // Update progress after processing section (no name, count only)
           const progressAfter: TopLevelSectionsProgress = {
             currentSection: sectionIndex,
             totalSections,
@@ -159,29 +160,29 @@ export function useTopLevelSectionsExtraction(options?: {
           options?.onProgress?.(progressAfter);
         }
 
-        console.log('[useTopLevelSectionsExtraction] Extração concluída', {
+          console.log('[useTopLevelSectionsExtraction] Extraction completed', {
           totalSections: sections.length,
           successfulSections,
           failedSections,
           totalSuggestionsCreated,
         });
 
-        // Toast de sucesso com informações agregadas
+          // Success toast with aggregated info
         if (successfulSections > 0) {
           toast.success(
-            `Seções de nível superior extraídas: ${successfulSections}/${sections.length}`,
+              `Top-level sections extracted: ${successfulSections}/${sections.length}`,
             {
               description: failedSections > 0
-                ? `${failedSections} seção(ões) falharam. ${totalSuggestionsCreated} sugestão(ões) criada(s).`
-                : `${totalSuggestionsCreated} sugestão(ões) criada(s).`,
+                  ? `${failedSections} section(s) failed. ${totalSuggestionsCreated} suggestion(s) created.`
+                  : `${totalSuggestionsCreated} suggestion(s) created.`,
               duration: 6000,
             },
           );
         } else if (failedSections > 0) {
           toast.error(
-            `Falha ao extrair seções de nível superior`,
+              `Failed to extract top-level sections`,
             {
-              description: `Todas as ${failedSections} seção(ões) falharam.`,
+                description: `All ${failedSections} section(s) failed.`,
               duration: 6000,
             },
           );
@@ -197,10 +198,10 @@ export function useTopLevelSectionsExtraction(options?: {
         options?.onSuccess?.(result);
         return result;
       } catch (err: any) {
-        console.error('[useTopLevelSectionsExtraction] Erro na extração:', err);
-        const errorMessage = err.message || "Erro desconhecido na extração de seções de nível superior.";
+          console.error('[useTopLevelSectionsExtraction] Extraction error:', err);
+          const errorMessage = err.message || t('extraction', 'errors_topLevelSectionsExtraction');
         setError(errorMessage);
-        toast.error(`Erro na extração de seções de nível superior: ${errorMessage}`);
+          toast.error(`${t('extraction', 'errors_topLevelSectionsExtraction')}: ${errorMessage}`);
         throw err;
       } finally {
         setLoading(false);

@@ -1,8 +1,8 @@
 /**
- * Popover de Histórico de Sugestões de IA
- * 
- * Mostra histórico completo de sugestões agrupadas por run_id
- * Permite aceitar/rejeitar sugestões passadas
+ * AI suggestion history popover
+ *
+ * Shows full history of suggestions grouped by run_id
+ * Allows accepting/rejecting past suggestions
  * 
  * @component
  */
@@ -15,25 +15,22 @@ import {Button} from '@/components/ui/button';
 import {Separator} from '@/components/ui/separator';
 import {Check, Clock, Loader2, X} from 'lucide-react';
 import {cn} from '@/lib/utils';
+import {t} from '@/lib/copy';
 import type {AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
 
-// Função simples para formatar data (sem dependência externa)
-const formatTimestamp = (date: Date | string): string => {
+const formatTimestamp = (date: Date | string, invalidLabel: string = 'Invalid date'): string => {
   try {
     const dateObj = date instanceof Date ? date : new Date(date);
-    if (isNaN(dateObj.getTime())) {
-      return 'Data inválida';
-    }
-    return new Intl.DateTimeFormat('pt-BR', {
+      if (isNaN(dateObj.getTime())) return invalidLabel;
+      return new Intl.DateTimeFormat('en-US', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
     }).format(dateObj);
-  } catch (err) {
-    console.error('Erro ao formatar timestamp:', err, date);
-    return 'Data inválida';
+  } catch {
+      return invalidLabel;
   }
 };
 
@@ -68,18 +65,18 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
 
   const loadHistory = useCallback(async () => {
     if (!instanceId || !fieldId) {
-      console.warn('⚠️ [AISuggestionHistoryPopover] instanceId ou fieldId não fornecidos');
+        console.warn('[AISuggestionHistoryPopover] instanceId or fieldId not provided');
       return;
     }
 
     setLoading(true);
     try {
-      console.log('🔄 [AISuggestionHistoryPopover] Carregando histórico...', { instanceId, fieldId });
+        console.log('[AISuggestionHistoryPopover] Loading history...', {instanceId, fieldId});
       const data = await getHistory(instanceId, fieldId);
-      console.log('✅ [AISuggestionHistoryPopover] Histórico carregado:', { count: data.length, data });
+        console.log('[AISuggestionHistoryPopover] History loaded:', {count: data.length, data});
       setHistory(data);
     } catch (err) {
-      console.error('❌ [AISuggestionHistoryPopover] Erro ao carregar histórico:', err);
+        console.error('[AISuggestionHistoryPopover] Error loading history:', err);
       setHistory([]);
     } finally {
       setLoading(false);
@@ -90,7 +87,7 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
     if (open) {
       loadHistory();
     } else {
-      // Limpar histórico ao fechar para garantir dados frescos na próxima abertura
+        // Clear history on close so next open has fresh data
       setHistory([]);
     }
   }, [open, loadHistory]);
@@ -105,8 +102,9 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
     return acc;
   }, {} as Record<string, AISuggestionHistoryItem[]>);
 
+    const invalidDateLabel = t('extraction', 'historyInvalidDate');
   const formatValue = (value: any): string => {
-    if (value === null || value === undefined) return '(vazio)';
+      if (value === null || value === undefined) return t('extraction', 'emptyValue');
     if (typeof value === 'object') return JSON.stringify(value);
     if (typeof value === 'string' && value.length > 50) {
       return `${value.substring(0, 50)}...`;
@@ -122,9 +120,9 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
       </PopoverTrigger>
       <PopoverContent className="w-96 max-w-[90vw] sm:max-w-md p-0 z-50" align="start" side="bottom">
         <div className="p-4 border-b">
-          <h4 className="font-semibold text-sm">Histórico de Sugestões</h4>
+            <h4 className="font-semibold text-sm">{t('extraction', 'historySuggestionsTitle')}</h4>
           <p className="text-xs text-muted-foreground mt-1">
-            {history.length} sugestão(ões) encontrada(s)
+              {history.length} {t('extraction', 'historySuggestionsCount')}
           </p>
         </div>
 
@@ -135,7 +133,7 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
             </div>
           ) : history.length === 0 ? (
             <div className="p-8 text-center text-sm text-muted-foreground">
-              Nenhuma sugestão anterior encontrada
+                {t('extraction', 'historyNoSuggestions')}
             </div>
           ) : (
             <div className="p-2 sm:p-3">
@@ -145,15 +143,15 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
                   <div className="px-2 py-1.5 mb-2 bg-muted/50 rounded">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-medium truncate">
-                        Extração #{runIndex + 1}
+                        {t('extraction', 'historyExtractionRun')} #{runIndex + 1}
                       </span>
                       <span className="text-xs text-muted-foreground shrink-0">
-                        {formatTimestamp(suggestions[0].timestamp)}
+                        {formatTimestamp(suggestions[0].timestamp, invalidDateLabel)}
                       </span>
                     </div>
                   </div>
 
-                  {/* Sugestões do Run */}
+                    {/* Run suggestions */}
                   <div className="space-y-2">
                     {suggestions.map((suggestion) => {
                       const isCurrent = suggestion.id === currentSuggestionId;
@@ -194,19 +192,20 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
                                 )}
                               >
                                 {suggestion.status === 'accepted'
-                                  ? 'Aceita'
+                                    ? t('extraction', 'suggestionAccepted')
                                   : suggestion.status === 'rejected'
-                                  ? 'Rejeitada'
+                                        ? t('extraction', 'suggestionRejected')
                                   : `${confidencePercent}%`}
                               </Badge>
                             </div>
                           </div>
 
-                          {/* Metadata e Ações */}
+                            {/* Metadata and actions */}
                           <div className="flex items-center justify-between gap-2 flex-wrap">
                             <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
                               <Clock className="h-3 w-3" />
-                              <span className="truncate">{formatTimestamp(suggestion.timestamp)}</span>
+                                <span
+                                    className="truncate">{formatTimestamp(suggestion.timestamp, invalidDateLabel)}</span>
                             </div>
 
                             {suggestion.status === 'pending' && (

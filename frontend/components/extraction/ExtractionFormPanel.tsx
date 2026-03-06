@@ -1,8 +1,8 @@
 /**
- * Painel de Formulário para Extração
- * 
- * Componente isolado que gerencia o formulário de extração (modo extract ou compare).
- * Extraído do ExtractionFullScreen para modularidade e reutilização.
+ * Extraction form panel
+ *
+ * Isolated component that manages the extraction form (extract or compare mode).
+ * Extracted from ExtractionFullScreen for modularity and reuse.
  * 
  * @component
  */
@@ -27,8 +27,8 @@ export interface ExtractionFormPanelProps {
 // =================== COMPONENT ===================
 
 /**
- * Painel de formulário que alterna entre modos extract e compare
- * Simplifica o ExtractionFullScreen ao extrair lógica de renderização
+ * Form panel that toggles between extract and compare modes
+ * Simplifies ExtractionFullScreen by extracting render logic
  */
 export function ExtractionFormPanel({
   viewMode,

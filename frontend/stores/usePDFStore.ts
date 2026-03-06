@@ -24,7 +24,7 @@ interface PDFState {
   searchQuery: string;
   searchResults: Array<{
     pageNumber: number;
-    matchIndex: number; // Índice do match específico na página
+      matchIndex: number; // Index of specific match on the page
   }>;
   currentSearchIndex: number;
   
@@ -66,7 +66,7 @@ export const usePDFStore = create<PDFState>()(
         pdfDocument: null,
         numPages: 0,
         currentPage: 1,
-        scale: 0.85, // Padrão: Ajustar à Página
+          scale: 0.85, // Default: Fit to page
         rotation: 0,
         ui: {
           viewMode: 'continuous',

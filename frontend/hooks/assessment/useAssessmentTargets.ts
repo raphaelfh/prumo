@@ -1,11 +1,11 @@
 /**
- * Hook para buscar targets de assessment
- * 
- * Retorna lista de targets (artigos ou instâncias) dependendo da configuração:
- * - Se scope = 'article': retorna lista de artigos
- * - Se scope = 'extraction_instance': retorna lista de instâncias do entity_type configurado
- * 
- * Inclui paginação para performance com muitos targets.
+ * Hook to fetch assessment targets
+ *
+ * Returns list of targets (articles or instances) depending on config:
+ * - If scope = 'article': returns article list
+ * - If scope = 'extraction_instance': returns instances of configured entity_type
+ *
+ * Includes pagination for performance with many targets.
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -17,6 +17,7 @@ import {
 } from '@/types/assessment-target';
 import { ProjectAssessmentConfig } from '@/types/assessment-config';
 import type { ExtractionInstanceRef } from '@/types/assessment-target';
+import {t} from '@/lib/copy';
 
 interface UseAssessmentTargetsOptions {
   page?: number;
@@ -64,7 +65,7 @@ export function useAssessmentTargets(
       }
     } catch (err: unknown) {
       console.error('Error loading assessment targets:', err);
-      setError(err instanceof Error ? err.message : 'Erro desconhecido');
+        setError(err instanceof Error ? err.message : t('common', 'errors_unknownError'));
     } finally {
       setLoading(false);
     }
@@ -98,12 +99,12 @@ export function useAssessmentTargets(
 
   const loadInstanceTargets = async () => {
     if (!config?.entityTypeId) {
-      throw new Error('Entity type não configurado para assessment por instância');
+        throw new Error(t('assessment', 'errors_entityTypeNotConfigured'));
     }
 
     const offset = (page - 1) * pageSize;
 
-    // Buscar instâncias com joins para article
+      // Fetch instances with article joins
     let query = supabase
       .from('extraction_instances')
       .select(`
@@ -163,7 +164,7 @@ export function useAssessmentTargets(
   };
 
   const loadMore = async () => {
-    // Implementar paginação incremental se necessário
+      // Implement incremental pagination if needed
     // Por enquanto, aumentar page e recarregar
   };
 

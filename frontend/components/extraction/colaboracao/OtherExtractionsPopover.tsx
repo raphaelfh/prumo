@@ -16,11 +16,12 @@ import {Avatar, AvatarFallback, AvatarImage} from '@/components/ui/avatar';
 import {Button} from '@/components/ui/button';
 import {Check, Table as TableIcon, Users} from 'lucide-react';
 import {formatDistanceToNow} from 'date-fns';
-import {ptBR} from 'date-fns/locale';
+import {enUS} from 'date-fns/locale';
 import {cn} from '@/lib/utils';
 import {formatComparisonValue} from '@/lib/comparison/formatters';
 import {detectConsensus} from '@/lib/comparison/consensus';
 import {ConsensusIndicator} from '@/components/shared/comparison';
+import {t} from '@/lib/copy';
 import type {OtherExtraction} from '@/hooks/extraction/colaboracao/useOtherExtractions';
 
 // =================== INTERFACES ===================
@@ -78,7 +79,7 @@ export function OtherExtractionsPopover(props: OtherExtractionsPopoverProps) {
           <div className="flex items-center justify-between">
             <h4 className="font-medium flex items-center gap-2">
               <Users className="h-4 w-4" />
-              Outras Extrações ({relevantExtractions.length})
+                {t('extraction', 'otherExtractionsTitle')} ({relevantExtractions.length})
             </h4>
           </div>
 
@@ -116,7 +117,7 @@ export function OtherExtractionsPopover(props: OtherExtractionsPopoverProps) {
                           {matchesMe && (
                             <Badge variant="secondary" className="text-xs">
                               <Check className="h-3 w-3 mr-1" />
-                              Igual
+                                {t('extraction', 'otherSameAsMine')}
                             </Badge>
                           )}
                         </div>
@@ -127,7 +128,7 @@ export function OtherExtractionsPopover(props: OtherExtractionsPopoverProps) {
 
                         <p className="text-xs text-muted-foreground mt-1">
                           {formatDistanceToNow(ext.timestamp, {
-                            locale: ptBR,
+                              locale: enUS,
                             addSuffix: true
                           })}
                         </p>
@@ -160,7 +161,7 @@ export function OtherExtractionsPopover(props: OtherExtractionsPopoverProps) {
                 onClick={onViewComparison}
               >
                 <TableIcon className="mr-2 h-4 w-4" />
-                Ver Comparação Completa
+                  {t('extraction', 'otherViewFullComparison')}
               </Button>
             </>
           )}

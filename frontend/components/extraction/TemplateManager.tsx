@@ -1,7 +1,7 @@
 /**
- * Componente para gerenciar templates de extração
- * 
- * Permite clonar templates globais, criar templates customizados
+ * Component to manage extraction templates
+ *
+ * Clone global templates, create custom templates
  * e gerenciar templates ativos do projeto.
  */
 
@@ -11,6 +11,7 @@ import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
 import {AlertCircle, CheckCircle, Copy, Database, Plus, Settings} from 'lucide-react';
 import {toast} from 'sonner';
+import {t} from '@/lib/copy';
 import {ProjectExtractionTemplate} from '@/types/extraction';
 import {useGlobalTemplates} from '@/hooks/extraction/useGlobalTemplates';
 
@@ -48,7 +49,7 @@ export function TemplateManager({
       setShowCloneDialog(false);
       onTemplateSelect(result);
     } else {
-      toast.error('Não foi possível clonar o template selecionado.');
+        toast.error(t('extraction', 'cloneError'));
     }
   };
 
@@ -65,9 +66,9 @@ export function TemplateManager({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-semibold">Gerenciar Templates</h3>
+            <h3 className="text-lg font-semibold">{t('extraction', 'templateManageTitle')}</h3>
           <p className="text-sm text-muted-foreground">
-            Clone templates padrão ou crie templates customizados
+              {t('extraction', 'templateManageDesc')}
           </p>
         </div>
         <div className="flex space-x-2">
@@ -77,14 +78,14 @@ export function TemplateManager({
             size="sm"
           >
             <Copy className="h-4 w-4 mr-2" />
-            Clonar Template
+              {t('extraction', 'templateCloneButton')}
           </Button>
           <Button
             onClick={() => setShowCreateDialog(true)}
             size="sm"
           >
             <Plus className="h-4 w-4 mr-2" />
-            Criar Template
+              {t('extraction', 'templateCreateButton')}
           </Button>
         </div>
       </div>
@@ -94,10 +95,10 @@ export function TemplateManager({
         <CardHeader>
           <CardTitle className="flex items-center space-x-2">
             <Database className="h-5 w-5" />
-            <span>Templates do Projeto</span>
+              <span>{t('extraction', 'templateProjectTemplates')}</span>
           </CardTitle>
           <CardDescription>
-            Templates ativos e disponíveis para este projeto
+              {t('extraction', 'templateProjectDesc')}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -105,15 +106,15 @@ export function TemplateManager({
             <div className="flex items-center justify-center py-8">
               <div className="text-center">
                 <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent mx-auto mb-2"></div>
-                <p className="text-sm text-muted-foreground">Carregando templates...</p>
+                  <p className="text-sm text-muted-foreground">{t('extraction', 'loadingTemplates')}</p>
               </div>
             </div>
           ) : templates.length === 0 ? (
             <div className="text-center py-8">
               <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h4 className="font-medium mb-2">Nenhum template encontrado</h4>
+                <h4 className="font-medium mb-2">{t('extraction', 'templateNoneFound')}</h4>
               <p className="text-sm text-muted-foreground mb-4">
-                Clone um template padrão ou crie um template customizado para começar
+                  {t('extraction', 'templateNoneHint')}
               </p>
               <div className="flex justify-center space-x-2">
                 <Button
@@ -122,14 +123,14 @@ export function TemplateManager({
                   size="sm"
                 >
                   <Copy className="h-4 w-4 mr-2" />
-                  Clonar Template
+                    {t('extraction', 'templateCloneButton')}
                 </Button>
                 <Button
                   onClick={() => setShowCreateDialog(true)}
                   size="sm"
                 >
                   <Plus className="h-4 w-4 mr-2" />
-                  Criar Template
+                    {t('extraction', 'templateCreateButton')}
                 </Button>
               </div>
             </div>
@@ -153,7 +154,7 @@ export function TemplateManager({
                       <div>
                         <h4 className="font-medium">{template.name}</h4>
                         <p className="text-sm text-muted-foreground">
-                          {template.description || 'Sem descrição'}
+                            {template.description || t('extraction', 'noDescription')}
                         </p>
                       </div>
                     </div>
@@ -163,7 +164,7 @@ export function TemplateManager({
                     </div>
                   </div>
                   <div className="mt-2 text-xs text-muted-foreground">
-                    Criado em {new Date(template.created_at).toLocaleDateString()}
+                      {t('extraction', 'templateCreatedAt')} {new Date(template.created_at).toLocaleDateString()}
                   </div>
                 </div>
               ))}
@@ -172,7 +173,7 @@ export function TemplateManager({
         </CardContent>
       </Card>
 
-      {/* Templates Globais Disponíveis */}
+        {/* Available global templates */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center space-x-2">
@@ -180,7 +181,7 @@ export function TemplateManager({
             <span>Templates Globais</span>
           </CardTitle>
           <CardDescription>
-            Templates padrão disponíveis para clonagem
+              Default templates available for cloning
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -189,14 +190,14 @@ export function TemplateManager({
               <div className="text-center">
                 <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent mx-auto mb-2"></div>
                 <p className="text-sm text-muted-foreground">
-                  Carregando templates globais...
+                    {t('extraction', 'loadingGlobalTemplates')}
                 </p>
               </div>
             </div>
           ) : globalTemplatesError ? (
             <div className="text-center py-8">
               <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h4 className="font-medium mb-2">Erro ao carregar templates</h4>
+                <h4 className="font-medium mb-2">{t('extraction', 'errorLoadTemplates')}</h4>
               <p className="text-sm text-muted-foreground mb-4">
                 {globalTemplatesError}
               </p>
@@ -205,22 +206,22 @@ export function TemplateManager({
                 variant="outline"
                 size="sm"
               >
-                Tentar novamente
+                  {t('common', 'tryAgain')}
               </Button>
             </div>
           ) : globalTemplates.length === 0 ? (
             <div className="text-center py-8">
               <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h4 className="font-medium mb-2">Nenhum template global disponível</h4>
+                <h4 className="font-medium mb-2">{t('extraction', 'configNoGlobalTemplates')}</h4>
               <p className="text-sm text-muted-foreground mb-2">
-                Rode as migrações Supabase para popular a base (CHARMS, PICOS, etc.)
+                  {t('extraction', 'runMigrationsHint')}
               </p>
               <Button
                 onClick={refreshGlobalTemplates}
                 variant="outline"
                 size="sm"
               >
-                Atualizar lista
+                  {t('extraction', 'updateList')}
               </Button>
             </div>
           ) : (
@@ -234,10 +235,10 @@ export function TemplateManager({
                     <div>
                       <h4 className="font-medium">{template.name}</h4>
                       <p className="text-sm text-muted-foreground">
-                        {template.description || 'Sem descrição'}
+                          {template.description || t('extraction', 'noDescription')}
                       </p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {template.entityTypesCount} seções configuradas · v{template.version}
+                          {template.entityTypesCount} {t('extraction', 'sectionsConfigured')} · v{template.version}
                       </p>
                     </div>
                     <div className="flex items-center space-x-2">
@@ -248,7 +249,7 @@ export function TemplateManager({
                         variant="outline"
                       >
                         <Copy className="h-4 w-4 mr-2" />
-                        Clonar
+                          {t('extraction', 'cloneButton')}
                       </Button>
                     </div>
                   </div>
@@ -259,29 +260,29 @@ export function TemplateManager({
         </CardContent>
       </Card>
 
-      {/* Dialogs placeholder - serão implementados depois */}
+        {/* Dialogs placeholder - to be implemented later */}
       {showCloneDialog && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <Card className="w-full max-w-md">
             <CardHeader>
-              <CardTitle>Clonar Template</CardTitle>
+                <CardTitle>{t('extraction', 'cloneTemplateTitle')}</CardTitle>
               <CardDescription>
-                Escolha um template global para clonar
+                  {t('extraction', 'chooseTemplateToClone')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Funcionalidade será implementada em breve
+                  {t('extraction', 'comingSoon')}
               </p>
               <div className="flex justify-end space-x-2">
                 <Button
                   onClick={() => setShowCloneDialog(false)}
                   variant="outline"
                 >
-                  Cancelar
+                    {t('common', 'cancel')}
                 </Button>
                 <Button onClick={() => setShowCloneDialog(false)}>
-                  Clonar
+                    {t('extraction', 'cloneButton')}
                 </Button>
               </div>
             </CardContent>
@@ -293,24 +294,24 @@ export function TemplateManager({
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <Card className="w-full max-w-md">
             <CardHeader>
-              <CardTitle>Criar Template Customizado</CardTitle>
+                <CardTitle>{t('extraction', 'createCustomTemplateTitle')}</CardTitle>
               <CardDescription>
-                Crie um template personalizado para este projeto
+                  {t('extraction', 'createCustomTemplateDesc')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Funcionalidade será implementada em breve
+                  {t('extraction', 'comingSoon')}
               </p>
               <div className="flex justify-end space-x-2">
                 <Button
                   onClick={() => setShowCreateDialog(false)}
                   variant="outline"
                 >
-                  Cancelar
+                    {t('common', 'cancel')}
                 </Button>
                 <Button onClick={() => setShowCreateDialog(false)}>
-                  Criar
+                    {t('extraction', 'createButton')}
                 </Button>
               </div>
             </CardContent>

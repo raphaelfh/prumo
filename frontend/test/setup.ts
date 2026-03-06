@@ -1,4 +1,4 @@
-// Importar mock de localStorage ANTES de qualquer coisa
+// Import localStorage mock BEFORE anything else
 import './mocks/localStorage';
 
 import '@testing-library/jest-dom';
@@ -6,7 +6,7 @@ import {afterAll, afterEach, beforeAll} from 'vitest';
 import {cleanup} from '@testing-library/react';
 import {server} from './mocks/server';
 
-// Estender expect com matchers do jest-dom
+// Extend expect with jest-dom matchers
 // eslint-disable-next-line @typescript-eslint/no-namespace
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -18,12 +18,12 @@ declare global {
   }
 }
 
-// Limpar DOM após cada teste
+// Clean DOM after each test
 afterEach(() => {
   cleanup();
 });
 
-// Configurar MSW para mock de APIs
+// Configure MSW for API mocks
 beforeAll(() => {
   server.listen({ onUnhandledRequest: 'error' });
 });
@@ -36,7 +36,7 @@ afterAll(() => {
   server.close();
 });
 
-// Mock do window.matchMedia (necessário para componentes que usam media queries)
+// Mock window.matchMedia (needed for components using media queries)
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
   value: (query: string) => ({
@@ -51,14 +51,14 @@ Object.defineProperty(window, 'matchMedia', {
   }),
 });
 
-// Mock do ResizeObserver (necessário para alguns componentes)
+// Mock ResizeObserver (needed for some components)
 global.ResizeObserver = class ResizeObserver {
   observe() {}
   unobserve() {}
   disconnect() {}
 };
 
-// Mock do IntersectionObserver (necessário para lazy loading)
+// Mock IntersectionObserver (needed for lazy loading)
 global.IntersectionObserver = class IntersectionObserver {
   constructor() {}
   observe() {}
@@ -66,7 +66,7 @@ global.IntersectionObserver = class IntersectionObserver {
   disconnect() {}
 };
 
-// Mock do PDF.js (necessário para componentes PDF)
+// Mock PDF.js (needed for PDF components)
 global.pdfjsLib = {
   GlobalWorkerOptions: {
     workerSrc: '',

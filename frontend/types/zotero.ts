@@ -1,9 +1,9 @@
 /**
- * Tipos TypeScript para integração com Zotero API
- * Baseado na API v3: https://www.zotero.org/support/dev/web_api/v3/start
+ * TypeScript types for Zotero API integration
+ * Based on API v3: https://www.zotero.org/support/dev/web_api/v3/start
  */
 
-// =================== CREDENCIAIS E CONFIGURAÇÃO ===================
+// =================== CREDENTIALS AND CONFIG ===================
 
 export interface ZoteroCredentials {
   userId: string;
@@ -62,7 +62,7 @@ export interface ZoteroCreator {
   creatorType: 'author' | 'editor' | 'contributor' | string;
   firstName?: string;
   lastName?: string;
-  name?: string; // Para organizações
+    name?: string; // For organizations
 }
 
 export interface ZoteroTag {
@@ -154,7 +154,7 @@ export interface ZoteroAttachment {
   };
 }
 
-// =================== IMPORTAÇÃO ===================
+// =================== IMPORT ===================
 
 export interface ImportOptions {
   downloadPdfs: boolean;
@@ -169,13 +169,13 @@ export interface ImportProgress {
   current: number;
   total: number;
   message: string;
-  currentFile?: string; // Nome do arquivo sendo processado no momento
+    currentFile?: string; // Name of file currently being processed
   stats: {
     imported: number;
     updated: number;
     skipped: number;
     errors: number;
-    pdfsDownloaded?: number; // Contador de PDFs baixados
+      pdfsDownloaded?: number; // Count of PDFs downloaded
   };
 }
 

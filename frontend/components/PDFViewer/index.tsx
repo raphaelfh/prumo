@@ -1,7 +1,7 @@
 /**
  * PDFViewer - Componente principal do visualizador de PDF
- * 
- * Container de alto nível que orquestra:
+ *
+ * Top-level container that orchestrates:
  * - Toolbar de controles
  * - Core do viewer (PDFViewerCore)
  * - Search panel overlay
@@ -34,7 +34,7 @@ export function PDFViewer({ articleId, projectId, className }: PDFViewerProps) {
       />
 
       <div className="flex-1 flex overflow-hidden relative">
-        {/* PDF Viewer Core - Ocupa todo o espaço */}
+          {/* PDF Viewer Core - fills space */}
         <div className="flex-1 w-full">
           <PDFViewerCore articleId={articleId} projectId={projectId} />
         </div>

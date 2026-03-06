@@ -1,10 +1,10 @@
 """
-Testes de integração para conexão com banco de dados.
+Integration tests for database connection.
 
 Estes testes validam:
-- Conexão com o PostgreSQL (Supabase local)
-- Existência das tabelas principais
-- Operações básicas de CRUD
+- Connection to PostgreSQL (local Supabase)
+- Existence of main tables
+- Basic CRUD operations
 """
 
 import pytest
@@ -14,17 +14,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 @pytest.mark.asyncio
 class TestDatabaseConnection:
-    """Testes de conexão e estrutura do banco."""
+    """Database connection and structure tests."""
 
     async def test_database_connection(self, db_session: AsyncSession) -> None:
-        """Verifica se a conexão com o banco está funcionando."""
+        """Check if database connection is working."""
         result = await db_session.execute(text("SELECT 1 as value"))
         row = result.fetchone()
         assert row is not None
         assert row.value == 1
 
     async def test_database_version(self, db_session: AsyncSession) -> None:
-        """Verifica versão do PostgreSQL."""
+        """Check PostgreSQL version."""
         result = await db_session.execute(text("SELECT version()"))
         row = result.fetchone()
         assert row is not None
@@ -78,7 +78,7 @@ class TestDatabaseConnection:
 
 @pytest.mark.asyncio
 class TestDatabaseEnums:
-    """Testes para verificar enums do banco."""
+    """Tests to verify database enums."""
 
     async def test_review_type_enum_exists(self, db_session: AsyncSession) -> None:
         """Verifica se o enum review_type existe."""
@@ -122,7 +122,7 @@ class TestDatabaseEnums:
 
 @pytest.mark.asyncio
 class TestDatabaseSchema:
-    """Testes para verificar estrutura das tabelas."""
+    """Tests to verify table structure."""
 
     async def test_projects_columns(self, db_session: AsyncSession) -> None:
         """Verifica colunas da tabela projects."""
@@ -136,11 +136,11 @@ class TestDatabaseSchema:
             """)
         )
         columns = [row[0] for row in result.fetchall()]
-        
-        # Colunas obrigatórias (usando created_by_id como no schema real)
+
+        # Required columns (using created_by_id as in real schema)
         expected_columns = ["id", "name", "review_type", "created_by_id", "created_at"]
         for col in expected_columns:
-            assert col in columns, f"Coluna {col} não encontrada em projects"
+            assert col in columns, f"Column {col} not found in projects"
 
     async def test_articles_columns(self, db_session: AsyncSession) -> None:
         """Verifica colunas da tabela articles."""
@@ -154,11 +154,11 @@ class TestDatabaseSchema:
             """)
         )
         columns = [row[0] for row in result.fetchall()]
-        
-        # Colunas obrigatórias
+
+        # Required columns
         expected_columns = ["id", "project_id", "title", "created_at"]
         for col in expected_columns:
-            assert col in columns, f"Coluna {col} não encontrada em articles"
+            assert col in columns, f"Column {col} not found in articles"
 
     async def test_assessment_instruments_columns(self, db_session: AsyncSession) -> None:
         """Verifica colunas da tabela assessment_instruments."""
@@ -172,19 +172,19 @@ class TestDatabaseSchema:
             """)
         )
         columns = [row[0] for row in result.fetchall()]
-        
-        # Colunas obrigatórias (schema real usa tool_type, name, version)
+
+        # Required columns (real schema uses tool_type, name, version)
         expected_columns = ["id", "name", "tool_type", "created_at"]
         for col in expected_columns:
-            assert col in columns, f"Coluna {col} não encontrada em assessment_instruments"
+            assert col in columns, f"Column {col} not found in assessment_instruments"
 
 
 @pytest.mark.asyncio
 class TestDatabaseRLS:
-    """Testes para verificar Row Level Security."""
+    """Tests to verify Row Level Security."""
 
     async def test_rls_enabled_on_projects(self, db_session: AsyncSession) -> None:
-        """Verifica se RLS está habilitado na tabela projects."""
+        """Check if RLS is enabled on projects table."""
         result = await db_session.execute(
             text("""
                 SELECT relrowsecurity 
@@ -194,11 +194,11 @@ class TestDatabaseRLS:
             """)
         )
         row = result.fetchone()
-        # RLS pode estar habilitado ou não dependendo do ambiente
+        # RLS may or may not be enabled depending on environment
         assert row is not None
 
     async def test_rls_enabled_on_articles(self, db_session: AsyncSession) -> None:
-        """Verifica se RLS está habilitado na tabela articles."""
+        """Check if RLS is enabled on articles table."""
         result = await db_session.execute(
             text("""
                 SELECT relrowsecurity 

@@ -1,10 +1,10 @@
 /**
- * Testes de validação de tipos
- * 
- * Valida que os tipos base (Article, Project) estão corretamente definidos
- * e podem ser usados sem erros de compilação.
- * 
- * Este teste valida apenas estrutura de tipos TypeScript, sem dependências externas.
+ * Type validation tests
+ *
+ * Validates that base types (Article, Project) are correctly defined
+ * and can be used without compilation errors.
+ *
+ * These tests validate TypeScript type structure only, with no external dependencies.
  */
 
 import {describe, expect, it} from 'vitest';
@@ -13,8 +13,8 @@ import {toArticleListItem} from '@/types/article';
 import type {Project, ProjectData} from '@/types/project';
 
 describe('Type Definitions - Article', () => {
-  it('deve ter tipo Article definido corretamente', () => {
-    // Mock de Article baseado no tipo do Supabase
+    it('should have Article type defined correctly', () => {
+        // Mock Article based on Supabase type
     const mockArticle: Article = {
       id: 'test-article-id',
       title: 'Test Article',
@@ -63,7 +63,7 @@ describe('Type Definitions - Article', () => {
     expect(mockArticle.project_id).toBe('test-project-id');
   });
 
-  it('deve ter tipo ArticleListItem definido corretamente', () => {
+    it('should have ArticleListItem type defined correctly', () => {
     const mockListItem: ArticleListItem = {
       id: 'test-id',
       title: 'Test Title',
@@ -80,7 +80,7 @@ describe('Type Definitions - Article', () => {
     expect(typeof mockListItem.publication_year).toBe('number');
   });
 
-  it('toArticleListItem deve converter Article para ArticleListItem', () => {
+    it('toArticleListItem should convert Article to ArticleListItem', () => {
     const mockArticle: Article = {
       id: 'test-id',
       title: 'Test',
@@ -163,9 +163,9 @@ describe('Type Definitions - Project', () => {
     expect(mockProject.is_active).toBe(true);
   });
 
-  it('deve ter tipo ProjectData estendendo Project', () => {
-    // ProjectData é usado em vários lugares do código
-    // Validar que está compatível com Project
+    it('should have ProjectData type extending Project', () => {
+        // ProjectData is used in several places in the code
+        // Validate it is compatible with Project
     const mockProjectData: Partial<ProjectData> = {
       id: 'test-id',
       name: 'Test',

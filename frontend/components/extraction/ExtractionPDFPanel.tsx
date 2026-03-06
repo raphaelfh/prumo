@@ -1,8 +1,8 @@
 /**
- * Painel de PDF para Extração
- * 
- * Componente isolado que gerencia o PDF viewer na interface de extração.
- * Extraído do ExtractionFullScreen para modularidade e reutilização.
+ * PDF panel for extraction
+ *
+ * Isolated component that manages the PDF viewer in the extraction interface.
+ * Extracted from ExtractionFullScreen for modularity and reuse.
  * 
  * @component
  */
@@ -22,7 +22,7 @@ export interface ExtractionPDFPanelProps {
 // =================== COMPONENT ===================
 
 /**
- * Painel de PDF memoizado para evitar re-renders desnecessários
+ * Memoized PDF panel to avoid unnecessary re-renders
  */
 function ExtractionPDFPanelComponent({ 
   articleId, 
@@ -43,7 +43,7 @@ function ExtractionPDFPanelComponent({
   );
 }
 
-// Memoizar para evitar re-renders quando props não mudam
+// Memoize to avoid re-renders when props unchanged
 export const ExtractionPDFPanel = memo(ExtractionPDFPanelComponent, (prevProps, nextProps) => {
   return (
     prevProps.articleId === nextProps.articleId &&

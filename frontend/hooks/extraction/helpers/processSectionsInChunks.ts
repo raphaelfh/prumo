@@ -1,10 +1,10 @@
 /**
- * Helper para processar seções em chunks
- * 
- * Encapsula a lógica de processar seções divididas em chunks,
- * incluindo atualização de progresso e tratamento de erros.
- * 
- * DRY: Reutilizável em múltiplos hooks de extração.
+ * Helper to process sections in chunks
+ *
+ * Encapsulates logic to process sections split into chunks,
+ * including progress updates and error handling.
+ *
+ * DRY: Reusable across extraction hooks.
  */
 
 import {SectionExtractionService} from "@/services/sectionExtractionService";
@@ -31,10 +31,10 @@ export interface ProcessChunksResult {
 }
 
 /**
- * Processa seções em chunks sequencialmente
- * 
- * @param options - Opções de processamento
- * @returns Resultado consolidado do processamento
+ * Processes sections in chunks sequentially
+ *
+ * @param options - Processing options
+ * @returns Consolidated processing result
  */
 export async function processSectionsInChunks(
   options: ProcessChunksOptions
@@ -71,7 +71,7 @@ export async function processSectionsInChunks(
       return section?.label || section?.name || 'Desconhecida';
     });
 
-    // Atualizar progresso antes do chunk
+      // Update progress before chunk
     const progressBefore: ExtractionProgress = {
       currentChunk: chunkIndex + 1,
       totalChunks: sectionIdChunks.length,
@@ -82,7 +82,7 @@ export async function processSectionsInChunks(
     onProgress?.(progressBefore);
 
     try {
-      // Chamar service com chunk específico
+        // Call service with specific chunk
       const chunkRequest: BatchSectionExtractionRequest = {
         ...baseRequest,
         sectionIds: chunk,
@@ -95,7 +95,7 @@ export async function processSectionsInChunks(
         throw new Error("No data returned from chunk extraction");
       }
 
-      // Consolidar resultados do chunk
+        // Consolidate chunk results
       const chunkSuccessful = result.data.sections.filter(s => s.success).length;
       const chunkFailed = result.data.sections.filter(s => !s.success).length;
 
@@ -106,7 +106,7 @@ export async function processSectionsInChunks(
       totalDurationMs += result.data.durationMs || 0;
       completedSections += chunk.length;
 
-      // Atualizar progresso após chunk
+        // Update progress after chunk
       const progressAfter: ExtractionProgress = {
         currentChunk: chunkIndex + 1,
         totalChunks: sectionIdChunks.length,
@@ -117,12 +117,12 @@ export async function processSectionsInChunks(
       onProgress?.(progressAfter);
     } catch (chunkError: any) {
       console.error(`[processSectionsInChunks] Erro no chunk ${chunkIndex + 1}:`, chunkError);
-      
-      // Pular chunk que falhou (não propagar erro)
+
+        // Skip failed chunk (do not propagate error)
       failedSections += chunk.length;
       completedSections += chunk.length;
 
-      // Atualizar progresso mesmo em caso de erro
+        // Update progress even on error
       const progressAfter: ExtractionProgress = {
         currentChunk: chunkIndex + 1,
         totalChunks: sectionIdChunks.length,
@@ -132,7 +132,7 @@ export async function processSectionsInChunks(
       };
       onProgress?.(progressAfter);
 
-      // Continuar com próximo chunk
+        // Continue with next chunk
 
     }
   }

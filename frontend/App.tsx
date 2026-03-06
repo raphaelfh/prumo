@@ -11,8 +11,9 @@ import {ProtectedRoute} from "./components/ProtectedRoute";
 import {ErrorBoundary} from "./components/ErrorBoundary";
 import {ProjectLayout} from "./components/layout/AppLayout";
 import {Loader2} from "lucide-react";
+import {t} from "@/lib/copy";
 
-// Lazy loading de rotas para code splitting
+// Lazy loading of routes for code splitting
 const Auth = lazy(() => import("./pages/Auth"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const ProjectView = lazy(() => import("./pages/ProjectView"));
@@ -24,19 +25,19 @@ const UserSettings = lazy(() => import("./pages/UserSettings"));
 const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
-// Componente de loading para Suspense
+// Loading component for Suspense
 const PageLoader = () => (
   <div className="flex items-center justify-center min-h-screen">
     <Loader2 className="h-8 w-8 animate-spin text-primary" />
   </div>
 );
 
-// QueryClient configurado com opções otimizadas
+// QueryClient configured with optimized options
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 5 * 60 * 1000, // 5 minutos
-      gcTime: 10 * 60 * 1000, // 10 minutos (antigo cacheTime)
+        staleTime: 5 * 60 * 1000, // 5 minutes
+        gcTime: 10 * 60 * 1000, // 10 minutes (formerly cacheTime)
       refetchOnWindowFocus: false,
       retry: 1,
     },
@@ -45,7 +46,7 @@ const queryClient = new QueryClient({
 
 const App = () => {
   return (
-    <ErrorBoundary context="Aplicação Principal">
+      <ErrorBoundary context={t('common', 'errorContextApp')}>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <Toaster />
@@ -56,7 +57,7 @@ const App = () => {
                 v7_relativeSplatPath: true,
               }}
             >
-              <ErrorBoundary context="Autenticação">
+                <ErrorBoundary context={t('common', 'errorContextAuth')}>
                 <AuthProvider>
                   <Suspense fallback={<PageLoader />}>
                     <Routes>
@@ -66,7 +67,7 @@ const App = () => {
                     path="/"
                     element={
                       <ProtectedRoute>
-                        <ErrorBoundary context="Dashboard">
+                          <ErrorBoundary context={t('common', 'errorContextDashboard')}>
                           <Dashboard />
                         </ErrorBoundary>
                       </ProtectedRoute>
@@ -76,7 +77,7 @@ const App = () => {
                     path="/projects/:projectId"
                     element={
                       <ProtectedRoute>
-                        <ErrorBoundary context="Visualização de Projeto">
+                          <ErrorBoundary context={t('common', 'errorContextProjectView')}>
                           <ProjectProvider>
                             <SidebarProvider>
                               <ProjectLayout>
@@ -92,7 +93,7 @@ const App = () => {
                     path="/projects/:projectId/assessment/:articleId/:instrumentId"
                     element={
                       <ProtectedRoute>
-                        <ErrorBoundary context="Avaliação Completa">
+                          <ErrorBoundary context={t('common', 'errorContextAssessment')}>
                           <AssessmentFullScreen />
                         </ErrorBoundary>
                       </ProtectedRoute>
@@ -102,7 +103,7 @@ const App = () => {
                     path="/projects/:projectId/extraction/:articleId"
                     element={
                       <ProtectedRoute>
-                        <ErrorBoundary context="Extração de Dados">
+                          <ErrorBoundary context={t('common', 'errorContextExtraction')}>
                           <ExtractionFullScreen />
                         </ErrorBoundary>
                       </ProtectedRoute>
@@ -112,7 +113,7 @@ const App = () => {
                     path="/projects/:projectId/articles/add"
                     element={
                       <ProtectedRoute>
-                        <ErrorBoundary context="Adicionar Artigo">
+                          <ErrorBoundary context={t('common', 'errorContextAddArticle')}>
                           <ProjectProvider>
                             <AddArticle />
                           </ProjectProvider>
@@ -124,7 +125,7 @@ const App = () => {
                     path="/projects/:projectId/articles/:articleId/edit"
                     element={
                       <ProtectedRoute>
-                        <ErrorBoundary context="Editar Artigo">
+                          <ErrorBoundary context={t('common', 'errorContextEditArticle')}>
                           <ProjectProvider>
                             <EditArticle />
                           </ProjectProvider>
@@ -136,7 +137,7 @@ const App = () => {
                     path="/settings"
                     element={
                       <ProtectedRoute>
-                        <ErrorBoundary context="Configurações do Usuário">
+                          <ErrorBoundary context={t('common', 'errorContextUserSettings')}>
                           <UserSettings />
                         </ErrorBoundary>
                       </ProtectedRoute>

@@ -1,6 +1,6 @@
 /**
- * Componente de badge de Sugestões IA
- * Exibe contador de sugestões pendentes com acesso rápido
+ * AI suggestions badge component.
+ * Shows count of pending suggestions with quick access.
  */
 
 import {Badge} from '@/components/ui/badge';
@@ -8,11 +8,12 @@ import {Tooltip, TooltipContent, TooltipTrigger,} from '@/components/ui/tooltip'
 import {Brain} from 'lucide-react';
 import {isSuggestionPending} from '@/lib/ai-extraction/suggestionUtils';
 import type {AISuggestion} from '@/types/ai-extraction';
+import {t} from '@/lib/copy';
 
 interface HeaderAIActionsProps {
   /** Sugestões de IA indexadas por `${instanceId}_${fieldId}` */
   suggestions: Record<string, AISuggestion>;
-  /** Callback quando clica no badge */
+    /** Callback when clicking the badge */
   onClick?: () => void;
   /** Modo compacto (apenas ícone) */
   compact?: boolean;
@@ -70,7 +71,7 @@ export function HeaderAIActions({
           <div>{badgeContent}</div>
         </TooltipTrigger>
         <TooltipContent side="top" sideOffset={5} className="z-[100]">
-          {pendingCount} {pendingCount === 1 ? 'sugestão de IA pendente' : 'sugestões de IA pendentes'}
+            {pendingCount} {pendingCount === 1 ? t('extraction', 'aiSuggestionPending') : t('extraction', 'aiSuggestionsPending')}
         </TooltipContent>
       </Tooltip>
     );
@@ -82,8 +83,8 @@ export function HeaderAIActions({
         {badgeContent}
       </TooltipTrigger>
       <TooltipContent side="top" sideOffset={5} className="z-[100]">
-        {pendingCount} {pendingCount === 1 ? 'sugestão de IA pendente' : 'sugestões de IA pendentes'}
-        {onClick && ' — Clique para ver'}
+          {pendingCount} {pendingCount === 1 ? t('extraction', 'aiSuggestionPending') : t('extraction', 'aiSuggestionsPending')}
+          {onClick && t('extraction', 'aiClickToView')}
       </TooltipContent>
     </Tooltip>
   );

@@ -1,8 +1,8 @@
 /**
- * usePDFVirtualization - Hook para virtualização de páginas PDF
- * 
- * Otimiza performance detectando páginas visíveis e renderizando apenas
- * páginas no viewport + buffer usando Intersection Observer.
+ * usePDFVirtualization - Hook for PDF page virtualization
+ *
+ * Optimizes performance by detecting visible pages and rendering only
+ * viewport + buffer pages using Intersection Observer.
  */
 
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
@@ -10,7 +10,7 @@ import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 interface UsePDFVirtualizationProps {
   numPages: number;
   containerRef: React.RefObject<HTMLElement>;
-  buffer?: number; // Páginas antes/depois para pré-carregar
+    buffer?: number; // Pages before/after to preload
   rootMargin?: string; // Margem do Intersection Observer
 }
 
@@ -29,12 +29,12 @@ export function usePDFVirtualization({
   const [pageRefs, setPageRefs] = useState<Map<number, HTMLDivElement>>(new Map());
   const observerRef = useRef<IntersectionObserver | null>(null);
   const visiblePagesRef = useRef<Set<number>>(new Set());
-  // Rastrear páginas que foram renderizadas para evitar desmontar prematuramente
+    // Track pages that were rendered to avoid unmounting prematurely
   const renderedPagesRef = useRef<Set<number>>(new Set());
-  // Rastrear páginas que estão carregando
+    // Track pages that are loading
   const loadingPagesRef = useRef<Set<number>>(new Set());
 
-  // Registrar referência de página
+    // Register page ref
   const registerPageRef = useCallback((pageNumber: number, element: HTMLDivElement | null) => {
     if (element) {
       setPageRefs((prev) => {
@@ -51,7 +51,7 @@ export function usePDFVirtualization({
     }
   }, []);
 
-  // Calcular range visível com buffer, incluindo páginas em carregamento
+    // Calculate visible range with buffer, including loading pages
   const calculateVisibleRange = useCallback((visiblePages: Set<number>): VisibleRange => {
     if (visiblePages.size === 0) {
       return { start: 1, end: Math.min(3, numPages) };
@@ -61,7 +61,7 @@ export function usePDFVirtualization({
     let minPage = Math.max(1, pages[0] - buffer);
     let maxPage = Math.min(numPages, pages[pages.length - 1] + buffer);
 
-    // Incluir páginas que estão carregando mesmo que fora do range
+      // Include pages that are loading even if outside range
     if (loadingPagesRef.current.size > 0) {
       const loadingPages = Array.from(loadingPagesRef.current);
       const minLoading = Math.min(...loadingPages);
@@ -70,12 +70,12 @@ export function usePDFVirtualization({
       maxPage = Math.max(maxPage, maxLoading);
     }
 
-    // Incluir páginas já renderizadas para evitar desmontar prematuramente
+      // Include already rendered pages to avoid unmounting prematurely
     if (renderedPagesRef.current.size > 0) {
       const renderedPages = Array.from(renderedPagesRef.current);
       const minRendered = Math.min(...renderedPages);
       const maxRendered = Math.max(...renderedPages);
-      // Manter pelo menos 1 página de buffer das renderizadas
+        // Keep at least 1 page buffer of rendered pages
       minPage = Math.min(minPage, Math.max(1, minRendered - 1));
       maxPage = Math.max(maxPage, Math.min(numPages, maxRendered + 1));
     }
@@ -97,10 +97,10 @@ export function usePDFVirtualization({
       }
     });
 
-    // Atualizar range visível
+      // Update visible range
     const newRange = calculateVisibleRange(visiblePagesRef.current);
     setVisibleRange((prev) => {
-      // Só atualizar se realmente mudou (evitar re-renders desnecessários)
+        // Only update if actually changed (avoid unnecessary re-renders)
       if (prev.start !== newRange.start || prev.end !== newRange.end) {
         return newRange;
       }
@@ -116,10 +116,10 @@ export function usePDFVirtualization({
     observerRef.current = new IntersectionObserver(handleIntersection, {
       root: containerRef.current,
       rootMargin,
-      threshold: 0.01, // Trigger quando qualquer parte da página estiver visível
+        threshold: 0.01, // Trigger when any part of page is visible
     });
 
-    // Observar todas as referências de páginas registradas
+      // Observe all registered page refs
     pageRefs.forEach((element) => {
       if (element && observerRef.current) {
         observerRef.current.observe(element);
@@ -133,12 +133,12 @@ export function usePDFVirtualization({
     };
   }, [containerRef, handleIntersection, pageRefs, rootMargin]);
 
-  // Marcar página como renderizada
+    // Mark page as rendered
   const markPageRendered = useCallback((pageNumber: number) => {
     renderedPagesRef.current.add(pageNumber);
   }, []);
 
-  // Marcar página como carregando
+    // Mark page as loading
   const markPageLoading = useCallback((pageNumber: number, isLoading: boolean) => {
     if (isLoading) {
       loadingPagesRef.current.add(pageNumber);
@@ -147,17 +147,17 @@ export function usePDFVirtualization({
     }
   }, []);
 
-  // Verificar se página deve ser renderizada
+    // Check if page should be rendered
   const shouldRenderPage = useCallback((pageNumber: number): boolean => {
     const inRange = pageNumber >= visibleRange.start && pageNumber <= visibleRange.end;
     const isRendered = renderedPagesRef.current.has(pageNumber);
     const isLoading = loadingPagesRef.current.has(pageNumber);
-    
-    // Renderizar se está no range, ou se já foi renderizada (evitar desmontar), ou se está carregando
+
+      // Render if in range, or already rendered (avoid unmount), or loading
     return inRange || isRendered || isLoading;
   }, [visibleRange]);
 
-  // Obter lista de páginas para renderizar
+    // Get list of pages to render
   const pagesToRender = useMemo(() => {
     const pages: number[] = [];
     for (let i = visibleRange.start; i <= visibleRange.end; i++) {
@@ -168,7 +168,7 @@ export function usePDFVirtualization({
     return pages;
   }, [visibleRange, numPages]);
 
-  // Limpar referências de páginas fora do range
+    // Clean up page refs outside range
   const cleanupOutOfRangePages = useCallback(() => {
     setPageRefs((prev) => {
       const next = new Map();
@@ -181,7 +181,7 @@ export function usePDFVirtualization({
     });
   }, [visibleRange]);
 
-  // Inicializar com primeira página visível
+    // Initialize with first page visible
   useEffect(() => {
     if (numPages > 0 && visibleRange.start === 1 && visibleRange.end === 1) {
       setVisibleRange({ start: 1, end: Math.min(1 + buffer * 2, numPages) });

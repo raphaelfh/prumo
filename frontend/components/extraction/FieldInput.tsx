@@ -1,16 +1,16 @@
 /**
- * Input Universal de Campo de Extração
- * 
- * Componente que renderiza input apropriado baseado no tipo do campo:
- * - text: Input ou Textarea
- * - number: Input number + unit badge
+ * Universal extraction field input
+ *
+ * Renders the appropriate input by field type:
+ * - text: Input or Textarea
+ * - number: Number input + unit badge
  * - date: DatePicker
  * - select: Select dropdown
  * - multiselect: Multi-select
  * - boolean: Switch
- * 
- * Também mostra badges de IA e outras extrações (futuro).
- * 
+ *
+ * Also shows AI badges and other extractions (future).
+ *
  * @component
  */
 
@@ -38,6 +38,7 @@ import {AISuggestionHistoryPopover} from './ai/AISuggestionHistoryPopover';
 import {getRelatedUnits} from '@/lib/unitConversions';
 import {extractUnit, extractValue, isEmptyValue, isValidNumber,} from '@/lib/ai-extraction/valueParser';
 import {isSuggestionPending} from '@/lib/ai-extraction/suggestionUtils';
+import {t} from '@/lib/copy';
 
 // =================== INTERFACES ===================
 
@@ -63,19 +64,19 @@ interface FieldInputProps {
 export function FieldInput(props: FieldInputProps) {
   const { field, instanceId, value, onChange, disabled, otherExtractions, aiSuggestion, onAcceptAI, onRejectAI, getSuggestionsHistory, isActionLoading, viewMode } = props;
   const [validationError, setValidationError] = useState<string | null>(null);
-  
-  // Espaçamento fixo confortável
+
+    // Fixed comfortable spacing
   const containerPadding = 'py-4';
   const inputHeight = 'h-9';
   const gap = 'gap-4';
 
-  // Lógica de valor exibido no campo:
-  // - Valor do estado local sempre tem prioridade (pode ser manual ou aceito da IA)
-  // - Se há sugestão aceita e não há valor manual, mostrar valor da sugestão
+    // Display value logic:
+    // - Local state value always has priority (manual or AI-accepted)
+    // - If there is accepted suggestion and no manual value, show suggestion value
   const hasAIPending = aiSuggestion ? isSuggestionPending(aiSuggestion) : false;
   const hasAIAccepted = aiSuggestion ? aiSuggestion.status === 'accepted' : false;
-  
-  // Função helper para normalizar valores para comparação
+
+    // Helper to normalize values for comparison
   const normalizeValueForComparison = (val: any): any => {
     if (val === null || val === undefined) return null;
     if (typeof val === 'object' && 'value' in val) {
@@ -83,45 +84,45 @@ export function FieldInput(props: FieldInputProps) {
     }
     return val;
   };
-  
-  // Distinguir valor manual de valor aceito da IA:
-  // - Se há sugestão aceita e o valor atual é igual ao valor da sugestão, NÃO é manual
-  // - Se o valor atual é diferente do valor da sugestão aceita, é manual (usuário editou)
-  // - Se não há sugestão aceita, qualquer valor não vazio é considerado manual
+
+    // Distinguish manual value from AI-accepted:
+    // - If accepted suggestion and current value equals suggestion value, NOT manual
+    // - If current value differs from accepted suggestion, manual (user edited)
+    // - If no accepted suggestion, any non-empty value is considered manual
   const aiAcceptedValue = hasAIAccepted && aiSuggestion?.value !== null && aiSuggestion?.value !== undefined 
     ? aiSuggestion.value 
     : null;
-  
-  // Comparação mais robusta de valores (considera objetos e arrays)
+
+    // More robust value comparison (handles objects and arrays)
   const isValueEqualToAccepted = aiAcceptedValue !== null && 
     JSON.stringify(normalizeValueForComparison(value)) === JSON.stringify(normalizeValueForComparison(aiAcceptedValue));
-  
-  // Se há valor no campo mas não é igual ao aceito, é manual
-  // Se não há sugestão aceita, valor no campo é considerado manual
+
+    // If field has value but it's not equal to accepted, it's manual
+    // If no accepted suggestion, field value is considered manual
   const hasManualValue = !isEmptyValue(value) && (!hasAIAccepted || !isValueEqualToAccepted);
-  
-  // Valor a exibir: priorizar valor do estado (que já foi atualizado após aceitar)
-  // Se não há valor no estado mas há sugestão aceita, mostrar valor da sugestão
+
+    // Value to display: prefer state value (already updated after accept)
+    // If no state value but there is accepted suggestion, show suggestion value
   const displayValue = !isEmptyValue(value)
     ? value
     : (hasAIAccepted && aiAcceptedValue !== null)
       ? aiAcceptedValue
       : '';
 
-  // Validação básica
+    // Basic validation
   const validateValue = (val: any): boolean => {
-    // Para campos obrigatórios, verificar se o valor não está vazio
+      // For required fields, check value is not empty
     if (field.is_required) {
       if (isEmptyValue(val)) {
-        setValidationError('Campo obrigatório');
+          setValidationError(t('extraction', 'fieldRequired'));
         return false;
       }
     }
 
     if (field.field_type === 'number') {
-      // Se tem valor mas não é um número válido
+        // If has value but not a valid number
       if (!isEmptyValue(val) && !isValidNumber(val)) {
-        setValidationError('Valor deve ser um número');
+          setValidationError(t('extraction', 'fieldMustBeNumber'));
         return false;
       }
     }
@@ -135,31 +136,33 @@ export function FieldInput(props: FieldInputProps) {
     onChange(newValue);
   };
 
-  // Renderizar input baseado no tipo
+    // Render input by type
   const renderInput = () => {
     switch (field.field_type) {
       case 'text': {
-        // Se description longa, usar textarea
+          // Long description: use textarea (English keywords for label detection)
         const labelLower = field.label.toLowerCase();
-        const isLongText = labelLower.includes('descrição') ||
-                          labelLower.includes('justificativa') ||
-                          labelLower.includes('comentário') ||
-                          labelLower.includes('conclusão') ||
-                          labelLower.includes('conclusões') ||
-                          labelLower.includes('resultado') ||
-                          labelLower.includes('resultados') ||
-                          labelLower.includes('análise') ||
-                          labelLower.includes('análises') ||
-                          labelLower.includes('discussão') ||
-                          labelLower.includes('observação') ||
-                          labelLower.includes('observações');
+          const isLongText = labelLower.includes('description') ||
+              labelLower.includes('justification') ||
+              labelLower.includes('comment') ||
+              labelLower.includes('conclusion') ||
+              labelLower.includes('conclusions') ||
+              labelLower.includes('result') ||
+              labelLower.includes('results') ||
+              labelLower.includes('method') ||
+              labelLower.includes('methods') ||
+              labelLower.includes('analysis') ||
+              labelLower.includes('analyses') ||
+              labelLower.includes('discussion') ||
+              labelLower.includes('observation') ||
+              labelLower.includes('observations');
         
         if (isLongText) {
           return (
             <Textarea
               value={displayValue || ''}
               onChange={(e) => handleChange(e.target.value)}
-              placeholder={`Digite ${field.label.toLowerCase()}`}
+              placeholder={t('extraction', 'fieldPlaceholderEnter').replace('{{label}}', field.label.toLowerCase())}
               disabled={disabled}
               className={cn(
                   "text-sm min-h-[80px]",
@@ -174,7 +177,7 @@ export function FieldInput(props: FieldInputProps) {
           <Input
             value={displayValue || ''}
             onChange={(e) => handleChange(e.target.value)}
-            placeholder={`Digite ${field.label.toLowerCase()}`}
+            placeholder={t('extraction', 'fieldPlaceholderEnter').replace('{{label}}', field.label.toLowerCase())}
             disabled={disabled}
               className={cn(
                 inputHeight,
@@ -191,11 +194,11 @@ export function FieldInput(props: FieldInputProps) {
         const numValue = extractValue(displayValue);
         const currentUnit = extractUnit(displayValue) 
           ?? (field.allowed_units && field.allowed_units.length > 0 ? field.allowed_units[0] : field.unit);
-        
-        // Priorizar allowed_units customizadas sobre dicionário automático
+
+          // Prefer custom allowed_units over automatic dictionary
         const relatedUnits = field.allowed_units && field.allowed_units.length > 0
-          ? field.allowed_units // Usar unidades configuradas pelo manager (primeira é padrão)
-          : (field.unit ? getRelatedUnits(field.unit) : []); // Fallback para dicionário automático
+            ? field.allowed_units // Use units configured by manager (first is default)
+            : (field.unit ? getRelatedUnits(field.unit) : []); // Fallback to automatic dictionary
         
         const hasMultipleUnits = relatedUnits.length > 0;
 
@@ -215,8 +218,8 @@ export function FieldInput(props: FieldInputProps) {
               disabled={disabled}
               className={cn("flex-1", inputHeight, "text-sm", validationError && "border-destructive")}
             />
-            
-            {/* Unit selector se houver unidades */}
+
+              {/* Unit selector when units are available */}
             {hasMultipleUnits ? (
               <Select
                 value={currentUnit || ''}
@@ -229,19 +232,19 @@ export function FieldInput(props: FieldInputProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {/* Todas as unidades disponíveis (allowed_units ou relacionadas) */}
+                    {/* All available units (allowed_units or related) */}
                   {relatedUnits.map((unit, index) => (
                     <SelectItem key={unit} value={unit}>
                       {unit}
                       {index === 0 && field.allowed_units && field.allowed_units.length > 0 && (
-                        <span className="ml-1 text-xs text-muted-foreground">(padrão)</span>
+                          <span className="ml-1 text-xs text-muted-foreground">{t('extraction', 'defaultUnit')}</span>
                       )}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             ) : (field.allowed_units && field.allowed_units.length > 0 ? field.allowed_units[0] : field.unit) ? (
-              // Badge fixo se não houver múltiplas unidades mas houver uma unidade definida
+                // Fixed badge when there are not multiple units but one is defined
               <Badge variant="outline" className="shrink-0 self-center">
                 {field.allowed_units && field.allowed_units.length > 0 ? field.allowed_units[0] : field.unit}
               </Badge>
@@ -270,10 +273,10 @@ export function FieldInput(props: FieldInputProps) {
               value={value || null}
               onChange={handleChange}
               allowOther={true}
-              otherLabel={field.other_label || 'Outro (especificar)'}
+              otherLabel={field.other_label || t('extraction', 'otherSpecifyDefault')}
               otherPlaceholder={field.other_placeholder || undefined}
               disabled={disabled}
-              placeholder={`Selecione ${field.label.toLowerCase()}`}
+              placeholder={t('extraction', 'selectFieldPlaceholder').replace('{{label}}', field.label.toLowerCase())}
               className={cn(validationError && 'border-destructive')}
             />
           );
@@ -285,7 +288,8 @@ export function FieldInput(props: FieldInputProps) {
             disabled={disabled}
           >
             <SelectTrigger className={cn(inputHeight, "text-sm", validationError && "border-destructive")}>
-              <SelectValue placeholder={`Selecione ${field.label.toLowerCase()}`} />
+                <SelectValue
+                    placeholder={t('extraction', 'selectFieldPlaceholder').replace('{{label}}', field.label.toLowerCase())}/>
             </SelectTrigger>
             <SelectContent>
               {options.map((option: any, index: number) => {
@@ -311,10 +315,10 @@ export function FieldInput(props: FieldInputProps) {
               value={value || null}
               onChange={handleChange}
               allowOther={true}
-              otherLabel={field.other_label || 'Outro (especificar)'}
+              otherLabel={field.other_label || t('extraction', 'otherSpecifyDefault')}
               otherPlaceholder={field.other_placeholder || undefined}
               disabled={disabled}
-              placeholder={`Selecione ${field.label.toLowerCase()}`}
+              placeholder={t('extraction', 'selectFieldPlaceholder').replace('{{label}}', field.label.toLowerCase())}
             />
           );
         }
@@ -323,7 +327,7 @@ export function FieldInput(props: FieldInputProps) {
           <Input
             value={Array.isArray(value) ? value.join(', ') : value || ''}
             onChange={(e) => handleChange(e.target.value.split(',').map(v => v.trim()))}
-            placeholder="Valores separados por vírgula"
+            placeholder={t('extraction', 'valuesCommaSeparated')}
             disabled={disabled}
             className={cn(inputHeight, "text-sm", validationError && "border-destructive")}
           />
@@ -339,7 +343,7 @@ export function FieldInput(props: FieldInputProps) {
               disabled={disabled}
             />
             <span className="text-sm text-muted-foreground">
-              {value ? 'Sim' : 'Não'}
+              {value ? t('extraction', 'yes') : t('extraction', 'no')}
             </span>
           </div>
         );
@@ -356,18 +360,18 @@ export function FieldInput(props: FieldInputProps) {
     }
   };
 
-  // Determinar se deve mostrar display de sugestão abaixo do input
-  // Mostrar se:
-  // - Sugestão existe (pending, accepted ou rejected) E
-  // - Para sugestões PENDING: mostrar sempre (mesmo se campo tem valor)
-  // - Para sugestões ACCEPTED: mostrar se o valor atual é igual ao aceito (não foi editado manualmente)
-  // - Para sugestões REJECTED: mostrar para permitir reverter
+    // Determine whether to show suggestion display below input
+    // Show if:
+    // - Suggestion exists (pending, accepted or rejected) AND
+    // - For PENDING: always show (even if field has value)
+    // - For ACCEPTED: show if current value equals accepted (not manually edited)
+    // - For REJECTED: show to allow revert
   const shouldShowSuggestion = aiSuggestion && (
-    // Sempre mostrar sugestões pendentes
+      // Always show pending suggestions
     aiSuggestion.status === 'pending' ||
-    // Mostrar aceitas se o valor ainda é igual (não foi editado manualmente)
+    // Show accepted if value is still equal (not manually edited)
     (aiSuggestion.status === 'accepted' && !hasManualValue) ||
-    // Mostrar rejeitadas para permitir reverter
+    // Show rejected to allow revert
     aiSuggestion.status === 'rejected'
   );
 
@@ -389,7 +393,7 @@ export function FieldInput(props: FieldInputProps) {
       
       {/* Coluna direita: Input */}
               <div className="space-y-2 min-w-0">
-        {/* Badges de colaboração - apenas no modo comparação */}
+                  {/* Collaboration badges - only in comparison mode */}
         {viewMode === 'compare' && otherExtractions && otherExtractions.length > 0 && (
           <div className="flex items-center gap-2 mb-2">
             <OtherExtractionsPopover
@@ -403,14 +407,14 @@ export function FieldInput(props: FieldInputProps) {
           </div>
         )}
 
-        {/* Input com badge + histórico ao lado direito */}
+                  {/* Input with badge + history on the right */}
         <div className="flex items-center gap-2 min-w-0">
           <div className="flex-1 min-w-0 overflow-hidden">
             {renderInput()}
           </div>
           
           <div className="flex items-center gap-1 shrink-0">
-            {/* Badge + Info sempre visíveis ao lado direito do input (se houver sugestão pendente ou aceita) */}
+              {/* Badge + Info always visible on the right of input (if pending or accepted suggestion) */}
           {aiSuggestion && 
            (aiSuggestion.status === 'pending' || aiSuggestion.status === 'accepted') && (
             <AISuggestionBadge
@@ -418,7 +422,7 @@ export function FieldInput(props: FieldInputProps) {
             />
           )}
 
-            {/* Botão de Histórico - sempre visível se houver função getHistory */}
+              {/* History button - always visible if getHistory is provided */}
             {getSuggestionsHistory && aiSuggestion && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -436,7 +440,7 @@ export function FieldInput(props: FieldInputProps) {
                             "h-7 w-7",
                             "text-muted-foreground hover:text-foreground hover:bg-muted"
                           )}
-                          title="Histórico de sugestões"
+                          title={t('extraction', 'historySuggestionsAria')}
                         >
                           <History className="h-4 w-4" />
                         </Button>
@@ -445,14 +449,14 @@ export function FieldInput(props: FieldInputProps) {
                   </div>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Histórico de sugestões</p>
+                    <p>Suggestion history</p>
                 </TooltipContent>
               </Tooltip>
             )}
           </div>
         </div>
 
-        {/* Valor sugerido + botões aceitar/rejeitar abaixo do input - apenas se não há valor manual (Opção F) */}
+                  {/* Suggested value + accept/reject buttons below input - only when no manual value */}
         {shouldShowSuggestion && (
           <AISuggestionDisplay
             suggestion={aiSuggestion}
@@ -478,13 +482,13 @@ export function FieldInput(props: FieldInputProps) {
 }
 
 /**
- * Exporta versão memoizada para evitar re-renders desnecessários
- * 
- * Performance crítica: Só re-renderiza se valor DESTE campo específico mudou
+ * Exports memoized version to avoid unnecessary re-renders
+ *
+ * Performance-critical: Only re-renders when THIS field's value changed
  * Soluciona bug de input perdendo foco a cada caractere
  */
 export default memo(FieldInput, (prevProps, nextProps) => {
-  // Comparação otimizada: apenas props que afetam ESTE campo
+    // Optimized comparison: only props that affect THIS field
   const aiSuggestionChanged = prevProps.aiSuggestion?.id !== nextProps.aiSuggestion?.id ||
                                 prevProps.aiSuggestion?.status !== nextProps.aiSuggestion?.status;
   
@@ -494,7 +498,7 @@ export default memo(FieldInput, (prevProps, nextProps) => {
     prevProps.value === nextProps.value &&
     prevProps.disabled === nextProps.disabled &&
     prevProps.viewMode === nextProps.viewMode &&
-    !aiSuggestionChanged // Re-renderizar se sugestão mudar (status ou ID)
+    !aiSuggestionChanged // Re-render when suggestion changes (status or ID)
   );
 });
 

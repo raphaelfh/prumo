@@ -1,11 +1,11 @@
 /**
- * Accordion de Domínio de Assessment
+ * Assessment domain accordion
  *
- * Componente que renderiza um domínio do instrumento de avaliação com seus items.
- * Calcula progresso do domínio e exibe items de forma organizada.
+ * Renders a domain of the assessment instrument with its items.
+ * Calculates domain progress and displays items in an organized way.
  *
- * Atualizado para usar os novos hooks e tipos (DRY + KISS)
- * Baseado em SectionAccordion.tsx do módulo de extração
+ * Updated to use new hooks and types (DRY + KISS)
+ * Based on SectionAccordion.tsx from the extraction module
  *
  * @component
  */
@@ -28,6 +28,7 @@ import type {
   AIAssessmentSuggestionHistoryItem,
 } from '@/types/assessment';
 import { calculateAssessmentProgress, getAssessmentSuggestionKey } from '@/lib/assessment-utils';
+import {t} from '@/lib/copy';
 
 // =================== INTERFACES ===================
 
@@ -64,7 +65,7 @@ export function DomainAccordion(props: DomainAccordionProps) {
     disabled,
   } = props;
 
-  // Ref para o trigger do accordion
+    // Ref for accordion trigger
   const triggerRef = useRef<HTMLButtonElement>(null);
 
   const handleChevronClick = (e: MouseEvent) => {
@@ -72,21 +73,21 @@ export function DomainAccordion(props: DomainAccordionProps) {
     triggerRef.current?.click();
   };
 
-  // Calcular progresso deste domínio
+    // Calculate progress for this domain
   const progress = calculateAssessmentProgress(items, responses);
   const totalRequired = progress.totalRequired;
   const completedRequired = progress.completedRequired;
   const isComplete = progress.isComplete;
   const progressPercentage = progress.progressPercentage;
 
-  // Determinar cor da borda esquerda baseada no status
+    // Determine left border color based on status
   const borderColor = isComplete
     ? 'border-l-green-500'
     : completedRequired > 0
     ? 'border-l-blue-500'
     : 'border-l-slate-300';
 
-  // Gerar ID único para o accordion
+    // Generate unique ID for accordion
   const accordionId = `domain-${domainName.toLowerCase().replace(/\s+/g, '-')}`;
 
   return (
@@ -106,7 +107,7 @@ export function DomainAccordion(props: DomainAccordionProps) {
                   'flex flex-1 items-center justify-between py-4 font-medium transition-all hover:no-underline'
                 )}
               >
-                {/* Título à esquerda */}
+                  {/* Title on the left */}
                 <div className="flex items-center gap-3">
                   <h3 className="font-semibold text-base">{domainName}</h3>
                   <Badge variant="outline" className="text-xs">
@@ -114,7 +115,7 @@ export function DomainAccordion(props: DomainAccordionProps) {
                   </Badge>
                 </div>
 
-                {/* Progresso à direita */}
+                  {/* Progress on the right */}
                 <div className="flex items-center gap-3 text-sm text-muted-foreground">
                   <span className="font-medium">
                     {completedRequired}/{totalRequired}
@@ -124,7 +125,7 @@ export function DomainAccordion(props: DomainAccordionProps) {
               </AccordionPrimitive.Trigger>
             </AccordionPrimitive.Header>
 
-            {/* Chevron manualmente posicionado */}
+              {/* Manually positioned chevron */}
             <button
               type="button"
               onClick={handleChevronClick}
@@ -140,7 +141,7 @@ export function DomainAccordion(props: DomainAccordionProps) {
           <div className="divide-y divide-slate-100">
             {items.length === 0 ? (
               <div className="text-center py-8">
-                <p className="text-muted-foreground">Nenhum item neste domínio</p>
+                  <p className="text-muted-foreground">{t('assessment', 'noItemsInDomain')}</p>
               </div>
             ) : (
               items.map((item) => (

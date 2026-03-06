@@ -11,6 +11,7 @@ import {Badge} from '@/components/ui/badge';
 import {Button} from '@/components/ui/button';
 import {Tooltip, TooltipContent, TooltipTrigger,} from '@/components/ui/tooltip';
 import {Brain, CheckCheck, Loader2, Sparkles} from 'lucide-react';
+import {t} from '@/lib/copy';
 import type {AIAssessmentSuggestion} from '@/types/assessment';
 import type {BatchAssessmentProgress} from '@/hooks/assessment/ai/useBatchAssessment';
 
@@ -89,8 +90,8 @@ export function AssessmentHeaderAIActions({
           <TooltipContent>
             {pendingCount}{' '}
             {pendingCount === 1
-              ? 'sugestão de IA pendente'
-              : 'sugestões de IA pendentes'}
+                ? t('assessment', 'aiSuggestionPendingSingle')
+                : t('assessment', 'aiSuggestionPendingPlural')}
           </TooltipContent>
         </Tooltip>
       )}

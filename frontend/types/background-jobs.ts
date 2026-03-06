@@ -1,18 +1,18 @@
 /**
- * Types para Background Jobs (tarefas em background)
- * 
- * Sistema para gerenciar tarefas de longa duração que rodam em background,
- * permitindo o usuário continuar usando a aplicação enquanto elas executam.
+ * Types for background jobs
+ *
+ * System for managing long-running tasks in the background,
+ * allowing the user to keep using the app while they run.
  */
 
 export type JobType = 'zotero-import';
 
-export type JobStatus = 
-  | 'pending'      // Aguardando início
-  | 'running'      // Em execução
-  | 'completed'    // Concluída com sucesso
-  | 'failed'       // Falhou com erro
-  | 'cancelled';   // Cancelada pelo usuário
+export type JobStatus =
+    | 'pending'      // Waiting to start
+    | 'running'      // Running
+    | 'completed'    // Completed successfully
+    | 'failed'       // Failed with error
+    | 'cancelled';   // Cancelled by user
 
 export interface JobProgress {
   phase: string;
@@ -31,7 +31,7 @@ export interface JobStats {
 }
 
 /**
- * Background Job genérico
+ * Generic background job
  */
 export interface BackgroundJob {
   id: string;
@@ -47,7 +47,7 @@ export interface BackgroundJob {
 }
 
 /**
- * Importação do Zotero específica
+ * Zotero import specific
  */
 export interface ZoteroImportJob extends BackgroundJob {
   type: 'zotero-import';
@@ -66,7 +66,7 @@ export interface ZoteroImportJob extends BackgroundJob {
 }
 
 /**
- * Helper para criar novo job
+ * Helper to create a new job
  */
 export function createZoteroImportJob(
   projectId: string,

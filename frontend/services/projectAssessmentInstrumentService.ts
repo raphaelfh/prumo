@@ -2,7 +2,7 @@
  * Project Assessment Instrument Service
  *
  * Gerencia instrumentos de avaliacao por projeto.
- * Permite clonar instrumentos globais (PROBAST, ROBIS) ou criar customizados.
+ * Clone global instruments (PROBAST, ROBIS) or create custom ones.
  *
  * Usa apiClient centralizado para:
  * - Autenticacao automatica via JWT do Supabase
@@ -181,7 +181,7 @@ export async function getInstrumentByType(
   return instruments.find((i) => i.toolType === toolType) || null;
 }
 
-// Re-exportar como namespace para compatibilidade
+// Re-export as namespace for compatibility
 export const projectAssessmentInstrumentService = {
   listGlobalInstruments,
   listProjectInstruments,

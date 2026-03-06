@@ -1,11 +1,11 @@
 /**
- * pdfSearchService - Serviço de busca em documentos PDF
- * 
- * Funcionalidades:
- * - Extração de texto de páginas PDF usando PDF.js
- * - Busca com suporte a case sensitive, palavras inteiras e regex
- * - Cache de texto extraído para performance
- * - Extração de contexto ao redor dos matches
+ * pdfSearchService - PDF document search service
+ *
+ * Features:
+ * - Extract text from PDF pages using PDF.js
+ * - Search with case sensitive, whole words and regex support
+ * - Cache extracted text for performance
+ * - Extract context around matches
  */
 
 import type {PDFDocumentProxy, PDFPageProxy} from 'pdfjs-dist';
@@ -29,21 +29,21 @@ export interface SearchResult {
   context: string;
 }
 
-// Cache de texto extraído (página -> texto)
+// Cache of extracted text (page -> text)
 const textCache = new Map<string, string>();
-const MAX_CACHE_SIZE = 20; // Limitar cache a 20 páginas
+const MAX_CACHE_SIZE = 20; // Limit cache to 20 pages
 
 /**
- * Gera chave única para cache baseada no documento e página
+ * Generates unique cache key from document and page
  */
 function getCacheKey(doc: PDFDocumentProxy, pageNumber: number): string {
-  // Usar fingerprint do PDF + número da página
+    // Use PDF fingerprint + page number
   const fingerprint = (doc as any).fingerprint || doc.loadingTask?.docId || 'unknown';
   return `${fingerprint}-${pageNumber}`;
 }
 
 /**
- * Limpa cache se exceder tamanho máximo (FIFO)
+ * Trims cache when it exceeds max size (FIFO)
  */
 function trimCache() {
   if (textCache.size > MAX_CACHE_SIZE) {
@@ -55,7 +55,7 @@ function trimCache() {
 }
 
 /**
- * Extrai texto de uma página PDF
+ * Extracts text from a PDF page
  */
 export async function extractTextFromPage(page: PDFPageProxy): Promise<string> {
   try {
@@ -65,13 +65,13 @@ export async function extractTextFromPage(page: PDFPageProxy): Promise<string> {
       .join(' ');
     return text;
   } catch (error) {
-    console.error('❌ Erro ao extrair texto da página:', error);
+      console.error('Error extracting page text:', error);
     return '';
   }
 }
 
 /**
- * Busca matches de um query em um texto
+ * Searches for query matches in text
  */
 export function searchInText(
   text: string,
@@ -87,13 +87,13 @@ export function searchInText(
     let pattern: RegExp;
 
     if (useRegex) {
-      // Modo regex: usar query diretamente
+        // Regex mode: use query directly
       pattern = new RegExp(query, caseSensitive ? 'g' : 'gi');
     } else {
-      // Escape caracteres especiais de regex
+        // Escape regex special characters
       let escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      
-      // Adicionar word boundaries se wholeWords ativo
+
+        // Add word boundaries if wholeWords is on
       if (wholeWords) {
         escapedQuery = `\\b${escapedQuery}\\b`;
       }
@@ -108,29 +108,29 @@ export function searchInText(
         end: match.index + match[0].length,
         text: match[0],
       });
-      
-      // Evitar loop infinito com matches de comprimento zero
+
+        // Avoid infinite loop with zero-length matches
       if (match[0].length === 0) {
         pattern.lastIndex++;
       }
     }
   } catch (error) {
-    console.error('❌ Erro ao buscar no texto (regex inválida?):', error);
+      console.error('Search error in text (invalid regex?):', error);
   }
 
   return matches;
 }
 
 /**
- * Extrai contexto ao redor de um match
+ * Extracts context around a match
  */
 function extractContext(text: string, match: SearchMatch, contextLength = 50): string {
   const start = Math.max(0, match.start - contextLength);
   const end = Math.min(text.length, match.end + contextLength);
   
   let context = text.substring(start, end);
-  
-  // Adicionar reticências se truncado
+
+    // Add ellipsis if truncated
   if (start > 0) context = '...' + context;
   if (end < text.length) context = context + '...';
   
@@ -138,7 +138,7 @@ function extractContext(text: string, match: SearchMatch, contextLength = 50): s
 }
 
 /**
- * Busca em todo o documento PDF
+ * Searches the entire PDF document
  */
 export async function searchInDocument(
   doc: PDFDocumentProxy,
@@ -154,27 +154,27 @@ export async function searchInDocument(
 
   for (let pageNum = 1; pageNum <= numPages; pageNum++) {
     try {
-      // Verificar cache primeiro
+        // Check cache first
       const cacheKey = getCacheKey(doc, pageNum);
       let pageText: string;
 
       if (textCache.has(cacheKey)) {
         pageText = textCache.get(cacheKey)!;
       } else {
-        // Extrair texto da página
+          // Extract text from page
         const page = await doc.getPage(pageNum);
         pageText = await extractTextFromPage(page);
-        
-        // Salvar no cache
+
+          // Save to cache
         textCache.set(cacheKey, pageText);
         trimCache();
       }
 
-      // Buscar matches na página
+        // Search for matches on page
       const matches = searchInText(pageText, query, options);
 
       if (matches.length > 0) {
-        // Pegar contexto do primeiro match (para preview)
+          // Get context from first match (for preview)
         const context = extractContext(pageText, matches[0]);
         
         results.push({
@@ -185,12 +185,12 @@ export async function searchInDocument(
         });
       }
 
-      // Notificar progresso
+        // Notify progress
       if (onProgress) {
         onProgress(pageNum, numPages);
       }
     } catch (error) {
-      console.error(`❌ Erro ao buscar na página ${pageNum}:`, error);
+        console.error(`Search error on page ${pageNum}:`, error);
     }
   }
 
@@ -198,7 +198,7 @@ export async function searchInDocument(
 }
 
 /**
- * Limpa cache de texto (útil ao trocar de documento)
+ * Clears text cache (useful when switching document)
  */
 export function clearTextCache() {
   textCache.clear();

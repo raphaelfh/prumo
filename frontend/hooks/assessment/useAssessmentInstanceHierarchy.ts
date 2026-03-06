@@ -1,17 +1,18 @@
 /**
- * Hook para gerenciar hierarquia de assessment instances
+ * Hook to manage assessment instance hierarchy
  *
- * Constrói árvore hierárquica de instances (root → children)
- * útil para casos como:
+ * Builds hierarchical tree of instances (root → children)
+ * Useful for cases like:
  * - PROBAST root → Domain instances
- * - Assessment geral → Sub-assessments por seção
+ * - General assessment → Sub-assessments per section
  *
- * Análogo a useEntityHierarchy de extraction.
+ * Analogous to useEntityHierarchy in extraction.
  */
 
 import {useCallback, useEffect, useMemo, useState} from 'react';
 import {supabase} from '@/integrations/supabase/client';
 import {AssessmentInstance, AssessmentInstanceHierarchy, AssessmentInstanceProgress,} from '@/types/assessment';
+import {t} from '@/lib/copy';
 
 interface UseAssessmentInstanceHierarchyProps {
   projectId: string;
@@ -30,7 +31,7 @@ export function useAssessmentInstanceHierarchy({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Carregar todas as instances
+    // Load all instances
   const loadInstances = useCallback(async () => {
     if (!enabled || !projectId) {
       setInstances([]);
@@ -62,20 +63,20 @@ export function useAssessmentInstanceHierarchy({
 
       setInstances(data || []);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Erro ao carregar instances';
-      console.error('Erro ao carregar instances:', err);
+        const message = err instanceof Error ? err.message : t('assessment', 'errors_loadAssessment');
+        console.error('Error loading instances:', err);
       setError(message);
     } finally {
       setLoading(false);
     }
   }, [enabled, projectId, articleId, instrumentId]);
 
-  // Carregar dados iniciais
+    // Load initial data
   useEffect(() => {
     loadInstances();
   }, [loadInstances]);
 
-  // Buscar children de uma instance usando função SQL
+    // Fetch children of an instance using SQL function
   const getChildren = useCallback(async (
     parentInstanceId: string
   ): Promise<AssessmentInstance[]> => {
@@ -89,12 +90,12 @@ export function useAssessmentInstanceHierarchy({
 
       return data || [];
     } catch (err: unknown) {
-      console.error('Erro ao buscar children:', err);
+        console.error('Error fetching children:', err);
       return [];
     }
   }, []);
 
-  // Calcular progresso de uma instance
+    // Calculate progress for an instance
   const calculateProgress = useCallback(async (
     instanceId: string
   ): Promise<AssessmentInstanceProgress> => {
@@ -120,7 +121,7 @@ export function useAssessmentInstanceHierarchy({
         completion_percentage: 0,
       };
     } catch (err: unknown) {
-      console.error('Erro ao calcular progresso:', err);
+        console.error('Error calculating progress:', err);
       return {
         total_items: 0,
         answered_items: 0,
@@ -129,16 +130,16 @@ export function useAssessmentInstanceHierarchy({
     }
   }, []);
 
-  // Construir hierarquia recursiva
+    // Build recursive hierarchy
   const buildHierarchy = useCallback(async (
     parentId: string | null = null
   ): Promise<AssessmentInstanceHierarchy[]> => {
-    // Filtrar instances deste nível
+      // Filter instances at this level
     const currentLevelInstances = instances.filter(
       inst => inst.parent_instance_id === parentId
     );
 
-    // Construir hierarquia para cada instance
+      // Build hierarchy for each instance
     const hierarchies = await Promise.all(
       currentLevelInstances.map(async (instance) => {
         const children = await buildHierarchy(instance.id);
@@ -155,17 +156,17 @@ export function useAssessmentInstanceHierarchy({
     return hierarchies;
   }, [instances, calculateProgress]);
 
-  // Memoizar root instances
+    // Memoize root instances
   const rootInstances = useMemo(() => {
     return instances.filter(inst => inst.parent_instance_id === null);
   }, [instances]);
 
-  // Memoizar hierarquia completa (chamada lazy para evitar loops)
+    // Memoize full hierarchy (lazy call to avoid loops)
   const getFullHierarchy = useCallback(async (): Promise<AssessmentInstanceHierarchy[]> => {
     return buildHierarchy(null);
   }, [buildHierarchy]);
 
-  // Buscar path de uma instance (root → ... → instance)
+    // Get path of an instance (root → ... → instance)
   const getInstancePath = useCallback((instanceId: string): AssessmentInstance[] => {
     const path: AssessmentInstance[] = [];
     let currentId: string | null = instanceId;
@@ -174,14 +175,14 @@ export function useAssessmentInstanceHierarchy({
       const instance = instances.find(inst => inst.id === currentId);
       if (!instance) break;
 
-      path.unshift(instance); // Adicionar no início
+        path.unshift(instance); // Add at beginning
       currentId = instance.parent_instance_id;
     }
 
     return path;
   }, [instances]);
 
-  // Verificar se instance é descendente de outra
+    // Check if instance is descendant of another
   const isDescendantOf = useCallback((
     instanceId: string,
     ancestorId: string

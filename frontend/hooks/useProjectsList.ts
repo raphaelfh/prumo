@@ -1,12 +1,13 @@
 /**
- * Hook para gerenciar lista de projetos
- * Reutilizável entre sidebar desktop e mobile
+ * Hook to manage project list
+ * Reusable between desktop and mobile sidebar
  */
 
 import {useCallback, useEffect, useState} from 'react';
 import {useNavigate} from 'react-router-dom';
 import {supabase} from '@/integrations/supabase/client';
 import {toast} from 'sonner';
+import {t} from '@/lib/copy';
 import type {ProjectListItem} from '@/types/project';
 
 export const useProjectsList = () => {
@@ -25,7 +26,7 @@ export const useProjectsList = () => {
       if (error) throw error;
       setProjects(data || []);
     } catch (error: any) {
-      toast.error("Erro ao carregar projetos");
+        toast.error(t('pages', 'dashboardCouldNotLoadProjects'));
       console.error(error);
     } finally {
       setLoading(false);

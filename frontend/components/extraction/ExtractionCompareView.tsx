@@ -1,10 +1,11 @@
 /**
- * View de Comparação de Extrações
+ * Extraction comparison view
  * 
  * Renderiza seções no modo comparação usando ComparisonSectionView.
  * Cada seção decide automaticamente sua estratégia (simple vs entity-selector).
  */
 
+import {t} from '@/lib/copy';
 import type {ComparisonUser} from '@/components/shared/comparison';
 import {ComparisonSectionView} from '@/components/shared/comparison';
 import {Separator} from '@/components/ui/separator';
@@ -25,7 +26,7 @@ export interface ExtractionCompareViewProps {
 }
 
 export function ExtractionCompareView(props: ExtractionCompareViewProps) {
-  // Buscar instances de TODOS os usuários
+    // Fetch instances for ALL users
   const { instances: allUserInstances, loading: instancesLoading } = useAllUserInstances({
     articleId: props.instances[0]?.article_id || '',
     enabled: props.instances.length > 0
@@ -36,7 +37,7 @@ export function ExtractionCompareView(props: ExtractionCompareViewProps) {
       <div className="flex items-center justify-center py-8">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Carregando comparação...</p>
+            <p className="text-muted-foreground">{t('extraction', 'loadingComparison')}</p>
         </div>
       </div>
     );
@@ -59,7 +60,7 @@ export function ExtractionCompareView(props: ExtractionCompareViewProps) {
               instances={typeInstances}
               myValues={props.values}
               otherExtractions={props.otherExtractions}
-              allUserInstances={allUserInstances} // NOVO: instances de todos os usuários
+              allUserInstances={allUserInstances} // Instances from all users
               currentUser={props.currentUser}
               onValueUpdate={props.updateValue}
               editable={props.editable}
@@ -84,7 +85,7 @@ export function ExtractionCompareView(props: ExtractionCompareViewProps) {
               )}
               myValues={props.values}
               otherExtractions={props.otherExtractions}
-              allUserInstances={allUserInstances} // NOVO: instances de todos os usuários
+              allUserInstances={allUserInstances} // Instances from all users
               currentUser={props.currentUser}
               onValueUpdate={props.updateValue}
               editable={props.editable}
@@ -106,7 +107,7 @@ export function ExtractionCompareView(props: ExtractionCompareViewProps) {
                   instances={childInstances}
                   myValues={props.values}
                   otherExtractions={props.otherExtractions}
-                  allUserInstances={allUserInstances} // NOVO: instances de todos os usuários
+                  allUserInstances={allUserInstances} // Instances from all users
                   currentUser={props.currentUser}
                   onValueUpdate={props.updateValue}
                   editable={props.editable}

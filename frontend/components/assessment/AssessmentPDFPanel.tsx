@@ -1,10 +1,10 @@
 /**
- * Painel de PDF para Assessment (Avaliação de Qualidade)
+ * PDF panel for Assessment (Quality Assessment)
  *
- * Componente isolado que gerencia o PDF viewer na interface de assessment.
- * Extraído do AssessmentFullScreen para modularidade e reutilização (SRP).
+ * Isolated component that manages the PDF viewer in the assessment interface.
+ * Extracted from AssessmentFullScreen for modularity and reuse (SRP).
  *
- * Baseado em ExtractionPDFPanel.tsx (DRY + KISS)
+ * Based on ExtractionPDFPanel.tsx (DRY + KISS)
  *
  * @component
  */
@@ -24,7 +24,7 @@ export interface AssessmentPDFPanelProps {
 // =================== COMPONENT ===================
 
 /**
- * Painel de PDF memoizado para evitar re-renders desnecessários
+ * Memoized PDF panel to avoid unnecessary re-renders
  */
 function AssessmentPDFPanelComponent({
   articleId,
@@ -45,7 +45,7 @@ function AssessmentPDFPanelComponent({
   );
 }
 
-// Memoizar para evitar re-renders quando props não mudam
+// Memoize to avoid re-renders when props don't change
 export const AssessmentPDFPanel = memo(
   AssessmentPDFPanelComponent,
   (prevProps, nextProps) => {

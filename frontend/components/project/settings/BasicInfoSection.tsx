@@ -1,126 +1,82 @@
 /**
- * Seção de Informações Básicas do Projeto
- * Nome, descrição e tipo de revisão
+ * Basic project info section — name, description, review type.
  */
 
-import {Input} from "@/components/ui/input";
-import {Label} from "@/components/ui/label";
-import {Textarea} from "@/components/ui/textarea";
-import {Card, CardContent, CardDescription, CardHeader, CardTitle} from "@/components/ui/card";
-import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/components/ui/select";
-import {Badge} from "@/components/ui/badge";
-
-type ReviewType = 'interventional' | 'predictive_model' | 'diagnostic' | 'prognostic' | 'qualitative' | 'other';
-
-interface Project {
-  name: string;
-  description: string | null;
-  review_type?: ReviewType | null;
-}
+import {Input} from '@/components/ui/input';
+import {Textarea} from '@/components/ui/textarea';
+import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '@/components/ui/select';
+import {Badge} from '@/components/ui/badge';
+import {SettingsSection, SettingsField, SettingsCard} from '@/components/settings';
+import type {Project, ReviewType} from '@/types/project';
+import {REVIEW_TYPES} from '@/types/project';
+import {t} from '@/lib/copy';
 
 interface BasicInfoSectionProps {
-  project: Project;
-  onChange: (updates: Partial<Project>) => void;
+    project: Pick<Project, 'name' | 'description' | 'review_type'>;
+    onChange: (updates: Partial<Pick<Project, 'name' | 'description' | 'review_type'>>) => void;
 }
 
-const REVIEW_TYPES: Record<ReviewType, { label: string; description: string; badge?: string }> = {
-  interventional: {
-    label: 'Intervenções',
-    description: 'Revisão de efetividade de intervenções (PICO clássico)',
-  },
-  predictive_model: {
-    label: 'Modelos Preditivos',
-    description: 'Revisão de modelos preditivos e prognósticos (PICOTS)',
-    badge: 'PICOTS'
-  },
-  diagnostic: {
-    label: 'Testes Diagnósticos',
-    description: 'Revisão de acurácia de testes diagnósticos',
-  },
-  prognostic: {
-    label: 'Fatores Prognósticos',
-    description: 'Revisão de fatores associados a prognóstico',
-  },
-  qualitative: {
-    label: 'Estudos Qualitativos',
-    description: 'Síntese de evidências qualitativas',
-  },
-  other: {
-    label: 'Outro',
-    description: 'Outros tipos de revisão sistemática',
-  },
-};
-
 export function BasicInfoSection({ project, onChange }: BasicInfoSectionProps) {
-  const currentReviewType = project.review_type || 'interventional';
+    const currentReviewType = (project.review_type || 'interventional') as ReviewType;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold mb-2">Informações Básicas</h2>
-        <p className="text-sm text-muted-foreground">
-          Identifique seu projeto com um nome claro e defina o tipo de revisão.
-        </p>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Identificação do Projeto</CardTitle>
-          <CardDescription>
-            Estas informações ajudam você e sua equipe a identificar o projeto.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="space-y-2">
-            <Label htmlFor="name">
-              Nome do Projeto <span className="text-destructive">*</span>
-            </Label>
+      <SettingsSection
+          title={t('project', 'basicSectionTitle')}
+          description={t('project', 'basicSectionDesc')}
+      >
+          <SettingsCard
+              title={t('project', 'basicCardIdentification')}
+              description={t('project', 'basicCardIdentificationDesc')}
+          >
+              <div className="space-y-4">
+                  <SettingsField
+                      label={t('project', 'basicProjectNameLabel')}
+                      htmlFor="name"
+                      required
+                      hint={t('project', 'basicProjectNameHint')}
+                  >
             <Input
               id="name"
               value={project.name}
               onChange={(e) => onChange({ name: e.target.value })}
-              placeholder="Ex: Revisão Sistemática - Diabetes Tipo 2"
+              placeholder={t('project', 'basicProjectNamePlaceholder')}
               required
-              className="max-w-2xl"
+              className="max-w-2xl text-[13px] h-9"
             />
-            <p className="text-xs text-muted-foreground">
-              Um nome curto e descritivo para identificar seu projeto.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="description">Descrição</Label>
+                  </SettingsField>
+                  <SettingsField
+                      label={t('project', 'basicDescriptionLabel')}
+                      htmlFor="description"
+                      hint={t('project', 'basicDescriptionHint')}
+                  >
             <Textarea
               id="description"
-              value={project.description || ""}
+              value={project.description ?? ''}
               onChange={(e) => onChange({ description: e.target.value })}
-              placeholder="Descreva brevemente os objetivos e escopo desta revisão sistemática..."
+              placeholder={t('project', 'basicDescriptionPlaceholder')}
               rows={4}
-              className="resize-none"
+              className="resize-none text-[13px]"
             />
-            <p className="text-xs text-muted-foreground">
-              Uma visão geral opcional do que este projeto abrange.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+                  </SettingsField>
+              </div>
+          </SettingsCard>
 
-      {/* Tipo de Revisão */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Tipo de Revisão</CardTitle>
-          <CardDescription>
-            Selecione o tipo de revisão sistemática para habilitar recursos específicos.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="review_type">Tipo de Revisão <span className="text-destructive">*</span></Label>
+          <SettingsCard
+              title={t('project', 'basicReviewTypeCardTitle')}
+              description={t('project', 'basicReviewTypeCardDesc')}
+          >
+              <div className="space-y-4">
+                  <SettingsField
+                      label={t('project', 'basicReviewTypeLabel')}
+                      htmlFor="review_type"
+                      required
+                      hint={REVIEW_TYPES[currentReviewType].description}
+                  >
             <Select
               value={currentReviewType}
               onValueChange={(value: ReviewType) => onChange({ review_type: value })}
             >
-              <SelectTrigger id="review_type" className="max-w-md">
+                <SelectTrigger id="review_type" className="max-w-md h-9 text-[13px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -129,7 +85,7 @@ export function BasicInfoSection({ project, onChange }: BasicInfoSectionProps) {
                     <div className="flex items-center gap-2">
                       <span>{REVIEW_TYPES[type].label}</span>
                       {REVIEW_TYPES[type].badge && (
-                        <Badge variant="secondary" className="text-xs">
+                          <Badge variant="secondary" className="text-[11px]">
                           {REVIEW_TYPES[type].badge}
                         </Badge>
                       )}
@@ -138,29 +94,23 @@ export function BasicInfoSection({ project, onChange }: BasicInfoSectionProps) {
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">
-              {REVIEW_TYPES[currentReviewType].description}
-            </p>
-          </div>
+                  </SettingsField>
 
           {currentReviewType === 'predictive_model' && (
-            <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
-              <div className="flex items-start gap-3">
-                <Badge variant="default">PICOTS</Badge>
+              <div className="rounded-md border border-primary/20 bg-primary/5 p-3">
+                  <div className="flex items-start gap-2">
+                      <Badge variant="default" className="text-[11px]">PICOTS</Badge>
                 <div className="flex-1">
-                  <p className="text-sm font-medium mb-1">Framework PICOTS Habilitado</p>
-                  <p className="text-xs text-muted-foreground">
-                    A seção de Detalhes da Revisão incluirá o framework PICOTS completo com 
-                    critérios de inclusão/exclusão para cada componente (População, Índice, 
-                    Comparador, Outcomes, Timing, Setting).
+                    <p className="text-[13px] font-medium mb-0.5">{t('project', 'basicPicotsEnabledTitle')}</p>
+                    <p className="text-[12px] text-muted-foreground/70">
+                        {t('project', 'basicPicotsEnabledDesc')}
                   </p>
                 </div>
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
-    </div>
+              </div>
+          </SettingsCard>
+      </SettingsSection>
   );
 }
-

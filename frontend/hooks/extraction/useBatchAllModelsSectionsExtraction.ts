@@ -1,27 +1,28 @@
 /**
- * Hook para Extração de Seções de Todos os Modelos Existentes
- * 
- * Hook React para gerenciar extração de IA de todas as seções de todos os modelos
- * já existentes, usando chunking para evitar timeout.
- * 
- * FOCO: Iterar sobre modelos existentes e extrair seções de cada um usando chunking.
- * Não extrai modelos novos - apenas processa modelos já existentes.
- * 
+ * Hook for extracting sections from all existing models
+ *
+ * React hook to manage AI extraction of all sections from all existing models,
+ * using chunking to avoid timeout.
+ *
+ * FOCUS: Iterate over existing models and extract sections from each using chunking.
+ * Does not extract new models - only processes existing models.
+ *
  * FEATURES:
- * - Itera sobre modelos existentes
- * - Para cada modelo, extrai todas as seções usando chunking
- * - Progresso agregado (modelos + seções do modelo atual)
- * - Tratamento de erros (pula modelos que falharam)
+ * - Iterates over existing models
+ * - For each model, extracts all sections using chunking
+ * - Aggregated progress (models + current model sections)
+ * - Error handling (skips failed models)
  */
 
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
+import {t} from "@/lib/copy";
 import { getModelChildSections } from "./helpers/getModelChildSections";
 import { processSectionsInChunks } from "./helpers/processSectionsInChunks";
 import type { ExtractionProgress } from "./useBatchSectionExtractionChunked";
 
 /**
- * Progresso da extração de seções de todos os modelos
+ * Progress of extracting sections from all models
  */
 export interface AllModelsSectionsProgress {
   currentModel: number;
@@ -46,14 +47,14 @@ export interface UseBatchAllModelsSectionsExtractionReturn {
 }
 
 /**
- * Hook para extração de seções de todos os modelos existentes
- * 
- * USO:
+ * Hook for extracting sections from all existing models
+ *
+ * USAGE:
  * ```tsx
  * const { extractAllSectionsForAllModels, loading, progress } = useBatchAllModelsSectionsExtraction({
- *   onProgress: (p) => console.log('Progresso:', p),
+ *   onProgress: (p) => console.log('Progress:', p),
  *   onSuccess: (result) => {
- *     // Refresh sugestões
+ *     // Refresh suggestions
  *   }
  * });
  * 
@@ -64,9 +65,9 @@ export interface UseBatchAllModelsSectionsExtractionReturn {
  *   models: [{ instanceId: '...', modelName: 'CatBoost' }, ...]
  * });
  * ```
- * 
- * @param options - Opções do hook
- * @returns Função de extração, estado de loading, error e progresso
+ *
+ * @param options - Hook options
+ * @returns Extract function, loading state, error and progress
  */
 export function useBatchAllModelsSectionsExtraction(options?: {
   onProgress?: (progress: AllModelsSectionsProgress) => void;
@@ -76,12 +77,11 @@ export function useBatchAllModelsSectionsExtraction(options?: {
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<AllModelsSectionsProgress | null>(null);
 
-  const chunkSize = 2; // Tamanho do chunk para seções
+    const chunkSize = 2; // Chunk size for sections
 
   /**
-   * Extrai todas as seções de todos os modelos existentes
-   * 
-   * @param params - Parâmetros da extração (projectId, articleId, templateId, models)
+   * Extracts all sections from all existing models
+   * @param params - Extraction params (projectId, articleId, templateId, models)
    */
   const extractAllSectionsForAllModels = useCallback(
     async (params: {
@@ -90,7 +90,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
       templateId: string;
       models: Array<{ instanceId: string; modelName: string }>;
     }) => {
-      console.log('[useBatchAllModelsSectionsExtraction] Iniciando extração de seções de todos os modelos', {
+        console.log('[useBatchAllModelsSectionsExtraction] Starting extraction of sections for all models', {
         totalModels: params.models.length,
       });
       setLoading(true);
@@ -101,8 +101,8 @@ export function useBatchAllModelsSectionsExtraction(options?: {
         const { projectId, articleId, templateId, models } = params;
 
         if (models.length === 0) {
-          toast.warning("Nenhum modelo encontrado", {
-            description: "Não há modelos para extrair seções. Extraia modelos primeiro.",
+            toast.warning(t('extraction', 'noModelsFoundTitle'), {
+                description: t('extraction', 'noModelsToExtractSections'),
           });
           return;
         }
@@ -117,12 +117,12 @@ export function useBatchAllModelsSectionsExtraction(options?: {
         for (let i = 0; i < models.length; i++) {
           const model = models[i];
 
-          console.log(`[useBatchAllModelsSectionsExtraction] Processando modelo ${i + 1}/${models.length}`, {
+            console.log(`[useBatchAllModelsSectionsExtraction] Processing model ${i + 1}/${models.length}`, {
             modelName: model.modelName,
             instanceId: model.instanceId,
           });
 
-          // Atualizar progresso: modelo atual
+            // Update progress: current model
           const currentProgress: AllModelsSectionsProgress = {
             currentModel: i + 1,
             totalModels: models.length,
@@ -135,20 +135,20 @@ export function useBatchAllModelsSectionsExtraction(options?: {
           }
 
           try {
-            // Extrair seções deste modelo usando chunking
-            // 1. Buscar lista de seções do modelo
+              // Extract sections from this model using chunking
+              // 1. Fetch model sections list
             const sections = await getModelChildSections(
               model.instanceId,
               templateId,
             );
 
             if (sections.length === 0) {
-              console.log(`[useBatchAllModelsSectionsExtraction] Nenhuma seção encontrada para modelo ${model.modelName}`);
-              successfulModels++; // Considerar sucesso mesmo sem seções
+                console.log(`[useBatchAllModelsSectionsExtraction] No sections found for model ${model.modelName}`);
+                successfulModels++; // Consider success even with no sections
               continue;
             }
 
-            // 2. Processar seções em chunks usando helper
+              // 2. Process sections in chunks using helper
             const modelResult = await processSectionsInChunks({
               sections,
               baseRequest: {
@@ -175,26 +175,26 @@ export function useBatchAllModelsSectionsExtraction(options?: {
             totalTokensUsed += modelResult.totalTokensUsed;
             totalDurationMs += modelResult.totalDurationMs;
 
-            // Se chegou aqui, extração foi bem-sucedida
+              // If we got here, extraction succeeded
             successfulModels++;
-            console.log(`[useBatchAllModelsSectionsExtraction] Modelo ${i + 1} concluído com sucesso`, {
+              console.log(`[useBatchAllModelsSectionsExtraction] Model ${i + 1} completed`, {
               modelName: model.modelName,
               suggestionsCreated: modelResult.totalSuggestionsCreated,
               tokensUsed: modelResult.totalTokensUsed,
             });
           } catch (modelError: any) {
-            console.error(`[useBatchAllModelsSectionsExtraction] Erro no modelo ${i + 1}:`, modelError);
-            
-            // Pular modelo que falhou (não propagar erro)
+              console.error(`[useBatchAllModelsSectionsExtraction] Error in model ${i + 1}:`, modelError);
+
+              // Skip failed model (do not propagate error)
             failedModels++;
-            
-            // Continuar com próximo modelo
+
+              // Continue with next model
 
           }
         }
 
-        // Consolidar resultados finais
-        console.log('[useBatchAllModelsSectionsExtraction] Extração concluída', {
+          // Consolidate final results
+          console.log('[useBatchAllModelsSectionsExtraction] Extraction completed', {
           totalModels: models.length,
           successfulModels,
           failedModels,
@@ -202,27 +202,33 @@ export function useBatchAllModelsSectionsExtraction(options?: {
           totalDurationMs,
         });
 
-        // Toast de sucesso com informações agregadas
+          // Success toast with aggregated info
         const durationSecs = (totalDurationMs / 1000).toFixed(1);
         if (failedModels === 0) {
           toast.success(
-            `Extração concluída! Seções extraídas de ${successfulModels} modelo(s) com sucesso.`,
+              t('extraction', 'batchAllModelsSuccessTitle').replace('{{n}}', String(successfulModels)),
             {
-              description: `${totalSuggestionsCreated} sugestão(ões) criada(s). ${totalTokensUsed} tokens usados em ${durationSecs}s`,
+                description: t('extraction', 'batchAllModelsSuccessDesc')
+                    .replace('{{suggestions}}', String(totalSuggestionsCreated))
+                    .replace('{{tokens}}', String(totalTokensUsed))
+                    .replace('{{duration}}', durationSecs),
               duration: 8000,
             },
           );
         } else {
           toast.warning(
-            `Extração parcialmente concluída: ${successfulModels}/${models.length} modelo(s) processado(s) com sucesso.`,
+              t('extraction', 'batchAllModelsPartialTitle').replace('{{success}}', String(successfulModels)).replace('{{total}}', String(models.length)),
             {
-              description: `${totalSuggestionsCreated} sugestão(ões) criada(s). ${failedModels} modelo(s) falharam. ${totalTokensUsed} tokens usados.`,
+                description: t('extraction', 'batchAllModelsPartialDesc')
+                    .replace('{{suggestions}}', String(totalSuggestionsCreated))
+                    .replace('{{failed}}', String(failedModels))
+                    .replace('{{tokens}}', String(totalTokensUsed)),
               duration: 10000,
             },
           );
         }
 
-        // Chamar callback de sucesso se fornecido
+          // Call success callback if provided
         if (options?.onSuccess) {
           Promise.resolve(
             options.onSuccess({
@@ -232,28 +238,28 @@ export function useBatchAllModelsSectionsExtraction(options?: {
               totalSuggestionsCreated,
             })
           ).catch(err => {
-            console.error('[useBatchAllModelsSectionsExtraction] Erro no callback onSuccess:', err);
+              console.error('[useBatchAllModelsSectionsExtraction] Error in onSuccess callback:', err);
           });
         }
 
-        // Limpar progresso
+          // Clear progress
         setProgress(null);
       } catch (err: any) {
-        console.error('[useBatchAllModelsSectionsExtraction] Erro capturado', {
+          console.error('[useBatchAllModelsSectionsExtraction] Caught error', {
           error: err instanceof Error ? err.message : String(err),
           name: err instanceof Error ? err.name : 'Unknown',
           stack: err instanceof Error ? err.stack : undefined,
         });
 
-        // Tratar erro de forma amigável
+          // Handle error in a user-friendly way
         const message = err instanceof Error ? err.message : String(err);
         setError(message);
 
-        toast.error(`Erro na extração de seções: ${message}`, {
+          toast.error(`${t('extraction', 'errors_sectionsExtraction')}: ${message}`, {
           duration: 8000,
         });
 
-        // Limpar progresso
+          // Clear progress
         setProgress(null);
 
         // Re-throw para permitir tratamento adicional pelo componente

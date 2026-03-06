@@ -2,6 +2,7 @@ import {useEffect, useState} from "react";
 import {supabase} from "@/integrations/supabase/client";
 import type {AssessmentInstrument, AssessmentItem} from "@/types/assessment";
 import {normalizeAssessmentItem, parseInstrumentSchema} from "@/lib/assessment-utils";
+import {t} from "@/lib/copy";
 
 export type { AssessmentInstrument, AssessmentItem } from "@/types/assessment";
 
@@ -30,7 +31,7 @@ export const useAssessmentInstruments = () => {
       })) as AssessmentInstrument[];
       setInstruments(normalized);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Erro ao carregar instrumentos";
+        const message = error instanceof Error ? error.message : t('assessment', 'instrumentErrorLoad');
       console.error("Error loading instruments:", error);
       setError(message);
     } finally {

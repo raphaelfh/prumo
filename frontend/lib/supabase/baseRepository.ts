@@ -1,25 +1,25 @@
 /**
- * Base Repository para chamadas Supabase padronizadas
- * 
- * Abstrai chamadas comuns ao Supabase, padronizando:
- * - Tratamento de erros
- * - Verificação de autenticação
- * - Logging estruturado
- * 
- * Segue princípio DRY: evita duplicação de código em services.
- * 
+ * Base repository for standardized Supabase calls
+ *
+ * Abstracts common Supabase usage, standardizing:
+ * - Error handling
+ * - Authentication checks
+ * - Structured logging
+ *
+ * Follows DRY: avoids code duplication in services.
+ *
  * @module lib/supabase/baseRepository
  */
 
 import {supabase} from '@/integrations/supabase/client';
 import type {PostgrestError} from '@supabase/supabase-js';
 
-// =================== TIPOS ===================
+// =================== TYPES ===================
 
 /**
- * Type helper para contornar tipagem estrita do Supabase em queries dinâmicas.
- * O Supabase client espera nomes literais de tabelas, mas este repository trabalha com strings dinâmicas.
- * Usamos 'as any' apenas na chamada .from() para permitir nomes dinâmicos de tabelas.
+ * Type helper to work around strict Supabase typing for dynamic queries.
+ * Supabase client expects literal table names; this repository uses dynamic strings.
+ * We use 'as any' only on .from() to allow dynamic table names.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type DynamicSupabaseTable = any;
@@ -37,7 +37,7 @@ export interface RepositoryResult<T> {
   error: PostgrestError | null;
 }
 
-// =================== ERROS ===================
+// =================== ERRORS ===================
 
 export class SupabaseRepositoryError extends Error {
   constructor(
@@ -51,7 +51,7 @@ export class SupabaseRepositoryError extends Error {
 }
 
 export class AuthenticationError extends Error {
-  constructor(message = 'Usuário não autenticado') {
+    constructor(message = 'User not authenticated') {
     super(message);
     this.name = 'AuthenticationError';
   }
@@ -60,7 +60,7 @@ export class AuthenticationError extends Error {
 // =================== HELPERS ===================
 
 /**
- * Verifica se o usuário está autenticado
+ * Ensures user is authenticated
  */
 export async function requireAuth(): Promise<string> {
   const { data: { session }, error } = await supabase.auth.getSession();
@@ -73,7 +73,7 @@ export async function requireAuth(): Promise<string> {
 }
 
 /**
- * Trata erro do Supabase de forma consistente
+ * Handles Supabase error consistently
  */
 export function handleSupabaseError(
   error: PostgrestError | null,
@@ -82,22 +82,22 @@ export function handleSupabaseError(
 ): never {
   if (!error) {
     throw new SupabaseRepositoryError(
-      customMessage || `Erro desconhecido em ${context}`
+        customMessage || `Unknown error in ${context}`
     );
   }
 
   throw new SupabaseRepositoryError(
-    customMessage || `Falha em ${context}: ${error.message}`,
+      customMessage || `Failed in ${context}: ${error.message}`,
     error,
     { code: error.code, details: error.details, hint: error.hint }
   );
 }
 
 /**
- * Query builder genérico para Supabase (retorna array)
- * 
- * NOTA: Usa type assertion devido à tipagem estrita do Supabase.
- * Para queries complexas, continue usando supabase.from() diretamente.
+ * Generic query builder for Supabase (returns array)
+ *
+ * NOTE: Uses type assertion due to strict Supabase typing.
+ * For complex queries, use supabase.from() directly.
  * 
  * @example
  * ```typescript
@@ -115,11 +115,11 @@ export async function queryBuilder<T>(
 ): Promise<RepositoryResult<T[]>> {
   const { select = '*', filters = {}, orderBy, limit, single = false } = options;
 
-  // Type assertion necessário: Supabase espera literais de tabela, mas recebemos strings dinâmicas
+    // Type assertion needed: Supabase expects table literals but we pass dynamic strings
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let query = (supabase.from(table as any) as DynamicSupabaseTable).select(select);
 
-  // Aplicar filtros
+    // Apply filters
   Object.entries(filters).forEach(([key, value]) => {
     if (value === null || value === undefined) {
       query = query.is(key, null);
@@ -130,31 +130,31 @@ export async function queryBuilder<T>(
     }
   });
 
-  // Ordenação
+    // Order
   if (orderBy) {
     query = query.order(orderBy.column, { ascending: orderBy.ascending ?? true });
   }
 
-  // Limite
+    // Limit
   if (limit) {
     query = query.limit(limit);
   }
 
-  // Executar query
-  // O objeto query após aplicar filtros já é "thenable" (pode ser await diretamente)
+    // Execute query
+    // Query object after filters is thenable (can be awaited directly)
   if (single) {
     const { data, error } = await query.single();
-    // Quando single=true, retornar como array com um elemento (ou null)
+      // When single=true, return as array with one element (or null)
     return { data: data ? [data as T] : null, error };
   }
 
-  // Para queries múltiplas, await diretamente (não chamar como função)
+    // For multiple rows, await directly (do not call as function)
   const { data, error } = await query;
   return { data: (data || []) as T[], error };
 }
 
 /**
- * Query builder para single result (retorna T | null)
+ * Query builder for single result (returns T | null)
  */
 export async function queryBuilderSingle<T>(
   table: string,
@@ -168,9 +168,9 @@ export async function queryBuilderSingle<T>(
 }
 
 /**
- * Insert helper padronizado
- * 
- * NOTA: Usa type assertion devido à tipagem estrita do Supabase.
+ * Standardized insert helper
+ *
+ * NOTE: Uses type assertion due to strict Supabase typing.
  */
 export async function insertOne<T>(
   table: string,
@@ -188,16 +188,16 @@ export async function insertOne<T>(
   }
 
   if (!result) {
-    throw new SupabaseRepositoryError(`Falha ao inserir em ${table}: nenhum dado retornado`);
+      throw new SupabaseRepositoryError(`Failed to insert into ${table}: no data returned`);
   }
 
   return result as T;
 }
 
 /**
- * Insert many helper padronizado
- * 
- * NOTA: Usa type assertion devido à tipagem estrita do Supabase.
+ * Standardized insert many helper
+ *
+ * NOTE: Uses type assertion due to strict Supabase typing.
  */
 export async function insertMany<T>(
   table: string,
@@ -217,9 +217,9 @@ export async function insertMany<T>(
 }
 
 /**
- * Update helper padronizado
- * 
- * NOTA: Usa type assertion devido à tipagem estrita do Supabase.
+ * Standardized update helper
+ *
+ * NOTE: Uses type assertion due to strict Supabase typing.
  */
 export async function updateOne<T>(
   table: string,
@@ -239,16 +239,16 @@ export async function updateOne<T>(
   }
 
   if (!result) {
-    throw new SupabaseRepositoryError(`Falha ao atualizar ${table} (id: ${id}): nenhum dado retornado`);
+      throw new SupabaseRepositoryError(`Failed to update ${table} (id: ${id}): no data returned`);
   }
 
   return result as T;
 }
 
 /**
- * Delete helper padronizado
- * 
- * NOTA: Usa type assertion devido à tipagem estrita do Supabase.
+ * Standardized delete helper
+ *
+ * NOTE: Uses type assertion due to strict Supabase typing.
  */
 export async function deleteOne(
   table: string,

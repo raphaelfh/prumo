@@ -1,14 +1,15 @@
 /**
- * Hook para gerenciamento centralizado de erros
- * 
- * Fornece funções utilitárias para tratamento consistente de erros
- * em operações de CRUD de campos.
- * 
+ * Centralized error handling hook
+ *
+ * Provides utility functions for consistent error handling
+ * in field CRUD operations.
+ *
  * @module hooks/extraction/useErrorHandler
  */
 
 import {useCallback} from 'react';
 import {toast} from 'sonner';
+import {t} from '@/lib/copy';
 
 interface ErrorHandlerOptions {
   showToast?: boolean;
@@ -25,7 +26,7 @@ export function useErrorHandler() {
     const {
       showToast = true,
       logError = true,
-      fallbackMessage = 'Ocorreu um erro inesperado'
+        fallbackMessage = t('extraction', 'errorHandlerFallback')
     } = options;
 
     const errorMessage = error instanceof Error 
@@ -46,29 +47,35 @@ export function useErrorHandler() {
   }, []);
 
   const handleFieldValidationError = useCallback((error: unknown) => {
-    return handleError(error, 'Erro ao validar campo', {
-      fallbackMessage: 'Não foi possível validar o campo'
+      return handleError(error, t('extraction', 'errors_validateField'), {
+          fallbackMessage: t('extraction', 'fieldOperationValidateFallback')
     });
   }, [handleError]);
 
   const handleFieldOperationError = useCallback((
     error: unknown,
-    operation: 'criar' | 'editar' | 'excluir' | 'validar'
+    operation: 'create' | 'edit' | 'delete' | 'validate'
   ) => {
-    const contextMap = {
-      criar: 'Erro ao criar campo',
-      editar: 'Erro ao editar campo',
-      excluir: 'Erro ao excluir campo',
-      validar: 'Erro ao validar campo'
+      const contextMap: Record<typeof operation, string> = {
+          create: t('extraction', 'errors_addField'),
+          edit: t('extraction', 'errors_updateField'),
+          delete: t('extraction', 'errors_removeField'),
+          validate: t('extraction', 'errors_validateField')
+      };
+      const fallbackMap: Record<typeof operation, string> = {
+          create: t('extraction', 'fieldOperationCreateFallback'),
+          edit: t('extraction', 'fieldOperationEditFallback'),
+          delete: t('extraction', 'fieldOperationDeleteFallback'),
+          validate: t('extraction', 'fieldOperationValidateFallback')
     };
 
     return handleError(error, contextMap[operation], {
-      fallbackMessage: `Não foi possível ${operation} o campo`
+        fallbackMessage: fallbackMap[operation]
     });
   }, [handleError]);
 
   const handlePermissionError = useCallback((operation: string) => {
-    const message = `Você não tem permissão para ${operation}`;
+      const message = t('extraction', 'permissionDeniedOperation');
     toast.error(message);
     return message;
   }, []);
@@ -78,13 +85,13 @@ export function useErrorHandler() {
       const zodError = error as any;
       const firstError = zodError.errors?.[0];
       if (firstError?.message) {
-        toast.error(`Validação: ${firstError.message}`);
+          toast.error(t('extraction', 'errors_validationPrefix').replace('{{message}}', firstError.message));
         return firstError.message;
       }
     }
-    
-    return handleError(error, 'Erro de validação', {
-      fallbackMessage: 'Dados inválidos fornecidos'
+
+      return handleError(error, t('extraction', 'validationErrorTitle'), {
+          fallbackMessage: t('extraction', 'validationInvalidData')
     });
   }, [handleError]);
 

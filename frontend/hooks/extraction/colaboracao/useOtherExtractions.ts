@@ -1,14 +1,15 @@
 /**
- * Hook para carregar extrações de outros membros
- * 
- * Busca valores extraídos por outros usuários do mesmo projeto
- * para permitir comparação e detecção de consenso.
- * 
+ * Hook to load extractions from other members
+ *
+ * Fetches values extracted by other users in the same project
+ * to allow comparison and consensus detection.
+ *
  * @hook
  */
 
 import {useEffect, useState} from 'react';
 import {supabase} from '@/integrations/supabase/client';
+import {t} from '@/lib/copy';
 
 // =================== INTERFACES ===================
 
@@ -59,9 +60,9 @@ export function useOtherExtractions(
     setError(null);
 
     try {
-      console.log('👥 Carregando extrações de outros membros...');
+        console.log('Loading other members\' extractions...');
 
-      // Buscar extracted_values de outros usuários
+        // Fetch extracted_values from other users
       const { data, error: queryError } = await supabase
         .from('extracted_values')
         .select(`
@@ -77,7 +78,7 @@ export function useOtherExtractions(
 
       if (queryError) throw queryError;
 
-      // Agrupar por usuário
+        // Group by user
       const groupedByUser: Record<string, OtherExtraction> = {};
 
       (data || []).forEach(value => {
@@ -86,19 +87,19 @@ export function useOtherExtractions(
         if (!groupedByUser[userId]) {
           groupedByUser[userId] = {
             userId,
-            userName: value.reviewer?.full_name || 'Usuário',
+              userName: value.reviewer?.full_name || 'User',
             userAvatar: value.reviewer?.avatar_url,
             values: {},
             timestamp: new Date(value.updated_at || value.created_at)
           };
         }
 
-        // Adicionar valor
+          // Add value
         const key = `${value.instance_id}_${value.field_id}`;
         const extractedValue = value.value?.value ?? value.value;
         groupedByUser[userId].values[key] = extractedValue;
 
-        // Atualizar timestamp para o mais recente
+          // Update timestamp to latest
         const valueTimestamp = new Date(value.updated_at || value.created_at);
         if (valueTimestamp > groupedByUser[userId].timestamp) {
           groupedByUser[userId].timestamp = valueTimestamp;
@@ -107,12 +108,12 @@ export function useOtherExtractions(
 
       const extractionsList = Object.values(groupedByUser);
       setOtherExtractions(extractionsList);
-      
-      console.log(`✅ Carregadas extrações de ${extractionsList.length} membros`);
+
+        console.log(`✅ Loaded extractions from ${extractionsList.length} members`);
 
     } catch (err: any) {
-      console.error('❌ Erro ao carregar outras extrações:', err);
-      setError(err.message || 'Erro ao carregar');
+        console.error('Error loading other extractions:', err);
+        setError(err.message || t('extraction', 'errors_loadOtherExtractions'));
     } finally {
       setLoading(false);
     }

@@ -1,13 +1,13 @@
 /**
- * ArticleFileUploadDialogNew - Modal Moderno para Upload de Arquivos
- * 
- * Funcionalidades:
- * - Drag & Drop intuitivo
- * - Upload múltiplo com seleção de role por arquivo
- * - Preview de arquivos com informações detalhadas
- * - Validação robusta
- * - Progress tracking em tempo real
- * - Interface moderna e responsiva
+ * ArticleFileUploadDialogNew - Modern file upload modal
+ *
+ * Features:
+ * - Intuitive drag & drop
+ * - Multiple upload with role selection per file
+ * - File preview with detailed info
+ * - Robust validation
+ * - Real-time progress tracking
+ * - Modern responsive UI
  */
 
 import {useCallback, useEffect, useState} from "react";
@@ -33,6 +33,7 @@ import {useAuth} from "@/contexts/AuthContext";
 import {supabase} from "@/integrations/supabase/client";
 import {FILE_ROLE_DESCRIPTIONS, FILE_ROLE_LABELS, FILE_ROLES, FILE_UPLOAD_CONFIG} from "@/lib/file-constants";
 import {detectFileFormat, formatFileSize, generateStorageKey, validateFile} from "@/lib/file-validation";
+import {t} from "@/lib/copy";
 
 interface FileWithRole {
   id: string;
@@ -75,7 +76,7 @@ export function ArticleFileUploadDialogNew({
     uploadedSize: 0
   });
 
-  // Verificar se já existe arquivo MAIN
+    // Check if MAIN file already exists
   useEffect(() => {
     const checkMainFile = async () => {
       if (!open || !articleId) return;
@@ -89,19 +90,19 @@ export function ArticleFileUploadDialogNew({
           .maybeSingle();
 
         if (error && error.code !== 'PGRST116') {
-          console.error('Erro ao verificar arquivo MAIN:', error);
+            console.error('Error checking MAIN file:', error);
           return;
         }
 
         if (data) {
           setHasMainFile(true);
-          setMainFileInfo({ filename: (data as any).original_filename || 'Arquivo sem nome' });
+            setMainFileInfo({filename: (data as any).original_filename || t('articles', 'fileWithoutName')});
         } else {
           setHasMainFile(false);
           setMainFileInfo(null);
         }
       } catch (error) {
-        console.error('Erro ao verificar arquivo MAIN:', error);
+          console.error('Error checking MAIN file:', error);
       }
     };
 
@@ -119,7 +120,7 @@ export function ArticleFileUploadDialogNew({
     setIsDragOver(false);
   }, []);
 
-  // Atualizar estatísticas
+    // Update statistics
   const updateStats = useCallback(() => {
     setFiles(currentFiles => {
       const stats = {
@@ -134,7 +135,7 @@ export function ArticleFileUploadDialogNew({
     });
   }, []);
 
-  // Adicionar arquivos
+    // Add files
   const addFiles = useCallback((newFiles: File[]) => {
     const validFiles = newFiles.filter(file => {
       const validation = validateFile(file);
@@ -167,13 +168,13 @@ export function ArticleFileUploadDialogNew({
     addFiles(droppedFiles);
   }, [addFiles]);
 
-  // Remover arquivo
+    // Remove file
   const removeFile = useCallback((fileId: string) => {
     setFiles(prev => prev.filter(f => f.id !== fileId));
     updateStats();
   }, [updateStats]);
 
-  // Atualizar role do arquivo
+    // Update file role
   const updateFileRole = useCallback((fileId: string, role: string) => {
     setFiles(prev => prev.map(f => 
       f.id === fileId ? { ...f, role } : f
@@ -185,29 +186,29 @@ export function ArticleFileUploadDialogNew({
     const { file, role } = fileWithRole;
     
     try {
-      // Atualizar status para uploading com progresso inicial
+        // Set status to uploading with initial progress
       setFiles(prev => prev.map(f => 
         f.id === fileWithRole.id 
           ? { ...f, status: 'uploading' as const, progress: 0 }
           : f
       ));
 
-      // Validar arquivo
+        // Validate file
       const validation = validateFile(file);
       if (!validation.valid) {
-        throw new Error(validation.error || "Arquivo inválido");
+          throw new Error(validation.error || t('articles', 'invalidFile'));
       }
 
-      // Atualizar progresso: validação concluída (5%)
+        // Update progress: validation done (5%)
       setFiles(prev => prev.map(f => 
         f.id === fileWithRole.id 
           ? { ...f, progress: 5 }
           : f
       ));
 
-      // Verificar se já existe arquivo MAIN
+        // Check if MAIN file already exists
       if (role === FILE_ROLES.MAIN && hasMainFile) {
-        throw new Error("Já existe um arquivo principal neste artigo");
+          throw new Error(t('articles', 'mainExistsError'));
       }
 
       // Gerar chave de storage
@@ -216,31 +217,31 @@ export function ArticleFileUploadDialogNew({
       // Detectar formato
       const detectedFormat = detectFileFormat(file);
 
-      // Atualizar progresso: preparação concluída (10%)
+        // Update progress: preparation done (10%)
       setFiles(prev => prev.map(f => 
         f.id === fileWithRole.id 
           ? { ...f, progress: 10 }
           : f
       ));
 
-      // Upload para storage
+        // Upload to storage
       const { error: uploadError } = await supabase.storage
         .from("articles")
         .upload(fileName, file);
 
       if (uploadError) {
-        console.error("Erro no upload do storage:", uploadError);
-        throw new Error("Erro ao fazer upload: " + uploadError.message);
+          console.error('Storage upload error:', uploadError);
+          throw new Error(t('articles', 'uploadError') + ': ' + uploadError.message);
       }
 
-      // Atualizar progresso: upload concluído (80%)
+        // Update progress: upload done (80%)
       setFiles(prev => prev.map(f => 
         f.id === fileWithRole.id 
           ? { ...f, progress: 80 }
           : f
       ));
 
-      // Registrar no banco
+        // Register in database
       const { error: insertError } = await supabase.from("article_files").insert([{
         project_id: projectId,
         article_id: articleId,
@@ -252,13 +253,13 @@ export function ArticleFileUploadDialogNew({
       }]);
 
       if (insertError) {
-        console.error("Erro ao inserir no banco:", insertError);
+          console.error('Database insert error:', insertError);
         // Rollback: deletar arquivo do storage
         await supabase.storage.from("articles").remove([fileName]);
-        throw new Error("Erro ao registrar arquivo: " + insertError.message + ". Verifique se a migração para adicionar a coluna 'file_role' foi aplicada.");
+          throw new Error(t('articles', 'registerError') + ': ' + insertError.message + '. ' + (insertError.message?.includes('file_role') ? 'Check that the migration to add the file_role column was applied.' : ''));
       }
 
-      // Atualizar status: concluído (100%)
+        // Set status: completed (100%)
       setFiles(prev => prev.map(f => 
         f.id === fileWithRole.id 
           ? { ...f, status: 'completed', progress: 100 }
@@ -266,13 +267,13 @@ export function ArticleFileUploadDialogNew({
       ));
 
     } catch (error: any) {
-      console.error("Erro completo no upload:", error);
+        console.error('Upload error:', error);
       setFiles(prev => prev.map(f => 
-        f.id === fileWithRole.id 
-          ? { ...f, status: 'error' as const, error: error.message || "Erro desconhecido" }
+        f.id === fileWithRole.id
+            ? {...f, status: 'error' as const, error: error.message || t('articles', 'errorUnknown')}
           : f
       ));
-      // Não fazer throw para não interromper outros uploads
+        // Don't throw so other uploads can continue
       // throw error;
     }
   };
@@ -280,30 +281,30 @@ export function ArticleFileUploadDialogNew({
   // Upload de todos os arquivos
   const handleUpload = async () => {
     if (!user) {
-      toast.error("Você precisa estar autenticado");
+        toast.error(t('articles', 'authRequired'));
       return;
     }
 
     if (files.length === 0) {
-      toast.error("Selecione pelo menos um arquivo");
+        toast.error(t('articles', 'uploadSelectAtLeastOne'));
       return;
     }
 
     // Validar roles
     const mainFiles = files.filter(f => f.role === FILE_ROLES.MAIN);
     if (mainFiles.length > 1) {
-      toast.error("Apenas um arquivo pode ser marcado como principal");
+        toast.error(t('articles', 'uploadOnlyOneMain'));
       return;
     }
 
     if (hasMainFile && mainFiles.length > 0) {
-      toast.error("Já existe um arquivo principal. Remova-o primeiro ou escolha outra função");
+        toast.error(t('articles', 'mainExists'));
       return;
     }
 
     setIsUploading(true);
 
-    // Atualizar status para uploading com progresso inicial 0
+      // Set status to uploading with initial progress 0
     setFiles(prev => prev.map(f => ({ 
       ...f, 
       status: 'uploading' as const,
@@ -311,7 +312,7 @@ export function ArticleFileUploadDialogNew({
     })));
 
     try {
-      // Aguardar um momento para garantir que o estado foi atualizado e pegar os arquivos mais recentes
+        // Wait a moment so state is updated and we get the latest files
       let filesToUpload: FileWithRole[] = [];
       
       await new Promise<void>(resolve => {
@@ -329,10 +330,10 @@ export function ArticleFileUploadDialogNew({
         await uploadFile(fileWithRole);
       }
 
-      // Aguardar um momento para garantir que os estados foram atualizados
+        // Wait a moment for state updates to settle
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      // Verificar resultados após upload (usando estado atualizado)
+        // Check results after upload (using updated state)
       setFiles(currentFiles => {
         const completedFiles = currentFiles.filter(f => f.status === 'completed').length;
         const failedFiles = currentFiles.filter(f => f.status === 'error').length;
@@ -343,28 +344,28 @@ export function ArticleFileUploadDialogNew({
             .filter(f => f.status === 'error' && f.error)
             .map(f => f.error)
             .join('; ');
-          toast.error(`Erro ao fazer upload: ${errorMessages}`);
+            toast.error(t('articles', 'uploadFilesError') + ': ' + (errorMessages || error.message || t('articles', 'errorUnknown')));
         } else if (failedFiles > 0) {
           // Alguns falharam, alguns sucederam
-          toast.warning(`${completedFiles} arquivo(s) enviado(s), mas ${failedFiles} falharam. Verifique os erros acima.`);
+            toast.warning(t('articles', 'uploadPartialCount').replace('{{completed}}', String(completedFiles)).replace('{{failed}}', String(failedFiles)));
           onFileUploaded?.();
         } else if (completedFiles > 0) {
           // Todos sucederam
-          toast.success(`${completedFiles} arquivo(s) enviado(s) com sucesso!`);
+            toast.success(t('articles', 'uploadSuccessCount').replace('{{n}}', String(completedFiles)));
           onFileUploaded?.();
-          
-          // Fechar após 2 segundos
+
+            // Close after 2 seconds
           setTimeout(() => {
             handleClose();
           }, 2000);
         }
-        
-        return currentFiles; // Retornar sem alterações
+
+          return currentFiles; // Return unchanged
       });
 
     } catch (error: any) {
-      console.error("Erro no upload:", error);
-      toast.error("Erro ao fazer upload dos arquivos: " + (error.message || "Erro desconhecido"));
+        console.error('Upload error:', error);
+        toast.error(t('articles', 'uploadFilesError') + ': ' + (error.message || t('articles', 'errorUnknown')));
     } finally {
       setIsUploading(false);
     }
@@ -373,7 +374,7 @@ export function ArticleFileUploadDialogNew({
   // Fechar modal
   const handleClose = () => {
     if (isUploading) {
-      const confirm = window.confirm("Existem uploads em andamento. Deseja realmente cancelar?");
+        const confirm = window.confirm(t('articles', 'uploadCancelConfirm'));
       if (!confirm) return;
     }
 
@@ -383,7 +384,7 @@ export function ArticleFileUploadDialogNew({
     onOpenChange(false);
   };
 
-  // Seleção de arquivos via input
+    // File selection via input
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(e.target.files || []);
     addFiles(selectedFiles);
@@ -400,7 +401,7 @@ export function ArticleFileUploadDialogNew({
     }
   };
 
-  // Obter ícone do status
+    // Get icon for status
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'completed': return <CheckCircle className="h-4 w-4" />;
@@ -414,9 +415,9 @@ export function ArticleFileUploadDialogNew({
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-w-[95vw] sm:max-w-2xl md:max-w-4xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col p-0 sm:p-0 gap-0">
         <DialogHeader className="px-4 sm:px-6 pt-6 pb-4">
-          <DialogTitle>Adicionar Arquivos ao Artigo</DialogTitle>
+            <DialogTitle>{t('articles', 'addFilesToArticle')}</DialogTitle>
           <DialogDescription>
-            Arraste arquivos ou clique para selecionar. Você pode definir a função de cada arquivo individualmente.
+              {t('articles', 'uploadDragOrClickDesc')}
           </DialogDescription>
         </DialogHeader>
 
@@ -428,10 +429,10 @@ export function ArticleFileUploadDialogNew({
                 <Alert className="mb-4">
                   <FileCheck className="h-4 w-4" />
                   <AlertDescription>
-                    <strong>Arquivo principal já existe:</strong> {mainFileInfo.filename}
+                      <strong>{t('articles', 'uploadMainFileExists')}</strong> {mainFileInfo.filename}
                     <br />
                     <span className="text-xs text-muted-foreground">
-                      Selecione "Material Suplementar" ou outra função para os novos arquivos.
+                      {t('articles', 'supplementalHint')}
                     </span>
                   </AlertDescription>
                 </Alert>
@@ -453,9 +454,9 @@ export function ArticleFileUploadDialogNew({
                     </div>
                     
                     <div>
-                      <h3 className="text-base sm:text-lg font-semibold">Arraste arquivos aqui</h3>
+                        <h3 className="text-base sm:text-lg font-semibold">{t('articles', 'uploadDragFilesHere')}</h3>
                       <p className="text-sm text-muted-foreground">
-                        ou clique para selecionar múltiplos arquivos
+                          {t('articles', 'uploadOrClickToSelect')}
                       </p>
                     </div>
 
@@ -471,19 +472,19 @@ export function ArticleFileUploadDialogNew({
                       <Button asChild size="sm" className="sm:size-default">
                         <label htmlFor="file-upload" className="cursor-pointer">
                           <Plus className="mr-2 h-4 w-4" />
-                          Selecionar Arquivos
+                            {t('articles', 'uploadSelectFiles')}
                         </label>
                       </Button>
                     </div>
 
                     <div className="text-xs text-muted-foreground px-2">
-                      Máximo {FILE_UPLOAD_CONFIG.MAX_SIZE_MB}MB por arquivo
+                        {t('articles', 'uploadMaxPerFile').replace('{{n}}', String(FILE_UPLOAD_CONFIG.MAX_SIZE_MB))}
                       <br />
                       <span className="hidden sm:inline">
-                        Formatos: {FILE_UPLOAD_CONFIG.ALLOWED_EXTENSIONS.join(', ')}
+                        {t('articles', 'uploadFormats')} {FILE_UPLOAD_CONFIG.ALLOWED_EXTENSIONS.join(', ')}
                       </span>
                       <span className="sm:hidden">
-                        Formatos: .pdf, .doc, .docx, .txt, .csv, .xls, .xlsx, imagens
+                        {t('articles', 'uploadFormats')} {t('articles', 'uploadFormatsShort')}
                       </span>
                     </div>
                   </div>
@@ -494,7 +495,7 @@ export function ArticleFileUploadDialogNew({
               {files.length > 0 && (
                 <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-base sm:text-lg">Arquivos Selecionados</CardTitle>
+                      <CardTitle className="text-base sm:text-lg">{t('articles', 'uploadFilesSelected')}</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <ScrollArea className="max-h-64 sm:max-h-96">
@@ -524,7 +525,7 @@ export function ArticleFileUploadDialogNew({
 
                                 <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-2 sm:mt-1">
                                   <Label className="text-xs text-muted-foreground whitespace-nowrap">
-                                    Função:
+                                      {t('articles', 'uploadRoleLabel')}
                                   </Label>
                                   <Select
                                     value={fileWithRole.role}
@@ -547,7 +548,7 @@ export function ArticleFileUploadDialogNew({
                                             <div>
                                               <div className="font-medium">
                                                 {label}
-                                                {isMainDisabled && " (já existe)"}
+                                                  {isMainDisabled && ` ${t('articles', 'alreadyExists')}`}
                                               </div>
                                               <div className="text-xs text-muted-foreground">
                                                 {FILE_ROLE_DESCRIPTIONS[value as keyof typeof FILE_ROLE_DESCRIPTIONS]}
@@ -574,7 +575,7 @@ export function ArticleFileUploadDialogNew({
                                   onClick={() => removeFile(fileWithRole.id)}
                                   disabled={isUploading}
                                   className="h-8 w-8 p-0"
-                                  aria-label="Remover arquivo"
+                                  aria-label={t('extraction', 'removeFileAria')}
                                 >
                                   <X className="h-4 w-4" />
                                 </Button>
@@ -585,24 +586,24 @@ export function ArticleFileUploadDialogNew({
                       </div>
                     </ScrollArea>
 
-                    {/* Estatísticas */}
+                      {/* Statistics */}
                     <div className="mt-4 pt-4 border-t">
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 text-center text-xs sm:text-sm">
                         <div>
                           <div className="font-semibold">{uploadStats.total}</div>
-                          <div className="text-muted-foreground">Total</div>
+                            <div className="text-muted-foreground">{t('articles', 'uploadTotal')}</div>
                         </div>
                         <div>
                           <div className="font-semibold text-green-600">{uploadStats.completed}</div>
-                          <div className="text-muted-foreground">Prontos</div>
+                            <div className="text-muted-foreground">{t('articles', 'uploadReady')}</div>
                         </div>
                         <div>
                           <div className="font-semibold text-blue-600">{uploadStats.total - uploadStats.completed - uploadStats.failed}</div>
-                          <div className="text-muted-foreground">Pendentes</div>
+                            <div className="text-muted-foreground">{t('articles', 'uploadPending')}</div>
                         </div>
                         <div>
                           <div className="font-semibold text-red-600">{uploadStats.failed}</div>
-                          <div className="text-muted-foreground">Erros</div>
+                            <div className="text-muted-foreground">{t('articles', 'errors')}</div>
                         </div>
                       </div>
                     </div>
@@ -614,7 +615,7 @@ export function ArticleFileUploadDialogNew({
             /* Progress durante upload */
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base sm:text-lg">Enviando Arquivos</CardTitle>
+                  <CardTitle className="text-base sm:text-lg">{t('articles', 'uploadUploadingFiles')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
@@ -623,9 +624,9 @@ export function ArticleFileUploadDialogNew({
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2">
                         <span className="text-sm font-medium truncate">{fileWithRole.file.name}</span>
                         <span className={`text-sm whitespace-nowrap ${getStatusColor(fileWithRole.status)}`}>
-                          {fileWithRole.status === 'uploading' ? 'Enviando...' : 
-                           fileWithRole.status === 'completed' ? 'Concluído' :
-                           fileWithRole.status === 'error' ? 'Erro' : 'Pendente'}
+                          {fileWithRole.status === 'uploading' ? t('articles', 'uploadUploading') :
+                              fileWithRole.status === 'completed' ? t('articles', 'statusCompleted') :
+                                  fileWithRole.status === 'error' ? t('articles', 'statusError') : t('articles', 'statusPending')}
                         </span>
                       </div>
                       
@@ -662,7 +663,7 @@ export function ArticleFileUploadDialogNew({
                   disabled={isUploading}
                   className="w-full sm:w-auto"
                 >
-                  Cancelar
+                    {t('common', 'cancel')}
                 </Button>
                 <Button
                   onClick={handleUpload}
@@ -686,7 +687,7 @@ export function ArticleFileUploadDialogNew({
           ) : (
             <>
               <div className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
-                {uploadStats.completed} de {uploadStats.total} concluídos
+                  {uploadStats.completed} of {uploadStats.total} completed
               </div>
               
               <Button

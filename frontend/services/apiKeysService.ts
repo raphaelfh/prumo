@@ -1,8 +1,8 @@
 /**
  * API Keys Service
- * 
- * Gerencia API keys de provedores externos (OpenAI, Anthropic, Gemini, Grok).
- * As keys são criptografadas via Fernet no backend FastAPI.
+ *
+ * Manages API keys for external providers (OpenAI, Anthropic, Gemini, Grok).
+ * Keys are encrypted via Fernet in the FastAPI backend.
  */
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
@@ -57,7 +57,7 @@ class APIKeysService {
   }
 
   /**
-   * Lista todas as API keys do usuário.
+   * Lists all API keys for the user.
    */
   async listKeys(token: string, activeOnly: boolean = true): Promise<APIKeyInfo[]> {
     const response = await fetch(
@@ -69,20 +69,20 @@ class APIKeysService {
     );
 
     if (!response.ok) {
-      throw new Error(`Erro ao listar API keys: ${response.status}`);
+        throw new Error(`Error listing API keys: ${response.status}`);
     }
 
     const data = await response.json();
     
     if (!data.ok) {
-      throw new Error(data.error?.message || 'Erro ao listar API keys');
+        throw new Error(data.error?.message || 'Error listing API keys');
     }
 
     return data.data.keys || [];
   }
 
   /**
-   * Cria nova API key.
+   * Creates a new API key.
    */
   async createKey(
     token: string,
@@ -96,20 +96,20 @@ class APIKeysService {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || `Erro ao criar API key: ${response.status}`);
+        throw new Error(errorData.detail || `Error creating API key: ${response.status}`);
     }
 
     const data = await response.json();
     
     if (!data.ok) {
-      throw new Error(data.error?.message || 'Erro ao criar API key');
+        throw new Error(data.error?.message || 'Error creating API key');
     }
 
     return data.data;
   }
 
   /**
-   * Atualiza uma API key (ativar/desativar, definir como default).
+   * Updates an API key (activate/deactivate, set as default).
    */
   async updateKey(
     token: string,
@@ -124,18 +124,18 @@ class APIKeysService {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || `Erro ao atualizar API key: ${response.status}`);
+        throw new Error(errorData.detail || `Error updating API key: ${response.status}`);
     }
 
     const data = await response.json();
     
     if (!data.ok) {
-      throw new Error(data.error?.message || 'Erro ao atualizar API key');
+        throw new Error(data.error?.message || 'Error updating API key');
     }
   }
 
   /**
-   * Remove permanentemente uma API key.
+   * Permanently removes an API key.
    */
   async deleteKey(token: string, keyId: string): Promise<void> {
     const response = await fetch(`${API_BASE_URL}/api/v1/user-api-keys/${keyId}`, {
@@ -145,18 +145,18 @@ class APIKeysService {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || `Erro ao remover API key: ${response.status}`);
+        throw new Error(errorData.detail || `Error deleting API key: ${response.status}`);
     }
 
     const data = await response.json();
     
     if (!data.ok) {
-      throw new Error(data.error?.message || 'Erro ao remover API key');
+        throw new Error(data.error?.message || 'Error deleting API key');
     }
   }
 
   /**
-   * Revalida uma API key existente.
+   * Revalidates an existing API key.
    */
   async validateKey(token: string, keyId: string): Promise<ValidationResult> {
     const response = await fetch(
@@ -169,13 +169,13 @@ class APIKeysService {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.detail || `Erro ao validar API key: ${response.status}`);
+        throw new Error(errorData.detail || `Error validating API key: ${response.status}`);
     }
 
     const data = await response.json();
     
     if (!data.ok) {
-      throw new Error(data.error?.message || 'Erro ao validar API key');
+        throw new Error(data.error?.message || 'Error validating API key');
     }
 
     return data.data;
@@ -191,13 +191,13 @@ class APIKeysService {
     });
 
     if (!response.ok) {
-      throw new Error(`Erro ao listar provedores: ${response.status}`);
+        throw new Error(`Error listing providers: ${response.status}`);
     }
 
     const data = await response.json();
     
     if (!data.ok) {
-      throw new Error(data.error?.message || 'Erro ao listar provedores');
+        throw new Error(data.error?.message || 'Error listing providers');
     }
 
     return data.data.providers || [];

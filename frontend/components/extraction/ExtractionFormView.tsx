@@ -1,8 +1,8 @@
 /**
- * View de Formulário de Extração
- * 
- * Renderiza seções no modo extração (não-comparação).
- * Extraído do ExtractionFullScreen para modularidade.
+ * Extraction form view
+ *
+ * Renders sections in extraction mode (non-comparison).
+ * Extracted from ExtractionFullScreen for modularity.
  */
 
 import {memo} from 'react';
@@ -48,32 +48,32 @@ export interface ExtractionFormViewProps {
   handleRemoveInstance: (instanceId: string) => void;
   projectId: string;
   articleId: string;
-  templateId: string; // Nova: necessário para extração de seção
+    templateId: string; // Required for section extraction
   modelsLoading: boolean;
-  onExtractionComplete?: () => void; // Callback para refresh após extração
+    onExtractionComplete?: () => void; // Callback to refresh after extraction
 }
 
 function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
-  // Hook para extração de modelos
+    // Hook for model extraction
   const { extractModels, loading: extractingModels } = useModelExtraction({
     onSuccess: async (runId, modelsCreated) => {
-      console.log('[ExtractionFormView] Modelos extraídos:', { runId, modelsCreated });
-      
-      // Recarregar modelos e instâncias após extração
+        console.log('[ExtractionFormView] Models extracted:', {runId, modelsCreated});
+
+        // Reload models and instances after extraction
       try {
         await props.onRefreshModels();
         await props.onRefreshInstances();
-        
-        // Selecionar primeiro modelo se não houver activeModelId
+
+          // Select first model if no activeModelId
         if (props.models.length === 0 && modelsCreated > 0) {
           // Aguardar um pouco para garantir que os modelos foram carregados
           setTimeout(async () => {
             await props.onRefreshModels();
-            // O setActiveModelId será chamado pelo componente pai através do useModelManagement
+              // setActiveModelId will be called by parent via useModelManagement
           }, 500);
         }
       } catch (error) {
-        console.error('[ExtractionFormView] Erro ao recarregar após extração de modelos:', error);
+          console.error('[ExtractionFormView] Error reloading after model extraction:', error);
       }
     },
   });
@@ -87,32 +87,32 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
         templateId: props.templateId,
       });
     } catch (error) {
-      // Erro já tratado pelo hook com toast
-      console.error('[ExtractionFormView] Erro na extração de modelos:', error);
+        // Error already handled by hook with toast
+        console.error('[ExtractionFormView] Error in model extraction:', error);
     }
   };
 
-  // Hook para extração de todas as seções do modelo com chunking
+    // Hook for extracting all sections of the model with chunking
   const { extractAllSections, loading: extractingAllSections, progress: extractionProgress } = useBatchSectionExtractionChunked({
     onSuccess: async (result) => {
-      console.log('[ExtractionFormView] Todas as seções extraídas:', result);
-      
-      // Recarregar instâncias e sugestões após extração
+        console.log('[ExtractionFormView] All sections extracted:', result);
+
+        // Reload instances and suggestions after extraction
       try {
         await props.onRefreshInstances();
         if (props.onExtractionComplete) {
           await props.onExtractionComplete();
         }
       } catch (error) {
-        console.error('[ExtractionFormView] Erro ao recarregar após extração de todas as seções:', error);
+          console.error('[ExtractionFormView] Error reloading after all sections extraction:', error);
       }
     },
   });
 
-  // Handler para extrair todas as seções do modelo ativo
+    // Handler to extract all sections of the active model
   const handleExtractAllSections = async () => {
     if (!props.activeModelId) {
-      console.warn('[ExtractionFormView] Nenhum modelo ativo para extrair todas as seções');
+        console.warn('[ExtractionFormView] No active model to extract all sections');
       return;
     }
 
@@ -125,32 +125,32 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
         extractAllSections: true,
       });
     } catch (error) {
-      // Erro já tratado pelo hook com toast
-      console.error('[ExtractionFormView] Erro na extração de todas as seções:', error);
+        // Error already handled by hook with toast
+        console.error('[ExtractionFormView] Error in extraction of all sections:', error);
     }
   };
 
-  // Hook para extração de seções de todos os modelos
+    // Hook for extracting sections from all models
   const { extractAllSectionsForAllModels, loading: extractingAllSectionsForAllModels, progress: allModelsProgress } = useBatchAllModelsSectionsExtraction({
     onSuccess: async (result) => {
-      console.log('[ExtractionFormView] Seções de todos os modelos extraídas:', result);
-      
-      // Recarregar instâncias e sugestões após extração
+        console.log('[ExtractionFormView] Sections from all models extracted:', result);
+
+        // Reload instances and suggestions after extraction
       try {
         await props.onRefreshInstances();
         if (props.onExtractionComplete) {
           await props.onExtractionComplete();
         }
       } catch (error) {
-        console.error('[ExtractionFormView] Erro ao recarregar após extração de seções de todos os modelos:', error);
+          console.error('[ExtractionFormView] Error reloading after extraction of sections from all models:', error);
       }
     },
   });
 
-  // Handler para extrair seções de todos os modelos
+    // Handler to extract sections from all models
   const handleExtractAllSectionsForAllModels = async () => {
     if (props.models.length === 0) {
-      console.warn('[ExtractionFormView] Nenhum modelo disponível para extrair seções');
+        console.warn('[ExtractionFormView] No model available to extract sections');
       return;
     }
 
@@ -165,8 +165,8 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
         })),
       });
     } catch (error) {
-      // Erro já tratado pelo hook com toast
-      console.error('[ExtractionFormView] Erro na extração de seções de todos os modelos:', error);
+        // Error already handled by hook with toast
+        console.error('[ExtractionFormView] Error in extraction of sections from all models:', error);
     }
   };
 
@@ -225,14 +225,14 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
             extractingAllSectionsForAllModels={extractingAllSectionsForAllModels}
           />
 
-          {/* Progresso de extração em batch de um modelo */}
+            {/* Batch extraction progress for one model */}
           {extractingAllSections && extractionProgress && (
             <div className="mt-4">
               <BatchExtractionProgress progress={extractionProgress} />
             </div>
           )}
 
-          {/* Progresso de extração em batch de todos os modelos */}
+            {/* Batch extraction progress for all models */}
           {extractingAllSectionsForAllModels && allModelsProgress && (
             <div className="mt-4">
               <BatchAllModelsSectionsProgress progress={allModelsProgress} />
@@ -280,11 +280,11 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
   );
 }
 
-// Memoizar componente para evitar re-renders desnecessários
-// Compara props críticas que realmente causam mudanças visuais
+// Memoize component to avoid unnecessary re-renders
+// Compares critical props that actually cause visual changes
 export const ExtractionFormView = memo(ExtractionFormViewComponent, (prevProps, nextProps) => {
-  // Comparação customizada focada em props que realmente importam
-  // IMPORTANTE: Incluir aiSuggestions para garantir re-render quando sugestões são atualizadas após extração
+    // Custom comparison focused on props that actually matter
+    // IMPORTANT: Include aiSuggestions to ensure re-render when suggestions are updated after extraction
   const aiSuggestionsChanged = 
     prevProps.aiSuggestions !== nextProps.aiSuggestions ||
     Object.keys(prevProps.aiSuggestions).length !== Object.keys(nextProps.aiSuggestions).length;

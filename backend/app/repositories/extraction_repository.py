@@ -199,14 +199,14 @@ class ExtractionEntityTypeRepository(BaseRepository[ExtractionEntityType]):
         cardinality: str | None = None,
     ) -> list[ExtractionEntityType]:
         """
-        Busca entity types filhos com eager loading dos fields.
-        
+        Fetch child entity types with eager loading of fields.
+
         Args:
-            parent_entity_type_id: ID do entity type pai.
-            cardinality: Filtro por cardinality (opcional).
-            
+            parent_entity_type_id: Parent entity type ID.
+            cardinality: Optional cardinality filter.
+
         Returns:
-            Lista de entity types filhos com fields pré-carregados.
+            List of child entity types with fields preloaded.
         """
         if isinstance(parent_entity_type_id, str):
             parent_entity_type_id = UUID(parent_entity_type_id)

@@ -1,10 +1,10 @@
 /**
- * ViewModeTools - Selector de modo de visualização
- * 
- * Modos suportados:
- * - Página Única (single) - melhor performance para navegação
- * - Scroll Contínuo (continuous) - scroll fluido entre páginas
- * - Duas Páginas (two-page) - comparação lado a lado
+ * ViewModeTools - View mode selector
+ *
+ * Supported modes:
+ * - Single page - best performance for navigation
+ * - Continuous scroll - smooth scroll between pages
+ * - Two pages - side-by-side comparison
  */
 
 import {useCallback} from 'react';
@@ -16,7 +16,7 @@ export function ViewModeTools() {
   const { ui, setViewMode } = usePDFStore();
   const viewMode = ui?.viewMode || 'continuous';
 
-  // Callback otimizado para mudança de modo
+    // Callback for mode change
   const handleViewModeChange = useCallback((value: string) => {
     if (setViewMode) {
       setViewMode(value as any);
@@ -34,9 +34,9 @@ export function ViewModeTools() {
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="single">Página Única</SelectItem>
-          <SelectItem value="continuous">Scroll Contínuo</SelectItem>
-          <SelectItem value="two-page">Duas Páginas</SelectItem>
+            <SelectItem value="single">Single Page</SelectItem>
+            <SelectItem value="continuous">Continuous Scroll</SelectItem>
+            <SelectItem value="two-page">Two Pages</SelectItem>
         </SelectContent>
       </Select>
     </div>

@@ -1,5 +1,5 @@
 // ========================================
-// TIPOS PARA NOVA ARQUITETURA DE ANOTAÇÕES
+// TYPES FOR NEW ANNOTATIONS ARCHITECTURE
 // ========================================
 
 export interface Position {
@@ -122,12 +122,12 @@ export interface Comment {
   isResolved: boolean;
   createdAt: string;
   updatedAt: string;
-  // Para threads
+    // For threads
   replies?: Comment[];
 }
 
 // ========================================
-// TIPOS PARA INSERÇÃO NO BANCO
+// TYPES FOR DB INSERT
 // ========================================
 
 export interface HighlightInsert {

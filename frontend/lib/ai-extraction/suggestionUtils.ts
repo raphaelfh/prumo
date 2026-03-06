@@ -1,54 +1,42 @@
 /**
- * Utilitários para formatação e manipulação de sugestões de IA
- * 
- * Funções puras para formatação de valores de sugestões para exibição na UI.
- * 
- * @example
- * ```typescript
- * // Calcular porcentagem de confiança
- * const percent = calculateConfidencePercent(0.85); // 85
- * 
- * // Formatar valor para exibição
- * const display = formatSuggestionValue(suggestion.value, 40); // "(vazio)" | "Texto..."
- * 
- * // Filtrar por threshold
- * const highConfidence = filterSuggestionsByConfidence(suggestions, 0.8);
- * ```
+ * Utilities for formatting and handling AI suggestions
+ *
+ * Pure functions for formatting suggestion values for UI display.
  */
 
 import type {AISuggestion} from '@/types/ai-extraction';
 
 /**
- * Calcula a porcentagem de confiança formatada
- * 
- * @param confidence - Valor de confiança (0-1)
- * @returns Porcentagem arredondada (0-100)
+ * Calculates formatted confidence percentage
+ *
+ * @param confidence - Confidence value (0-1)
+ * @returns Rounded percentage (0-100)
  */
 export function calculateConfidencePercent(confidence: number): number {
   return Math.round(confidence * 100);
 }
 
 /**
- * Formata valor de sugestão para exibição
- * 
- * Converte valores para string de forma legível, truncando se necessário.
- * 
- * @param value - Valor a formatar
- * @param maxLength - Comprimento máximo (padrão: 40)
- * @returns String formatada
+ * Formats suggestion value for display
+ *
+ * Converts values to readable string, truncating if needed.
+ *
+ * @param value - Value to format
+ * @param maxLength - Max length (default: 40)
+ * @returns Formatted string
  */
 export function formatSuggestionValue(value: any, maxLength: number = 40): string {
-  // String vazia também é um valor válido - mostrar como "(vazio)" apenas se for realmente null/undefined
+    // Empty string is also a valid value; show "(empty)" only for null/undefined
   if (value === null || value === undefined) {
-    return '(vazio)';
+      return '(empty)';
   }
 
   if (value === '') {
-    return '(vazio)';
+      return '(empty)';
   }
 
   if (typeof value === 'boolean') {
-    return value ? 'Sim' : 'Não';
+      return value ? 'Yes' : 'No';
   }
 
   if (typeof value === 'number') {
@@ -69,14 +57,14 @@ export function formatSuggestionValue(value: any, maxLength: number = 40): strin
 }
 
 /**
- * Obtém o valor completo formatado para tooltip/exibição expandida
- * 
- * @param value - Valor a formatar
- * @returns String completa do valor
+ * Gets full formatted value for tooltip/expanded display
+ *
+ * @param value - Value to format
+ * @returns Full string of value
  */
 export function formatFullSuggestionValue(value: any): string {
   if (value === null || value === undefined) {
-    return '(vazio)';
+      return '(empty)';
   }
 
   if (typeof value === 'string') {
@@ -91,31 +79,31 @@ export function formatFullSuggestionValue(value: any): string {
 }
 
 /**
- * Verifica se uma sugestão foi aceita
- * 
- * @param suggestion - Sugestão a verificar
- * @returns true se a sugestão está com status 'accepted'
+ * Checks if a suggestion was accepted
+ *
+ * @param suggestion - Suggestion to check
+ * @returns true if suggestion has status 'accepted'
  */
 export function isSuggestionAccepted(suggestion: AISuggestion): boolean {
   return suggestion.status === 'accepted';
 }
 
 /**
- * Verifica se uma sugestão está pendente
- * 
- * @param suggestion - Sugestão a verificar
- * @returns true se a sugestão está com status 'pending'
+ * Checks if a suggestion is pending
+ *
+ * @param suggestion - Suggestion to check
+ * @returns true if suggestion has status 'pending'
  */
 export function isSuggestionPending(suggestion: AISuggestion): boolean {
   return suggestion.status === 'pending';
 }
 
 /**
- * Filtra sugestões por threshold de confiança
- * 
- * @param suggestions - Record de sugestões
- * @param threshold - Threshold mínimo de confiança (0-1, padrão: 0.8)
- * @returns Array de [key, suggestion] filtradas
+ * Filters suggestions by confidence threshold
+ *
+ * @param suggestions - Record of suggestions
+ * @param threshold - Minimum confidence threshold (0-1, default: 0.8)
+ * @returns Filtered array of [key, suggestion]
  */
 export function filterSuggestionsByConfidence(
   suggestions: Record<string, AISuggestion>,
@@ -127,10 +115,10 @@ export function filterSuggestionsByConfidence(
 }
 
 /**
- * Ordena sugestões por confiança (maior primeiro)
- * 
- * @param suggestions - Record de sugestões
- * @returns Array de [key, suggestion] ordenadas
+ * Sorts suggestions by confidence (highest first)
+ *
+ * @param suggestions - Record of suggestions
+ * @returns Sorted array of [key, suggestion]
  */
 export function sortSuggestionsByConfidence(
   suggestions: Record<string, AISuggestion>

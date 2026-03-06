@@ -1,6 +1,6 @@
 /**
- * Sistema de cache centralizado para a aplicação
- * Suporta TTL, invalidação e múltiplas instâncias
+ * Centralized cache for the application
+ * Supports TTL, invalidation and multiple instances
  */
 
 interface CacheEntry<T> {
@@ -37,7 +37,7 @@ class CacheService {
     
     if (!entry) return null;
 
-    // Verificar se expirou
+      // Check if expired
     if (entry.ttl && Date.now() - entry.timestamp > entry.ttl) {
       this.cache.delete(key);
       return null;
@@ -76,7 +76,7 @@ class CacheService {
     const entry = this.cache.get(key);
     if (!entry) return false;
 
-    // Verificar se expirou
+      // Check if expired
     if (entry.ttl && Date.now() - entry.timestamp > entry.ttl) {
       this.cache.delete(key);
       return false;
@@ -114,7 +114,7 @@ class CacheService {
   }
 
   /**
-   * Retorna estatísticas do cache
+   * Returns cache statistics
    */
   getStats() {
     return {
@@ -125,12 +125,12 @@ class CacheService {
   }
 }
 
-// Instâncias de cache pré-configuradas
+// Pre-configured cache instances
 export const globalCache = new CacheService('global');
 export const assessmentCache = new CacheService('assessment');
 export const articleCache = new CacheService('article');
 
-// Cleanup automático a cada 5 minutos
+// Auto cleanup every 5 minutes
 if (typeof window !== 'undefined') {
   setInterval(() => {
     globalCache.cleanup();

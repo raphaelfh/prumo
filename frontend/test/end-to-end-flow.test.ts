@@ -1,17 +1,17 @@
 /**
- * Testes de integração do fluxo principal
- * 
- * Valida se:
- * 1. Fluxo de dados está consistente
- * 2. Estruturas se integram corretamente
- * 3. Lógica de negócio funciona
+ * Main flow integration tests
+ *
+ * Validates:
+ * 1. Data flow is consistent
+ * 2. Structures integrate correctly
+ * 3. Business logic works
  */
 
 import {describe, expect, it} from 'vitest';
 
 describe('End-to-End Integration Flow', () => {
-  it('deve simular fluxo completo de criação de projeto', () => {
-    // Simular criação de projeto
+    it('should simulate full project creation flow', () => {
+        // Simulate project creation
     const mockProject = {
       id: 'test-project-id',
       name: 'E2E Test Project - Systematic Review of AI Models',
@@ -25,7 +25,7 @@ describe('End-to-End Integration Flow', () => {
     expect(mockProject.id).toBeDefined();
   });
 
-  it('deve simular adição de manager ao projeto', () => {
+    it('should simulate adding manager to project', () => {
     const mockMember = {
       project_id: 'test-project-id',
       user_id: 'test-user-id',
@@ -37,20 +37,20 @@ describe('End-to-End Integration Flow', () => {
     expect(mockMember.project_id).toBe('test-project-id');
   });
 
-  it('deve simular clonagem de template CHARMS', () => {
+    it('should simulate cloning CHARMS template', () => {
     const mockGlobalTemplate = {
       id: 'global-charms-template',
       name: 'CHARMS',
       framework: 'CHARMS',
       is_global: true,
-      description: 'Template global CHARMS'
+        description: 'Global CHARMS template'
     };
 
     const mockProjectTemplate = {
       id: 'project-template-id',
       project_id: 'test-project-id',
       global_template_id: mockGlobalTemplate.id,
-      name: 'CHARMS (Projeto: E2E Test)',
+        name: 'CHARMS (Project: E2E Test)',
       framework: 'CHARMS',
       is_active: true
     };
@@ -60,41 +60,41 @@ describe('End-to-End Integration Flow', () => {
     expect(mockProjectTemplate.is_active).toBe(true);
   });
 
-  it('deve simular criação de seções do CHARMS', () => {
+    it('should simulate CHARMS section creation', () => {
     const mockSections = [
-      { name: 'source_of_data', label: 'Fonte dos Dados', sort_order: 1 },
-      { name: 'participants', label: 'Participantes', sort_order: 2 },
-      { name: 'outcome_to_be_predicted', label: 'Desfecho a ser Predito', sort_order: 3 },
-      { name: 'predictors', label: 'Preditores', sort_order: 4 },
-      { name: 'sample_size', label: 'Tamanho da Amostra', sort_order: 5 }
+        {name: 'source_of_data', label: 'Source of Data', sort_order: 1},
+        {name: 'participants', label: 'Participants', sort_order: 2},
+        {name: 'outcome_to_be_predicted', label: 'Outcome to be Predicted', sort_order: 3},
+        {name: 'predictors', label: 'Predictors', sort_order: 4},
+        {name: 'sample_size', label: 'Sample Size', sort_order: 5}
     ];
 
     expect(mockSections).toHaveLength(5);
     expect(mockSections[0].name).toBe('source_of_data');
     expect(mockSections[1].name).toBe('participants');
-    
-    // Verificar ordenação
+
+        // Verify sort order
     const sortedSections = mockSections.sort((a, b) => a.sort_order - b.sort_order);
     expect(sortedSections[0].sort_order).toBe(1);
     expect(sortedSections[4].sort_order).toBe(5);
   });
 
-  it('deve simular adição de campo personalizado', () => {
+    it('should simulate adding custom field', () => {
     const mockCustomField = {
       entity_type_id: 'participants-section-id',
       name: 'custom_ethnicity',
-      label: 'Etnia dos Participantes',
-      description: 'Informações sobre a composição étnica da amostra',
+        label: 'Participant Ethnicity',
+        description: 'Information about the ethnic composition of the sample',
       field_type: 'multiselect',
       is_required: false,
       allowed_values: [
-        'Caucasiano',
-        'Afrodescendente', 
-        'Asiático',
-        'Hispânico/Latino',
-        'Indígena',
-        'Outros',
-        'Não informado'
+          'Caucasian',
+          'African descent',
+          'Asian',
+          'Hispanic/Latino',
+          'Indigenous',
+          'Other',
+          'Not reported'
       ],
       sort_order: 99
     };
@@ -102,39 +102,39 @@ describe('End-to-End Integration Flow', () => {
     expect(mockCustomField.name).toBe('custom_ethnicity');
     expect(mockCustomField.field_type).toBe('multiselect');
     expect(mockCustomField.allowed_values).toHaveLength(7);
-    expect(mockCustomField.allowed_values).toContain('Caucasiano');
+        expect(mockCustomField.allowed_values).toContain('Caucasian');
     expect(mockCustomField.is_required).toBe(false);
   });
 
-  it('deve simular edição de campo existente', () => {
+    it('should simulate editing existing field', () => {
     const originalField = {
       id: 'existing-field-id',
       name: 'age_range',
-      label: 'Faixa Etária',
-      description: 'Faixa etária original',
+        label: 'Age Range',
+        description: 'Original age range',
       is_required: false
     };
 
     const updates = {
-      description: 'Faixa etária dos participantes do estudo (atualizada no teste E2E)',
+        description: 'Age range of study participants (updated in E2E test)',
       is_required: true
     };
 
     const updatedField = { ...originalField, ...updates };
 
-    expect(updatedField.description).toContain('atualizada no teste E2E');
+        expect(updatedField.description).toContain('updated in E2E test');
     expect(updatedField.is_required).toBe(true);
-    expect(updatedField.name).toBe(originalField.name); // nome não muda
+        expect(updatedField.name).toBe(originalField.name); // name does not change
   });
 
-  it('deve simular validação de permissões', () => {
+    it('should simulate permission validation', () => {
     const mockMembership = {
       project_id: 'test-project-id',
       user_id: 'test-user-id',
       role: 'manager'
     };
 
-    // Simular função que verifica se é manager
+        // Simulate function that checks if user is manager
     const isManager = mockMembership.role === 'manager';
     const canEdit = isManager;
     const canCreate = isManager;
@@ -146,8 +146,8 @@ describe('End-to-End Integration Flow', () => {
     expect(canDelete).toBe(true);
   });
 
-  it('deve simular integridade da estrutura final', () => {
-    // Simular dados finais do projeto
+    it('should simulate final structure integrity', () => {
+        // Simulate final project data
     const mockFinalStructure = {
       project: {
         id: 'test-project-id',
@@ -176,15 +176,15 @@ describe('End-to-End Integration Flow', () => {
     expect(mockFinalStructure.custom_fields).toBe(1);
   });
 
-  it('deve simular cenários de error handling', () => {
-    // Teste de nome duplicado
+    it('should simulate error handling scenarios', () => {
+        // Duplicate name test
     const existingFieldNames = ['age_range', 'custom_ethnicity', 'study_design'];
     const newFieldName = 'custom_ethnicity';
     const isDuplicate = existingFieldNames.includes(newFieldName);
     
     expect(isDuplicate).toBe(true);
 
-    // Teste de campo select sem opções
+        // Select field without options test
     const invalidSelectField = {
       name: 'invalid_select',
       field_type: 'select',
@@ -197,12 +197,12 @@ describe('End-to-End Integration Flow', () => {
     expect(isValidSelect).toBe(false);
   });
 
-  it('deve simular teste de performance', () => {
+    it('should simulate performance test', () => {
     const mockLoadTime = 450; // ms
     const mockSectionsCount = 10;
     const mockFieldsCount = 48;
 
-    expect(mockLoadTime).toBeLessThan(2000); // menos de 2 segundos
+        expect(mockLoadTime).toBeLessThan(2000); // under 2 seconds
     expect(mockSectionsCount).toBeGreaterThan(5);
     expect(mockFieldsCount).toBeGreaterThan(40);
   });

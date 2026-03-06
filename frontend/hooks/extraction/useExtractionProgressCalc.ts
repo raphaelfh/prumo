@@ -1,12 +1,12 @@
 /**
- * Hook para calcular progresso de extração
- * 
- * Separa responsabilidade de calcular progresso do useExtractionSetup.
- * Segue SRP: uma responsabilidade por hook.
+ * Hook to compute extraction progress
+ *
+ * Separates progress calculation from useExtractionSetup (SRP).
  */
 
 import {useCallback} from 'react';
 import {supabase} from '@/integrations/supabase/client';
+import {t} from '@/lib/copy';
 
 export interface ExtractionProgress {
   totalRequiredFields: number;
@@ -21,18 +21,18 @@ interface UseExtractionProgressCalcReturn {
 }
 
 /**
- * Hook para calcular progresso de extração
+ * Hook to compute extraction progress
  */
 export function useExtractionProgressCalc(): UseExtractionProgressCalcReturn {
   /**
-   * Calcula o progresso de extração para um artigo
+   * Computes extraction progress for an article
    */
   const calculateProgress = useCallback(async (
     articleId: string,
     templateId: string
   ): Promise<ExtractionProgress | null> => {
     try {
-      // 1. Buscar entity types do template
+        // 1. Fetch template entity types
       const { data: entityTypes, error: entityTypesError } = await supabase
         .from('extraction_entity_types')
         .select('id')
@@ -43,7 +43,7 @@ export function useExtractionProgressCalc(): UseExtractionProgressCalcReturn {
 
       const entityTypeIds = entityTypes.map(et => et.id);
 
-      // 2. Buscar campos obrigatórios e opcionais
+        // 2. Fetch required and optional fields
       const { data: fields, error: fieldsError } = await supabase
         .from('extraction_fields')
         .select('id, is_required')
@@ -55,7 +55,7 @@ export function useExtractionProgressCalc(): UseExtractionProgressCalcReturn {
       const requiredFields = fields.filter(f => f.is_required);
       const optionalFields = fields.filter(f => !f.is_required);
 
-      // 3. Buscar instâncias do artigo
+        // 3. Fetch article instances
       const { data: instances, error: instancesError } = await supabase
         .from('extraction_instances')
         .select('id')
@@ -75,7 +75,7 @@ export function useExtractionProgressCalc(): UseExtractionProgressCalcReturn {
 
       const instanceIds = instances.map(i => i.id);
 
-      // 4. Contar valores preenchidos
+        // 4. Count filled values
       const { data: values, error: valuesError } = await supabase
         .from('extracted_values')
         .select('field_id, instance_id')
@@ -104,8 +104,8 @@ export function useExtractionProgressCalc(): UseExtractionProgressCalcReturn {
       };
 
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Erro ao calcular progresso';
-      console.error('Erro ao calcular progresso de extração:', err);
+        const message = err instanceof Error ? err.message : t('extraction', 'errorCalculatingProgress');
+        console.error('Error calculating extraction progress:', err);
       return null;
     }
   }, []);

@@ -12,6 +12,7 @@ import {Search} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,} from '@/components/ui/tooltip';
 import {usePDFStore} from '@/stores/usePDFStore';
+import {t} from '@/lib/copy';
 
 export function SearchTool() {
   const { ui, setSearchOpen } = usePDFStore();
@@ -26,13 +27,13 @@ export function SearchTool() {
             size="icon"
             onClick={() => setSearchOpen(!searchOpen)}
             className="h-8 w-8"
-            aria-label="Buscar no Documento"
+            aria-label={t('extraction', 'searchDocumentAria')}
           >
             <Search className="h-4 w-4" />
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          <p>Buscar no Documento</p>
+            <p>{t('extraction', 'searchDocumentAria')}</p>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

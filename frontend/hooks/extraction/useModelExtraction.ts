@@ -1,20 +1,21 @@
 /**
- * Hook para Extração de Modelos de Predição
- * 
- * Hook React para gerenciar extração automática de modelos de predição do artigo.
- * 
- * FOCO: Extração automática de modelos (model-extraction pipeline).
- * Permite ao usuário extrair modelos automaticamente do PDF do artigo.
+ * Hook for prediction model extraction
+ *
+ * React hook to manage automatic extraction of article prediction models.
+ *
+ * FOCUS: Automatic model extraction (model-extraction pipeline).
+ * Allows user to extract models automatically from the article PDF.
  * 
  * FEATURES:
  * - Estado de loading e error
- * - Toast notifications automáticas
- * - Callback para refresh após extração (recarregar modelos e instâncias)
- * - Tratamento de erros amigável
+ * - Automatic toast notifications
+ * - Callback to refresh after extraction (reload models and instances)
+ * - User-friendly error handling
  */
 
 import {useCallback, useState} from "react";
 import {toast} from "sonner";
+import {t} from "@/lib/copy";
 import {type ModelExtractionRequest, SectionExtractionService,} from "@/services/sectionExtractionService";
 import {AuthenticationError, getErrorCode, getErrorMessage, PDFNotFoundError,} from "@/lib/ai-extraction/errors";
 
@@ -28,13 +29,13 @@ export interface UseModelExtractionReturn {
 }
 
 /**
- * Hook para extração de modelos de predição
+ * Hook for prediction model extraction
  * 
  * USO:
  * ```tsx
  * const { extractModels, loading, error } = useModelExtraction({
  *   onSuccess: (runId, modelsCreated) => {
- *     // Refresh modelos e instâncias
+ *     // Refresh models and instances
  *   }
  * });
  * 
@@ -44,9 +45,9 @@ export interface UseModelExtractionReturn {
  *   templateId
  * });
  * ```
- * 
- * @param options - Opções do hook (callback de sucesso)
- * @returns Função de extração, estado de loading e error
+ *
+ * @param options - Hook options (success callback)
+ * @returns Extract function, loading state and error
  */
 export function useModelExtraction(options?: {
   onSuccess?: (runId: string, modelsCreated: number) => void;
@@ -55,18 +56,17 @@ export function useModelExtraction(options?: {
   const [error, setError] = useState<string | null>(null);
 
   /**
-   * Extrai modelos de predição do artigo
-   * 
-   * @param request - Parâmetros da extração
+   * Extracts prediction models from the article
+   * @param request - Extraction parameters
    */
   const extractModels = useCallback(
     async (request: ModelExtractionRequest) => {
-      console.log('[useModelExtraction] Iniciando extração de modelos', request);
+        console.log('[useModelExtraction] Starting model extraction', request);
       setLoading(true);
       setError(null);
 
       try {
-        // Chamar service para executar extração
+          // Call service to run extraction
         console.log('[useModelExtraction] Chamando service...');
         const result = await SectionExtractionService.extractModels(request);
         console.log('[useModelExtraction] Service retornou', {
@@ -80,35 +80,33 @@ export function useModelExtraction(options?: {
 
         const modelsCreated = result.data.modelsCreated.length;
 
-        // Verificar se há modelos criados
+          // Check if there are models created
         if (modelsCreated === 0) {
           // Avisar que nenhum modelo foi encontrado
-          toast.warning("Nenhum modelo encontrado", {
-            description: "A extração foi concluída, mas nenhum modelo de predição foi encontrado no artigo.",
+            toast.warning(t('extraction', 'noModelsFoundTitle'), {
+                description: t('extraction', 'noModelsExtractionComplete'),
             duration: 6000,
           });
         } else {
-          // Toast de sucesso com informações úteis
-          // Nota: Backend envia tokensTotal, não tokensUsed
           toast.success(
-            `Extração concluída! ${modelsCreated} modelo(s) encontrado(s) e criado(s).`,
+              t('extraction', 'modelExtractionSuccessTitle').replace('{{n}}', String(modelsCreated)),
             {
-              description: `${result.data.metadata?.tokensTotal || 0} tokens usados`,
+                description: t('extraction', 'modelExtractionSuccessTokens').replace('{{n}}', String(result.data.metadata?.tokensTotal || 0)),
             },
           );
         }
 
         // Chamar callback de sucesso se fornecido
-        // Útil para refresh de modelos e instâncias após extração
-        // IMPORTANTE: Não fazer await - callback não deve bloquear o reset do loading
+          // Useful to refresh models and instances after extraction
+          // IMPORTANT: Do not await - callback must not block loading reset
         if (options?.onSuccess) {
           // Executar callback sem bloquear (pode ser async)
-          // O loading será resetado no finally independentemente do callback
+            // Loading will be reset in finally regardless of callback
           Promise.resolve(
             options.onSuccess(result.data.runId, modelsCreated)
           ).catch(err => {
             console.error('[useModelExtraction] Erro no callback onSuccess:', err);
-            // Não bloquear o reset do loading por erro no callback
+              // Do not block loading reset on callback error
           });
         }
       } catch (err: any) {
@@ -118,7 +116,7 @@ export function useModelExtraction(options?: {
           stack: err instanceof Error ? err.stack : undefined,
         });
 
-        // Tratar erro de forma amigável usando classes de erro customizadas
+          // Handle error in a user-friendly way using custom error classes
         const message = getErrorMessage(err);
         const code = getErrorCode(err);
         setError(message);
@@ -126,15 +124,15 @@ export function useModelExtraction(options?: {
         // Toast de erro com mensagem clara baseada no tipo de erro
         const errorCode = code || '';
         if (err instanceof PDFNotFoundError || errorCode === 'PDF_NOT_FOUND') {
-          toast.error("Erro na extração", {
+            toast.error(t('extraction', 'modelExtractionErrorTitle'), {
             description: message,
           });
         } else if (err instanceof AuthenticationError || errorCode === 'AUTH_ERROR') {
-          toast.error("Erro de autenticação", {
-            description: "Por favor, faça login novamente.",
+            toast.error(t('extraction', 'modelExtractionAuthErrorTitle'), {
+                description: t('extraction', 'sectionExtractionErrorAuthDesc'),
           });
         } else {
-          toast.error(`Erro na extração de modelos: ${message}`);
+            toast.error(`${t('extraction', 'modelExtractionErrorTitle')}: ${message}`);
         }
 
         // Re-throw para permitir tratamento adicional pelo componente

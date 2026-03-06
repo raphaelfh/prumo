@@ -1,33 +1,34 @@
 /**
- * Comparação de Instância Única
- * 
- * Para cardinality='one':
- * - Renderiza ComparisonTable com todos os fields
- * - Compara valores de todos os usuários lado a lado
+ * Single instance comparison
+ *
+ * For cardinality='one':
+ * - Renders ComparisonTable with all fields
+ * - Compares values from all users side by side
  */
 
 import {useCallback, useMemo} from 'react';
 import {type ComparisonColumn, ComparisonTable, type ComparisonUser} from './ComparisonTable';
 import {extractInstanceValuesForUser} from '@/lib/comparison/grouping';
 import type {ComparisonSectionViewProps} from './ComparisonSectionView';
+import {t} from '@/lib/copy';
 
 export function SingleInstanceComparison(props: ComparisonSectionViewProps) {
   const instance = props.instances[0];
-  
-  // IMPORTANTE: Todos os hooks devem ser chamados ANTES de qualquer early return
-  // Preparar columns (cada field é uma row)
+
+    // IMPORTANT: All hooks must be called BEFORE any early return
+    // Prepare columns (each field is a row)
   const columns = useMemo<ComparisonColumn[]>(() => 
     props.entityType.fields.map(field => ({
       id: field.id,
       label: field.label,
       getValue: (fieldId: string, userData: Record<string, any>) => userData[fieldId],
       isRequired: field.is_required,
-      field: field // ✅ NOVO: passar field para a coluna
+        field: field // Pass field to column
     })),
     [props.entityType.fields]
   );
-  
-  // Preparar data (userId -> fieldId -> value)
+
+    // Prepare data (userId -> fieldId -> value)
   const comparisonData = useMemo(() => {
     if (!instance) return {};
     
@@ -38,11 +39,11 @@ export function SingleInstanceComparison(props: ComparisonSectionViewProps) {
       props.myValues, 
       instance.id
     );
-    
-    // Valores de outros usuários
+
+      // Other users' values
     props.otherExtractions.forEach(ext => {
-      // Encontrar instanceId correspondente (mesma seção)
-      // Para cardinality='one', sempre há apenas 1 instance por usuário
+        // Find corresponding instanceId (same section)
+        // For cardinality='one', there is always only 1 instance per user
       data[ext.userId] = extractInstanceValuesForUser(
         ext.values,
         instance.id // Assumindo mesmo ID (pode precisar ajuste)
@@ -51,8 +52,8 @@ export function SingleInstanceComparison(props: ComparisonSectionViewProps) {
     
     return data;
   }, [props.currentUser.userId, props.myValues, props.otherExtractions, instance]);
-  
-  // Preparar lista de outros usuários
+
+    // Prepare list of other users
   const otherUsers = useMemo<ComparisonUser[]>(() => 
     props.otherExtractions.map(ext => ({
       userId: ext.userId,
@@ -62,8 +63,8 @@ export function SingleInstanceComparison(props: ComparisonSectionViewProps) {
     })),
     [props.otherExtractions]
   );
-  
-  // Handler para edição
+
+    // Edit handler
   const handleValueChange = useCallback((fieldId: string, newValue: any) => {
     if (props.onValueUpdate && instance) {
       props.onValueUpdate(instance.id, fieldId, newValue);
@@ -74,7 +75,7 @@ export function SingleInstanceComparison(props: ComparisonSectionViewProps) {
   if (!instance) {
     return (
       <div className="text-center py-4 text-muted-foreground text-sm">
-        Nenhuma instância criada para esta seção
+          {t('shared', 'noInstanceForSection')}
       </div>
     );
   }

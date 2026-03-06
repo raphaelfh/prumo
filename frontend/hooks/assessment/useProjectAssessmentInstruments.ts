@@ -1,14 +1,14 @@
 /**
- * Hook para gerenciar instrumentos de avaliacao de projeto.
+ * Hook to manage project assessment instruments.
  *
- * Fornece funcionalidades para:
- * - Listar instrumentos globais disponiveis
- * - Listar instrumentos configurados no projeto
- * - Clonar instrumentos globais para o projeto
- * - Criar instrumentos customizados
- * - Atualizar e deletar instrumentos
+ * Provides:
+ * - List available global instruments
+ * - List instruments configured in the project
+ * - Clone global instruments into the project
+ * - Create custom instruments
+ * - Update and delete instruments
  *
- * Usa apiClient centralizado (auth automatica via Supabase session).
+ * Uses centralized apiClient (auth via Supabase session).
  */
 
 import {useCallback, useState} from 'react';
@@ -41,7 +41,7 @@ export const projectInstrumentKeys = {
 };
 
 /**
- * Hook para listar instrumentos globais disponiveis.
+ * Hook to list available global instruments.
  */
 export function useGlobalInstruments() {
   const { session } = useAuth();
@@ -52,13 +52,13 @@ export function useGlobalInstruments() {
       return listGlobalInstruments();
     },
     enabled: !!session?.access_token,
-    staleTime: 5 * 60 * 1000, // 5 minutos
+      staleTime: 5 * 60 * 1000, // 5 minutes
     retry: 1,
   });
 }
 
 /**
- * Hook para listar instrumentos de um projeto.
+ * Hook to list instruments of a project.
  */
 export function useProjectInstruments(projectId: string | null) {
   const { session } = useAuth();
@@ -72,13 +72,13 @@ export function useProjectInstruments(projectId: string | null) {
       return listProjectInstruments(projectId);
     },
     enabled: !!session?.access_token && !!projectId,
-    staleTime: 30 * 1000, // 30 segundos
+      staleTime: 30 * 1000, // 30 seconds
     retry: 1,
   });
 }
 
 /**
- * Hook para buscar um instrumento especifico.
+ * Hook to fetch a specific instrument.
  */
 export function useProjectInstrument(instrumentId: string | null) {
   const { session } = useAuth();
@@ -98,7 +98,7 @@ export function useProjectInstrument(instrumentId: string | null) {
 }
 
 /**
- * Hook para verificar se projeto tem instrumento configurado.
+ * Hook to check if project has an instrument configured.
  */
 export function useHasConfiguredInstrument(projectId: string | null) {
   const { data: instruments, isLoading } = useProjectInstruments(projectId);
@@ -111,7 +111,7 @@ export function useHasConfiguredInstrument(projectId: string | null) {
 }
 
 /**
- * Hook para clonar instrumento global.
+ * Hook to clone a global instrument.
  */
 export function useCloneInstrument() {
   const queryClient = useQueryClient();
@@ -129,7 +129,7 @@ export function useCloneInstrument() {
 }
 
 /**
- * Hook para criar instrumento customizado.
+ * Hook to create a custom instrument.
  */
 export function useCreateInstrument() {
   const queryClient = useQueryClient();
@@ -147,7 +147,7 @@ export function useCreateInstrument() {
 }
 
 /**
- * Hook para atualizar instrumento.
+ * Hook to update an instrument.
  */
 export function useUpdateInstrument() {
   const queryClient = useQueryClient();
@@ -176,7 +176,7 @@ export function useUpdateInstrument() {
 }
 
 /**
- * Hook para deletar instrumento.
+ * Hook to delete an instrument.
  */
 export function useDeleteInstrument() {
   const queryClient = useQueryClient();
@@ -200,7 +200,7 @@ export function useDeleteInstrument() {
 }
 
 /**
- * Hook combinado para gerenciamento completo de instrumentos.
+ * Combined hook for full instrument management.
  */
 export function useProjectAssessmentInstrumentManager(projectId: string | null) {
   const [selectedInstrumentId, setSelectedInstrumentId] = useState<

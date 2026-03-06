@@ -1,19 +1,19 @@
 /**
- * Comparação de Modelos Preditivos (1:1)
- * 
- * Permite usuário selecionar:
- * 1. Qual dos SEUS modelos comparar
- * 2. Com qual OUTRO USUÁRIO comparar
- * 3. Qual MODELO desse outro usuário comparar
- * 
- * Renderiza grid lado-a-lado usando ComparisonTable genérico.
- * 
+ * Predictive model comparison (1:1)
+ *
+ * Lets the user select:
+ * 1. Which of YOUR models to compare
+ * 2. With which OTHER USER to compare
+ * 3. Which MODEL of that user to compare
+ *
+ * Renders side-by-side grid using generic ComparisonTable.
+ *
  * Features:
- * - Seletores cascata (modelo próprio → usuário → modelo do usuário)
- * - Auto-seleção inteligente (primeiro modelo disponível)
- * - Validação de estado (precisa ter modelos)
- * - Grid de comparação 1:1
- * 
+ * - Cascade selectors (own model → user → user's model)
+ * - Smart auto-selection (first available model)
+ * - State validation (must have models)
+ * - 1:1 comparison grid
+ *
  * @component
  */
 
@@ -29,9 +29,11 @@ import {
 } from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Info } from 'lucide-react';
+import {Badge} from '@/components/ui/badge';
 import { ComparisonTable, type ComparisonColumn, type ComparisonUser } from '@/components/shared/comparison';
 import type { ExtractionEntityType, ExtractionField, ExtractionInstance } from '@/types/extraction';
 import type { OtherExtraction } from '@/hooks/extraction/colaboracao/useOtherExtractions';
+import {t} from '@/lib/copy';
 
 // =================== INTERFACES ===================
 
@@ -60,33 +62,33 @@ export function ModelLevelComparison(props: ModelLevelComparisonProps) {
   const [otherSelectedUserId, setOtherSelectedUserId] = useState<string | null>(null);
   const [otherSelectedModelId, setOtherSelectedModelId] = useState<string | null>(null);
 
-  // Meus modelos (instances do tipo prediction_models)
+    // My models (instances of type prediction_models)
   const myModels = myInstances[modelParentType.id] || [];
 
-  // Auto-selecionar primeiro modelo do usuário atual
+    // Auto-select first model of current user
   useEffect(() => {
     if (myModels.length > 0 && !mySelectedModelId) {
       setMySelectedModelId(myModels[0].id);
     }
   }, [myModels, mySelectedModelId]);
 
-  // Extrair modelos de outros usuários
-  // NOTA: otherExtractions.values contém dados flat de extracted_values
-  // Precisamos inferir quais instances existem baseado nas chaves
+    // Extract models from other users
+    // NOTE: otherExtractions.values contains flat extracted_values data
+    // We infer which instances exist from the keys
   const modelsByUser = useMemo(() => {
     const grouped = new Map<string, Array<{ id: string; label: string }>>();
 
     otherExtractions.forEach(ext => {
       const userModels: Array<{ id: string; label: string }> = [];
 
-      // Analisar chaves para encontrar instanceIds únicos
-      // Formato esperado: `${instanceId}_${fieldId}`
+        // Parse keys to find unique instanceIds
+        // Expected format: `${instanceId}_${fieldId}`
       const instanceIds = new Set<string>();
 
       Object.keys(ext.values).forEach(key => {
         const parts = key.split('_');
         if (parts.length >= 2) {
-          // Primeira parte é instanceId (UUID format)
+            // First part is instanceId (UUID format)
           const potentialInstanceId = parts[0];
           if (potentialInstanceId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)) {
             instanceIds.add(potentialInstanceId);
@@ -94,12 +96,12 @@ export function ModelLevelComparison(props: ModelLevelComparisonProps) {
         }
       });
 
-      // Para cada instanceId, criar entry (usamos instanceId como label por enquanto)
-      // TODO: Buscar label real do banco ou metadata
+        // For each instanceId, create entry (we use instanceId as label for now)
+        // TODO: Fetch real label from DB or metadata
       instanceIds.forEach(instanceId => {
         userModels.push({
           id: instanceId,
-          label: `Modelo ${userModels.length + 1}` // Fallback
+            label: t('shared', 'modelFallbackLabel').replace('{{n}}', String(userModels.length + 1)),
         });
       });
 
@@ -111,7 +113,7 @@ export function ModelLevelComparison(props: ModelLevelComparisonProps) {
     return grouped;
   }, [otherExtractions]);
 
-  // Resetar modelo selecionado quando mudar usuário
+    // Reset selected model when user changes
   useEffect(() => {
     if (otherSelectedUserId) {
       const userModels = modelsByUser.get(otherSelectedUserId);
@@ -123,18 +125,18 @@ export function ModelLevelComparison(props: ModelLevelComparisonProps) {
     }
   }, [otherSelectedUserId, modelsByUser]);
 
-  // Buscar entity types filhos do modelo (Candidate Predictors, Performance, etc)
+    // Get child entity types of model (Candidate Predictors, Performance, etc)
   const modelChildTypes = useMemo(() => 
     entityTypes.filter(et => et.parent_entity_type_id === modelParentType.id),
     [entityTypes, modelParentType.id]
   );
 
-  // Preparar colunas para model-level (fields dos child types)
+    // Prepare columns for model-level (fields of child types)
   const modelColumns = useMemo<ComparisonColumn[]>(() => {
     const columns: ComparisonColumn[] = [];
 
     modelChildTypes.forEach(childType => {
-      // Pegar fields deste child type (se carregados)
+        // Get fields of this child type (if loaded)
       const fields = (childType as any).fields || [];
 
       fields.forEach((field: ExtractionField) => {
@@ -142,10 +144,10 @@ export function ModelLevelComparison(props: ModelLevelComparisonProps) {
           id: field.id,
           label: `${childType.label} > ${field.label}`,
           getValue: (fieldId: string, userData: Record<string, any>) => {
-            // Para model-level, precisamos do instanceId
-            // Usar modelos selecionados
-            // Chave: `${instanceId}_${fieldId}`
-            return userData[fieldId]; // Será ajustado com instanceId quando renderizar
+              // For model-level we need instanceId
+              // Use selected models
+              // Key: `${instanceId}_${fieldId}`
+              return userData[fieldId]; // Will be adjusted with instanceId when rendering
           },
           isRequired: field.is_required
         });
@@ -155,7 +157,7 @@ export function ModelLevelComparison(props: ModelLevelComparisonProps) {
     return columns;
   }, [modelChildTypes]);
 
-  // Preparar data específico para os 2 modelos selecionados
+    // Prepare data for the 2 selected models
   const modelComparisonData = useMemo(() => {
     if (!mySelectedModelId || !otherSelectedModelId || !otherSelectedUserId) {
       return {};
@@ -163,7 +165,7 @@ export function ModelLevelComparison(props: ModelLevelComparisonProps) {
 
     const data: Record<string, Record<string, any>> = {};
 
-    // Dados do meu modelo selecionado
+      // My selected model data
     const myModelData: Record<string, any> = {};
     modelColumns.forEach(column => {
       const key = `${mySelectedModelId}_${column.id}`;
@@ -171,7 +173,7 @@ export function ModelLevelComparison(props: ModelLevelComparisonProps) {
     });
     data[currentUser.userId] = myModelData;
 
-    // Dados do modelo do outro usuário
+      // Other user's model data
     const otherUserData: Record<string, any> = {};
     const otherExtraction = otherExtractions.find(e => e.userId === otherSelectedUserId);
     if (otherExtraction) {
@@ -185,14 +187,13 @@ export function ModelLevelComparison(props: ModelLevelComparisonProps) {
     return data;
   }, [mySelectedModelId, otherSelectedModelId, otherSelectedUserId, myValues, otherExtractions, modelColumns, currentUser.userId]);
 
-  // Validações
+    // Validation
   if (myModels.length === 0) {
     return (
       <Alert>
         <Info className="h-4 w-4" />
         <AlertDescription>
-          Você ainda não criou nenhum modelo preditivo. 
-          Adicione modelos na aba <strong>Extração</strong> para poder comparar.
+            {t('shared', 'youHaveNoModels')} {t('shared', 'youHaveNoModelsDesc')}
         </AlertDescription>
       </Alert>
     );
@@ -203,8 +204,7 @@ export function ModelLevelComparison(props: ModelLevelComparisonProps) {
       <Alert>
         <Info className="h-4 w-4" />
         <AlertDescription>
-          Nenhum outro revisor criou modelos ainda.
-          A comparação ficará disponível quando outros membros adicionarem modelos.
+            {t('shared', 'noOtherReviewersCreatedModels')} {t('shared', 'noOtherReviewersCreatedModelsDesc')}
         </AlertDescription>
       </Alert>
     );
@@ -212,19 +212,19 @@ export function ModelLevelComparison(props: ModelLevelComparisonProps) {
 
   return (
     <div className="space-y-4">
-      {/* Seletores de Modelos */}
+        {/* Model selectors */}
       <Card>
         <CardContent className="pt-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Coluna Esquerda: Meu Modelo */}
+              {/* Left column: My model */}
             <div className="space-y-2">
-              <Label className="text-sm font-medium">Seu Modelo</Label>
+                <Label className="text-sm font-medium">{t('shared', 'yourModel')}</Label>
               <Select 
                 value={mySelectedModelId || ''} 
                 onValueChange={setMySelectedModelId}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Selecione seu modelo" />
+                    <SelectValue placeholder={t('shared', 'selectYourModel')}/>
                 </SelectTrigger>
                 <SelectContent>
                   {myModels.map(model => (
@@ -235,42 +235,41 @@ export function ModelLevelComparison(props: ModelLevelComparisonProps) {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                {myModels.length} modelo{myModels.length !== 1 ? 's' : ''} criado{myModels.length !== 1 ? 's' : ''}
+                  {t('shared', 'modelsCreatedCount').replace('{{n}}', String(myModels.length))}
               </p>
             </div>
 
-            {/* Coluna Direita: Modelo de Outro Usuário */}
+              {/* Right column: Other user's model */}
             <div className="space-y-2">
-              <Label className="text-sm font-medium">Comparar com</Label>
+                <Label className="text-sm font-medium">{t('shared', 'compareWith')}</Label>
               
-              {/* Seletor de Usuário */}
               <Select 
                 value={otherSelectedUserId || ''} 
                 onValueChange={setOtherSelectedUserId}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Selecione outro revisor" />
+                    <SelectValue placeholder={t('shared', 'selectOtherReviewer')}/>
                 </SelectTrigger>
                 <SelectContent>
                   {Array.from(modelsByUser.entries()).map(([userId, models]) => {
                     const user = otherExtractions.find(e => e.userId === userId);
                     return (
                       <SelectItem key={userId} value={userId}>
-                        {user?.userName} ({models.length} modelo{models.length !== 1 ? 's' : ''})
+                          {user?.userName} ({t('shared', 'modelsCreatedCount').replace('{{n}}', String(models.length))})
                       </SelectItem>
                     );
                   })}
                 </SelectContent>
               </Select>
 
-              {/* Seletor de Modelo (cascata) */}
+                {/* Model selector (cascade) */}
               {otherSelectedUserId && modelsByUser.get(otherSelectedUserId) && (
                 <Select 
                   value={otherSelectedModelId || ''} 
                   onValueChange={setOtherSelectedModelId}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Selecione o modelo" />
+                      <SelectValue placeholder={t('shared', 'selectModel')}/>
                   </SelectTrigger>
                   <SelectContent>
                     {modelsByUser.get(otherSelectedUserId)!.map(model => (
@@ -284,7 +283,7 @@ export function ModelLevelComparison(props: ModelLevelComparisonProps) {
 
               {otherSelectedUserId && !otherSelectedModelId && (
                 <p className="text-xs text-muted-foreground">
-                  Selecione um modelo acima
+                    {t('shared', 'selectModelAbove')}
                 </p>
               )}
             </div>
@@ -292,13 +291,13 @@ export function ModelLevelComparison(props: ModelLevelComparisonProps) {
         </CardContent>
       </Card>
 
-      {/* Grid de Comparação 1:1 */}
+        {/* 1:1 comparison grid */}
       {mySelectedModelId && otherSelectedModelId && otherSelectedUserId && (
         <>
-          {/* Info sobre os modelos sendo comparados */}
+            {/* Info about models being compared */}
           <div className="flex items-center justify-between bg-muted/50 rounded-lg p-3 text-sm">
             <div className="flex items-center gap-2">
-              <Badge variant="secondary">Seu modelo</Badge>
+                <Badge variant="secondary">{t('shared', 'yourModel')}</Badge>
               <span className="font-medium">
                 {myModels.find(m => m.id === mySelectedModelId)?.label}
               </span>
@@ -314,7 +313,7 @@ export function ModelLevelComparison(props: ModelLevelComparisonProps) {
             </div>
           </div>
 
-          {/* Tabela de comparação */}
+            {/* Comparison table */}
           <ComparisonTable
             columns={modelColumns}
             rows={modelColumns.map(c => c.id)}
@@ -328,7 +327,7 @@ export function ModelLevelComparison(props: ModelLevelComparisonProps) {
               isCurrentUser: false
             }))}
             data={modelComparisonData}
-            showConsensus={false} // Não faz sentido para comparação 1:1
+            showConsensus={false} // Not meaningful for 1:1 comparison
             maxHeight="500px"
           />
         </>

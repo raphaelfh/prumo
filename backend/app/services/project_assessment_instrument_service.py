@@ -1,9 +1,9 @@
 """
 Project Assessment Instrument Service.
 
-Serviço para gerenciar instrumentos de avaliação por projeto.
-Permite clonar instrumentos globais (PROBAST, ROBIS, etc.) para
-projetos ou criar instrumentos customizados.
+Service to manage assessment instruments per project.
+Allows cloning global instruments (PROBAST, ROBIS, etc.) to
+projects or creating custom instruments.
 """
 
 from uuid import UUID
@@ -33,13 +33,13 @@ from app.schemas.assessment import (
 
 class ProjectAssessmentInstrumentService(LoggerMixin):
     """
-    Service para gerenciar instrumentos de avaliação por projeto.
+    Service to manage assessment instruments per project.
 
-    Permite:
-    - Clonar instrumentos globais (PROBAST, ROBIS)
-    - Criar instrumentos customizados
-    - Gerenciar items de cada instrumento
-    - Atualizar configurações por projeto
+    Allows:
+    - Cloning global instruments (PROBAST, ROBIS)
+    - Creating custom instruments
+    - Managing items of each instrument
+    - Updating settings per project
     """
 
     def __init__(
@@ -64,14 +64,14 @@ class ProjectAssessmentInstrumentService(LoggerMixin):
         active_only: bool = True,
     ) -> list[ProjectAssessmentInstrumentSchema]:
         """
-        Lista instrumentos de um projeto.
+        List instruments for a project.
 
         Args:
-            project_id: ID do projeto.
-            active_only: Se True, retorna apenas instrumentos ativos.
+            project_id: Project ID.
+            active_only: If True, return only active instruments.
 
         Returns:
-            Lista de instrumentos do projeto.
+            List of project instruments.
         """
         instruments = await self._project_instruments.get_by_project(
             project_id, active_only=active_only
@@ -79,8 +79,9 @@ class ProjectAssessmentInstrumentService(LoggerMixin):
 
         result = []
         for instrument in instruments:
-            # Load items
-            items = await self._project_items.get_by_instrument(instrument.id)
+            # Items already loaded via selectinload in get_by_project
+            raw_items = getattr(instrument, "items", None) or []
+            items = sorted(raw_items, key=lambda i: (i.sort_order or 0))
             schema = ProjectAssessmentInstrumentSchema.model_validate(instrument)
             schema.items = [
                 ProjectAssessmentItemSchema.model_validate(item) for item in items
@@ -94,13 +95,13 @@ class ProjectAssessmentInstrumentService(LoggerMixin):
         instrument_id: UUID,
     ) -> ProjectAssessmentInstrumentSchema | None:
         """
-        Busca instrumento por ID com items.
+        Fetch instrument by ID with items.
 
         Args:
-            instrument_id: ID do instrumento.
+            instrument_id: Instrument ID.
 
         Returns:
-            Instrumento com items ou None.
+            Instrument with items or None.
         """
         instrument = await self._project_instruments.get_with_items(instrument_id)
         if not instrument:
@@ -115,21 +116,21 @@ class ProjectAssessmentInstrumentService(LoggerMixin):
         custom_name: str | None = None,
     ) -> ProjectAssessmentInstrumentSchema:
         """
-        Clona um instrumento global para um projeto.
+        Clone a global instrument to a project.
 
-        Cria uma cópia do instrumento global (PROBAST, ROBIS, etc.)
-        com todos os seus items, permitindo customização por projeto.
+        Creates a copy of the global instrument (PROBAST, ROBIS, etc.)
+        with all its items, allowing per-project customization.
 
         Args:
-            project_id: ID do projeto.
-            global_instrument_id: ID do instrumento global a clonar.
-            custom_name: Nome customizado (opcional).
+            project_id: Project ID.
+            global_instrument_id: ID of global instrument to clone.
+            custom_name: Custom name (optional).
 
         Returns:
-            Instrumento clonado.
+            Cloned instrument.
 
         Raises:
-            ValueError: Se instrumento global não encontrado.
+            ValueError: If global instrument not found.
         """
         # Check if already cloned
         existing = await self._project_instruments.get_by_global_instrument(
@@ -310,7 +311,7 @@ class ProjectAssessmentInstrumentService(LoggerMixin):
             instrument_id: ID do instrumento.
 
         Returns:
-            True se deletado, False se não encontrado.
+            True if deleted, False if not found.
         """
         instrument = await self._project_instruments.get_by_id(instrument_id)
         if not instrument:
@@ -405,7 +406,7 @@ class ProjectAssessmentInstrumentService(LoggerMixin):
             item_id: ID do item.
 
         Returns:
-            True se deletado, False se não encontrado.
+            True if deleted, False if not found.
         """
         item = await self._project_items.get_by_id(item_id)
         if not item:
@@ -420,21 +421,16 @@ class ProjectAssessmentInstrumentService(LoggerMixin):
         self,
     ) -> list[dict]:
         """
-        Lista instrumentos globais disponíveis para clonagem.
+        List global instruments available for cloning.
 
         Returns:
             Lista de instrumentos globais com seus items.
         """
-        # Get all active global instruments
-        instruments = await self._global_instruments.get_all()
+        instruments = await self._global_instruments.get_all_active_with_items()
 
         result = []
         for instrument in instruments:
-            if not instrument.is_active:
-                continue
-
-            items = await self._global_items.get_by_instrument(instrument.id)
-
+            items = getattr(instrument, "items", None) or []
             result.append({
                 "id": str(instrument.id),
                 "toolType": instrument.tool_type,
@@ -443,7 +439,7 @@ class ProjectAssessmentInstrumentService(LoggerMixin):
                 "mode": instrument.mode,
                 "targetMode": getattr(instrument, 'target_mode', 'per_article'),
                 "itemsCount": len(items),
-                "domains": list(set(item.domain for item in items)),
+                "domains": list(set(item.domain for item in items if item.domain)),
             })
 
         return result

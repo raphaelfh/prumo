@@ -1,7 +1,7 @@
 /**
- * Componente Inline de Sugestão de IA
- * 
- * Mostra sugestão ao lado do campo de input de forma minimalista
+ * Inline AI suggestion component
+ *
+ * Shows suggestion next to the input field in a minimal way
  * Layout responsivo: [%] [✓] [✗] [Valor truncado]
  * 
  * @component
@@ -42,7 +42,7 @@ export function AISuggestionInline({
 
   return (
     <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 animate-in fade-in slide-in-from-right-2 duration-200 flex-wrap">
-      {/* Porcentagem + Botões de ação - mostrar se pendente ou rejeitado (para mostrar indicador) */}
+        {/* Percentage + action buttons - show if pending or rejected (to show indicator) */}
       {!isAccepted && (
         <div className="flex items-center gap-2 shrink-0">
           <AISuggestionConfidence suggestion={suggestion} showDetailsOnClick />
@@ -56,7 +56,7 @@ export function AISuggestionInline({
         </div>
       )}
 
-      {/* Badge de confiança quando aceita (com histórico se disponível) */}
+        {/* Confidence badge when accepted (with history if available) */}
       {isAccepted && getHistory && (
         <AISuggestionHistoryPopover
           instanceId={instanceId}

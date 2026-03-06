@@ -1,8 +1,8 @@
 /**
- * Valor sugerido (nível de assessment) com tooltip
- * Componente compartilhado reutilizável
+ * Suggested value (assessment level) with tooltip
+ * Reusable shared component
  *
- * Adaptado de extraction/ai/shared/AISuggestionValue.tsx
+ * Adapted from extraction/ai/shared/AISuggestionValue.tsx
  */
 
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
@@ -20,7 +20,7 @@ interface AISuggestionValueProps {
 // =================== HELPERS ===================
 
 /**
- * Formata valor para exibição
+ * Format value for display
  */
 function formatSuggestionValue(level: string, maxLength: number): string {
   const formatted = formatAssessmentLevel(level);
@@ -31,7 +31,7 @@ function formatSuggestionValue(level: string, maxLength: number): string {
 }
 
 /**
- * Retorna valor completo formatado
+ * Returns full formatted value
  */
 function formatFullSuggestionValue(level: string): string {
   return formatAssessmentLevel(level);

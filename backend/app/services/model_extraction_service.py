@@ -1,14 +1,14 @@
 """
 Model Extraction Service.
 
-Migrado de: supabase/functions/model-extraction/index.ts
+Migrated from: supabase/functions/model-extraction/index.ts
 
-Serviço para extração automática de modelos de predição de artigos.
-Implementa:
-- Identificação de modelos via LLM
-- Criação automática de hierarquia (modelo + seções filhas)
-- Tracking de extraction_runs e tokens
-- Repository Pattern com SQLAlchemy
+Service for automatic extraction of article prediction models.
+Implements:
+- Model identification via LLM
+- Automatic hierarchy creation (model + child sections)
+- extraction_runs and token tracking
+- Repository Pattern with SQLAlchemy
 """
 
 import json
@@ -41,7 +41,7 @@ from app.utils.json_parser import extract_models_from_response
 
 @dataclass
 class ModelExtractionResult:
-    """Resultado de extração de modelos."""
+    """Model extraction result."""
 
     extraction_run_id: str
     models_created: list[dict[str, Any]]
@@ -55,13 +55,13 @@ class ModelExtractionResult:
 
 class ModelExtractionService(LoggerMixin):
     """
-    Service para extração de modelos de predição.
-    
-    Identifica e cria instâncias de modelos automaticamente.
-    Migrado para usar SQLAlchemy via Repository Pattern.
-    Suporta BYOK (Bring Your Own Key) com fallback para key global.
+    Service for prediction model extraction.
+
+    Identifies and creates model instances automatically.
+    Migrated to use SQLAlchemy via Repository Pattern.
+    Supports BYOK (Bring Your Own Key) with fallback to global key.
     """
-    
+
     def __init__(
         self,
         db: AsyncSession,
@@ -71,14 +71,14 @@ class ModelExtractionService(LoggerMixin):
         openai_api_key: str | None = None,
     ):
         """
-        Inicializa o service.
-        
+        Initialize the service.
+
         Args:
-            db: Sessão async do SQLAlchemy.
-            user_id: ID do usuário autenticado.
-            storage: Adapter de storage.
-            trace_id: ID de rastreamento.
-            openai_api_key: API key customizada (BYOK). Se None, usa key global.
+            db: Async SQLAlchemy session.
+            user_id: Authenticated user ID.
+            storage: Storage adapter.
+            trace_id: Trace ID.
+            openai_api_key: Custom API key (BYOK). If None, uses global key.
         """
         self.db = db
         self.user_id = user_id
@@ -103,20 +103,20 @@ class ModelExtractionService(LoggerMixin):
         model: str = "gpt-4o-mini",
     ) -> ModelExtractionResult:
         """
-        Extrai modelos de predição de um artigo.
-        
+        Extract prediction models from an article.
+
         Args:
-            project_id: ID do projeto.
-            article_id: ID do artigo.
-            template_id: ID do template.
-            model: Modelo OpenAI a usar.
+            project_id: Project ID.
+            article_id: Article ID.
+            template_id: Template ID.
+            model: OpenAI model to use.
 
         Returns:
-            ModelExtractionResult com extraction_run_id, modelos e tokens.
+            ModelExtractionResult with extraction_run_id, models and tokens.
         """
         start_time = time.time()
-        
-        # 1. Criar extraction_run no banco
+
+        # 1. Create extraction_run in DB
         run = await self._runs.create_run(
             project_id=project_id,
             article_id=article_id,
@@ -139,19 +139,19 @@ class ModelExtractionService(LoggerMixin):
         )
         
         try:
-            # 2. Buscar PDF
+            # 2. Fetch PDF
             pdf_data = await self._get_pdf(article_id)
             
             # 3. Processar texto do PDF
             pdf_text = await self.pdf_processor.extract_text(pdf_data)
-            
-            # 4. Buscar template e entity types
+
+            # 4. Fetch template and entity types
             template = await self._get_template(template_id)
             
             # 5. Identificar modelos usando LLM (com tracking de tokens)
             models, llm_response = await self._identify_models(pdf_text, template, model)
-            
-            # 6. Criar instâncias no banco (modelo + children)
+
+            # 6. Create instances in DB (model + children)
             created_models, total_children = await self._create_model_instances(
                 project_id=project_id,
                 article_id=article_id,
@@ -218,7 +218,7 @@ class ModelExtractionService(LoggerMixin):
             raise
     
     async def _get_pdf(self, article_id: UUID) -> bytes:
-        """Busca e faz download do PDF do artigo via Storage Adapter."""
+        """Fetch and download article PDF via Storage Adapter."""
         pdf_file = await self._article_files.get_latest_pdf(article_id)
         
         if not pdf_file:
@@ -228,18 +228,18 @@ class ModelExtractionService(LoggerMixin):
     
     async def _get_template(self, template_id: UUID) -> Any:
         """
-        Busca template com entity types.
-        
-        Tenta primeiro project_extraction_templates (template de projeto),
-        depois extraction_templates_global (template global).
+        Fetch template with entity types.
+
+        Tries project_extraction_templates first (project template),
+        then extraction_templates_global (global template).
         """
-        # Primeiro, tentar template de projeto
+        # First try project template
         template = await self._templates.get_with_entity_types(template_id)
-        
+
         if template:
             return template
-        
-        # Se não encontrou, tentar template global
+
+        # If not found, try global template
         template = await self._global_templates.get_by_id(template_id)
         
         if template:
@@ -254,17 +254,17 @@ class ModelExtractionService(LoggerMixin):
         model: str,
     ) -> tuple[list[dict[str, Any]], Any]:
         """
-        Usa LLM para identificar modelos no texto do PDF.
-        
+        Use LLM to identify models in PDF text.
+
         Args:
-            pdf_text: Texto extraído do PDF.
-            template: Template de extração.
-            model: Modelo OpenAI a usar.
-            
+            pdf_text: Text extracted from PDF.
+            template: Extraction template.
+            model: OpenAI model to use.
+
         Returns:
-            Tuple com lista de modelos e resposta OpenAI.
+            Tuple of model list and OpenAI response.
         """
-        # Buscar entity type "prediction_models" ou "model" no template
+        # Find entity type "prediction_models" or "model" in template
         entity_types = template.entity_types if hasattr(template, 'entity_types') else []
         model_entity = next(
             (et for et in entity_types 
@@ -310,8 +310,8 @@ If no models are found, return: {{"models": []}}
             model=model,
             response_format={"type": "json_object"},
         )
-        
-        # Usa parser robusto que trata múltiplos formatos
+
+        # Use robust parser that handles multiple formats
         models = extract_models_from_response(response.content, trace_id=self.trace_id)
         
         self.logger.info(
@@ -328,20 +328,20 @@ If no models are found, return: {{"models": []}}
         template_id: UUID,
     ) -> str | None:
         """
-        Busca o entity_type_id para 'prediction_models' no template.
-        
+        Fetch entity_type_id for 'prediction_models' in template.
+
         Returns:
-            entity_type_id ou None se não encontrar.
+            entity_type_id or None if not found.
         """
-        # Tentar primeiro por project_template_id
+        # Try first by project_template_id
         entity_type = await self._entity_types.get_by_name(
             "prediction_models", template_id, is_project_template=True
         )
         
         if entity_type:
             return str(entity_type.id)
-        
-        # Tentar por template_id (templates globais)
+
+        # Try by template_id (global templates)
         entity_type = await self._entity_types.get_by_name(
             "prediction_models", template_id, is_project_template=False
         )
@@ -357,9 +357,9 @@ If no models are found, return: {{"models": []}}
         template_id: UUID,
     ) -> list[Any]:
         """
-        Busca entity types filhos de um parent entity type.
-        
-        Retorna apenas os que têm cardinality='one' (criação automática).
+        Fetch child entity types of a parent entity type.
+
+        Returns only those with cardinality='one' (auto-creation).
         """
         return await self._entity_types.get_children(
             parent_entity_type_id,
@@ -376,13 +376,13 @@ If no models are found, return: {{"models": []}}
         run_id: UUID,
     ) -> int:
         """
-        Cria instâncias filhas para um modelo.
-        
-        Para cada entity_type com parent_entity_type_id apontando para
-        prediction_models e cardinality='one', cria uma instância.
-        
+        Create child instances for a model.
+
+        For each entity_type with parent_entity_type_id pointing to
+        prediction_models and cardinality='one', create one instance.
+
         Returns:
-            Número de child instances criadas.
+            Number of child instances created.
         """
         child_entity_types = await self._get_child_entity_types(
             parent_entity_type_id, template_id
@@ -420,7 +420,7 @@ If no models are found, return: {{"models": []}}
                     entity_type=child_et.name,
                 )
             except Exception as e:
-                # Log mas não falha - child instances podem ser criadas depois
+                # Log but do not fail - child instances can be created later
                 self.logger.warning(
                     "child_instance_creation_failed",
                     trace_id=self.trace_id,
@@ -439,16 +439,16 @@ If no models are found, return: {{"models": []}}
         run: Any,
     ) -> tuple[list[ExtractionInstance], int]:
         """
-        Cria instâncias de modelos no banco com hierarquia completa.
-        
-        Para cada modelo identificado:
-        1. Cria a instância do modelo (parent)
-        2. Cria automaticamente as child instances (seções com cardinality='one')
-        
+        Create model instances in DB with full hierarchy.
+
+        For each identified model:
+        1. Create the model instance (parent)
+        2. Automatically create child instances (sections with cardinality='one')
+
         Returns:
-            Tupla (lista de modelos criados, total de children criados).
+            Tuple (list of created models, total children created).
         """
-        # Buscar entity_type_id para 'prediction_models'
+        # Fetch entity_type_id for 'prediction_models'
         entity_type_id = await self._get_prediction_models_entity_type_id(template_id)
         
         if not entity_type_id:

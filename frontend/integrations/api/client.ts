@@ -1,21 +1,22 @@
 /**
- * Cliente HTTP para comunicação com FastAPI backend.
+ * HTTP client for FastAPI backend communication.
  *
- * Características:
- * - Inclui automaticamente JWT do Supabase Auth
- * - Suporta tipagem completa de requests/responses
- * - Tratamento de erros consistente
- * - Logging de operações em desenvolvimento
+ * Features:
+ * - Automatically includes JWT from Supabase Auth
+ * - Full request/response typing
+ * - Consistent error handling
+ * - Operation logging in development
  */
 
 import {supabase} from "@/integrations/supabase/client";
+import {t} from "@/lib/copy";
 
-// URL base da API (configurável via env)
+// API base URL (configurable via env)
 const API_BASE_URL =
   import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
 /**
- * Resposta padrão da API (compatível com formato do backend).
+ * Standard API response (compatible with backend format).
  */
 export interface ApiResponse<T = unknown> {
   ok: boolean;
@@ -29,23 +30,23 @@ export interface ApiResponse<T = unknown> {
 }
 
 /**
- * Opções para requisições à API.
+ * Options for API requests.
  */
 export interface ApiRequestOptions extends Omit<RequestInit, "body"> {
   body?: unknown;
   /**
-   * Se true, não inclui o token de autenticação.
-   * Use para endpoints públicos.
+   * If true, do not include auth token.
+   * Use for public endpoints.
    */
   skipAuth?: boolean;
   /**
-   * Timeout em millisegundos (padrão: 60000).
+   * Timeout in milliseconds (default: 60000).
    */
   timeout?: number;
 }
 
 /**
- * Erro customizado para respostas da API.
+ * Custom error for API responses.
  */
 export class ApiError extends Error {
   constructor(
@@ -61,12 +62,12 @@ export class ApiError extends Error {
 }
 
 /**
- * Cliente para fazer requisições à API FastAPI.
+ * Client for FastAPI requests.
  *
- * @param endpoint - Caminho do endpoint (ex: "/api/v1/assessment/ai")
- * @param options - Opções da requisição
- * @returns Promise com a resposta tipada
- * @throws ApiError se a requisição falhar
+ * @param endpoint - Endpoint path (e.g. "/api/v1/assessment/ai")
+ * @param options - Request options
+ * @returns Promise with typed response
+ * @throws ApiError if the request fails
  *
  * @example
  * ```typescript
@@ -103,28 +104,27 @@ export async function apiClient<T>(
     ),
   };
 
-  // Adicionar token de autenticação se necessário
+    // Add auth token if needed
   if (!skipAuth) {
     const {
       data: { session },
     } = await supabase.auth.getSession();
-
     if (session?.access_token) {
       headers["Authorization"] = `Bearer ${session.access_token}`;
     } else {
-      // Usuário não autenticado tentando acessar endpoint protegido
+        // Unauthenticated user trying to access protected endpoint
       throw new ApiError(
         "AUTH_REQUIRED",
-        "Autenticação necessária",
+          t('common', 'errors_authRequired'),
         401
       );
     }
   }
 
-  // Preparar body
+    // Prepare body
   const requestBody = body ? JSON.stringify(body) : undefined;
 
-  // Criar controller para timeout
+    // Create controller for timeout
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
 
@@ -144,14 +144,14 @@ export async function apiClient<T>(
 
     clearTimeout(timeoutId);
 
-    // Parse da resposta
+      // Parse response
     const responseData: ApiResponse<T> = await response.json();
 
-    // Verificar se a resposta indica erro
+      // Check if response indicates error
     if (!response.ok || !responseData.ok) {
       const error = responseData.error || {
         code: "UNKNOWN_ERROR",
-        message: "Erro desconhecido",
+          message: t('common', 'errors_unknownError'),
       };
 
       throw new ApiError(
@@ -163,25 +163,25 @@ export async function apiClient<T>(
       );
     }
 
-    // Retornar dados
+      // Return data
     return responseData.data as T;
   } catch (error) {
     clearTimeout(timeoutId);
 
-    // Tratar erros de timeout
+      // Handle timeout errors
     if (error instanceof Error && error.name === "AbortError") {
       throw new ApiError(
         "TIMEOUT",
-        "Requisição expirou. Tente novamente.",
+          t('common', 'errors_requestExpired'),
         408
       );
     }
 
-    // Tratar erros de rede
+      // Handle network errors
     if (error instanceof TypeError && error.message === "Failed to fetch") {
       throw new ApiError(
         "NETWORK_ERROR",
-        "Erro de conexão. Verifique sua internet.",
+          t('common', 'errors_connectionError'),
         0
       );
     }
@@ -191,19 +191,19 @@ export async function apiClient<T>(
       throw error;
     }
 
-    // Erro genérico
+      // Generic error
     throw new ApiError(
       "UNKNOWN_ERROR",
-      error instanceof Error ? error.message : "Erro desconhecido",
+        error instanceof Error ? error.message : t('common', 'errors_unknownError'),
       500
     );
   }
 }
 
-// =================== HELPERS PARA ENDPOINTS ESPECÍFICOS ===================
+// =================== HELPERS FOR SPECIFIC ENDPOINTS ===================
 
 /**
- * Tipos de ação para Zotero.
+ * Zotero action types.
  */
 export type ZoteroAction =
   | "save-credentials"
@@ -214,7 +214,7 @@ export type ZoteroAction =
   | "download-attachment";
 
 /**
- * Cliente específico para endpoints Zotero.
+ * Client for Zotero endpoints.
  */
 export async function zoteroClient<T>(
   action: ZoteroAction,
@@ -227,7 +227,7 @@ export async function zoteroClient<T>(
 }
 
 /**
- * Cliente específico para AI Assessment.
+ * Client for AI Assessment endpoints.
  */
 export async function aiAssessmentClient<T>(
   body: Record<string, unknown>
@@ -235,12 +235,12 @@ export async function aiAssessmentClient<T>(
   return apiClient<T>("/api/v1/assessment/ai", {
     method: "POST",
     body,
-    timeout: 120000, // 2 minutos para operações AI
+      timeout: 120000, // 2 minutes for AI operations
   });
 }
 
 /**
- * Cliente específico para extração de seções.
+ * Client for section extraction endpoints.
  */
 export async function sectionExtractionClient<T>(
   body: Record<string, unknown>
@@ -253,7 +253,7 @@ export async function sectionExtractionClient<T>(
 }
 
 /**
- * Cliente específico para extração de modelos.
+ * Client for model extraction endpoints.
  */
 export async function modelExtractionClient<T>(
   body: Record<string, unknown>

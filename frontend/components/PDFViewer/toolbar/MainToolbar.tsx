@@ -3,8 +3,8 @@
  * 
  * Responsabilidades:
  * - Orquestrar todas as ferramentas em um layout responsivo
- * - Gerenciar o estado de expansão/colapso
- * - Agrupar ferramentas por categoria
+ * - Manage expand/collapse state
+ * - Group tools by category
  */
 
 import { NavigationTools } from './NavigationTools';
@@ -18,7 +18,7 @@ export function MainToolbar() {
   return (
     <div className="flex items-center gap-1 p-2 border-b bg-background flex-wrap shadow-sm">
 
-      {/* Navegação de Páginas */}
+        {/* Page navigation */}
       <NavigationTools />
 
       <Separator orientation="vertical" className="h-6 hidden sm:block" />
@@ -28,7 +28,7 @@ export function MainToolbar() {
 
       <Separator orientation="vertical" className="h-6 hidden sm:block" />
 
-      {/* Modos de Visualização */}
+        {/* View modes */}
       <ViewModeTools />
 
       <Separator orientation="vertical" className="h-6 hidden sm:block" />
@@ -39,7 +39,7 @@ export function MainToolbar() {
       {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Mais Opções */}
+        {/* More options */}
       <MoreTools />
     </div>
   );

@@ -14,12 +14,13 @@ import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,} from '@/components/ui/dropdown-menu';
 import {usePDFStore} from '@/stores/usePDFStore';
+import {t} from '@/lib/copy';
 
 export function ZoomTools() {
   const { scale, zoomIn, zoomOut, setScale } = usePDFStore();
   const [zoomInput, setZoomInput] = useState(Math.round(scale * 100).toString());
 
-  // Sincronizar input com scale
+    // Sync input with scale
   useEffect(() => {
     setZoomInput(Math.round(scale * 100).toString());
   }, [scale]);
@@ -45,9 +46,9 @@ export function ZoomTools() {
   };
 
   const presets = [
-    { label: 'Ajustar à Largura', value: 1.0 },
-    { label: 'Ajustar à Página', value: 0.85 },
-    { label: 'Tamanho Real', value: 1.0 },
+      {label: t('pdf', 'zoomFitWidth'), value: 1.0},
+      {label: t('pdf', 'zoomFitPage'), value: 0.85},
+      {label: 'Actual size', value: 1.0},
     { label: '50%', value: 0.5 },
     { label: '75%', value: 0.75 },
     { label: '100%', value: 1.0 },
@@ -74,7 +75,7 @@ export function ZoomTools() {
           <Button
             variant="ghost"
             className="h-8 px-2 min-w-[70px] justify-center hover:bg-accent"
-            title="Opções de Zoom"
+            title={t('pdf', 'zoomOptionsTitle')}
           >
             <form onSubmit={handleZoomSubmit} className="flex items-center" onClick={(e) => e.stopPropagation()}>
               <Input
@@ -83,7 +84,7 @@ export function ZoomTools() {
                 onChange={handleZoomInputChange}
                 onBlur={handleZoomSubmit}
                 className="w-10 h-6 text-center text-sm px-1 border-none shadow-none focus-visible:ring-0 bg-transparent hover:bg-transparent"
-                aria-label="Porcentagem de zoom"
+                aria-label={t('extraction', 'zoomPercentageAria')}
                 style={{
                   color: 'inherit', // Herdar cor do parent para manter legibilidade
                 }}

@@ -1,13 +1,13 @@
 /**
- * Hook para gerenciar upload de múltiplos arquivos
- * 
- * Funcionalidades:
- * - Fila de uploads com processamento paralelo
- * - Controle de concorrência
- * - Tracking de progresso individual
- * - Retry automático em caso de falha
- * - Cancelamento de uploads
- * - Estatísticas em tempo real
+ * Hook to manage multiple file uploads
+ *
+ * Features:
+ * - Upload queue with parallel processing
+ * - Concurrency control
+ * - Per-file progress tracking
+ * - Automatic retry on failure
+ * - Upload cancellation
+ * - Real-time statistics
  */
 
 import {useCallback, useRef, useState} from 'react';
@@ -15,6 +15,7 @@ import {supabase} from '@/integrations/supabase/client';
 import {toast} from 'sonner';
 import {detectFileFormat, generateStorageKey, validateFile} from '@/lib/file-validation';
 import {FILE_ERROR_MESSAGES} from '@/lib/file-constants';
+import {t} from '@/lib/copy';
 import type {ArticleFile} from '@/types/article-files';
 
 export interface UploadQueueItem {
@@ -33,27 +34,27 @@ export interface UploadQueueItem {
 
 export interface UseMultiFileUploadOptions {
   /**
-   * Número máximo de uploads simultâneos
+   * Maximum concurrent uploads
    */
   maxConcurrent?: number;
   
   /**
-   * Número máximo de tentativas em caso de falha
+   * Maximum retry attempts on failure
    */
   maxRetries?: number;
   
   /**
-   * Callback quando todos os uploads forem concluídos
+   * Callback when all uploads complete
    */
   onComplete?: (results: { successful: ArticleFile[]; failed: UploadQueueItem[] }) => void;
   
   /**
-   * Callback para cada arquivo completado
+   * Callback for each completed file
    */
   onFileComplete?: (result: ArticleFile) => void;
   
   /**
-   * Callback para progresso geral
+   * Callback for overall progress
    */
   onProgress?: (progress: number) => void;
 }
@@ -77,7 +78,7 @@ export function useMultiFileUpload(
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
 
   /**
-   * Adiciona arquivos à fila
+   * Adds files to the queue
    */
   const addFiles = useCallback((files: File[], fileRole: string) => {
     const newItems: UploadQueueItem[] = files.map(file => ({
@@ -94,22 +95,22 @@ export function useMultiFileUpload(
   }, []);
 
   /**
-   * Faz upload de um arquivo individual
+   * Uploads a single file
    */
   const uploadSingleFile = useCallback(async (item: UploadQueueItem): Promise<ArticleFile> => {
-    // Validar arquivo
+      // Validate file
     const validation = validateFile(item.file);
     if (!validation.valid) {
-      throw new Error(validation.error || 'Arquivo inválido');
+        throw new Error(validation.error || 'Invalid file');
     }
 
-    // Detectar formato
+      // Detect format
     const detectedFormat = validation.detectedFormat || detectFileFormat(item.file);
 
-    // Gerar storage key
+      // Generate storage key
     const storageKey = generateStorageKey(projectId, articleId, item.file.name);
 
-    // Criar AbortController para cancelamento
+      // Create AbortController for cancellation
     const abortController = new AbortController();
     abortControllersRef.current.set(item.id, abortController);
 
@@ -117,7 +118,7 @@ export function useMultiFileUpload(
       const startTime = Date.now();
       let uploadedBytes = 0;
 
-      // Upload para o storage com progress tracking
+        // Upload to storage with progress tracking
       const { error: uploadError } = await supabase.storage
         .from('articles')
         .upload(storageKey, item.file, {
@@ -129,8 +130,8 @@ export function useMultiFileUpload(
         throw new Error(FILE_ERROR_MESSAGES.STORAGE_ERROR + ': ' + uploadError.message);
       }
 
-      // Simular progresso (o Supabase não fornece eventos de progresso nativamente)
-      // Em produção, você pode usar XMLHttpRequest ou fetch com streams para progresso real
+        // Simulate progress (Supabase does not provide progress events natively)
+        // In production you can use XMLHttpRequest or fetch with streams for real progress
       const updateProgress = (progress: number) => {
         const elapsed = (Date.now() - startTime) / 1000;
         uploadedBytes = (item.file.size * progress) / 100;
@@ -143,13 +144,13 @@ export function useMultiFileUpload(
         ));
       };
 
-      // Simular progresso para feedback visual
+        // Simulate progress for visual feedback
       for (let i = 10; i <= 90; i += 10) {
         await new Promise(resolve => setTimeout(resolve, 100));
         updateProgress(i);
       }
 
-      // Inserir registro no banco
+        // Insert record in DB
       const { data: articleFile, error: insertError } = await supabase
         .from('article_files')
         .insert({
@@ -166,7 +167,7 @@ export function useMultiFileUpload(
         .single();
 
       if (insertError) {
-        // Rollback: remover arquivo do storage
+          // Rollback: remove file from storage
         await supabase.storage.from('articles').remove([storageKey]);
         throw new Error(FILE_ERROR_MESSAGES.DATABASE_ERROR + ': ' + insertError.message);
       }
@@ -180,7 +181,7 @@ export function useMultiFileUpload(
   }, [projectId, articleId]);
 
   /**
-   * Processa a fila de uploads
+   * Processes the upload queue
    */
   const processQueue = useCallback(async () => {
     if (isUploading) return;
@@ -190,27 +191,27 @@ export function useMultiFileUpload(
     const failed: UploadQueueItem[] = [];
 
     const processNext = async (): Promise<void> => {
-      // Encontrar próximo item pendente
+        // Find next pending item
       const nextItem = queue.find(
         item => item.status === 'pending' && !activeUploadsRef.current.has(item.id)
       );
 
       if (!nextItem) return;
 
-      // Verificar limite de uploads simultâneos
+        // Check concurrent upload limit
       if (activeUploadsRef.current.size >= maxConcurrent) return;
 
-      // Marcar como em upload
+        // Mark as uploading
       activeUploadsRef.current.add(nextItem.id);
       setQueue(prev => prev.map(q =>
         q.id === nextItem.id ? { ...q, status: 'uploading' as const } : q
       ));
 
       try {
-        // Fazer upload
+          // Perform upload
         const result = await uploadSingleFile(nextItem);
 
-        // Sucesso
+          // Success
         setQueue(prev => prev.map(q =>
           q.id === nextItem.id
             ? { ...q, status: 'success' as const, result, progress: 100 }
@@ -223,18 +224,18 @@ export function useMultiFileUpload(
       } catch (error: any) {
         console.error(`Error uploading ${nextItem.file.name}:`, error);
 
-        // Verificar se deve tentar novamente
+          // Check if should retry
         const shouldRetry = (nextItem.retryCount || 0) < maxRetries;
 
         if (shouldRetry) {
-          // Marcar para retry
+            // Mark for retry
           setQueue(prev => prev.map(q =>
             q.id === nextItem.id
               ? { ...q, status: 'pending' as const, retryCount: (q.retryCount || 0) + 1 }
               : q
           ));
         } else {
-          // Falha definitiva
+            // Final failure
           setQueue(prev => prev.map(q =>
             q.id === nextItem.id
               ? { ...q, status: 'error' as const, error: error.message }
@@ -245,7 +246,7 @@ export function useMultiFileUpload(
       } finally {
         activeUploadsRef.current.delete(nextItem.id);
 
-        // Calcular progresso geral
+          // Calculate overall progress
         const completedCount = queue.filter(q => 
           q.status === 'success' || q.status === 'error'
         ).length + 1;
@@ -255,18 +256,18 @@ export function useMultiFileUpload(
       }
     };
 
-    // Processar fila até concluir
+      // Process queue until done
     const processLoop = async () => {
       while (true) {
         const pendingItems = queue.filter(item => item.status === 'pending');
         const uploadingItems = queue.filter(item => item.status === 'uploading');
 
-        // Se não há mais itens pendentes ou em upload, terminar
+          // If no more pending or uploading items, finish
         if (pendingItems.length === 0 && uploadingItems.length === 0) {
           break;
         }
 
-        // Iniciar uploads até o limite de concorrência
+          // Start uploads up to concurrency limit
         const availableSlots = maxConcurrent - activeUploadsRef.current.size;
         const itemsToStart = Math.min(availableSlots, pendingItems.length);
 
@@ -277,7 +278,7 @@ export function useMultiFileUpload(
 
         await Promise.all(promises);
 
-        // Pequeno delay antes de verificar novamente
+          // Short delay before checking again
         await new Promise(resolve => setTimeout(resolve, 100));
       }
     };
@@ -286,23 +287,23 @@ export function useMultiFileUpload(
 
     setIsUploading(false);
 
-    // Notificar conclusão
+      // Notify completion
     if (results.length > 0 || failed.length > 0) {
       onComplete?.({ successful: results, failed });
       
       if (results.length > 0) {
-        toast.success(`${results.length} arquivo(s) enviado(s) com sucesso!`);
+          toast.success(`${results.length} file(s) uploaded successfully!`);
       }
       
       if (failed.length > 0) {
-        toast.error(`${failed.length} arquivo(s) falharam no envio.`);
+          toast.error(`${failed.length} file(s) failed to upload.`);
       }
     }
 
   }, [queue, isUploading, maxConcurrent, maxRetries, uploadSingleFile, onComplete, onFileComplete, onProgress]);
 
   /**
-   * Cancela um upload específico
+   * Cancels a specific upload
    */
   const cancelUpload = useCallback((itemId: string) => {
     const abortController = abortControllersRef.current.get(itemId);
@@ -311,14 +312,14 @@ export function useMultiFileUpload(
     }
 
     setQueue(prev => prev.map(q =>
-      q.id === itemId ? { ...q, status: 'error' as const, error: 'Cancelado pelo usuário' } : q
+        q.id === itemId ? {...q, status: 'error' as const, error: t('extraction', 'cancelledByUser')} : q
     ));
 
     activeUploadsRef.current.delete(itemId);
   }, []);
 
   /**
-   * Tenta novamente um upload que falhou
+   * Retries a failed upload
    */
   const retryUpload = useCallback((itemId: string) => {
     setQueue(prev => prev.map(q =>
@@ -327,10 +328,10 @@ export function useMultiFileUpload(
   }, []);
 
   /**
-   * Limpa a fila
+   * Clears the queue
    */
   const clearQueue = useCallback(() => {
-    // Cancelar todos os uploads ativos
+      // Cancel all active uploads
     abortControllersRef.current.forEach(controller => controller.abort());
     abortControllersRef.current.clear();
     activeUploadsRef.current.clear();
@@ -340,14 +341,14 @@ export function useMultiFileUpload(
   }, []);
 
   /**
-   * Remove um item da fila
+   * Removes an item from the queue
    */
   const removeFromQueue = useCallback((itemId: string) => {
     cancelUpload(itemId);
     setQueue(prev => prev.filter(q => q.id !== itemId));
   }, [cancelUpload]);
 
-  // Calcular estatísticas
+    // Calculate statistics
   const stats = {
     total: queue.length,
     completed: queue.filter(q => q.status === 'success').length,

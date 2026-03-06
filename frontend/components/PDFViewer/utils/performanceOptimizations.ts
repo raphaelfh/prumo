@@ -1,15 +1,15 @@
 /**
- * Performance Optimizations - Utilitários para otimização
- * 
+ * Performance Optimizations - Utilities for optimization
+ *
  * Features:
- * - Debounce para operações pesadas
- * - Throttle para eventos contínuos
+ * - Debounce for heavy operations
+ * - Throttle for continuous events
  * - Lazy loading helpers
  * - Memory management
  */
 
 /**
- * Debounce - Atrasa a execução até que pare de ser chamado
+ * Debounce - Delays execution until calls stop
  */
 export function debounce<T extends (...args: any[]) => any>(
   func: T,
@@ -31,7 +31,7 @@ export function debounce<T extends (...args: any[]) => any>(
 }
 
 /**
- * Throttle - Limita a frequência de execução
+ * Throttle - Limits execution frequency
  */
 export function throttle<T extends (...args: any[]) => any>(
   func: T,
@@ -49,7 +49,7 @@ export function throttle<T extends (...args: any[]) => any>(
 }
 
 /**
- * LazyComponent - Wrapper para lazy loading de componentes
+ * LazyComponent - Wrapper for lazy loading components
  */
 export function createLazyComponent<T extends React.ComponentType<any>>(
   importFn: () => Promise<{ default: T }>
@@ -58,7 +58,7 @@ export function createLazyComponent<T extends React.ComponentType<any>>(
 }
 
 /**
- * isInViewport - Verifica se elemento está visível
+ * isInViewport - Check if element is visible
  */
 export function isInViewport(element: Element): boolean {
   const rect = element.getBoundingClientRect();

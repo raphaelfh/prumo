@@ -1,15 +1,15 @@
 /**
  * Add Model Dialog
- * 
- * Dialog para adicionar um novo modelo de predição.
- * Permite ao usuário nomear o modelo e opcionalmente especificar o método de modelagem.
- * 
+ *
+ * Dialog to add a new prediction model.
+ * Lets the user name the model and optionally specify the modelling method.
+ *
  * Features:
- * - Validação de nome (não vazio, não duplicado)
- * - Campo opcional para modelling method
- * - Loading state durante criação
- * - Mensagens de erro claras
- * 
+ * - Name validation (non-empty, no duplicates)
+ * - Optional field for modelling method
+ * - Loading state during creation
+ * - Clear error messages
+ *
  * @component
  */
 
@@ -22,6 +22,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import {t} from '@/lib/copy';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {Label} from '@/components/ui/label';
@@ -50,7 +51,7 @@ export function AddModelDialog({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Reset ao abrir/fechar
+    // Reset on open/close
   useEffect(() => {
     if (!open) {
       setModelName('');
@@ -60,17 +61,17 @@ export function AddModelDialog({
     }
   }, [open]);
 
-  // Validação
+    // Validation
   const validate = (): boolean => {
     // Nome vazio
     if (!modelName.trim()) {
-      setError('O nome do modelo não pode estar vazio');
+        setError(t('extraction', 'modelNameEmpty'));
       return false;
     }
 
-    // Nome muito curto
+      // Name too short
     if (modelName.trim().length < 3) {
-      setError('O nome do modelo deve ter pelo menos 3 caracteres');
+        setError(t('extraction', 'modelNameMinLength'));
       return false;
     }
 
@@ -80,7 +81,7 @@ export function AddModelDialog({
     );
 
     if (isDuplicate) {
-      setError('Já existe um modelo com este nome');
+        setError(t('extraction', 'modelNameDuplicate'));
       return false;
     }
 
@@ -88,7 +89,7 @@ export function AddModelDialog({
     return true;
   };
 
-  // Handler de submit
+    // Submit handler
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -99,15 +100,15 @@ export function AddModelDialog({
 
     try {
       await onConfirm(modelName.trim(), modellingMethod.trim());
-      // Dialog será fechado pelo parent component
+        // Dialog will be closed by parent component
     } catch (err: any) {
-      console.error('Erro ao criar modelo:', err);
-      setError(err.message || 'Erro ao criar modelo');
+        console.error('Error creating model:', err);
+        setError(err.message || t('extraction', 'modelCreateError'));
       setLoading(false);
     }
   };
 
-  // Handler de tecla Enter
+    // Enter key handler
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -122,11 +123,10 @@ export function AddModelDialog({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-primary" />
-              Adicionar Novo Modelo
+                {t('extraction', 'addNewModel')}
             </DialogTitle>
             <DialogDescription>
-              Crie um novo modelo de predição para extrair seus dados.
-              Você poderá adicionar quantos modelos quiser.
+                {t('extraction', 'addNewModelDesc')}
             </DialogDescription>
           </DialogHeader>
 
@@ -134,12 +134,12 @@ export function AddModelDialog({
             {/* Campo: Model Name */}
             <div className="space-y-2">
               <Label htmlFor="model-name" className="flex items-center gap-1">
-                Nome do Modelo
+                  {t('extraction', 'modelNameLabel')}
                 <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="model-name"
-                placeholder="Ex: Logistic Regression, Random Forest, XGBoost..."
+                placeholder={t('extraction', 'modelNamePlaceholder')}
                 value={modelName}
                 onChange={(e) => setModelName(e.target.value)}
                 onKeyDown={handleKeyDown}
@@ -148,26 +148,27 @@ export function AddModelDialog({
                 className={error ? 'border-destructive' : ''}
               />
               <p className="text-xs text-muted-foreground">
-                Escolha um nome descritivo para identificar este modelo
+                  {t('extraction', 'modelNameHint')}
               </p>
             </div>
 
             {/* Campo: Modelling Method (Opcional) */}
             <div className="space-y-2">
               <Label htmlFor="modelling-method">
-                Método de Modelagem
-                <span className="text-xs text-muted-foreground ml-1">(opcional)</span>
+                  {t('extraction', 'modellingMethodLabel')}
+                  <span
+                      className="text-xs text-muted-foreground ml-1">{t('extraction', 'modellingMethodOptional')}</span>
               </Label>
               <Input
                 id="modelling-method"
-                placeholder="Ex: Supervised learning, Neural network..."
+                placeholder={t('extraction', 'modelDescriptionPlaceholder')}
                 value={modellingMethod}
                 onChange={(e) => setModellingMethod(e.target.value)}
                 onKeyDown={handleKeyDown}
                 disabled={loading}
               />
               <p className="text-xs text-muted-foreground">
-                Você pode preencher este campo depois na extração
+                  {t('extraction', 'modellingMethodHint')}
               </p>
             </div>
 
@@ -179,11 +180,11 @@ export function AddModelDialog({
               </Alert>
             )}
 
-            {/* Info sobre modelos existentes */}
+              {/* Info about existing models */}
             {existingModels.length > 0 && (
               <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
                 <p className="text-xs text-slate-600 font-medium mb-2">
-                  Modelos já adicionados:
+                    {t('extraction', 'modelsAlreadyAdded')}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {existingModels.map((name, index) => (
@@ -206,16 +207,16 @@ export function AddModelDialog({
               onClick={onCancel}
               disabled={loading}
             >
-              Cancelar
+                {t('common', 'cancel')}
             </Button>
             <Button type="submit" disabled={loading || !modelName.trim()}>
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Criando...
+                    {t('extraction', 'creating')}
                 </>
               ) : (
-                'Criar Modelo'
+                  t('extraction', 'createModel')
               )}
             </Button>
           </DialogFooter>

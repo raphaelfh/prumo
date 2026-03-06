@@ -1,14 +1,14 @@
 /**
- * Hook para gerenciar hierarquia de entities e instances
- * 
- * Constrói árvore hierárquica de entity_types e suas instances,
- * suportando parent-child relationships recursivos.
- * 
- * Retorna:
- * - tree: Árvore hierárquica para renderização recursiva
- * - flatMap: Map para lookup rápido de instances por ID
- * - parentMap: Map de instance_id → parent_instance_id
- * - childrenMap: Map de parent_id → children[]
+ * Hook to manage entity and instance hierarchy
+ *
+ * Builds hierarchical tree of entity_types and their instances,
+ * supporting recursive parent-child relationships.
+ *
+ * Returns:
+ * - tree: Hierarchical tree for recursive rendering
+ * - flatMap: Map for fast instance lookup by ID
+ * - parentMap: Map of instance_id → parent_instance_id
+ * - childrenMap: Map of parent_id → children[]
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -51,7 +51,7 @@ export function useEntityHierarchy(
       setLoading(true);
       setError(null);
 
-      // 1. Carregar entity_types com hierarquia
+        // 1. Load entity_types with hierarchy
       const { data: entityTypes, error: etError } = await supabase
         .from('extraction_entity_types')
         .select('*')
@@ -60,7 +60,7 @@ export function useEntityHierarchy(
 
       if (etError) throw etError;
 
-      // 2. Carregar todas as instances do artigo
+        // 2. Load all article instances
       const { data: instances, error: instancesError } = await supabase
         .from('extraction_instances')
         .select('*')
@@ -69,7 +69,7 @@ export function useEntityHierarchy(
 
       if (instancesError) throw instancesError;
 
-      // 3. Construir maps
+        // 3. Build maps
       const newFlatMap = new Map<string, ExtractionInstance>();
       const newParentMap = new Map<string, string>();
       const newChildrenMap = new Map<string, ExtractionInstance[]>();
@@ -88,7 +88,7 @@ export function useEntityHierarchy(
         }
       });
 
-      // 4. Construir árvore
+        // 4. Build tree
       const treeNodes = buildTree(
         entityTypes as ExtractionEntityType[],
         instances as ExtractionInstance[],
@@ -109,29 +109,29 @@ export function useEntityHierarchy(
   };
 
   /**
-   * Constrói árvore recursiva de entity_types e instances
+   * Builds recursive tree of entity_types and instances
    */
   const buildTree = (
     entityTypes: ExtractionEntityType[],
     instances: ExtractionInstance[],
     parentEntityTypeId: string | null
   ): EntityNode[] => {
-    // Buscar entity_types filhos deste parent
+      // Fetch child entity_types of this parent
     const childTypes = entityTypes.filter(
       et => et.parent_entity_type_id === parentEntityTypeId
     );
 
     return childTypes.map(entityType => {
-      // Buscar instances deste entity_type (apenas top-level ou corretas)
+        // Fetch instances of this entity_type (top-level or correct parent)
       const typeInstances = instances.filter(
         i => i.entity_type_id === entityType.id
       );
 
-      // Recursão: Para entity_types que são children, precisamos
-      // construir nodes para cada instance parent
+        // Recursion: For entity_types that are children, we need to
+        // build nodes for each parent instance
       let children: EntityNode[] = [];
-      
-      // Buscar entity_types que são children deste
+
+        // Fetch entity_types that are children of this one
       const childEntityTypes = entityTypes.filter(
         et => et.parent_entity_type_id === entityType.id
       );
@@ -145,7 +145,7 @@ export function useEntityHierarchy(
               i => i.entity_type_id === childType.id 
                 && i.parent_instance_id === parentInstance.id
             ),
-            children: [] // Por simplicidade, não suportamos 3+ níveis por enquanto
+              children: [] // For simplicity we do not support 3+ levels yet
           }))
         );
       }

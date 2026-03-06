@@ -1,7 +1,7 @@
 """
 Project Models.
 
-Modelos para projetos de revisão sistemática e membros.
+Models for systematic review projects and members.
 """
 
 from datetime import datetime
@@ -23,9 +23,9 @@ if TYPE_CHECKING:
 
 class ReviewType(str, PyEnum):
     """
-    Tipo de revisão sistemática.
+    Type of systematic review.
     
-    Valores alinhados com o enum 'review_type' no PostgreSQL.
+    Values aligned with PostgreSQL 'review_type' enum.
     """
     
     INTERVENTIONAL = "interventional"
@@ -40,7 +40,7 @@ class ProjectMemberRole(str, PyEnum):
     """
     Papel do membro no projeto.
     
-    Valores alinhados com o enum 'project_member_role' no PostgreSQL.
+    Values aligned with PostgreSQL 'project_member_role' enum.
     """
     
     MANAGER = "manager"
@@ -51,9 +51,8 @@ class ProjectMemberRole(str, PyEnum):
 
 class Project(BaseModel):
     """
-    Projeto de revisão sistemática.
-    
-    Contém configurações, membros e artigos associados.
+    Systematic review project.
+    Contains settings, members and associated articles.
     """
     
     __tablename__ = "projects"
@@ -74,8 +73,8 @@ class Project(BaseModel):
     )
     
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    
-    # Campos de revisão
+
+    # Review fields
     review_title: Mapped[str | None] = mapped_column(Text, nullable=True)
     condition_studied: Mapped[str | None] = mapped_column(String, nullable=True)
     review_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -89,8 +88,8 @@ class Project(BaseModel):
         PG_UUID(as_uuid=True),
         nullable=True,
     )
-    
-    # Configuração PICOTS para revisões de modelos preditivos
+
+    # PICOTS configuration for predictive model reviews
     picots_config_ai_review: Mapped[dict | None] = mapped_column(
         JSONB,
         nullable=True,
@@ -146,7 +145,7 @@ class Project(BaseModel):
 
     # Índices definidos via __table_args__
     __table_args__ = (
-        # Índices GIN para campos JSONB (busca eficiente com @>, ?, etc.)
+        # GIN indexes for JSONB fields (efficient search with @>, ?, etc.)
         Index("idx_projects_settings_gin", "settings", postgresql_using="gin"),
         Index("idx_projects_review_keywords_gin", "review_keywords", postgresql_using="gin"),
         Index("idx_projects_eligibility_criteria_gin", "eligibility_criteria", postgresql_using="gin"),
@@ -160,7 +159,7 @@ class Project(BaseModel):
 
 class ProjectMember(BaseModel):
     """
-    Membro de um projeto com seu papel e permissões.
+    Project member with role and permissions.
     
     Índices:
     - project_id, user_id: FKs indexadas
@@ -226,7 +225,7 @@ class ProjectMember(BaseModel):
     
     # Índices definidos via __table_args__
     __table_args__ = (
-        # Unique constraint para evitar duplicatas
+        # Unique constraint to avoid duplicates
         UniqueConstraint("project_id", "user_id", name="uq_project_user"),
         {"schema": "public"},
     )

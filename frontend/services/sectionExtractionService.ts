@@ -1,12 +1,12 @@
 /**
- * Service para Extração de Seção Específica via FastAPI
+ * Section-specific extraction service via FastAPI
  *
- * Service layer para chamar o backend FastAPI (Render) para extração de dados.
- * Encapsula a lógica de comunicação com a API e tratamento de erros.
+ * Service layer to call FastAPI backend (Render) for data extraction.
+ * Encapsulates API communication and error handling.
  *
- * FOCO: Section extraction pipeline - extração granular por seção (entity type).
+ * FOCUS: Section extraction pipeline - granular extraction per section (entity type).
  *
- * USO: Chamado pelos hooks de extração para processar artigos com IA.
+ * USAGE: Called by extraction hooks to process articles with AI.
  *
  * @example
  * ```typescript
@@ -18,7 +18,7 @@
  *   options: { model: 'gpt-4o' }
  * });
  *
- * console.log(`Criadas ${result.data?.suggestionsCreated} sugestões`);
+ * console.log(`Created ${result.data?.suggestionsCreated} suggestions`);
  * ```
  */
 
@@ -33,7 +33,7 @@ import type {
 } from "@/types/ai-extraction";
 import {APIError} from "@/lib/ai-extraction/errors";
 
-// Re-exportar tipos para compatibilidade
+// Re-export types for compatibility
 export type {
   SectionExtractionRequest,
   SectionExtractionResponse,
@@ -42,38 +42,38 @@ export type {
 };
 
 /**
- * Classe service para extração de seção via FastAPI
+ * Service class for section extraction via FastAPI
  *
- * RESPONSABILIDADES:
- * - Chamar endpoints do FastAPI (Render)
- * - Parsear responses e converter para formato esperado
- * - Tratar erros de forma consistente
+ * RESPONSIBILITIES:
+ * - Call FastAPI (Render) endpoints
+ * - Parse responses and convert to expected format
+ * - Handle errors consistently
  */
 export class SectionExtractionService {
   /**
-   * Extrai dados de uma seção específica via FastAPI
+   * Extracts data for a specific section via FastAPI
    *
-   * FLUXO:
-   * 1. Gerar trace ID para rastreabilidade
-   * 2. Enviar POST para FastAPI backend
-   * 3. Parsear response com tratamento de erro robusto
-   * 4. Retornar dados no formato esperado
+   * FLOW:
+   * 1. Generate trace ID for traceability
+   * 2. Send POST to FastAPI backend
+   * 3. Parse response with robust error handling
+   * 4. Return data in expected format
    *
-   * @param request - Parâmetros da extração (projectId, articleId, templateId, entityTypeId)
-   * @returns Response com runId e metadata
-   * @throws APIError se falhar a extração
+   * @param request - Extraction params (projectId, articleId, templateId, entityTypeId)
+   * @returns Response with runId and metadata
+   * @throws APIError if extraction fails
    */
   static async extractSection(request: SectionExtractionRequest): Promise<SectionExtractionResponse> {
     const traceId = crypto.randomUUID();
 
-    console.log('[SectionExtractionService] Iniciando extração via FastAPI', {
+      console.log('[SectionExtractionService] Starting extraction via FastAPI', {
       traceId,
       request: { ...request, options: request.options || {} },
     });
 
     try {
-      // NOTA: apiClient retorna responseData.data diretamente, não {ok, data}
-      // Portanto, o tipo aqui é o conteúdo interno de SectionExtractionResponse['data']
+        // NOTE: apiClient returns responseData.data directly, not {ok, data}
+        // So the type here is the inner content of SectionExtractionResponse['data']
       type SectionExtractionData = NonNullable<SectionExtractionResponse['data']>;
 
       const data = await sectionExtractionClient<SectionExtractionData>({
@@ -85,7 +85,7 @@ export class SectionExtractionService {
         model: request.options?.model,
       });
 
-      console.log('[SectionExtractionService] Extração via FastAPI concluída', {
+        console.log('[SectionExtractionService] FastAPI extraction completed', {
         runId: data?.runId,
         suggestionsCreated: data?.suggestionsCreated,
       });
@@ -104,7 +104,7 @@ export class SectionExtractionService {
         });
       }
       throw new APIError(
-        error instanceof Error ? error.message : "Erro desconhecido",
+          error instanceof Error ? error.message : "Unknown error",
         undefined,
         { originalError: String(error) },
       );
@@ -112,29 +112,29 @@ export class SectionExtractionService {
   }
 
   /**
-   * Extrai modelos de predição do artigo automaticamente via FastAPI
+   * Extracts prediction models from the article automatically via FastAPI
    *
-   * FLUXO:
-   * 1. Gerar trace ID para rastreabilidade
-   * 2. Enviar POST para FastAPI backend (model-extraction)
-   * 3. Parsear response com tratamento de erro robusto
-   * 4. Retornar lista de modelos criados
+   * FLOW:
+   * 1. Generate trace ID for traceability
+   * 2. Send POST to FastAPI backend (model-extraction)
+   * 3. Parse response with robust error handling
+   * 4. Return list of created models
    *
-   * @param request - Parâmetros da extração (projectId, articleId, templateId)
-   * @returns Response com runId, modelos criados e metadata
-   * @throws APIError se falhar a extração
+   * @param request - Extraction params (projectId, articleId, templateId)
+   * @returns Response with runId, created models and metadata
+   * @throws APIError if extraction fails
    */
   static async extractModels(request: ModelExtractionRequest): Promise<ModelExtractionResponse> {
     const traceId = crypto.randomUUID();
 
-    console.log('[SectionExtractionService] Iniciando extração de modelos via FastAPI', {
+      console.log('[SectionExtractionService] Starting model extraction via FastAPI', {
       traceId,
       request: { ...request, options: request.options || {} },
     });
 
     try {
-      // NOTA: apiClient retorna responseData.data diretamente, não {ok, data}
-      // Portanto, o tipo aqui é o conteúdo interno de ModelExtractionResponse['data']
+        // NOTE: apiClient returns responseData.data directly, not {ok, data}
+        // So the type here is the inner content of ModelExtractionResponse['data']
       type ModelExtractionData = NonNullable<ModelExtractionResponse['data']>;
 
       const data = await modelExtractionClient<ModelExtractionData>({
@@ -144,7 +144,7 @@ export class SectionExtractionService {
         model: request.options?.model,
       });
 
-      console.log('[SectionExtractionService] Extração de modelos via FastAPI concluída', {
+        console.log('[SectionExtractionService] Model extraction via FastAPI completed', {
         runId: data?.runId,
         modelsCreated: data?.modelsCreated?.length || 0,
       });
@@ -163,7 +163,7 @@ export class SectionExtractionService {
         });
       }
       throw new APIError(
-        error instanceof Error ? error.message : "Erro desconhecido",
+          error instanceof Error ? error.message : "Unknown error",
         undefined,
         { originalError: String(error) },
       );
@@ -171,29 +171,29 @@ export class SectionExtractionService {
   }
 
   /**
-   * Extrai todas as seções de um modelo de uma vez via FastAPI
+   * Extracts all sections of a model in one go via FastAPI
    *
-   * FLUXO:
-   * 1. Gerar trace ID para rastreabilidade
-   * 2. Enviar POST para FastAPI backend com extractAllSections=true
-   * 3. Parsear response com tratamento de erro robusto
-   * 4. Retornar resultado agregado
+   * FLOW:
+   * 1. Generate trace ID for traceability
+   * 2. Send POST to FastAPI backend with extractAllSections=true
+   * 3. Parse response with robust error handling
+   * 4. Return aggregated result
    *
-   * @param request - Parâmetros da extração (projectId, articleId, templateId, parentInstanceId)
-   * @returns Response com resultados agregados de todas as seções
-   * @throws APIError se falhar a extração
+   * @param request - Extraction params (projectId, articleId, templateId, parentInstanceId)
+   * @returns Response with aggregated results for all sections
+   * @throws APIError if extraction fails
    */
   static async extractAllSections(request: BatchSectionExtractionRequest): Promise<BatchSectionExtractionResponse> {
     const traceId = crypto.randomUUID();
 
-    console.log('[SectionExtractionService] Iniciando extração de todas as seções via FastAPI', {
+      console.log('[SectionExtractionService] Starting full sections extraction via FastAPI', {
       traceId,
       request: { ...request, options: request.options || {} },
     });
 
     try {
-      // NOTA: apiClient retorna responseData.data diretamente, não {ok, data}
-      // Portanto, o tipo aqui é o conteúdo interno de BatchSectionExtractionResponse['data']
+        // NOTE: apiClient returns responseData.data directly, not {ok, data}
+        // So the type here is the inner content of BatchSectionExtractionResponse['data']
       type BatchSectionExtractionData = NonNullable<BatchSectionExtractionResponse['data']>;
 
       const data = await sectionExtractionClient<BatchSectionExtractionData>({
@@ -207,7 +207,7 @@ export class SectionExtractionService {
         model: request.options?.model,
       });
 
-      console.log('[SectionExtractionService] Extração de todas as seções via FastAPI concluída', {
+        console.log('[SectionExtractionService] Full sections extraction via FastAPI completed', {
         totalSections: data?.totalSections,
         successfulSections: data?.successfulSections,
         failedSections: data?.failedSections,
@@ -227,7 +227,7 @@ export class SectionExtractionService {
         });
       }
       throw new APIError(
-        error instanceof Error ? error.message : "Erro desconhecido",
+          error instanceof Error ? error.message : "Unknown error",
         undefined,
         { originalError: String(error) },
       );

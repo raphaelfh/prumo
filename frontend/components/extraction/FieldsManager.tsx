@@ -1,15 +1,15 @@
 /**
- * Gerenciador de Campos de uma Seção
- * 
- * Permite visualizar e editar os campos de uma seção/entidade.
- * Agora com CRUD completo: adicionar, editar, remover campos.
- * 
+ * Section fields manager
+ *
+ * View and edit fields of a section/entity.
+ * Full CRUD: add, edit, remove fields.
+ *
  * Features:
- * - Listagem de campos em tabela
- * - Edição inline (label, description, is_required)
- * - Adicionar novo campo (dialog)
- * - Remover campo com validação (dialog)
- * - Controle de permissões (manager vs reviewer)
+ * - Field list in table
+ * - Inline edit (label, description, is_required)
+ * - Add new field (dialog)
+ * - Remove field with validation (dialog)
+ * - Permission control (manager vs reviewer)
  * 
  * @component
  */
@@ -26,6 +26,7 @@ import {AddFieldDialog} from './dialogs/AddFieldDialog';
 import {DeleteFieldConfirm} from './dialogs/DeleteFieldConfirm';
 import {EditFieldDialog} from './dialogs/EditFieldDialog';
 import {useProject} from '@/contexts/ProjectContext';
+import {t} from '@/lib/copy';
 import type {ExtractionField} from '@/types/extraction';
 
 interface FieldsManagerProps {
@@ -81,7 +82,7 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
         actions.cancelEdit();
       }
     } catch (error) {
-      handleFieldOperationError(error, 'editar');
+        handleFieldOperationError(error, 'edit');
     } finally {
       actions.setSavingEdit(false);
     }
@@ -109,7 +110,7 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
         canChangeType: false,
         extractedValuesCount: 0,
         affectedArticles: [],
-        message: 'Erro ao validar campo',
+          message: t('extraction', 'errors_validateField'),
       });
     } finally {
       actions.setValidatingDelete(null);
@@ -124,27 +125,27 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
       }
       return success;
     } catch (error) {
-      handleFieldOperationError(error, 'excluir');
+        handleFieldOperationError(error, 'delete');
       return false;
     }
   }, [actions, deleteField, handleFieldOperationError]);
 
   const getFieldTypeLabel = useCallback((type: string) => {
     const labels: Record<string, string> = {
-      text: 'Texto',
-      number: 'Número',
-      date: 'Data',
-      select: 'Seleção',
-      multiselect: 'Múltipla Escolha',
-      boolean: 'Sim/Não',
+        text: t('extraction', 'fieldTypeText'),
+        number: t('extraction', 'fieldTypeNumber'),
+        date: t('extraction', 'fieldTypeDate'),
+        select: t('extraction', 'fieldTypeSelect'),
+        multiselect: t('extraction', 'fieldTypeMultiselect'),
+        boolean: t('extraction', 'fieldTypeBoolean'),
     };
     return labels[type] || type;
   }, []);
 
   // Memoizar valores computados
   const hasFields = useMemo(() => fields.length > 0, [fields.length]);
-  
-  // Handlers de dialog - corrigido para não fechar inadvertidamente
+
+    // Dialog handlers - fixed to avoid closing inadvertently
   const dialogHandlers = useMemo(() => ({
     addDialog: (open: boolean) => {
       if (!open) actions.closeAddDialog();
@@ -161,14 +162,14 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
     return (
       <div className="flex items-center justify-center p-4">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        <span className="ml-2 text-sm text-muted-foreground">Carregando campos...</span>
+          <span className="ml-2 text-sm text-muted-foreground">{t('extraction', 'loadingFields')}</span>
       </div>
     );
   }
 
   return (
     <div className="space-y-4" role="main" aria-labelledby="fields-header">
-      {/* Header com ações */}
+        {/* Header with actions */}
       <FieldsHeader
         fieldsCount={fields.length}
         userRole={userRole}
@@ -176,7 +177,7 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
         onAddField={actions.openAddDialog}
       />
 
-      {/* Tabela de campos */}
+        {/* Fields table */}
       {!hasFields ? (
         <EmptyFieldsState
           canCreate={canCreate}

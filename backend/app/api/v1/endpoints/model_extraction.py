@@ -39,22 +39,22 @@ async def extract_models(
     supabase: SupabaseClient,
 ) -> ApiResponse:
     """
-    Executa extração de modelos de predição de um artigo.
-    
-    Rate limit: 5 requisições por minuto por usuário.
-    
-    O pipeline:
-    1. Busca PDF do artigo
-    2. Processa texto do PDF
-    3. Identifica modelos de predição
-    4. Cria instâncias com hierarquias
-    
+    Run prediction model extraction for an article.
+
+    Rate limit: 5 requests per minute per user.
+
+    Pipeline:
+    1. Fetch article PDF
+    2. Process PDF text
+    3. Identify prediction models
+    4. Create instances with hierarchies
+
     Args:
-        request: Request HTTP (usado pelo rate limiter).
-        payload: Dados do artigo e template.
-        
+        request: HTTP request (used by rate limiter).
+        payload: Article and template data.
+
     Returns:
-        ApiResponse com modelos criados.
+        ApiResponse with created models.
     """
     trace_id = str(uuid.uuid4())
     
@@ -69,7 +69,7 @@ async def extract_models(
     )
     
     try:
-        # Cria storage adapter via factory
+        # Create storage adapter via factory
         storage = create_storage_adapter(supabase)
         
         # Buscar API key do usuário (BYOK) com fallback para global

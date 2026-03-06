@@ -1,9 +1,8 @@
 /**
- * Helper para conversões e sugestões de unidades
- * 
- * Fornece unidades relacionadas para facilitar extração de dados
- * quando artigos usam unidades diferentes.
- * 
+ * Helper for unit conversions and suggestions
+ *
+ * Provides related units to ease data extraction when articles use different units.
+ *
  * @module unitConversions
  */
 
@@ -15,94 +14,94 @@ export interface UnitFamily {
   relatedUnits: string[];
 }
 
-// =================== FAMÍLIAS DE UNIDADES ===================
+// =================== UNIT FAMILIES ===================
 
 export const UNIT_FAMILIES: Record<string, UnitFamily> = {
-  // Tempo
+    // Time
   'years': {
-    category: 'Tempo',
+      category: 'Time',
     baseUnit: 'years',
     relatedUnits: ['months', 'weeks', 'days', 'hours']
   },
   'months': {
-    category: 'Tempo',
+      category: 'Time',
     baseUnit: 'months',
     relatedUnits: ['years', 'weeks', 'days']
   },
   'weeks': {
-    category: 'Tempo',
+      category: 'Time',
     baseUnit: 'weeks',
     relatedUnits: ['years', 'months', 'days']
   },
   'days': {
-    category: 'Tempo',
+      category: 'Time',
     baseUnit: 'days',
     relatedUnits: ['years', 'months', 'weeks', 'hours']
   },
-  
-  // Massa
+
+    // Mass
   'kg': {
-    category: 'Massa',
+      category: 'Mass',
     baseUnit: 'kg',
     relatedUnits: ['g', 'mg', 'lb', 'oz']
   },
   'g': {
-    category: 'Massa',
+      category: 'Mass',
     baseUnit: 'g',
     relatedUnits: ['kg', 'mg', 'μg']
   },
   'lb': {
-    category: 'Massa',
+      category: 'Mass',
     baseUnit: 'lb',
     relatedUnits: ['kg', 'oz']
   },
-  
-  // Comprimento
+
+    // Length
   'cm': {
-    category: 'Comprimento',
+      category: 'Length',
     baseUnit: 'cm',
     relatedUnits: ['m', 'mm', 'inches', 'feet']
   },
   'm': {
-    category: 'Comprimento',
+      category: 'Length',
     baseUnit: 'm',
     relatedUnits: ['cm', 'mm', 'km']
   },
   'mm': {
-    category: 'Comprimento',
+      category: 'Length',
     baseUnit: 'mm',
     relatedUnits: ['cm', 'm', 'μm']
   },
-  
-  // Pressão
+
+    // Pressure
   'mmHg': {
-    category: 'Pressão',
+      category: 'Pressure',
     baseUnit: 'mmHg',
     relatedUnits: ['kPa', 'atm', 'bar']
   },
-  
-  // Percentual
+
+    // Percentage
   '%': {
-    category: 'Percentual',
+      category: 'Percentage',
     baseUnit: '%',
-    relatedUnits: ['decimal', 'fração', 'proporção']
+      relatedUnits: ['decimal', 'fraction', 'proportion']
   },
-  
-  // Contagem
+
+    // Count
   'participantes': {
-    category: 'Contagem',
+      category: 'Count',
     baseUnit: 'participantes',
     relatedUnits: ['pacientes', 'indivíduos', 'pessoas', 'n']
   },
   'eventos': {
-    category: 'Contagem',
+      category: 'Count',
     baseUnit: 'eventos',
     relatedUnits: ['casos', 'ocorrências', 'n']
   },
-  
-  // Temperatura
+
+    // Temperature
   '°C': {
-    category: 'Temperatura',
+      category: 'Temperature',
     baseUnit: '°C',
     relatedUnits: ['°F', 'K']
   },
@@ -115,10 +114,10 @@ export const UNIT_FAMILIES: Record<string, UnitFamily> = {
   }
 };
 
-// =================== FUNÇÕES ===================
+// =================== FUNCTIONS ===================
 
 /**
- * Retorna unidades relacionadas a uma unidade base
+ * Returns units related to a base unit
  */
 export function getRelatedUnits(baseUnit: string | null | undefined): string[] {
   if (!baseUnit) return [];
@@ -130,7 +129,7 @@ export function getRelatedUnits(baseUnit: string | null | undefined): string[] {
 }
 
 /**
- * Retorna todas as unidades disponíveis por categoria
+ * Returns all available units by category
  */
 export function getAllUnitsByCategory(): Record<string, string[]> {
   const categories: Record<string, string[]> = {};
@@ -153,14 +152,14 @@ export function getAllUnitsByCategory(): Record<string, string[]> {
 }
 
 /**
- * Normaliza unidade (trata variações comuns)
+ * Normalizes unit (handles common variations)
  */
 export function normalizeUnit(unit: string | null | undefined): string | null {
   if (!unit) return null;
   
   const normalized = unit.trim().toLowerCase();
-  
-  // Mapeamento de variações comuns
+
+    // Map of common variations
   const variations: Record<string, string> = {
     'ano': 'years',
     'anos': 'years',
@@ -183,12 +182,13 @@ export function normalizeUnit(unit: string | null | undefined): string | null {
     'porcento': '%',
     'porcentagem': '%',
   };
+    // PT/EN variations normalized to canonical unit keys
   
   return variations[normalized] || unit;
 }
 
 /**
- * Verifica se uma unidade é válida
+ * Checks if a unit is valid
  */
 export function isValidUnit(unit: string | null | undefined): boolean {
   if (!unit) return false;
@@ -196,10 +196,10 @@ export function isValidUnit(unit: string | null | undefined): boolean {
 }
 
 /**
- * Retorna unidade padrão se nenhuma for especificada
+ * Returns default unit when none is specified
  */
 export function getDefaultUnit(fieldType: string): string | null {
-  // Por enquanto retorna null, mas pode ser expandido
+    // For now returns null; can be extended later
   return null;
 }
 

@@ -1,6 +1,6 @@
 /**
- * Componentes compartilhados de sugestões de IA
- * Reutilizados entre extraction e assessment
+ * Shared AI suggestion components
+ * Reused between extraction and assessment
  */
 
 export { AISuggestionActions } from './AISuggestionActions';

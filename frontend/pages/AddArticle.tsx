@@ -1,5 +1,5 @@
 /**
- * AddArticle - Página para Adicionar Novo Artigo
+ * AddArticle - Page to add a new article
  * 
  * Usa o componente unificado ArticleForm em modo 'add'
  */

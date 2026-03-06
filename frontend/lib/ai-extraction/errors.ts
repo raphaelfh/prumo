@@ -1,11 +1,11 @@
 /**
- * Classes de erro customizadas para AI Extraction
- * 
- * Erros específicos do domínio para melhor tratamento e mensagens amigáveis.
+ * Custom error classes for AI Extraction
+ *
+ * Domain-specific errors for better handling and user-friendly messages.
  */
 
 /**
- * Erro base para AI Extraction
+ * Base error for AI Extraction
  */
 export class AIExtractionError extends Error {
   constructor(
@@ -19,12 +19,12 @@ export class AIExtractionError extends Error {
 }
 
 /**
- * Erro quando sugestão não é encontrada
+ * Error when suggestion is not found
  */
 export class SuggestionNotFoundError extends AIExtractionError {
   constructor(instanceId: string, fieldId: string) {
     super(
-      `Sugestão não encontrada para instância ${instanceId} e campo ${fieldId}`,
+        `Suggestion not found for instance ${instanceId} and field ${fieldId}`,
       'SUGGESTION_NOT_FOUND',
       { instanceId, fieldId }
     );
@@ -33,14 +33,14 @@ export class SuggestionNotFoundError extends AIExtractionError {
 }
 
 /**
- * Erro quando não há instâncias para extrair
+ * Error when there are no instances to extract
  */
 export class NoInstancesError extends AIExtractionError {
   constructor(entityTypeId: string, entityTypeName?: string) {
     super(
       entityTypeName
-        ? `Nenhuma instância encontrada para a seção "${entityTypeName}". Crie pelo menos uma instância antes de extrair.`
-        : `Nenhuma instância encontrada para esta seção. Crie pelo menos uma instância antes de extrair.`,
+          ? `No instances found for section "${entityTypeName}". Create at least one instance before extracting.`
+          : `No instances found for this section. Create at least one instance before extracting.`,
       'NO_INSTANCES',
       { entityTypeId, entityTypeName }
     );
@@ -49,12 +49,12 @@ export class NoInstancesError extends AIExtractionError {
 }
 
 /**
- * Erro quando PDF não é encontrado
+ * Error when PDF is not found
  */
 export class PDFNotFoundError extends AIExtractionError {
   constructor(articleId: string) {
     super(
-      'PDF não encontrado. Faça upload de um PDF primeiro.',
+        'PDF not found. Upload a PDF first.',
       'PDF_NOT_FOUND',
       { articleId }
     );
@@ -63,7 +63,7 @@ export class PDFNotFoundError extends AIExtractionError {
 }
 
 /**
- * Erro quando há mismatch entre nomes de campos extraídos e campos esperados
+ * Error when extracted field names do not match expected fields
  */
 export class FieldNameMismatchError extends AIExtractionError {
   constructor(
@@ -72,11 +72,11 @@ export class FieldNameMismatchError extends AIExtractionError {
     suggestions?: string[]
   ) {
     const suggestionText = suggestions && suggestions.length > 0
-      ? ` Sugestões: ${suggestions.join(', ')}`
+        ? ` Suggestions: ${suggestions.join(', ')}`
       : '';
     
     super(
-      `Campos extraídos não correspondem aos campos esperados.${suggestionText} Verifique se os nomes dos campos no template correspondem exatamente aos retornados pela IA.`,
+        `Extracted fields do not match expected fields.${suggestionText} Check that template field names match exactly those returned by the AI.`,
       'FIELD_NAME_MISMATCH',
       { unmatchedFields, expectedFields, suggestions }
     );
@@ -85,12 +85,12 @@ export class FieldNameMismatchError extends AIExtractionError {
 }
 
 /**
- * Erro de autenticação
+ * Authentication error
  */
 export class AuthenticationError extends AIExtractionError {
   constructor() {
     super(
-      'Usuário não autenticado',
+        'User not authenticated',
       'AUTH_ERROR'
     );
     this.name = 'AuthenticationError';
@@ -98,7 +98,7 @@ export class AuthenticationError extends AIExtractionError {
 }
 
 /**
- * Erro de validação
+ * Validation error
  */
 export class ValidationError extends AIExtractionError {
   constructor(message: string, details?: unknown) {
@@ -122,14 +122,14 @@ export class APIError extends AIExtractionError {
 }
 
 /**
- * Helper para determinar se um erro é do tipo AIExtractionError
+ * Helper to determine if an error is AIExtractionError type
  */
 export function isAIExtractionError(error: unknown): error is AIExtractionError {
   return error instanceof AIExtractionError;
 }
 
 /**
- * Extrai mensagem amigável de erro
+ * Extracts user-friendly error message
  */
 export function getErrorMessage(error: unknown): string {
   if (isAIExtractionError(error)) {
@@ -140,11 +140,11 @@ export function getErrorMessage(error: unknown): string {
     return error.message;
   }
 
-  return 'Erro desconhecido';
+    return 'Unknown error';
 }
 
 /**
- * Extrai código de erro para tratamento específico
+ * Extracts error code for specific handling
  */
 export function getErrorCode(error: unknown): string | null {
   if (isAIExtractionError(error)) {

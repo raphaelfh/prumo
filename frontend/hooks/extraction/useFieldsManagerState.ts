@@ -1,9 +1,8 @@
 /**
- * Hook para gerenciar estado local do FieldsManager
- * 
- * Centraliza toda a lógica de estado local para melhor organização
- * e reutilização.
- * 
+ * Hook to manage FieldsManager local state
+ *
+ * Centralizes local state logic for better organization and reuse.
+ *
  * @module hooks/extraction/useFieldsManagerState
  */
 
@@ -11,12 +10,12 @@ import {useCallback, useState} from 'react';
 import type {ExtractionField, FieldValidationResult} from '@/types/extraction';
 
 interface FieldsManagerState {
-  // Estados de edição inline
+    // Inline edit state
   editingId: string | null;
   editData: Partial<ExtractionField>;
   savingEdit: boolean;
-  
-  // Estados de dialogs
+
+    // Dialog state
   showAddDialog: boolean;
   showEditDialog: boolean;
   fieldToEdit: ExtractionField | null;
@@ -26,13 +25,13 @@ interface FieldsManagerState {
 }
 
 interface FieldsManagerActions {
-  // Ações de edição inline
+    // Inline edit actions
   startEdit: (field: ExtractionField) => void;
   updateEditData: (data: Partial<ExtractionField>) => void;
   cancelEdit: () => void;
   setSavingEdit: (saving: boolean) => void;
-  
-  // Ações de dialogs
+
+    // Dialog actions
   openAddDialog: () => void;
   closeAddDialog: () => void;
   openEditDialog: (field: ExtractionField) => void;
@@ -41,8 +40,8 @@ interface FieldsManagerActions {
   closeDeleteDialog: () => void;
   setDeleteValidation: (validation: FieldValidationResult | null) => void;
   setValidatingDelete: (fieldId: string | null) => void;
-  
-  // Ações de reset
+
+    // Reset actions
   resetAll: () => void;
 }
 

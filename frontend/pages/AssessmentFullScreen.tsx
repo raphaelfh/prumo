@@ -1,19 +1,19 @@
 /**
- * Interface Full Screen para Avaliação de Qualidade (Assessment)
+ * Full-screen Quality Assessment interface
  *
- * Página principal onde o usuário avalia a qualidade/risco de viés de um artigo específico.
- * Similar ao ExtractionFullScreen, com PDF viewer ao lado e formulário de avaliação.
+ * Main page where the user assesses article quality/risk of bias.
+ * Similar to ExtractionFullScreen, with PDF viewer and assessment form.
  *
- * REFATORADO para usar novos hooks e componentes (DRY + KISS)
- * Baseado em ExtractionFullScreen.tsx
+ * Refactored to use new hooks and components (DRY + KISS)
+ * Based on ExtractionFullScreen.tsx
  *
  * Features:
- * - PDF viewer com toggle
- * - Formulário de avaliação por domínios
- * - Auto-save automático
- * - Sugestões de IA (prefill + badge)
+ * - PDF viewer with toggle
+ * - Assessment form by domains
+ * - Auto-save
+ * - AI suggestions (prefill + badge)
  * - Progress tracking
- * - Navegação entre artigos
+ * - Article navigation
  *
  * @page
  */
@@ -45,6 +45,7 @@ import {BatchAssessmentProgress} from '@/components/assessment/ai/BatchAssessmen
 
 // Types
 import type {AssessmentLevel, EvidencePassage} from '@/types/assessment';
+import {t} from '@/lib/copy';
 
 // =================== COMPONENT ===================
 
@@ -57,7 +58,7 @@ export default function AssessmentFullScreen() {
   const [submitting, setSubmitting] = useState(false);
   const { userId } = useCurrentUser();
 
-  // Hook para carregar dados usando hook dedicado (SRP: separação de responsabilidades)
+    // Load data via dedicated hook (SRP: separation of concerns)
   const {
     article,
     project,
@@ -74,7 +75,7 @@ export default function AssessmentFullScreen() {
     enabled: !!projectId && !!articleId && !!instrumentId,
   });
 
-  // Hook para gerenciar respostas de assessment
+    // Manage assessment responses
   const {
     responses,
     updateResponse,
@@ -85,17 +86,17 @@ export default function AssessmentFullScreen() {
     projectId: projectId || '',
     articleId: articleId || '',
     instrumentId: instrumentId || '',
-    extractionInstanceId: undefined, // Não é hierárquico (não por modelo)
+      extractionInstanceId: undefined, // Not hierarchical (not per model)
     toolType: instrument?.tool_type,
     items,
     enabled: !!projectId && !!articleId && !!instrumentId,
   });
 
-  // Hook para calcular progresso
+    // Compute progress
   const { completedItems, totalItems, completionPercentage, isComplete } =
     useAssessmentProgress(responses, items);
 
-  // Hook para auto-save (só habilitar após valores inicializados)
+    // Auto-save (only enable after values initialized)
   const { isSaving, lastSaved } = useAssessmentAutoSave({
     responses,
     save: saveResponses,
@@ -115,7 +116,7 @@ export default function AssessmentFullScreen() {
     responsesRef.current = responses;
   }, [responses]);
 
-  // Callbacks para sugestões de IA
+    // AI suggestion callbacks
   const handleAISuggestionAccepted = useCallback(
     async (
       itemId: string,
@@ -143,7 +144,7 @@ export default function AssessmentFullScreen() {
     [updateResponse]
   );
 
-  // Hook para sugestões de IA
+    // AI suggestions
   const {
     suggestions: aiSuggestions,
     acceptSuggestion,
@@ -162,7 +163,7 @@ export default function AssessmentFullScreen() {
     onSuggestionRejected: handleAISuggestionRejected,
   });
 
-  // Hook para avaliar item individual
+    // Single-item assessment
   const [triggeringItemId, setTriggeringItemId] = useState<string | null>(null);
   const { assessItem } = useSingleAssessment({
     onSuccess: async (suggestionId) => {
@@ -178,7 +179,7 @@ export default function AssessmentFullScreen() {
           await refreshSuggestions();
         }
       } catch (error) {
-        console.error('[AssessmentFullScreen] Erro ao recarregar sugestões:', error);
+          console.error('[AssessmentFullScreen] Error reloading suggestions:', error);
       } finally {
         // T016: Clear trigger AFTER refresh so spinner stays until card can render
         setTriggeringItemId(null);
@@ -189,7 +190,7 @@ export default function AssessmentFullScreen() {
     },
   });
 
-  // Handler para trigger de avaliação de item
+    // Single-item assessment trigger handler
   const handleTriggerAI = useCallback(
     async (itemId: string) => {
       setTriggeringItemId(itemId);
@@ -207,7 +208,7 @@ export default function AssessmentFullScreen() {
           model: 'gpt-4o-mini',
         });
       } catch (error) {
-        console.error('❌ Erro ao avaliar item:', error);
+          console.error('Error assessing item:', error);
         setTriggeringItemId(null);
         delete preAISnapshotRef.current[itemId];
       }
@@ -215,7 +216,7 @@ export default function AssessmentFullScreen() {
     [projectId, articleId, instrumentId, assessItem]
   );
 
-  // Hook para batch assessment
+    // Batch assessment
   const {
     assessBatch,
     loading: batchLoading,
@@ -229,12 +230,12 @@ export default function AssessmentFullScreen() {
           await refreshSuggestions();
         }
       } catch (error) {
-        console.error('❌ Erro ao recarregar sugestões após batch:', error);
+          console.error('Error reloading suggestions after batch:', error);
       }
     },
   });
 
-  // Handler para batch assessment
+    // Batch assessment handler
   const handleBatchAssess = useCallback(() => {
     assessBatch({
       projectId: projectId || '',
@@ -248,26 +249,26 @@ export default function AssessmentFullScreen() {
   // State for batch progress visibility
   const [showBatchProgress, setShowBatchProgress] = useState(true);
 
-  // Navegação entre artigos
+    // Article navigation
   const handleNavigateToArticle = (newArticleId: string) => {
     navigate(`/projects/${projectId}/assessment/${newArticleId}/${instrumentId}`);
   };
 
-  // Finalizar avaliação
+    // Finalize assessment
   const handleSubmit = async () => {
     if (!isComplete) {
-      toast.error('Complete todas as perguntas obrigatórias antes de finalizar');
+        toast.error(t('pages', 'assessmentScreenCompleteRequired'));
       return;
     }
 
     setSubmitting(true);
     try {
-      // Salvar respostas finais
+        // Save final responses
       await saveResponses();
 
-      // Atualizar status para submitted
+        // Update status to submitted
       if (!userId) {
-        throw new Error('Usuário não autenticado');
+          throw new Error(t('common', 'errors_userNotAuthenticated'));
       }
 
       const { error } = await supabase
@@ -280,11 +281,11 @@ export default function AssessmentFullScreen() {
 
       if (error) throw error;
 
-      toast.success('Avaliação concluída com sucesso!');
+        toast.success(t('pages', 'assessmentScreenSubmitSuccess'));
       navigate(`/projects/${projectId}`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Erro ao finalizar avaliação';
-      console.error('❌ Erro ao finalizar avaliação:', error);
+        const message = error instanceof Error ? error.message : t('pages', 'assessmentScreenErrorFinalize');
+        console.error('Error finalizing assessment:', error);
       toast.error(message);
     } finally {
       setSubmitting(false);
@@ -304,8 +305,9 @@ export default function AssessmentFullScreen() {
   if (dataError) {
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-4">
-        <p className="text-destructive">Erro ao carregar dados</p>
-        <Button onClick={() => navigate(`/projects/${projectId}`)}>Voltar ao Projeto</Button>
+          <p className="text-destructive">{t('pages', 'assessmentScreenErrorLoad')}</p>
+          <Button
+              onClick={() => navigate(`/projects/${projectId}`)}>{t('pages', 'assessmentScreenBackToProject')}</Button>
       </div>
     );
   }
@@ -314,8 +316,9 @@ export default function AssessmentFullScreen() {
   if (!instrument) {
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-4">
-        <p className="text-muted-foreground">Nenhum instrumento configurado</p>
-        <Button onClick={() => navigate(`/projects/${projectId}`)}>Voltar ao Projeto</Button>
+          <p className="text-muted-foreground">{t('pages', 'assessmentScreenNoInstrument')}</p>
+          <Button
+              onClick={() => navigate(`/projects/${projectId}`)}>{t('pages', 'assessmentScreenBackToProject')}</Button>
       </div>
     );
   }
@@ -324,7 +327,7 @@ export default function AssessmentFullScreen() {
     <div className="h-screen flex flex-col">
       {/* Header */}
       <AssessmentHeader
-        projectName={project?.name || 'Projeto'}
+          projectName={project?.name || t('pages', 'extractionScreenProjectFallback')}
         instrumentName={instrument?.name || ''}
         articleTitle={article?.title || ''}
         onBack={() => navigate(`/projects/${projectId}?tab=assessment`)}
@@ -401,12 +404,12 @@ export default function AssessmentFullScreen() {
                   {submitting ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Finalizando...
+                        {t('pages', 'assessmentScreenFinalizing')}
                     </>
                   ) : (
                     <>
                       <CheckCircle className="mr-2 h-4 w-4" />
-                      Concluir Avaliação
+                        {t('pages', 'assessmentScreenCompleteAssessment')}
                     </>
                   )}
                 </Button>

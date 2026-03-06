@@ -1,24 +1,27 @@
 /**
- * Interface principal para extração de dados
- * 
- * Componente que gerencia todo o fluxo de extração de dados
- * para um projeto específico, incluindo templates, instâncias e valores.
+ * Main interface for data extraction
+ *
+ * Manages the full data extraction flow for a project,
+ * including templates, instances and values.
  */
 
 import {useEffect, useState} from 'react';
 import {useSearchParams} from 'react-router-dom';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
-import {Tabs, TabsContent, TabsList, TabsTrigger} from '@/components/ui/tabs';
+import {Skeleton} from '@/components/ui/skeleton';
 import {AlertCircle, CheckCircle, Download, FileText, PlusCircle, Settings} from 'lucide-react';
 import {ProjectExtractionTemplate} from '@/types/extraction';
 import {useExtractionTemplates} from '@/hooks/extraction/useExtractionTemplates';
+import {useProjectMemberRole} from '@/hooks/useProjectMemberRole';
 import {ArticleExtractionTable} from './ArticleExtractionTable';
+import {ConfigureTemplateFirst} from './config/ConfigureTemplateFirst';
 import {TemplateConfigEditor} from './TemplateConfigEditor';
 import {useAuth} from '@/contexts/AuthContext';
 import {CreateCustomTemplateDialog, ImportTemplateDialog} from './dialogs';
 import {supabase} from '@/integrations/supabase/client';
 import {toast} from 'sonner';
+import {t} from '@/lib/copy';
 
 interface ExtractionInterfaceProps {
   projectId: string;
@@ -27,8 +30,8 @@ interface ExtractionInterfaceProps {
 export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
-  
-  // Ler aba da URL ou usar padrão
+
+    // Read tab from URL or use default
   const tabFromUrl = searchParams.get('extractionTab') as 'extraction' | 'dashboard' | 'configuration' | null;
   const initialTab = (tabFromUrl && ['extraction', 'dashboard', 'configuration'].includes(tabFromUrl)) 
     ? tabFromUrl 
@@ -46,26 +49,32 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     progressPercentage: 0,
   });
 
-  // Hook para gerenciar templates
+    // Hook to manage templates
   const { 
-    templates, 
+    templates,
+      globalTemplates,
     loading: templatesLoading, 
     error: templatesError,
     refreshTemplates
   } = useExtractionTemplates({ projectId });
 
-  // Carregar template ativo quando templates são carregados
+    // Pre-select template when opening import dialog from config list
+    const [importInitialTemplateId, setImportInitialTemplateId] = useState<string | null>(null);
+
+    const {isManager, loading: roleLoading} = useProjectMemberRole(projectId);
+
+    // Load active template when templates are loaded
   useEffect(() => {
     if (templates.length > 0) {
       if (!activeTemplate) {
-        // Se não há template ativo, selecionar o padrão
+          // If no active template, select the default
         const defaultTemplate = templates.find(t => t.is_active) || templates[0];
         setActiveTemplate(defaultTemplate);
       } else {
-        // Verificar se o template ativo ainda existe na lista
+          // Check if active template still exists in the list
         const currentTemplate = templates.find(t => t.id === activeTemplate.id);
         if (!currentTemplate) {
-          // Template foi removido ou recriado, pegar o mais recente
+            // Template was removed or recreated; use the latest
           const defaultTemplate = templates.find(t => t.is_active) || templates[0];
           if (defaultTemplate) {
             setActiveTemplate(defaultTemplate);
@@ -75,26 +84,43 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     }
   }, [templates]);
 
-  // Sincronizar aba ativa com URL
+    // Non-manager cannot access Configuration: redirect to extraction if they had configuration selected
+    useEffect(() => {
+        if (roleLoading) return;
+        if (!isManager && activeTab === 'configuration') {
+            setActiveTab('extraction');
+        }
+    }, [isManager, roleLoading, activeTab]);
+
+    // Sync activeTab FROM URL when bar (ProjectView) changes extractionTab param
+    useEffect(() => {
+        const urlTab = searchParams.get('extractionTab') as 'extraction' | 'dashboard' | 'configuration' | null;
+        const valid = urlTab && ['extraction', 'dashboard', 'configuration'].includes(urlTab);
+        if (valid && urlTab !== activeTab) {
+            setActiveTab(urlTab);
+        }
+    }, [searchParams]);
+
+    // Sync active tab with URL
   useEffect(() => {
     const newParams = new URLSearchParams(searchParams);
     newParams.set('extractionTab', activeTab);
     setSearchParams(newParams, { replace: true });
   }, [activeTab, searchParams, setSearchParams]);
 
-  // Função para mudar aba e atualizar URL
+    // Change tab and update URL
   const handleTabChange = (tab: 'extraction' | 'dashboard' | 'configuration') => {
     setActiveTab(tab);
   };
 
-  // Carregar artigos e estatísticas
+    // Load articles and statistics
   useEffect(() => {
     if (projectId) {
       loadArticles();
     }
   }, [projectId]);
 
-  // Carregar estatísticas quando artigos ou template mudam
+    // Load statistics when articles or template change
   useEffect(() => {
     if (articles.length > 0 && activeTemplate && user) {
       loadExtractionStats();
@@ -114,7 +140,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
       setArticles(data || []);
     } catch (error: any) {
       console.error("Error loading articles:", error);
-      toast.error("Erro ao carregar artigos");
+        toast.error(t('extraction', 'errorLoadArticles'));
     }
   };
 
@@ -122,34 +148,36 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     if (!activeTemplate || !user) return;
 
     try {
-      // Buscar instâncias de extração para o template ativo
-      const { data: instances, error: instancesError } = await supabase
-        .from("extraction_instances" as any)
-        .select("article_id")
-        .eq("project_id", projectId)
-        .eq("template_id", activeTemplate.id);
+        // Fetch instances and values in parallel (reduces total time)
+        const [instancesResult, valuesResult] = await Promise.all([
+            supabase
+                .from("extraction_instances" as any)
+                .select("article_id")
+                .eq("project_id", projectId)
+                .eq("template_id", activeTemplate.id),
+            supabase
+                .from("extracted_values" as any)
+                .select(`
+            instance_id,
+            extraction_instances!inner(article_id, template_id)
+          `)
+                .eq("extraction_instances.project_id", projectId)
+                .eq("extraction_instances.template_id", activeTemplate.id)
+                .eq("reviewer_id", user.id),
+        ]);
 
-      if (instancesError) throw instancesError;
+        const {data: instances, error: instancesError} = instancesResult;
+        const {data: extractedValues, error: valuesError} = valuesResult;
 
-      // Buscar valores extraídos pelo usuário logado
-      const { data: extractedValues, error: valuesError } = await supabase
-        .from("extracted_values" as any)
-        .select(`
-          instance_id,
-          extraction_instances!inner(article_id, template_id)
-        `)
-        .eq("extraction_instances.project_id", projectId)
-        .eq("extraction_instances.template_id", activeTemplate.id)
-        .eq("reviewer_id", user.id);
-
+        if (instancesError) throw instancesError;
       if (valuesError) throw valuesError;
 
-      // Calcular estatísticas
+        // Compute statistics
       const totalArticles = articles.length;
       const articlesWithInstances = new Set(instances?.map((i: any) => i.article_id) || []);
       const extractionsStarted = articlesWithInstances.size;
-      
-      // Contar artigos com extração completa (pelo menos uma instância com valores)
+
+        // Count articles with extraction complete (at least one instance with values)
       const articlesWithValues = new Set(extractedValues?.map((v: any) => v.extraction_instances?.article_id).filter(Boolean) || []);
       const extractionsCompleted = articlesWithValues.size;
       
@@ -165,89 +193,80 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
       });
     } catch (error: any) {
       console.error("Error loading extraction stats:", error);
-      toast.error("Erro ao carregar estatísticas de extração");
+        toast.error(t('extraction', 'errorLoadStats'));
     }
   };
 
-  // Renderizar aba Dashboard
+    // Render Dashboard tab
   const renderDashboard = () => (
-    <div className="space-y-6">
-      {/* Estatísticas Principais - Layout Minimalista */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Artigos</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
+      <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              <Card className="border-border/40 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
+                      <CardTitle className="text-[13px] font-medium">{t('extraction', 'dashboardArticles')}</CardTitle>
+                      <FileText className="h-4 w-4 text-muted-foreground" strokeWidth={1.5}/>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{extractionStats.totalArticles}</div>
-            <p className="text-xs text-muted-foreground">
-              no projeto
-            </p>
+                  <CardContent className="px-4 pb-4">
+                      <div className="text-xl font-bold">{extractionStats.totalArticles}</div>
+                      <p className="text-[13px] text-muted-foreground">{t('extraction', 'dashboardInProject')}</p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Extrações Iniciadas</CardTitle>
-            <CheckCircle className="h-4 w-4 text-muted-foreground" />
+              <Card className="border-border/40 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
+                      <CardTitle
+                          className="text-[13px] font-medium">{t('extraction', 'dashboardExtractionsStarted')}</CardTitle>
+                      <CheckCircle className="h-4 w-4 text-muted-foreground" strokeWidth={1.5}/>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
+                  <CardContent className="px-4 pb-4">
+                      <div className="text-xl font-bold">
               {extractionStats.extractionsStarted}
               {extractionStats.extractionsCompleted > 0 && (
-                <span className="text-sm text-muted-foreground ml-2">
-                  ({extractionStats.extractionsCompleted} completas)
+                  <span className="text-[13px] text-muted-foreground ml-2">
+                  ({extractionStats.extractionsCompleted} {t('extraction', 'dashboardComplete')})
                 </span>
               )}
             </div>
-            <p className="text-xs text-muted-foreground">
-              artigos em extração
-            </p>
+                      <p className="text-[13px] text-muted-foreground">{t('extraction', 'dashboardArticlesInExtraction')}</p>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Progresso Geral</CardTitle>
-            <AlertCircle className="h-4 w-4 text-muted-foreground" />
+              <Card className="border-border/40 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
+                      <CardTitle
+                          className="text-[13px] font-medium">{t('extraction', 'dashboardOverallProgress')}</CardTitle>
+                      <AlertCircle className="h-4 w-4 text-muted-foreground" strokeWidth={1.5}/>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{extractionStats.progressPercentage}%</div>
-            <p className="text-xs text-muted-foreground">
-              completude média
-            </p>
+                  <CardContent className="px-4 pb-4">
+                      <div className="text-xl font-bold">{extractionStats.progressPercentage}%</div>
+                      <p className="text-[13px] text-muted-foreground">{t('extraction', 'dashboardAverageCompleteness')}</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Mensagem se não houver template */}
       {!activeTemplate && !templatesLoading && (
-        <Card className="border-blue-200 bg-blue-50">
-          <CardContent className="pt-6">
+          <Card className="border-border/40 border-blue-200 bg-blue-50">
+              <CardContent className="pt-4 pb-4 px-4">
             <div className="flex items-start justify-between">
               <div className="flex items-start space-x-3">
-                <Settings className="h-5 w-5 text-blue-600 mt-0.5" />
+                  <Settings className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" strokeWidth={1.5}/>
                 <div>
-                  <p className="font-medium text-blue-900">Configure seu template de extração</p>
-                  <p className="text-sm text-blue-700 mt-1">
-                    Para começar a extrair dados, você precisa configurar as variáveis que serão coletadas.
+                    <p className="text-[13px] font-medium text-blue-900">{t('extraction', 'dashboardConfigureTitle')}</p>
+                    <p className="text-[13px] text-blue-700 mt-1">
+                        {t('extraction', 'dashboardConfigureDesc')}
                   </p>
                   <div className="mt-3 space-y-2">
-                    <p className="text-sm text-blue-800 font-medium">Você pode:</p>
-                    <ul className="text-sm text-blue-700 space-y-1 ml-4">
-                      <li>• Importar o template CHARMS (checklist oficial)</li>
-                      <li>• Criar suas próprias seções e campos personalizados</li>
+                      <p className="text-[13px] text-blue-800 font-medium">{t('extraction', 'dashboardYouCan')}</p>
+                      <ul className="text-[13px] text-blue-700 space-y-1 ml-4">
+                          <li>• {t('extraction', 'dashboardImportCharmsOption')}</li>
+                          <li>• {t('extraction', 'dashboardCreateSectionsOption')}</li>
                     </ul>
                   </div>
                 </div>
               </div>
-              <Button 
-                onClick={() => setActiveTab('configuration')}
-                className="ml-4"
-              >
-                <Settings className="h-4 w-4 mr-2" />
-                Configurar
+                <Button onClick={() => setActiveTab('configuration')} className="ml-4">
+                    <Settings className="h-4 w-4 mr-2" strokeWidth={1.5}/>
+                    {t('extraction', 'dashboardConfigureButton')}
               </Button>
             </div>
           </CardContent>
@@ -256,8 +275,11 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     </div>
   );
 
-  // Renderizar conteúdo das abas
+    // Render tab content (only when not loading templates)
   const renderTabContent = () => {
+      if (templatesLoading) {
+          return null;
+      }
     switch (activeTab) {
       case 'extraction':
         return activeTemplate ? (
@@ -265,45 +287,15 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
             projectId={projectId} 
             templateId={activeTemplate.id}
           />
+        ) : isManager ? (
+            <ConfigureTemplateFirst onConfigureClick={() => setActiveTab('configuration')}/>
         ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle>Configure o template primeiro</CardTitle>
-              <CardDescription>
-                Você precisa configurar as variáveis que serão extraídas dos artigos.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Vá para a aba <strong>Configuração</strong> e escolha:
-              </p>
-              <div className="bg-muted/50 rounded-lg p-4 space-y-3">
-                <div className="flex items-start space-x-3">
-                  <Download className="h-5 w-5 text-muted-foreground mt-0.5" />
-                  <div>
-                    <p className="font-medium text-sm">Importar template CHARMS</p>
-                    <p className="text-sm text-muted-foreground">
-                      Use o checklist oficial para revisões de modelos preditivos
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start space-x-3">
-                  <PlusCircle className="h-5 w-5 text-muted-foreground mt-0.5" />
-                  <div>
-                    <p className="font-medium text-sm">Criar seções personalizadas</p>
-                    <p className="text-sm text-muted-foreground">
-                      Defina suas próprias variáveis de extração
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <Button 
-                onClick={() => setActiveTab('configuration')}
-                className="w-full"
-              >
-                <Settings className="h-4 w-4 mr-2" />
-                Ir para Configuração
-              </Button>
+            <Card className="border-border/40 shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-md w-full">
+                <CardContent className="pt-6 pb-6">
+                    <div className="flex items-start gap-3 text-[13px] text-muted-foreground">
+                        <AlertCircle className="h-5 w-5 text-muted-foreground flex-shrink-0 mt-0.5" strokeWidth={1.5}/>
+                        <p>{t('extraction', 'configContactManagerToConfigure')}</p>
+                    </div>
             </CardContent>
           </Card>
         );
@@ -318,71 +310,113 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
             templateId={activeTemplate.id}
           />
         ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle>Configure seu template de extração</CardTitle>
-              <CardDescription>
-                Escolha como você deseja estruturar a extração de dados dos artigos
+            <Card className="border-border/40 shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-md w-full">
+                <CardHeader className="pb-2">
+                    <CardTitle
+                        className="text-[13px] font-medium text-foreground">{t('extraction', 'configPanelTitle')}</CardTitle>
+                    <CardDescription className="text-[13px] text-muted-foreground">
+                        {t('extraction', 'configPanelDesc')}
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Opção 1: Importar Template Global */}
-              <div className="border rounded-lg p-4 hover:bg-muted/50 transition-colors">
+                <CardContent className="space-y-4">
+                    {/* 1. Create Custom Template (primary action first) */}
+                    <div
+                        className="border border-border/40 rounded-lg p-4 hover:bg-muted/50 transition-colors duration-75">
                 <div className="flex items-start justify-between">
                   <div className="space-y-2 flex-1">
                     <div className="flex items-center space-x-2">
-                      <Download className="h-5 w-5 text-primary" />
-                      <h3 className="font-semibold">Importar Template CHARMS</h3>
+                        <PlusCircle className="h-4 w-4 text-primary" strokeWidth={1.5}/>
+                        <h3 className="text-[13px] font-semibold">{t('extraction', 'configCreateCustomTitle')}</h3>
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      Use o checklist oficial para revisões sistemáticas de modelos preditivos. 
-                      Inclui 11 seções e 45 campos pré-configurados seguindo as diretrizes CHARMS.
+                      <p className="text-[13px] text-muted-foreground">
+                          {t('extraction', 'configCreateCustomFullDesc')}
                     </p>
                   </div>
-                  <Button onClick={() => setShowImportDialog(true)} className="ml-4">
-                    <Download className="h-4 w-4 mr-2" />
-                    Importar
-                  </Button>
-                </div>
-              </div>
-
-              {/* Opção 2: Criar Custom */}
-              <div className="border rounded-lg p-4 hover:bg-muted/50 transition-colors">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-2 flex-1">
-                    <div className="flex items-center space-x-2">
-                      <PlusCircle className="h-5 w-5 text-primary" />
-                      <h3 className="font-semibold">Criar Template Personalizado</h3>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      Defina suas próprias seções e campos de extração. Ideal para revisões 
-                      com necessidades específicas ou frameworks diferentes.
-                    </p>
-                  </div>
-                  <Button 
-                    variant="outline" 
+                    <Button
+                        variant="outline"
                     className="ml-4"
                     onClick={() => setShowCreateCustomDialog(true)}
                   >
-                    <PlusCircle className="h-4 w-4 mr-2" />
-                    Criar Template
+                        <PlusCircle className="h-4 w-4 mr-2" strokeWidth={1.5}/>
+                        {t('extraction', 'configCreateTemplateButton')}
                   </Button>
                 </div>
               </div>
 
-              {/* Nota informativa */}
-              <div className="bg-blue-50 border-blue-200 rounded-lg p-4">
+                    {/* 2. Manager info */}
+                    <div className="bg-blue-50 border border-border/40 border-blue-200 rounded-lg p-4">
                 <div className="flex items-start space-x-3">
-                  <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5" />
-                  <div className="text-sm text-blue-800">
-                    <p className="font-medium mb-1">Managers podem configurar templates</p>
+                    <AlertCircle className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" strokeWidth={1.5}/>
+                    <div className="text-[13px] text-blue-800">
+                        <p className="font-medium mb-1">{t('extraction', 'configManagersNote')}</p>
                     <p className="text-blue-700">
-                      Se você não é manager do projeto, solicite que um manager configure 
-                      o template de extração antes de começar.
+                        {t('extraction', 'configManagersNoteDesc')}
                     </p>
                   </div>
                 </div>
               </div>
+
+                    {/* 3. Import template (at bottom) */}
+                    <div className="space-y-2" role="region" aria-labelledby="config-import-section-heading">
+                        <h3 id="config-import-section-heading"
+                            className="text-[13px] font-medium text-foreground">{t('extraction', 'configImportSectionTitle')}</h3>
+                        {globalTemplates.length > 0 ? (
+                            <div className="rounded-md border border-border/40 overflow-hidden">
+                                <div className="max-h-[280px] overflow-y-auto"
+                                     aria-label={t('extraction', 'configAvailableTemplates')}>
+                                    <table className="w-full text-[13px] border-collapse">
+                                        <thead className="sticky top-0 bg-muted/30 border-b border-border/40 z-10">
+                                        <tr>
+                                            <th className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground text-left py-2 px-3 w-[20%]">Name</th>
+                                            <th className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground text-left py-2 px-3">Description</th>
+                                            <th className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground text-left py-2 px-3 w-[12%]">Framework</th>
+                                            <th className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground text-right py-2 px-3 w-[80px]">Action</th>
+                                        </tr>
+                                        </thead>
+                                        <tbody>
+                                        {globalTemplates.map((gt) => (
+                                            <tr
+                                                key={gt.id}
+                                                className="group border-b border-border/40 last:border-b-0 hover:bg-muted/50 transition-colors duration-75"
+                                            >
+                                                <td className="py-2 px-3 font-medium text-foreground">{gt.name}</td>
+                                                <td className="py-2 px-3 text-muted-foreground line-clamp-2 max-w-[40ch]">{gt.description ?? '—'}</td>
+                                                <td className="py-2 px-3">
+                                <span
+                                    className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide px-1.5 py-0.5 rounded border border-border/40"
+                                    aria-hidden="true">
+                                  {gt.framework}
+                                </span>
+                                                </td>
+                                                <td className="py-2 px-3 text-right">
+                                                    <Button
+                                                        size="sm"
+                                                        className="opacity-90 group-hover:opacity-100"
+                                                        aria-label={`${t('extraction', 'configImportThisTemplate')} ${gt.name}`}
+                                                        onClick={() => {
+                                                            setImportInitialTemplateId(gt.id);
+                                                            setShowImportDialog(true);
+                                                        }}
+                                                    >
+                                                        <Download className="h-4 w-4 mr-1.5" strokeWidth={1.5}/>
+                                                        {t('extraction', 'configImportThisTemplate')}
+                                                    </Button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="rounded-md border border-border/40 p-4 text-center">
+                                <p className="text-[13px] text-muted-foreground mb-2">{t('extraction', 'configNoTemplatesAvailable')}</p>
+                                <Button variant="outline" size="sm" onClick={() => setShowImportDialog(true)}>
+                                    {t('extraction', 'configSeeDetails')}
+                                </Button>
+                            </div>
+                        )}
+                    </div>
             </CardContent>
           </Card>
         );
@@ -393,79 +427,55 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
             projectId={projectId} 
             templateId={activeTemplate.id}
           />
+        ) : isManager ? (
+            <ConfigureTemplateFirst onConfigureClick={() => setActiveTab('configuration')}/>
         ) : (
-          <Card>
-            <CardHeader>
-              <CardTitle>Configure o template primeiro</CardTitle>
-              <CardDescription>
-                Você precisa configurar as variáveis que serão extraídas dos artigos.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Vá para a aba <strong>Configuração</strong> e escolha:
-              </p>
-              <div className="bg-muted/50 rounded-lg p-4 space-y-3">
-                <div className="flex items-start space-x-3">
-                  <Download className="h-5 w-5 text-muted-foreground mt-0.5" />
-                  <div>
-                    <p className="font-medium text-sm">Importar template CHARMS</p>
-                    <p className="text-sm text-muted-foreground">
-                      Use o checklist oficial para revisões de modelos preditivos
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start space-x-3">
-                  <PlusCircle className="h-5 w-5 text-muted-foreground mt-0.5" />
-                  <div>
-                    <p className="font-medium text-sm">Criar seções personalizadas</p>
-                    <p className="text-sm text-muted-foreground">
-                      Defina suas próprias variáveis de extração
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <Button 
-                onClick={() => setActiveTab('configuration')}
-                className="w-full"
-              >
-                <Settings className="h-4 w-4 mr-2" />
-                Ir para Configuração
-              </Button>
-            </CardContent>
-          </Card>
+            <Card className="border-border/40 shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-md w-full">
+                <CardContent className="pt-6 pb-6">
+                    <div className="flex items-start gap-3 text-[13px] text-muted-foreground">
+                        <AlertCircle className="h-5 w-5 text-muted-foreground flex-shrink-0 mt-0.5" strokeWidth={1.5}/>
+                        <p>{t('extraction', 'configContactManagerToConfigure')}</p>
+                    </div>
+                </CardContent>
+            </Card>
         );
     }
   };
 
-  return (
-    <div className="space-y-6">
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={(value) => handleTabChange(value as any)}>
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="extraction" disabled={!activeTemplate}>
-            Extração
-          </TabsTrigger>
-          <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-          <TabsTrigger value="configuration">
-            Configuração
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value={activeTab} className="mt-6">
-          {renderTabContent()}
-        </TabsContent>
-      </Tabs>
-
-      {/* Loading state */}
-      {templatesLoading && (
-        <div className="flex items-center justify-center py-12">
-          <div className="text-center">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4"></div>
-            <p className="text-muted-foreground">Carregando templates...</p>
+    return (
+        <div className="space-y-4">
+            <div className="mt-6">
+                {templatesLoading ? (
+                    <div className="space-y-4" aria-busy="true" aria-label={t('extraction', 'loadingTemplates')}>
+                        <div className="flex items-center gap-2">
+                            <Skeleton className="h-9 flex-1 max-w-sm"/>
+                            <Skeleton className="h-4 w-24"/>
+                        </div>
+                        <div className="rounded-lg border border-border/40">
+                            <div className="border-b border-border/40 px-4 py-2 flex gap-4">
+                                <Skeleton className="h-4 w-[30%]"/>
+                                <Skeleton className="h-4 w-[15%]"/>
+                                <Skeleton className="h-4 w-[10%]"/>
+                                <Skeleton className="h-4 w-[15%]"/>
+                                <Skeleton className="h-4 w-[10%]"/>
+                                <Skeleton className="h-4 w-[15%]"/>
+                            </div>
+                            {[1, 2, 3, 4, 5, 6].map((i) => (
+                                <div key={i} className="flex gap-4 px-4 py-2 border-b border-border/40 last:border-b-0">
+                                    <Skeleton className="h-4 flex-1 max-w-[30%]"/>
+                                    <Skeleton className="h-4 w-[15%]"/>
+                                    <Skeleton className="h-4 w-[10%]"/>
+                                    <Skeleton className="h-4 w-[15%]"/>
+                                    <Skeleton className="h-4 w-[10%]"/>
+                                    <Skeleton className="h-8 w-20"/>
+                </div>
+                            ))}
+                        </div>
           </div>
-        </div>
-      )}
+                ) : (
+                    renderTabContent()
+                )}
+            </div>
 
       {/* Error state */}
       {templatesError && (
@@ -474,7 +484,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
             <div className="flex items-center space-x-2 text-destructive">
               <AlertCircle className="h-5 w-5" />
               <div>
-                <p className="font-medium">Erro ao carregar templates</p>
+                  <p className="font-medium">{t('extraction', 'errorLoadTemplates')}</p>
                 <p className="text-sm">{templatesError}</p>
               </div>
             </div>
@@ -482,53 +492,58 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
         </Card>
       )}
 
-      {/* Dialog para importar template global */}
+            {/* Dialog to import global template */}
       <ImportTemplateDialog
         projectId={projectId}
         open={showImportDialog}
-        onOpenChange={setShowImportDialog}
+        onOpenChange={(open) => {
+            if (!open) setImportInitialTemplateId(null);
+            setShowImportDialog(open);
+        }}
+        initialTemplateId={importInitialTemplateId}
         onTemplateImported={async (templateId?: string) => {
-          // Recarregar templates sem recarregar a página
+            setImportInitialTemplateId(null);
+            // Refresh templates without reloading the page
           const updatedTemplates = await refreshTemplates() || [];
-          // Manter na aba de configuração
+            // Stay on configuration tab
           handleTabChange('configuration');
-          // Selecionar o template recém-importado
+            // Select the newly imported template
           if (templateId && updatedTemplates.length > 0) {
             const newTemplate = updatedTemplates.find((t: ProjectExtractionTemplate) => t.id === templateId);
             if (newTemplate) {
               setActiveTemplate(newTemplate);
             } else {
-              // Se não encontrou pelo ID, seleciona o mais recente
+                // If not found by ID, select the most recent
               setActiveTemplate(updatedTemplates[0]);
             }
           } else if (updatedTemplates.length > 0) {
-            // Seleciona o mais recente se não tiver ID
+              // Select the most recent if no ID
             setActiveTemplate(updatedTemplates[0]);
           }
         }}
       />
 
-      {/* Dialog para criar template personalizado */}
+            {/* Dialog to create custom template */}
       <CreateCustomTemplateDialog
         projectId={projectId}
         open={showCreateCustomDialog}
         onOpenChange={setShowCreateCustomDialog}
         onTemplateCreated={async (templateId?: string) => {
-          // Recarregar templates sem recarregar a página
+            // Refresh templates without reloading the page
           const updatedTemplates = await refreshTemplates() || [];
-          // Manter na aba de configuração
+            // Stay on configuration tab
           handleTabChange('configuration');
-          // Selecionar o template recém-criado
+            // Select the newly created template
           if (templateId && updatedTemplates.length > 0) {
             const newTemplate = updatedTemplates.find((t: ProjectExtractionTemplate) => t.id === templateId);
             if (newTemplate) {
               setActiveTemplate(newTemplate);
             } else {
-              // Se não encontrou pelo ID, seleciona o mais recente
+                // If not found by ID, select the most recent
               setActiveTemplate(updatedTemplates[0]);
             }
           } else if (updatedTemplates.length > 0) {
-            // Seleciona o mais recente se não tiver ID
+              // Select the most recent if no ID
             setActiveTemplate(updatedTemplates[0]);
           }
         }}

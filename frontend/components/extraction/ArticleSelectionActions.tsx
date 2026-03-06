@@ -1,7 +1,7 @@
 /**
  * Barra de ações para artigos selecionados
- * 
- * Componente minimalista e elegante que aparece quando há artigos selecionados.
+ *
+ * Minimal component that appears when articles are selected.
  * Exibe contador, menu de ações e botão para limpar seleção.
  */
 
@@ -17,6 +17,7 @@ import {
 import {Badge} from '@/components/ui/badge';
 import {Download, MoreHorizontal, Sparkles, X} from 'lucide-react';
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
+import {t} from '@/lib/copy';
 
 interface ArticleSelectionActionsProps {
   /**
@@ -35,12 +36,12 @@ interface ArticleSelectionActionsProps {
   selectedArticleTitles: string[];
   
   /**
-   * Callback para limpar seleção
+   * Callback to clear selection
    */
   onClearSelection: () => void;
   
   /**
-   * Callback para executar extração IA em batch
+   * Callback to run batch AI extraction
    */
   onBatchAIExtraction: () => void;
   
@@ -69,7 +70,7 @@ export function ArticleSelectionActions({
           <Badge variant="secondary" className="gap-1.5 px-2.5 py-1">
             <span className="font-medium">{selectedCount}</span>
             <span className="text-muted-foreground">
-              {selectedCount === 1 ? 'artigo selecionado' : 'artigos selecionados'}
+              {selectedCount === 1 ? t('extraction', 'tableArticleSelected') : t('extraction', 'tableArticlesSelected')}
             </span>
           </Badge>
         </div>
@@ -87,18 +88,18 @@ export function ArticleSelectionActions({
                       disabled={isExtracting}
                     >
                       <MoreHorizontal className="h-4 w-4" />
-                      Ações
+                        {t('extraction', 'tableActions')}
                     </Button>
                   </DropdownMenuTrigger>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Menu de ações para artigos selecionados</p>
+                    <p>{t('extraction', 'tableSelectionMenuTooltip')}</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
             
             <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuLabel>Ações em lote</DropdownMenuLabel>
+                <DropdownMenuLabel>{t('extraction', 'tableBatchActionsLabel')}</DropdownMenuLabel>
               <DropdownMenuSeparator />
               
               <DropdownMenuItem
@@ -107,7 +108,7 @@ export function ArticleSelectionActions({
                 className="gap-2"
               >
                 <Sparkles className="h-4 w-4" />
-                <span>Extração por IA</span>
+                  <span>{t('extraction', 'tableAIExtraction')}</span>
               </DropdownMenuItem>
               
               <DropdownMenuItem
@@ -115,8 +116,8 @@ export function ArticleSelectionActions({
                 className="gap-2 opacity-50 cursor-not-allowed"
               >
                 <Download className="h-4 w-4" />
-                <span>Exportar</span>
-                <span className="ml-auto text-xs text-muted-foreground">Em desenvolvimento</span>
+                  <span>{t('extraction', 'tableExport')}</span>
+                  <span className="ml-auto text-xs text-muted-foreground">{t('extraction', 'tableInDevelopment')}</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -135,7 +136,7 @@ export function ArticleSelectionActions({
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Limpar seleção</p>
+                  <p>{t('extraction', 'tableClearSelection')}</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>

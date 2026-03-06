@@ -5,6 +5,7 @@ import {AlertTriangle, Eye, EyeOff, Loader2, Lock} from 'lucide-react';
 import {toast} from 'sonner';
 import {useBlindReview} from '@/hooks/assessment/useBlindReview';
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,} from '@/components/ui/tooltip';
+import {t} from '@/lib/copy';
 
 interface BlindModeToggleProps {
   projectId: string;
@@ -29,7 +30,7 @@ export const BlindModeToggle = ({
 
   const handleToggle = async () => {
     if (!canManageBlindMode) {
-      toast.error('Apenas managers podem alterar o modo blind');
+        toast.error(t('assessment', 'blindOnlyManagers'));
       return;
     }
 
@@ -37,12 +38,12 @@ export const BlindModeToggle = ({
     try {
       const newMode = await toggleBlindMode();
       toast.success(
-        newMode 
-          ? 'Modo blind ativado - reviewers não podem ver outras avaliações'
-          : 'Modo blind desativado - reviewers podem ver outras avaliações'
+        newMode
+            ? t('assessment', 'blindEnabled')
+            : t('assessment', 'blindDisabled')
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Erro ao alterar modo blind';
+        const message = error instanceof Error ? error.message : t('assessment', 'blindErrorToggle');
       console.error('Error toggling blind mode:', error);
       toast.error(message);
     } finally {
@@ -54,7 +55,7 @@ export const BlindModeToggle = ({
     return (
       <div className={`flex items-center gap-2 ${className}`}>
         <Loader2 className="h-4 w-4 animate-spin" />
-        <span className="text-sm text-muted-foreground">Carregando...</span>
+          <span className="text-sm text-muted-foreground">{t('common', 'loading')}</span>
       </div>
     );
   }
@@ -63,7 +64,7 @@ export const BlindModeToggle = ({
     return (
       <div className={`flex items-center gap-2 ${className}`}>
         <AlertTriangle className="h-4 w-4 text-destructive" />
-        <span className="text-sm text-destructive">Erro: {error}</span>
+          <span className="text-sm text-destructive">{t('assessment', 'blindErrorLabel')}: {error}</span>
       </div>
     );
   }
@@ -77,12 +78,12 @@ export const BlindModeToggle = ({
         {isBlindMode ? (
           <>
             <EyeOff className="h-3 w-3" />
-            Blind Ativo
+              {t('assessment', 'blindActive')}
           </>
         ) : (
           <>
             <Eye className="h-3 w-3" />
-            Blind Inativo
+              {t('assessment', 'blindInactive')}
           </>
         )}
       </Badge>
@@ -109,9 +110,9 @@ export const BlindModeToggle = ({
             </TooltipTrigger>
             <TooltipContent>
               <p>
-                {isBlindMode 
-                  ? 'Desativar modo blind' 
-                  : 'Ativar modo blind'
+                {isBlindMode
+                    ? t('assessment', 'blindDeactivate')
+                    : t('assessment', 'blindActivate')
                 }
               </p>
             </TooltipContent>
@@ -126,7 +127,7 @@ export const BlindModeToggle = ({
               </div>
             </TooltipTrigger>
             <TooltipContent>
-              <p>Apenas managers podem alterar o modo blind</p>
+                <p>{t('assessment', 'blindOnlyManagers')}</p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>

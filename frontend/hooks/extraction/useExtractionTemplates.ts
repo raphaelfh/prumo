@@ -1,5 +1,5 @@
 /**
- * Hook para gerenciar templates de extração
+ * Hook to manage extraction templates
  * 
  * Gerencia templates globais e templates de projeto,
  * incluindo clonagem e criação de templates customizados.
@@ -9,6 +9,7 @@ import {useCallback, useEffect, useState} from 'react';
 import {supabase} from '@/integrations/supabase/client';
 import {useAuth} from '@/contexts/AuthContext';
 import {toast} from 'sonner';
+import {t} from '@/lib/copy';
 import {ExtractionTemplateOption, GlobalExtractionTemplate, ProjectExtractionTemplate} from '@/types/extraction';
 
 interface UseExtractionTemplatesProps {
@@ -24,7 +25,7 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
 
   // Funções de carregamento removidas - agora são inline no useEffect
 
-  // Carregar dados iniciais
+    // Load initial data
   useEffect(() => {
     if (!projectId) {
       setTemplates([]);
@@ -36,43 +37,42 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
     const loadData = async () => {
       setLoading(true);
       setError(null);
-      
       try {
-        // Carregar templates globais primeiro (sempre)
-        const { data: globalData, error: globalError } = await supabase
-          .from('extraction_templates_global')
-          .select('*')
-          .eq('is_global', true)
-          .order('name', { ascending: true });
+          // Load global and project templates in parallel (reduces total time)
+          const [globalResult, projectResult] = await Promise.all([
+              supabase
+                  .from('extraction_templates_global')
+                  .select('*')
+                  .eq('is_global', true)
+                  .order('name', {ascending: true}),
+              supabase
+                  .from('project_extraction_templates')
+                  .select('*')
+                  .eq('project_id', projectId)
+                  .eq('is_active', true)
+                  .order('created_at', {ascending: false}),
+          ]);
 
-        if (globalError) {
-          console.error('Erro ao carregar templates globais:', globalError);
-          throw globalError;
-        }
+          const {data: globalData, error: globalError} = globalResult;
+          const {data: projectData, error: projectError} = projectResult;
 
-        setGlobalTemplates(globalData || []);
-
-        // Carregar templates do projeto
-        const { data: projectData, error: projectError } = await supabase
-          .from('project_extraction_templates')
-          .select('*')
-          .eq('project_id', projectId)
-          .eq('is_active', true)
-          .order('created_at', { ascending: false });
-
+          if (globalError) {
+              console.error('Error loading global templates:', globalError);
+              throw globalError;
+          }
         if (projectError) {
-          console.error('Erro ao carregar templates do projeto:', projectError);
+            console.error('Error loading project templates:', projectError);
           throw projectError;
         }
 
+          setGlobalTemplates(globalData || []);
         setTemplates(projectData || []);
-        
-        console.log('Dados carregados com sucesso:', {
+          console.log('Templates loaded:', {
           globalTemplates: globalData?.length || 0,
           projectTemplates: projectData?.length || 0
         });
       } catch (err: any) {
-        console.error('Erro ao carregar dados:', err);
+          console.error('Error loading template data:', err);
         setError(err.message);
       } finally {
         setLoading(false);
@@ -98,7 +98,7 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
         .order('created_at', { ascending: false });
 
       if (projectError) {
-        console.error('Erro ao recarregar templates:', projectError);
+          console.error('Error refreshing templates:', projectError);
         throw projectError;
       }
 
@@ -106,25 +106,25 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
       setTemplates(templatesList);
       return templatesList;
     } catch (err: any) {
-      console.error('Erro ao recarregar templates:', err);
+        console.error('Error refreshing templates:', err);
       throw err;
     }
   }, [projectId]);
 
-  // Clonar template global para o projeto
+    // Clone global template to project
   const cloneTemplate = useCallback(async (
     globalTemplateId: string, 
     customName?: string
   ): Promise<ProjectExtractionTemplate | null> => {
     try {
-      // Verificar se o usuário está autenticado
+        // Check if user is authenticated
       if (!user) {
-        throw new Error('Usuário não autenticado');
+          throw new Error(t('common', 'errors_userNotAuthenticated'));
       }
 
-      console.log('Usuário autenticado:', user.id);
+        console.log('User authenticated:', user.id);
 
-      // Buscar template global
+        // Fetch global template
       const { data: globalTemplate, error: globalError } = await supabase
         .from('extraction_templates_global')
         .select('*')
@@ -132,9 +132,9 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
         .single();
 
       if (globalError) throw globalError;
-      if (!globalTemplate) throw new Error('Template global não encontrado');
+        if (!globalTemplate) throw new Error(t('common', 'errors_templateNotFound'));
 
-      // Buscar entidades do template global
+        // Fetch entities from global template
       const { data: entityTypes, error: entitiesError } = await supabase
         .from('extraction_entity_types')
         .select(`
@@ -167,7 +167,7 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
 
       if (templateError) throw templateError;
 
-      // Criar entidades e campos para o template do projeto
+        // Create entities and fields for project template
       // Clonar entity_types (2 passadas para preservar hierarquia)
       const entityTypeMapping: Record<string, string> = {};
 
@@ -193,7 +193,7 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
         entityTypeMapping[globalEntity.id] = newEntity.id;
       }
 
-      // Passada 2: Atualizar parent references com IDs mapeados
+        // Pass 2: Update parent references with mapped IDs
       for (const globalEntity of entityTypes || []) {
         if (globalEntity.parent_entity_type_id) {
           const newEntityId = entityTypeMapping[globalEntity.id];
@@ -243,12 +243,12 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
       // Recarregar templates do projeto
       await refreshTemplates();
 
-      toast.success(`Template "${templateName}" clonado com sucesso!`);
+        toast.success(t('extraction', 'templateClonedSuccess').replace('{{name}}', templateName));
       return projectTemplate;
 
     } catch (err: any) {
-      console.error('Erro ao clonar template:', err);
-      toast.error(`Erro ao clonar template: ${err.message}`);
+        console.error('Error cloning template:', err);
+        toast.error(`${t('extraction', 'errors_cloneTemplate')}: ${err.message}`);
       return null;
     }
   }, [projectId, user, refreshTemplates]);
@@ -261,7 +261,7 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
   ): Promise<ProjectExtractionTemplate | null> => {
     try {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) throw new Error('Usuário não autenticado');
+        if (userError || !user) throw new Error(t('common', 'errors_userNotAuthenticated'));
 
       const { data: template, error } = await supabase
         .from('project_extraction_templates')
@@ -272,7 +272,7 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
           framework,
           version: '1.0.0',
           schema: {
-            description: `Template customizado: ${description}`,
+              description: `Custom template: ${description}`,
             domains: []
           },
           created_by: user.id
@@ -285,12 +285,12 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
       // Recarregar templates
       await refreshTemplates();
 
-      toast.success(`Template "${name}" criado com sucesso!`);
+        toast.success(t('extraction', 'templateCreatedSuccess').replace('{{name}}', name));
       return template;
 
     } catch (err: any) {
-      console.error('Erro ao criar template customizado:', err);
-      toast.error(`Erro ao criar template: ${err.message}`);
+        console.error('Error creating custom template:', err);
+        toast.error(`${t('extraction', 'errors_createTemplate')}: ${err.message}`);
       return null;
     }
   }, [projectId, refreshTemplates]);
@@ -308,11 +308,11 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
       // Recarregar templates
       await refreshTemplates();
 
-      toast.success(`Template ${isActive ? 'ativado' : 'desativado'} com sucesso!`);
+        toast.success(t('extraction', isActive ? 'templateActivatedSuccess' : 'templateDeactivatedSuccess'));
 
     } catch (err: any) {
-      console.error('Erro ao alterar status do template:', err);
-      toast.error(`Erro ao alterar status: ${err.message}`);
+        console.error('Error updating template status:', err);
+        toast.error(`${t('extraction', 'errors_updateTemplateStatus')}: ${err.message}`);
     }
   }, [refreshTemplates]);
 
@@ -327,7 +327,7 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
     }));
   }, [globalTemplates]);
 
-  // Verificar se template já foi clonado
+    // Check if template was already cloned
   const isTemplateCloned = useCallback((globalTemplateId: string): boolean => {
     return templates.some(template => template.global_template_id === globalTemplateId);
   }, [templates]);
@@ -339,7 +339,7 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
     loading,
     error,
 
-    // Ações
+      // Actions
     cloneTemplate,
     createCustomTemplate,
     toggleTemplateActive,

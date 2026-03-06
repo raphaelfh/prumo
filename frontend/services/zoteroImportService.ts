@@ -1,6 +1,6 @@
 /**
- * Serviço de Importação do Zotero
- * Gerencia todo o processo de importação de artigos do Zotero para o projeto
+ * Zotero import service
+ * Manages the full process of importing articles from Zotero into the project
  */
 
 import {supabase} from '@/integrations/supabase/client';
@@ -23,29 +23,30 @@ import {
     shouldDownloadAttachment,
     shouldUpdateArticle,
 } from './zoteroMapper';
+import {t} from '@/lib/copy';
 
 /**
- * Classe principal para gerenciar importação do Zotero
+ * Main class for managing Zotero import
  */
 export class ZoteroImportService {
   private abortController: AbortController | null = null;
 
   /**
-   * Faz chamada à API FastAPI.
+   * Calls the FastAPI backend.
    */
   private async callZoteroApi<T = unknown>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
     return await zoteroClient<T>(action as ZoteroAction, payload);
   }
 
   /**
-   * Salva credenciais do Zotero no Vault
+   * Saves Zotero credentials in the vault
    */
   async saveCredentials(credentials: ZoteroCredentialsInput): Promise<void> {
     await this.callZoteroApi('save-credentials', credentials);
   }
 
   /**
-   * Testa conexão com o Zotero usando credenciais armazenadas
+   * Tests connection to Zotero using stored credentials
    */
   async testConnection(): Promise<ZoteroTestConnectionResult> {
     try {
@@ -61,7 +62,7 @@ export class ZoteroImportService {
         error: result.error,
       };
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Erro desconhecido';
+        const message = error instanceof Error ? error.message : 'Unknown error';
       return {
         success: false,
         error: message,
@@ -70,7 +71,7 @@ export class ZoteroImportService {
   }
 
   /**
-   * Lista collections disponíveis na biblioteca do Zotero
+   * Lists collections available in the Zotero library
    */
   async listCollections(): Promise<ZoteroCollection[]> {
     const result = await this.callZoteroApi<{ collections: ZoteroCollection[] }>('list-collections');
@@ -78,7 +79,7 @@ export class ZoteroImportService {
   }
 
   /**
-   * Busca items de uma collection específica
+   * Fetches items from a specific collection
    */
   private async fetchItems(collectionKey: string, limit = 100, start = 0): Promise<{
     items: ZoteroItem[];
@@ -105,7 +106,7 @@ export class ZoteroImportService {
   }
 
   /**
-   * Busca attachments de um item
+   * Fetches attachments for an item
    */
   private async fetchAttachments(itemKey: string): Promise<any[]> {
     const result = await this.callZoteroApi<{ attachments: any[] }>('fetch-attachments', { itemKey });
@@ -113,7 +114,7 @@ export class ZoteroImportService {
   }
 
   /**
-   * Baixa PDF do Zotero e faz upload para Supabase Storage
+   * Downloads PDF from Zotero and uploads to Supabase Storage
    */
   private async downloadAndUploadPdf(
     projectId: string,
@@ -122,7 +123,7 @@ export class ZoteroImportService {
     fileRole: 'MAIN' | 'SUPPLEMENT'
   ): Promise<void> {
     try {
-      // 1. Baixar attachment via API
+        // 1. Download attachment via API
       const downloadResult = await this.callZoteroApi<{
         base64: string;
         filename: string;
@@ -136,7 +137,7 @@ export class ZoteroImportService {
       const { base64, filename, size } = downloadResult;
       const contentType = downloadResult.content_type || downloadResult.contentType || 'application/pdf';
 
-      // 2. Converter base64 para Blob
+        // 2. Convert base64 to Blob
       const binaryString = atob(base64);
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) {
@@ -144,11 +145,11 @@ export class ZoteroImportService {
       }
       const blob = new Blob([bytes], { type: contentType });
 
-      // 3. Gerar storage key
+        // 3. Generate storage key
       const fileExt = filename.split('.').pop() || 'pdf';
       const storageKey = `${projectId}/${articleId}/${Date.now()}_${attachment.key}.${fileExt}`;
 
-      // 4. Upload para Supabase Storage
+        // 4. Upload to Supabase Storage
       const { error: uploadError } = await supabase.storage
         .from('articles')
         .upload(storageKey, blob, {
@@ -161,10 +162,10 @@ export class ZoteroImportService {
         throw new Error(`Upload failed: ${uploadError.message}`);
       }
 
-      // 5. Detectar formato do arquivo
+        // 5. Detect file format
       const detectedFormat = this.detectFormatFromContentType(contentType);
 
-      // 6. Criar registro em article_files
+        // 6. Create record in article_files
       const { error: insertError } = await supabase
         .from('article_files')
         .insert({
@@ -179,21 +180,21 @@ export class ZoteroImportService {
         });
 
       if (insertError) {
-        // Rollback: deletar arquivo do storage
+          // Rollback: delete file from storage
         await supabase.storage.from('articles').remove([storageKey]);
         throw new Error(`Database insert failed: ${insertError.message}`);
       }
 
       console.log(`PDF uploaded successfully: ${filename} (${fileRole})`);
     } catch (error: any) {
-      // Log warning mas não falhar a importação do artigo
+        // Log warning but do not fail article import
       console.warn(`Failed to download PDF ${attachment.data.title}:`, error.message);
-      throw error; // Re-throw para tracking no caller
+        throw error; // Re-throw for tracking in caller
     }
   }
 
   /**
-   * Detecta formato do arquivo a partir do Content-Type
+   * Detects file format from Content-Type
    */
   private detectFormatFromContentType(contentType: string): string {
     const lower = contentType.toLowerCase();
@@ -207,7 +208,7 @@ export class ZoteroImportService {
   }
 
   /**
-   * Processa um único item do Zotero
+   * Processes a single Zotero item
    */
   private async processItem(
     projectId: string,
@@ -216,44 +217,44 @@ export class ZoteroImportService {
     options: ImportOptions
   ): Promise<{ action: 'imported' | 'updated' | 'skipped'; articleId?: string; error?: string }> {
     try {
-      // Log para debug
-      console.log('[processItem] Processando item:', {
+        // Debug log
+        console.log('[processItem] Processing item:', {
         projectId,
         itemTitle: item.data.title?.substring(0, 50),
         doi: item.data.DOI,
       });
 
-      // Verificar se item tem título
+        // Check if item has title
       if (!item.data.title) {
-        return { action: 'skipped', error: 'Item sem título' };
+          return {action: 'skipped', error: t('extraction', 'zoteroItemNoTitle')};
       }
 
-      // Buscar duplicata
+        // Find duplicate
       const existing = await findDuplicateArticle(projectId, item);
 
-      // Mapear dados do Zotero para formato do artigo
+        // Map Zotero data to article format
       const articleData = mapZoteroItemToArticle(item, projectId, collectionKey);
 
       let articleId: string;
       let action: 'imported' | 'updated' | 'skipped';
 
       if (existing) {
-        // Artigo já existe
+          // Article already exists
         if (!options.updateExisting) {
           return { action: 'skipped', articleId: existing.id };
         }
 
-        // Verificar se deve atualizar (versão mais nova)
+          // Check if should update (newer version)
         if (!shouldUpdateArticle(existing.zotero_version, item.version)) {
           return { action: 'skipped', articleId: existing.id };
         }
 
-        // Atualizar artigo existente
+          // Update existing article
         const { error } = await supabase
           .from('articles')
           .update({
             ...articleData,
-            project_id: projectId, // Garantir que não muda de projeto
+              project_id: projectId, // Ensure project does not change
           })
           .eq('id', existing.id);
 
@@ -262,8 +263,8 @@ export class ZoteroImportService {
         articleId = existing.id;
         action = 'updated';
       } else {
-        // Criar novo artigo
-        console.log('[processItem] Tentando inserir novo artigo:', {
+          // Create new article
+          console.log('[processItem] Inserting new article:', {
           projectId,
           doi: articleData.doi,
           title: articleData.title?.substring(0, 50),
@@ -280,7 +281,7 @@ export class ZoteroImportService {
           .single();
 
         if (error) {
-          console.error('[processItem] Erro ao inserir artigo:', {
+            console.error('[processItem] Error inserting article:', {
             error,
             code: error.code,
             message: error.message,
@@ -289,24 +290,24 @@ export class ZoteroImportService {
           });
           throw error;
         }
-        if (!newArticle) throw new Error('Falha ao criar artigo');
+          if (!newArticle) throw new Error('Failed to create article');
 
         articleId = newArticle.id;
         action = 'imported';
       }
 
-      // Download de PDFs/attachments se configurado
+        // Download PDFs/attachments if configured
       if (options.downloadPdfs) {
         try {
           const attachments = await this.fetchAttachments(item.key);
-          
-          // Filtrar attachments válidos
+
+            // Filter valid attachments
           const downloadableAttachments = attachments.filter(att => 
             shouldDownloadAttachment(att, options.onlyPdfs)
           );
 
           if (downloadableAttachments.length > 0) {
-            // Verificar se artigo já tem arquivo MAIN
+              // Check if article already has MAIN file
             const { data: existingFiles } = await supabase
               .from('article_files')
               .select('file_role')
@@ -316,10 +317,10 @@ export class ZoteroImportService {
 
             const hasMainFile = !!existingFiles;
 
-            // Priorizar attachments (primeiro = MAIN)
+              // Prioritize attachments (first = MAIN)
             const prioritized = prioritizeMainPdf(downloadableAttachments);
 
-            // Download de cada attachment
+              // Download each attachment
             for (let i = 0; i < prioritized.length; i++) {
               const attachment = prioritized[i];
               const fileRole = determineFileRole(attachment, i, hasMainFile);
@@ -327,14 +328,14 @@ export class ZoteroImportService {
               try {
                 await this.downloadAndUploadPdf(projectId, articleId, attachment, fileRole);
               } catch (pdfError: any) {
-                console.warn(`Falha ao baixar ${attachment.data.title}:`, pdfError.message);
-                // Continuar para próximo arquivo
+                  console.warn(`Failed to download ${attachment.data.title}:`, pdfError.message);
+                  // Continue to next file
               }
             }
           }
         } catch (pdfError) {
-          console.warn('Erro ao processar attachments:', pdfError);
-          // Não falhar a importação do artigo se attachments falharem
+            console.warn('Error processing attachments:', pdfError);
+            // Do not fail article import if attachments fail
         }
       }
 
@@ -342,14 +343,14 @@ export class ZoteroImportService {
 
     } catch (error: any) {
       return { 
-        action: 'skipped', 
-        error: error.message || 'Erro desconhecido' 
+        action: 'skipped',
+          error: error.message || 'Unknown error'
       };
     }
   }
 
   /**
-   * Importa artigos de uma collection do Zotero
+   * Imports articles from a Zotero collection
    */
   async importFromCollection(
     projectId: string,
@@ -371,12 +372,12 @@ export class ZoteroImportService {
     const errors: ImportError[] = [];
 
     try {
-      // Fase 1: Buscar items
+        // Phase 1: Fetch items
       onProgress?.({
         phase: 'fetching',
         current: 0,
         total: 0,
-        message: 'Buscando artigos do Zotero...',
+          message: t('extraction', 'zoteroProgressFetching'),
         stats,
       });
 
@@ -400,7 +401,7 @@ export class ZoteroImportService {
           phase: 'fetching',
           current: allItems.length,
           total: totalResults,
-          message: `Buscando artigos... ${allItems.length}/${totalResults}`,
+            message: t('extraction', 'zoteroProgressFetchingCount').replace('{{current}}', String(allItems.length)).replace('{{total}}', String(totalResults)),
           stats,
         });
       }
@@ -416,12 +417,12 @@ export class ZoteroImportService {
         };
       }
 
-      // Fase 2: Processar items
+        // Phase 2: Process items
       onProgress?.({
         phase: 'processing',
         current: 0,
         total: totalItems,
-        message: 'Processando artigos...',
+          message: t('extraction', 'zoteroProgressProcessing'),
         stats,
       });
 
@@ -440,14 +441,14 @@ export class ZoteroImportService {
             if (result.error) {
               errors.push({
                 itemKey: item.key,
-                itemTitle: item.data.title || 'Sem título',
+                  itemTitle: item.data.title || t('extraction', 'zoteroItemTitleFallback'),
                 error: result.error,
                 phase: 'processing',
               });
             }
           }
 
-          // Contar PDFs baixados se opção estiver ativa
+            // Count downloaded PDFs if option is enabled
           if (options.downloadPdfs && result.articleId) {
             try {
               const { count } = await supabase
@@ -459,15 +460,15 @@ export class ZoteroImportService {
                 stats.pdfsDownloaded = (stats.pdfsDownloaded || 0) + count;
               }
             } catch (countError) {
-              // Ignorar erro de contagem
+                // Ignore count error
             }
           }
         } catch (error: any) {
           stats.errors++;
           errors.push({
             itemKey: item.key,
-            itemTitle: item.data.title || 'Sem título',
-            error: error.message || 'Erro desconhecido',
+              itemTitle: item.data.title || t('extraction', 'zoteroItemTitleFallback'),
+              error: error.message || 'Unknown error',
             phase: 'processing',
           });
         }
@@ -478,20 +479,20 @@ export class ZoteroImportService {
           phase,
           current: i + 1,
           total: totalItems,
-          message: options.downloadPdfs 
-            ? `Processando e baixando PDFs... ${i + 1}/${totalItems}`
-            : `Processando ${i + 1}/${totalItems}...`,
+          message: options.downloadPdfs
+              ? t('extraction', 'zoteroProgressProcessingWithPdfs').replace('{{current}}', String(i + 1)).replace('{{total}}', String(totalItems))
+              : t('extraction', 'zoteroProgressProcessingCount').replace('{{current}}', String(i + 1)).replace('{{total}}', String(totalItems)),
           currentFile: item.data.title,
           stats,
         });
       }
 
-      // Fase 3: Completo
+        // Phase 3: Complete
       onProgress?.({
         phase: 'complete',
         current: totalItems,
         total: totalItems,
-        message: 'Importação concluída!',
+          message: t('extraction', 'zoteroProgressComplete'),
         stats,
       });
 
@@ -507,7 +508,7 @@ export class ZoteroImportService {
         phase: 'error',
         current: 0,
         total: 0,
-        message: error.message || 'Erro na importação',
+          message: error.message || t('extraction', 'zoteroProgressError'),
         stats,
       });
 
@@ -518,8 +519,8 @@ export class ZoteroImportService {
           ...errors,
           {
             itemKey: '',
-            itemTitle: 'Erro geral',
-            error: error.message || 'Erro desconhecido',
+              itemTitle: 'General error',
+              error: error.message || 'Unknown error',
             phase: 'general',
           },
         ],
@@ -531,7 +532,7 @@ export class ZoteroImportService {
   }
 
   /**
-   * Cancela importação em andamento
+   * Cancels import in progress
    */
   cancelImport(): void {
     this.abortController?.abort();
@@ -539,26 +540,26 @@ export class ZoteroImportService {
   }
 
   /**
-   * Remove credenciais do Zotero
+   * Removes Zotero credentials
    */
   async disconnect(): Promise<void> {
     const { data: { user } } = await supabase.auth.getUser();
     
     if (!user) {
-      throw new Error('Usuário não autenticado');
+        throw new Error('User not authenticated');
     }
 
-    // Desativar integração
+      // Deactivate integration
     const { error } = await supabase
       .from('zotero_integrations')
       .update({ is_active: false })
       .eq('user_id', user.id);
 
     if (error) {
-      throw new Error(`Erro ao desconectar: ${error.message}`);
+        throw new Error(`Failed to disconnect: ${error.message}`);
     }
   }
 }
 
-// Exportar instância singleton
+// Export singleton instance
 export const zoteroService = new ZoteroImportService();

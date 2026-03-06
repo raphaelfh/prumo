@@ -1,13 +1,13 @@
 /**
- * Hook para gerenciar respostas de assessment (Assessment 2.0)
+ * Hook to manage assessment responses (Assessment 2.0)
  *
- * Análogo a useExtractionData. Gerencia responses individuais
- * (granularidade: 1 linha = 1 resposta).
+ * Analogous to useExtractionData. Manages individual responses
+ * (granularity: 1 row = 1 response).
  *
- * Permite vincular responses a assessment instances específicas
- * (útil para PROBAST por modelo).
+ * Allows linking responses to specific assessment instances
+ * (useful for PROBAST per model).
  *
- * @see useExtractionData - Hook análogo para extraction
+ * @see useExtractionData - Analogous hook for extraction
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -20,6 +20,7 @@ import {
   BulkCreateAssessmentResponsesRequest,
   AssessmentSource,
 } from '@/types/assessment';
+import {t} from '@/lib/copy';
 
 interface UseAssessmentResponsesNewProps {
   assessmentInstanceId?: string;
@@ -76,8 +77,8 @@ export function useAssessmentResponsesNew({
 
       setResponses(data || []);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Erro ao carregar responses';
-      console.error('Erro ao carregar assessment responses:', err);
+        const message = err instanceof Error ? err.message : t('assessment', 'errors_loadResponses');
+        console.error('Error loading assessment responses:', err);
       setError(message);
       toast.error(message);
     } finally {
@@ -99,7 +100,7 @@ export function useAssessmentResponsesNew({
       const reviewerId = user.data.user?.id;
 
       if (!reviewerId) {
-        throw new Error('Usuário não autenticado');
+          throw new Error(t('common', 'errors_userNotAuthenticated'));
       }
 
       const { data: newResponse, error } = await supabase
@@ -128,14 +129,14 @@ export function useAssessmentResponsesNew({
 
       return newResponse;
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Erro ao criar response';
-      console.error('Erro ao criar response:', err);
+        const message = err instanceof Error ? err.message : t('assessment', 'errors_createResponse');
+        console.error('Error creating response:', err);
       toast.error(message);
       return null;
     }
   }, []);
 
-  // Criar múltiplas responses em batch
+    // Create multiple responses in batch
   const bulkCreateResponses = useCallback(async (
     data: BulkCreateAssessmentResponsesRequest
   ): Promise<AssessmentResponseNew[]> => {
@@ -144,7 +145,7 @@ export function useAssessmentResponsesNew({
       const reviewerId = user.data.user?.id;
 
       if (!reviewerId) {
-        throw new Error('Usuário não autenticado');
+          throw new Error(t('common', 'errors_userNotAuthenticated'));
       }
 
       const responsesToInsert = data.responses.map(response => ({
@@ -170,13 +171,13 @@ export function useAssessmentResponsesNew({
 
       if (newResponses) {
         setResponses(prev => [...prev, ...newResponses]);
-        toast.success(`${newResponses.length} respostas criadas`);
+          toast.success(t('assessment', 'responsesCreatedCount').replace('{{n}}', String(newResponses.length)));
       }
 
       return newResponses || [];
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Erro ao criar responses';
-      console.error('Erro ao criar responses em batch:', err);
+        const message = err instanceof Error ? err.message : t('assessment', 'errors_createResponsesBatch');
+        console.error('Error creating responses in batch:', err);
       toast.error(message);
       return [];
     }
@@ -200,7 +201,7 @@ export function useAssessmentResponsesNew({
 
       if (error) throw error;
 
-      // Atualizar estado local
+        // Update local state
       setResponses(prev =>
         prev.map(resp =>
           resp.id === responseId
@@ -211,8 +212,8 @@ export function useAssessmentResponsesNew({
 
       return true;
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Erro ao atualizar response';
-      console.error('Erro ao atualizar response:', err);
+        const message = err instanceof Error ? err.message : t('assessment', 'errors_updateResponse');
+        console.error('Error updating response:', err);
       toast.error(message);
       return false;
     }
@@ -233,14 +234,14 @@ export function useAssessmentResponsesNew({
 
       return true;
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Erro ao deletar response';
-      console.error('Erro ao deletar response:', err);
+        const message = err instanceof Error ? err.message : t('assessment', 'errors_deleteResponse');
+        console.error('Error deleting response:', err);
       toast.error(message);
       return false;
     }
   }, []);
 
-  // Buscar response específica por instance + item
+    // Fetch specific response by instance + item
   const getResponseByInstanceAndItem = useCallback(async (
     instanceId: string,
     itemId: string
@@ -257,17 +258,17 @@ export function useAssessmentResponsesNew({
 
       return data;
     } catch (err: unknown) {
-      console.error('Erro ao buscar response:', err);
+        console.error('Error fetching response:', err);
       return null;
     }
   }, []);
 
-  // Upsert response (update se existe, create se não existe)
+    // Upsert response (update if exists, create if not)
   const upsertResponse = useCallback(async (
     data: CreateAssessmentResponseRequest
   ): Promise<AssessmentResponseNew | null> => {
     try {
-      // Verificar se já existe
+        // Check if already exists
       const existing = await getResponseByInstanceAndItem(
         data.assessment_instance_id,
         data.assessment_item_id
@@ -295,7 +296,7 @@ export function useAssessmentResponsesNew({
     }
   }, [getResponseByInstanceAndItem, updateResponse, createResponse]);
 
-  // Estatísticas
+    // Statistics
   const stats = useMemo(() => {
     const bySource = responses.reduce((acc, resp) => {
       acc[resp.source] = (acc[resp.source] || 0) + 1;

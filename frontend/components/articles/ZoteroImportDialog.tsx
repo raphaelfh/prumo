@@ -1,5 +1,5 @@
 /**
- * Diálogo multi-step para importação de artigos do Zotero
+ * Multi-step dialog for importing articles from Zotero
  */
 
 import {useEffect, useState} from 'react';
@@ -39,6 +39,7 @@ import {createZoteroImportJob} from '@/types/background-jobs';
 import type {ImportOptions} from '@/types/zotero';
 import {cn} from '@/lib/utils';
 import {toast} from 'sonner';
+import {t} from '@/lib/copy';
 
 interface ZoteroImportDialogProps {
   open: boolean;
@@ -74,17 +75,17 @@ export function ZoteroImportDialog({
   const [selectedCollection, setSelectedCollection] = useState<string | null>(null);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [importOptions, setImportOptions] = useState<ImportOptions>({
-    downloadPdfs: true, // Habilitado agora que está implementado
-    onlyPdfs: true, // Por padrão, baixar apenas PDFs
+      downloadPdfs: true, // Enabled now that it is implemented
+      onlyPdfs: true, // By default, download PDFs only
     updateExisting: true,
     importTags: true,
     conflictResolution: 'update',
   });
 
-  // Carregar collections quando abrir o diálogo ou projectId mudar
+    // Load collections when dialog opens or projectId changes
   useEffect(() => {
     if (open) {
-      console.log('[ZoteroImportDialog] Dialog aberto com projectId:', projectId);
+        console.log('[ZoteroImportDialog] Dialog opened with projectId:', projectId);
       listCollections();
       setCurrentStep('select-collection');
       setSelectedCollection(null);
@@ -92,9 +93,9 @@ export function ZoteroImportDialog({
     }
   }, [open, projectId, listCollections, resetProgress]);
 
-  // Log quando projectId muda
+    // Log when projectId changes
   useEffect(() => {
-    console.log('[ZoteroImportDialog] ProjectId atualizado:', projectId);
+      console.log('[ZoteroImportDialog] ProjectId updated:', projectId);
   }, [projectId]);
 
   const handleNext = () => {
@@ -114,7 +115,7 @@ export function ZoteroImportDialog({
 
     const selectedCollectionData = collections.find(c => c.key === selectedCollection);
 
-    // Criar background job
+      // Create background job
     const job = createZoteroImportJob(
       projectId,
       selectedCollection,
@@ -125,19 +126,19 @@ export function ZoteroImportDialog({
       }
     );
 
-    // Adicionar job ao store
+      // Add job to store
     addJob(job);
 
     setCurrentStep('importing');
 
-    // Iniciar importação com callback para atualizar job
+      // Start import with callback to update job
     const result = await startImport(
       projectId, 
       selectedCollection, 
       importOptions,
       job.id,
       (updatedProgress) => {
-        // Atualizar job com progresso
+          // Update job with progress
         updateJob(job.id, {
           status: 'running',
           progress: updatedProgress,
@@ -147,7 +148,7 @@ export function ZoteroImportDialog({
       }
     );
 
-    // Atualizar job com resultado final
+      // Update job with final result
     if (result?.success) {
       updateJob(job.id, {
         status: 'completed',
@@ -159,14 +160,14 @@ export function ZoteroImportDialog({
       updateJob(job.id, {
         status: 'failed',
         completedAt: Date.now(),
-        error: result?.errors?.[0]?.error || 'Erro na importação',
+          error: result?.errors?.[0]?.error || t('articles', 'zoteroImportError'),
       });
     }
   };
 
   const handleClose = () => {
     if (importing) {
-      // Se está importando, mostrar confirmação
+        // If importing, show confirmation
       setShowCloseConfirm(true);
     } else {
       onOpenChange(false);
@@ -174,21 +175,21 @@ export function ZoteroImportDialog({
   };
 
   const handleConfirmMinimize = () => {
-    // Minimizar: apenas fechar dialog, importação continua
+      // Minimize: just close dialog, import continues
     setShowCloseConfirm(false);
     onOpenChange(false);
-    toast.info('Importação continuando em background. Você será notificado quando concluir.', {
+      toast.info(t('articles', 'zoteroImportContinuing'), {
       duration: 4000,
     });
   };
 
   const handleConfirmCancel = () => {
-    // Cancelar: interromper importação
+      // Cancel: stop import
     cancelImport();
     setShowCloseConfirm(false);
     onOpenChange(false);
-    
-    // Atualizar job como cancelado
+
+      // Update job as cancelled
     if (currentJobId) {
       updateJob(currentJobId, {
         status: 'cancelled',
@@ -207,15 +208,15 @@ export function ZoteroImportDialog({
       <Dialog open={open} onOpenChange={handleClose}>
         <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
         <DialogHeader className="flex-shrink-0">
-          <DialogTitle>Importar do Zotero</DialogTitle>
+            <DialogTitle>{t('articles', 'zoteroTitle')}</DialogTitle>
           <DialogDescription>
-            {currentStep === 'select-collection' && 'Selecione uma collection para importar'}
-            {currentStep === 'configure-options' && 'Configure as opções de importação'}
-            {currentStep === 'importing' && 'Importando artigos...'}
+              {currentStep === 'select-collection' && t('articles', 'zoteroSelectCollection')}
+              {currentStep === 'configure-options' && t('articles', 'zoteroConfigureOptions')}
+              {currentStep === 'importing' && t('articles', 'zoteroImportingArticles')}
           </DialogDescription>
         </DialogHeader>
 
-        {/* Área de conteúdo com scroll */}
+            {/* Scrollable content area */}
         <ScrollArea className="flex-1 -mx-6 px-6">
           <div className="space-y-4 py-2">
           {/* Step 1: Selecionar Collection */}
@@ -229,7 +230,7 @@ export function ZoteroImportDialog({
                 <Alert>
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
-                    Nenhuma collection encontrada na sua biblioteca Zotero.
+                      {t('articles', 'zoteroNoCollectionsFound')}
                   </AlertDescription>
                 </Alert>
               ) : (
@@ -276,13 +277,13 @@ export function ZoteroImportDialog({
             </div>
           )}
 
-          {/* Step 2: Configurar Opções */}
+              {/* Step 2: Configure options */}
           {currentStep === 'configure-options' && (
             <div className="space-y-6">
               <Alert>
                 <Info className="h-4 w-4" />
                 <AlertDescription>
-                  Configure como os artigos devem ser importados.
+                    {t('articles', 'zoteroStep2Desc')}
                 </AlertDescription>
               </Alert>
 
@@ -297,15 +298,15 @@ export function ZoteroImportDialog({
                   />
                   <div className="space-y-1 flex-1">
                     <Label htmlFor="download-pdfs" className="cursor-pointer">
-                      Baixar PDFs automaticamente
+                        {t('articles', 'zoteroDownloadPdfs')}
                     </Label>
                     <p className="text-sm text-muted-foreground">
-                      Download de PDFs e attachments do Zotero. Primeiro PDF será o arquivo principal (MAIN).
+                        {t('articles', 'zoteroDownloadPdfsDesc')}
                     </p>
                   </div>
                 </div>
 
-                {/* Sub-opção: Apenas PDFs */}
+                  {/* Sub-option: PDFs only */}
                 {importOptions.downloadPdfs && (
                   <div className="flex items-start space-x-3 p-4 rounded-lg border ml-8">
                     <Checkbox
@@ -317,10 +318,10 @@ export function ZoteroImportDialog({
                     />
                     <div className="space-y-1 flex-1">
                       <Label htmlFor="only-pdfs" className="cursor-pointer">
-                        Baixar apenas PDFs
+                          {t('articles', 'zoteroOnlyPdfs')}
                       </Label>
                       <p className="text-sm text-muted-foreground">
-                        Se desabilitado, também baixa snapshots HTML e outros attachments
+                          {t('articles', 'zoteroOnlyPdfsDesc')}
                       </p>
                     </div>
                   </div>
@@ -336,10 +337,10 @@ export function ZoteroImportDialog({
                   />
                   <div className="space-y-1 flex-1">
                     <Label htmlFor="update-existing" className="cursor-pointer">
-                      Atualizar artigos existentes
+                        {t('articles', 'zoteroUpdateExisting')}
                     </Label>
                     <p className="text-sm text-muted-foreground">
-                      Se um artigo com mesmo DOI já existir, atualizar seus metadados
+                        {t('articles', 'zoteroUpdateExistingDesc')}
                     </p>
                   </div>
                 </div>
@@ -354,10 +355,10 @@ export function ZoteroImportDialog({
                   />
                   <div className="space-y-1 flex-1">
                     <Label htmlFor="import-tags" className="cursor-pointer">
-                      Importar tags como keywords
+                        {t('articles', 'zoteroImportTagsAsKeywords')}
                     </Label>
                     <p className="text-sm text-muted-foreground">
-                      Tags do Zotero serão importadas como palavras-chave do artigo
+                        {t('articles', 'zoteroTagsAsKeywordsDesc')}
                     </p>
                   </div>
                 </div>
@@ -365,7 +366,7 @@ export function ZoteroImportDialog({
             </div>
           )}
 
-          {/* Step 3: Progresso da Importação */}
+              {/* Step 3: Import progress */}
           {currentStep === 'importing' && progress && (
             <div className="space-y-4">
               <div className="space-y-2">
@@ -378,12 +379,12 @@ export function ZoteroImportDialog({
                 <Progress value={progressPercentage} className="h-2" />
               </div>
 
-              {/* Grid de estatísticas - 2 cols em mobile, 3 em desktop */}
+                {/* Stats grid - 2 cols on mobile, 3 on desktop */}
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="p-3 rounded-lg border bg-muted/50">
                   <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
                     <CheckCircle2 className="h-3 w-3 flex-shrink-0" />
-                    <span>Importados</span>
+                      <span>{t('articles', 'zoteroImported')}</span>
                   </div>
                   <p className="text-xl font-bold">{progress.stats.imported}</p>
                 </div>
@@ -391,7 +392,7 @@ export function ZoteroImportDialog({
                 <div className="p-3 rounded-lg border bg-muted/50">
                   <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
                     <Download className="h-3 w-3 flex-shrink-0" />
-                    <span>Atualizados</span>
+                      <span>{t('articles', 'zoteroUpdated')}</span>
                   </div>
                   <p className="text-xl font-bold">{progress.stats.updated}</p>
                 </div>
@@ -399,7 +400,7 @@ export function ZoteroImportDialog({
                 <div className="p-3 rounded-lg border bg-muted/50">
                   <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
                     <AlertCircle className="h-3 w-3 flex-shrink-0" />
-                    <span>Pulados</span>
+                      <span>{t('articles', 'zoteroSkipped')}</span>
                   </div>
                   <p className="text-xl font-bold">{progress.stats.skipped}</p>
                 </div>
@@ -407,12 +408,12 @@ export function ZoteroImportDialog({
                 <div className="p-3 rounded-lg border bg-muted/50">
                   <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
                     <XCircle className="h-3 w-3 flex-shrink-0" />
-                    <span>Erros</span>
+                      <span>{t('articles', 'zoteroErrors')}</span>
                   </div>
                   <p className="text-xl font-bold">{progress.stats.errors}</p>
                 </div>
 
-                {/* PDFs Baixados - aparece no grid junto com as outras stats */}
+                  {/* PDFs downloaded - shown in grid with other stats */}
                 {progress.stats.pdfsDownloaded !== undefined && progress.stats.pdfsDownloaded > 0 && (
                   <div className="p-3 rounded-lg border bg-primary/5">
                     <div className="flex items-center gap-1 text-xs text-primary mb-1">
@@ -424,12 +425,12 @@ export function ZoteroImportDialog({
                 )}
               </div>
 
-              {/* Mostrar arquivo sendo processado - com line-clamp para limitar a 2 linhas */}
+                {/* Show file being processed - line-clamp to 2 lines */}
               {progress.currentFile && (
                 <div className="px-3 py-2 rounded-lg bg-muted/30 border border-dashed">
                   <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
                     <Loader2 className="h-3 w-3 animate-spin" />
-                    Processando:
+                      Processing:
                   </p>
                   <p 
                     className="text-sm font-medium line-clamp-2 leading-tight" 
@@ -444,7 +445,7 @@ export function ZoteroImportDialog({
                 <Alert>
                   <CheckCircle2 className="h-4 w-4" />
                   <AlertDescription>
-                    Importação concluída com sucesso!
+                      Import completed successfully!
                   </AlertDescription>
                 </Alert>
               )}
@@ -462,13 +463,13 @@ export function ZoteroImportDialog({
           </div>
         </ScrollArea>
 
-        {/* Footer com botões */}
+            {/* Footer with buttons */}
         <div className="flex justify-between pt-4 border-t flex-shrink-0">
           <div>
             {currentStep === 'configure-options' && (
               <Button variant="outline" onClick={handleBack} disabled={importing}>
                 <ChevronLeft className="mr-2 h-4 w-4" />
-                Voltar
+                  {t('articles', 'zoteroBack')}
               </Button>
             )}
           </div>
@@ -478,16 +479,16 @@ export function ZoteroImportDialog({
               {importing ? (
                 <>
                   <Minimize2 className="mr-2 h-4 w-4" />
-                  Minimizar
+                    {t('articles', 'zoteroMinimize')}
                 </>
               ) : (
-                'Fechar'
+                  t('articles', 'zoteroClose')
               )}
             </Button>
 
             {currentStep === 'select-collection' && (
               <Button onClick={handleNext} disabled={!canProceed}>
-                Próximo
+                  {t('articles', 'zoteroNext')}
                 <ChevronRight className="ml-2 h-4 w-4" />
               </Button>
             )}
@@ -497,12 +498,12 @@ export function ZoteroImportDialog({
                 {importing ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Importando...
+                      {t('articles', 'zoteroImporting')}
                   </>
                 ) : (
                   <>
                     <Download className="mr-2 h-4 w-4" />
-                    Iniciar Importação
+                      {t('articles', 'zoteroStartImport')}
                   </>
                 )}
               </Button>
@@ -512,24 +513,23 @@ export function ZoteroImportDialog({
       </DialogContent>
     </Dialog>
 
-    {/* Confirmação ao fechar durante importação */}
+        {/* Confirm when closing during import */}
     <AlertDialog open={showCloseConfirm} onOpenChange={setShowCloseConfirm}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Importação em andamento</AlertDialogTitle>
+            <AlertDialogTitle>{t('articles', 'zoteroCloseConfirmTitle')}</AlertDialogTitle>
           <AlertDialogDescription>
-            A importação ainda está em execução. Você pode minimizar o diálogo e a importação 
-            continuará em background, ou cancelar para interromper o processo.
+              {t('articles', 'zoteroCloseConfirmDesc')}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel onClick={handleConfirmCancel}>
             <XCircle className="mr-2 h-4 w-4" />
-            Cancelar Importação
+              {t('articles', 'zoteroCancelImport')}
           </AlertDialogCancel>
           <AlertDialogAction onClick={handleConfirmMinimize}>
             <Minimize2 className="mr-2 h-4 w-4" />
-            Continuar em Background
+              {t('articles', 'zoteroContinueInBackground')}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

@@ -1,13 +1,13 @@
 /**
- * Constantes para arquivos vinculados a artigos
- * 
- * IMPORTANTE: 
- * - file_type = FORMATO do arquivo (PDF, DOC, DOCX, etc.)
- * - file_role = FUNÇÃO/PAPEL do arquivo (Principal, Suplementar, etc.)
+ * Constants for article-linked files
+ *
+ * IMPORTANT:
+ * - file_type = FILE FORMAT (PDF, DOC, DOCX, etc.)
+ * - file_role = FILE ROLE (Main, Supplement, etc.)
  */
 
 /**
- * Papel/função do arquivo no artigo
+ * File role in the article
  */
 export const FILE_ROLES = {
   MAIN: 'MAIN',
@@ -22,23 +22,23 @@ export const FILE_ROLES = {
 export type FileRole = typeof FILE_ROLES[keyof typeof FILE_ROLES];
 
 export const FILE_ROLE_LABELS: Record<FileRole, string> = {
-  [FILE_ROLES.MAIN]: 'Arquivo Principal',
-  [FILE_ROLES.SUPPLEMENT]: 'Material Suplementar',
-  [FILE_ROLES.PROTOCOL]: 'Protocolo',
-  [FILE_ROLES.DATASET]: 'Dataset/Dados',
-  [FILE_ROLES.APPENDIX]: 'Apêndice',
-  [FILE_ROLES.FIGURE]: 'Figura/Imagem',
-  [FILE_ROLES.OTHER]: 'Outro'
+    [FILE_ROLES.MAIN]: 'Main file',
+    [FILE_ROLES.SUPPLEMENT]: 'Supplemental material',
+    [FILE_ROLES.PROTOCOL]: 'Protocol',
+    [FILE_ROLES.DATASET]: 'Dataset',
+    [FILE_ROLES.APPENDIX]: 'Appendix',
+    [FILE_ROLES.FIGURE]: 'Figure / Image',
+    [FILE_ROLES.OTHER]: 'Other',
 };
 
 export const FILE_ROLE_DESCRIPTIONS: Record<FileRole, string> = {
-  [FILE_ROLES.MAIN]: 'Arquivo principal do artigo (PDF, DOC, etc.)',
-  [FILE_ROLES.SUPPLEMENT]: 'Material suplementar, apêndices adicionais',
-  [FILE_ROLES.PROTOCOL]: 'Protocolo de pesquisa ou metodologia',
-  [FILE_ROLES.DATASET]: 'Conjunto de dados, planilhas, arquivos de dados',
-  [FILE_ROLES.APPENDIX]: 'Apêndice ou anexo do artigo',
-  [FILE_ROLES.FIGURE]: 'Figuras, gráficos ou imagens em alta resolução',
-  [FILE_ROLES.OTHER]: 'Outros tipos de arquivos relacionados'
+    [FILE_ROLES.MAIN]: 'Main article file (PDF, DOC, etc.)',
+    [FILE_ROLES.SUPPLEMENT]: 'Supplemental material, additional appendices',
+    [FILE_ROLES.PROTOCOL]: 'Research protocol or methodology',
+    [FILE_ROLES.DATASET]: 'Dataset, spreadsheets, data files',
+    [FILE_ROLES.APPENDIX]: 'Article appendix or attachment',
+    [FILE_ROLES.FIGURE]: 'Figures, charts or high-resolution images',
+    [FILE_ROLES.OTHER]: 'Other related file types',
 };
 
 /**
@@ -62,7 +62,7 @@ export const FILE_FORMATS = {
 export type FileFormat = typeof FILE_FORMATS[keyof typeof FILE_FORMATS];
 
 /**
- * Mapeamento de MIME types para formatos
+ * MIME type to format mapping
  */
 export const MIME_TYPE_TO_FORMAT: Record<string, FileFormat> = {
   'application/pdf': FILE_FORMATS.PDF,
@@ -79,7 +79,7 @@ export const MIME_TYPE_TO_FORMAT: Record<string, FileFormat> = {
 };
 
 /**
- * Mapeamento de extensões para formatos
+ * Extension to format mapping
  */
 export const EXTENSION_TO_FORMAT: Record<string, FileFormat> = {
   '.pdf': FILE_FORMATS.PDF,
@@ -96,7 +96,7 @@ export const EXTENSION_TO_FORMAT: Record<string, FileFormat> = {
 };
 
 /**
- * Configurações de validação de arquivo
+ * File validation settings
  */
 export const FILE_UPLOAD_CONFIG = {
   MAX_SIZE_MB: 50,
@@ -106,15 +106,15 @@ export const FILE_UPLOAD_CONFIG = {
 } as const;
 
 /**
- * Mensagens de erro padronizadas
+ * Standardized error messages
  */
 export const FILE_ERROR_MESSAGES = {
-  FILE_TOO_LARGE: `Arquivo muito grande. Tamanho máximo: ${FILE_UPLOAD_CONFIG.MAX_SIZE_MB}MB`,
-  INVALID_TYPE: 'Tipo de arquivo não permitido',
-  UPLOAD_FAILED: 'Erro ao fazer upload do arquivo',
-  STORAGE_ERROR: 'Erro ao salvar arquivo no storage',
-  DATABASE_ERROR: 'Erro ao registrar arquivo no banco de dados',
-  NO_FILE_SELECTED: 'Nenhum arquivo selecionado',
-  DUPLICATE_FILE: 'Arquivo já existe para este artigo'
+    FILE_TOO_LARGE: `File too large. Maximum size: ${FILE_UPLOAD_CONFIG.MAX_SIZE_MB}MB`,
+    INVALID_TYPE: 'File type not allowed',
+    UPLOAD_FAILED: 'Error uploading file',
+    STORAGE_ERROR: 'Error saving file to storage',
+    DATABASE_ERROR: 'Error registering file in database',
+    NO_FILE_SELECTED: 'No file selected',
+    DUPLICATE_FILE: 'File already exists for this article',
 } as const;
 
