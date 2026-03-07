@@ -163,11 +163,11 @@ export function logTemplateDebug(
   additionalInfo?: any
 ): void {
   console.group(`🔍 [${context}] Debug Template`);
-  console.log('Template ID:', templateId);
-  console.log('Timestamp:', new Date().toISOString());
+    console.warn('Template ID:', templateId);
+    console.warn('Timestamp:', new Date().toISOString());
   
   if (additionalInfo) {
-      console.log('Additional info:', additionalInfo);
+      console.warn('Additional info:', additionalInfo);
   }
   
   console.groupEnd();
@@ -186,7 +186,7 @@ export function ensureProjectTemplateId(templateId: string): void {
   }
 
     // Basic log for debug
-    console.log(`🔍 Template ID in use: ${templateId}`);
+    console.warn(`🔍 Template ID in use: ${templateId}`);
 }
 
 /**

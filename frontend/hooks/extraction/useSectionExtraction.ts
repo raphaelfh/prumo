@@ -69,15 +69,15 @@ export function useSectionExtraction(options?: {
    */
   const extractSection = useCallback(
     async (request: SectionExtractionRequest) => {
-        console.log('[useSectionExtraction] Starting extraction', request);
+        console.warn('[useSectionExtraction] Starting extraction', request);
       setLoading(true);
       setError(null);
 
       try {
           // Call service to run extraction
-        console.log('[useSectionExtraction] Chamando service...');
+          console.warn('[useSectionExtraction] Chamando service...');
         const result = await SectionExtractionService.extractSection(request);
-        console.log('[useSectionExtraction] Service retornou', {
+          console.warn('[useSectionExtraction] Service retornou', {
           hasData: !!result.data,
           suggestionsCreated: result.data?.suggestionsCreated,
         });

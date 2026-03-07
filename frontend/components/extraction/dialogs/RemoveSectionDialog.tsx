@@ -68,8 +68,8 @@ interface RemoveSectionDialogProps {
 // =================== COMPONENT ===================
 
 export function RemoveSectionDialog({
-  projectId,
-  templateId,
+                                        projectId: _projectId,
+                                        templateId: _templateId,
   sectionId,
   sectionName,
   open,
@@ -103,7 +103,7 @@ export function RemoveSectionDialog({
     setAnalyzing(true);
     
     try {
-        console.log('Analyzing removal impact:', {sectionId, sectionName});
+        console.warn('Analyzing removal impact:', {sectionId, sectionName});
 
         // sectionId is now entity_type_id directly
       const entityTypeId = sectionId;
@@ -166,7 +166,7 @@ export function RemoveSectionDialog({
         warnings
       };
 
-      console.log('📊 Impacto analisado:', impactData);
+        console.warn('📊 Impacto analisado:', impactData);
       setImpact(impactData);
 
     } catch (error: any) {
@@ -184,18 +184,18 @@ export function RemoveSectionDialog({
     }
   };
 
-  const handleSubmit = async (data: RemoveSectionInput) => {
+    const handleSubmit = async (_data: RemoveSectionInput) => {
     if (!sectionId || !impact) return;
     
     setLoading(true);
     
     try {
-        console.log('Starting section removal:', {sectionId, sectionName});
+        console.warn('Starting section removal:', {sectionId, sectionName});
 
         // sectionId is now entity_type_id directly
       const entityTypeId = sectionId;
 
-      console.log('🎯 Entity type a ser removido:', entityTypeId);
+        console.warn('🎯 Entity type a ser removido:', entityTypeId);
 
         // Delete entity type (CASCADE automatically deletes fields, instances and values)
       const { error: entityError } = await supabase
@@ -208,7 +208,7 @@ export function RemoveSectionDialog({
         throw entityError;
       }
 
-        console.log('Entity type and all dependencies removed via CASCADE');
+        console.warn('Entity type and all dependencies removed via CASCADE');
 
         toast.success(t('extraction', 'sectionRemovedSuccess').replace('{{name}}', sectionName));
       

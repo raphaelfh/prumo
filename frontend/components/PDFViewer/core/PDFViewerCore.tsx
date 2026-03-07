@@ -46,7 +46,8 @@ export function PDFViewerCore({ articleId, projectId, className }: PDFViewerCore
   const isContinuousMode = viewMode === 'continuous';
 
     // Load PDF
-  useEffect(() => {
+
+    useEffect(() => {
     loadPDF();
   }, [articleId]);
 
@@ -102,7 +103,7 @@ export function PDFViewerCore({ articleId, projectId, className }: PDFViewerCore
   };
 
   const handleLoadSuccess = useCallback((pdf: any) => {
-      console.log('PDF loaded successfully:', pdf.numPages, 'pages');
+      console.warn('PDF loaded successfully:', pdf.numPages, 'pages');
     setNumPages(pdf.numPages);
     setPdfDocument(pdf);
   }, [setNumPages, setPdfDocument]);
@@ -112,7 +113,8 @@ export function PDFViewerCore({ articleId, projectId, className }: PDFViewerCore
       setError(t('extraction', 'pdfLoadDocumentError'));
   }, []);
 
-  const handleUploadSuccess = useCallback(() => {
+
+    const handleUploadSuccess = useCallback(() => {
     setShowUploadDialog(false);
     setError(null);
     loadPDF();

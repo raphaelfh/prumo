@@ -41,14 +41,16 @@ import {t} from '@/lib/copy';
 import {TABLE_CELL_CLASS} from '@/lib/table-constants';
 import type {FilterFieldConfig, FilterValues} from '@/components/shared/list';
 import {
-    DataTableWrapper,
     EmptyListState,
     FilterButtonWithPopover,
     isFilterValueEmpty,
     ListCount,
     ListFilterPanel,
+    ListRowCard,
     ListToolbarSearch,
+    ResponsiveList,
 } from '@/components/shared/list';
+import {useIsNarrow} from '@/hooks/use-mobile';
 
 type Article = Pick<ArticleRow, 'id' | 'title' | 'authors' | 'publication_year' | 'created_at'>;
 
@@ -119,6 +121,7 @@ const INITIAL_ASSESSMENT_FILTER_VALUES: FilterValues = Object.fromEntries(
 
 export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAssessmentTableProps) {
   const navigate = useNavigate();
+    const isNarrow = useIsNarrow();
   const [articles, setArticles] = useState<ArticleWithAssessment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -424,7 +427,7 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
     // Estado: Ready — toolbar + table
   return (
     <div className="space-y-4">
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex flex-wrap items-center gap-2 w-full">
             <ListToolbarSearch
                 ref={searchInputRef}
                 value={searchQuery}
@@ -449,9 +452,11 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
                 total={articles.length}
                 label={t('assessment', 'tableArticlesCount')}
             />
-      </div>
+        </div>
 
-        <DataTableWrapper>
+        <ResponsiveList
+            isNarrow={isNarrow}
+            tableContent={
         <Table>
           <TableHeader>
               <TableRow className="border-b border-border/40">
@@ -470,11 +475,11 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
                 </div>
               </TableHead>
                   <TableHead
-                      className="w-[15%] h-8 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                      className="w-[15%] hidden md:table-cell h-8 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
                       {t('assessment', 'tableColumnAuthors')}
               </TableHead>
                   <TableHead
-                      className="w-[10%] h-8 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                      className="w-[10%] hidden md:table-cell h-8 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
                 <div className="flex items-center gap-2">
                   <Button
                     variant="ghost"
@@ -488,7 +493,7 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
                 </div>
               </TableHead>
                   <TableHead
-                      className="w-[15%] h-8 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                      className="w-[15%] hidden lg:table-cell h-8 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
                 <div className="flex items-center gap-2">
                   <Button
                     variant="ghost"
@@ -533,7 +538,7 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
                       {article.title}
                     </div>
                   </TableCell>
-                      <TableCell className={TABLE_CELL_CLASS}>
+                      <TableCell className={`hidden md:table-cell ${TABLE_CELL_CLASS}`}>
                     {article.authors && article.authors.length > 0 ? (
                       <div className="text-sm flex items-center gap-1 max-w-full overflow-hidden">
                         <User className="h-3 w-3 text-muted-foreground flex-shrink-0" />
@@ -546,13 +551,13 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
                         <span className="text-muted-foreground">N/A</span>
                     )}
                   </TableCell>
-                      <TableCell className={TABLE_CELL_CLASS}>
+                      <TableCell className={`hidden md:table-cell ${TABLE_CELL_CLASS}`}>
                           <div className="flex items-center gap-1">
                       <Calendar className="h-3 w-3 text-muted-foreground" />
                       {article.publication_year || 'N/A'}
                     </div>
                   </TableCell>
-                      <TableCell className={TABLE_CELL_CLASS}>
+                      <TableCell className={`hidden lg:table-cell ${TABLE_CELL_CLASS}`}>
                     {article.assessment ? (
                       <div className="space-y-1">
                           <div className="flex items-center justify-between text-[13px]">
@@ -607,7 +612,52 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
             })}
           </TableBody>
         </Table>
-        </DataTableWrapper>
+            }
+            cardContent={
+                <>
+                    {filteredAndSortedArticles.map((article) => {
+                        const progress = article.assessment?.completion_percentage || 0;
+                        const isComplete = getAssessmentStatus(article.assessment?.status, progress) === 'complete';
+                        const hasAssessment = !!article.assessment;
+                        return (
+                            <ListRowCard
+                                key={article.id}
+                                title={article.title}
+                                subtitle={article.authors?.slice(0, 2).join(', ') || undefined}
+                                meta={
+                                    <>
+                                        {article.publication_year != null && <span>{article.publication_year}</span>}
+                                        {getStatusBadge(article)}
+                                    </>
+                                }
+                                primaryAction={
+                                    !hasAssessment ? (
+                                        <Button onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleStartAssessment(article.id);
+                                        }} size="sm" className="h-8 gap-1" disabled={article.isLoading}>
+                                            {article.isLoading ? <Loader2 className="h-3 w-3 animate-spin"/> :
+                                                <PlayCircle className="h-3 w-3"/>}
+                                            {t('assessment', 'tableStart')}
+                                        </Button>
+                                    ) : (
+                                        <Button onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleContinueAssessment(article.id);
+                                        }} variant={isComplete ? 'outline' : 'default'} size="sm" className="h-8 gap-1">
+                                            {isComplete ? <CheckCircle className="h-3 w-3"/> :
+                                                <Edit className="h-3 w-3"/>}
+                                            {isComplete ? t('assessment', 'tableView') : t('assessment', 'tableContinue')}
+                                        </Button>
+                                    )
+                                }
+                                onClick={() => (hasAssessment ? handleContinueAssessment(article.id) : handleStartAssessment(article.id))}
+                            />
+                        );
+                    })}
+                </>
+            }
+        />
 
       {filteredAndSortedArticles.length === 0 && articles.length > 0 && (
           <EmptyListState

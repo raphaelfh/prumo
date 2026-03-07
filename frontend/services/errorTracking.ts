@@ -62,8 +62,8 @@ class ErrorTrackingService {
     if (this.isDevelopment) {
       console.group(`🚨 Error Captured: ${errorId}`);
       console.error('Error:', error);
-      console.info('Context:', context);
-      console.info('Report:', errorReport);
+        console.warn('Context:', context);
+        console.warn('Report:', errorReport);
       console.groupEnd();
     }
 
@@ -82,7 +82,7 @@ class ErrorTrackingService {
     this.metrics.push(metric);
 
     if (this.isDevelopment) {
-      console.log(`📊 Metric: ${metric.name} = ${metric.value}${metric.unit}`);
+        console.warn(`📊 Metric: ${metric.name} = ${metric.value}${metric.unit}`);
     }
 
       // In production, send to metrics service
@@ -221,7 +221,7 @@ class ErrorTrackingService {
     try {
         // Here you would integrate with Sentry, LogRocket, etc.
         // For now, just simulate send
-      console.log('Sending error to monitoring service:', errorReport);
+        console.warn('Sending error to monitoring service:', errorReport);
 
         // Example integration with your own API
       // await fetch('/api/errors', {
@@ -237,7 +237,7 @@ class ErrorTrackingService {
   private async sendMetric(metric: PerformanceMetric): Promise<void> {
     try {
         // Here you would integrate with DataDog, New Relic, etc.
-      console.log('Sending metric to monitoring service:', metric);
+        console.warn('Sending metric to monitoring service:', metric);
 
         // Example integration with your own API
       // await fetch('/api/metrics', {

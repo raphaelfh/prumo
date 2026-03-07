@@ -59,7 +59,7 @@ const COMMON_UNITS = {
 };
 
 // Flatten all units for search
-const ALL_UNITS = Object.values(COMMON_UNITS).flat();
+const _ALL_UNITS = Object.values(COMMON_UNITS).flat();
 
 export function UnitEditor({ value, onChange, disabled = false }: UnitEditorProps) {
   const [open, setOpen] = useState(false);

@@ -40,7 +40,7 @@ interface UseOtherExtractionsReturn {
 export function useOtherExtractions(
   props: UseOtherExtractionsProps
 ): UseOtherExtractionsReturn {
-  const { articleId, projectId, currentUserId, enabled = true } = props;
+    const {articleId, projectId: _projectId, currentUserId, enabled = true} = props;
 
   const [otherExtractions, setOtherExtractions] = useState<OtherExtraction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,7 +60,7 @@ export function useOtherExtractions(
     setError(null);
 
     try {
-        console.log('Loading other members\' extractions...');
+        console.warn('Loading other members\' extractions...');
 
         // Fetch extracted_values from other users
       const { data, error: queryError } = await supabase
@@ -109,7 +109,7 @@ export function useOtherExtractions(
       const extractionsList = Object.values(groupedByUser);
       setOtherExtractions(extractionsList);
 
-        console.log(`✅ Loaded extractions from ${extractionsList.length} members`);
+        console.warn(`✅ Loaded extractions from ${extractionsList.length} members`);
 
     } catch (err: any) {
         console.error('Error loading other extractions:', err);

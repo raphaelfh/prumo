@@ -49,7 +49,7 @@ export interface UseBatchSectionExtractionChunkedReturn {
  * Usage:
  * ```tsx
  * const { extractAllSections, loading, progress } = useBatchSectionExtractionChunked({
- *   onProgress: (p) => console.log('Progress:', p),
+ *   onProgress: (p) => console.warn('Progress:', p),
  *   onSuccess: (result) => {
  *     // Refresh suggestions
  *   }
@@ -75,7 +75,7 @@ export function useBatchSectionExtractionChunked(options?: {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<ExtractionProgress | null>(null);
-  const [pdfTextCache, setPdfTextCache] = useState<string | null>(null);
+    const [pdfTextCache, _setPdfTextCache] = useState<string | null>(null);
 
   const chunkSize = options?.chunkSize || 2;
 
@@ -86,14 +86,14 @@ export function useBatchSectionExtractionChunked(options?: {
    */
   const extractAllSections = useCallback(
     async (request: Omit<BatchSectionExtractionRequest, 'sectionIds' | 'pdfText'>) => {
-        console.log('[useBatchSectionExtractionChunked] Starting extraction with chunking', request);
+        console.warn('[useBatchSectionExtractionChunked] Starting extraction with chunking', request);
       setLoading(true);
       setError(null);
       setProgress(null);
 
       try {
           // 1. Fetch model section list
-          console.log('[useBatchSectionExtractionChunked] Fetching model sections...');
+          console.warn('[useBatchSectionExtractionChunked] Fetching model sections...');
         const sections = await getModelChildSections(
           request.parentInstanceId,
           request.templateId,
@@ -104,7 +104,7 @@ export function useBatchSectionExtractionChunked(options?: {
           return;
         }
 
-          console.log('[useBatchSectionExtractionChunked] Sections found:', sections.length);
+          console.warn('[useBatchSectionExtractionChunked] Sections found:', sections.length);
 
           // 2. Process sections in chunks using helper
         const result = await processSectionsInChunks({
@@ -122,7 +122,7 @@ export function useBatchSectionExtractionChunked(options?: {
         const { totalSuggestionsCreated, successfulSections, failedSections, totalTokensUsed, totalDurationMs } = result;
         const totalSections = sections.length;
 
-          console.log('[useBatchSectionExtractionChunked] Extraction completed', {
+          console.warn('[useBatchSectionExtractionChunked] Extraction completed', {
           totalSections,
           successfulSections,
           failedSections,

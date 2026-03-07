@@ -44,9 +44,9 @@ export async function importGlobalTemplate(
     const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error(t('common', 'errors_userNotAuthenticated'));
 
-      console.log('🚀 Importing global template (with MERGE)...');
-    console.log('  Project:', projectId);
-    console.log('  Template:', globalTemplateId);
+      console.warn('🚀 Importing global template (with MERGE)...');
+      console.warn('  Project:', projectId);
+      console.warn('  Template:', globalTemplateId);
 
       // 1. Fetch global template
     const { data: globalTemplate, error: templateError } = await supabase
@@ -58,7 +58,7 @@ export async function importGlobalTemplate(
     if (templateError) throw templateError;
       if (!globalTemplate) throw new Error(t('common', 'errors_templateNotFound'));
 
-    console.log(`  ✅ Template: ${globalTemplate.name} v${globalTemplate.version}`);
+      console.warn(`  ✅ Template: ${globalTemplate.name} v${globalTemplate.version}`);
 
       // 2. Fetch existing active template (if any)
     const { data: existingTemplates } = await supabase
@@ -77,7 +77,7 @@ export async function importGlobalTemplate(
         // MERGE: Use existing template
       projectTemplate = existingTemplates[0];
       isMerge = true;
-        console.log(`  🔄 Merging into existing template: ${projectTemplate.name}`);
+        console.warn(`  🔄 Merging into existing template: ${projectTemplate.name}`);
 
         // Fetch existing entity types
       const { data: existingEntityTypes, error: etError } = await supabase
@@ -99,7 +99,7 @@ export async function importGlobalTemplate(
         fieldsExisting = existingFields || [];
       }
 
-        console.log(`  📊 Existing template: ${entityTypesExisting.length} entity types, ${fieldsExisting.length} fields`);
+        console.warn(`  📊 Existing template: ${entityTypesExisting.length} entity types, ${fieldsExisting.length} fields`);
     } else {
         // Create new template
       const { data: newTemplate, error: projectTemplateError } = await supabase
@@ -120,7 +120,7 @@ export async function importGlobalTemplate(
 
       if (projectTemplateError) throw projectTemplateError;
       projectTemplate = newTemplate;
-      console.log(`  ✅ Novo template criado: ${projectTemplate.id}`);
+        console.warn(`  ✅ Novo template criado: ${projectTemplate.id}`);
     }
 
       // 4. Fetch entity_types from global template
@@ -136,7 +136,7 @@ export async function importGlobalTemplate(
         throw new Error(t('extraction', 'errors_templateHasNoEntityTypes'));
     }
 
-    console.log(`  ✅ Entity types encontrados: ${globalEntityTypes.length}`);
+      console.warn(`  ✅ Entity types encontrados: ${globalEntityTypes.length}`);
 
       // 5. MERGE: Add only entity types that do not exist (2 passes to preserve hierarchy)
     const entityTypeMapping: Record<string, string> = {};
@@ -147,7 +147,7 @@ export async function importGlobalTemplate(
     let entityTypesAdded = 0;
     let entityTypesSkipped = 0;
 
-      console.log(`  🔄 Merging entity types (pass 1/2)...`);
+      console.warn(`  🔄 Merging entity types (pass 1/2)...`);
     for (const globalEntity of globalEntityTypes) {
         // Check if already exists by name
       const existingId = existingEntityTypesByName.get(globalEntity.name);
@@ -156,7 +156,7 @@ export async function importGlobalTemplate(
           // Already exists, use it
         entityTypeMapping[globalEntity.id] = existingId;
         entityTypesSkipped++;
-          console.log(`    ⏭️  Entity type "${globalEntity.name}" already exists, keeping existing`);
+          console.warn(`    ⏭️  Entity type "${globalEntity.name}" already exists, keeping existing`);
       } else {
           // Does not exist, add
         const { data: newEntity, error: insertError } = await supabase
@@ -178,13 +178,13 @@ export async function importGlobalTemplate(
 
         entityTypeMapping[globalEntity.id] = newEntity.id;
         entityTypesAdded++;
-          console.log(`    ✅ Entity type "${globalEntity.name}" added`);
+          console.warn(`    ✅ Entity type "${globalEntity.name}" added`);
       }
     }
 
-      console.log(`  📊 Entity types: ${entityTypesAdded} added, ${entityTypesSkipped} kept`);
+      console.warn(`  📊 Entity types: ${entityTypesAdded} added, ${entityTypesSkipped} kept`);
 
-      console.log('  🔄 Updating parent references (pass 2/2)...');
+      console.warn('  🔄 Updating parent references (pass 2/2)...');
     for (const globalEntity of globalEntityTypes) {
       if (globalEntity.parent_entity_type_id) {
         const newEntityId = entityTypeMapping[globalEntity.id];
@@ -202,7 +202,7 @@ export async function importGlobalTemplate(
     }
 
       // 6. MERGE: Add only fields that do not exist
-      console.log('  🔄 Merging fields...');
+      console.warn('  🔄 Merging fields...');
     
     const { data: globalFields, error: fieldsError } = await supabase
       .from('extraction_fields')
@@ -212,7 +212,7 @@ export async function importGlobalTemplate(
 
     if (fieldsError) throw fieldsError;
 
-      console.log(`  ✅ Global template fields: ${(globalFields || []).length}`);
+      console.warn(`  ✅ Global template fields: ${(globalFields || []).length}`);
 
       // Create map of existing fields by (entity_type_id, name)
     const existingFieldsByKey = new Map(
@@ -233,7 +233,7 @@ export async function importGlobalTemplate(
       if (existingFieldId) {
           // Already exists, skip
         fieldsSkipped++;
-          console.log(`    ⏭️  Field "${globalField.name}" already exists in ${globalField.entity_type_id}, keeping existing`);
+          console.warn(`    ⏭️  Field "${globalField.name}" already exists in ${globalField.entity_type_id}, keeping existing`);
       } else {
           // Does not exist, add
         const { error: insertFieldError } = await supabase
@@ -262,12 +262,12 @@ export async function importGlobalTemplate(
         }
 
         fieldsAdded++;
-        console.log(`    ✅ Field "${globalField.name}" adicionado`);
+          console.warn(`    ✅ Field "${globalField.name}" adicionado`);
       }
     }
 
-    console.log(`  📊 Fields: ${fieldsAdded} adicionados, ${fieldsSkipped} mantidos`);
-      console.log(`✅✅✅ IMPORT ${isMerge ? 'MERGE' : 'COMPLETE'}! ✅✅✅`);
+      console.warn(`  📊 Fields: ${fieldsAdded} adicionados, ${fieldsSkipped} mantidos`);
+      console.warn(`✅✅✅ IMPORT ${isMerge ? 'MERGE' : 'COMPLETE'}! ✅✅✅`);
 
     return {
       success: true,
@@ -303,7 +303,7 @@ export async function createInitialInstances(
   userId: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-      console.log('Creating initial instances...');
+      console.warn('Creating initial instances...');
 
       // Fetch entity_types from template
     const { data: entityTypes, error: etError } = await supabase
@@ -336,7 +336,7 @@ export async function createInitialInstances(
       }
     }
 
-      console.log(`  ✅ Initial instances created`);
+      console.warn(`  ✅ Initial instances created`);
 
     return { success: true };
   } catch (err: any) {

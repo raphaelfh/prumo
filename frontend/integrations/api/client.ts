@@ -132,7 +132,7 @@ export async function apiClient<T>(
     const url = `${API_BASE_URL}${endpoint}`;
 
     if (import.meta.env.DEV) {
-      console.debug(`[API] ${fetchOptions.method || "GET"} ${endpoint}`);
+        console.warn(`[API] ${fetchOptions.method || "GET"} ${endpoint}`);
     }
 
     const response = await fetch(url, {

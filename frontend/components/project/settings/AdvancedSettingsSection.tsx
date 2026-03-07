@@ -19,7 +19,7 @@ import {
     AlertDialogTitle,
     AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import {AlertTriangle, Trash2} from 'lucide-react';
+import {AlertTriangle as _AlertTriangle, Trash2} from 'lucide-react';
 import {supabase} from '@/integrations/supabase/client';
 import {toast} from 'sonner';
 import {SettingsSection, SettingsCard, TagInput} from '@/components/settings';

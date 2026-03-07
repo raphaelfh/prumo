@@ -60,7 +60,7 @@ export function ArticleExtractionList({ projectId, templateId }: ArticleExtracti
   }, [projectId, templateId]);
 
   const loadArticles = async () => {
-      console.log('ArticleExtractionList - loadArticles called:', {projectId, templateId});
+      console.warn('ArticleExtractionList - loadArticles called:', {projectId, templateId});
     setLoading(true);
     setError(null);
 
@@ -77,7 +77,7 @@ export function ArticleExtractionList({ projectId, templateId }: ArticleExtracti
         throw articlesError;
       }
 
-        console.log('Articles loaded:', articlesData?.length || 0);
+        console.warn('Articles loaded:', articlesData?.length || 0);
 
       if (!articlesData || articlesData.length === 0) {
         setArticles([]);
@@ -93,7 +93,7 @@ export function ArticleExtractionList({ projectId, templateId }: ArticleExtracti
 
             if (initialized) {
               progress = await calculateProgress(article.id, templateId);
-                console.log(`Article progress ${article.title}:`, progress);
+                console.warn(`Article progress ${article.title}:`, progress);
             }
 
             return {
@@ -114,7 +114,7 @@ export function ArticleExtractionList({ projectId, templateId }: ArticleExtracti
         })
       );
 
-        console.log('Articles processed:', articlesWithExtraction.length);
+        console.warn('Articles processed:', articlesWithExtraction.length);
       setArticles(articlesWithExtraction);
     } catch (err: any) {
         console.error('Error loading articles:', err);

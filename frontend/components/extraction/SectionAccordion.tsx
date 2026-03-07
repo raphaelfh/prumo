@@ -67,7 +67,7 @@ export function SectionAccordion(props: SectionAccordionProps) {
     // onSuccess callback notifies parent for suggestion refresh
     // IMPORTANT: onSuccess must not block - call without await so loading is not stuck
   const { extractSection, loading: extractionLoading } = useSectionExtraction({
-    onSuccess: async (runId, suggestionsCreated) => {
+      onSuccess: async (runId, _suggestionsCreated) => {
         // Notify parent that extraction completed
         // CRITICAL: Do not await here - let it run in background
       // O loading deve ser resetado pelo hook independentemente deste callback

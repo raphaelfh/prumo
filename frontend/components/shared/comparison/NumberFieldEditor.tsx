@@ -48,7 +48,7 @@ export function NumberFieldEditor(props: NumberFieldEditorProps) {
 
   const [numValue, setNumValue] = useState(initialNumValue || '');
   const [currentUnit, setCurrentUnit] = useState(initialUnit || '');
-    const [isSelectOpen, setIsSelectOpen] = useState(false); // Internal state to track Select
+    const [_isSelectOpen, setIsSelectOpen] = useState(false); // Internal state to track Select
   const selectTriggerRef = useRef<HTMLButtonElement>(null);
 
     // Determine available units

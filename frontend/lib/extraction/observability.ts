@@ -206,8 +206,8 @@ export class ExtractionLogger {
     }[entry.level];
 
     const prefix = `${emoji} [${entry.operation}]`;
-    const logFn = entry.level === 'error' ? console.error : 
-                  entry.level === 'warn' ? console.warn : console.log;
+      const logFn = entry.level === 'error' ? console.error :
+          entry.level === 'warn' ? console.warn : console.warn;
 
     if (entry.error) {
       logFn(prefix, entry.message, entry.context, entry.error);
@@ -221,7 +221,7 @@ export class ExtractionLogger {
   /**
    * Sends error to analytics system (Sentry, etc)
    */
-  private sendToAnalytics(entry: LogEntry) {
+  private sendToAnalytics(_entry: LogEntry) {
     // TODO: Integrar com Sentry ou similar
     // if (window.Sentry) {
     //   window.Sentry.captureException(entry.error, {
@@ -304,7 +304,7 @@ export class PerformanceTracker {
       const duration = this.end(id);
       
       if (CONFIG.enableConsole && duration !== null) {
-        console.log(`⏱️ [${operation}] ${duration.toFixed(0)}ms`);
+          console.warn(`⏱️ [${operation}] ${duration.toFixed(0)}ms`);
       }
       
       return result;
@@ -409,7 +409,7 @@ if (import.meta.env.DEV) {
     export: exportLogs,
     clear: clearObservability
   };
-  
-  console.log('🔍 Debug utilities available: window.extractionDebug');
+
+    console.warn('🔍 Debug utilities available: window.extractionDebug');
 }
 

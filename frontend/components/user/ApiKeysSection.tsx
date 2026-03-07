@@ -144,7 +144,7 @@ export function ApiKeysSection() {
     }
   };
 
-  const handleDeactivate = async (keyId: string) => {
+    const _handleDeactivate = async (keyId: string) => {
     try {
       const token = await getAccessToken();
       await apiKeysService.updateKey(token, keyId, { isActive: false });

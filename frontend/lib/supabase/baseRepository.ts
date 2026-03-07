@@ -21,7 +21,7 @@ import type {PostgrestError} from '@supabase/supabase-js';
  * Supabase client expects literal table names; this repository uses dynamic strings.
  * We use 'as any' only on .from() to allow dynamic table names.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 type DynamicSupabaseTable = any;
 
 export interface QueryOptions {
@@ -116,8 +116,8 @@ export async function queryBuilder<T>(
   const { select = '*', filters = {}, orderBy, limit, single = false } = options;
 
     // Type assertion needed: Supabase expects table literals but we pass dynamic strings
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let query = (supabase.from(table as any) as DynamicSupabaseTable).select(select);
+
+    let query = (supabase.from(table as any) as DynamicSupabaseTable).select(select);
 
     // Apply filters
   Object.entries(filters).forEach(([key, value]) => {
@@ -177,8 +177,8 @@ export async function insertOne<T>(
   data: Partial<T>,
   context = 'insert'
 ): Promise<T> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: result, error } = await (supabase.from(table as any) as DynamicSupabaseTable)
+
+    const { data: result, error } = await (supabase.from(table as any) as DynamicSupabaseTable)
     .insert(data)
     .select()
     .single();
@@ -204,8 +204,8 @@ export async function insertMany<T>(
   data: Partial<T>[],
   context = 'insertMany'
 ): Promise<T[]> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: result, error } = await (supabase.from(table as any) as DynamicSupabaseTable)
+
+    const { data: result, error } = await (supabase.from(table as any) as DynamicSupabaseTable)
     .insert(data)
     .select();
 
@@ -227,8 +227,8 @@ export async function updateOne<T>(
   updates: Partial<T>,
   context = 'update'
 ): Promise<T> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: result, error } = await (supabase.from(table as any) as DynamicSupabaseTable)
+
+    const { data: result, error } = await (supabase.from(table as any) as DynamicSupabaseTable)
     .update(updates)
     .eq('id', id)
     .select()
@@ -255,8 +255,8 @@ export async function deleteOne(
   id: string,
   context = 'delete'
 ): Promise<void> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { error } = await (supabase.from(table as any) as DynamicSupabaseTable)
+
+    const { error } = await (supabase.from(table as any) as DynamicSupabaseTable)
     .delete()
     .eq('id', id);
 

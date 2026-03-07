@@ -84,7 +84,7 @@ export class AISuggestionService {
       // Keep only the latest per field (first in sorted array)
     const suggestionsMap: Record<string, AISuggestion> = {};
 
-      console.log(`📊 [loadSuggestions] Processing ${(data || []).length} suggestion(s) from DB for ${instanceIds.length} instance(s)`);
+      console.warn(`📊 [loadSuggestions] Processing ${(data || []).length} suggestion(s) from DB for ${instanceIds.length} instance(s)`);
 
     (data || []).forEach((item: AISuggestionRaw) => {
       if (!item.instance_id) {
@@ -100,18 +100,18 @@ export class AISuggestionService {
         // Only add if not already present (keeps latest)
       if (!suggestionsMap[key]) {
         suggestionsMap[key] = normalizeAISuggestion(item);
-          console.log(`✅ [loadSuggestions] Suggestion added: ${key}`, {
+          console.warn(`✅ [loadSuggestions] Suggestion added: ${key}`, {
           status: item.status,
           fieldId: item.field_id,
           instanceId: item.instance_id
         });
       } else {
-          console.log(`⏭️ [loadSuggestions] Latest suggestion already exists for ${key}, skipping`);
+          console.warn(`⏭️ [loadSuggestions] Latest suggestion already exists for ${key}, skipping`);
       }
     });
 
     const finalCount = Object.keys(suggestionsMap).length;
-      console.log(`🎯 [loadSuggestions] Total of ${finalCount} unique suggestion(s) mapped`);
+      console.warn(`🎯 [loadSuggestions] Total of ${finalCount} unique suggestion(s) mapped`);
 
     return {
       suggestions: suggestionsMap,
@@ -320,7 +320,7 @@ export class AISuggestionService {
     const instanceIds = (data || []).map((i) => i.id);
 
       // Detailed log for debug
-      console.log(`📋 [getArticleInstanceIds] Found ${instanceIds.length} instance(s) for article ${articleId}:`, {
+      console.warn(`📋 [getArticleInstanceIds] Found ${instanceIds.length} instance(s) for article ${articleId}:`, {
           instanceIds: instanceIds.slice(0, 10), // First 10 to avoid log noise
       instances: (data || []).slice(0, 5).map(i => ({
         id: i.id,

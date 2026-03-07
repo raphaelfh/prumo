@@ -44,19 +44,19 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     setLoading(true);
 
     try {
-        console.log('Loading AI suggestions...', {articleId});
+        console.warn('Loading AI suggestions...', {articleId});
 
         // Fetch instances for this article
       const instanceIds = await AISuggestionService.getArticleInstanceIds(articleId);
 
       if (instanceIds.length === 0) {
-          console.log('No instances found when loading suggestions');
+          console.warn('No instances found when loading suggestions');
         setSuggestions({});
         setLoading(false);
         return { suggestions: {}, count: 0 };
       }
 
-        console.log(`📋 ${instanceIds.length} instance(s) found for loading suggestions:`, {
+        console.warn(`📋 ${instanceIds.length} instance(s) found for loading suggestions:`, {
             instanceIds: instanceIds.slice(0, 5), // First 5 IDs for debug
         totalCount: instanceIds.length
       });
@@ -69,11 +69,11 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
       setSuggestions(() => {
         const newSuggestions = result.suggestions;
         const count = Object.keys(newSuggestions).length;
-          console.log(`✅ [useAISuggestions] ${count} suggestion(s) loaded and state updated`);
+          console.warn(`✅ [useAISuggestions] ${count} suggestion(s) loaded and state updated`);
 
           // Detailed log of loaded suggestion keys for debug
         const suggestionKeys = Object.keys(newSuggestions).slice(0, 10);
-          console.log(`📝 [useAISuggestions] First suggestions loaded:`, {
+          console.warn(`📝 [useAISuggestions] First suggestions loaded:`, {
           keys: suggestionKeys,
           total: count
         });
@@ -138,7 +138,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
           ...next[key],
           status: 'accepted' as const,
         };
-          console.log(`✅ Suggestion ${key} accepted - state updated to 'accepted'`);
+          console.warn(`✅ Suggestion ${key} accepted - state updated to 'accepted'`);
           return {...next}; // New reference to ensure re-render
       });
 
@@ -205,7 +205,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
           ...next[key],
           status: 'rejected' as const,
         };
-          console.log(`✅ Suggestion ${key} rejected - state updated to 'rejected'`);
+          console.warn(`✅ Suggestion ${key} rejected - state updated to 'rejected'`);
           return {...next}; // New reference to ensure re-render
       });
 

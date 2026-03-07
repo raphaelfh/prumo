@@ -185,7 +185,7 @@ export class ZoteroImportService {
         throw new Error(`Database insert failed: ${insertError.message}`);
       }
 
-      console.log(`PDF uploaded successfully: ${filename} (${fileRole})`);
+        console.warn(`PDF uploaded successfully: ${filename} (${fileRole})`);
     } catch (error: any) {
         // Log warning but do not fail article import
       console.warn(`Failed to download PDF ${attachment.data.title}:`, error.message);
@@ -218,7 +218,7 @@ export class ZoteroImportService {
   ): Promise<{ action: 'imported' | 'updated' | 'skipped'; articleId?: string; error?: string }> {
     try {
         // Debug log
-        console.log('[processItem] Processing item:', {
+        console.warn('[processItem] Processing item:', {
         projectId,
         itemTitle: item.data.title?.substring(0, 50),
         doi: item.data.DOI,
@@ -264,7 +264,7 @@ export class ZoteroImportService {
         action = 'updated';
       } else {
           // Create new article
-          console.log('[processItem] Inserting new article:', {
+          console.warn('[processItem] Inserting new article:', {
           projectId,
           doi: articleData.doi,
           title: articleData.title?.substring(0, 50),
@@ -459,7 +459,7 @@ export class ZoteroImportService {
               if (count && count > 0) {
                 stats.pdfsDownloaded = (stats.pdfsDownloaded || 0) + count;
               }
-            } catch (countError) {
+            } catch (_countError) {
                 // Ignore count error
             }
           }

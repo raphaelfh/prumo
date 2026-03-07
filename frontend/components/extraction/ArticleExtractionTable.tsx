@@ -53,14 +53,19 @@ import {t} from '@/lib/copy';
 import {TABLE_CELL_CLASS} from '@/lib/table-constants';
 import type {FilterFieldConfig, FilterValues} from '@/components/shared/list';
 import {
-    DataTableWrapper,
+    ActiveFilterChips,
+    buildActiveFiltersList,
     EmptyListState,
     FilterButtonWithPopover,
     isFilterValueEmpty,
     ListCount,
+    ListDisplaySortPopover,
     ListFilterPanel,
+    ListRowCard,
     ListToolbarSearch,
+    ResponsiveList,
 } from '@/components/shared/list';
+import {useIsNarrow} from '@/hooks/use-mobile';
 
 interface Article {
   id: string;
@@ -142,6 +147,7 @@ const INITIAL_EXTRACTION_FILTER_VALUES: FilterValues = {
 export function ArticleExtractionTable({ projectId, templateId }: ArticleExtractionTableProps) {
   const navigate = useNavigate();
   const location = useLocation();
+    const isNarrow = useIsNarrow();
     const searchInputRef = useRef<HTMLInputElement>(null);
   const [articles, setArticles] = useState<ArticleWithExtraction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -367,7 +373,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
         const hasInstances = article.instances.length > 0;
         const isComplete = progress >= 100;
         const isInProgress = hasInstances && progress > 0 && progress < 100;
-        const isNotStarted = !hasInstances;
+            const _isNotStarted = !hasInstances;
             const articleStatus = isComplete ? 'complete' : isInProgress ? 'in_progress' : 'not_started';
             if (!statusFilter.includes(articleStatus)) return false;
       }
@@ -589,6 +595,38 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
         setFilterValues(INITIAL_EXTRACTION_FILTER_VALUES);
     }, []);
 
+    const clearFilterField = useCallback((fieldId: string) => {
+        const field = EXTRACTION_FILTER_FIELDS.find((f) => f.id === fieldId);
+        if (!field) return;
+        setFilterValues((prev) => ({
+            ...prev,
+            [fieldId]:
+                field.type === 'categorical'
+                    ? []
+                    : field.type === 'numericRange'
+                        ? {}
+                        : '',
+        }));
+    }, []);
+
+    const extractionFilterLabels = useMemo(
+        () =>
+            Object.fromEntries(
+                EXTRACTION_FILTER_FIELDS.map((f) => [f.id, f.label])
+            ) as Record<string, string>,
+        []
+    );
+
+    const activeFiltersList = useMemo(
+        () =>
+            buildActiveFiltersList(
+                EXTRACTION_FILTER_FIELDS,
+                filterValues,
+                extractionFilterLabels
+            ),
+        [filterValues, extractionFilterLabels]
+    );
+
     const activeFiltersCount = useMemo(() => {
         let n = globalFilter.trim() ? 1 : 0;
         EXTRACTION_FILTER_FIELDS.forEach((f) => {
@@ -698,7 +736,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                       ref={searchInputRef}
                       placeholder={t('extraction', 'tableSearchPlaceholderShortcut')}
             value={globalFilter}
-            onChange={(e) => setGlobalFilter(e.target.value)}
+                      onChange={setGlobalFilter}
                   />
                   <FilterButtonWithPopover
                       open={filterPopoverOpen}
@@ -713,6 +751,24 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                           onChange={setFilterValues}
                       />
                   </FilterButtonWithPopover>
+                  <ListDisplaySortPopover
+                      sortOptions={[
+                          {value: 'title', label: t('extraction', 'tableColumnTitle')},
+                          {value: 'publication_year', label: t('extraction', 'tableColumnYear')},
+                          {value: 'extraction_progress', label: t('extraction', 'tableColumnProgress')},
+                          {value: 'status', label: t('extraction', 'tableColumnStatus')},
+                          {value: 'created_at', label: t('extraction', 'tableColumnCreatedAt')},
+                      ]}
+                      sortField={sortField}
+                      sortDirection={sortDirection}
+                      onSortFieldChange={(v) => setSortField(v as SortField)}
+                      onSortDirectionChange={() =>
+                          setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'))
+                      }
+                      orderLabel={t('extraction', 'tableOrdering')}
+                      tooltipLabel={t('extraction', 'tableDisplayAndSort')}
+                      ariaLabel={t('extraction', 'tableDisplayOptions')}
+                  />
                   <div className="flex items-center gap-2 shrink-0 ml-auto">
                       <ListCount
                           visible={filteredAndSortedArticles.length}
@@ -757,12 +813,23 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                           </div>
                       )}
                   </div>
-        </div>
-      </div>
+              </div>
+              <ActiveFilterChips
+                  filters={activeFiltersList}
+                  onClearField={clearFilterField}
+                  onClearAll={clearListFilters}
+                  clearAllLabel={t('extraction', 'tableClearAll')}
+                  removeFilterAriaLabel={(label) =>
+                      t('extraction', 'tableRemoveFilter').replace('{{label}}', label)
+                  }
+              />
+          </div>
 
-        {/* Table */}
-          <DataTableWrapper>
-              <Table className="table-fixed w-full">
+          {/* Table or card list (responsive) */}
+          <ResponsiveList
+              isNarrow={isNarrow}
+              tableContent={
+                  <Table className="table-fixed w-full">
                   <TableHeader className="bg-transparent">
                       <TableRow className="hover:bg-transparent border-b border-border/40 h-8">
                           <TableHead className={`w-[40px] min-w-[40px] ${TABLE_CELL_CLASS} text-left align-middle`}>
@@ -807,11 +874,11 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                   {getSortIcon('title')}
                 </div>
               </TableHead>
-                          <TableHead className={`w-[12%] ${TABLE_CELL_CLASS}`}>
+                          <TableHead className={`w-[12%] hidden md:table-cell ${TABLE_CELL_CLASS}`}>
                               <span
                                   className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{t('extraction', 'tableColumnAuthors')}</span>
               </TableHead>
-                          <TableHead className={`w-[10%] ${TABLE_CELL_CLASS}`}>
+                          <TableHead className={`w-[10%] hidden md:table-cell ${TABLE_CELL_CLASS}`}>
                               <div className="flex items-center gap-1">
                                   <Button variant="ghost" size="sm" onClick={() => handleSort('publication_year')}
                                           className="h-auto p-0 min-w-0 text-[11px] font-medium text-muted-foreground uppercase tracking-wider hover:bg-transparent hover:text-foreground transition-colors">
@@ -820,7 +887,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                   {getSortIcon('publication_year')}
                 </div>
               </TableHead>
-                          <TableHead className={`w-[18%] ${TABLE_CELL_CLASS}`}>
+                          <TableHead className={`w-[18%] hidden lg:table-cell ${TABLE_CELL_CLASS}`}>
                               <div className="flex items-center gap-1">
                                   <Button variant="ghost" size="sm" onClick={() => handleSort('extraction_progress')}
                                           className="h-auto p-0 min-w-0 text-[11px] font-medium text-muted-foreground uppercase tracking-wider hover:bg-transparent hover:text-foreground transition-colors">
@@ -861,7 +928,8 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                       <TableCell className={`${TABLE_CELL_CLASS} font-medium text-[13px]`}>
                           <div className="line-clamp-1 leading-tight text-foreground font-medium">{article.title}</div>
                   </TableCell>
-                      <TableCell className={`max-w-[120px] ${TABLE_CELL_CLASS} text-[13px] text-muted-foreground`}>
+                      <TableCell
+                          className={`max-w-[120px] hidden md:table-cell ${TABLE_CELL_CLASS} text-[13px] text-muted-foreground`}>
                     {article.authors && article.authors.length > 0 ? (
                       <div
                           className="flex items-center gap-1 cursor-help group relative"
@@ -883,13 +951,13 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                         <span className="text-muted-foreground">N/A</span>
                     )}
                   </TableCell>
-                      <TableCell className={`${TABLE_CELL_CLASS} text-[13px]`}>
+                      <TableCell className={`hidden md:table-cell ${TABLE_CELL_CLASS} text-[13px]`}>
                           <div className="flex items-center gap-1">
                       <Calendar className="h-3 w-3 text-muted-foreground" />
                       {article.publication_year || 'N/A'}
                     </div>
                   </TableCell>
-                      <TableCell className={`${TABLE_CELL_CLASS} text-[13px]`}>
+                      <TableCell className={`hidden lg:table-cell ${TABLE_CELL_CLASS} text-[13px]`}>
                     {hasInstances ? (
                       <div className="space-y-1">
                           <div className="flex items-center justify-between">
@@ -944,7 +1012,60 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
             })}
           </TableBody>
         </Table>
-          </DataTableWrapper>
+              }
+              cardContent={
+                  <>
+                      {filteredAndSortedArticles.map((article) => {
+                          const progress = calculateExtractionProgress(article);
+                          const isComplete = progress >= 100;
+                          const hasInstances = article.instances.length > 0;
+                          return (
+                              <ListRowCard
+                                  key={article.id}
+                                  leading={
+                                      <Checkbox
+                                          checked={isSelected(article.id)}
+                                          onCheckedChange={() => toggleArticle(article.id)}
+                                          aria-label={`Select: ${article.title}`}
+                                      />
+                                  }
+                                  title={article.title}
+                                  subtitle={article.authors?.slice(0, 2).join(', ') || undefined}
+                                  meta={
+                                      <>
+                                          {article.publication_year != null && <span>{article.publication_year}</span>}
+                                          {getStatusBadge(article)}
+                                      </>
+                                  }
+                                  primaryAction={
+                                      !hasInstances ? (
+                                          <Button onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleStartExtraction(article.id);
+                                          }} size="sm" className="h-8 gap-1" disabled={article.isLoading}>
+                                              {article.isLoading ? <Loader2 className="h-3 w-3 animate-spin"/> :
+                                                  <PlayCircle className="h-3 w-3"/>}
+                                              {t('extraction', 'tableStart')}
+                                          </Button>
+                                      ) : (
+                                          <Button onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleContinueExtraction(article.id);
+                                          }} variant={isComplete ? 'outline' : 'default'} size="sm"
+                                                  className="h-8 gap-1">
+                                              {isComplete ? <CheckCircle className="h-3 w-3"/> :
+                                                  <Edit className="h-3 w-3"/>}
+                                              {isComplete ? t('extraction', 'tableView') : t('extraction', 'tableContinue')}
+                                          </Button>
+                                      )
+                                  }
+                                  onClick={() => (hasInstances ? handleContinueExtraction(article.id) : handleStartExtraction(article.id))}
+                              />
+                          );
+                      })}
+                  </>
+              }
+          />
 
           {/* Empty state after filters (match ArticlesList) */}
       {filteredAndSortedArticles.length === 0 && articles.length > 0 && (

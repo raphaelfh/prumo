@@ -34,7 +34,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children, className }) => 
 // Layout with Sidebar for specific pages
 export const ProjectLayout: React.FC<AppLayoutProps> = ({ children, className }) => {
   const { project, activeTab, changeTab } = useProject();
-    const {sidebarCollapsed, toggleSidebar, mobileOpen, setMobileOpen} = useSidebar();
+    const {sidebarCollapsed, toggleSidebar: _toggleSidebar, mobileOpen, setMobileOpen} = useSidebar();
 
   return (
     <div className={cn("h-screen flex flex-col overflow-hidden bg-background", className)}>

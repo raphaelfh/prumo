@@ -24,7 +24,7 @@ interface FilterNumericRangeFieldProps {
 const NONE = '_none';
 
 export function FilterNumericRangeField({
-                                            id,
+                                            id: _id,
                                             label,
                                             value,
                                             onChange,

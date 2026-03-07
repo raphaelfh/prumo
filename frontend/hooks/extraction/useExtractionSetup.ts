@@ -51,7 +51,7 @@ export function useExtractionSetup() {
     setError(null);
 
     try {
-        console.log('Starting extraction for article:', {articleId, projectId, templateId});
+        console.warn('Starting extraction for article:', {articleId, projectId, templateId});
 
         // 1. Check if instances already exist for this article
       const { data: existingInstances, error: checkError } = await supabase
@@ -90,10 +90,10 @@ export function useExtractionSetup() {
         return { success: false, instancesCreated: 0, error };
       }
 
-        console.log(`Creating ${entityTypes.length} instances for the article`);
+        console.warn(`Creating ${entityTypes.length} instances for the article`);
 
         // 3. Create instances based on entity types
-      const instances = entityTypes.map((entityType, index) => ({
+        const instances = entityTypes.map((entityType, _index) => ({
         project_id: projectId,
         article_id: articleId,
         template_id: templateId,
@@ -117,7 +117,7 @@ export function useExtractionSetup() {
       }
 
       const instancesCreated = createdInstances?.length || 0;
-        console.log(`${instancesCreated} instances created successfully`);
+        console.warn(`${instancesCreated} instances created successfully`);
 
         toast.success(t('extraction', 'extractionStartedToast').replace('{{n}}', String(instancesCreated)));
 
@@ -166,7 +166,7 @@ export function useExtractionSetup() {
       }
 
       const initialized = data && data.length > 0;
-      console.log(`Artigo ${articleId} inicializado:`, initialized);
+        console.warn(`Artigo ${articleId} inicializado:`, initialized);
       return initialized;
     } catch (err) {
         console.error('Error checking initialization:', err);

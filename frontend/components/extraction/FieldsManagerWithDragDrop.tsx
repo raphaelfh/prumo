@@ -340,7 +340,7 @@ export function FieldsManagerWithDragDrop({ entityTypeId, sectionName }: FieldsM
   const [fieldToEdit, setFieldToEdit] = useState<ExtractionField | null>(null);
   const [fieldToDelete, setFieldToDelete] = useState<ExtractionField | null>(null);
   const [deleteValidation, setDeleteValidation] = useState<FieldValidationResult | null>(null);
-  const [validatingDelete, setValidatingDelete] = useState(false);
+    const [_validatingDelete, setValidatingDelete] = useState(false);
 
   // Drag and drop
   const [isReordering, setIsReordering] = useState(false);

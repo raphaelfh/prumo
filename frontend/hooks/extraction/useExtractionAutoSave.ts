@@ -93,7 +93,7 @@ export function useExtractionAutoSave(
       });
 
       if (valuesToSave.length === 0) {
-          console.log('No values to save (all empty)');
+          console.warn('No values to save (all empty)');
         setIsSaving(false);
         return;
       }
@@ -118,7 +118,7 @@ export function useExtractionAutoSave(
         };
       });
 
-        console.log(`Auto-saving ${upserts.length} values...`);
+        console.warn(`Auto-saving ${upserts.length} values...`);
 
         // Check which values already exist (batch SELECT)
       const { data: existingValues, error: selectError } = await supabase
@@ -180,7 +180,7 @@ export function useExtractionAutoSave(
       }
 
       setLastSaved(new Date());
-        console.log(`Auto-save completed: ${upserts.length} values saved`);
+        console.warn(`Auto-save completed: ${upserts.length} values saved`);
 
     } catch (err: any) {
         console.error('Auto-save error:', err);

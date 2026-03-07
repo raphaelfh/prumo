@@ -30,7 +30,7 @@ export function PDFCanvas() {
     // Debug: check if searchQuery is in store
   useEffect(() => {
     if (searchQuery) {
-        console.debug(`[PDFCanvas] searchQuery in store: "${searchQuery}", ${searchResults?.length || 0} results`);
+        console.warn(`[PDFCanvas] searchQuery in store: "${searchQuery}", ${searchResults?.length || 0} results`);
     }
   }, [searchQuery, searchResults]);
   
@@ -75,7 +75,7 @@ export function PDFCanvas() {
 
   const handlePageLoadSuccess = useCallback((page: any) => {
       // Page loaded successfully - can be used for future metrics
-    console.debug('Page loaded:', page.pageNumber);
+      console.warn('Page loaded:', page.pageNumber);
       // Mark page as rendered and no longer loading
     if (markPageRendered) {
       markPageRendered(page.pageNumber);

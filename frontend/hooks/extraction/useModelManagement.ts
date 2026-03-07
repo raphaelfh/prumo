@@ -111,7 +111,7 @@ export function useModelManagement({
     // Load existing models
   const loadModels = useCallback(async () => {
     if (!enabled || !modelParentEntityTypeId) {
-      console.log('⏭️ loadModels: Skipped (enabled:', enabled, ', modelParentEntityTypeId:', modelParentEntityTypeId, ')');
+        console.warn('⏭️ loadModels: Skipped (enabled:', enabled, ', modelParentEntityTypeId:', modelParentEntityTypeId, ')');
       setModels([]);
       setLoading(false);
       return;
@@ -121,7 +121,7 @@ export function useModelManagement({
       setLoading(true);
       setError(null);
 
-        console.log('[useModelManagement] Loading models for article:', articleId, ', entity_type:', modelParentEntityTypeId);
+        console.warn('[useModelManagement] Loading models for article:', articleId, ', entity_type:', modelParentEntityTypeId);
 
         // Fetch prediction_models instances for this article
       const { data: instances, error: instancesError } = await supabase
@@ -133,7 +133,7 @@ export function useModelManagement({
 
       if (instancesError) throw instancesError;
 
-      console.log(`✅ Encontradas ${instances?.length || 0} instances de modelos:`, instances?.map(i => i.label));
+        console.warn(`✅ Encontradas ${instances?.length || 0} instances de modelos:`, instances?.map(i => i.label));
 
       if (!instances || instances.length === 0) {
         setModels([]);
@@ -183,7 +183,7 @@ export function useModelManagement({
   loadModelsRef.current = loadModels;
 
     // Function to generate unique name
-  const generateUniqueModelName = useCallback(async (
+    const _generateUniqueModelName = useCallback(async (
     baseName: string,
     maxAttempts: number = 10
   ): Promise<string> => {
@@ -227,7 +227,7 @@ export function useModelManagement({
     }
 
     try {
-        console.log('🆕 Creating new model:', modelName);
+        console.warn('🆕 Creating new model:', modelName);
 
         // 1. Fetch parent entity type
       const { data: parentEntityType, error: etError } = await supabase
@@ -295,8 +295,8 @@ export function useModelManagement({
       setActiveModelId(newModel.instanceId);
 
         toast.success(t('extraction', 'modelCreatedSuccess').replace('{{label}}', result.parent.label));
-      
-      console.log(`✅ Hierarquia criada: 1 parent + ${result.children.length} children`);
+
+        console.warn(`✅ Hierarquia criada: 1 parent + ${result.children.length} children`);
 
         // Return model AND created child instances
       return {
@@ -314,7 +314,7 @@ export function useModelManagement({
     // Remove model (using service - simplified)
   const removeModel = useCallback(async (instanceId: string): Promise<void> => {
     try {
-        console.log('🗑️ Removing model:', instanceId);
+        console.warn('🗑️ Removing model:', instanceId);
 
         // Delegate to service (automatic CASCADE)
       await extractionInstanceService.removeInstance(instanceId);
@@ -353,7 +353,7 @@ export function useModelManagement({
         return updatedModels[0].instanceId;
       });
 
-      console.log('✅ Modelo removido:', removedModelName);
+        console.warn('✅ Modelo removido:', removedModelName);
         toast.success(t('extraction', 'modelRemovedSuccess').replace('{{label}}', removedModelName));
 
     } catch (err: any) {

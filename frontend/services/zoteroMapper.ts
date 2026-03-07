@@ -143,7 +143,7 @@ export async function findDuplicateArticle(
   const data = item.data;
 
     // Debug log: which project_id is being used
-    console.log('[findDuplicateArticle] Checking duplicates:', {
+    console.warn('[findDuplicateArticle] Checking duplicates:', {
     projectId,
     itemKey: item.key,
     doi: data.DOI,
@@ -160,7 +160,7 @@ export async function findDuplicateArticle(
       .maybeSingle();
 
     if (byZoteroKey) {
-        console.log('[findDuplicateArticle] Duplicate found by zotero_item_key:', byZoteroKey);
+        console.warn('[findDuplicateArticle] Duplicate found by zotero_item_key:', byZoteroKey);
       return byZoteroKey;
     }
   }
@@ -174,7 +174,7 @@ export async function findDuplicateArticle(
       .eq('doi', data.DOI)
       .maybeSingle();
 
-      console.log('[findDuplicateArticle] DOI search result:', {
+      console.warn('[findDuplicateArticle] DOI search result:', {
       found: !!byDoi,
       error: doiError,
       result: byDoi,
@@ -183,7 +183,7 @@ export async function findDuplicateArticle(
     });
 
     if (byDoi) {
-        console.log('[findDuplicateArticle] Duplicate found by DOI:', byDoi);
+        console.warn('[findDuplicateArticle] Duplicate found by DOI:', byDoi);
       return byDoi;
     }
   }
@@ -198,12 +198,12 @@ export async function findDuplicateArticle(
       .maybeSingle();
 
     if (byTitle) {
-        console.log('[findDuplicateArticle] Duplicate found by title:', byTitle);
+        console.warn('[findDuplicateArticle] Duplicate found by title:', byTitle);
       return byTitle;
     }
   }
 
-    console.log('[findDuplicateArticle] No duplicate found');
+    console.warn('[findDuplicateArticle] No duplicate found');
   return null;
 }
 

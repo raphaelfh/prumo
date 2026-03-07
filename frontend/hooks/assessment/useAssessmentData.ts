@@ -235,7 +235,7 @@ export function useAssessmentData({
 
     setDomains(domainsArray);
 
-      console.log('[useAssessmentData] Instrument loaded:', {
+      console.warn('[useAssessmentData] Instrument loaded:', {
       instrumentId,
       name: projectInstrument.name,
       itemsCount: normalizedItems.length,
@@ -281,7 +281,7 @@ export function useAssessmentData({
     }
 
     if (data) {
-        console.log('[useAssessmentData] Existing assessment loaded:', {
+        console.warn('[useAssessmentData] Existing assessment loaded:', {
         assessmentId: data.id,
         status: data.status,
         completionPercentage: data.completion_percentage,
@@ -330,7 +330,7 @@ export function useAssessmentData({
     setError(null);
 
     try {
-        console.log('[useAssessmentData] Starting load:', {
+        console.warn('[useAssessmentData] Starting load:', {
         projectId,
         articleId,
         instrumentId,
@@ -345,7 +345,7 @@ export function useAssessmentData({
         loadArticles(),
       ]);
 
-        console.log('[useAssessmentData] Load completed');
+        console.warn('[useAssessmentData] Load completed');
       setInitialized(true);
     } catch (err) {
         const errorMessage = err instanceof Error ? err.message : t('common', 'errors_unknownError');

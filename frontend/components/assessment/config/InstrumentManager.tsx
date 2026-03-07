@@ -71,7 +71,7 @@ export function InstrumentManager({ projectId }: InstrumentManagerProps) {
     }
   };
 
-  const isLoading = isLoadingGlobal || isLoadingProject;
+    const _isLoading = isLoadingGlobal || isLoadingProject;
 
   // Show editor when an instrument is selected for configuration
   if (editingInstrumentId) {

@@ -29,8 +29,8 @@ interface SearchPanelProps {
 
 export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
   const { 
-    getPdfDocument, 
-    goToPage,
+    getPdfDocument,
+      goToPage: _goToPage,
     searchQuery,
     setSearchQuery,
     searchResults,
@@ -81,7 +81,7 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
     setSearchProgress({ current: 0, total: pdfDoc.numPages });
     
     try {
-      console.log('🔍 Buscando:', { query: currentQuery, caseSensitive, wholeWords, useRegex });
+        console.warn('🔍 Buscando:', {query: currentQuery, caseSensitive, wholeWords, useRegex});
       
       const searchResults = await searchInDocument(
         pdfDoc,
@@ -92,7 +92,7 @@ export function SearchPanel({ isOpen, onClose }: SearchPanelProps) {
         }
       );
 
-        console.log(`Search complete: ${searchResults.length} page(s) with results`);
+        console.warn(`Search complete: ${searchResults.length} page(s) with results`);
       setLocalResults(searchResults);
       
       // Transformar resultados em formato flat para store

@@ -136,7 +136,7 @@ export default function ExtractionFullScreen() {
     // Hook for AI suggestions with callbacks to fill/clear field
   const handleAISuggestionAccepted = useCallback(async (instanceId: string, fieldId: string, value: any) => {
       // Fill field automatically when suggestion is accepted
-      console.log('Accepting AI suggestion:', {instanceId, fieldId, value});
+      console.warn('Accepting AI suggestion:', {instanceId, fieldId, value});
       // updateValue updates local state immediately
       // AISuggestionService.acceptSuggestion already saves to DB
       // No need to reload all values (refreshValues caused full page reload)
@@ -145,7 +145,7 @@ export default function ExtractionFullScreen() {
 
   const handleAISuggestionRejected = useCallback(async (instanceId: string, fieldId: string) => {
       // Clear field when suggestion is rejected
-      console.log('Rejecting AI suggestion - clearing field:', {instanceId, fieldId});
+      console.warn('Rejecting AI suggestion - clearing field:', {instanceId, fieldId});
       // updateValue updates local state immediately
       // AISuggestionService.rejectSuggestion already updates status in DB
       // No need to reload all values (refreshValues caused full page reload)
@@ -267,18 +267,18 @@ export default function ExtractionFullScreen() {
   };
 
   const handleConfirmAddModel = async (modelName: string, modellingMethod: string) => {
-      console.log('Starting model creation:', modelName);
+      console.warn('Starting model creation:', modelName);
     const result = await createModel(modelName, modellingMethod);
     
     if (result) {
-        console.log('Model created successfully:', result.model);
+        console.warn('Model created successfully:', result.model);
       setShowAddModelDialog(false);
 
         // Reload instances only (child instances will be included)
         // Do not call refreshModels() - hook already updates local state
       await refreshInstances();
 
-        console.log('State updated, fields should appear immediately');
+        console.warn('State updated, fields should appear immediately');
     }
   };
 
@@ -722,7 +722,7 @@ export default function ExtractionFullScreen() {
    * IMPORTANT: This function must not block - runs in background.
    */
   const handleExtractionComplete = (runId?: string) => {
-    console.log('✅ Extraction completed', runId ? `runId: ${runId}` : '');
+      console.warn('✅ Extraction completed', runId ? `runId: ${runId}` : '');
 
       // Run refresh in background (do not block)
       // Hook loading should be reset regardless of this callback
@@ -735,10 +735,10 @@ export default function ExtractionFullScreen() {
 
           // 1. Reload instances (backend may have created new ones for cardinality="many")
         if (template) {
-            console.log('Reloading instances after extraction...');
+            console.warn('Reloading instances after extraction...');
           try {
             await refreshInstances();
-              console.log('Instances reloaded successfully');
+              console.warn('Instances reloaded successfully');
           } catch (err) {
               console.error('Error reloading instances (non-critical):', err);
               // Do not block flow - instances will be reloaded on next refresh
@@ -759,14 +759,14 @@ export default function ExtractionFullScreen() {
         const pollDelay = 1000; // 1 segundo entre tentativas
 
           // First attempt (after delays above)
-          console.log('Reloading AI suggestions...');
+          console.warn('Reloading AI suggestions...');
         let result = await refreshAISuggestions();
 
           // Check for suggestions using direct result (not React state)
         let foundSuggestions = result.count > 0;
         
         if (foundSuggestions) {
-            console.log(`${result.count} suggestion(s) found immediately`);
+            console.warn(`${result.count} suggestion(s) found immediately`);
           return;
         }
 
@@ -774,7 +774,7 @@ export default function ExtractionFullScreen() {
         while (!foundSuggestions && attempts < maxAttempts) {
           attempts++;
 
-            console.log(`Attempt ${attempts + 1}/${maxAttempts + 1}: Reloading suggestions...`);
+            console.warn(`Attempt ${attempts + 1}/${maxAttempts + 1}: Reloading suggestions...`);
 
             // Wait before reload (give backend time to create suggestions)
           await new Promise(resolve => setTimeout(resolve, pollDelay));
@@ -786,18 +786,18 @@ export default function ExtractionFullScreen() {
           foundSuggestions = result.count > 0;
           
           if (foundSuggestions) {
-              console.log(`${result.count} suggestion(s) found after ${attempts + 1} attempt(s)`);
+              console.warn(`${result.count} suggestion(s) found after ${attempts + 1} attempt(s)`);
             return;
           }
         }
 
           // If we got here without finding suggestions
         if (!foundSuggestions) {
-            console.log('No suggestions found after multiple attempts');
-            console.log('   Possible reasons:');
-            console.log('   - Suggestions were not created (fields already filled, etc)');
-            console.log('   - Suggestions were created but not yet available in the database');
-            console.log('   - There is an issue loading suggestions');
+            console.warn('No suggestions found after multiple attempts');
+            console.warn('   Possible reasons:');
+            console.warn('   - Suggestions were not created (fields already filled, etc)');
+            console.warn('   - Suggestions were created but not yet available in the database');
+            console.warn('   - There is an issue loading suggestions');
         }
       } catch (error) {
           console.error('Error reloading suggestions:', error);
@@ -840,7 +840,7 @@ export default function ExtractionFullScreen() {
         onAISuggestionsClick={() => {
             // Scroll to first suggestion or open panel
           // Por enquanto, apenas log - pode ser melhorado depois
-            console.log('Clicked AI badge - scrolling to first suggestion');
+            console.warn('Clicked AI badge - scrolling to first suggestion');
         }}
         template={template}
         instances={instances}

@@ -47,7 +47,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
     setLoading(true);
     
     try {
-      console.log('📦 Carregando entity types do template:', templateId);
+        console.warn('📦 Carregando entity types do template:', templateId);
 
       // Buscar entity types do project_template
       const { data: entityTypesData, error: entityTypesError } = await supabase
@@ -61,7 +61,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         throw entityTypesError;
       }
 
-      console.log(`✅ Entity types encontrados: ${(entityTypesData || []).length}`);
+        console.warn(`✅ Entity types encontrados: ${(entityTypesData || []).length}`);
 
       // Para cada entity type, contar fields
       const entityTypesWithCounts = await Promise.all(
@@ -163,8 +163,8 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
               <CardTitle className="flex items-center gap-2">
                 <Settings className="h-5 w-5" />
                   Template configuration
@@ -199,7 +199,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
           return (
             <AccordionItem key={entityType.id} value={entityType.id}>
               <Card className={cn(hasChildren && "border-l-4 border-l-primary")}>
-                <AccordionTrigger className="px-6 py-4 hover:no-underline">
+                  <AccordionTrigger className="px-6 py-4 min-h-[44px] hover:no-underline">
                   <div className="flex items-center justify-between w-full pr-4">
                     <div className="flex items-center gap-3">
                       <Badge variant="secondary" className="font-mono text-xs">
@@ -236,8 +236,8 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
                 </AccordionTrigger>
                 <AccordionContent>
                   <CardContent className="pt-4 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm text-muted-foreground">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="text-sm text-muted-foreground min-w-0">
                           <p><strong>{t('extraction', 'technicalName')}:</strong> {entityType.name}</p>
                         <p className="mt-1">
                             <strong>{t('extraction', 'typeLabel')}:</strong> {entityType.cardinality === 'one' ? t('extraction', 'sectionSingle') : t('extraction', 'sectionMultiple')}
@@ -246,7 +246,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
                           <p className="mt-1">{entityType.description}</p>
                         )}
                       </div>
-                      <div className="flex gap-2">
+                          <div className="flex flex-wrap gap-2 w-full sm:w-auto">
                         {editingId === entityType.id ? (
                           <>
                             <Button
@@ -311,7 +311,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
                           {children.map((child) => (
                             <Card key={child.id} className="bg-slate-50">
                               <CardHeader className="pb-3">
-                                <div className="flex items-center justify-between">
+                                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                                   <div>
                                     <CardTitle className="text-sm">{child.label}</CardTitle>
                                     <p className="text-xs text-muted-foreground mt-1">
@@ -351,7 +351,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
               <p className="text-xs mb-4">
                   Import a global template or create custom sections
               </p>
-              <div className="flex gap-2 justify-center">
+                <div className="flex flex-wrap gap-2 justify-center">
                 <Button 
                   variant="outline" 
                   onClick={() => setShowImportDialog(true)}

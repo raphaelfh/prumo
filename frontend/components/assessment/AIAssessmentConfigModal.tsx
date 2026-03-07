@@ -86,7 +86,7 @@ export const AIAssessmentConfigModal = ({
   open,
   onOpenChange,
   projectId,
-  instrumentId,
+                                            instrumentId: _instrumentId,
   articles,
   assessmentItems,
   onStartBatchProcessing
@@ -96,7 +96,7 @@ export const AIAssessmentConfigModal = ({
   const [saving, setSaving] = useState(false);
   const [selectedArticles, setSelectedArticles] = useState<string[]>([]);
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
-  const [projectData, setProjectData] = useState<ProjectConfigData | null>(null);
+    const [_projectData, setProjectData] = useState<ProjectConfigData | null>(null);
   const [selectedItem, setSelectedItem] = useState<AssessmentItem | null>(null);
   const [itemConfig, setItemConfig] = useState<{ systemPrompt: string; userPromptTemplate: string }>({
     systemPrompt: DEFAULT_CONFIG.systemPrompt,

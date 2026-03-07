@@ -85,7 +85,7 @@ export function ZoteroImportDialog({
     // Load collections when dialog opens or projectId changes
   useEffect(() => {
     if (open) {
-        console.log('[ZoteroImportDialog] Dialog opened with projectId:', projectId);
+        console.warn('[ZoteroImportDialog] Dialog opened with projectId:', projectId);
       listCollections();
       setCurrentStep('select-collection');
       setSelectedCollection(null);
@@ -95,7 +95,7 @@ export function ZoteroImportDialog({
 
     // Log when projectId changes
   useEffect(() => {
-      console.log('[ZoteroImportDialog] ProjectId updated:', projectId);
+      console.warn('[ZoteroImportDialog] ProjectId updated:', projectId);
   }, [projectId]);
 
   const handleNext = () => {

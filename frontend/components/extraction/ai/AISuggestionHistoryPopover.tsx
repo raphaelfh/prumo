@@ -71,9 +71,9 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
 
     setLoading(true);
     try {
-        console.log('[AISuggestionHistoryPopover] Loading history...', {instanceId, fieldId});
+        console.warn('[AISuggestionHistoryPopover] Loading history...', {instanceId, fieldId});
       const data = await getHistory(instanceId, fieldId);
-        console.log('[AISuggestionHistoryPopover] History loaded:', {count: data.length, data});
+        console.warn('[AISuggestionHistoryPopover] History loaded:', {count: data.length, data});
       setHistory(data);
     } catch (err) {
         console.error('[AISuggestionHistoryPopover] Error loading history:', err);

@@ -104,7 +104,7 @@ export function useExtractionProgressCalc(): UseExtractionProgressCalcReturn {
       };
 
     } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : t('extraction', 'errorCalculatingProgress');
+        const _message = err instanceof Error ? err.message : t('extraction', 'errorCalculatingProgress');
         console.error('Error calculating extraction progress:', err);
       return null;
     }

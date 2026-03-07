@@ -198,7 +198,7 @@ export function isValidUnit(unit: string | null | undefined): boolean {
 /**
  * Returns default unit when none is specified
  */
-export function getDefaultUnit(fieldType: string): string | null {
+export function getDefaultUnit(_fieldType: string): string | null {
     // For now returns null; can be extended later
   return null;
 }

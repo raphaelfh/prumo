@@ -53,8 +53,8 @@ interface ArticleSelectionActionsProps {
 
 export function ArticleSelectionActions({
   selectedCount,
-  selectedArticleIds,
-  selectedArticleTitles,
+                                            selectedArticleIds: _selectedArticleIds,
+                                            selectedArticleTitles: _selectedArticleTitles,
   onClearSelection,
   onBatchAIExtraction,
   isExtracting = false,

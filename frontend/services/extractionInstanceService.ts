@@ -523,7 +523,7 @@ export class ExtractionInstanceService {
 
           // Skip if has parent OR cardinality='many'
         if (entityType.parent_entity_type_id || entityType.cardinality === 'many') {
-            console.log(`Skipping auto-creation: ${entityType.name}`);
+            console.warn(`Skipping auto-creation: ${entityType.name}`);
           continue;
         }
 
@@ -541,7 +541,7 @@ export class ExtractionInstanceService {
         }
       }
 
-        console.log(`Initialization: ${createdInstances.length} instance(s) total`);
+        console.warn(`Initialization: ${createdInstances.length} instance(s) total`);
       return createdInstances;
 
     } catch (error: any) {

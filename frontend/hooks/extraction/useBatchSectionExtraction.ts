@@ -65,15 +65,15 @@ export function useBatchSectionExtraction(options?: {
    */
   const extractAllSections = useCallback(
     async (request: BatchSectionExtractionRequest) => {
-        console.log('[useBatchSectionExtraction] Starting extraction of all sections', request);
+        console.warn('[useBatchSectionExtraction] Starting extraction of all sections', request);
       setLoading(true);
       setError(null);
 
       try {
           // Call service to run extraction
-          console.log('[useBatchSectionExtraction] Calling service...');
+          console.warn('[useBatchSectionExtraction] Calling service...');
         const result = await SectionExtractionService.extractAllSections(request);
-          console.log('[useBatchSectionExtraction] Service returned', {
+          console.warn('[useBatchSectionExtraction] Service returned', {
           hasData: !!result.data,
           totalSections: result.data?.totalSections,
           successfulSections: result.data?.successfulSections,

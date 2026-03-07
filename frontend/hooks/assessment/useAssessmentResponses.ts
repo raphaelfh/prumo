@@ -136,7 +136,7 @@ export function useAssessmentResponses({
         setResponses(normalizedResponses);
         setAssessmentId(data.id);
 
-        console.log('✅ [useAssessmentResponses] Respostas carregadas:', {
+          console.warn('✅ [useAssessmentResponses] Respostas carregadas:', {
           assessmentId: data.id,
           responsesCount: Object.keys(data.responses || {}).length,
           status: data.status,
@@ -145,7 +145,7 @@ export function useAssessmentResponses({
           // Assessment does not exist yet
         setResponses({});
         setAssessmentId(null);
-        console.log('ℹ️ [useAssessmentResponses] Nenhum assessment encontrado, iniciando vazio');
+          console.warn('ℹ️ [useAssessmentResponses] Nenhum assessment encontrado, iniciando vazio');
       }
 
       setInitialized(true);
@@ -173,7 +173,7 @@ export function useAssessmentResponses({
       } as AssessmentResponse,
     }));
 
-    console.log('📝 [useAssessmentResponses] Resposta atualizada localmente:', {
+      console.warn('📝 [useAssessmentResponses] Resposta atualizada localmente:', {
       itemId,
       response: partialResponse,
     });
@@ -221,7 +221,7 @@ export function useAssessmentResponses({
             throw new Error(`${t('assessment', 'errors_updateAssessment')}: ${updateError.message}`);
         }
 
-        console.log('✅ [useAssessmentResponses] Assessment atualizado:', {
+          console.warn('✅ [useAssessmentResponses] Assessment atualizado:', {
           assessmentId,
           responsesCount: totalResponses,
         });
@@ -251,7 +251,7 @@ export function useAssessmentResponses({
 
         setAssessmentId(newAssessment.id);
 
-        console.log('✅ [useAssessmentResponses] Assessment criado:', {
+          console.warn('✅ [useAssessmentResponses] Assessment criado:', {
           assessmentId: newAssessment.id,
           responsesCount: totalResponses,
         });

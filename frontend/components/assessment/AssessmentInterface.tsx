@@ -269,7 +269,7 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
       case 'configuration':
         return (
             <Card className="border-border/40 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
-                <CardHeader className="pb-2">
+                <CardHeader className="pb-2 px-4 sm:px-6">
                     <CardTitle className="flex items-center gap-2 text-[13px] font-medium">
                         <Settings className="h-4 w-4" strokeWidth={1.5}/>
                         {t('assessment', 'configInstrumentsTitle')}
@@ -278,7 +278,7 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
                         {t('assessment', 'configInstrumentsDesc')}
               </CardDescription>
             </CardHeader>
-            <CardContent>
+                <CardContent className="px-4 sm:px-6">
               <InstrumentManager projectId={projectId} />
             </CardContent>
           </Card>
@@ -300,14 +300,15 @@ export const AssessmentInterface = ({ projectId }: AssessmentInterfaceProps) => 
           }
         }}
       >
-          <TabsList className="grid w-full grid-cols-3 h-10 text-[13px] border-border/40">
-              <TabsTrigger value="assessment" className="data-[state=active]:bg-muted/50">
+          <TabsList className="flex flex-wrap gap-1 w-full h-10 text-[13px] border-border/40 p-1">
+              <TabsTrigger value="assessment" className="flex-1 min-w-[80px] data-[state=active]:bg-muted/50">
                   {t('assessment', 'tabAssessment')}
           </TabsTrigger>
-              <TabsTrigger value="dashboard" disabled={!hasInstrument} className="data-[state=active]:bg-muted/50">
+              <TabsTrigger value="dashboard" disabled={!hasInstrument}
+                           className="flex-1 min-w-[80px] data-[state=active]:bg-muted/50">
                   {t('assessment', 'tabDashboard')}
           </TabsTrigger>
-              <TabsTrigger value="configuration" className="data-[state=active]:bg-muted/50">
+              <TabsTrigger value="configuration" className="flex-1 min-w-[80px] data-[state=active]:bg-muted/50">
                   {t('assessment', 'tabConfiguration')}
           </TabsTrigger>
         </TabsList>

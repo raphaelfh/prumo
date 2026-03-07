@@ -57,7 +57,7 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
     // Hook for model extraction
   const { extractModels, loading: extractingModels } = useModelExtraction({
     onSuccess: async (runId, modelsCreated) => {
-        console.log('[ExtractionFormView] Models extracted:', {runId, modelsCreated});
+        console.warn('[ExtractionFormView] Models extracted:', {runId, modelsCreated});
 
         // Reload models and instances after extraction
       try {
@@ -95,7 +95,7 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
     // Hook for extracting all sections of the model with chunking
   const { extractAllSections, loading: extractingAllSections, progress: extractionProgress } = useBatchSectionExtractionChunked({
     onSuccess: async (result) => {
-        console.log('[ExtractionFormView] All sections extracted:', result);
+        console.warn('[ExtractionFormView] All sections extracted:', result);
 
         // Reload instances and suggestions after extraction
       try {
@@ -133,7 +133,7 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
     // Hook for extracting sections from all models
   const { extractAllSectionsForAllModels, loading: extractingAllSectionsForAllModels, progress: allModelsProgress } = useBatchAllModelsSectionsExtraction({
     onSuccess: async (result) => {
-        console.log('[ExtractionFormView] Sections from all models extracted:', result);
+        console.warn('[ExtractionFormView] Sections from all models extracted:', result);
 
         // Reload instances and suggestions after extraction
       try {

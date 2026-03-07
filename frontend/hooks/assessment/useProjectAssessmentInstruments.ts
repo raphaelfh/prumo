@@ -155,7 +155,7 @@ export function useUpdateInstrument() {
   return useMutation({
     mutationFn: async ({
       instrumentId,
-      projectId,
+                           projectId: _projectId,
       data,
     }: {
       instrumentId: string;
@@ -184,7 +184,7 @@ export function useDeleteInstrument() {
   return useMutation({
     mutationFn: async ({
       instrumentId,
-      projectId,
+                           projectId: _projectId,
     }: {
       instrumentId: string;
       projectId: string;

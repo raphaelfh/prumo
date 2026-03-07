@@ -49,7 +49,7 @@ export function AISuggestionHistoryPopover({
   itemId,
   currentSuggestionId,
   getHistory,
-  onAccept,
+                                               onAccept: _onAccept,
   onReject,
   trigger,
 }: AISuggestionHistoryPopoverProps) {

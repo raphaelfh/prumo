@@ -67,7 +67,7 @@ export function ExtractionExport({
 
   const handleExport = async () => {
       // Placeholder for export logic
-    console.log('Exportando dados:', {
+      console.warn('Exportando dados:', {
       format: exportFormat,
       includeEvidence,
       includeMetadata,

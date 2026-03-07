@@ -78,7 +78,7 @@ export function useTopLevelSectionsExtraction(options?: {
         model?: 'gpt-4o-mini' | 'gpt-4o' | 'gpt-5';
       };
     }) => {
-        console.log('[useTopLevelSectionsExtraction] Starting top-level sections extraction', params);
+        console.warn('[useTopLevelSectionsExtraction] Starting top-level sections extraction', params);
       setLoading(true);
       setError(null);
       setProgress(null);
@@ -87,11 +87,11 @@ export function useTopLevelSectionsExtraction(options?: {
         const { projectId, articleId, templateId, options: extractionOptions } = params;
 
           // 1. Fetch top-level sections list
-          console.log('[useTopLevelSectionsExtraction] Fetching top-level sections...');
+          console.warn('[useTopLevelSectionsExtraction] Fetching top-level sections...');
         const sections = await getTopLevelSections(templateId);
 
         if (sections.length === 0) {
-            console.log('[useTopLevelSectionsExtraction] No top-level sections found');
+            console.warn('[useTopLevelSectionsExtraction] No top-level sections found');
             toast.info(t('extraction', 'noTopLevelSectionsFound'));
           return {
             totalSections: 0,
@@ -101,7 +101,7 @@ export function useTopLevelSectionsExtraction(options?: {
           };
         }
 
-          console.log('[useTopLevelSectionsExtraction] Sections found:', sections.length);
+          console.warn('[useTopLevelSectionsExtraction] Sections found:', sections.length);
 
           // 2. Process each section sequentially
         let totalSuggestionsCreated = 0;
@@ -138,7 +138,7 @@ export function useTopLevelSectionsExtraction(options?: {
             if (result.data) {
               totalSuggestionsCreated += result.data.suggestionsCreated || 0;
               successfulSections++;
-                console.log(`[useTopLevelSectionsExtraction] Section ${sectionIndex}/${totalSections} extracted successfully: ${section.label}`);
+                console.warn(`[useTopLevelSectionsExtraction] Section ${sectionIndex}/${totalSections} extracted successfully: ${section.label}`);
             } else {
               failedSections++;
                 console.error(`[useTopLevelSectionsExtraction] Section ${sectionIndex}/${totalSections} failed: ${section.label}`);
@@ -160,7 +160,7 @@ export function useTopLevelSectionsExtraction(options?: {
           options?.onProgress?.(progressAfter);
         }
 
-          console.log('[useTopLevelSectionsExtraction] Extraction completed', {
+          console.warn('[useTopLevelSectionsExtraction] Extraction completed', {
           totalSections: sections.length,
           successfulSections,
           failedSections,

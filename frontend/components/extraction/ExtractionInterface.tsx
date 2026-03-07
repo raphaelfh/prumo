@@ -247,7 +247,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
       {!activeTemplate && !templatesLoading && (
           <Card className="border-border/40 border-blue-200 bg-blue-50">
               <CardContent className="pt-4 pb-4 px-4">
-            <div className="flex items-start justify-between">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex items-start space-x-3">
                   <Settings className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" strokeWidth={1.5}/>
                 <div>
@@ -264,7 +264,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
                   </div>
                 </div>
               </div>
-                <Button onClick={() => setActiveTab('configuration')} className="ml-4">
+                      <Button onClick={() => setActiveTab('configuration')} className="w-full sm:w-auto sm:ml-4">
                     <Settings className="h-4 w-4 mr-2" strokeWidth={1.5}/>
                     {t('extraction', 'dashboardConfigureButton')}
               </Button>
@@ -322,8 +322,8 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
                     {/* 1. Create Custom Template (primary action first) */}
                     <div
                         className="border border-border/40 rounded-lg p-4 hover:bg-muted/50 transition-colors duration-75">
-                <div className="flex items-start justify-between">
-                  <div className="space-y-2 flex-1">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="space-y-2 flex-1 min-w-0">
                     <div className="flex items-center space-x-2">
                         <PlusCircle className="h-4 w-4 text-primary" strokeWidth={1.5}/>
                         <h3 className="text-[13px] font-semibold">{t('extraction', 'configCreateCustomTitle')}</h3>
@@ -334,7 +334,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
                   </div>
                     <Button
                         variant="outline"
-                    className="ml-4"
+                        className="w-full sm:w-auto sm:ml-4"
                     onClick={() => setShowCreateCustomDialog(true)}
                   >
                         <PlusCircle className="h-4 w-4 mr-2" strokeWidth={1.5}/>
@@ -361,8 +361,8 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
                         <h3 id="config-import-section-heading"
                             className="text-[13px] font-medium text-foreground">{t('extraction', 'configImportSectionTitle')}</h3>
                         {globalTemplates.length > 0 ? (
-                            <div className="rounded-md border border-border/40 overflow-hidden">
-                                <div className="max-h-[280px] overflow-y-auto"
+                            <div className="rounded-md border border-border/40 overflow-hidden min-w-0">
+                                <div className="max-h-[280px] overflow-y-auto overflow-x-auto min-w-0"
                                      aria-label={t('extraction', 'configAvailableTemplates')}>
                                     <table className="w-full text-[13px] border-collapse">
                                         <thead className="sticky top-0 bg-muted/30 border-b border-border/40 z-10">

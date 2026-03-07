@@ -61,15 +61,15 @@ export function useModelExtraction(options?: {
    */
   const extractModels = useCallback(
     async (request: ModelExtractionRequest) => {
-        console.log('[useModelExtraction] Starting model extraction', request);
+        console.warn('[useModelExtraction] Starting model extraction', request);
       setLoading(true);
       setError(null);
 
       try {
           // Call service to run extraction
-        console.log('[useModelExtraction] Chamando service...');
+          console.warn('[useModelExtraction] Chamando service...');
         const result = await SectionExtractionService.extractModels(request);
-        console.log('[useModelExtraction] Service retornou', {
+          console.warn('[useModelExtraction] Service retornou', {
           hasData: !!result.data,
           modelsCreated: result.data?.modelsCreated?.length || 0,
         });

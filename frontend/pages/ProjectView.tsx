@@ -168,17 +168,18 @@ export default function ProjectView() {
   return (
       <div className="h-full bg-background flex flex-col">
 
-        {/* Sticky action bar — outside scroll container for edge-to-edge sticking */}
+          {/* Sticky action bar — stack on narrow (flex-col md:flex-row), single row from md */}
         {activeTab !== 'settings' && (
             <div
-                className="flex-shrink-0 h-12 flex items-center justify-between border-b border-border/40 bg-background/80 backdrop-blur-sm px-6 lg:px-10">
-          <span className="text-[13px] text-muted-foreground/70">
+                className="flex-shrink-0 min-h-12 md:h-12 flex flex-col md:flex-row md:items-center md:justify-between items-stretch gap-2 md:gap-0 py-3 md:py-0 border-b border-border/40 bg-background/80 backdrop-blur-sm px-6 lg:px-10">
+          <span className="text-[13px] text-muted-foreground/70 w-full min-w-0 md:flex-1 md:truncate">
             {activeTab === 'articles'
                 ? 'Articles'
                 : (TAB_DESCRIPTIONS[activeTab] ?? '')}
           </span>
                 {activeTab === 'extraction' && (
-                    <div className="flex items-center gap-0.5" role="tablist" aria-label="Extraction views">
+                    <div className="flex items-center gap-0.5 w-full md:w-auto flex-shrink-0" role="tablist"
+                         aria-label="Extraction views">
                         {[
                             {value: 'extraction' as const, label: t('extraction', 'tabExtraction')},
                             {value: 'dashboard' as const, label: t('extraction', 'tabDashboard')},
@@ -204,7 +205,7 @@ export default function ProjectView() {
                     </div>
                 )}
               {activeTab === 'articles' && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 w-full md:w-auto flex-shrink-0 flex-wrap">
                       <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                               <Button

@@ -63,9 +63,9 @@ export function AddFieldDialog({
   onOpenChange,
   onSave,
   sectionName,
-  entityTypeId,
-  createOtherSpecifyField,
-  removeOtherSpecifyField,
+                                   entityTypeId: _entityTypeId,
+                                   createOtherSpecifyField: _createOtherSpecifyField,
+                                   removeOtherSpecifyField: _removeOtherSpecifyField,
 }: AddFieldDialogProps) {
   const [loading, setLoading] = useState(false);
   const [autoGenerateName, setAutoGenerateName] = useState(true);

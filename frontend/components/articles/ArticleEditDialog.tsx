@@ -63,7 +63,7 @@ interface ArticleEditDialogProps {
 export function ArticleEditDialog({ open, onOpenChange, articleId, onArticleUpdated }: ArticleEditDialogProps) {
   const [article, setArticle] = useState<Article | null>(null);
   const [files, setFiles] = useState<ArticleFile[]>([]);
-  const [loading, setLoading] = useState(false);
+    const [_loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
   

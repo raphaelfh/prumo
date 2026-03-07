@@ -21,11 +21,11 @@ interface AISuggestionsPanelProps {
 }
 
 export function AISuggestionsPanel({
-  projectId,
+                                       projectId: _projectId,
   articleId,
   template,
-  instances,
-  values
+                                       instances: _instances,
+                                       values: _values
 }: AISuggestionsPanelProps) {
   if (!template) {
     return (

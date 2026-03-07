@@ -42,7 +42,7 @@ export function useGlobalTemplates(): UseGlobalTemplatesReturn {
     setError(null);
 
     try {
-        console.log('Fetching available global templates...');
+        console.warn('Fetching available global templates...');
 
         // Fetch global templates
       const { data: templatesData, error: templatesError } = await supabase
@@ -85,7 +85,7 @@ export function useGlobalTemplates(): UseGlobalTemplatesReturn {
         })
       );
 
-      console.log(`✅ ${templatesWithCounts.length} templates globais encontrados`);
+        console.warn(`✅ ${templatesWithCounts.length} templates globais encontrados`);
       setTemplates(templatesWithCounts);
 
     } catch (err: any) {

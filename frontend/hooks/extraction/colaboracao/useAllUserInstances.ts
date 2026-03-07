@@ -47,7 +47,7 @@ export function useAllUserInstances(props: UseAllUserInstancesProps): UseAllUser
     setError(null);
 
     try {
-        console.log('Fetching all-user instances for article:', articleId);
+        console.warn('Fetching all-user instances for article:', articleId);
 
       const { data, error: queryError } = await supabase
         .from('extraction_instances')
@@ -58,7 +58,7 @@ export function useAllUserInstances(props: UseAllUserInstancesProps): UseAllUser
       if (queryError) throw queryError;
 
       setInstances((data || []) as InstanceWithCreator[]);
-        console.log(`✅ Loaded ${(data || []).length} instances from all users`);
+        console.warn(`✅ Loaded ${(data || []).length} instances from all users`);
 
     } catch (err: any) {
         console.error('❌ Error loading instances:', err);

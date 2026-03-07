@@ -87,7 +87,7 @@ const generateSnakeCaseName = (label: string): string => {
 // =================== COMPONENT ===================
 
 export function AddSectionDialog({
-  projectId,
+                                     projectId: _projectId,
   templateId,
   open,
   onOpenChange,
@@ -121,7 +121,7 @@ export function AddSectionDialog({
     setLoading(true);
     
     try {
-        console.log('Creating new section:', data);
+        console.warn('Creating new section:', data);
 
         // 1. Fetch next sort_order from existing entity_types
       const { data: existingEntityTypes, error: orderError } = await supabase
@@ -159,7 +159,7 @@ export function AddSectionDialog({
         throw entityError;
       }
 
-        console.log('Entity type created:', newEntityType.id);
+        console.warn('Entity type created:', newEntityType.id);
 
         toast.success(t('extraction', 'sectionCreatedSuccess').replace('{{label}}', data.label));
 

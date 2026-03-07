@@ -59,11 +59,11 @@ export function usePDFSearchHighlight({
     // Debug: verificar se encontrou marks
     if (!targetMark) {
       const allMarks = pageElement.querySelectorAll('mark[data-search-match="true"], rect[data-search-match="true"]');
-      console.debug(`[SearchHighlight] Página ${pageNumber}, matchIndex ${currentMatchIndex}: encontrados ${allMarks.length} marks/rects`);
+        console.warn(`[SearchHighlight] Página ${pageNumber}, matchIndex ${currentMatchIndex}: encontrados ${allMarks.length} marks/rects`);
     }
 
     if (targetMark) {
-      console.debug(`[SearchHighlight] Scroll para página ${pageNumber}, matchIndex ${currentMatchIndex}`);
+        console.warn(`[SearchHighlight] Scroll para página ${pageNumber}, matchIndex ${currentMatchIndex}`);
       // Encontrar o container de scroll correto
       const scrollContainer = document.querySelector('[data-scroll-container="true"]') as HTMLElement ||
                              pageElement.closest('.pdf-viewer-core') as HTMLElement ||

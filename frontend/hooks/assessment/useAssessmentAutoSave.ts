@@ -109,18 +109,18 @@ export function useAssessmentAutoSave(
       const responsesToSave = countValidResponses(responses);
 
       if (responsesToSave === 0) {
-          console.log('⚠️ [useAssessmentAutoSave] No responses to save (all empty)');
+          console.warn('⚠️ [useAssessmentAutoSave] No responses to save (all empty)');
         setIsSaving(false);
         return;
       }
 
-        console.log(`💾 [useAssessmentAutoSave] Auto-saving ${responsesToSave} response(s)...`);
+        console.warn(`💾 [useAssessmentAutoSave] Auto-saving ${responsesToSave} response(s)...`);
 
         // Call provided save function (from useAssessmentResponses)
       await save();
 
       setLastSaved(new Date());
-        console.log(`✅ [useAssessmentAutoSave] Auto-save done: ${responsesToSave} response(s) saved`);
+        console.warn(`✅ [useAssessmentAutoSave] Auto-save done: ${responsesToSave} response(s) saved`);
     } catch (err) {
         const message = err instanceof Error ? err.message : t('common', 'errors_saveFailed');
         console.error('❌ [useAssessmentAutoSave] Auto-save error:', err);

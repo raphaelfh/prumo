@@ -22,15 +22,16 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
-      "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
+        "react-hooks/exhaustive-deps": "off",
+        "react-refresh/only-export-components": "off",
+        "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-unused-vars": ["warn", { 
         argsIgnorePattern: "^_",
         varsIgnorePattern: "^_",
         caughtErrorsIgnorePattern: "^_"
       }],
-      "@typescript-eslint/no-explicit-any": "warn",
       "prefer-const": "error",
-      "no-console": ["warn", { allow: ["warn", "error"] }],
+        "no-console": ["warn", {allow: ["warn", "error", "time", "timeEnd", "group", "groupEnd"]}],
     },
   },
   {

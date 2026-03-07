@@ -47,7 +47,7 @@ export function HeaderMoreMenu({
   template,
   instances = [],
   values = [],
-  compact = false,
+                                   compact: _compact = false,
   articleId,
   templateId,
   onExtractionComplete,

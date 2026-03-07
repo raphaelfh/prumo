@@ -32,7 +32,7 @@ export interface ExtractionFormPanelProps {
  */
 export function ExtractionFormPanel({
   viewMode,
-  showPDF,
+                                        showPDF: _showPDF,
   formViewProps,
   compareViewProps,
 }: ExtractionFormPanelProps) {

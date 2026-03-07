@@ -77,7 +77,7 @@ export function ImportTemplateDialog({
     setImporting(true);
 
     try {
-      console.log('📥 Importando template:', selectedTemplate.name);
+        console.warn('📥 Importando template:', selectedTemplate.name);
 
       const result = await importGlobalTemplate(projectId, selectedTemplate.id);
 

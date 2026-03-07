@@ -6,17 +6,13 @@ import {Badge} from "@/components/ui/badge";
 import {Checkbox} from "@/components/ui/checkbox";
 import {
     ChevronDown,
-    ChevronsUpDown,
     ChevronUp,
     FileText,
-    LayoutGrid,
     MoreHorizontal,
     Plus,
     Search,
-    SlidersHorizontal,
     Trash2,
     Upload,
-    X
 } from "lucide-react";
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from "@/components/ui/table";
 import {
@@ -36,8 +32,6 @@ import {
     AlertDialogHeader,
     AlertDialogTitle
 } from "@/components/ui/alert-dialog";
-import {Popover, PopoverContent, PopoverTrigger} from "@/components/ui/popover";
-import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/components/ui/select";
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "@/components/ui/tooltip";
 import {supabase} from "@/integrations/supabase/client";
 import {toast} from "sonner";
@@ -46,13 +40,18 @@ import {TABLE_CELL_CLASS} from "@/lib/table-constants";
 import {useListKeyboardShortcuts} from "@/hooks/useListKeyboardShortcuts";
 import type {FilterFieldConfig, FilterValues} from "@/components/shared/list";
 import {
-    DataTableWrapper,
+    ActiveFilterChips,
+    buildActiveFiltersList,
     EmptyListState,
     FilterButtonWithPopover,
     ListCount,
+    ListDisplaySortPopover,
     ListFilterPanel,
+    ListRowCard,
     ListToolbarSearch,
+    ResponsiveList,
 } from "@/components/shared/list";
+import {useIsNarrow} from '@/hooks/use-mobile';
 import {ArticleFileUploadDialogNew} from "./ArticleFileUploadDialogNew";
 import {ZoteroImportDialog} from "./ZoteroImportDialog";
 import {useZoteroIntegration} from "@/hooks/useZoteroIntegration";
@@ -124,7 +123,7 @@ interface VisibleColumns {
   abstract: boolean;
 }
 
-/** Data column configuration for header (DRY). id = key in columnWidths. */
+/** Data column configuration for header (DRY). id = key in columnWidths. breakpoint = from which Tailwind breakpoint the column is visible (sm = always in table, md/lg = hidden until that breakpoint). */
 const TABLE_COLUMNS: Array<{
     id: string;
     label: string;
@@ -132,15 +131,45 @@ const TABLE_COLUMNS: Array<{
     filterKey?: string;
     visibleKey?: keyof VisibleColumns;
     flexible?: boolean;
+    /** When to show column in table: sm (default), md, lg */
+    breakpoint?: 'sm' | 'md' | 'lg';
 }> = [
-    {id: 'title', label: 'Title', sortField: 'title', filterKey: 'title', flexible: true},
-    {id: 'pdf', label: 'PDF', sortField: 'has_main_file', filterKey: 'has_main_file', visibleKey: 'pdf'},
-    {id: 'authors', label: 'Authors', sortField: 'authors', filterKey: 'authors', visibleKey: 'authors'},
-    {id: 'journal', label: 'Journal', sortField: 'journal_title', filterKey: 'journal_title', visibleKey: 'journal'},
-    {id: 'year', label: 'Year', sortField: 'publication_year', filterKey: 'publication_year', visibleKey: 'year'},
-    {id: 'keywords', label: 'Keywords', filterKey: 'keywords', visibleKey: 'keywords'},
-    {id: 'doi', label: 'DOI', visibleKey: 'doi'},
-    {id: 'abstract', label: 'Abstract', visibleKey: 'abstract'},
+    {id: 'title', label: 'Title', sortField: 'title', filterKey: 'title', flexible: true, breakpoint: 'sm'},
+    {
+        id: 'pdf',
+        label: 'PDF',
+        sortField: 'has_main_file',
+        filterKey: 'has_main_file',
+        visibleKey: 'pdf',
+        breakpoint: 'sm'
+    },
+    {
+        id: 'authors',
+        label: 'Authors',
+        sortField: 'authors',
+        filterKey: 'authors',
+        visibleKey: 'authors',
+        breakpoint: 'md'
+    },
+    {
+        id: 'journal',
+        label: 'Journal',
+        sortField: 'journal_title',
+        filterKey: 'journal_title',
+        visibleKey: 'journal',
+        breakpoint: 'lg'
+    },
+    {
+        id: 'year',
+        label: 'Year',
+        sortField: 'publication_year',
+        filterKey: 'publication_year',
+        visibleKey: 'year',
+        breakpoint: 'md'
+    },
+    {id: 'keywords', label: 'Keywords', filterKey: 'keywords', visibleKey: 'keywords', breakpoint: 'lg'},
+    {id: 'doi', label: 'DOI', visibleKey: 'doi', breakpoint: 'lg'},
+    {id: 'abstract', label: 'Abstract', visibleKey: 'abstract', breakpoint: 'lg'},
 ];
 
 export function ArticlesList({
@@ -151,6 +180,7 @@ export function ArticlesList({
                                  onOpenZoteroDialog,
                                  onOpenRisDialog,
                              }: ArticlesListProps) {
+    const isNarrow = useIsNarrow();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedArticles, setSelectedArticles] = useState<Set<string>>(new Set());
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -198,7 +228,6 @@ export function ArticlesList({
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
     const [filterValues, setFilterValues] = useState<FilterValues>(INITIAL_ARTICLES_FILTER_VALUES);
     const [filterPopoverOpen, setFilterPopoverOpen] = useState(false);
-    const [displayPopoverOpen, setDisplayPopoverOpen] = useState(false);
 
     // Visible columns
   const [visibleColumns, setVisibleColumns] = useState<VisibleColumns>({
@@ -236,6 +265,7 @@ export function ArticlesList({
                 return merged;
             }
         } catch (_) {
+            // Ignore JSON parse or localStorage errors; use defaults
         }
         return {...DEFAULT_COLUMN_WIDTHS};
     });
@@ -265,6 +295,7 @@ export function ArticlesList({
             try {
                 localStorage.setItem(COLUMN_WIDTHS_KEY, JSON.stringify(columnWidthsRef.current));
             } catch (_) {
+                // Ignore localStorage errors
             }
             setResizingColumn(null);
         };
@@ -378,37 +409,19 @@ export function ArticlesList({
     };
     }, [articles]);
 
-    // List of active filters to show in chip bar (derived from filterValues)
-    const activeFiltersList = useMemo(() => {
-        const labels: Record<string, string> = {
-            title: 'Title',
-            authors: 'Authors',
-            journal_title: 'Journal',
-            publication_year: 'Year',
-            keywords: 'Keywords',
-            has_main_file: 'PDF'
-        };
-        const list: { column: string; label: string; value: string }[] = [];
-        ARTICLES_FILTER_FIELDS.forEach((f) => {
-            const v = filterValues[f.id];
-            if (f.type === 'categorical' && Array.isArray(v) && v.length > 0) {
-                v.forEach((val) => {
-                    const opt = f.options?.find(o => o.value === val);
-                    list.push({column: f.id, label: labels[f.id] ?? f.id, value: opt?.label ?? val});
-                });
-            } else if (f.type === 'numericRange' && v != null && typeof v === 'object' && !Array.isArray(v)) {
-                const r = v as { min?: number; max?: number };
-                if (r.min != null || r.max != null) {
-                    const from = r.min != null ? String(r.min) : '?';
-                    const to = r.max != null ? String(r.max) : '?';
-                    list.push({column: f.id, label: labels[f.id] ?? f.id, value: `${from}–${to}`});
-                }
-            } else if (typeof v === 'string' && v.trim() !== '') {
-                list.push({column: f.id, label: labels[f.id] ?? f.id, value: v.trim()});
-            }
-        });
-        return list;
-    }, [filterValues]);
+    const ARTICLES_FILTER_LABELS: Record<string, string> = useMemo(() => ({
+        title: 'Title',
+        authors: 'Authors',
+        journal_title: 'Journal',
+        publication_year: 'Year',
+        keywords: 'Keywords',
+        has_main_file: 'PDF',
+    }), []);
+
+    const activeFiltersList = useMemo(
+        () => buildActiveFiltersList(ARTICLES_FILTER_FIELDS, filterValues, ARTICLES_FILTER_LABELS),
+        [filterValues, ARTICLES_FILTER_LABELS]
+    );
 
     // Visible columns toggle
   const toggleColumn = (column: keyof VisibleColumns) => {
@@ -643,6 +656,9 @@ export function ArticlesList({
   };
 
     const hasActiveListFilters = activeFiltersList.length > 0 || !!searchTerm.trim();
+    /** CSS class for responsive column visibility (sm = always, md/lg = hidden until that breakpoint). */
+    const colVisibilityClass = (breakpoint?: 'sm' | 'md' | 'lg') =>
+        !breakpoint || breakpoint === 'sm' ? '' : breakpoint === 'md' ? 'hidden md:table-cell' : 'hidden lg:table-cell';
     useListKeyboardShortcuts({
         searchInputRef,
         setFilterPopoverOpen,
@@ -722,7 +738,6 @@ export function ArticlesList({
     ) : null;
 
     const tableContent = (
-        <DataTableWrapper>
             <Table className="table-fixed w-full">
                       <TableHeader className="bg-transparent">
                           <TableRow className="hover:bg-transparent border-b border-border/40 h-8">
@@ -737,7 +752,7 @@ export function ArticlesList({
                               {TABLE_COLUMNS.filter(col => col.visibleKey === undefined || visibleColumns[col.visibleKey]).map((col) => (
                                   <TableHead
                                       key={col.id}
-                                      className={`relative h-8 text-xs font-medium text-muted-foreground group/head ${TABLE_CELL_CLASS}`}
+                                      className={`relative h-8 text-xs font-medium text-muted-foreground group/head ${TABLE_CELL_CLASS} ${colVisibilityClass(col.breakpoint)}`}
                                       style={getColumnStyle(col.id)}
                                   >
                                       <div className="flex items-center gap-1 pr-4 min-w-0">
@@ -791,7 +806,7 @@ export function ArticlesList({
 
                                   {/* Title */}
                                   <TableCell
-                                      className={`${TABLE_CELL_CLASS} font-medium cursor-pointer`}
+                                      className={`${TABLE_CELL_CLASS} font-medium cursor-pointer ${colVisibilityClass('sm')}`}
                                       style={getColumnStyle('title')}
                                       onClick={() => onArticleClick(article.id)}
                                   >
@@ -803,7 +818,8 @@ export function ArticlesList({
 
                                   {/* PDF */}
                                   {visibleColumns.pdf && (
-                                      <TableCell className={TABLE_CELL_CLASS} style={getColumnStyle('pdf')}>
+                                      <TableCell className={`${TABLE_CELL_CLASS} ${colVisibilityClass('sm')}`}
+                                                 style={getColumnStyle('pdf')}>
                                           <div className="flex items-center gap-1 min-w-0">
                                           {articlesWithMainFile.has(article.id) ? (
                                               <div
@@ -865,7 +881,7 @@ export function ArticlesList({
                                   {/* Authors */}
                                   {visibleColumns.authors && (
                                       <TableCell
-                                          className={`${TABLE_CELL_CLASS} text-[13px] text-muted-foreground font-medium`}
+                                          className={`${TABLE_CELL_CLASS} text-[13px] text-muted-foreground font-medium ${colVisibilityClass('md')}`}
                                           style={getColumnStyle('authors')}>
                                           <TooltipProvider>
                                               <Tooltip>
@@ -892,7 +908,7 @@ export function ArticlesList({
                                   {/* Journal */}
                                   {visibleColumns.journal && (
                                       <TableCell
-                                          className={`${TABLE_CELL_CLASS} text-[13px] text-muted-foreground italic`}
+                                          className={`${TABLE_CELL_CLASS} text-[13px] text-muted-foreground italic ${colVisibilityClass('lg')}`}
                                           style={getColumnStyle('journal')}>
                         <span
                             className="line-clamp-2 leading-tight"
@@ -905,7 +921,8 @@ export function ArticlesList({
 
                                   {/* Year */}
                                   {visibleColumns.year && (
-                                      <TableCell className={TABLE_CELL_CLASS} style={getColumnStyle('year')}>
+                                      <TableCell className={`${TABLE_CELL_CLASS} ${colVisibilityClass('md')}`}
+                                                 style={getColumnStyle('year')}>
                                           {article.publication_year ? (
                                               <span
                                                   className="text-xs font-semibold px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
@@ -919,7 +936,8 @@ export function ArticlesList({
 
                                   {/* Keywords */}
                                   {visibleColumns.keywords && (
-                                      <TableCell className={TABLE_CELL_CLASS} style={getColumnStyle('keywords')}>
+                                      <TableCell className={`${TABLE_CELL_CLASS} ${colVisibilityClass('lg')}`}
+                                                 style={getColumnStyle('keywords')}>
                                           {article.keywords && article.keywords.length > 0 ? (
                                               <div className="flex flex-wrap gap-1">
                                                   {article.keywords.slice(0, 1).map((keyword, idx) => (
@@ -943,7 +961,8 @@ export function ArticlesList({
 
                                   {/* DOI */}
                                   {visibleColumns.doi && (
-                                      <TableCell className={TABLE_CELL_CLASS} style={getColumnStyle('doi')}>
+                                      <TableCell className={`${TABLE_CELL_CLASS} ${colVisibilityClass('lg')}`}
+                                                 style={getColumnStyle('doi')}>
                                           {article.doi ? (
                                               <Button
                                                   size="sm"
@@ -964,7 +983,8 @@ export function ArticlesList({
 
                                   {/* Abstract */}
                                   {visibleColumns.abstract && (
-                                      <TableCell className={TABLE_CELL_CLASS} style={getColumnStyle('abstract')}>
+                                      <TableCell className={`${TABLE_CELL_CLASS} ${colVisibilityClass('lg')}`}
+                                                 style={getColumnStyle('abstract')}>
                                           <div
                                               className="text-[12px] text-muted-foreground/80 line-clamp-2 leading-tight">
                                               {article.abstract || "\u2013"}
@@ -1024,10 +1044,69 @@ export function ArticlesList({
                           ))}
                       </TableBody>
                   </Table>
-        </DataTableWrapper>
     );
 
-    const bodyContent = showEmpty ? emptyContent : tableContent;
+    const cardContent = (
+        <>
+            {filteredArticles.map((article) => (
+                <ListRowCard
+                    key={article.id}
+                    leading={
+                        <Checkbox
+                            checked={selectedArticles.has(article.id)}
+                            onCheckedChange={(checked) => handleSelectArticle(article.id, checked as boolean)}
+                            aria-label={t('articles', 'listSelectArticle').replace('{{title}}', article.title ?? t('articles', 'listArticle'))}
+                            className="h-3.5 w-3.5 rounded-sm"
+                        />
+                    }
+                    title={article.title ?? t('articles', 'listUntitled')}
+                    subtitle={article.authors?.slice(0, 2).join(', ') || undefined}
+                    meta={
+                        <>
+                            {article.publication_year != null && <span>{article.publication_year}</span>}
+                            {article.journal_title && <span className="italic">{article.journal_title}</span>}
+                        </>
+                    }
+                    primaryAction={
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button size="sm" variant="ghost" className="h-8 gap-1"
+                                        onClick={(e) => e.stopPropagation()}>
+                                    <MoreHorizontal className="h-3.5 w-3.5"/>
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-44">
+                                <DropdownMenuItem onClick={(e) => {
+                                    e.stopPropagation();
+                                    onArticleClick(article.id);
+                                }} className="text-xs">
+                                    <FileText className="mr-2 h-3.5 w-3.5"/> Ver Detalhes
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={(e) => {
+                                    e.stopPropagation();
+                                    openUploadDialog(article.id);
+                                }} className="text-xs">
+                                    <Upload className="mr-2 h-3.5 w-3.5"/> Attach file
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator/>
+                                <DropdownMenuItem onClick={(e) => {
+                                    e.stopPropagation();
+                                    openDeleteDialog(article.id);
+                                }} className="text-xs text-destructive focus:text-destructive">
+                                    <Trash2 className="mr-2 h-3.5 w-3.5"/> Delete
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    }
+                    onClick={() => onArticleClick(article.id)}
+                />
+            ))}
+        </>
+    );
+
+    const bodyContent = showEmpty ? emptyContent : (
+        <ResponsiveList isNarrow={isNarrow} tableContent={tableContent} cardContent={cardContent}/>
+    );
 
     return (
         <>
@@ -1058,89 +1137,35 @@ export function ArticlesList({
                                 }}
                             />
                         </FilterButtonWithPopover>
-                        <Popover open={displayPopoverOpen} onOpenChange={setDisplayPopoverOpen}>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <PopoverTrigger asChild>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-8 w-8 p-0 rounded-md hover:bg-muted/50 transition-colors text-muted-foreground"
-                                            aria-label={t('articles', 'listDisplayOptions')}
-                                        >
-                                            <SlidersHorizontal className="h-4 w-4"/>
-                                        </Button>
-                                    </PopoverTrigger>
-                                </TooltipTrigger>
-                                <TooltipContent side="bottom">{t('articles', 'listDisplayAndSort')}</TooltipContent>
-                            </Tooltip>
-                            <PopoverContent className="w-72 p-0" align="end">
-                                <div className="p-3 space-y-4">
-                                    <div className="space-y-2">
-                                        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                                            <ChevronsUpDown className="h-3.5 w-3.5"/>
-                                            {t('articles', 'listOrdering')}
-                                        </p>
-                                        <div className="flex gap-2 items-center">
-                                            <Select value={sortField}
-                                                    onValueChange={(v) => setSortField(v as SortField)}>
-                                                <SelectTrigger className="h-8 text-[13px] flex-1">
-                                                    <SelectValue/>
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem value="title">Title</SelectItem>
-                                                    <SelectItem value="authors">Authors</SelectItem>
-                                                    <SelectItem value="journal_title">Journal</SelectItem>
-                                                    <SelectItem value="publication_year">Year</SelectItem>
-                                                    <SelectItem value="has_main_file">PDF</SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                className="h-8 w-8 p-0 shrink-0"
-                                                onClick={() => setSortDirection(d => d === 'asc' ? 'desc' : 'asc')}
-                                            >
-                                                {sortDirection === 'asc' ? <ChevronUp className="h-3.5 w-3.5"/> :
-                                                    <ChevronDown className="h-3.5 w-3.5"/>}
-                                            </Button>
-                                        </div>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                                            <LayoutGrid className="h-3.5 w-3.5"/>
-                                            {t('articles', 'listDisplayProperties')}
-                                        </p>
-                                        <div className="flex flex-wrap gap-1.5">
-                                            {[
-                                                {key: 'title' as const, label: 'Title'},
-                                                {key: 'pdf' as const, label: 'PDF'},
-                                                {key: 'authors' as const, label: 'Authors'},
-                                                {key: 'journal' as const, label: 'Journal'},
-                                                {key: 'year' as const, label: 'Year'},
-                                                {key: 'keywords' as const, label: 'Keywords'},
-                                                {key: 'doi' as const, label: 'DOI'},
-                                                {key: 'abstract' as const, label: 'Abstract'},
-                                            ].map(({key, label}) => (
-                                                <button
-                                                    key={key}
-                                                    type="button"
-                                                    disabled={key === 'title'}
-                                                    onClick={() => key !== 'title' && toggleColumn(key)}
-                                                    className={`rounded-md border px-2 py-1 text-[12px] transition-colors disabled:opacity-60 disabled:cursor-default ${
-                                                        visibleColumns[key]
-                                                            ? 'border-primary/50 bg-primary/10 text-foreground'
-                                                            : 'border-border/40 bg-muted/30 text-muted-foreground hover:bg-muted/50'
-                                                    }`}
-                                                >
-                                                    {label}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-                            </PopoverContent>
-                        </Popover>
+                        <ListDisplaySortPopover
+                            sortOptions={[
+                                {value: 'title', label: 'Title'},
+                                {value: 'authors', label: 'Authors'},
+                                {value: 'journal_title', label: 'Journal'},
+                                {value: 'publication_year', label: 'Year'},
+                                {value: 'has_main_file', label: 'PDF'},
+                            ]}
+                            sortField={sortField}
+                            sortDirection={sortDirection}
+                            onSortFieldChange={(v) => setSortField(v as SortField)}
+                            onSortDirectionChange={() => setSortDirection((d) => (d === 'asc' ? 'desc' : 'asc'))}
+                            orderLabel={t('articles', 'listOrdering')}
+                            columns={[
+                                {key: 'title', label: 'Title', disabled: true},
+                                {key: 'pdf', label: 'PDF'},
+                                {key: 'authors', label: 'Authors'},
+                                {key: 'journal', label: 'Journal'},
+                                {key: 'year', label: 'Year'},
+                                {key: 'keywords', label: 'Keywords'},
+                                {key: 'doi', label: 'DOI'},
+                                {key: 'abstract', label: 'Abstract'},
+                            ]}
+                            visibleKeys={visibleColumns as unknown as Record<string, boolean>}
+                            onToggleColumn={(key) => toggleColumn(key as keyof VisibleColumns)}
+                            displayPropertiesLabel={t('articles', 'listDisplayProperties')}
+                            tooltipLabel={t('articles', 'listDisplayAndSort')}
+                            ariaLabel={t('articles', 'listDisplayOptions')}
+                        />
                     </div>
                     <div className="flex items-center gap-2 shrink-0 ml-auto">
                         <ListCount
@@ -1167,37 +1192,13 @@ export function ArticlesList({
                         )}
                     </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                    {activeFiltersList.length > 0 && (
-                        <div className="flex flex-wrap items-center gap-1.5">
-                            {activeFiltersList.map(({column, label, value}) => (
-                                <span
-                                    key={column}
-                                    className="inline-flex items-center gap-1 rounded-md border border-border/50 bg-muted/40 px-2 py-1 text-[11px] text-foreground"
-                                >
-                              <span className="truncate max-w-[120px]">{label}: {value}</span>
-                              <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-4 w-4 p-0 shrink-0 hover:bg-muted rounded"
-                                  onClick={() => clearFilterField(column)}
-                                  aria-label={t('articles', 'listRemoveFilter').replace('{{label}}', label)}
-                              >
-                                  <X className="h-2.5 w-2.5"/>
-                              </Button>
-                          </span>
-                            ))}
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-[11px] text-muted-foreground hover:text-foreground h-6 px-1.5"
-                                onClick={clearAllFilters}
-                            >
-                                {t('articles', 'listClearAll')}
-                            </Button>
-                        </div>
-                    )}
-                </div>
+                <ActiveFilterChips
+                    filters={activeFiltersList}
+                    onClearField={clearFilterField}
+                    onClearAll={clearAllFilters}
+                    clearAllLabel={t('articles', 'listClearAll')}
+                    removeFilterAriaLabel={(label) => t('articles', 'listRemoveFilter').replace('{{label}}', label)}
+                />
             </div>
 
             {bodyContent}

@@ -18,7 +18,7 @@
  *   options: { model: 'gpt-4o' }
  * });
  *
- * console.log(`Created ${result.data?.suggestionsCreated} suggestions`);
+ * console.warn(`Created ${result.data?.suggestionsCreated} suggestions`);
  * ```
  */
 
@@ -66,7 +66,7 @@ export class SectionExtractionService {
   static async extractSection(request: SectionExtractionRequest): Promise<SectionExtractionResponse> {
     const traceId = crypto.randomUUID();
 
-      console.log('[SectionExtractionService] Starting extraction via FastAPI', {
+      console.warn('[SectionExtractionService] Starting extraction via FastAPI', {
       traceId,
       request: { ...request, options: request.options || {} },
     });
@@ -85,7 +85,7 @@ export class SectionExtractionService {
         model: request.options?.model,
       });
 
-        console.log('[SectionExtractionService] FastAPI extraction completed', {
+        console.warn('[SectionExtractionService] FastAPI extraction completed', {
         runId: data?.runId,
         suggestionsCreated: data?.suggestionsCreated,
       });
@@ -127,7 +127,7 @@ export class SectionExtractionService {
   static async extractModels(request: ModelExtractionRequest): Promise<ModelExtractionResponse> {
     const traceId = crypto.randomUUID();
 
-      console.log('[SectionExtractionService] Starting model extraction via FastAPI', {
+      console.warn('[SectionExtractionService] Starting model extraction via FastAPI', {
       traceId,
       request: { ...request, options: request.options || {} },
     });
@@ -144,7 +144,7 @@ export class SectionExtractionService {
         model: request.options?.model,
       });
 
-        console.log('[SectionExtractionService] Model extraction via FastAPI completed', {
+        console.warn('[SectionExtractionService] Model extraction via FastAPI completed', {
         runId: data?.runId,
         modelsCreated: data?.modelsCreated?.length || 0,
       });
@@ -186,7 +186,7 @@ export class SectionExtractionService {
   static async extractAllSections(request: BatchSectionExtractionRequest): Promise<BatchSectionExtractionResponse> {
     const traceId = crypto.randomUUID();
 
-      console.log('[SectionExtractionService] Starting full sections extraction via FastAPI', {
+      console.warn('[SectionExtractionService] Starting full sections extraction via FastAPI', {
       traceId,
       request: { ...request, options: request.options || {} },
     });
@@ -207,7 +207,7 @@ export class SectionExtractionService {
         model: request.options?.model,
       });
 
-        console.log('[SectionExtractionService] Full sections extraction via FastAPI completed', {
+        console.warn('[SectionExtractionService] Full sections extraction via FastAPI completed', {
         totalSections: data?.totalSections,
         successfulSections: data?.successfulSections,
         failedSections: data?.failedSections,

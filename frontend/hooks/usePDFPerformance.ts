@@ -19,7 +19,7 @@ export function usePDFPerformance({ numPages, currentPage, scale }: UsePDFPerfor
     if (typeof window !== 'undefined' && 'gc' in window && typeof (window as any).gc === 'function') {
       try {
         (window as any).gc();
-      } catch (e) {
+      } catch (_e) {
         // Silently fail - gc might not be available
       }
     }
@@ -63,7 +63,7 @@ export function usePDFPerformance({ numPages, currentPage, scale }: UsePDFPerfor
 
       // For very high zoom, limit resolution to avoid memory issues
     const effectiveScale = Math.min(scale, 3.0);
-    const canvasScale = Math.min(effectiveScale * devicePixelRatio, 4.0);
+      const _canvasScale = Math.min(effectiveScale * devicePixelRatio, 4.0);
 
     return {
       scale: effectiveScale,

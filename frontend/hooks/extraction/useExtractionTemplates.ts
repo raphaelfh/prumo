@@ -67,7 +67,7 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
 
           setGlobalTemplates(globalData || []);
         setTemplates(projectData || []);
-          console.log('Templates loaded:', {
+          console.warn('Templates loaded:', {
           globalTemplates: globalData?.length || 0,
           projectTemplates: projectData?.length || 0
         });
@@ -122,7 +122,7 @@ export function useExtractionTemplates({ projectId }: UseExtractionTemplatesProp
           throw new Error(t('common', 'errors_userNotAuthenticated'));
       }
 
-        console.log('User authenticated:', user.id);
+        console.warn('User authenticated:', user.id);
 
         // Fetch global template
       const { data: globalTemplate, error: globalError } = await supabase

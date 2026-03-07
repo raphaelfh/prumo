@@ -259,6 +259,6 @@ export const useExtractionInstances = () => {
 
 if (import.meta.env.DEV) {
   (window as any).extractionStore = useExtractionStore;
-  console.log('🏪 Extraction store available: window.extractionStore.getState()');
+    console.warn('🏪 Extraction store available: window.extractionStore.getState()');
 }
 

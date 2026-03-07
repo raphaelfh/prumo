@@ -74,7 +74,7 @@ export function useErrorHandler() {
     });
   }, [handleError]);
 
-  const handlePermissionError = useCallback((operation: string) => {
+    const handlePermissionError = useCallback((_operation: string) => {
       const message = t('extraction', 'permissionDeniedOperation');
     toast.error(message);
     return message;

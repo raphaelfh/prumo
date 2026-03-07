@@ -52,7 +52,7 @@ export interface UseBatchAllModelsSectionsExtractionReturn {
  * USAGE:
  * ```tsx
  * const { extractAllSectionsForAllModels, loading, progress } = useBatchAllModelsSectionsExtraction({
- *   onProgress: (p) => console.log('Progress:', p),
+ *   onProgress: (p) => console.warn('Progress:', p),
  *   onSuccess: (result) => {
  *     // Refresh suggestions
  *   }
@@ -90,7 +90,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
       templateId: string;
       models: Array<{ instanceId: string; modelName: string }>;
     }) => {
-        console.log('[useBatchAllModelsSectionsExtraction] Starting extraction of sections for all models', {
+        console.warn('[useBatchAllModelsSectionsExtraction] Starting extraction of sections for all models', {
         totalModels: params.models.length,
       });
       setLoading(true);
@@ -117,7 +117,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
         for (let i = 0; i < models.length; i++) {
           const model = models[i];
 
-            console.log(`[useBatchAllModelsSectionsExtraction] Processing model ${i + 1}/${models.length}`, {
+            console.warn(`[useBatchAllModelsSectionsExtraction] Processing model ${i + 1}/${models.length}`, {
             modelName: model.modelName,
             instanceId: model.instanceId,
           });
@@ -143,7 +143,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
             );
 
             if (sections.length === 0) {
-                console.log(`[useBatchAllModelsSectionsExtraction] No sections found for model ${model.modelName}`);
+                console.warn(`[useBatchAllModelsSectionsExtraction] No sections found for model ${model.modelName}`);
                 successfulModels++; // Consider success even with no sections
               continue;
             }
@@ -177,7 +177,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
 
               // If we got here, extraction succeeded
             successfulModels++;
-              console.log(`[useBatchAllModelsSectionsExtraction] Model ${i + 1} completed`, {
+              console.warn(`[useBatchAllModelsSectionsExtraction] Model ${i + 1} completed`, {
               modelName: model.modelName,
               suggestionsCreated: modelResult.totalSuggestionsCreated,
               tokensUsed: modelResult.totalTokensUsed,
@@ -194,7 +194,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
         }
 
           // Consolidate final results
-          console.log('[useBatchAllModelsSectionsExtraction] Extraction completed', {
+          console.warn('[useBatchAllModelsSectionsExtraction] Extraction completed', {
           totalModels: models.length,
           successfulModels,
           failedModels,

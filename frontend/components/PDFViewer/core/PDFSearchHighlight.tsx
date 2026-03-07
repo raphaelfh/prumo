@@ -42,18 +42,18 @@ export const PDFSearchHighlight: React.FC<PDFSearchHighlightProps> = ({
     // Extract matches with coordinates
   useEffect(() => {
     if (!pageProxy || !searchQuery.trim()) {
-        console.debug(`[PDFSearchHighlight] Page ${pageNumber}: no pageProxy or empty query`);
+        console.warn(`[PDFSearchHighlight] Page ${pageNumber}: no pageProxy or empty query`);
       setMatches([]);
       return;
     }
 
     const extractMatches = async () => {
       try {
-          console.debug(`[PDFSearchHighlight] Page ${pageNumber}: extracting matches for "${searchQuery}"`);
+          console.warn(`[PDFSearchHighlight] Page ${pageNumber}: extracting matches for "${searchQuery}"`);
         const textContent = await pageProxy.getTextContent();
         const viewportData = pageProxy.getViewport({ scale: 1 });
 
-          console.debug(`[PDFSearchHighlight] Page ${pageNumber}: viewport=${viewportData.width}x${viewportData.height}, ${textContent.items.length} items`);
+          console.warn(`[PDFSearchHighlight] Page ${pageNumber}: viewport=${viewportData.width}x${viewportData.height}, ${textContent.items.length} items`);
         setViewport({ width: viewportData.width, height: viewportData.height });
 
         const escapedQuery = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -62,7 +62,12 @@ export const PDFSearchHighlight: React.FC<PDFSearchHighlightProps> = ({
         let matchIndex = 0;
 
           // Find matches item by item to get precise coordinates
-        textContent.items.forEach((item: any, itemIndex: number) => {
+          textContent.items.forEach((item: {
+              str?: string;
+              transform?: number[];
+              height?: number;
+              width?: number
+          }, _itemIndex: number) => {
           const itemText = item.str || '';
           if (!itemText) return;
 
@@ -107,8 +112,8 @@ export const PDFSearchHighlight: React.FC<PDFSearchHighlightProps> = ({
               height: fontSize * 1.2, // Um pouco maior para melhor visibilidade
               matchIndex: matchIndex++,
             });
-            
-            console.debug(`[PDFSearchHighlight] Match ${matchIndex - 1} encontrado: x=${matchX}, y=${svgY - fontSize}, width=${matchWidth}, height=${fontSize * 1.2}`);
+
+              console.warn(`[PDFSearchHighlight] Match ${matchIndex - 1} encontrado: x=${matchX}, y=${svgY - fontSize}, width=${matchWidth}, height=${fontSize * 1.2}`);
             
             // Evitar loop infinito
             if (match[0].length === 0) {
@@ -117,7 +122,7 @@ export const PDFSearchHighlight: React.FC<PDFSearchHighlightProps> = ({
           }
         });
 
-          console.debug(`[PDFSearchHighlight] Page ${pageNumber}: found ${foundMatches.length} matches`);
+          console.warn(`[PDFSearchHighlight] Page ${pageNumber}: found ${foundMatches.length} matches`);
         setMatches(foundMatches);
       } catch (error) {
           console.error(`[PDFSearchHighlight] Error extracting search coordinates on page ${pageNumber}:`, error);
@@ -131,7 +136,7 @@ export const PDFSearchHighlight: React.FC<PDFSearchHighlightProps> = ({
     // Debug: check if rendering
   useEffect(() => {
     if (searchQuery && pageProxy) {
-        console.debug(`[PDFSearchHighlight] Rendering overlay for page ${pageNumber}:`, {
+        console.warn(`[PDFSearchHighlight] Rendering overlay for page ${pageNumber}:`, {
         viewport,
         matchesCount: matches.length,
         isHighlighted,
@@ -141,12 +146,12 @@ export const PDFSearchHighlight: React.FC<PDFSearchHighlightProps> = ({
   }, [pageNumber, searchQuery, viewport, matches.length, isHighlighted, currentMatchIndex, pageProxy]);
 
   if (!viewport) {
-      console.debug(`[PDFSearchHighlight] Page ${pageNumber}: no viewport`);
+      console.warn(`[PDFSearchHighlight] Page ${pageNumber}: no viewport`);
     return null;
   }
 
   if (matches.length === 0) {
-      console.debug(`[PDFSearchHighlight] Page ${pageNumber}: no matches`);
+      console.warn(`[PDFSearchHighlight] Page ${pageNumber}: no matches`);
     return null;
   }
 

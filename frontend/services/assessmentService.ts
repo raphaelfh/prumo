@@ -61,7 +61,7 @@ export class AssessmentService {
       instrumentId: string;
     }
   ): Promise<AIAssessmentResponse> {
-      console.log('[assessSingleItem] Starting AI assessment:', {
+      console.warn('[assessSingleItem] Starting AI assessment:', {
       projectId: request.projectId,
       articleId: request.articleId,
       itemId: request.assessmentItemId,
@@ -93,7 +93,7 @@ export class AssessmentService {
       );
 
       if (data) {
-          console.log('[assessSingleItem] Assessment completed:', {
+          console.warn('[assessSingleItem] Assessment completed:', {
           suggestionId: data.id,
           level: data.selectedLevel,
           confidence: data.confidenceScore,
@@ -120,7 +120,7 @@ export class AssessmentService {
   static async assessBatch(
     request: BatchAIAssessmentRequest
   ): Promise<BatchAIAssessmentResponse> {
-      console.log('[assessBatch] Starting AI batch assessment:', {
+      console.warn('[assessBatch] Starting AI batch assessment:', {
       projectId: request.projectId,
       articleId: request.articleId,
       itemsCount: request.itemIds.length,
@@ -148,7 +148,7 @@ export class AssessmentService {
       );
 
       if (data) {
-          console.log('[assessBatch] Batch completed:', {
+          console.warn('[assessBatch] Batch completed:', {
           totalItems: data.totalItems,
           successfulItems: data.successfulItems,
           failedItems: data.totalItems - data.successfulItems,
@@ -172,7 +172,7 @@ export class AssessmentService {
   static async listSuggestions(
     request: ListSuggestionsRequest
   ): Promise<ListSuggestionsResponse> {
-      console.log('[listSuggestions] Listing suggestions:', {
+      console.warn('[listSuggestions] Listing suggestions:', {
       projectId: request.projectId,
       articleId: request.articleId,
       instrumentId: request.instrumentId,
@@ -205,7 +205,7 @@ export class AssessmentService {
       );
 
       if (data) {
-          console.log('[listSuggestions] Suggestions loaded:', {
+          console.warn('[listSuggestions] Suggestions loaded:', {
           total: data.total,
         });
       }
@@ -229,7 +229,7 @@ export class AssessmentService {
     suggestionId: string,
     request: ReviewAISuggestionRequest
   ): Promise<ReviewAISuggestionResponse> {
-      console.log('[reviewSuggestion] Reviewing suggestion:', {
+      console.warn('[reviewSuggestion] Reviewing suggestion:', {
       suggestionId,
       action: request.action,
     });
@@ -248,7 +248,7 @@ export class AssessmentService {
       );
 
       if (data) {
-          console.log('[reviewSuggestion] Review completed:', {
+          console.warn('[reviewSuggestion] Review completed:', {
           action: data.action,
           assessmentCreated: data.assessmentCreated,
           assessmentId: data.assessmentId,

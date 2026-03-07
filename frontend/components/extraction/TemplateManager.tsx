@@ -26,7 +26,7 @@ interface TemplateManagerProps {
 }
 
 export function TemplateManager({
-  projectId,
+                                    projectId: _projectId,
   templates,
   activeTemplate,
   onTemplateSelect,
@@ -53,7 +53,7 @@ export function TemplateManager({
     }
   };
 
-  const handleCreateTemplate = async (name: string, description: string, framework: 'CHARMS' | 'PICOS' | 'CUSTOM') => {
+    const _handleCreateTemplate = async (name: string, description: string, framework: 'CHARMS' | 'PICOS' | 'CUSTOM') => {
     const result = await onTemplateCreate(name, description, framework);
     if (result) {
       setShowCreateDialog(false);

@@ -78,7 +78,7 @@ export function useFieldManagement({
 
       const role = data?.role as ProjectMemberRole;
       const isManager = role === 'manager';
-      const isReviewer = role === 'reviewer';
+        const _isReviewer = role === 'reviewer';
       const canView = true; // Todos membros podem ver
 
       const result: PermissionCheckResult = {

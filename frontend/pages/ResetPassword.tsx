@@ -95,7 +95,8 @@ export default function ResetPassword() {
         const settle = (ready: boolean) => {
             if (!settled) {
                 settled = true;
-                ready ? setSessionReady(true) : setSessionError(true);
+                if (ready) setSessionReady(true);
+                else setSessionError(true);
             }
         };
 

@@ -142,7 +142,7 @@ export function useAIAssessmentSuggestions(
         // Get authenticated user
       if (authLoading || !user) throw new AuthenticationError();
 
-        console.log('[acceptSuggestion] Accepting suggestion:', {
+        console.warn('[acceptSuggestion] Accepting suggestion:', {
         itemId,
         suggestionId: suggestion.id,
         level: suggestion.suggested_value.level,
@@ -176,7 +176,7 @@ export function useAIAssessmentSuggestions(
           reviewed_at: new Date().toISOString(),
         };
 
-          console.log(`[acceptSuggestion] State updated to 'accepted': ${key}`);
+          console.warn(`[acceptSuggestion] State updated to 'accepted': ${key}`);
           return {...next}; // New reference for re-render
       });
 
@@ -220,7 +220,7 @@ export function useAIAssessmentSuggestions(
 
       const wasAccepted = suggestion.status === 'accepted';
 
-        console.log('[rejectSuggestion] Rejecting suggestion:', {
+        console.warn('[rejectSuggestion] Rejecting suggestion:', {
         itemId,
         suggestionId: suggestion.id,
         wasAccepted,
@@ -253,7 +253,7 @@ export function useAIAssessmentSuggestions(
           reviewed_at: new Date().toISOString(),
         };
 
-          console.log(`[rejectSuggestion] State updated to 'rejected': ${key}`);
+          console.warn(`[rejectSuggestion] State updated to 'rejected': ${key}`);
         return { ...next };
       });
 
@@ -282,7 +282,7 @@ export function useAIAssessmentSuggestions(
     try {
       if (authLoading || !user) throw new AuthenticationError();
 
-        console.log('[batchAccept] Starting batch accept:', {threshold});
+        console.warn('[batchAccept] Starting batch accept:', {threshold});
 
       const accepted = await AIAssessmentSuggestionService.batchAcceptSuggestions({
         suggestions,

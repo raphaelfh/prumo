@@ -92,7 +92,7 @@ export const requestIdleCallback =
 export function logMemoryUsage() {
   if (process.env.NODE_ENV === 'development' && 'memory' in performance) {
     const memory = (performance as any).memory;
-    console.log('📊 Memory Usage:', {
+      console.warn('📊 Memory Usage:', {
       usedJSHeapSize: `${(memory.usedJSHeapSize / 1048576).toFixed(2)} MB`,
       totalJSHeapSize: `${(memory.totalJSHeapSize / 1048576).toFixed(2)} MB`,
       limit: `${(memory.jsHeapSizeLimit / 1048576).toFixed(2)} MB`,

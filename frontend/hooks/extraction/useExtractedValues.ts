@@ -65,12 +65,12 @@ export function useExtractedValues(props: UseExtractedValuesProps): UseExtracted
     setError(null);
 
     try {
-        console.log('Loading extracted values for article:', articleId);
+        console.warn('Loading extracted values for article:', articleId);
 
         // Fetch existing values for current user
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-          console.log('User not authenticated');
+          console.warn('User not authenticated');
         setValues({});
         return;
       }
@@ -106,7 +106,7 @@ export function useExtractedValues(props: UseExtractedValuesProps): UseExtracted
 
       setValues(valuesMap);
       setInitialized(true); // ✅ Marca como inicializado
-      console.log(`✅ Carregados ${Object.keys(valuesMap).length} valores extraídos`);
+        console.warn(`✅ Carregados ${Object.keys(valuesMap).length} valores extraídos`);
 
     } catch (err: any) {
       console.error('❌ Erro ao carregar valores:', err);
@@ -151,7 +151,7 @@ export function useExtractedValues(props: UseExtractedValuesProps): UseExtracted
       });
 
       if (upserts.length === 0) {
-        console.log('⚠️ Nenhum valor para salvar');
+          console.warn('⚠️ Nenhum valor para salvar');
         return;
       }
 
@@ -214,7 +214,7 @@ export function useExtractedValues(props: UseExtractedValuesProps): UseExtracted
         if (insertError) throw insertError;
       }
 
-      console.log(`✅ Salvos ${upserts.length} valores`);
+        console.warn(`✅ Salvos ${upserts.length} valores`);
 
     } catch (err: any) {
       console.error('❌ Erro ao salvar valores:', err);

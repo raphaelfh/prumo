@@ -161,7 +161,7 @@ export function useFullAIExtraction(options?: {
       articleId: string;
       templateId: string;
     }) => {
-        console.log('[useFullAIExtraction] Starting full AI extraction', params);
+        console.warn('[useFullAIExtraction] Starting full AI extraction', params);
       setLoading(true);
       setError(null);
       setProgress(null);
@@ -170,13 +170,13 @@ export function useFullAIExtraction(options?: {
         const { projectId, articleId, templateId } = params;
 
           // PHASE 1: Extract models and top-level sections in parallel
-          console.log('[useFullAIExtraction] Phase 1: Extracting models and top-level sections in parallel...');
+          console.warn('[useFullAIExtraction] Phase 1: Extracting models and top-level sections in parallel...');
         setProgress({
           stage: 'extracting_models',
         });
 
           // Run both extractions in parallel
-        const [modelsResult, topLevelSectionsResult] = await Promise.all([
+          const [_modelsResult, topLevelSectionsResult] = await Promise.all([
           extractModelsHook({
             projectId,
             articleId,
@@ -189,13 +189,13 @@ export function useFullAIExtraction(options?: {
           }),
         ]);
 
-          console.log('[useFullAIExtraction] Models and top-level sections extracted successfully', {
+          console.warn('[useFullAIExtraction] Models and top-level sections extracted successfully', {
           modelsExtracted: true,
           topLevelSectionsExtracted: topLevelSectionsResult.totalSections > 0,
         });
 
           // PHASE 2: Fetch extracted models
-          console.log('[useFullAIExtraction] Phase 2: Fetching extracted models...');
+          console.warn('[useFullAIExtraction] Phase 2: Fetching extracted models...');
         const modelParentEntityTypeId = await fetchModelParentEntityTypeId(templateId);
         const models = await fetchExtractedModels(articleId, modelParentEntityTypeId);
 
@@ -206,12 +206,12 @@ export function useFullAIExtraction(options?: {
           return;
         }
 
-          console.log('[useFullAIExtraction] Found', models.length, 'model(s)', {
+          console.warn('[useFullAIExtraction] Found', models.length, 'model(s)', {
           modelNames: models.map(m => m.modelName),
         });
 
           // PHASE 3: Extract sections from all models
-          console.log('[useFullAIExtraction] Phase 3: Extracting sections from all models...');
+          console.warn('[useFullAIExtraction] Phase 3: Extracting sections from all models...');
         setProgress({
           stage: 'extracting_sections',
         });
@@ -223,7 +223,7 @@ export function useFullAIExtraction(options?: {
           models,
         });
 
-          console.log('[useFullAIExtraction] Full AI extraction completed successfully');
+          console.warn('[useFullAIExtraction] Full AI extraction completed successfully');
 
           // Final success toast
         const topLevelSectionsCount = topLevelSectionsResult?.totalSections || 0;

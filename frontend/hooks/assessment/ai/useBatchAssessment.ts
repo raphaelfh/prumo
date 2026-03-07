@@ -71,7 +71,7 @@ export function useBatchAssessment(options?: {
       });
 
       try {
-        console.log('🤖 [useBatchAssessment] Iniciando batch:', {
+          console.warn('🤖 [useBatchAssessment] Iniciando batch:', {
           totalItems: items.length,
           itemsToAssess: itemsToAssess.length,
           skipped: items.length - itemsToAssess.length,

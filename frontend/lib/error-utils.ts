@@ -13,13 +13,9 @@ import {t} from '@/lib/copy';
 
 // =================== TYPES ===================
 
-export interface ErrorResult<T> {
-  ok: true;
-  data: T;
-} | {
-  false;
-  Error;
-}
+export type ErrorResult<T> =
+    | { ok: true; data: T }
+    | { ok: false; error: Error };
 
 export interface WithErrorHandlingOptions {
     /** Context for logs (e.g. "loadArticles", "saveAssessment") */

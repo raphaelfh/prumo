@@ -20,10 +20,10 @@ class Logger {
     
     switch (level) {
       case 'debug':
-        console.log(`${prefix} ${message}`, data !== undefined ? data : '');
+          console.warn(`${prefix} ${message}`, data !== undefined ? data : '');
         break;
       case 'info':
-        console.info(`${prefix} ${message}`, data !== undefined ? data : '');
+          console.warn(`${prefix} ${message}`, data !== undefined ? data : '');
         break;
       case 'warn':
         console.warn(`${prefix} ${message}`, data !== undefined ? data : '');

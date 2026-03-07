@@ -7,7 +7,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { BackgroundJob, ZoteroImportJob } from '@/types/background-jobs';
+import type {BackgroundJob} from '@/types/background-jobs';
 
 interface BackgroundJobsState {
   jobs: BackgroundJob[];

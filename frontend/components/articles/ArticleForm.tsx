@@ -168,7 +168,7 @@ const STEPS: { id: FormStep; label: string; icon: any; description: string }[] =
 
 export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleFormProps) {
   const navigate = useNavigate();
-  const { user } = useAuth();
+    const {user: _user} = useAuth();
   
   // Estado principal
   const [currentStep, setCurrentStep] = useState<FormStep>('basic');
@@ -415,7 +415,7 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
         ingestion_source: mode === 'add' ? "MANUAL" : undefined,
       };
 
-      let result;
+        let _result;
       if (mode === 'add') {
         const { data, error } = await supabase
           .from("articles")
@@ -424,7 +424,7 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
           .single();
         
         if (error) throw error;
-        result = data;
+          _result = data;
       } else {
         const { data, error } = await supabase
           .from("articles")
@@ -434,7 +434,7 @@ export function ArticleForm({ mode, projectId, articleId, onComplete }: ArticleF
           .single();
         
         if (error) throw error;
-        result = data;
+          _result = data;
       }
 
         toast.success(mode === 'add' ? t('articles', 'articleCreatedSuccess') : t('articles', 'articleUpdatedSuccess'));

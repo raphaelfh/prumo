@@ -21,7 +21,7 @@ export const Topbar: React.FC<TopbarProps> = ({
   className,
 }) => {
   const { user, isLoading } = useUserProfile();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const [_mobileMenuOpen, _setMobileMenuOpen] = useState(false);
 
     // Use sidebar context only on project pages
     // IMPORTANT: Hooks must always be called unconditionally
@@ -41,8 +41,8 @@ export const Topbar: React.FC<TopbarProps> = ({
     return (
         <header
             className={cn("sticky top-0 z-40 w-full border-b border-border/40 bg-background/80 backdrop-blur-md", className)}>
-            <div className="flex h-12 w-full items-center justify-between px-4">
-          <div className="flex items-center gap-2">
+            <div className="flex h-12 w-full items-center justify-between px-4 sm:px-6">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
               <div className="h-5 w-5 rounded bg-muted animate-pulse flex-shrink-0"/>
               <div className="h-[13px] w-28 bg-muted animate-pulse rounded flex-shrink-0"/>
           </div>
@@ -56,7 +56,7 @@ export const Topbar: React.FC<TopbarProps> = ({
     return (
         <header
             className={cn("sticky top-0 z-40 w-full border-b border-border/40 bg-background/80 backdrop-blur-md", className)}>
-            <div className="mx-auto flex h-12 w-full max-w-[1200px] items-center justify-between gap-3 px-4">
+            <div className="mx-auto flex h-12 w-full max-w-[1200px] items-center justify-between gap-3 px-4 sm:px-6">
           <div className="flex items-center gap-2">
               <span className="text-[13px] font-medium text-foreground">{t('navigation', 'topbarBrand')}</span>
           </div>
@@ -69,9 +69,9 @@ export const Topbar: React.FC<TopbarProps> = ({
   return (
       <header
           className={cn("z-40 w-full border-b border-border/40 bg-background/80 backdrop-blur-md sticky top-0", className)}>
-          <div className="flex h-12 w-full items-center justify-between px-4 flex-shrink-0">
-        {/* Left Section - Toggle */}
-              <div className="flex items-center gap-2">
+          <div className="flex h-12 w-full items-center justify-between px-4 sm:px-6 flex-shrink-0">
+              {/* Left Section - Toggle + title (min-w-0 so title can truncate) */}
+              <div className="flex items-center gap-2 min-w-0 flex-1">
                   {/* Hamburger Menu - Mobile/Tablet only */}
                   {sidebarContext && isProjectPage && (
                       <Button
@@ -107,7 +107,7 @@ export const Topbar: React.FC<TopbarProps> = ({
                               className="text-[13px] font-medium text-foreground tracking-tight">{t('navigation', 'topbarBrandFull')}</span>
                       </div>
                   ) : (
-                      <span className="text-[13px] font-medium text-foreground px-2">
+                      <span className="text-[13px] font-medium text-foreground px-2 truncate block min-w-0">
                         {tabIdToLabel[projectContext?.activeTab ?? ''] ?? t('layout', 'defaultProjectName')}
                       </span>
                   )}
@@ -115,7 +115,7 @@ export const Topbar: React.FC<TopbarProps> = ({
         </div>
 
         {/* Right Section - Notifications + Feedback + Profile Menu */}
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-shrink-0">
           <NotificationCenter />
           <FeedbackButton />
                   <div className="h-4 w-[1px] bg-border/40 mx-1"/>

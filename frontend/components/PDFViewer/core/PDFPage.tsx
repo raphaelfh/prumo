@@ -45,7 +45,7 @@ export const PDFPage = React.memo<PDFPageProps>(({
     // Debug: check if props are received
   useEffect(() => {
     if (searchQuery) {
-      console.debug(`[PDFPage ${pageNumber}] Props recebidas: searchQuery="${searchQuery}", isHighlighted=${isHighlighted}, currentMatchIndex=${currentMatchIndex}`);
+        console.warn(`[PDFPage ${pageNumber}] Props recebidas: searchQuery="${searchQuery}", isHighlighted=${isHighlighted}, currentMatchIndex=${currentMatchIndex}`);
     }
   }, [pageNumber, searchQuery, isHighlighted, currentMatchIndex]);
 
@@ -57,11 +57,11 @@ export const PDFPage = React.memo<PDFPageProps>(({
     // Function to highlight found text
   const customTextRenderer = useMemo(() => {
     if (!searchQuery || !searchQuery.trim()) {
-      console.debug(`[PDFPage ${pageNumber}] customTextRenderer: query vazia, retornando undefined`);
+        console.warn(`[PDFPage ${pageNumber}] customTextRenderer: query vazia, retornando undefined`);
       return undefined;
     }
 
-    console.debug(`[PDFPage ${pageNumber}] customTextRenderer criado para query: "${searchQuery}"`);
+      console.warn(`[PDFPage ${pageNumber}] customTextRenderer criado para query: "${searchQuery}"`);
 
       // Create regex for search (case insensitive by default)
     const escapedQuery = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -73,7 +73,7 @@ export const PDFPage = React.memo<PDFPageProps>(({
 
         // Debug: check if processing
       if (parts.length > 1) {
-        console.debug(`[PDFPage ${pageNumber}] customTextRenderer processando texto com ${parts.length - 1} match(es)`);
+          console.warn(`[PDFPage ${pageNumber}] customTextRenderer processando texto com ${parts.length - 1} match(es)`);
       }
       
       return parts.map((part, index) => {
@@ -150,7 +150,7 @@ export const PDFPage = React.memo<PDFPageProps>(({
     }
     
     if (pdfPage) {
-      console.debug(`[PDFPage ${pageNumber}] pageProxy definido:`, pdfPage);
+        console.warn(`[PDFPage ${pageNumber}] pageProxy definido:`, pdfPage);
       setPageProxy(pdfPage);
     } else {
         console.warn(`[PDFPage ${pageNumber}] Could not get pageProxy from page object:`, page);
