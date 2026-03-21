@@ -7,7 +7,7 @@
  * - Important updates
  */
 
-import {useMemo, useState} from 'react';
+import {useEffect, useMemo, useState} from 'react';
 import {Bell, CheckCircle2, Clock, Loader2, X, XCircle} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
@@ -25,15 +25,90 @@ import {useBackgroundJobPolling} from '@/hooks/useBackgroundJobPolling';
 import {cn} from '@/lib/utils';
 import {toast} from 'sonner';
 import {useNavigate} from 'react-router-dom';
-import type {BackgroundJob, ZoteroImportJob} from '@/types/background-jobs';
+import type {ArticlesExportJob, BackgroundJob, ZoteroImportJob} from '@/types/background-jobs';
 import {t} from '@/lib/copy';
+import {getExportStatus} from '@/services/articlesExportService';
 
 export function NotificationCenter() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const { jobs, removeJob, clearCompletedJobs, getRecentJobs } = useBackgroundJobs();
+    const {jobs, removeJob, clearCompletedJobs, getRecentJobs, updateJob} = useBackgroundJobs();
   
   const recentJobs = useMemo(() => getRecentJobs(20), [jobs, getRecentJobs]);
+
+    useEffect(() => {
+        let isInFlight = false;
+        let isDisposed = false;
+
+        const tick = async () => {
+            if (isInFlight || isDisposed) return;
+            isInFlight = true;
+            try {
+                const exportJobs = useBackgroundJobs
+                    .getState()
+                    .jobs.filter(
+                        (job) =>
+                            job.type === 'articles-export' &&
+                            (job.status === 'pending' || job.status === 'running')
+                    ) as ArticlesExportJob[];
+
+                if (exportJobs.length === 0) return;
+
+                await Promise.all(
+                    exportJobs.map(async (job) => {
+                        try {
+                            const status = await getExportStatus(job.metadata.backendJobId);
+                            const nextStatus = status.status === 'pending' ? 'running' : status.status;
+                            updateJob(job.id, {
+                                status: nextStatus,
+                                startedAt: job.startedAt ?? Date.now(),
+                                completedAt:
+                                    status.status === 'completed' ||
+                                    status.status === 'failed' ||
+                                    status.status === 'cancelled'
+                                        ? Date.now()
+                                        : undefined,
+                                error: status.error,
+                                progress: status.progress
+                                    ? {
+                                        phase: status.progress.stage,
+                                        current: status.progress.current,
+                                        total: status.progress.total,
+                                        message: status.progress.stage,
+                                    }
+                                    : undefined,
+                                metadata: {
+                                    ...job.metadata,
+                                    downloadUrl: status.downloadUrl ?? job.metadata.downloadUrl,
+                                },
+                                stats:
+                                    status.skippedFiles && status.skippedFiles.length > 0
+                                        ? {skipped: status.skippedFiles.length}
+                                        : undefined,
+                            });
+                        } catch (error) {
+                            updateJob(job.id, {
+                                status: 'failed',
+                                completedAt: Date.now(),
+                                error: error instanceof Error ? error.message : 'Failed to check export status',
+                            });
+                        }
+                    })
+                );
+            } finally {
+                isInFlight = false;
+            }
+        };
+
+        void tick();
+        const id = setInterval(() => {
+            void tick();
+        }, 2500);
+        return () => {
+            isDisposed = true;
+            clearInterval(id);
+        };
+    }, [updateJob]);
 
     // Polling to update jobs
   useBackgroundJobPolling({
@@ -41,13 +116,26 @@ export function NotificationCenter() {
     onJobComplete: (job) => {
       toast.success(getCompletionMessage(job), {
         duration: 5000,
-        action: job.type === 'zotero-import' ? {
-            label: t('navigation', 'viewProject'),
-          onClick: () => {
-            const zoteroJob = job as ZoteroImportJob;
-            navigate(`/projects/${zoteroJob.metadata.projectId}`);
-          },
-        } : undefined,
+          action:
+              job.type === 'zotero-import'
+                  ? {
+                      label: t('navigation', 'viewProject'),
+                      onClick: () => {
+                          const zoteroJob = job as ZoteroImportJob;
+                          navigate(`/projects/${zoteroJob.metadata.projectId}`);
+                      },
+                  }
+                  : job.type === 'articles-export'
+                      ? {
+                          label: t('articles', 'exportDownload'),
+                          onClick: () => {
+                              const exportJob = job as ArticlesExportJob;
+                              if (exportJob.metadata.downloadUrl) {
+                                  window.open(exportJob.metadata.downloadUrl, '_blank', 'noopener,noreferrer');
+                              }
+                          },
+                      }
+                      : undefined,
       });
     },
     onJobFailed: (job) => {
@@ -86,6 +174,14 @@ export function NotificationCenter() {
       const zoteroJob = job as ZoteroImportJob;
       navigate(`/projects/${zoteroJob.metadata.projectId}`);
       setOpen(false);
+        return;
+    }
+      if (job.type === 'articles-export' && job.status === 'completed') {
+          const exportJob = job as ArticlesExportJob;
+          if (exportJob.metadata.downloadUrl) {
+              window.open(exportJob.metadata.downloadUrl, '_blank', 'noopener,noreferrer');
+          }
+          setOpen(false);
     }
   };
 
@@ -161,7 +257,8 @@ interface NotificationItemProps {
 
 function NotificationItem({ job, onRemove, onClick }: NotificationItemProps) {
   const icon = getJobIcon(job);
-  const isClickable = job.status === 'completed' && job.type === 'zotero-import';
+    const isClickable =
+        job.status === 'completed' && (job.type === 'zotero-import' || job.type === 'articles-export');
 
   return (
     <div
@@ -264,6 +361,9 @@ function getJobTitle(job: BackgroundJob): string {
   if (job.type === 'zotero-import') {
       return t('navigation', 'zoteroImport');
   }
+    if (job.type === 'articles-export') {
+        return t('articles', 'exportTitle');
+    }
     return t('navigation', 'backgroundTask');
 }
 
@@ -281,6 +381,25 @@ function getJobDescription(job: BackgroundJob): string {
         return job.error || t('navigation', 'importError');
     }
   }
+    if (job.type === 'articles-export') {
+        const metadata = (job as ArticlesExportJob).metadata;
+        const formats = metadata.formats.join(', ').toUpperCase();
+        if (job.status === 'running' || job.status === 'pending') {
+            return `${t('articles', 'exportInProgress')} (${metadata.articleCount} items, ${formats})`;
+        }
+        if (job.status === 'completed') {
+            const skipped = job.stats?.skipped ?? 0;
+            return skipped > 0
+                ? t('articles', 'exportSkippedFilesCount').replace('{{n}}', String(skipped))
+                : t('articles', 'exportDownloadReady');
+        }
+        if (job.status === 'failed') {
+            return job.error || t('articles', 'exportFailed');
+        }
+        if (job.status === 'cancelled') {
+            return t('articles', 'exportCancelled');
+        }
+    }
 
     return job.status === 'completed' ? t('navigation', 'statusCompleted') : job.error || t('navigation', 'statusInProgress');
 }
@@ -296,6 +415,9 @@ function getCompletionMessage(job: BackgroundJob): string {
 
       return `${t('navigation', 'importComplete')} ${parts.join(', ')}`;
   }
+    if (job.type === 'articles-export') {
+        return t('articles', 'exportDownloadReady');
+    }
 
     return t('navigation', 'taskCompleteSuccess');
 }

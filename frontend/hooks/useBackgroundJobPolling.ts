@@ -32,12 +32,20 @@ export function useBackgroundJobPolling(options: UseBackgroundJobPollingOptions 
       const previousStatus = previousJobStatesRef.current.get(job.id);
       
       // Job completado
-      if (previousStatus === 'running' && job.status === 'completed') {
+        if (
+            previousStatus !== undefined &&
+            previousStatus !== 'completed' &&
+            job.status === 'completed'
+        ) {
         onJobComplete?.(job);
       }
       
       // Job falhou
-      if (previousStatus === 'running' && job.status === 'failed') {
+        if (
+            previousStatus !== undefined &&
+            previousStatus !== 'failed' &&
+            job.status === 'failed'
+        ) {
         onJobFailed?.(job);
       }
 

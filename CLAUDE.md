@@ -1,8 +1,13 @@
 # review-ai-hub Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-03-04
+Auto-generated from all feature plans. Last updated: 2026-03-15
 
 ## Active Technologies
+
+- Python 3.11+ (backend), TypeScript strict (frontend) + FastAPI, SQLAlchemy 2.0 async, Celery + Redis, Supabase (auth +
+  storage); React 18, Vite, TanStack Query, Zustand, shadcn/Radix (005-articles-export)
+- PostgreSQL (public schema, Alembic) for articles/article_files; Supabase Storage for file binaries and export ZIPs (
+  temp path or dedicated bucket) (005-articles-export)
 
 - TypeScript (strict), React 18.3 + Vite, TanStack Query, Zustand, shadcn/Radix, react-hook-form, Zod; **i18n/copy**:
   módulo customizado em `frontend/lib/copy/` (namespaces por área, sem lib externa); ver research.md (004-frontend-i18n)
@@ -24,6 +29,9 @@ npm test && npm run lint
 - TypeScript (strict), React 18.3: Follow standard conventions
 
 ## Recent Changes
+
+- 005-articles-export: Added Python 3.11+ (backend), TypeScript strict (frontend) + FastAPI, SQLAlchemy 2.0 async,
+  Celery + Redis, Supabase (auth + storage); React 18, Vite, TanStack Query, Zustand, shadcn/Radix
 
 - 004-frontend-i18n: Added TypeScript (strict), React 18.3 + Vite, TanStack Query, Zustand, shadcn/Radix,
   react-hook-form, Zod; **i18n/copy**: módulo customizado em `frontend/lib/copy/` (namespaces por área, sem lib

@@ -8,6 +8,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     ai_assessment,
+    articles_export,
     model_extraction,
     project_assessment_instruments,
     section_extraction,
@@ -54,3 +55,8 @@ api_router.include_router(
     tags=["Project Assessment Instruments"],
 )
 
+api_router.include_router(
+    articles_export.router,
+    prefix="/articles-export",
+    tags=["Articles Export"],
+)

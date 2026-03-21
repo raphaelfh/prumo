@@ -5,7 +5,7 @@
  * allowing the user to keep using the app while they run.
  */
 
-export type JobType = 'zotero-import';
+export type JobType = 'zotero-import' | 'articles-export';
 
 export type JobStatus =
     | 'pending'      // Waiting to start
@@ -66,6 +66,22 @@ export interface ZoteroImportJob extends BackgroundJob {
 }
 
 /**
+ * Articles export specific
+ */
+export interface ArticlesExportJob extends BackgroundJob {
+    type: 'articles-export';
+    metadata: {
+        projectId: string;
+        projectName?: string;
+        backendJobId: string;
+        formats: Array<'csv' | 'ris' | 'rdf'>;
+        fileScope: 'none' | 'main_only' | 'all';
+        articleCount: number;
+        downloadUrl?: string;
+    };
+}
+
+/**
  * Helper to create a new job
  */
 export function createZoteroImportJob(
@@ -86,5 +102,26 @@ export function createZoteroImportJob(
       ...metadata,
     },
   };
+}
+
+/**
+ * Helper to create a new articles export background job
+ */
+export function createArticlesExportJob(
+    projectId: string,
+    backendJobId: string,
+    metadata: Omit<ArticlesExportJob['metadata'], 'projectId' | 'backendJobId'>
+): ArticlesExportJob {
+    return {
+        id: `articles-export-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+        type: 'articles-export',
+        status: 'pending',
+        createdAt: Date.now(),
+        metadata: {
+            projectId,
+            backendJobId,
+            ...metadata,
+        },
+    };
 }
 

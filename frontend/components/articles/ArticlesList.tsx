@@ -7,6 +7,7 @@ import {Checkbox} from "@/components/ui/checkbox";
 import {
     ChevronDown,
     ChevronUp,
+    Download,
     FileText,
     MoreHorizontal,
     Plus,
@@ -53,6 +54,7 @@ import {
 } from "@/components/shared/list";
 import {useIsNarrow} from '@/hooks/use-mobile';
 import {ArticleFileUploadDialogNew} from "./ArticleFileUploadDialogNew";
+import {ArticlesExportDialog} from "./ArticlesExportDialog";
 import {ZoteroImportDialog} from "./ZoteroImportDialog";
 import {useZoteroIntegration} from "@/hooks/useZoteroIntegration";
 
@@ -190,6 +192,7 @@ export function ArticlesList({
   const [articleToUpload, setArticleToUpload] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [zoteroImportOpen, setZoteroImportOpen] = useState(false);
+    const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [articlesWithMainFile, setArticlesWithMainFile] = useState<Set<string>>(new Set());
 
     const useImportCallbacks = !!onOpenZoteroDialog;
@@ -1173,6 +1176,17 @@ export function ArticlesList({
                             total={articles.length}
                             label={articles.length === 1 ? t('articles', 'listArticle') : t('articles', 'listArticles')}
                         />
+                        {(filteredArticles.length > 0 || selectedArticles.size > 0) && (
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setExportDialogOpen(true)}
+                                className="h-6 text-[11px] rounded-lg border-border/50 hover:bg-muted/50"
+                            >
+                                <Download className="mr-1 h-3 w-3"/>
+                                {t('articles', 'exportSubmit')}
+                            </Button>
+                        )}
                         {selectedArticles.size > 0 && (
                             <div className="flex items-center gap-2 animate-in fade-in duration-200">
                           <span className="text-[11px] font-medium text-foreground">
@@ -1235,6 +1249,15 @@ export function ArticlesList({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+            <ArticlesExportDialog
+                open={exportDialogOpen}
+                onOpenChange={setExportDialogOpen}
+                projectId={projectId}
+                currentListIds={filteredArticles.map((a) => a.id)}
+                selectedIds={Array.from(selectedArticles)}
+                defaultArticleScope={selectedArticles.size > 0 ? "selected" : "current_list"}
+            />
 
       {/* Bulk Delete Confirmation Dialog */}
       <AlertDialog open={bulkDeleteDialogOpen} onOpenChange={setBulkDeleteDialogOpen}>
