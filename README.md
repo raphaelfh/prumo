@@ -1,7 +1,6 @@
 # Review Hub
 
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
-![CLA](https://img.shields.io/badge/CLA-Required-orange.svg)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue.svg)
 ![React](https://img.shields.io/badge/React-18.3-blue.svg)
 
@@ -130,15 +129,15 @@ O aplicativo estará disponível em:
 - [Integração com Zotero](docs/tecnicas/ZOTERO_ARCHITECTURE.md)
 
 ### Documentação Legal
-- [Guia de Contribuição](.github/CONTRIBUTING.md)
-- [Código de Conduta](docs/legal/CODE_OF_CONDUCT.md)
-- [Política de Segurança](docs/legal/SECURITY.md)
+
+- [Guia de Contribuição](CONTRIBUTING.md)
+- [Código de Conduta](CODE_OF_CONDUCT.md)
+- [Política de Segurança](SECURITY.md)
 
 ## 🤝 Contribuindo
 
-Contribuições são bem-vindas! Por favor, leia nosso [Guia de Contribuição](.github/CONTRIBUTING.md) para detalhes sobre nosso código de conduta e o processo para submeter pull requests.
-
-**Importante**: Antes de contribuir, você precisará assinar nosso [Contributor License Agreement (CLA)](docs/legal/CLA.md).
+Contribuições são bem-vindas! Por favor, leia nosso [Guia de Contribuição](CONTRIBUTING.md) para detalhes sobre nosso
+código de conduta e o processo para submeter pull requests.
 
 ### Primeiros Passos
 
@@ -148,7 +147,7 @@ Contribuições são bem-vindas! Por favor, leia nosso [Guia de Contribuição](
 4. Push para a branch (`git push origin feature/AmazingFeature`)
 5. Abra um Pull Request
 
-Para mais detalhes, consulte [CONTRIBUTING.md](.github/CONTRIBUTING.md).
+Para mais detalhes, consulte [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## 🏗️ Tecnologias Utilizadas
 
@@ -249,16 +248,8 @@ ANTHROPIC_API_KEY=your_anthropic_api_key
 
 ## 📝 Licença
 
-Este projeto está licenciado sob a **GNU Affero General Public License v3.0 (AGPL-3.0)**. Veja o arquivo [LICENSE](LICENSE) na raiz do repositório para o texto completo da licença.
-
-### Modelo de Licenciamento Duplo
-
-Este projeto utiliza um modelo de **licenciamento duplo**:
-
-- **AGPL-3.0 (Padrão)**: Todo o código está disponível sob a GNU Affero General Public License v3.0
-- **Licença Comercial**: Disponível mediante pagamento para uso proprietário/comercial sem obrigações de copyleft
-
-Para mais informações sobre licenças comerciais, entre em contato através do repositório.
+Este projeto está licenciado sob a **GNU Affero General Public License v3.0 (AGPL-3.0-only)**. Veja os
+arquivos [LICENSE](LICENSE) e [LICENSE.txt](LICENSE.txt) na raiz do repositório para o texto completo da licença.
 
 ## 🙏 Agradecimentos
 

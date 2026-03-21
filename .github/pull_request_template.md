@@ -35,7 +35,6 @@ Antes de submeter, certifique-se de que:
 - [ ] Testes novos e existentes passam localmente com minhas mudanças
 - [ ] Atualizei a documentação conforme necessário
 - [ ] Minhas mudanças não quebram funcionalidades existentes
-- [ ] Assinei o [CLA](../docs/legal/CLA.md) (o bot CLA Assistant irá verificar isso)
 
 ## 🧪 Como Testar
 
@@ -63,10 +62,9 @@ Para revisores:
 - [ ] O código segue os padrões do projeto?
 - [ ] Os testes estão adequados?
 - [ ] A documentação foi atualizada?
-- [ ] O CLA foi assinado?
 - [ ] As mudanças são seguras?
 
 ---
 
-**Nota**: Este PR será revisado e mesclado apenas após aprovação e assinatura do CLA.
+**Nota**: Este PR sera revisado e mesclado apenas apos aprovacao e passagem dos checks obrigatorios de CI.
 

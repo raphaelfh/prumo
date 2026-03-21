@@ -77,9 +77,10 @@ backend/
 └── tests/
 
 frontend/
-├── components/
-├── pages/
-├── services/
+├── src/
+│   ├── components/
+│   ├── pages/
+│   └── services/
 └── tests/
 
 # [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)

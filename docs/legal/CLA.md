@@ -2,7 +2,7 @@
 
 ## Acordo de Licença de Contribuidor
 
-Ao contribuir para o projeto **Review Hub**, você concorda em conceder os seguintes direitos e declarações:
+Ao contribuir para o projeto **Review AI Hub**, você concorda em conceder os seguintes direitos e declarações:
 
 ### 1. Concessão de Licença
 
@@ -59,6 +59,19 @@ Para assinar este CLA, você deve:
 
 **Nota**: Se você trabalha para uma empresa, certifique-se de ter autorização para assinar este acordo em nome da empresa.
 
+### Fluxo oficial de validação
+
+Este projeto utiliza exclusivamente o [CLA Assistant](https://cla-assistant.io/) para validação de assinatura em Pull
+Requests.
+Não realizamos assinatura manual fora do fluxo do bot.
+
+### Solução de problemas comuns
+
+- **Assinei e o check ainda não atualizou**: aguarde alguns minutos e atualize a página do PR.
+- **Assinei com a conta errada**: assine novamente com a mesma conta GitHub autora da contribuição.
+- **PR com múltiplos autores**: cada pessoa que contribuiu com código pode precisar assinar.
+- **Push direto sem PR**: abra um Pull Request, pois a verificação de CLA ocorre no fluxo de PR.
+
 ---
 
 ## Perguntas Frequentes
@@ -81,5 +94,5 @@ Infelizmente, não poderemos aceitar sua contribuição sem a assinatura do CLA,
 
 ---
 
-**Última atualização**: Janeiro 2025
+**Última atualização**: março 2026
 

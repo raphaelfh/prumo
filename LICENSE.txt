@@ -1,0 +1,8 @@
+GNU AFFERO GENERAL PUBLIC LICENSE
+Version 3, 19 November 2007
+
+SPDX-License-Identifier: AGPL-3.0-only
+
+The complete AGPL-3.0 license text is available in:
+
+- `LICENSE`

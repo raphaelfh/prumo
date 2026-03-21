@@ -35,8 +35,21 @@ class Settings(BaseSettings):
     
     @property
     def cors_origins_list(self) -> list[str]:
-        """Retorna lista de origens CORS."""
-        return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
+        """Retorna lista de origens CORS com fallback seguro para desenvolvimento."""
+        configured = [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+        # Mantem origens essenciais para desenvolvimento mesmo quando CORS_ORIGINS no .env estiver desatualizado.
+        defaults = [
+            "http://localhost:5173",
+            "http://localhost:3000",
+            "http://localhost:8080",
+            "http://127.0.0.1:8080",
+            "https://review-ai-hub.vercel.app",
+        ]
+        merged: list[str] = []
+        for origin in [*configured, *defaults]:
+            if origin not in merged:
+                merged.append(origin)
+        return merged
     
     # =================== SUPABASE ===================
     SUPABASE_URL: str

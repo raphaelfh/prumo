@@ -60,22 +60,57 @@ class ArticleRepository(BaseRepository[Article]):
     async def get_with_files(self, article_id: UUID | str) -> Article | None:
         """
         Busca artigo com seus arquivos.
-        
+
         Args:
             article_id: ID do artigo.
-            
+
         Returns:
             Artigo com arquivos ou None.
         """
         if isinstance(article_id, str):
             article_id = UUID(article_id)
-        
+
         result = await self.db.execute(
             select(Article)
             .options(selectinload(Article.files))
             .where(Article.id == article_id)
         )
         return result.scalar_one_or_none()
+
+    async def get_by_ids(
+            self,
+            article_ids: list[UUID] | list[str],
+            project_id: UUID | str,
+            *,
+            include_files: bool = False,
+    ) -> list[Article]:
+        """
+        Busca artigos por lista de IDs, restritos ao projeto.
+
+        Args:
+            article_ids: IDs dos artigos.
+            project_id: ID do projeto (artigos devem pertencer a este projeto).
+            include_files: Se deve carregar arquivos relacionados.
+
+        Returns:
+            Lista de artigos encontrados, na ordem dos IDs solicitados.
+        """
+        if not article_ids:
+            return []
+        ids = [UUID(aid) if isinstance(aid, str) else aid for aid in article_ids]
+        if isinstance(project_id, str):
+            project_id = UUID(project_id)
+        query = select(Article).where(
+            Article.id.in_(ids),
+            Article.project_id == project_id,
+        )
+        if include_files:
+            query = query.options(selectinload(Article.files))
+        result = await self.db.execute(query)
+        rows = list(result.scalars().all())
+        # Manter ordem dos IDs solicitados
+        by_id = {a.id: a for a in rows}
+        return [by_id[i] for i in ids if i in by_id]
 
     async def get_by_zotero_item_key(
         self,
