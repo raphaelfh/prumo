@@ -1,36 +1,26 @@
 /**
- * EditArticle - Page to edit existing article
- * 
- * Usa o componente unificado ArticleForm em modo 'edit'
+ * Legacy route: redirects to project articles tab with the edit-article sheet open.
  */
 
-import {Navigate, useNavigate, useParams} from "react-router-dom";
-import {ArticleForm} from "@/components/articles/ArticleForm";
+import {Navigate, useParams} from "react-router-dom";
 
 function EditArticle() {
-  const { projectId, articleId } = useParams<{ 
-    projectId: string; 
-    articleId: string; 
+    const {projectId, articleId} = useParams<{
+        projectId: string;
+        articleId: string;
   }>();
-  const navigate = useNavigate();
 
   if (!projectId || !articleId) {
     return <Navigate to="/" replace />;
   }
 
-  const handleComplete = () => {
-      // Navigate back to project article list
-    navigate(`/projects/${projectId}?tab=articles`);
-  };
+    const search = new URLSearchParams({
+        tab: 'articles',
+        articleEditor: 'edit',
+        articleId,
+    });
 
-  return (
-    <ArticleForm
-      mode="edit"
-      projectId={projectId}
-      articleId={articleId}
-      onComplete={handleComplete}
-    />
-  );
+    return <Navigate to={`/projects/${projectId}?${search.toString()}`} replace/>;
 }
 
 export default EditArticle;

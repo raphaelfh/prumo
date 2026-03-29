@@ -335,6 +335,7 @@ class ZoteroService(LoggerMixin):
                     "Zotero-API-Version": ZOTERO_API_VERSION,
                 },
                 timeout=60.0,
+                follow_redirects=True,
             )
             
             if not response.is_success:

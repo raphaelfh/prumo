@@ -4,13 +4,22 @@
  * and maps FilterValues to its filter application logic.
  */
 
-export type FilterFieldType = 'text' | 'categorical' | 'numericRange';
+export type FilterFieldType =
+    | 'text'
+    | 'categorical'
+    | 'numericRange'
+    /** Options from facetedValues[fieldId] at runtime (e.g. keywords). Value: string[] */
+    | 'facetMultiSelect';
 
 export interface FilterFieldConfig {
     id: string;
     label: string;
     type: FilterFieldType;
     placeholder?: string;
+    /** facetMultiSelect: when facets list is empty */
+    facetNoDataMessage?: string;
+    /** facetMultiSelect: when search has no matches */
+    facetNoMatchesMessage?: string;
     /** For categorical: fixed options */
     options?: { value: string; label: string }[];
     /** For numericRange: optional bounds and step (e.g. year 1900–current) */

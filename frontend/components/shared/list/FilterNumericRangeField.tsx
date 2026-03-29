@@ -81,9 +81,6 @@ export function FilterNumericRangeField({
                             </SelectContent>
                         </Select>
                     </div>
-                    <span className="text-[11px] text-muted-foreground pt-5">
-            {t('common', 'listFilterTo')}
-          </span>
                     <div className="space-y-1">
             <span className="text-[11px] text-muted-foreground">
               {t('common', 'listFilterTo')}
@@ -134,9 +131,6 @@ export function FilterNumericRangeField({
                         step={step}
                     />
                 </div>
-                <span className="text-[11px] text-muted-foreground pt-5">
-          {t('common', 'listFilterTo')}
-        </span>
                 <div className="space-y-1">
           <span className="text-[11px] text-muted-foreground">
             {t('common', 'listFilterTo')}

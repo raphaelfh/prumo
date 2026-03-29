@@ -6,6 +6,8 @@ usando Pydantic Settings.
 """
 
 from functools import lru_cache
+from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from pydantic import PostgresDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -19,7 +21,7 @@ class Settings(BaseSettings):
     """
     
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(Path(__file__).resolve().parents[2] / ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -31,7 +33,7 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
     
     # =================== CORS ===================
-    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000,http://localhost:8080,http://127.0.0.1:8080,https://review-ai-hub.vercel.app"
+    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://localhost:8080,http://127.0.0.1:8080,https://review-ai-hub.vercel.app"
     
     @property
     def cors_origins_list(self) -> list[str]:
@@ -40,6 +42,7 @@ class Settings(BaseSettings):
         # Mantem origens essenciais para desenvolvimento mesmo quando CORS_ORIGINS no .env estiver desatualizado.
         defaults = [
             "http://localhost:5173",
+            "http://127.0.0.1:5173",
             "http://localhost:3000",
             "http://localhost:8080",
             "http://127.0.0.1:8080",
@@ -71,7 +74,12 @@ class Settings(BaseSettings):
     def async_database_url(self) -> str:
         """Retorna a URL do banco para uso com asyncpg."""
         url = str(self.DATABASE_URL)
-        return url.replace("postgresql://", "postgresql+asyncpg://")
+        async_url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        parsed = urlparse(async_url)
+        query_items = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        if "sslmode" in query_items and "ssl" not in query_items:
+            query_items["ssl"] = query_items.pop("sslmode")
+        return urlunparse(parsed._replace(query=urlencode(query_items)))
     
     # =================== OPENAI ===================
     # Opcional: fallback global para quando usuário não tem BYOK configurado

@@ -12,6 +12,7 @@ Configures Alembic to:
 import asyncio
 import logging
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from alembic import context
 from sqlalchemy.ext.asyncio import async_engine_from_config
@@ -41,8 +42,17 @@ logger = logging.getLogger("alembic.env")
 # DIRECT_DATABASE_URL should be set in production (e.g. Render env vars) to
 # the Supabase direct connection string. Falls back to DATABASE_URL for local
 # dev where there is no pooler.
+def _to_asyncpg_url(database_url: str) -> str:
+    async_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    parsed = urlparse(async_url)
+    query_items = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    if "sslmode" in query_items and "ssl" not in query_items:
+        query_items["ssl"] = query_items.pop("sslmode")
+    return urlunparse(parsed._replace(query=urlencode(query_items)))
+
+
 _direct_url = settings.DIRECT_DATABASE_URL or str(settings.DATABASE_URL)
-_migration_url = _direct_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+_migration_url = _to_asyncpg_url(_direct_url)
 config.set_main_option("sqlalchemy.url", _migration_url)
 
 # ---------------------------------------------------------------------------

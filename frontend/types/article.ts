@@ -12,6 +12,7 @@ import type {Database} from '@/integrations/supabase/types';
  * Usa o tipo gerado do Supabase para garantir type safety
  */
 export type Article = Database['public']['Tables']['articles']['Row'];
+export type ArticleSyncState = 'active' | 'removed_at_source' | 'conflict';
 
 /**
  * Type for Article insert
@@ -34,6 +35,9 @@ export interface ArticleListItem {
   publication_year: number | null;
   journal_title: string | null;
   doi: string | null;
+    ingestion_source: string | null;
+    zotero_item_key: string | null;
+    sync_state: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -49,6 +53,9 @@ export function toArticleListItem(article: Article): ArticleListItem {
     publication_year: article.publication_year,
     journal_title: article.journal_title,
     doi: article.doi,
+      ingestion_source: article.ingestion_source,
+      zotero_item_key: article.zotero_item_key,
+      sync_state: article.sync_state,
     created_at: article.created_at,
     updated_at: article.updated_at,
   };

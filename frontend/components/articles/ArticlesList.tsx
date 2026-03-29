@@ -1,5 +1,5 @@
 import type {CSSProperties} from "react";
-import {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState} from "react";
 import {useNavigate} from "react-router-dom";
 import {Button} from "@/components/ui/button";
 import {Badge} from "@/components/ui/badge";
@@ -7,7 +7,6 @@ import {Checkbox} from "@/components/ui/checkbox";
 import {
     ChevronDown,
     ChevronUp,
-    Download,
     FileText,
     MoreHorizontal,
     Plus,
@@ -57,18 +56,12 @@ import {ArticleFileUploadDialogNew} from "./ArticleFileUploadDialogNew";
 import {ArticlesExportDialog} from "./ArticlesExportDialog";
 import {ZoteroImportDialog} from "./ZoteroImportDialog";
 import {useZoteroIntegration} from "@/hooks/useZoteroIntegration";
+import type {Article} from "@/types/article";
+import {ARTICLES_DATA_COLUMN_DEFS, articleListCellTitle, formatArticleListCell} from "@/lib/articlesListDisplay";
 
-interface Article {
-  id: string;
-  title: string;
-  abstract: string | null;
-  publication_year: number | null;
-  journal_title: string | null;
-  authors: string[] | null;
-  doi: string | null;
-  pmid: string | null;
-  keywords: string[] | null;
-}
+export type ArticlesListHandle = {
+    openExportDialog: () => void;
+};
 
 interface ArticlesListProps {
   articles: Article[];
@@ -79,9 +72,19 @@ interface ArticlesListProps {
     onOpenZoteroDialog?: () => void;
     /** When provided, shows "Via RIS file" option alongside Zotero */
     onOpenRisDialog?: () => void;
+    /** Notifies parent when export action should be enabled (filtered list or selection). */
+    onExportAvailabilityChange?: (canExport: boolean) => void;
+    /** When set, empty-state "Add first article" opens the panel instead of navigating. */
+    onOpenAddArticle?: () => void;
 }
 
-type SortField = 'title' | 'authors' | 'journal_title' | 'publication_year' | 'created_at' | 'has_main_file';
+type SortField =
+    | 'title'
+    | 'authors'
+    | 'journal_title'
+    | 'publication_year'
+    | 'created_at'
+    | 'has_main_file';
 type SortDirection = 'asc' | 'desc';
 
 const ARTICLES_FILTER_FIELDS: FilterFieldConfig[] = [
@@ -96,11 +99,32 @@ const ARTICLES_FILTER_FIELDS: FilterFieldConfig[] = [
         maxBound: new Date().getFullYear(),
         step: 1
     },
-    {id: 'keywords', label: 'Keywords', type: 'text', placeholder: t('articles', 'listSearchKeywordPlaceholder')},
+    {
+        id: 'keywords',
+        label: 'Keywords',
+        type: 'facetMultiSelect',
+        placeholder: t('articles', 'listFilterKeywordsSearchPlaceholder'),
+        facetNoDataMessage: t('articles', 'listFilterKeywordsNoData'),
+        facetNoMatchesMessage: t('articles', 'listFilterKeywordsNoMatches'),
+    },
     {
         id: 'has_main_file', label: 'PDF', type: 'categorical', options: [
             {value: 'yes', label: t('articles', 'listHasPdf')},
             {value: 'no', label: t('articles', 'listNoPdf')},
+        ]
+    },
+    {
+        id: 'ingestion_source', label: 'Source', type: 'categorical', options: [
+            {value: 'ZOTERO', label: 'Zotero'},
+            {value: 'MANUAL', label: 'Manual'},
+            {value: 'RIS', label: 'RIS'},
+        ]
+    },
+    {
+        id: 'sync_state', label: 'Sync state', type: 'categorical', options: [
+            {value: 'active', label: 'Active'},
+            {value: 'removed_at_source', label: 'Removed at source'},
+            {value: 'conflict', label: 'Conflict'},
         ]
     },
 ];
@@ -112,18 +136,12 @@ const INITIAL_ARTICLES_FILTER_VALUES: FilterValues = {
     publication_year: {},
     keywords: '',
     has_main_file: [],
+    ingestion_source: [],
+    sync_state: [],
 };
 
-interface VisibleColumns {
-  title: boolean;
-  pdf: boolean;
-  authors: boolean;
-  journal: boolean;
-  year: boolean;
-  keywords: boolean;
-  doi: boolean;
-  abstract: boolean;
-}
+const VISIBLE_COLUMNS_KEY = "articles-list-visible-columns-v3";
+const COLUMN_WIDTHS_KEY = "articles-list-column-widths-v3";
 
 /** Data column configuration for header (DRY). id = key in columnWidths. breakpoint = from which Tailwind breakpoint the column is visible (sm = always in table, md/lg = hidden until that breakpoint). */
 const TABLE_COLUMNS: Array<{
@@ -131,7 +149,7 @@ const TABLE_COLUMNS: Array<{
     label: string;
     sortField?: SortField;
     filterKey?: string;
-    visibleKey?: keyof VisibleColumns;
+    visibleKey?: string;
     flexible?: boolean;
     /** When to show column in table: sm (default), md, lg */
     breakpoint?: 'sm' | 'md' | 'lg';
@@ -143,6 +161,12 @@ const TABLE_COLUMNS: Array<{
         sortField: 'has_main_file',
         filterKey: 'has_main_file',
         visibleKey: 'pdf',
+        breakpoint: 'sm'
+    },
+    {
+        id: 'source',
+        label: 'Source',
+        visibleKey: 'source',
         breakpoint: 'sm'
     },
     {
@@ -172,16 +196,65 @@ const TABLE_COLUMNS: Array<{
     {id: 'keywords', label: 'Keywords', filterKey: 'keywords', visibleKey: 'keywords', breakpoint: 'lg'},
     {id: 'doi', label: 'DOI', visibleKey: 'doi', breakpoint: 'lg'},
     {id: 'abstract', label: 'Abstract', visibleKey: 'abstract', breakpoint: 'lg'},
+    ...ARTICLES_DATA_COLUMN_DEFS.map((d) => ({
+        id: d.id,
+        label: d.label,
+        visibleKey: d.id,
+        breakpoint: 'lg' as const,
+    })),
 ];
 
-export function ArticlesList({
-                                 articles,
-                                 onArticleClick,
-                                 projectId,
-                                 onArticlesChange,
-                                 onOpenZoteroDialog,
-                                 onOpenRisDialog,
-                             }: ArticlesListProps) {
+/** Default: only core bibliographic columns; extended metadata off unless user enables. */
+function buildDefaultVisibleColumns(): Record<string, boolean> {
+    const d: Record<string, boolean> = {
+        title: true,
+        pdf: true,
+        source: false,
+        authors: true,
+        journal: true,
+        year: true,
+        keywords: true,
+        doi: true,
+        abstract: false,
+    };
+    for (const {id} of ARTICLES_DATA_COLUMN_DEFS) {
+        d[id] = false;
+    }
+    return d;
+}
+
+const DEFAULT_VISIBLE_COLUMNS = buildDefaultVisibleColumns();
+
+const DEFAULT_COLUMN_WIDTHS: Record<string, number> = {
+    title: 320,
+    pdf: 100,
+    source: 120,
+    authors: 140,
+    journal: 160,
+    year: 100,
+    keywords: 160,
+    doi: 200,
+    abstract: 220,
+};
+for (const {id} of ARTICLES_DATA_COLUMN_DEFS) {
+    if (DEFAULT_COLUMN_WIDTHS[id] == null) {
+        DEFAULT_COLUMN_WIDTHS[id] = id.includes('payload') || id.includes('conflict') ? 160 : 120;
+    }
+}
+
+export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(function ArticlesList(
+    {
+        articles,
+        onArticleClick,
+        projectId,
+        onArticlesChange,
+        onOpenZoteroDialog,
+        onOpenRisDialog,
+        onExportAvailabilityChange,
+        onOpenAddArticle,
+    },
+    ref,
+) {
     const isNarrow = useIsNarrow();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedArticles, setSelectedArticles] = useState<Set<string>>(new Set());
@@ -233,29 +306,19 @@ export function ArticlesList({
     const [filterPopoverOpen, setFilterPopoverOpen] = useState(false);
 
     // Visible columns
-  const [visibleColumns, setVisibleColumns] = useState<VisibleColumns>({
-    title: true,
-    pdf: true,
-    authors: true,
-    journal: true,
-    year: true,
-    keywords: true,
-    doi: false,
-    abstract: false
+    const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(() => {
+        if (typeof window === "undefined") return {...DEFAULT_VISIBLE_COLUMNS};
+        try {
+            const stored = localStorage.getItem(VISIBLE_COLUMNS_KEY);
+            if (!stored) return {...DEFAULT_VISIBLE_COLUMNS};
+            const parsed = JSON.parse(stored) as Record<string, boolean>;
+            return {...DEFAULT_VISIBLE_COLUMNS, ...parsed};
+        } catch (_) {
+            return {...DEFAULT_VISIBLE_COLUMNS};
+        }
   });
 
     // Resizable column widths (persisted in localStorage)
-    const COLUMN_WIDTHS_KEY = 'articles-list-column-widths';
-    const DEFAULT_COLUMN_WIDTHS: Record<string, number> = {
-        title: 320,
-        pdf: 100,
-        authors: 140,
-        journal: 160,
-        year: 100,
-        keywords: 160,
-        doi: 130,
-        abstract: 280,
-    };
     const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
         if (typeof window === 'undefined') return DEFAULT_COLUMN_WIDTHS;
         try {
@@ -355,9 +418,14 @@ export function ArticlesList({
         const field = ARTICLES_FILTER_FIELDS.find(f => f.id === fieldId);
         if (!field) return;
         setFilterValues(prev => ({
-      ...prev,
-            [fieldId]: field.type === 'categorical' ? [] : field.type === 'numericRange' ? {} : ''
-    }));
+            ...prev,
+            [fieldId]:
+                field.type === 'categorical' || field.type === 'facetMultiSelect'
+                    ? []
+                    : field.type === 'numericRange'
+                        ? {}
+                        : '',
+        }));
     }, []);
 
     const clearAllFilters = useCallback(() => {
@@ -419,6 +487,8 @@ export function ArticlesList({
         publication_year: 'Year',
         keywords: 'Keywords',
         has_main_file: 'PDF',
+        ingestion_source: 'Source',
+        sync_state: 'Sync state',
     }), []);
 
     const activeFiltersList = useMemo(
@@ -427,12 +497,20 @@ export function ArticlesList({
     );
 
     // Visible columns toggle
-  const toggleColumn = (column: keyof VisibleColumns) => {
+    const toggleColumn = (column: string) => {
     setVisibleColumns(prev => ({
       ...prev,
       [column]: !prev[column]
     }));
   };
+
+    useEffect(() => {
+        try {
+            localStorage.setItem(VISIBLE_COLUMNS_KEY, JSON.stringify(visibleColumns));
+        } catch (_) {
+            // Ignore localStorage errors
+        }
+    }, [visibleColumns]);
 
   // Handle article selection
   const handleSelectArticle = (articleId: string, checked: boolean) => {
@@ -555,10 +633,14 @@ export function ArticlesList({
         const searchLower = searchTerm.toLowerCase();
         const matchesSearch =
             (article.title ?? '').toLowerCase().includes(searchLower) ||
-          article.abstract?.toLowerCase().includes(searchLower) ||
-            article.authors?.some(a => (a ?? '').toLowerCase().includes(searchLower)) ||
-          article.journal_title?.toLowerCase().includes(searchLower) ||
-            article.keywords?.some(k => (k ?? '').toLowerCase().includes(searchLower));
+            (article.abstract ?? '').toLowerCase().includes(searchLower) ||
+            article.authors?.some((a) => (a ?? '').toLowerCase().includes(searchLower)) ||
+            (article.journal_title ?? '').toLowerCase().includes(searchLower) ||
+            article.keywords?.some((k) => (k ?? '').toLowerCase().includes(searchLower)) ||
+            article.mesh_terms?.some((m) => (m ?? '').toLowerCase().includes(searchLower)) ||
+            (article.doi ?? '').toLowerCase().includes(searchLower) ||
+            (article.pmid ?? '').toLowerCase().includes(searchLower) ||
+            (article.pmcid ?? '').toLowerCase().includes(searchLower);
         
         if (!matchesSearch) return false;
       }
@@ -592,13 +674,15 @@ export function ArticlesList({
             if (yearRange.max != null && y > yearRange.max) return false;
       }
 
-        const keywordsFilter = filterValues.keywords as string | undefined;
-        if (keywordsFilter?.trim()) {
-            const keywordMatch = article.keywords?.some(keyword =>
-                keyword.toLowerCase().includes(keywordsFilter.toLowerCase())
-        );
-        if (!keywordMatch) return false;
-      }
+        const keywordsFilter = filterValues.keywords as string[] | undefined;
+        // OR: artigo passa se tiver qualquer keyword selecionada (string exata; facetas usam trim).
+        if (keywordsFilter && keywordsFilter.length > 0) {
+            const articleKw = new Set(
+                (article.keywords ?? []).map((k) => (k ?? '').trim()).filter(Boolean)
+            );
+            const keywordMatch = keywordsFilter.some((k) => articleKw.has(k));
+            if (!keywordMatch) return false;
+        }
 
         const hasMainFileFilter = filterValues.has_main_file as string[] | undefined;
         if (hasMainFileFilter?.length) {
@@ -607,6 +691,18 @@ export function ArticlesList({
             const wantNo = hasMainFileFilter.includes('no');
             if (wantYes && !wantNo && !hasPdf) return false;
             if (wantNo && !wantYes && hasPdf) return false;
+        }
+
+        const sourceFilter = filterValues.ingestion_source as string[] | undefined;
+        if (sourceFilter?.length) {
+            const sourceValue = (article.ingestion_source ?? "MANUAL").toUpperCase();
+            if (!sourceFilter.includes(sourceValue)) return false;
+        }
+
+        const syncStateFilter = filterValues.sync_state as string[] | undefined;
+        if (syncStateFilter?.length) {
+            const syncStateValue = article.sync_state ?? "active";
+            if (!syncStateFilter.includes(syncStateValue)) return false;
         }
 
       return true;
@@ -637,6 +733,10 @@ export function ArticlesList({
         case 'has_main_file':
           aValue = articlesWithMainFile.has(a.id) ? 1 : 0;
           bValue = articlesWithMainFile.has(b.id) ? 1 : 0;
+            break;
+          case 'created_at':
+              aValue = new Date(a.created_at).getTime();
+              bValue = new Date(b.created_at).getTime();
           break;
         default:
           return 0;
@@ -649,6 +749,32 @@ export function ArticlesList({
 
     return filtered;
   }, [articles, searchTerm, filterValues, sortField, sortDirection, articlesWithMainFile]);
+
+    const filteredArticlesRef = useRef(filteredArticles);
+    filteredArticlesRef.current = filteredArticles;
+    const selectedArticlesRef = useRef(selectedArticles);
+    selectedArticlesRef.current = selectedArticles;
+
+    useEffect(() => {
+        onExportAvailabilityChange?.(
+            filteredArticles.length > 0 || selectedArticles.size > 0,
+        );
+    }, [filteredArticles, selectedArticles, onExportAvailabilityChange]);
+
+    useImperativeHandle(
+        ref,
+        () => ({
+            openExportDialog: () => {
+                if (
+                    filteredArticlesRef.current.length > 0 ||
+                    selectedArticlesRef.current.size > 0
+                ) {
+                    setExportDialogOpen(true);
+                }
+            },
+        }),
+        [],
+    );
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
@@ -684,7 +810,11 @@ export function ArticlesList({
             </p>
             <div className="flex flex-wrap items-center justify-center gap-3">
                 <Button
-                    onClick={() => navigate(`/projects/${projectId}/articles/add`)}
+                    onClick={() =>
+                        onOpenAddArticle
+                            ? onOpenAddArticle()
+                            : navigate(`/projects/${projectId}/articles/add`)
+                    }
                     className="h-10 px-6 text-[13px] font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors shadow-sm"
                 >
                     <Plus className="mr-2 h-4 w-4"/>
@@ -752,7 +882,10 @@ export function ArticlesList({
                                       className="h-3.5 w-3.5 rounded-sm"
                                   />
                               </TableHead>
-                              {TABLE_COLUMNS.filter(col => col.visibleKey === undefined || visibleColumns[col.visibleKey]).map((col) => (
+                              {TABLE_COLUMNS.filter(
+                                  (col) =>
+                                      col.visibleKey == null || visibleColumns[col.visibleKey] === true
+                              ).map((col) => (
                                   <TableHead
                                       key={col.id}
                                       className={`relative h-8 text-xs font-medium text-muted-foreground group/head ${TABLE_CELL_CLASS} ${colVisibilityClass(col.breakpoint)}`}
@@ -820,7 +953,7 @@ export function ArticlesList({
                                   </TableCell>
 
                                   {/* PDF */}
-                                  {visibleColumns.pdf && (
+                                  {visibleColumns.pdf === true && (
                                       <TableCell className={`${TABLE_CELL_CLASS} ${colVisibilityClass('sm')}`}
                                                  style={getColumnStyle('pdf')}>
                                           <div className="flex items-center gap-1 min-w-0">
@@ -881,8 +1014,25 @@ export function ArticlesList({
                                       </TableCell>
                                   )}
 
+                                  {/* Source */}
+                                  {visibleColumns.source === true && (
+                                      <TableCell className={`${TABLE_CELL_CLASS} ${colVisibilityClass('md')}`}
+                                                 style={getColumnStyle('source')}>
+                                          <div className="flex items-center gap-1">
+                                              <Badge variant="outline" className="h-4 px-1 text-[10px] uppercase">
+                                                  {article.ingestion_source ?? "MANUAL"}
+                                              </Badge>
+                                              {article.sync_state && article.sync_state !== "active" && (
+                                                  <Badge variant="secondary" className="h-4 px-1 text-[10px]">
+                                                      {article.sync_state}
+                                                  </Badge>
+                                              )}
+                                          </div>
+                                      </TableCell>
+                                  )}
+
                                   {/* Authors */}
-                                  {visibleColumns.authors && (
+                                  {visibleColumns.authors === true && (
                                       <TableCell
                                           className={`${TABLE_CELL_CLASS} text-[13px] text-muted-foreground font-medium ${colVisibilityClass('md')}`}
                                           style={getColumnStyle('authors')}>
@@ -909,7 +1059,7 @@ export function ArticlesList({
                                   )}
 
                                   {/* Journal */}
-                                  {visibleColumns.journal && (
+                                  {visibleColumns.journal === true && (
                                       <TableCell
                                           className={`${TABLE_CELL_CLASS} text-[13px] text-muted-foreground italic ${colVisibilityClass('lg')}`}
                                           style={getColumnStyle('journal')}>
@@ -923,7 +1073,7 @@ export function ArticlesList({
                                   )}
 
                                   {/* Year */}
-                                  {visibleColumns.year && (
+                                  {visibleColumns.year === true && (
                                       <TableCell className={`${TABLE_CELL_CLASS} ${colVisibilityClass('md')}`}
                                                  style={getColumnStyle('year')}>
                                           {article.publication_year ? (
@@ -938,7 +1088,7 @@ export function ArticlesList({
                                   )}
 
                                   {/* Keywords */}
-                                  {visibleColumns.keywords && (
+                                  {visibleColumns.keywords === true && (
                                       <TableCell className={`${TABLE_CELL_CLASS} ${colVisibilityClass('lg')}`}
                                                  style={getColumnStyle('keywords')}>
                                           {article.keywords && article.keywords.length > 0 ? (
@@ -963,21 +1113,34 @@ export function ArticlesList({
                                   )}
 
                                   {/* DOI */}
-                                  {visibleColumns.doi && (
+                                  {visibleColumns.doi === true && (
                                       <TableCell className={`${TABLE_CELL_CLASS} ${colVisibilityClass('lg')}`}
                                                  style={getColumnStyle('doi')}>
                                           {article.doi ? (
-                                              <Button
-                                                  size="sm"
-                                                  variant="ghost"
-                                                  onClick={(e) => {
-                                                      e.stopPropagation();
-                                                      window.open(`https://doi.org/${article.doi}`, "_blank");
-                                                  }}
-                                                  className="h-6 px-1 text-[11px] font-medium text-primary hover:bg-primary/5"
-                                              >
-                                                  Link DOI
-                                              </Button>
+                                              <TooltipProvider>
+                                                  <Tooltip>
+                                                      <TooltipTrigger asChild>
+                                                          <button
+                                                              type="button"
+                                                              className="max-w-full text-left text-[12px] font-medium text-primary underline-offset-2 hover:underline line-clamp-2"
+                                                              onClick={(e) => {
+                                                                  e.stopPropagation();
+                                                                  const raw = article.doi!.trim();
+                                                                  const path = raw
+                                                                      .replace(/^https?:\/\/(dx\.)?doi\.org\//i, '')
+                                                                      .replace(/^doi:\s*/i, '');
+                                                                  window.open(`https://doi.org/${path}`, '_blank', 'noopener,noreferrer');
+                                                              }}
+                                                          >
+                                                              {article.doi.trim()}
+                                                          </button>
+                                                      </TooltipTrigger>
+                                                      <TooltipContent side="top" className="max-w-sm">
+                                                          <p className="break-all text-xs">{article.doi}</p>
+                                                          <p className="text-[11px] text-muted-foreground mt-1">{t('articles', 'listDoiOpenHint')}</p>
+                                                      </TooltipContent>
+                                                  </Tooltip>
+                                              </TooltipProvider>
                                           ) : (
                                               <span className="text-[12px] text-muted-foreground/50">–</span>
                                           )}
@@ -985,7 +1148,7 @@ export function ArticlesList({
                                   )}
 
                                   {/* Abstract */}
-                                  {visibleColumns.abstract && (
+                                  {visibleColumns.abstract === true && (
                                       <TableCell className={`${TABLE_CELL_CLASS} ${colVisibilityClass('lg')}`}
                                                  style={getColumnStyle('abstract')}>
                                           <div
@@ -993,6 +1156,23 @@ export function ArticlesList({
                                               {article.abstract || "\u2013"}
                                           </div>
                                       </TableCell>
+                                  )}
+
+                                  {ARTICLES_DATA_COLUMN_DEFS.map(({id}) =>
+                                      visibleColumns[id] === true ? (
+                                          <TableCell
+                                              key={id}
+                                              className={`${TABLE_CELL_CLASS} hidden lg:table-cell`}
+                                              style={getColumnStyle(id)}
+                                          >
+                                              <span
+                                                  className="line-clamp-2 text-[12px] leading-tight text-muted-foreground"
+                                                  title={articleListCellTitle(article, id) ?? formatArticleListCell(article, id)}
+                                              >
+                                                  {formatArticleListCell(article, id)}
+                                              </span>
+                                          </TableCell>
+                                      ) : null
                                   )}
 
                                   {/* Actions */}
@@ -1066,8 +1246,10 @@ export function ArticlesList({
                     subtitle={article.authors?.slice(0, 2).join(', ') || undefined}
                     meta={
                         <>
+                            <span className="uppercase">{article.ingestion_source ?? "MANUAL"}</span>
                             {article.publication_year != null && <span>{article.publication_year}</span>}
                             {article.journal_title && <span className="italic">{article.journal_title}</span>}
+                            {article.sync_state && article.sync_state !== "active" && <span>{article.sync_state}</span>}
                         </>
                     }
                     primaryAction={
@@ -1118,7 +1300,7 @@ export function ArticlesList({
                     <div className="flex flex-wrap items-center gap-2 w-full">
                         <ListToolbarSearch
                             ref={searchInputRef}
-                            placeholder="Search... (⌘K)"
+                            placeholder="Search... (⌘F / Ctrl+F)"
                             value={searchTerm}
                             onChange={setSearchTerm}
                         />
@@ -1137,6 +1319,7 @@ export function ArticlesList({
                                     authors: facetedValues.authors,
                                     journal_title: facetedValues.journals,
                                     publication_year: facetedValues.years,
+                                    keywords: facetedValues.keywords,
                                 }}
                             />
                         </FilterButtonWithPopover>
@@ -1147,6 +1330,7 @@ export function ArticlesList({
                                 {value: 'journal_title', label: 'Journal'},
                                 {value: 'publication_year', label: 'Year'},
                                 {value: 'has_main_file', label: 'PDF'},
+                                {value: 'created_at', label: 'Created'},
                             ]}
                             sortField={sortField}
                             sortDirection={sortDirection}
@@ -1155,16 +1339,13 @@ export function ArticlesList({
                             orderLabel={t('articles', 'listOrdering')}
                             columns={[
                                 {key: 'title', label: 'Title', disabled: true},
-                                {key: 'pdf', label: 'PDF'},
-                                {key: 'authors', label: 'Authors'},
-                                {key: 'journal', label: 'Journal'},
-                                {key: 'year', label: 'Year'},
-                                {key: 'keywords', label: 'Keywords'},
-                                {key: 'doi', label: 'DOI'},
-                                {key: 'abstract', label: 'Abstract'},
+                                ...TABLE_COLUMNS.filter((c) => c.visibleKey != null).map((c) => ({
+                                    key: c.visibleKey as string,
+                                    label: c.label,
+                                })),
                             ]}
-                            visibleKeys={visibleColumns as unknown as Record<string, boolean>}
-                            onToggleColumn={(key) => toggleColumn(key as keyof VisibleColumns)}
+                            visibleKeys={visibleColumns}
+                            onToggleColumn={(key) => toggleColumn(String(key))}
                             displayPropertiesLabel={t('articles', 'listDisplayProperties')}
                             tooltipLabel={t('articles', 'listDisplayAndSort')}
                             ariaLabel={t('articles', 'listDisplayOptions')}
@@ -1176,17 +1357,6 @@ export function ArticlesList({
                             total={articles.length}
                             label={articles.length === 1 ? t('articles', 'listArticle') : t('articles', 'listArticles')}
                         />
-                        {(filteredArticles.length > 0 || selectedArticles.size > 0) && (
-                            <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setExportDialogOpen(true)}
-                                className="h-6 text-[11px] rounded-lg border-border/50 hover:bg-muted/50"
-                            >
-                                <Download className="mr-1 h-3 w-3"/>
-                                {t('articles', 'exportSubmit')}
-                            </Button>
-                        )}
                         {selectedArticles.size > 0 && (
                             <div className="flex items-center gap-2 animate-in fade-in duration-200">
                           <span className="text-[11px] font-medium text-foreground">
@@ -1308,4 +1478,6 @@ export function ArticlesList({
           )}
         </>
   );
-}
+});
+
+ArticlesList.displayName = 'ArticlesList';

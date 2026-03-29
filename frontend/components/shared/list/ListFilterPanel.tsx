@@ -6,6 +6,7 @@ import {isFilterValueEmpty} from './filter-types';
 import {FilterTextField} from './FilterTextField';
 import {FilterCategoricalField} from './FilterCategoricalField';
 import {FilterNumericRangeField} from './FilterNumericRangeField';
+import {FilterFacetMultiSelectField} from './FilterFacetMultiSelectField';
 
 export interface FacetedValuesMap {
     [fieldId: string]: { value: string; count: number }[];
@@ -90,6 +91,23 @@ export function ListFilterPanel({
                         />
                     );
                 }
+                if (field.type === 'facetMultiSelect') {
+                    const selected = Array.isArray(value) ? value : [];
+                    const facets = facetedValues[field.id] ?? [];
+                    return (
+                        <FilterFacetMultiSelectField
+                            key={field.id}
+                            id={field.id}
+                            label={field.label}
+                            value={selected}
+                            facets={facets}
+                            onChange={(v) => updateField(field.id, v)}
+                            searchPlaceholder={field.placeholder}
+                            noDataMessage={field.facetNoDataMessage}
+                            noMatchesMessage={field.facetNoMatchesMessage}
+                        />
+                    );
+                }
                 return null;
             })}
             {activeCount > 0 && (
@@ -100,8 +118,9 @@ export function ListFilterPanel({
                     onClick={() => {
                         const next: FilterValues = {};
                         fields.forEach((f) => {
-                            if (f.type === 'categorical') next[f.id] = [];
-                            else if (f.type === 'numericRange') next[f.id] = {};
+                            if (f.type === 'categorical' || f.type === 'facetMultiSelect') {
+                                next[f.id] = [];
+                            } else if (f.type === 'numericRange') next[f.id] = {};
                             else next[f.id] = '';
                         });
                         onChange(next);

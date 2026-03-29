@@ -25,6 +25,10 @@ export function buildActiveFiltersList(
                 const opt = f.options?.find((o) => o.value === val);
                 list.push({column: f.id, label, value: opt?.label ?? val});
             });
+        } else if (f.type === 'facetMultiSelect' && Array.isArray(v) && v.length > 0) {
+            v.forEach((val) => {
+                list.push({column: f.id, label, value: val});
+            });
         } else if (f.type === 'numericRange' && v != null && typeof v === 'object' && !Array.isArray(v)) {
             const r = v as { min?: number; max?: number };
             if (r.min != null || r.max != null) {

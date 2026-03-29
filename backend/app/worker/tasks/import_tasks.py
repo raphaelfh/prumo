@@ -10,6 +10,16 @@ from uuid import UUID
 
 from app.worker.celery_app import celery_app
 
+_WORKER_LOOP: asyncio.AbstractEventLoop | None = None
+
+
+def _run_in_worker_loop(coro):
+    global _WORKER_LOOP
+    if _WORKER_LOOP is None or _WORKER_LOOP.is_closed():
+        _WORKER_LOOP = asyncio.new_event_loop()
+        asyncio.set_event_loop(_WORKER_LOOP)
+    return _WORKER_LOOP.run_until_complete(coro)
+
 
 @celery_app.task(
     bind=True,
@@ -24,6 +34,8 @@ def import_zotero_collection_task(
     user_id: str,
     import_pdfs: bool = True,
     max_items: int = 100,
+        update_existing: bool = True,
+        sync_run_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Task para importação de collection do Zotero.
@@ -41,7 +53,7 @@ def import_zotero_collection_task(
     from app.core.deps import AsyncSessionLocal, get_supabase_client
     from app.core.factories import create_storage_adapter
     from app.services.zotero_import_service import ZoteroImportService
-    
+
     async def run():
         async with AsyncSessionLocal() as session:
             try:
@@ -59,15 +71,21 @@ def import_zotero_collection_task(
                     collection_key=collection_key,
                     max_items=max_items,
                     import_pdfs=import_pdfs,
+                    update_existing=update_existing,
+                    sync_run_id=UUID(sync_run_id) if sync_run_id else None,
                 )
 
                 await session.commit()
 
-                return {
+                result_payload = {
+                    "sync_run_id": result.sync_run_id,
                     "total_items": result.total_items,
                     "imported": result.imported,
+                    "updated": result.updated,
                     "failed": result.failed,
                     "skipped": result.skipped,
+                    "removed_at_source": result.removed_at_source,
+                    "reactivated": result.reactivated,
                     "results": [
                         {
                             "zotero_key": r.zotero_key,
@@ -80,12 +98,68 @@ def import_zotero_collection_task(
                         for r in result.results
                     ],
                 }
+                return result_payload
             except Exception:
                 await session.rollback()
                 raise
     
     try:
-        return asyncio.run(run())
+        return _run_in_worker_loop(run())
+    except Exception as exc:
+        self.retry(exc=exc)
+
+
+@celery_app.task(
+    bind=True,
+    max_retries=3,
+    default_retry_delay=120,
+    rate_limit="2/m",
+)
+def retry_failed_zotero_sync_task(
+        self,
+        project_id: str,
+        source_sync_run_id: str,
+        user_id: str,
+        sync_run_id: str,
+        limit: int = 100,
+) -> dict[str, Any]:
+    from app.core.deps import AsyncSessionLocal, get_supabase_client
+    from app.core.factories import create_storage_adapter
+    from app.services.zotero_import_service import ZoteroImportService
+
+    async def run():
+        async with AsyncSessionLocal() as session:
+            try:
+                supabase = get_supabase_client()
+                storage = create_storage_adapter(supabase)
+                service = ZoteroImportService(
+                    db=session,
+                    user_id=user_id,
+                    storage=storage,
+                    trace_id=self.request.id,
+                )
+                _, result = await service.retry_failed_items(
+                    project_id=UUID(project_id),
+                    source_run_id=UUID(source_sync_run_id),
+                    target_run_id=UUID(sync_run_id),
+                    limit=limit,
+                )
+                await session.commit()
+                return {
+                    "sync_run_id": sync_run_id,
+                    "retry_of_sync_run_id": source_sync_run_id,
+                    "queued_items": limit,
+                    "imported": result.imported,
+                    "updated": result.updated,
+                    "failed": result.failed,
+                    "skipped": result.skipped,
+                }
+            except Exception:
+                await session.rollback()
+                raise
+
+    try:
+        return _run_in_worker_loop(run())
     except Exception as exc:
         self.retry(exc=exc)
 
@@ -148,6 +222,6 @@ def sync_zotero_library_task(
                 raise
     
     try:
-        return asyncio.run(run())
+        return _run_in_worker_loop(run())
     except Exception as exc:
         self.retry(exc=exc)

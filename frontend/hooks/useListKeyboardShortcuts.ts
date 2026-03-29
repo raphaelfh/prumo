@@ -12,7 +12,7 @@ export interface UseListKeyboardShortcutsOptions {
 }
 
 /**
- * List toolbar keyboard shortcuts: ⌘K focus search, F toggle filter,
+ * List toolbar keyboard shortcuts: ⌘F/Ctrl+F focus search, F toggle filter,
  * Escape close popover then clear selection, ⌘A select all visible.
  * Only handles when focus is not in input/textarea.
  */
@@ -34,7 +34,7 @@ export function useListKeyboardShortcuts({
                 target.tagName === 'TEXTAREA' ||
                 target.isContentEditable;
 
-            if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
                 e.preventDefault();
                 searchInputRef.current?.focus();
                 return;

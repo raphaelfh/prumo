@@ -60,6 +60,38 @@ class ImportToProjectRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class SyncCollectionRequest(BaseModel):
+    project_id: str = Field(..., alias="projectId")
+    collection_key: str = Field(..., alias="collectionKey", min_length=1)
+    max_items: int = Field(default=1000, alias="maxItems", ge=1, le=10000)
+    include_attachments: bool = Field(default=True, alias="includeAttachments")
+    update_existing: bool = Field(default=True, alias="updateExisting")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class SyncStatusRequest(BaseModel):
+    sync_run_id: str = Field(..., alias="syncRunId")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class SyncRetryFailedRequest(BaseModel):
+    sync_run_id: str = Field(..., alias="syncRunId")
+    limit: int = Field(default=100, ge=1, le=1000)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class SyncItemResultRequest(BaseModel):
+    sync_run_id: str = Field(..., alias="syncRunId")
+    status_filter: str | None = Field(default=None, alias="statusFilter")
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=50, ge=1, le=200)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 # =================== RESPONSE SCHEMAS ===================
 
 
@@ -205,3 +237,60 @@ class ImportToProjectResponse(BaseModel):
     failed: int
     results: list[ImportResult]
 
+
+class SyncCollectionResponse(BaseModel):
+    sync_run_id: str = Field(alias="syncRunId")
+    status: str
+    message: str
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class SyncCountsResponse(BaseModel):
+    total_received: int = Field(alias="totalReceived")
+    persisted: int
+    updated: int
+    skipped: int
+    failed: int
+    removed_at_source: int = Field(alias="removedAtSource")
+    reactivated: int
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class SyncStatusResponse(BaseModel):
+    sync_run_id: str = Field(alias="syncRunId")
+    status: str
+    counts: SyncCountsResponse
+    started_at: datetime = Field(alias="startedAt")
+    completed_at: datetime | None = Field(default=None, alias="completedAt")
+    trace_id: str = Field(alias="traceId")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class SyncRetryFailedResponse(BaseModel):
+    sync_run_id: str = Field(alias="syncRunId")
+    retry_of_sync_run_id: str = Field(alias="retryOfSyncRunId")
+    queued_items: int = Field(alias="queuedItems")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class SyncItemResultEntry(BaseModel):
+    zotero_item_key: str | None = Field(default=None, alias="zoteroItemKey")
+    article_id: str | None = Field(default=None, alias="articleId")
+    status: str
+    error_code: str | None = Field(default=None, alias="errorCode")
+    error_message: str | None = Field(default=None, alias="errorMessage")
+    authority_rule_applied: str | None = Field(default=None, alias="authorityRuleApplied")
+    processed_at: datetime = Field(alias="processedAt")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class SyncItemResultsResponse(BaseModel):
+    items: list[SyncItemResultEntry]
+    total: int
+    offset: int
+    limit: int

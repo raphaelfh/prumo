@@ -40,7 +40,15 @@ export const useBackgroundJobs = create<BackgroundJobsState>()(
       updateJob: (jobId, updates) => {
         set((state) => ({
           jobs: state.jobs.map((job) =>
-            job.id === jobId ? { ...job, ...updates } : job
+              job.id === jobId
+                  ? {
+                      ...job,
+                      ...updates,
+                      progress: updates.progress ? {...job.progress, ...updates.progress} : job.progress,
+                      stats: updates.stats ? {...job.stats, ...updates.stats} : job.stats,
+                      metadata: updates.metadata ? {...job.metadata, ...updates.metadata} : job.metadata,
+                  }
+                  : job
           ),
         }));
       },

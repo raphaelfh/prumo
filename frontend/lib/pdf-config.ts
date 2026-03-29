@@ -7,6 +7,10 @@ export const PDF_OPTIONS = {
   cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/cmaps/`,
   cMapPacked: true,
   standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/standard_fonts/`,
+    // Security hardening for untrusted PDFs.
+    // Keep scripting/eval disabled to reduce attack surface from malicious documents.
+    isEvalSupported: false,
+    enableScripting: false,
   // Performance optimizations
   enableXfa: false, // Disable XFA forms for better performance
   disableAutoFetch: false, // Keep auto-fetch for better UX

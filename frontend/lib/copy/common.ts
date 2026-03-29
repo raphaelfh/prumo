@@ -95,6 +95,14 @@ export const common = {
     listFilterFrom: 'From',
     listFilterTo: 'To',
     listFilterAny: 'Any',
+    /** Placeholder {{n}} = number of selected options */
+    listFilterNSelected: '{{n}} selected',
+    /** facet multi-select when there are no facet values */
+    listFilterFacetNoData: 'No values available',
+    listFilterFacetNoMatches: 'No matches',
+    listFilterFacetSearchPlaceholder: 'Search…',
+    /** Aria label for categorical filter option search inside popover */
+    listFilterSearchOptionsAria: 'Search options',
     listFilterClearAll: 'Clear all',
 } as const;
 

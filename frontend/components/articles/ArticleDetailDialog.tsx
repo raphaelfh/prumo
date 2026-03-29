@@ -39,6 +39,12 @@ interface Article {
   keywords: string[] | null;
   url_landing: string | null;
   project_id: string;
+    ingestion_source: string | null;
+    sync_state: string | null;
+    source_lineage: string | null;
+    last_synced_at: string | null;
+    zotero_item_key: string | null;
+    zotero_collection_key: string | null;
 }
 
 interface ArticleFile {
@@ -215,6 +221,18 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
                 </p>
               </div>
             )}
+
+              <div className="flex items-center gap-2">
+                  <Badge variant="outline">{article.ingestion_source ?? "MANUAL"}</Badge>
+                  {article.sync_state && article.sync_state !== "active" && (
+                      <Badge variant="secondary">{article.sync_state}</Badge>
+                  )}
+                  {article.zotero_item_key && (
+                      <Badge variant="outline" className="font-mono text-[10px]">
+                          {article.zotero_item_key}
+                      </Badge>
+                  )}
+              </div>
 
             {/* Journal Info */}
             <div className="flex flex-wrap gap-4">

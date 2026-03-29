@@ -211,7 +211,11 @@ export type ZoteroAction =
   | "list-collections"
   | "fetch-items"
   | "fetch-attachments"
-  | "download-attachment";
+    | "download-attachment"
+    | "sync-collection"
+    | "sync-status"
+    | "sync-retry-failed"
+    | "sync-item-result";
 
 /**
  * Client for Zotero endpoints.

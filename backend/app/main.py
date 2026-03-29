@@ -46,7 +46,8 @@ def check_pending_migrations() -> None:
     alembic_cfg = AlembicConfig("alembic.ini")
     script = ScriptDirectory.from_config(alembic_cfg)
 
-    sync_url = settings.DATABASE_URL.unicode_string().replace(
+    raw_database_url = settings.DIRECT_DATABASE_URL or settings.DATABASE_URL.unicode_string()
+    sync_url = raw_database_url.replace(
         "postgresql://", "postgresql+psycopg://", 1
     )
     engine = create_engine(sync_url)

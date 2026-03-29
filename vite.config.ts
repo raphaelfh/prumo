@@ -10,6 +10,39 @@ export default defineConfig(({mode: _mode}) => ({
   },
     build: {
         chunkSizeWarningLimit: 800,
+        rollupOptions: {
+            output: {
+                manualChunks(id) {
+                    if (!id.includes("node_modules")) return undefined;
+
+                    if (id.includes("react-pdf") || id.includes("pdfjs-dist") || id.includes("@react-pdf-viewer")) {
+                        return "pdf-vendor";
+                    }
+
+                    if (id.includes("@tanstack/react-query")) {
+                        return "query-vendor";
+                    }
+
+                    if (id.includes("@radix-ui")) {
+                        return "radix-vendor";
+                    }
+
+                    if (id.includes("react-router-dom")) {
+                        return "router-vendor";
+                    }
+
+                    if (id.includes("react") || id.includes("react-dom") || id.includes("scheduler")) {
+                        return "react-vendor";
+                    }
+
+                    if (id.includes("lucide-react")) {
+                        return "icons-vendor";
+                    }
+
+                    return undefined;
+                },
+            },
+        },
     },
   plugins: [react()],
   resolve: {

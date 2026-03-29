@@ -175,6 +175,8 @@ export interface ImportProgress {
     updated: number;
     skipped: number;
     errors: number;
+      removedAtSource?: number;
+      reactivated?: number;
       pdfsDownloaded?: number; // Count of PDFs downloaded
   };
 }
@@ -193,9 +195,31 @@ export interface ImportResult {
     updated: number;
     skipped: number;
     errors: number;
+      removedAtSource?: number;
+      reactivated?: number;
+      pdfsDownloaded?: number;
   };
   errors: ImportError[];
   duration: number;
+}
+
+export interface ZoteroSyncCounts {
+    totalReceived: number;
+    persisted: number;
+    updated: number;
+    skipped: number;
+    failed: number;
+    removedAtSource: number;
+    reactivated: number;
+}
+
+export interface ZoteroSyncStatus {
+    syncRunId: string;
+    status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+    counts: ZoteroSyncCounts;
+    startedAt: string;
+    completedAt?: string | null;
+    traceId: string;
 }
 
 // =================== MAPEAMENTO DE ARTIGOS ===================

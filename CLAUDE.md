@@ -1,8 +1,13 @@
 # review-ai-hub Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-03-15
+Auto-generated from all feature plans. Last updated: 2026-03-28
 
 ## Active Technologies
+
+- Python 3.11+ (backend), TypeScript strict (frontend) + FastAPI, SQLAlchemy 2.0 async, Alembic, Celery + Redis,
+  Supabase Auth/Storage, React 18, (006-zotero-articles-sync)
+- PostgreSQL `public` schema (`articles` and related domain tables) + Supabase Storage bucket `articles` (
+  006-zotero-articles-sync)
 
 - Python 3.11+ (backend), TypeScript strict (frontend) + FastAPI, SQLAlchemy 2.0 async, Celery + Redis, Supabase (auth +
   storage); React 18, Vite, TanStack Query, Zustand, shadcn/Radix (005-articles-export)
@@ -29,6 +34,9 @@ npm test && npm run lint
 - TypeScript (strict), React 18.3: Follow standard conventions
 
 ## Recent Changes
+
+- 006-zotero-articles-sync: Added Python 3.11+ (backend), TypeScript strict (frontend) + FastAPI, SQLAlchemy 2.0 async,
+  Alembic, Celery + Redis, Supabase Auth/Storage, React 18,
 
 - 005-articles-export: Added Python 3.11+ (backend), TypeScript strict (frontend) + FastAPI, SQLAlchemy 2.0 async,
   Celery + Redis, Supabase (auth + storage); React 18, Vite, TanStack Query, Zustand, shadcn/Radix
