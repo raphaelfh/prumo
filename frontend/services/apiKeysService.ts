@@ -60,8 +60,9 @@ class APIKeysService {
    * Lists all API keys for the user.
    */
   async listKeys(token: string, activeOnly: boolean = true): Promise<APIKeyInfo[]> {
+      const requestUrl = `${API_BASE_URL}/api/v1/user-api-keys?active_only=${activeOnly}`;
     const response = await fetch(
-      `${API_BASE_URL}/api/v1/user-api-keys?active_only=${activeOnly}`,
+        requestUrl,
       {
         method: 'GET',
         headers: this.getAuthHeaders(token),
@@ -185,7 +186,8 @@ class APIKeysService {
    * Lista provedores suportados.
    */
   async listProviders(token: string): Promise<ProviderInfo[]> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/user-api-keys/providers`, {
+      const requestUrl = `${API_BASE_URL}/api/v1/user-api-keys/providers`;
+      const response = await fetch(requestUrl, {
       method: 'GET',
       headers: this.getAuthHeaders(token),
     });

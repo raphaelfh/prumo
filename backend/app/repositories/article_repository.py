@@ -6,11 +6,14 @@ Gerencia acesso a dados de artigos e arquivos.
 
 from uuid import UUID
 
-from sqlalchemy import select
+from datetime import datetime, timezone
+
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.article import Article, ArticleFile
+from app.models.article_author import ArticleSyncEvent, ArticleSyncRun
 from app.repositories.base import BaseRepository
 
 
@@ -155,9 +158,204 @@ class ArticleRepository(BaseRepository[Article]):
         
         result = await self.db.execute(
             select(func.count())
+            .select_from(Article)
             .where(Article.project_id == project_id)
         )
         return result.scalar_one()
+
+    async def get_by_canonical_identity(
+            self,
+            project_id: UUID,
+            *,
+            zotero_item_key: str | None = None,
+            doi: str | None = None,
+            url_landing: str | None = None,
+    ) -> Article | None:
+        if zotero_item_key:
+            return await self.get_by_zotero_item_key(project_id, zotero_item_key)
+
+        clauses = []
+        if doi:
+            clauses.append(Article.doi == doi)
+        if url_landing:
+            clauses.append(Article.url_landing == url_landing)
+        if not clauses:
+            return None
+
+        result = await self.db.execute(
+            select(Article)
+            .where(Article.project_id == project_id)
+            .where(clauses[0] if len(clauses) == 1 else clauses[0] | clauses[1])
+            .order_by(Article.updated_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def upsert_by_canonical_identity(
+            self,
+            *,
+            project_id: UUID,
+            payload: dict,
+            canonical_identity: dict[str, str | None],
+    ) -> tuple[Article, bool]:
+        existing = await self.get_by_canonical_identity(
+            project_id,
+            zotero_item_key=canonical_identity.get("zotero_item_key"),
+            doi=canonical_identity.get("doi"),
+            url_landing=canonical_identity.get("url_landing"),
+        )
+        if existing:
+            for key, value in payload.items():
+                setattr(existing, key, value)
+            existing.last_synced_at = datetime.now(timezone.utc)
+            await self.db.flush()
+            await self.db.refresh(existing)
+            return existing, False
+
+        article = Article(
+            project_id=project_id,
+            last_synced_at=datetime.now(timezone.utc),
+            **payload,
+        )
+        created = await self.create(article)
+        return created, True
+
+    async def mark_removed_at_source(self, article: Article) -> Article:
+        article.sync_state = "removed_at_source"
+        article.removed_at_source_at = datetime.now(timezone.utc)
+        article.last_synced_at = datetime.now(timezone.utc)
+        await self.db.flush()
+        await self.db.refresh(article)
+        return article
+
+    async def mark_reactivated(self, article: Article) -> Article:
+        article.sync_state = "reactivated"
+        article.removed_at_source_at = None
+        article.last_synced_at = datetime.now(timezone.utc)
+        await self.db.flush()
+        await self.db.refresh(article)
+        return article
+
+    async def get_zotero_project_articles(self, project_id: UUID, collection_key: str | None = None) -> list[Article]:
+        query = select(Article).where(
+            Article.project_id == project_id,
+            Article.ingestion_source == "zotero",
+            Article.zotero_item_key.is_not(None),
+        )
+        if collection_key:
+            query = query.where(Article.zotero_collection_key == collection_key)
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
+
+
+class ArticleSyncRunRepository(BaseRepository[ArticleSyncRun]):
+    def __init__(self, db: AsyncSession):
+        super().__init__(db, ArticleSyncRun)
+
+    async def create_run(
+            self,
+            *,
+            project_id: UUID,
+            requested_by_user_id: UUID,
+            source: str,
+            source_collection_key: str | None,
+    ) -> ArticleSyncRun:
+        run = ArticleSyncRun(
+            project_id=project_id,
+            requested_by_user_id=requested_by_user_id,
+            started_at=datetime.now(timezone.utc),
+            status="pending",
+            source=source,
+            source_collection_key=source_collection_key,
+        )
+        return await self.create(run)
+
+    async def get_owned_run(self, sync_run_id: UUID, user_id: UUID) -> ArticleSyncRun | None:
+        result = await self.db.execute(
+            select(ArticleSyncRun)
+            .where(ArticleSyncRun.id == sync_run_id)
+            .where(ArticleSyncRun.requested_by_user_id == user_id)
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def update_counts(self, run: ArticleSyncRun, counts: dict[str, int], status: str) -> ArticleSyncRun:
+        run.total_received = counts.get("total_received", run.total_received)
+        run.persisted = counts.get("persisted", run.persisted)
+        run.updated = counts.get("updated", run.updated)
+        run.skipped = counts.get("skipped", run.skipped)
+        run.failed = counts.get("failed", run.failed)
+        run.removed_at_source = counts.get("removed_at_source", run.removed_at_source)
+        run.reactivated = counts.get("reactivated", run.reactivated)
+        run.status = status
+        if status in {"completed", "failed", "cancelled"}:
+            run.completed_at = datetime.now(timezone.utc)
+        await self.db.flush()
+        await self.db.refresh(run)
+        return run
+
+
+class ArticleSyncEventRepository(BaseRepository[ArticleSyncEvent]):
+    def __init__(self, db: AsyncSession):
+        super().__init__(db, ArticleSyncEvent)
+
+    async def create_event(
+            self,
+            *,
+            project_id: UUID,
+            sync_run_id: UUID,
+            status: str,
+            zotero_item_key: str | None,
+            article_id: UUID | None = None,
+            authority_rule_applied: str | None = None,
+            error_code: str | None = None,
+            error_message: str | None = None,
+            event_payload: dict | None = None,
+    ) -> ArticleSyncEvent:
+        event = ArticleSyncEvent(
+            project_id=project_id,
+            article_id=article_id,
+            sync_run_id=sync_run_id,
+            zotero_item_key=zotero_item_key,
+            status=status,
+            authority_rule_applied=authority_rule_applied,
+            error_code=error_code,
+            error_message=error_message,
+            event_payload=event_payload,
+            processed_at=datetime.now(timezone.utc),
+        )
+        return await self.create(event)
+
+    async def list_run_events(
+            self,
+            *,
+            sync_run_id: UUID,
+            offset: int = 0,
+            limit: int = 50,
+            status_filter: str | None = None,
+    ) -> tuple[list[ArticleSyncEvent], int]:
+        query = select(ArticleSyncEvent).where(ArticleSyncEvent.sync_run_id == sync_run_id)
+        count_query = select(func.count()).select_from(ArticleSyncEvent).where(
+            ArticleSyncEvent.sync_run_id == sync_run_id)
+        if status_filter:
+            query = query.where(ArticleSyncEvent.status == status_filter)
+            count_query = count_query.where(ArticleSyncEvent.status == status_filter)
+
+        result = await self.db.execute(
+            query.order_by(ArticleSyncEvent.processed_at.desc()).offset(offset).limit(limit)
+        )
+        total_result = await self.db.execute(count_query)
+        return list(result.scalars().all()), int(total_result.scalar_one())
+
+    async def list_failed_by_run(self, sync_run_id: UUID, limit: int = 100) -> list[ArticleSyncEvent]:
+        result = await self.db.execute(
+            select(ArticleSyncEvent)
+            .where(ArticleSyncEvent.sync_run_id == sync_run_id)
+            .where(ArticleSyncEvent.status == "failed")
+            .order_by(ArticleSyncEvent.processed_at.asc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
 
 
 class ArticleFileRepository(BaseRepository[ArticleFile]):

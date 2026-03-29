@@ -1,4 +1,4 @@
-import {useEffect, useState} from "react";
+import {useCallback, useEffect, useRef, useState} from "react";
 import {useNavigate, useParams, useSearchParams} from "react-router-dom";
 import {supabase} from "@/integrations/supabase/client";
 import {Button} from "@/components/ui/button";
@@ -8,9 +8,11 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {Plus, ChevronDown, Upload, FileText} from "lucide-react";
+import {Plus, ChevronDown, Upload, FileText, Download} from "lucide-react";
 import {toast} from "sonner";
-import {ArticlesList} from "@/components/articles/ArticlesList";
+import {ArticlesList, type ArticlesListHandle} from "@/components/articles/ArticlesList";
+import {ArticleForm} from "@/components/articles/ArticleForm";
+import {Sheet, SheetContent} from "@/components/ui/sheet";
 import {ProjectSettings} from "@/components/project/ProjectSettings";
 import {AssessmentInterface} from "@/components/assessment/AssessmentInterface";
 import {ExtractionInterface} from "@/components/extraction/ExtractionInterface";
@@ -20,18 +22,60 @@ import {useProject} from "@/contexts/ProjectContext";
 import {useZoteroIntegration} from "@/hooks/useZoteroIntegration";
 import {useProjectMemberRole} from "@/hooks/useProjectMemberRole";
 import {t} from "@/lib/copy";
+import type {Article} from "@/types/article";
 
-interface Article {
-  id: string;
-  title: string;
-  abstract: string | null;
-  publication_year: number | null;
-  journal_title: string | null;
-  authors: string[] | null;
-  doi: string | null;
-  pmid: string | null;
-  keywords: string[] | null;
-}
+/** List projection: all article columns except large text blobs (not loaded in grid). */
+const PROJECT_ARTICLES_LIST_SELECT = [
+    "id",
+    "title",
+    "abstract",
+    "authors",
+    "publication_year",
+    "publication_month",
+    "publication_day",
+    "journal_title",
+    "journal_issn",
+    "journal_eissn",
+    "journal_publisher",
+    "volume",
+    "issue",
+    "pages",
+    "doi",
+    "pmid",
+    "pmcid",
+    "arxiv_id",
+    "pii",
+    "keywords",
+    "mesh_terms",
+    "url_landing",
+    "url_pdf",
+    "language",
+    "article_type",
+    "publication_status",
+    "open_access",
+    "license",
+    "study_design",
+    "conflicts_of_interest",
+    "data_availability",
+    "registration",
+    "funding",
+    "source_payload",
+    "sync_conflict_log",
+    "hash_fingerprint",
+    "source_lineage",
+    "row_version",
+    "ingestion_source",
+    "sync_state",
+    "zotero_item_key",
+    "zotero_collection_key",
+    "zotero_version",
+    "removed_at_source_at",
+    "last_synced_at",
+    "created_at",
+    "updated_at",
+].join(", ");
+
+type ProjectArticle = Article;
 
 const TAB_DESCRIPTIONS: Record<string, string> = {
     extraction: 'Extract structured data using standard templates',
@@ -57,12 +101,91 @@ export default function ProjectView() {
         next.set('extractionTab', tab);
         setSearchParams(next, {replace: true});
     };
-  
-  const [articles, setArticles] = useState<Article[]>([]);
+
+    const [articles, setArticles] = useState<ProjectArticle[]>([]);
   const [loading, setLoading] = useState(true);
     const [zoteroDialogOpen, setZoteroDialogOpen] = useState(false);
     const [risDialogOpen, setRisDialogOpen] = useState(false);
+    const articlesListRef = useRef<ArticlesListHandle>(null);
+    const [articlesExportEnabled, setArticlesExportEnabled] = useState(false);
     const {isConfigured: hasZoteroConfigured} = useZoteroIntegration();
+
+    const closeArticleEditor = useCallback(() => {
+        setSearchParams(
+            (prev) => {
+                const next = new URLSearchParams(prev);
+                next.delete('articleEditor');
+                next.delete('articleId');
+                return next;
+            },
+            {replace: true}
+        );
+    }, [setSearchParams]);
+
+    const openArticleEditorAdd = useCallback(() => {
+        setSearchParams(
+            (prev) => {
+                const next = new URLSearchParams(prev);
+                next.set('tab', 'articles');
+                next.set('articleEditor', 'add');
+                next.delete('articleId');
+                return next;
+            },
+            {replace: false}
+        );
+    }, [setSearchParams]);
+
+    const openArticleEditorEdit = useCallback(
+        (articleId: string) => {
+            setSearchParams(
+                (prev) => {
+                    const next = new URLSearchParams(prev);
+                    next.set('tab', 'articles');
+                    next.set('articleEditor', 'edit');
+                    next.set('articleId', articleId);
+                    return next;
+                },
+                {replace: false}
+            );
+        },
+        [setSearchParams]
+    );
+
+    useEffect(() => {
+        if (activeTab !== 'articles') {
+            setSearchParams(
+                (prev) => {
+                    if (!prev.get('articleEditor') && !prev.get('articleId')) {
+                        return prev;
+                    }
+                    const next = new URLSearchParams(prev);
+                    next.delete('articleEditor');
+                    next.delete('articleId');
+                    return next;
+                },
+                {replace: true}
+            );
+        }
+    }, [activeTab, setSearchParams]);
+
+    useEffect(() => {
+        if (activeTab !== 'articles') {
+            return;
+        }
+        const mode = searchParams.get('articleEditor');
+        const id = searchParams.get('articleId');
+        if (mode === 'edit' && !id) {
+            setSearchParams(
+                (prev) => {
+                    const next = new URLSearchParams(prev);
+                    next.delete('articleEditor');
+                    next.delete('articleId');
+                    return next;
+                },
+                {replace: true}
+            );
+        }
+    }, [activeTab, searchParams, setSearchParams]);
 
   useEffect(() => {
     if (projectId) {
@@ -102,10 +225,7 @@ export default function ProjectView() {
     try {
       const { data, error } = await supabase
         .from("articles")
-        .select(`
-          id, title, abstract, authors, publication_year,
-          journal_title, doi, pmid, keywords, created_at
-        `)
+          .select(PROJECT_ARTICLES_LIST_SELECT)
         .eq("project_id", projectId)
         .order("created_at", { ascending: false });
 
@@ -142,12 +262,15 @@ export default function ProjectView() {
       case 'articles':
         return (
             <ArticlesList
+                ref={articlesListRef}
                 articles={articles}
-                onArticleClick={(articleId) => navigate(`/projects/${projectId}/articles/${articleId}/edit`)}
+                onArticleClick={openArticleEditorEdit}
                 projectId={projectId || ''}
                 onArticlesChange={loadArticles}
                 onOpenZoteroDialog={() => setZoteroDialogOpen(true)}
                 onOpenRisDialog={() => setRisDialogOpen(true)}
+                onExportAvailabilityChange={setArticlesExportEnabled}
+                onOpenAddArticle={openArticleEditorAdd}
             />
         );
 
@@ -164,6 +287,13 @@ export default function ProjectView() {
         return null;
     }
   };
+
+    const articleEditorMode = searchParams.get('articleEditor');
+    const editorArticleIdFromUrl = searchParams.get('articleId');
+    const articleEditorSheetOpen =
+        activeTab === 'articles' &&
+        (articleEditorMode === 'add' ||
+            (articleEditorMode === 'edit' && Boolean(editorArticleIdFromUrl)));
 
   return (
       <div className="h-full bg-background flex flex-col">
@@ -205,17 +335,17 @@ export default function ProjectView() {
                     </div>
                 )}
               {activeTab === 'articles' && (
-                  <div className="flex items-center gap-2 w-full md:w-auto flex-shrink-0 flex-wrap">
+                  <div className="flex items-center gap-1.5 w-full md:w-auto flex-shrink-0 flex-wrap">
                       <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                               <Button
                                   size="sm"
                                   variant="outline"
-                                  className="h-8 px-4 text-[13px] font-medium rounded-lg border-border/50 hover:bg-muted/50 hover:border-border transition-colors"
+                                  className="h-7 px-2 gap-1 text-xs font-medium rounded-md border-border/50 hover:bg-muted/50 hover:border-border transition-colors"
                               >
-                                  <Upload className="mr-2 h-4 w-4"/>
-                                  Import articles
-                                  <ChevronDown className="ml-1.5 h-4 w-4 opacity-70"/>
+                                  <Upload className="h-3.5 w-3.5 shrink-0"/>
+                                  {t('pages', 'projectViewImportArticles')}
+                                  <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-70"/>
                               </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent
@@ -251,11 +381,21 @@ export default function ProjectView() {
                       </DropdownMenu>
                       <Button
                           size="sm"
-                          onClick={() => navigate(`/projects/${projectId}/articles/add`)}
-                          className="h-8 px-4 text-[13px] font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors"
+                          variant="outline"
+                          disabled={!articlesExportEnabled}
+                          onClick={() => articlesListRef.current?.openExportDialog()}
+                          className="h-7 px-2 gap-1 text-xs font-medium rounded-md border-border/50 hover:bg-muted/50 hover:border-border transition-colors disabled:opacity-50"
                       >
-                          <Plus className="mr-2 h-4 w-4"/>
-                          Add article
+                          <Download className="h-3.5 w-3.5 shrink-0"/>
+                          {t('pages', 'projectViewExportArticles')}
+                      </Button>
+                      <Button
+                          size="sm"
+                          onClick={openArticleEditorAdd}
+                          className="h-7 px-2.5 gap-1 text-xs font-medium rounded-md bg-foreground text-background hover:bg-foreground/90 transition-colors"
+                      >
+                          <Plus className="h-3.5 w-3.5 shrink-0"/>
+                          {t('pages', 'projectViewAddArticle')}
                       </Button>
                   </div>
               )}
@@ -284,6 +424,46 @@ export default function ProjectView() {
               projectId={projectId || ''}
               onImportComplete={loadArticles}
           />
+
+          <Sheet
+              open={articleEditorSheetOpen}
+              onOpenChange={(open) => {
+                  if (!open) {
+                      closeArticleEditor();
+                  }
+              }}
+          >
+              <SheetContent
+                  side="right"
+                  showCloseButton={false}
+                  className="flex h-full w-full max-w-full min-h-0 flex-col gap-0 border-l border-border/40 p-0 sm:max-w-none sm:w-[min(960px,96vw)] lg:w-[min(1100px,92vw)]"
+              >
+                  {articleEditorMode === 'add' && projectId ? (
+                      <ArticleForm
+                          key="article-editor-add"
+                          variant="panel"
+                          mode="add"
+                          projectId={projectId}
+                          onDismiss={closeArticleEditor}
+                          onComplete={loadArticles}
+                      />
+                  ) : null}
+                  {articleEditorMode === 'edit' && editorArticleIdFromUrl && projectId ? (
+                      <ArticleForm
+                          key={editorArticleIdFromUrl}
+                          variant="panel"
+                          mode="edit"
+                          projectId={projectId}
+                          articleId={editorArticleIdFromUrl}
+                          onDismiss={closeArticleEditor}
+                          onComplete={() => {
+                              void loadArticles();
+                              closeArticleEditor();
+                          }}
+                      />
+                  ) : null}
+              </SheetContent>
+          </Sheet>
     </div>
   );
 }

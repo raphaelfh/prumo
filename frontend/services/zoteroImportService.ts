@@ -13,6 +13,7 @@ import type {
     ZoteroCollection,
     ZoteroCredentialsInput,
     ZoteroItem,
+    ZoteroSyncStatus,
     ZoteroTestConnectionResult,
 } from '@/types/zotero';
 import {
@@ -30,6 +31,60 @@ import {t} from '@/lib/copy';
  */
 export class ZoteroImportService {
   private abortController: AbortController | null = null;
+
+    async startSync(projectId: string, collectionKey: string, options: ImportOptions): Promise<{
+        syncRunId: string;
+        status: string;
+        message: string;
+    }> {
+        const response = await this.callZoteroApi<{
+            syncRunId?: string;
+            sync_run_id?: string;
+            status?: string;
+            message?: string
+        }>('sync-collection', {
+            projectId,
+            collectionKey,
+            maxItems: 1000,
+            includeAttachments: options.downloadPdfs,
+            updateExisting: options.updateExisting,
+        });
+        return response as { syncRunId: string; status: string; message: string; };
+    }
+
+    async getSyncStatus(syncRunId: string): Promise<ZoteroSyncStatus> {
+        return this.callZoteroApi('sync-status', {syncRunId});
+    }
+
+    async retryFailed(syncRunId: string, limit = 100): Promise<{
+        syncRunId: string;
+        retryOfSyncRunId: string;
+        queuedItems: number;
+    }> {
+        return this.callZoteroApi('sync-retry-failed', {syncRunId, limit});
+    }
+
+    async getSyncItemResults(syncRunId: string, statusFilter?: string): Promise<{
+        items: Array<{
+            zoteroItemKey?: string;
+            articleId?: string;
+            status: string;
+            errorCode?: string;
+            errorMessage?: string;
+            authorityRuleApplied?: string;
+            processedAt: string;
+        }>;
+        total: number;
+        offset: number;
+        limit: number;
+    }> {
+        return this.callZoteroApi('sync-item-result', {
+            syncRunId,
+            statusFilter,
+            offset: 0,
+            limit: 50,
+        });
+    }
 
   /**
    * Calls the FastAPI backend.
@@ -372,132 +427,63 @@ export class ZoteroImportService {
     const errors: ImportError[] = [];
 
     try {
-        // Phase 1: Fetch items
-      onProgress?.({
-        phase: 'fetching',
-        current: 0,
-        total: 0,
-          message: t('extraction', 'zoteroProgressFetching'),
-        stats,
-      });
+        const started = await this.startSync(projectId, collectionKey, options);
+        const syncRunId = started.syncRunId;
+        let lastStatus = 'pending';
+        let lastTotal = 0;
 
-      let allItems: ZoteroItem[] = [];
-      let start = 0;
-      const batchSize = 100;
-      let hasMore = true;
-
-      while (hasMore) {
-        const { items, totalResults, hasMore: more } = await this.fetchItems(
-          collectionKey,
-          batchSize,
-          start
-        );
-
-        allItems = [...allItems, ...items];
-        hasMore = more;
-        start += batchSize;
+        while (lastStatus === 'pending' || lastStatus === 'running') {
+            const status = await this.getSyncStatus(syncRunId);
+            lastStatus = status.status;
+            stats.imported = status.counts.persisted;
+            stats.updated = status.counts.updated;
+            stats.skipped = status.counts.skipped;
+            stats.errors = status.counts.failed;
+            stats.removedAtSource = status.counts.removedAtSource;
+            stats.reactivated = status.counts.reactivated;
+            const total = status.counts.totalReceived;
+            lastTotal = total;
+            const current = status.counts.persisted + status.counts.updated + status.counts.skipped + status.counts.failed;
+            const showCount = total > 0;
 
         onProgress?.({
-          phase: 'fetching',
-          current: allItems.length,
-          total: totalResults,
-            message: t('extraction', 'zoteroProgressFetchingCount').replace('{{current}}', String(allItems.length)).replace('{{total}}', String(totalResults)),
-          stats,
+            phase: lastStatus === 'completed' ? 'complete' : 'processing',
+            current,
+            total,
+            message: lastStatus === 'completed'
+                ? t('extraction', 'zoteroProgressComplete')
+                : showCount
+                    ? t('extraction', 'zoteroProgressProcessingCount').replace('{{current}}', String(current)).replace('{{total}}', String(total))
+                    : t('extraction', 'zoteroProgressProcessing'),
+            stats,
         });
-      }
 
-      const totalItems = allItems.length;
-
-      if (totalItems === 0) {
-        return {
-          success: true,
-          stats,
-          errors: [],
-          duration: Date.now() - startTime,
-        };
-      }
-
-        // Phase 2: Process items
-      onProgress?.({
-        phase: 'processing',
-        current: 0,
-        total: totalItems,
-          message: t('extraction', 'zoteroProgressProcessing'),
-        stats,
-      });
-
-      for (let i = 0; i < allItems.length; i++) {
-        const item = allItems[i];
-
-        try {
-          const result = await this.processItem(projectId, item, collectionKey, options);
-
-          if (result.action === 'imported') {
-            stats.imported++;
-          } else if (result.action === 'updated') {
-            stats.updated++;
-          } else if (result.action === 'skipped') {
-            stats.skipped++;
-            if (result.error) {
-              errors.push({
-                itemKey: item.key,
-                  itemTitle: item.data.title || t('extraction', 'zoteroItemTitleFallback'),
-                error: result.error,
-                phase: 'processing',
-              });
+            if (lastStatus === 'pending' || lastStatus === 'running') {
+                await new Promise((resolve) => setTimeout(resolve, 1500));
             }
-          }
-
-            // Count downloaded PDFs if option is enabled
-          if (options.downloadPdfs && result.articleId) {
-            try {
-              const { count } = await supabase
-                .from('article_files')
-                .select('id', { count: 'exact', head: true })
-                .eq('article_id', result.articleId);
-              
-              if (count && count > 0) {
-                stats.pdfsDownloaded = (stats.pdfsDownloaded || 0) + count;
-              }
-            } catch (_countError) {
-                // Ignore count error
-            }
-          }
-        } catch (error: any) {
-          stats.errors++;
-          errors.push({
-            itemKey: item.key,
-              itemTitle: item.data.title || t('extraction', 'zoteroItemTitleFallback'),
-              error: error.message || 'Unknown error',
-            phase: 'processing',
-          });
         }
 
-        const phase = options.downloadPdfs ? 'downloading' : 'processing';
-        
-        onProgress?.({
-          phase,
-          current: i + 1,
-          total: totalItems,
-          message: options.downloadPdfs
-              ? t('extraction', 'zoteroProgressProcessingWithPdfs').replace('{{current}}', String(i + 1)).replace('{{total}}', String(totalItems))
-              : t('extraction', 'zoteroProgressProcessingCount').replace('{{current}}', String(i + 1)).replace('{{total}}', String(totalItems)),
-          currentFile: item.data.title,
-          stats,
-        });
-      }
-
-        // Phase 3: Complete
-      onProgress?.({
-        phase: 'complete',
-        current: totalItems,
-        total: totalItems,
-          message: t('extraction', 'zoteroProgressComplete'),
-        stats,
-      });
+        if (lastStatus !== 'completed') {
+            const diagnostics = await this.getSyncItemResults(syncRunId, 'failed');
+            diagnostics.items.forEach((item) => {
+                errors.push({
+                    itemKey: item.zoteroItemKey || '',
+                    itemTitle: item.zoteroItemKey || t('extraction', 'zoteroItemTitleFallback'),
+                    error: item.errorMessage || 'Sync failed',
+                    phase: 'processing',
+                });
+            });
+            onProgress?.({
+                phase: 'error',
+                current: stats.imported + stats.updated + stats.skipped + stats.errors,
+                total: lastTotal,
+                message: t('extraction', 'zoteroProgressError'),
+                stats,
+            });
+        }
 
       return {
-        success: true,
+          success: lastStatus === 'completed',
         stats,
         errors,
         duration: Date.now() - startTime,

@@ -76,7 +76,7 @@ PROJECT_NAME="Review Hub API"
 API_V1_PREFIX="/api/v1"
 
 # CORS
-CORS_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost:8080,http://127.0.0.1:8080
+CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://localhost:8080,http://127.0.0.1:8080
 
 # Supabase
 SUPABASE_URL=https://seu-projeto.supabase.co
@@ -136,6 +136,9 @@ echo ""
 echo -e "${BLUE}Próximos passos:${NC}"
 echo ""
 echo -e "  1. Edite o arquivo ${YELLOW}.env${NC} com suas credenciais"
+echo -e "     ${YELLOW}DATABASE_URL${NC} remoto recomendado (Supabase pooler):"
+echo -e "     ${YELLOW}postgresql://postgres.<project_ref>:<db_password>@aws-1-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require${NC}"
+echo -e "     ${YELLOW}Dica:${NC} evite host db.<project_ref>.supabase.co quando houver erro de DNS local."
 echo ""
 echo -e "  2. Ative o ambiente virtual:"
 echo -e "     ${YELLOW}source .venv/bin/activate${NC}"
@@ -148,5 +151,8 @@ echo -e "     ${YELLOW}http://localhost:8000/api/v1/docs${NC}"
 echo ""
 echo -e "  5. Execute os testes:"
 echo -e "     ${YELLOW}pytest${NC}"
+echo ""
+echo -e "  6. Aplicar migrations no banco remoto (quando aplicável):"
+echo -e "     ${YELLOW}uv run alembic upgrade head${NC}"
 echo ""
 

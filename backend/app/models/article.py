@@ -16,6 +16,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import BaseModel, PostgreSQLEnumType
 
 if TYPE_CHECKING:
+    from app.models.article_author import ArticleAuthorLink, ArticleSyncEvent
     from app.models.project import Project
 
 
@@ -117,6 +118,14 @@ class Article(BaseModel):
     zotero_item_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     zotero_collection_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     zotero_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sync_state: Mapped[str] = mapped_column(String, nullable=False, default="active")
+    removed_at_source_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sync_conflict_log: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    pdf_extracted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    semantic_abstract_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    semantic_fulltext_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_lineage: Mapped[str | None] = mapped_column(String, nullable=True)
     
     # Relationships
     project: Mapped["Project"] = relationship(
@@ -127,6 +136,15 @@ class Article(BaseModel):
         "ArticleFile",
         back_populates="article",
         cascade="all, delete-orphan",
+    )
+    author_links: Mapped[list["ArticleAuthorLink"]] = relationship(
+        "ArticleAuthorLink",
+        back_populates="article",
+        cascade="all, delete-orphan",
+    )
+    sync_events: Mapped[list["ArticleSyncEvent"]] = relationship(
+        "ArticleSyncEvent",
+        back_populates="article",
     )
     
     # Índices definidos via __table_args__ (Infrastructure as Code)

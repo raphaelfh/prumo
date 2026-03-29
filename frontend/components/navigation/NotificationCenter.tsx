@@ -159,6 +159,14 @@ export function NotificationCenter() {
     }).length;
   }, [recentJobs]);
 
+    const hasActiveBackgroundJobs = useMemo(
+        () =>
+            jobs.some(
+                (job) => job.status === 'pending' || job.status === 'running'
+            ),
+        [jobs]
+    );
+
   const handleRemoveJob = (jobId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     removeJob(jobId);
@@ -191,10 +199,25 @@ export function NotificationCenter() {
         <Button
           variant="ghost"
           size="icon"
-          className="relative h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors duration-75"
-          aria-label={t('navigation', 'notifications')}
+          className={cn(
+              'relative h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors duration-75',
+              hasActiveBackgroundJobs &&
+              'text-foreground/90 [&_svg]:opacity-90'
+          )}
+          aria-busy={hasActiveBackgroundJobs}
+          aria-label={
+              hasActiveBackgroundJobs
+                  ? t('navigation', 'notificationsAriaBackgroundActive')
+                  : t('navigation', 'notifications')
+          }
         >
             <Bell className="h-4 w-4" strokeWidth={1.5}/>
+            {hasActiveBackgroundJobs && (
+                <span
+                    className="pointer-events-none absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-sky-500 shadow-[0_0_0_1px_hsl(var(--background))] motion-safe:animate-pulse dark:bg-sky-400"
+                    aria-hidden
+                />
+            )}
           {unreadCount > 0 && (
             <Badge 
               variant="destructive" 
@@ -304,11 +327,11 @@ function NotificationItem({ job, onRemove, onClick }: NotificationItemProps) {
                   {job.progress.message}
                 </span>
                 <span className="text-muted-foreground ml-2 flex-shrink-0">
-                  {job.progress.current}/{job.progress.total}
+                  {job.progress.total > 0 ? `${job.progress.current}/${job.progress.total}` : '—'}
                 </span>
               </div>
-              <Progress 
-                value={(job.progress.current / Math.max(job.progress.total, 1)) * 100} 
+              <Progress
+                  value={job.progress.total > 0 ? (job.progress.current / job.progress.total) * 100 : 0}
                 className="h-1"
               />
             </div>
@@ -411,6 +434,8 @@ function getCompletionMessage(job: BackgroundJob): string {
 
       if (stats.imported) parts.push(`${stats.imported} ${t('navigation', 'importedCount')}`);
       if (stats.updated) parts.push(`${stats.updated} ${t('navigation', 'updatedCount')}`);
+      if (stats.removedAtSource) parts.push(`${stats.removedAtSource} removed`);
+      if (stats.reactivated) parts.push(`${stats.reactivated} reactivated`);
     if (stats.pdfsDownloaded) parts.push(`${stats.pdfsDownloaded} PDFs`);
 
       return `${t('navigation', 'importComplete')} ${parts.join(', ')}`;

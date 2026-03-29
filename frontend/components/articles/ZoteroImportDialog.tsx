@@ -200,7 +200,9 @@ export function ZoteroImportDialog({
 
   const canProceed = selectedCollection !== null;
   const progressPercentage = progress
-    ? Math.round((progress.current / Math.max(progress.total, 1)) * 100)
+      ? progress.total > 0
+          ? Math.round((progress.current / progress.total) * 100)
+          : 0
     : 0;
 
   return (
@@ -373,7 +375,7 @@ export function ZoteroImportDialog({
                 <div className="flex items-center justify-between text-sm gap-2">
                   <span className="truncate flex-1">{progress.message}</span>
                   <span className="text-muted-foreground flex-shrink-0">
-                    {progress.current}/{progress.total}
+                    {progress.total > 0 ? `${progress.current}/${progress.total}` : "—"}
                   </span>
                 </div>
                 <Progress value={progressPercentage} className="h-2" />

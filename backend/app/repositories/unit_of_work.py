@@ -70,6 +70,11 @@ from typing import Self
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.article_repository import ArticleFileRepository, ArticleRepository
+from app.repositories.article_author_repository import (
+    ArticleAuthorLinkRepository,
+    ArticleAuthorRepository,
+)
+from app.repositories.article_repository import ArticleSyncEventRepository, ArticleSyncRunRepository
 from app.repositories.assessment_repository import (
     AIAssessmentRepository,
     AssessmentEvidenceRepository,
@@ -141,6 +146,10 @@ class UnitOfWork:
         # Articles
         self.articles = ArticleRepository(self.session)
         self.article_files = ArticleFileRepository(self.session)
+        self.article_authors = ArticleAuthorRepository(self.session)
+        self.article_author_links = ArticleAuthorLinkRepository(self.session)
+        self.article_sync_runs = ArticleSyncRunRepository(self.session)
+        self.article_sync_events = ArticleSyncEventRepository(self.session)
         
         # Projects
         self.projects = ProjectRepository(self.session)

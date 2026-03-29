@@ -1,25 +1,17 @@
 /**
- * AddArticle - Page to add a new article
- * 
- * Usa o componente unificado ArticleForm em modo 'add'
+ * Legacy route: redirects to project articles tab with the add-article sheet open.
  */
 
 import {Navigate, useParams} from "react-router-dom";
-import {ArticleForm} from "@/components/articles/ArticleForm";
 
 function AddArticle() {
-  const { projectId } = useParams<{ projectId: string }>();
+    const {projectId} = useParams<{ projectId: string }>();
 
   if (!projectId) {
     return <Navigate to="/" replace />;
   }
 
-  return (
-    <ArticleForm
-      mode="add"
-      projectId={projectId}
-    />
-  );
+    return <Navigate to={`/projects/${projectId}?tab=articles&articleEditor=add`} replace/>;
 }
 
 export default AddArticle;

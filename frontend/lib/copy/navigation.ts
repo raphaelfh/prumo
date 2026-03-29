@@ -3,6 +3,8 @@
  */
 export const navigation = {
     notifications: 'Notifications',
+    notificationsAriaBackgroundActive:
+        'Notifications — background activity in progress',
     notificationsCleared: 'Notifications cleared',
     viewProject: 'View project',
     errorPrefix: 'Error',

@@ -27,6 +27,8 @@ export interface JobStats {
   updated?: number;
   skipped?: number;
   errors?: number;
+    removedAtSource?: number;
+    reactivated?: number;
   pdfsDownloaded?: number;
 }
 

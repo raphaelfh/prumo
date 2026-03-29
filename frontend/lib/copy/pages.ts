@@ -26,10 +26,11 @@ export const pages = {
     projectViewProjectNotFound: 'Project not found',
     projectViewTabExtractionDesc: 'Extract structured data using standard templates',
     projectViewTabAssessmentDesc: 'Assess methodological quality of articles',
-    projectViewImportArticles: 'Import articles',
+    projectViewImportArticles: 'Import',
     projectViewFromZotero: 'From Zotero',
     projectViewFromRisFile: 'From RIS file',
-    projectViewAddArticle: 'Add article',
+    projectViewAddArticle: 'Add',
+    projectViewExportArticles: 'Export',
     // ExtractionFullScreen
     extractionScreenLoading: 'Loading extraction interface...',
     extractionScreenErrorLoad: 'Error loading data',

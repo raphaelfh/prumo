@@ -19,6 +19,12 @@ from app.models.project import Project, ProjectMember, ProjectMemberRole, Review
 
 # Modelos que dependem dos anteriores
 from app.models.article import Article, ArticleFile, FileRole
+from app.models.article_author import (
+    ArticleAuthor,
+    ArticleAuthorLink,
+    ArticleSyncEvent,
+    ArticleSyncRun,
+)
 from app.models.extraction import (
     AISuggestion,
     ExtractedValue,
@@ -81,6 +87,10 @@ def _prepare_metadata() -> None:
     # 3. Article (depende de Project)
     Article.__table__  # type: ignore
     ArticleFile.__table__  # type: ignore
+    ArticleAuthor.__table__  # type: ignore
+    ArticleAuthorLink.__table__  # type: ignore
+    ArticleSyncRun.__table__  # type: ignore
+    ArticleSyncEvent.__table__  # type: ignore
     
     # 4. Extraction models (dependem de Article, Project, etc.)
     # Apenas acessar o metadata já força o processamento de todos
@@ -106,6 +116,10 @@ __all__ = [
     "Article",
     "ArticleFile",
     "FileRole",
+    "ArticleAuthor",
+    "ArticleAuthorLink",
+    "ArticleSyncRun",
+    "ArticleSyncEvent",
     # Extraction
     "ExtractionTemplateGlobal",
     "ProjectExtractionTemplate",

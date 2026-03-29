@@ -614,12 +614,20 @@ export type Database = {
           registration: Json | null
           row_version: number
           source_payload: Json | null
+            source_lineage: string | null
           study_design: string | null
+            sync_conflict_log: Json | null
+            sync_state: string
           title: string
           updated_at: string
           url_landing: string | null
           url_pdf: string | null
           volume: string | null
+            removed_at_source_at: string | null
+            last_synced_at: string | null
+            pdf_extracted_text: string | null
+            semantic_abstract_text: string | null
+            semantic_fulltext_text: string | null
           zotero_collection_key: string | null
           zotero_item_key: string | null
           zotero_version: number | null
@@ -659,12 +667,20 @@ export type Database = {
           registration?: Json | null
           row_version?: number
           source_payload?: Json | null
+            source_lineage?: string | null
           study_design?: string | null
+            sync_conflict_log?: Json | null
+            sync_state?: string
           title: string
           updated_at?: string
           url_landing?: string | null
           url_pdf?: string | null
           volume?: string | null
+            removed_at_source_at?: string | null
+            last_synced_at?: string | null
+            pdf_extracted_text?: string | null
+            semantic_abstract_text?: string | null
+            semantic_fulltext_text?: string | null
           zotero_collection_key?: string | null
           zotero_item_key?: string | null
           zotero_version?: number | null
@@ -704,12 +720,20 @@ export type Database = {
           registration?: Json | null
           row_version?: number
           source_payload?: Json | null
+            source_lineage?: string | null
           study_design?: string | null
+            sync_conflict_log?: Json | null
+            sync_state?: string
           title?: string
           updated_at?: string
           url_landing?: string | null
           url_pdf?: string | null
           volume?: string | null
+            removed_at_source_at?: string | null
+            last_synced_at?: string | null
+            pdf_extracted_text?: string | null
+            semantic_abstract_text?: string | null
+            semantic_fulltext_text?: string | null
           zotero_collection_key?: string | null
           zotero_item_key?: string | null
           zotero_version?: number | null

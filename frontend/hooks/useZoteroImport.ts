@@ -58,6 +58,8 @@ export function useZoteroImport() {
         updated: 0,
         skipped: 0,
         errors: 0,
+          removedAtSource: 0,
+          reactivated: 0,
         pdfsDownloaded: 0,
       },
     };
@@ -104,6 +106,8 @@ export function useZoteroImport() {
           updated: 0,
           skipped: 0,
           errors: 1,
+            removedAtSource: 0,
+            reactivated: 0,
         },
       };
 

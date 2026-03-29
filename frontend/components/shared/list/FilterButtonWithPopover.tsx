@@ -49,7 +49,7 @@ export function FilterButtonWithPopover({
                 </Tooltip>
             </TooltipProvider>
             <PopoverContent
-                className="p-0 border-border/50 shadow-[0_8px_30px_rgb(0,0,0,0.04)]"
+                className="p-0 border-border/50 shadow-[0_8px_30px_rgb(0,0,0,0.04)] max-h-[min(85vh,28rem)] overflow-y-auto overflow-x-hidden"
                 align="end"
                 sideOffset={6}
                 onOpenAutoFocus={(e) => e.preventDefault()}
