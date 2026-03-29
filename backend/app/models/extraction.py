@@ -670,6 +670,13 @@ class AISuggestion(Base, UUIDMixin):
         index=True,
     )
 
+    screening_run_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.screening_runs.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+
     # === Extraction suggestion fields (mutually exclusive with assessment fields) ===
     instance_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),

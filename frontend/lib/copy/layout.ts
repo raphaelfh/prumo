@@ -16,6 +16,7 @@ export const layout = {
     sectionReview: 'Review',
     navArticles: 'Articles',
     navSettings: 'Settings',
+    navScreening: 'Screening',
     navDataExtraction: 'Data extraction',
     navQualityAssessment: 'Quality assessment',
 } as const;

@@ -5,8 +5,10 @@ import {Button} from "@/components/ui/button";
 import {Badge} from "@/components/ui/badge";
 import {Checkbox} from "@/components/ui/checkbox";
 import {
+    Brain,
     ChevronDown,
     ChevronUp,
+    FileSpreadsheet,
     FileText,
     MoreHorizontal,
     Plus,
@@ -72,6 +74,10 @@ interface ArticlesListProps {
     onOpenZoteroDialog?: () => void;
     /** When provided, shows "Via RIS file" option alongside Zotero */
     onOpenRisDialog?: () => void;
+    /** When provided, shows "From CSV" option */
+    onOpenCsvDialog?: () => void;
+    /** When provided, shows "From PDF (AI)" option */
+    onOpenPdfDialog?: () => void;
     /** Notifies parent when export action should be enabled (filtered list or selection). */
     onExportAvailabilityChange?: (canExport: boolean) => void;
     /** When set, empty-state "Add first article" opens the panel instead of navigating. */
@@ -118,6 +124,8 @@ const ARTICLES_FILTER_FIELDS: FilterFieldConfig[] = [
             {value: 'ZOTERO', label: 'Zotero'},
             {value: 'MANUAL', label: 'Manual'},
             {value: 'RIS', label: 'RIS'},
+            {value: 'CSV_SCOPUS', label: 'CSV (Scopus)'},
+            {value: 'PDF_AI', label: 'PDF (AI)'},
         ]
     },
     {
@@ -250,6 +258,8 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
         onArticlesChange,
         onOpenZoteroDialog,
         onOpenRisDialog,
+        onOpenCsvDialog,
+        onOpenPdfDialog,
         onExportAvailabilityChange,
         onOpenAddArticle,
     },
@@ -844,6 +854,26 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
                             <Upload className="mr-2 h-4 w-4"/>
                             {onOpenRisDialog ? t('articles', 'listFromZotero') : t('articles', 'listImportArticles')}
                         </Button>
+                        {onOpenCsvDialog && (
+                            <Button
+                                variant="outline"
+                                onClick={onOpenCsvDialog}
+                                className="h-10 px-6 text-[13px] font-medium rounded-lg border-border/50 hover:bg-muted/50 transition-colors"
+                            >
+                                <FileSpreadsheet className="mr-2 h-4 w-4"/>
+                                {t('articles', 'csvImportTitle')}
+                            </Button>
+                        )}
+                        {onOpenPdfDialog && (
+                            <Button
+                                variant="outline"
+                                onClick={onOpenPdfDialog}
+                                className="h-10 px-6 text-[13px] font-medium rounded-lg border-border/50 hover:bg-muted/50 transition-colors"
+                            >
+                                <Brain className="mr-2 h-4 w-4"/>
+                                {t('articles', 'pdfImportTitle')}
+                            </Button>
+                        )}
                     </>
                 ) : (
                     hasZoteroConfigured ? (

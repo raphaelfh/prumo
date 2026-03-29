@@ -8,9 +8,11 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     ai_assessment,
+    article_import,
     articles_export,
     model_extraction,
     project_assessment_instruments,
+    screening,
     section_extraction,
     user_api_keys,
     zotero_import,
@@ -59,4 +61,16 @@ api_router.include_router(
     articles_export.router,
     prefix="/articles-export",
     tags=["Articles Export"],
+)
+
+api_router.include_router(
+    article_import.router,
+    prefix="/article-import",
+    tags=["Article Import"],
+)
+
+api_router.include_router(
+    screening.router,
+    prefix="/screening",
+    tags=["Screening"],
 )

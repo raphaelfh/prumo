@@ -51,6 +51,11 @@ POSTGRESQL_ENUM_VALUES: dict[str, list[str]] = {
     # Assessment enums
     "assessment_status": ["in_progress", "submitted", "locked", "archived"],
     "assessment_source": ["human", "ai", "consensus"],
+
+    # Screening enums
+    "screening_phase": ["title_abstract", "full_text"],
+    "screening_decision": ["include", "exclude", "maybe"],
+    "screening_conflict_status": ["none", "conflict", "resolved"],
 }
 
 
