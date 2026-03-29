@@ -16,8 +16,11 @@ import {Sheet, SheetContent} from "@/components/ui/sheet";
 import {ProjectSettings} from "@/components/project/ProjectSettings";
 import {AssessmentInterface} from "@/components/assessment/AssessmentInterface";
 import {ExtractionInterface} from "@/components/extraction/ExtractionInterface";
+import {ScreeningInterface} from "@/components/screening/ScreeningInterface";
 import {ZoteroImportDialog} from "@/components/articles/ZoteroImportDialog";
 import {RISImportDialog} from "@/components/articles/RISImportDialog";
+import {PDFImportDialog} from "@/components/articles/PDFImportDialog";
+import {CSVImportDialog} from "@/components/articles/CSVImportDialog";
 import {useProject} from "@/contexts/ProjectContext";
 import {useZoteroIntegration} from "@/hooks/useZoteroIntegration";
 import {useProjectMemberRole} from "@/hooks/useProjectMemberRole";
@@ -78,6 +81,7 @@ const PROJECT_ARTICLES_LIST_SELECT = [
 type ProjectArticle = Article;
 
 const TAB_DESCRIPTIONS: Record<string, string> = {
+    screening: 'Screen articles for inclusion in the review',
     extraction: 'Extract structured data using standard templates',
     assessment: 'Assess methodological quality of articles',
 };
@@ -106,6 +110,8 @@ export default function ProjectView() {
   const [loading, setLoading] = useState(true);
     const [zoteroDialogOpen, setZoteroDialogOpen] = useState(false);
     const [risDialogOpen, setRisDialogOpen] = useState(false);
+    const [pdfImportDialogOpen, setPdfImportDialogOpen] = useState(false);
+    const [csvImportDialogOpen, setCsvImportDialogOpen] = useState(false);
     const articlesListRef = useRef<ArticlesListHandle>(null);
     const [articlesExportEnabled, setArticlesExportEnabled] = useState(false);
     const {isConfigured: hasZoteroConfigured} = useZoteroIntegration();
@@ -269,10 +275,15 @@ export default function ProjectView() {
                 onArticlesChange={loadArticles}
                 onOpenZoteroDialog={() => setZoteroDialogOpen(true)}
                 onOpenRisDialog={() => setRisDialogOpen(true)}
+                onOpenCsvDialog={() => setCsvImportDialogOpen(true)}
+                onOpenPdfDialog={() => setPdfImportDialogOpen(true)}
                 onExportAvailabilityChange={setArticlesExportEnabled}
                 onOpenAddArticle={openArticleEditorAdd}
             />
         );
+
+      case 'screening':
+        return <ScreeningInterface projectId={projectId || ''} />;
 
       case 'extraction':
         return <ExtractionInterface projectId={projectId || ''} />;
@@ -377,6 +388,26 @@ export default function ProjectView() {
                           </span>
                                   From RIS file
                               </DropdownMenuItem>
+                              <DropdownMenuItem
+                                  onClick={() => setCsvImportDialogOpen(true)}
+                                  className="flex items-center gap-2.5 rounded-md py-2 px-2.5 cursor-pointer focus:bg-muted/60"
+                              >
+                          <span
+                              className="h-5 w-5 rounded bg-primary/10 flex items-center justify-center flex-shrink-0 border border-primary/15">
+                            <span className="text-[9px] font-semibold text-primary leading-none">CSV</span>
+                          </span>
+                                  From CSV (Scopus)
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                  onClick={() => setPdfImportDialogOpen(true)}
+                                  className="flex items-center gap-2.5 rounded-md py-2 px-2.5 cursor-pointer focus:bg-muted/60"
+                              >
+                          <span
+                              className="h-5 w-5 rounded bg-primary/10 flex items-center justify-center flex-shrink-0 border border-primary/15">
+                            <span className="text-[9px] font-semibold text-primary leading-none">AI</span>
+                          </span>
+                                  From PDF (AI extract)
+                              </DropdownMenuItem>
                           </DropdownMenuContent>
                       </DropdownMenu>
                       <Button
@@ -421,6 +452,18 @@ export default function ProjectView() {
           <RISImportDialog
               open={risDialogOpen}
               onOpenChange={setRisDialogOpen}
+              projectId={projectId || ''}
+              onImportComplete={loadArticles}
+          />
+          <PDFImportDialog
+              open={pdfImportDialogOpen}
+              onOpenChange={setPdfImportDialogOpen}
+              projectId={projectId || ''}
+              onImportComplete={loadArticles}
+          />
+          <CSVImportDialog
+              open={csvImportDialogOpen}
+              onOpenChange={setCsvImportDialogOpen}
               projectId={projectId || ''}
               onImportComplete={loadArticles}
           />

@@ -126,7 +126,11 @@ class Article(BaseModel):
     semantic_abstract_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     semantic_fulltext_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_lineage: Mapped[str | None] = mapped_column(String, nullable=True)
-    
+
+    # Screening phase (denormalized for fast queries and PRISMA counts)
+    # Values: null (not screened), "title_abstract", "full_text", "included", "excluded"
+    screening_phase: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
     # Relationships
     project: Mapped["Project"] = relationship(
         "Project",

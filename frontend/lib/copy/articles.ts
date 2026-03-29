@@ -310,6 +310,25 @@ export const articles = {
     exportInProgress: 'Export in progress…',
     exportCancelExport: 'Cancel export',
     exportSkippedFilesCount: '{{n}} file(s) could not be included in the package.',
+    // PDFImportDialog
+    pdfImportTitle: 'Import from PDF (AI extraction)',
+    pdfImportDesc: 'Upload a PDF and AI will extract the bibliographic metadata automatically.',
+    pdfImportSelectPdf: 'Select PDF',
+    pdfImportExtracting: 'Extracting metadata from PDF...',
+    pdfImportReviewHint: 'Metadata extracted. Review and edit before saving.',
+    pdfImportCloseConfirm: 'Closing will discard the extracted data. Continue?',
+    // CSVImportDialog
+    csvImportTitle: 'Import from CSV (Scopus)',
+    csvImportDesc: 'Select a .csv file exported from Scopus. Articles will be imported with deduplication by DOI.',
+    csvImportSelectFile: 'Select CSV file',
+    csvImportPreview: 'Preview (first 10):',
+    csvImportImporting: 'Importing...',
+    csvImportComplete: 'Import complete',
+    csvImportImported: 'Imported',
+    csvImportDuplicates: 'Duplicates',
+    csvImportFailed: 'Failed',
+    csvImportNoArticles: 'No articles found in CSV file',
+    csvImportInvalidFormat: 'CSV must have a "Title" column. Expected Scopus export format.',
 } as const;
 
 export type ArticlesCopy = typeof articles;
