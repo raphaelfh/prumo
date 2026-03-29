@@ -58,6 +58,15 @@ from app.models.assessment import (
     ProjectAssessmentInstrument,
     ProjectAssessmentItem,
 )
+from app.models.screening import (
+    ScreeningConfig,
+    ScreeningConflict,
+    ScreeningConflictStatusValue,
+    ScreeningDecision,
+    ScreeningDecisionValue,
+    ScreeningPhase,
+    ScreeningRun,
+)
 from app.models.integration import ZoteroIntegration
 from app.models.user_api_key import UserAPIKey, SUPPORTED_PROVIDERS
 
@@ -153,6 +162,14 @@ __all__ = [
     "ProjectAssessmentItem",
     # Integration
     "ZoteroIntegration",
+    # Screening
+    "ScreeningConfig",
+    "ScreeningDecision",
+    "ScreeningConflict",
+    "ScreeningRun",
+    "ScreeningPhase",
+    "ScreeningDecisionValue",
+    "ScreeningConflictStatusValue",
     # User API Keys
     "UserAPIKey",
     "SUPPORTED_PROVIDERS",
