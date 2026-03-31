@@ -1,28 +1,28 @@
 """
 Articles Export Schemas.
 
-Pydantic request/response para exportação de artigos (CSV, RIS, RDF).
+Pydantic request/response for exportacao de articles (CSV, RIS, RDF).
 """
 
-from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
-
 
 # =================== REQUEST ===================
 
 
 class ExportRequest(BaseModel):
-    """Request para iniciar exportação de artigos."""
+    """Request for iniciar exportacao de articles."""
 
-    project_id: UUID = Field(..., alias="projectId", description="ID do projeto")
-    article_ids: list[UUID] = Field(..., alias="articleIds", description="IDs dos artigos a exportar")
-    formats: list[str] = Field(..., description="Formatos: csv, ris, rdf (um ou mais)")
+    project_id: UUID = Field(..., alias="projectId", description="project")
+    article_ids: list[UUID] = Field(
+        ..., alias="articleIds", description="IDs of the articles a exportar"
+    )
+    formats: list[str] = Field(..., description="Formatos: csv, ris, rdf (um or mais)")
     file_scope: str = Field(
         ...,
         alias="fileScope",
-        description="Escopo de arquivos: none, main_only, all",
+        description="Escopo de files: none, main_only, all",
     )
 
     model_config = ConfigDict(populate_by_name=True)
@@ -32,7 +32,7 @@ class ExportRequest(BaseModel):
 
 
 class SkippedFileEntry(BaseModel):
-    """Entrada de arquivo que não pôde ser incluído no export."""
+    """Input for file that cannot be included in the export."""
 
     article_id: UUID = Field(..., alias="articleId")
     storage_key: str = Field(..., alias="storageKey")
@@ -42,7 +42,7 @@ class SkippedFileEntry(BaseModel):
 
 
 class ExportProgress(BaseModel):
-    """Progresso do export (opcional)."""
+    """Progresso do export (optional)."""
 
     current: int = Field(..., description="Item atual")
     total: int = Field(..., description="Total de itens")
@@ -72,7 +72,7 @@ class ExportStatusResponse(BaseModel):
 
 
 class ExportStartedResponse(BaseModel):
-    """Response 202 quando export é enfileirado (async)."""
+    """Response 202 quando export e enfileirado (async)."""
 
     job_id: str = Field(..., alias="jobId")
     message: str | None = Field(

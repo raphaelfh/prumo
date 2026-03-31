@@ -1,10 +1,10 @@
 """
 Celery Worker.
 
-Processamento assíncrono de tarefas longas:
+Processamento assincrono de tarefas longas:
 - Batch assessments
-- Extrações em lote
-- Importações do Zotero
+- Extracoes em lote
+- Importacoes do Zotero
 """
 
 from app.worker.celery_app import celery_app

@@ -1,7 +1,7 @@
 """
 Extraction Schemas.
 
-Schemas Pydantic para extração de dados de artigos científicos.
+Schemas Pydantic for extraction de data de articles cientificos.
 """
 
 from datetime import datetime
@@ -10,40 +10,39 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-
 # =================== COMMON SCHEMAS ===================
 
 
 class ExtractionOptions(BaseModel):
-    """Opções de extração."""
-    
+    """Opcoes de extraction."""
+
     model: str = Field(default="gpt-4o-mini", description="Modelo OpenAI a usar")
     temperature: float = Field(default=0.1, ge=0, le=2)
     max_tokens: int | None = Field(default=None, ge=100, le=16000)
-    
+
     model_config = ConfigDict(populate_by_name=True)
 
 
 class EvidencePassage(BaseModel):
-    """Passagem de texto citada como evidência."""
-    
-    text: str = Field(..., description="Texto extraído do documento")
-    page_number: int | None = Field(default=None, description="Número da página")
+    """Passagem de texto citada como evidencia."""
+
+    text: str = Field(..., description="Texto extraido do documento")
+    page_number: int | None = Field(default=None, description="Numero da pagina")
     confidence: float | None = Field(default=None, ge=0, le=1)
-    
+
     model_config = ConfigDict(populate_by_name=True)
 
 
 class FieldSuggestion(BaseModel):
-    """Sugestão de valor para um campo."""
-    
+    """Sugestao de valor for um field."""
+
     field_id: UUID = Field(..., alias="fieldId")
     field_name: str = Field(..., alias="fieldName")
     suggested_value: Any = Field(..., alias="suggestedValue")
     confidence_score: float | None = Field(default=None, alias="confidenceScore", ge=0, le=1)
     reasoning: str | None = None
     evidence: list[EvidencePassage] = []
-    
+
     model_config = ConfigDict(populate_by_name=True)
 
 
@@ -51,52 +50,48 @@ class FieldSuggestion(BaseModel):
 
 
 class SectionExtractionRequest(BaseModel):
-    """Request para extração de seção."""
-    
+    """Request for extraction de section."""
+
     project_id: UUID = Field(..., alias="projectId")
     article_id: UUID = Field(..., alias="articleId")
     template_id: UUID = Field(..., alias="templateId")
-    
-    # Para extração de seção única
+
+    # Para extraction de section unica
     entity_type_id: UUID | None = Field(default=None, alias="entityTypeId")
-    
-    # Para extração em batch de todas as seções
+
+    # Para extraction em batch de todas as sections
     parent_instance_id: UUID | None = Field(default=None, alias="parentInstanceId")
     extract_all_sections: bool = Field(default=False, alias="extractAllSections")
-    
-    # Filtrar seções específicas (para chunking)
+
+    # Filtrar sections especificas (para chunking)
     section_ids: list[UUID] | None = Field(default=None, alias="sectionIds")
-    
-    # Texto do PDF já processado (evita reprocessar)
+
+    # Texto do PDF ja processado (evita reprocessar)
     pdf_text: str | None = Field(default=None, alias="pdfText")
-    
-    # Opções de extração
+
+    # Opcoes de extraction
     options: ExtractionOptions | None = None
     model: str | None = Field(
         default="gpt-4o-mini",
         description="Modelo OpenAI a usar",
     )
-    
+
     model_config = ConfigDict(populate_by_name=True)
-    
+
     @model_validator(mode="after")
     def validate_extraction_mode(self) -> "SectionExtractionRequest":
-        """Valida que os campos corretos estão presentes para cada modo."""
+        """Valida que os fields corretos estao presentes for cada modo."""
         if self.extract_all_sections:
             if not self.parent_instance_id:
-                raise ValueError(
-                    "parentInstanceId is required when extractAllSections is true"
-                )
+                raise ValueError("parentInstanceId is required when extractAllSections is true")
         else:
             if not self.entity_type_id:
-                raise ValueError(
-                    "entityTypeId is required when extractAllSections is false"
-                )
+                raise ValueError("entityTypeId is required when extractAllSections is false")
         return self
 
 
 class SingleSectionResult(BaseModel):
-    """Resultado de extração de seção única."""
+    """Resultado de extraction de section unica."""
 
     extraction_run_id: str = Field(..., alias="extractionRunId")
     suggestions_created: int = Field(..., alias="suggestionsCreated")
@@ -110,7 +105,7 @@ class SingleSectionResult(BaseModel):
 
 
 class BatchSectionResult(BaseModel):
-    """Resultado de extração em batch."""
+    """Resultado de extraction em batch."""
 
     extraction_run_id: str = Field(..., alias="extractionRunId")
     total_sections: int = Field(..., alias="totalSections")
@@ -128,40 +123,40 @@ class BatchSectionResult(BaseModel):
 
 
 class ModelExtractionRequest(BaseModel):
-    """Request para extração de modelos de predição."""
-    
+    """Request for extraction de modelos de predicao."""
+
     project_id: UUID = Field(..., alias="projectId")
     article_id: UUID = Field(..., alias="articleId")
     template_id: UUID = Field(..., alias="templateId")
-    
-    # Opções de extração
+
+    # Opcoes de extraction
     model: str | None = Field(
         default="gpt-4o-mini",
         description="Modelo OpenAI a usar",
     )
     options: ExtractionOptions | None = None
-    
+
     model_config = ConfigDict(populate_by_name=True)
 
 
 class IdentifiedModel(BaseModel):
-    """Modelo de predição identificado no artigo."""
-    
+    """Modelo de predicao identificado in the article."""
+
     model_name: str = Field(..., alias="modelName")
     model_type: str | None = Field(default=None, alias="modelType")
     target_outcome: str | None = Field(default=None, alias="targetOutcome")
     description: str | None = None
-    
-    # Metadados adicionais extraídos
+
+    # Metadata adicionais extraidos
     sample_size: int | None = Field(default=None, alias="sampleSize")
     performance_metrics: dict[str, Any] = Field(default={}, alias="performanceMetrics")
     validation_strategy: str | None = Field(default=None, alias="validationStrategy")
-    
+
     model_config = ConfigDict(populate_by_name=True)
 
 
 class ModelExtractionResult(BaseModel):
-    """Resultado da extração de modelos."""
+    """Resultado da extraction de modelos."""
 
     extraction_run_id: str = Field(..., alias="extractionRunId")
     models_created: list[dict[str, Any]] = Field(..., alias="modelsCreated")
@@ -176,8 +171,8 @@ class ModelExtractionResult(BaseModel):
 
 
 class ExtractionFieldSchema(BaseModel):
-    """Schema de campo de extração."""
-    
+    """Schema de field de extraction."""
+
     id: UUID
     name: str
     label: str
@@ -189,13 +184,13 @@ class ExtractionFieldSchema(BaseModel):
     allowed_units: list[str] | None = Field(default=None, alias="allowedUnits")
     llm_description: str | None = Field(default=None, alias="llmDescription")
     sort_order: int = Field(default=0, alias="sortOrder")
-    
+
     model_config = ConfigDict(populate_by_name=True)
 
 
 class ExtractionEntityTypeSchema(BaseModel):
     """Schema de tipo de entidade."""
-    
+
     id: UUID
     name: str
     label: str
@@ -205,20 +200,20 @@ class ExtractionEntityTypeSchema(BaseModel):
     sort_order: int = Field(default=0, alias="sortOrder")
     parent_entity_type_id: UUID | None = Field(default=None, alias="parentEntityTypeId")
     fields: list[ExtractionFieldSchema] = []
-    
+
     model_config = ConfigDict(populate_by_name=True)
 
 
 class ExtractionTemplateSchema(BaseModel):
-    """Schema de template de extração."""
-    
+    """Schema de template de extraction."""
+
     id: UUID
     name: str
     description: str | None = None
     framework: Literal["CHARMS", "PICOS", "CUSTOM"]
     version: str
     entity_types: list[ExtractionEntityTypeSchema] = Field(default=[], alias="entityTypes")
-    
+
     model_config = ConfigDict(populate_by_name=True)
 
 
@@ -226,8 +221,8 @@ class ExtractionTemplateSchema(BaseModel):
 
 
 class CreateInstanceRequest(BaseModel):
-    """Request para criar instância de extração."""
-    
+    """Request for criar instance de extraction."""
+
     project_id: UUID = Field(..., alias="projectId")
     article_id: UUID = Field(..., alias="articleId")
     template_id: UUID = Field(..., alias="templateId")
@@ -235,13 +230,13 @@ class CreateInstanceRequest(BaseModel):
     parent_instance_id: UUID | None = Field(default=None, alias="parentInstanceId")
     label: str
     metadata: dict[str, Any] = {}
-    
+
     model_config = ConfigDict(populate_by_name=True)
 
 
 class InstanceResponse(BaseModel):
-    """Response de instância de extração."""
-    
+    """Response de instance de extraction."""
+
     id: UUID
     project_id: UUID = Field(..., alias="projectId")
     article_id: UUID | None = Field(default=None, alias="articleId")
@@ -253,7 +248,7 @@ class InstanceResponse(BaseModel):
     sort_order: int = Field(..., alias="sortOrder")
     created_at: datetime = Field(..., alias="createdAt")
     updated_at: datetime = Field(..., alias="updatedAt")
-    
+
     model_config = ConfigDict(populate_by_name=True, from_attributes=True)
 
 
@@ -261,8 +256,8 @@ class InstanceResponse(BaseModel):
 
 
 class SaveValueRequest(BaseModel):
-    """Request para salvar valor extraído."""
-    
+    """Request for salvar valor extraido."""
+
     instance_id: UUID = Field(..., alias="instanceId")
     field_id: UUID = Field(..., alias="fieldId")
     value: Any
@@ -270,13 +265,13 @@ class SaveValueRequest(BaseModel):
     unit: str | None = None
     evidence: list[EvidencePassage] = []
     ai_suggestion_id: UUID | None = Field(default=None, alias="aiSuggestionId")
-    
+
     model_config = ConfigDict(populate_by_name=True)
 
 
 class ValueResponse(BaseModel):
-    """Response de valor extraído."""
-    
+    """Response de valor extraido."""
+
     id: UUID
     instance_id: UUID = Field(..., alias="instanceId")
     field_id: UUID = Field(..., alias="fieldId")
@@ -287,7 +282,7 @@ class ValueResponse(BaseModel):
     is_consensus: bool = Field(default=False, alias="isConsensus")
     created_at: datetime = Field(..., alias="createdAt")
     updated_at: datetime = Field(..., alias="updatedAt")
-    
+
     model_config = ConfigDict(populate_by_name=True, from_attributes=True)
 
 
@@ -295,7 +290,7 @@ class ValueResponse(BaseModel):
 
 
 class SuggestionResponse(BaseModel):
-    """Response de sugestão de IA para extraction."""
+    """Response de suggestion de IA for extraction."""
 
     id: UUID
     extraction_run_id: UUID = Field(..., alias="extractionRunId")
@@ -311,9 +306,9 @@ class SuggestionResponse(BaseModel):
 
 
 class ReviewSuggestionRequest(BaseModel):
-    """Request para revisar sugestão."""
-    
+    """Request for revisar suggestion."""
+
     status: Literal["accepted", "rejected"]
     modified_value: Any | None = Field(default=None, alias="modifiedValue")
-    
+
     model_config = ConfigDict(populate_by_name=True)

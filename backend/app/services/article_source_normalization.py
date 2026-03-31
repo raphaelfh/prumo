@@ -58,9 +58,9 @@ class CanonicalArticlePayload:
 
 
 def normalize_zotero_item(
-        *,
-        item: dict[str, Any],
-        collection_key: str,
+    *,
+    item: dict[str, Any],
+    collection_key: str,
 ) -> CanonicalArticlePayload:
     data = item.get("data", {})
     creators = list(data.get("creators") or [])
@@ -87,7 +87,8 @@ def normalize_zotero_item(
         "pages": data.get("pages"),
         "doi": doi,
         "url_landing": url_landing,
-        "authors": [row["display_name"] for row in creator_rows if row["creator_type"] == "author"] or None,
+        "authors": [row["display_name"] for row in creator_rows if row["creator_type"] == "author"]
+        or None,
         "keywords": [tag.get("tag") for tag in data.get("tags", []) if tag.get("tag")] or None,
         "ingestion_source": "zotero",
         "source_payload": item,

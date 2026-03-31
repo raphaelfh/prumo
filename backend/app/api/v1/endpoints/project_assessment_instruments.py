@@ -17,10 +17,8 @@ from app.schemas.assessment import (
     CloneInstrumentRequest,
     CloneInstrumentResponse,
     ProjectAssessmentInstrumentCreate,
-    ProjectAssessmentInstrumentSchema,
     ProjectAssessmentInstrumentUpdate,
     ProjectAssessmentItemCreate,
-    ProjectAssessmentItemSchema,
     ProjectAssessmentItemUpdate,
 )
 from app.schemas.common import ApiResponse
@@ -41,7 +39,7 @@ logger = get_logger(__name__)
 )
 @limiter.limit("30/minute")
 async def list_global_instruments(
-    request: Request,
+    request: Request,  # noqa: ARG001
     db: DbSession,
     user: CurrentUser,
 ) -> ApiResponse:
@@ -75,7 +73,7 @@ async def list_global_instruments(
 )
 @limiter.limit("30/minute")
 async def list_project_instruments(
-    request: Request,
+    request: Request,  # noqa: ARG001
     project_id: UUID,
     db: DbSession,
     user: CurrentUser,
@@ -126,7 +124,7 @@ async def list_project_instruments(
 )
 @limiter.limit("30/minute")
 async def get_instrument(
-    request: Request,
+    request: Request,  # noqa: ARG001
     instrument_id: UUID,
     db: DbSession,
     user: CurrentUser,
@@ -165,7 +163,7 @@ async def get_instrument(
 )
 @limiter.limit("10/minute")
 async def clone_global_instrument(
-    request: Request,
+    request: Request,  # noqa: ARG001
     payload: CloneInstrumentRequest,
     db: DbSession,
     user: CurrentUser,
@@ -233,7 +231,7 @@ async def clone_global_instrument(
 )
 @limiter.limit("10/minute")
 async def create_instrument(
-    request: Request,
+    request: Request,  # noqa: ARG001
     payload: ProjectAssessmentInstrumentCreate,
     db: DbSession,
     user: CurrentUser,
@@ -277,14 +275,14 @@ async def create_instrument(
 )
 @limiter.limit("20/minute")
 async def update_instrument(
-    request: Request,
+    request: Request,  # noqa: ARG001
     instrument_id: UUID,
     payload: ProjectAssessmentInstrumentUpdate,
     db: DbSession,
     user: CurrentUser,
 ) -> ApiResponse:
     """
-    Atualiza um instrumento de projeto.
+    Update um instrument de project.
     """
     trace_id = str(uuid.uuid4())
 
@@ -317,15 +315,15 @@ async def update_instrument(
 )
 @limiter.limit("10/minute")
 async def delete_instrument(
-    request: Request,
+    request: Request,  # noqa: ARG001
     instrument_id: UUID,
     db: DbSession,
     user: CurrentUser,
 ) -> ApiResponse:
     """
-    Deleta um instrumento de projeto.
+    Delete um instrument de project.
 
-    Remove o instrumento e todos os seus items.
+    Remove o instrument and todos os seus items.
     """
     trace_id = str(uuid.uuid4())
 
@@ -361,14 +359,14 @@ async def delete_instrument(
 )
 @limiter.limit("20/minute")
 async def add_item(
-    request: Request,
+    request: Request,  # noqa: ARG001
     instrument_id: UUID,
     payload: ProjectAssessmentItemCreate,
     db: DbSession,
     user: CurrentUser,
 ) -> ApiResponse:
     """
-    Adiciona um novo item a um instrumento.
+    Adiciona um novo item a um instrument.
     """
     trace_id = str(uuid.uuid4())
 
@@ -395,14 +393,14 @@ async def add_item(
 )
 @limiter.limit("20/minute")
 async def update_item(
-    request: Request,
+    request: Request,  # noqa: ARG001
     item_id: UUID,
     payload: ProjectAssessmentItemUpdate,
     db: DbSession,
     user: CurrentUser,
 ) -> ApiResponse:
     """
-    Atualiza um item de instrumento.
+    Update um item de instrument.
     """
     trace_id = str(uuid.uuid4())
 
@@ -435,13 +433,13 @@ async def update_item(
 )
 @limiter.limit("20/minute")
 async def delete_item(
-    request: Request,
+    request: Request,  # noqa: ARG001
     item_id: UUID,
     db: DbSession,
     user: CurrentUser,
 ) -> ApiResponse:
     """
-    Deleta um item de instrumento.
+    Delete um item de instrument.
     """
     trace_id = str(uuid.uuid4())
 

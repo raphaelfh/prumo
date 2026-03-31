@@ -3,9 +3,9 @@ Zotero Import Endpoint.
 
 Migrado de: supabase/functions/zotero-import/index.ts
 
-Endpoints para integração com Zotero:
-- Salvar credenciais
-- Testar conexão
+Endpoints for integracao with Zotero:
+- Save credentials
+- Testar conexao
 - Listar collections
 - Buscar items
 - Download de attachments
@@ -53,7 +53,7 @@ logger = get_logger(__name__)
 
 
 class ZoteroAction(StrEnum):
-    """Ações disponíveis para Zotero."""
+    """Acoes disponiveis for Zotero."""
 
     SAVE_CREDENTIALS = "save-credentials"
     TEST_CONNECTION = "test-connection"
@@ -70,12 +70,12 @@ class ZoteroAction(StrEnum):
 @router.post(
     "/{action}",
     response_model=ApiResponse,
-    summary="Executar ação Zotero",
-    description="Endpoint unificado para todas as ações de integração com Zotero.",
+    summary="Executar acao Zotero",
+    description="Endpoint unificado for todas as acoes de integracao with Zotero.",
 )
 @limiter.limit("120/minute")
 async def zotero_action(
-        request: Request,
+    request: Request,
     action: ZoteroAction,
     db: DbSession,
     user: CurrentUser,
@@ -83,14 +83,14 @@ async def zotero_action(
     body: dict[str, Any] | None = None,
 ) -> ApiResponse:
     """
-    Executa uma ação de integração com Zotero.
+    Executa uma acao de integracao with Zotero.
 
     Args:
-        action: Tipo de ação a executar.
-        body: Dados específicos da ação.
+        action: Tipo de acao a executar.
+        body: Dados especificos da acao.
 
     Returns:
-        ApiResponse com resultado da ação.
+        ApiResponse with resultado da acao.
     """
     trace_id = getattr(request.state, "trace_id", None)
     service = ZoteroService(db=db, user_id=user.sub)
@@ -111,7 +111,7 @@ async def zotero_action(
                     api_key=request.api_key,
                     library_type=request.library_type,
                 )
-                # Commit explícito para persistir credenciais
+                # Explicit commit to persist credentials
                 await db.commit()
 
             case ZoteroAction.TEST_CONNECTION:
@@ -156,7 +156,7 @@ async def zotero_action(
                     collection_key=payload.collection_key,
                 )
                 await db.commit()
-                task = import_zotero_collection_task.delay(
+                _ = import_zotero_collection_task.delay(
                     project_id=str(project_id),
                     collection_key=payload.collection_key,
                     user_id=user.sub,
@@ -299,7 +299,11 @@ async def zotero_action(
             action=action.value,
             error=str(e),
         )
-        if action in {ZoteroAction.SYNC_RETRY_FAILED, ZoteroAction.SYNC_STATUS, ZoteroAction.SYNC_ITEM_RESULT}:
+        if action in {
+            ZoteroAction.SYNC_RETRY_FAILED,
+            ZoteroAction.SYNC_STATUS,
+            ZoteroAction.SYNC_ITEM_RESULT,
+        }:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     except Exception as e:

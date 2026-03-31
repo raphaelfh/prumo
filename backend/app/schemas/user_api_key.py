@@ -1,7 +1,7 @@
 """
 User API Key Schemas.
 
-Schemas Pydantic para gerenciamento de API keys dos usuarios.
+Schemas Pydantic for gerenciamento de API keys of the usuarios.
 """
 
 from typing import Any
@@ -12,7 +12,7 @@ from app.models.user_api_key import SUPPORTED_PROVIDERS
 
 
 class CreateAPIKeyRequest(BaseModel):
-    """Request para criar nova API key."""
+    """Request for criar nova API key."""
 
     provider: str = Field(
         ...,
@@ -28,17 +28,17 @@ class CreateAPIKeyRequest(BaseModel):
         default=None,
         alias="keyName",
         max_length=100,
-        description="Nome opcional para identificar a key",
+        description="Nome optional for identificar a key",
     )
     is_default: bool = Field(
         default=True,
         alias="isDefault",
-        description="Se deve ser a key default para o provedor",
+        description="Se deve ser a key default for o provedor",
     )
     key_metadata: dict[str, Any] | None = Field(
         default=None,
         alias="metadata",
-        description="Metadados extras (modelo preferido, etc.)",
+        description="Metadata extras (modelo preferido, etc.)",
     )
     validate_key: bool = Field(
         default=True,
@@ -50,7 +50,7 @@ class CreateAPIKeyRequest(BaseModel):
 
 
 class UpdateAPIKeyRequest(BaseModel):
-    """Request para atualizar API key."""
+    """Request for atualizar API key."""
 
     is_default: bool | None = Field(
         default=None,
@@ -60,20 +60,20 @@ class UpdateAPIKeyRequest(BaseModel):
     is_active: bool | None = Field(
         default=None,
         alias="isActive",
-        description="Se a key está ativa",
+        description="Se a key esta ativa",
     )
     key_name: str | None = Field(
         default=None,
         alias="keyName",
         max_length=100,
-        description="Nome para identificar a key",
+        description="Nome for identificar a key",
     )
 
     model_config = ConfigDict(populate_by_name=True)
 
 
 class APIKeyResponse(BaseModel):
-    """Resposta com dados de uma API key (sem a key em si)."""
+    """Resposta with data de uma API key (sem a key em si)."""
 
     id: str
     provider: str

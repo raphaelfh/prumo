@@ -1,8 +1,8 @@
 """
 Assessment Models.
 
-Modelos para instrumentos de avaliação de qualidade,
-itens, respostas e avaliações por IA.
+Modelos for instruments de avaliacao de qualidade,
+itens, respostas and avaliacoes por IA.
 """
 
 from datetime import datetime
@@ -21,7 +21,8 @@ from sqlalchemy import (
     Text,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, BaseModel, PostgreSQLEnumType, UUIDMixin
@@ -32,11 +33,11 @@ if TYPE_CHECKING:
 
 class AssessmentStatus(str, PyEnum):
     """
-    Status da avaliação de qualidade.
-    
-    Valores alinhados com o enum 'assessment_status' no PostgreSQL.
+    Status da avaliacao de qualidade.
+
+    Valores alinhados with o enum 'assessment_status' in the PostgreSQL.
     """
-    
+
     IN_PROGRESS = "in_progress"
     SUBMITTED = "submitted"
     LOCKED = "locked"
@@ -45,7 +46,7 @@ class AssessmentStatus(str, PyEnum):
 
 class AssessmentInstrument(Base, UUIDMixin):
     """
-    Instrumento de avaliação de qualidade (PROBAST, ROBIS, etc.).
+    Instrumento de avaliacao de qualidade (PROBAST, ROBIS, etc.).
     """
 
     __tablename__ = "assessment_instruments"
@@ -62,27 +63,27 @@ class AssessmentInstrument(Base, UUIDMixin):
 
     aggregation_rules: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     schema_: Mapped[dict | None] = mapped_column("schema", JSONB, nullable=True)
-    
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
     )
-    
+
     # Relationships
     items: Mapped[list["AssessmentItem"]] = relationship(
         "AssessmentItem",
         back_populates="instrument",
         cascade="all, delete-orphan",
     )
-    
+
     def __repr__(self) -> str:
         return f"<AssessmentInstrument {self.tool_type} {self.name}>"
 
 
 class AssessmentItem(Base, UUIDMixin):
     """
-    Item/pergunta individual de cada instrumento de avaliação.
+    Item/pergunta individual de cada instrument de avaliacao.
     """
 
     __tablename__ = "assessment_items"
@@ -129,11 +130,11 @@ class AssessmentItem(Base, UUIDMixin):
 
 
 # =================== REMOVED: LEGACY Assessment Model ===================
-# A tabela "assessments" foi removida na migração 0032 (2026-01-28).
+# A tabela "assessments" foi removida in the migracao 0032 (2026-01-28).
 # Use a nova estrutura:
-# - AssessmentInstance (análogo a ExtractionInstance)
-# - AssessmentResponse (análogo a ExtractedValue)
-# - AssessmentEvidence (análogo a ExtractionEvidence)
+# - AssessmentInstance (analogo a ExtractionInstance)
+# - AssessmentResponse (analogo a ExtractedValue)
+# - AssessmentEvidence (analogo a ExtractionEvidence)
 #
 # Veja: AssessmentInstance, AssessmentResponse, AssessmentEvidence abaixo
 # ========================================================================
@@ -141,59 +142,59 @@ class AssessmentItem(Base, UUIDMixin):
 
 class AIAssessmentConfig(BaseModel):
     """
-    Configurações de IA para avaliação de qualidade por projeto.
+    Configuracoes de IA for avaliacao de qualidade por project.
     """
-    
+
     __tablename__ = "ai_assessment_configs"
-    
+
     project_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("public.projects.id", ondelete="CASCADE"),
         nullable=False,
     )
-    
+
     instrument_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("public.assessment_instruments.id", ondelete="SET NULL"),
         nullable=True,
     )
-    
+
     model_name: Mapped[str] = mapped_column(
         String,
         default="google/gemini-2.5-flash",
         nullable=False,
     )
-    
+
     temperature: Mapped[float] = mapped_column(Numeric, default=0.3, nullable=False)
     max_tokens: Mapped[int] = mapped_column(Integer, default=2000, nullable=False)
-    
+
     system_instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    
+
     def __repr__(self) -> str:
         return f"<AIAssessmentConfig project={self.project_id}>"
 
 
 class AIAssessmentPrompt(BaseModel):
     """
-    Prompts customizados para cada item de avaliação.
+    Prompts customizados for cada item de avaliacao.
     """
-    
+
     __tablename__ = "ai_assessment_prompts"
-    
+
     assessment_item_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("public.assessment_items.id", ondelete="CASCADE"),
         unique=True,
         nullable=False,
     )
-    
+
     system_prompt: Mapped[str] = mapped_column(
         Text,
         default="You are an expert research quality assessor. Analyze the provided research article and answer the specific question based on the evidence found in the text.",
         nullable=False,
     )
-    
+
     user_prompt_template: Mapped[str] = mapped_column(
         Text,
         default="""Based on the article content, assess: {{question}}
@@ -203,30 +204,30 @@ Available response levels: {{levels}}
 Provide your assessment with clear justification and cite specific passages from the text that support your conclusion.""",
         nullable=False,
     )
-    
+
     # Relationships
     assessment_item: Mapped["AssessmentItem"] = relationship(
         "AssessmentItem",
         back_populates="prompt",
     )
-    
+
     def __repr__(self) -> str:
         return f"<AIAssessmentPrompt item={self.assessment_item_id}>"
 
 
 class AIAssessmentRun(BaseModel):
     """
-    Rastreamento de execuções de avaliação por IA.
+    Rastreamento de execucoes de avaliacao por IA.
 
     Similar a extraction_runs, rastreia o ciclo de vida completo
-    de uma execução de assessment por IA, incluindo parâmetros,
-    resultados e métricas de performance.
+    de uma execucao de assessment por IA, incluindo parametros,
+    resultados and metricas de performance.
 
-    Índices:
+    Indices:
     - project_id, article_id, instrument_id: FKs indexadas
     - extraction_instance_id: FK indexada (para PROBAST por modelo)
     - status, stage: Para queries de estado
-    - parameters, results: GIN para busca em JSONB
+    - parameters, results: GIN for busca em JSONB
     """
 
     __tablename__ = "ai_assessment_runs"
@@ -289,11 +290,11 @@ class AIAssessmentRun(BaseModel):
         index=True,
     )
 
-    # Índices definidos via __table_args__
+    # Indices definidos via __table_args__
     __table_args__ = (
-        # Índice composto para queries de status
+        # Indice composto for queries de status
         Index("idx_ai_assessment_runs_status", "status", "stage"),
-        # Índices GIN para JSONB
+        # Indices GIN for JSONB
         Index("idx_ai_assessment_runs_parameters_gin", "parameters", postgresql_using="gin"),
         Index("idx_ai_assessment_runs_results_gin", "results", postgresql_using="gin"),
         {"schema": "public"},
@@ -305,11 +306,11 @@ class AIAssessmentRun(BaseModel):
 
 class AIAssessment(BaseModel):
     """
-    Avaliação de qualidade gerada por IA.
+    Avaliacao de qualidade gerada por IA.
 
-    Índices:
+    Indices:
     - project_id, article_id: FKs indexadas
-    - evidence_passages: GIN para busca em JSONB
+    - evidence_passages: GIN for busca em JSONB
     """
 
     __tablename__ = "ai_assessments"
@@ -374,9 +375,9 @@ class AIAssessment(BaseModel):
         nullable=True,
     )
 
-    # Índices definidos via __table_args__
+    # Indices definidos via __table_args__
     __table_args__ = (
-        # Índice GIN para JSONB
+        # Indice GIN for JSONB
         Index("idx_ai_assessments_evidence_gin", "evidence_passages", postgresql_using="gin"),
         {"schema": "public"},
     )
@@ -392,7 +393,7 @@ class AssessmentSource(str, PyEnum):
     """
     Origem da resposta de assessment.
 
-    Valores alinhados com o enum 'assessment_source' no PostgreSQL.
+    Valores alinhados with o enum 'assessment_source' in the PostgreSQL.
     """
 
     HUMAN = "human"
@@ -402,12 +403,12 @@ class AssessmentSource(str, PyEnum):
 
 class AssessmentInstance(BaseModel):
     """
-    Instância de avaliação (PROBAST por artigo ou por modelo).
+    Instancia de avaliacao (PROBAST por article or por modelo).
 
-    Análogo a ExtractionInstance. Permite hierarquia e vinculação
-    a extraction_instances para suporte a PROBAST por modelo.
+    Analogo a ExtractionInstance. Permite hierarquia and vinculacao
+    a extraction_instances for suporte a PROBAST por modelo.
 
-    Índices:
+    Indices:
     - project_id, article_id, instrument_id: FKs indexadas
     - extraction_instance_id: FK indexada (para PROBAST por modelo)
     - parent_instance_id: FK indexada (hierarquia)
@@ -476,7 +477,7 @@ class AssessmentInstance(BaseModel):
     is_blind: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     can_see_others: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    # Metadados flexíveis (overall_risk, applicability_concerns, etc.)
+    # Metadata flexiveis (overall_risk, applicability_concerns, etc.)
     # Renamed from 'metadata' to 'meta' to avoid SQLAlchemy reserved attribute
     meta: Mapped[dict] = mapped_column("metadata", JSONB, default={}, nullable=False)
 
@@ -501,12 +502,12 @@ class AssessmentInstance(BaseModel):
 
 class AssessmentResponse(BaseModel):
     """
-    Resposta individual a um item de avaliação.
+    Resposta individual a um item de avaliacao.
 
-    Análogo a ExtractedValue. Granularidade total: 1 linha = 1 resposta.
+    Analogo a ExtractedValue. Granularidade total: 1 linha = 1 resposta.
 
-    Índices:
-    - project_id, article_id: FKs indexadas (denormalização para performance)
+    Indices:
+    - project_id, article_id: FKs indexadas (denormalizacao for performance)
     - assessment_instance_id, assessment_item_id: FKs indexadas
     - reviewer_id, source, selected_level: Para queries de filtro
     - uq_assessment_instance_item: UNIQUE (instance + item)
@@ -514,7 +515,7 @@ class AssessmentResponse(BaseModel):
 
     __tablename__ = "assessment_responses"
 
-    # Denormalização intencional (performance + RLS)
+    # Denormalizacao intencional (performance + RLS)
     project_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("public.projects.id", ondelete="CASCADE"),
@@ -548,7 +549,7 @@ class AssessmentResponse(BaseModel):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence: Mapped[float | None] = mapped_column(Numeric(3, 2), nullable=True)
 
-    # Origem e rastreabilidade
+    # Origem and rastreabilidade
     source: Mapped[str] = mapped_column(
         PostgreSQLEnumType("assessment_source"),
         default="human",
@@ -592,14 +593,14 @@ class AssessmentResponse(BaseModel):
 
 class AssessmentEvidence(BaseModel):
     """
-    Evidências que suportam respostas de avaliação ou instances.
+    Evidencias que suportam respostas de avaliacao or instances.
 
-    Análogo a ExtractionEvidence. Armazena citações do PDF que
-    justificam respostas ou avaliações completas.
+    Analogo a ExtractionEvidence. Armazena citacoes do PDF que
+    justificam respostas or avaliacoes completas.
 
-    Índices:
+    Indices:
     - project_id, article_id: FKs indexadas
-    - target_type, target_id: Índice composto para queries polimórficas
+    - target_type, target_id: Indice composto for queries polimorficas
     """
 
     __tablename__ = "assessment_evidence"
@@ -618,11 +619,11 @@ class AssessmentEvidence(BaseModel):
         index=True,
     )
 
-    # Alvo polimórfico (response ou instance)
+    # Alvo polimorfico (response or instance)
     target_type: Mapped[str] = mapped_column(String, nullable=False)
     target_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
 
-    # Evidência do PDF
+    # Evidencia do PDF
     article_file_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("public.article_files.id", ondelete="SET NULL"),
@@ -639,7 +640,7 @@ class AssessmentEvidence(BaseModel):
         nullable=False,
     )
 
-    # Índice composto definido via __table_args__
+    # Indice composto definido via __table_args__
     __table_args__ = (
         Index("idx_assessment_evidence_target", "target_type", "target_id"),
         {"schema": "public"},
@@ -782,4 +783,3 @@ class ProjectAssessmentItem(BaseModel):
 
     def __repr__(self) -> str:
         return f"<ProjectAssessmentItem {self.item_code} instrument={self.project_instrument_id}>"
-

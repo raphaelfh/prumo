@@ -81,11 +81,9 @@ class ProjectAssessmentInstrumentService(LoggerMixin):
         for instrument in instruments:
             # Items already loaded via selectinload in get_by_project
             raw_items = getattr(instrument, "items", None) or []
-            items = sorted(raw_items, key=lambda i: (i.sort_order or 0))
+            items = sorted(raw_items, key=lambda i: i.sort_order or 0)
             schema = ProjectAssessmentInstrumentSchema.model_validate(instrument)
-            schema.items = [
-                ProjectAssessmentItemSchema.model_validate(item) for item in items
-            ]
+            schema.items = [ProjectAssessmentItemSchema.model_validate(item) for item in items]
             result.append(schema)
 
         return result
@@ -145,9 +143,7 @@ class ProjectAssessmentInstrumentService(LoggerMixin):
             return await self.get_project_instrument(existing.id)  # type: ignore
 
         # Get global instrument with items
-        global_instrument = await self._global_instruments.get_with_items(
-            global_instrument_id
-        )
+        global_instrument = await self._global_instruments.get_with_items(global_instrument_id)
         if not global_instrument:
             raise ValueError(f"Global instrument not found: {global_instrument_id}")
 
@@ -156,11 +152,13 @@ class ProjectAssessmentInstrumentService(LoggerMixin):
             project_id=project_id,
             global_instrument_id=global_instrument_id,
             name=custom_name or global_instrument.name,
-            description=global_instrument.schema_.get("description") if global_instrument.schema_ else None,
+            description=global_instrument.schema_.get("description")
+            if global_instrument.schema_
+            else None,
             tool_type=global_instrument.tool_type,
             version=global_instrument.version,
             mode=global_instrument.mode,
-            target_mode=getattr(global_instrument, 'target_mode', 'per_article'),
+            target_mode=getattr(global_instrument, "target_mode", "per_article"),
             is_active=True,
             aggregation_rules=global_instrument.aggregation_rules,
             schema_=global_instrument.schema_,
@@ -208,13 +206,13 @@ class ProjectAssessmentInstrumentService(LoggerMixin):
         data: ProjectAssessmentInstrumentCreate,
     ) -> ProjectAssessmentInstrumentSchema:
         """
-        Cria um instrumento customizado para um projeto.
+        Create a custom instrument for a project.
 
         Args:
-            data: Dados do instrumento a criar.
+            data: Instrument data to create.
 
         Returns:
-            Instrumento criado.
+            Created instrument.
         """
         # Create instrument
         instrument = ProjectAssessmentInstrument(
@@ -274,14 +272,14 @@ class ProjectAssessmentInstrumentService(LoggerMixin):
         data: ProjectAssessmentInstrumentUpdate,
     ) -> ProjectAssessmentInstrumentSchema | None:
         """
-        Atualiza um instrumento de projeto.
+        Update a project instrument.
 
         Args:
-            instrument_id: ID do instrumento.
-            data: Dados a atualizar.
+            instrument_id: Instrument ID.
+            data: Data to update.
 
         Returns:
-            Instrumento atualizado ou None.
+            Updated instrument or None.
         """
         instrument = await self._project_instruments.get_by_id(instrument_id)
         if not instrument:
@@ -291,7 +289,7 @@ class ProjectAssessmentInstrumentService(LoggerMixin):
         update_data = data.model_dump(exclude_unset=True)
         for field, value in update_data.items():
             if field == "schema_config":
-                setattr(instrument, "schema_", value)
+                instrument.schema_ = value
             else:
                 setattr(instrument, field, value)
 
@@ -305,10 +303,10 @@ class ProjectAssessmentInstrumentService(LoggerMixin):
         instrument_id: UUID,
     ) -> bool:
         """
-        Deleta um instrumento de projeto.
+        Delete a project instrument.
 
         Args:
-            instrument_id: ID do instrumento.
+            instrument_id: Instrument ID.
 
         Returns:
             True if deleted, False if not found.
@@ -333,14 +331,14 @@ class ProjectAssessmentInstrumentService(LoggerMixin):
         data: ProjectAssessmentItemCreate,
     ) -> ProjectAssessmentItemSchema:
         """
-        Adiciona um item a um instrumento.
+        Add an item to an instrument.
 
         Args:
-            instrument_id: ID do instrumento.
-            data: Dados do item.
+            instrument_id: Instrument ID.
+            data: Item data.
 
         Returns:
-            Item criado.
+            Created item.
         """
         # Get max sort_order
         items = await self._project_items.get_by_instrument(instrument_id)
@@ -372,14 +370,14 @@ class ProjectAssessmentInstrumentService(LoggerMixin):
         data: ProjectAssessmentItemUpdate,
     ) -> ProjectAssessmentItemSchema | None:
         """
-        Atualiza um item de instrumento.
+        Update an instrument item.
 
         Args:
-            item_id: ID do item.
-            data: Dados a atualizar.
+            item_id: Item ID.
+            data: Data to update.
 
         Returns:
-            Item atualizado ou None.
+            Updated item or None.
         """
         item = await self._project_items.get_by_id(item_id)
         if not item:
@@ -400,10 +398,10 @@ class ProjectAssessmentInstrumentService(LoggerMixin):
         item_id: UUID,
     ) -> bool:
         """
-        Deleta um item de instrumento.
+        Delete an instrument item.
 
         Args:
-            item_id: ID do item.
+            item_id: Item ID.
 
         Returns:
             True if deleted, False if not found.
@@ -424,22 +422,24 @@ class ProjectAssessmentInstrumentService(LoggerMixin):
         List global instruments available for cloning.
 
         Returns:
-            Lista de instrumentos globais com seus items.
+            Global instruments list with their items.
         """
         instruments = await self._global_instruments.get_all_active_with_items()
 
         result = []
         for instrument in instruments:
             items = getattr(instrument, "items", None) or []
-            result.append({
-                "id": str(instrument.id),
-                "toolType": instrument.tool_type,
-                "name": instrument.name,
-                "version": instrument.version,
-                "mode": instrument.mode,
-                "targetMode": getattr(instrument, 'target_mode', 'per_article'),
-                "itemsCount": len(items),
-                "domains": list(set(item.domain for item in items if item.domain)),
-            })
+            result.append(
+                {
+                    "id": str(instrument.id),
+                    "toolType": instrument.tool_type,
+                    "name": instrument.name,
+                    "version": instrument.version,
+                    "mode": instrument.mode,
+                    "targetMode": getattr(instrument, "target_mode", "per_article"),
+                    "itemsCount": len(items),
+                    "domains": list({item.domain for item in items if item.domain}),
+                }
+            )
 
         return result

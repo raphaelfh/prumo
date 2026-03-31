@@ -1,7 +1,7 @@
 """
 Storage Adapters.
 
-Abstrações para armazenamento de arquivos.
+Abstracoes for armazenamento de files.
 """
 
 from app.infrastructure.storage.base import StorageAdapter

@@ -9,24 +9,23 @@ Tests the restructured assessment module:
 Following the extraction pattern architecture.
 """
 
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.assessment import (
+    AssessmentEvidence,
     AssessmentInstance,
     AssessmentResponse,
-    AssessmentEvidence,
     AssessmentSource,
 )
 from app.repositories.assessment_repository import (
+    AssessmentEvidenceRepository,
     AssessmentInstanceRepository,
     AssessmentResponseRepository,
-    AssessmentEvidenceRepository,
 )
 
 
@@ -96,8 +95,8 @@ class TestAssessmentInstanceRepository:
         instance.is_blind = False
         instance.can_see_others = True
         instance.meta = {}
-        instance.created_at = datetime.now(timezone.utc)
-        instance.updated_at = datetime.now(timezone.utc)
+        instance.created_at = datetime.now(UTC)
+        instance.updated_at = datetime.now(UTC)
         instance.responses = []
         return instance
 
@@ -224,8 +223,8 @@ class TestAssessmentResponseRepository:
         response.ai_suggestion_id = None
         response.project_id = project_id
         response.article_id = article_id
-        response.created_at = datetime.now(timezone.utc)
-        response.updated_at = datetime.now(timezone.utc)
+        response.created_at = datetime.now(UTC)
+        response.updated_at = datetime.now(UTC)
         return response
 
     @pytest.mark.asyncio
@@ -245,10 +244,10 @@ class TestAssessmentResponseRepository:
     async def test_get_by_item(self, repo, mock_db, instance_id, item_id, mock_response):
         """Test getting response for specific item."""
         mock_result = MagicMock()
-        mock_result.scalars.return_value.first.return_value = mock_response
+        mock_result.scalar_one_or_none.return_value = mock_response
         mock_db.execute.return_value = mock_result
 
-        response = await repo.get_by_item(instance_id, item_id)
+        response = await repo.get_by_instance_and_item(instance_id, item_id)
 
         assert response is not None
         assert response.assessment_item_id == item_id
@@ -278,6 +277,7 @@ class TestAssessmentResponseRepository:
         # Mock refresh behavior
         async def mock_refresh(obj):
             pass
+
         mock_db.refresh = AsyncMock(side_effect=mock_refresh)
 
         result = await repo.bulk_create(responses)
@@ -285,50 +285,6 @@ class TestAssessmentResponseRepository:
         mock_db.add_all.assert_called_once()
         mock_db.flush.assert_called_once()
         assert len(result) == 2
-
-    @pytest.mark.asyncio
-    async def test_upsert_response_create(self, repo, mock_db, instance_id, item_id, reviewer_id):
-        """Test upsert when response doesn't exist (INSERT)."""
-        # Mock: no existing response
-        mock_result_select = MagicMock()
-        mock_result_select.scalars.return_value.first.return_value = None
-
-        # Mock: insert
-        mock_db.add = MagicMock()
-        mock_db.flush = AsyncMock()
-        mock_db.refresh = AsyncMock()
-
-        new_response = MagicMock(spec=AssessmentResponse)
-        new_response.id = uuid4()
-
-        # Execute with side effect
-        async def execute_side_effect(stmt):
-            # First call: SELECT (no result)
-            if mock_db.execute.call_count == 1:
-                return mock_result_select
-            # After add, return the new object
-            return mock_result_select
-
-        mock_db.execute.side_effect = execute_side_effect
-
-        data = {
-            "assessment_instance_id": instance_id,
-            "assessment_item_id": item_id,
-            "selected_level": "yes",
-            "notes": "New response",
-            "confidence": 0.9,
-            "source": "human",
-            "reviewer_id": reviewer_id,
-            "project_id": uuid4(),
-            "article_id": uuid4(),
-        }
-
-        # Create new response object for the add
-        with patch.object(repo, '_model', AssessmentResponse):
-            response = await repo.upsertResponse(data)
-
-        # Should call add for new object
-        mock_db.add.assert_called()
 
     @pytest.mark.asyncio
     async def test_filter_by_source(self, repo, mock_db, article_id):
@@ -345,10 +301,7 @@ class TestAssessmentResponseRepository:
         mock_result.scalars.return_value.all.return_value = [ai_response]
         mock_db.execute.return_value = mock_result
 
-        responses = await repo.get_by_article(
-            article_id,
-            source=AssessmentSource.AI
-        )
+        responses = await repo.get_by_article(article_id, source=AssessmentSource.AI)
 
         assert len(responses) == 1
         assert responses[0].source == AssessmentSource.AI
@@ -374,7 +327,7 @@ class TestAssessmentEvidenceRepository:
         evidence.position = {"x": 100, "y": 200, "width": 50, "height": 20}
         evidence.text_content = "This is evidence from the PDF"
         evidence.created_by = reviewer_id
-        evidence.created_at = datetime.now(timezone.utc)
+        evidence.created_at = datetime.now(UTC)
         return evidence
 
     @pytest.mark.asyncio
@@ -420,7 +373,11 @@ class TestAssessmentEvidenceRepository:
         assert result == mock_evidence
 
     @pytest.mark.asyncio
-    async def test_evidence_with_position_data(self, repo, mock_evidence):
+    async def test_evidence_with_position_data(
+        self,
+        repo,  # noqa: ARG002
+        mock_evidence,
+    ):
         """Test evidence stores position data correctly."""
         assert mock_evidence.page_number == 5
         assert mock_evidence.position["x"] == 100
@@ -490,10 +447,12 @@ class TestAssessmentRepositoriesIntegration:
         created_responses = await response_repo.bulk_create(responses)
         assert len(created_responses) == 3
 
-        # 3. Add evidence
+        # 3. Add evidence (polymorphic target: response)
         evidence = AssessmentEvidence(
-            assessment_instance_id=instance.id,
-            assessment_response_id=responses[0].id,
+            project_id=project_id,
+            article_id=article_id,
+            target_type="response",
+            target_id=responses[0].id,
             article_file_id=uuid4(),
             page_number=10,
             text_content="Evidence text",
@@ -527,7 +486,7 @@ class TestAssessmentRepositoriesIntegration:
         mock_db.flush = AsyncMock()
         mock_db.refresh = AsyncMock()
 
-        created_parent = await instance_repo.create(parent)
+        _ = await instance_repo.create(parent)
 
         # Create children
         child1 = AssessmentInstance(

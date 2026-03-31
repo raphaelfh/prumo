@@ -1,5 +1,5 @@
 """
 Domain Layer.
 
-Contém domain events, entities e value objects.
+Contem domain events, entities and value objects.
 """

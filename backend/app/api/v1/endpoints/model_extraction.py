@@ -3,8 +3,8 @@ Model Extraction Endpoint.
 
 Migrado de: supabase/functions/model-extraction/index.ts
 
-Endpoint para extração automática de modelos de predição de artigos.
-Identifica e cria instâncias de modelos com suas hierarquias completas.
+Endpoint for extraction automatica de modelos de predicao de articles.
+Identifica and cria instances de modelos with its hierarquias completas.
 """
 
 import uuid
@@ -27,12 +27,12 @@ logger = get_logger(__name__)
 @router.post(
     "",
     response_model=ApiResponse,
-    summary="Extrair modelos de predição",
-    description="Identifica e extrai automaticamente modelos de predição do artigo.",
+    summary="Extrair modelos de predicao",
+    description="Identifica and extrai automaticamente modelos de predicao do article.",
 )
 @limiter.limit("5/minute")
 async def extract_models(
-    request: Request,  # Necessário para o rate limiter
+    request: Request,  # noqa: ARG001
     payload: ModelExtractionRequest,
     db: DbSession,
     user: CurrentUser,
@@ -57,7 +57,7 @@ async def extract_models(
         ApiResponse with created models.
     """
     trace_id = str(uuid.uuid4())
-    
+
     logger.info(
         "model_extraction_request",
         trace_id=trace_id,
@@ -67,15 +67,15 @@ async def extract_models(
         template_id=str(payload.template_id),
         model=payload.model,
     )
-    
+
     try:
         # Create storage adapter via factory
         storage = create_storage_adapter(supabase)
-        
-        # Buscar API key do usuário (BYOK) com fallback para global
+
+        # Buscar API key do user (BYOK) with fallback for global
         api_key_service = APIKeyService(db=db, user_id=user.sub)
         user_openai_key = await api_key_service.get_key_for_provider("openai")
-        
+
         service = ModelExtractionService(
             db=db,
             user_id=user.sub,
@@ -83,17 +83,17 @@ async def extract_models(
             trace_id=trace_id,
             openai_api_key=user_openai_key,
         )
-        
+
         result = await service.extract(
             project_id=payload.project_id,
             article_id=payload.article_id,
             template_id=payload.template_id,
             model=payload.model or "gpt-4o-mini",
         )
-        
-        # Commit explícito para persistir as instâncias criadas
+
+        # Commit explicito for persistir as instances criadas
         await db.commit()
-        
+
         logger.info(
             "model_extraction_success",
             trace_id=trace_id,
@@ -104,7 +104,7 @@ async def extract_models(
             tokens_total=result.tokens_total,
         )
 
-        # Formatar resposta no formato camelCase para o frontend
+        # Formatar resposta in the formato camelCase for o frontend
         response_data = ModelExtractionResult(
             extraction_run_id=result.extraction_run_id,
             models_created=result.models_created,
@@ -118,9 +118,9 @@ async def extract_models(
                 "tokensTotal": result.tokens_total,
             },
         ).model_dump(by_alias=True)
-        
+
         return ApiResponse(ok=True, data=response_data, trace_id=trace_id)
-        
+
     except ValueError as e:
         await db.rollback()
         logger.warning(

@@ -20,6 +20,7 @@ from app.models.assessment import (
     AssessmentInstrument,
     AssessmentItem,
     AssessmentResponse,
+    AssessmentSource,
     ProjectAssessmentInstrument,
     ProjectAssessmentItem,
 )
@@ -31,10 +32,10 @@ class AssessmentInstrumentRepository(BaseRepository[AssessmentInstrument]):
     Repository for assessment instruments.
     Manages ROBINS-I, RoB 2, etc.
     """
-    
+
     def __init__(self, db: AsyncSession):
         super().__init__(db, AssessmentInstrument)
-    
+
     async def get_by_project(
         self,
         project_id: UUID | str,
@@ -48,13 +49,12 @@ class AssessmentInstrumentRepository(BaseRepository[AssessmentInstrument]):
         """
         if isinstance(project_id, str):
             project_id = UUID(project_id)
-        
+
         result = await self.db.execute(
-            select(AssessmentInstrument)
-            .where(AssessmentInstrument.project_id == project_id)
+            select(AssessmentInstrument).where(AssessmentInstrument.project_id == project_id)
         )
         return list(result.scalars().all())
-    
+
     async def get_with_items(
         self,
         instrument_id: UUID | str,
@@ -68,7 +68,7 @@ class AssessmentInstrumentRepository(BaseRepository[AssessmentInstrument]):
         """
         if isinstance(instrument_id, str):
             instrument_id = UUID(instrument_id)
-        
+
         result = await self.db.execute(
             select(AssessmentInstrument)
             .options(selectinload(AssessmentInstrument.items))
@@ -85,7 +85,7 @@ class AssessmentInstrumentRepository(BaseRepository[AssessmentInstrument]):
         result = await self.db.execute(
             select(AssessmentInstrument)
             .options(selectinload(AssessmentInstrument.items))
-            .where(AssessmentInstrument.is_active == True)  # noqa: E712
+            .where(AssessmentInstrument.is_active.is_(True))
             .order_by(AssessmentInstrument.created_at.desc())
         )
         return list(result.scalars().all())
@@ -96,10 +96,10 @@ class AssessmentItemRepository(BaseRepository[AssessmentItem]):
     Repository for assessment items.
     Manages questions/evaluation criteria.
     """
-    
+
     def __init__(self, db: AsyncSession):
         super().__init__(db, AssessmentItem)
-    
+
     async def get_by_instrument(
         self,
         instrument_id: UUID | str,
@@ -113,14 +113,14 @@ class AssessmentItemRepository(BaseRepository[AssessmentItem]):
         """
         if isinstance(instrument_id, str):
             instrument_id = UUID(instrument_id)
-        
+
         result = await self.db.execute(
             select(AssessmentItem)
             .where(AssessmentItem.instrument_id == instrument_id)
             .order_by(AssessmentItem.sort_order)
         )
         return list(result.scalars().all())
-    
+
     async def get_item_with_levels(
         self,
         item_id: UUID | str,
@@ -134,10 +134,8 @@ class AssessmentItemRepository(BaseRepository[AssessmentItem]):
         """
         if isinstance(item_id, str):
             item_id = UUID(item_id)
-        
-        result = await self.db.execute(
-            select(AssessmentItem).where(AssessmentItem.id == item_id)
-        )
+
+        result = await self.db.execute(select(AssessmentItem).where(AssessmentItem.id == item_id))
         return result.scalar_one_or_none()
 
 
@@ -157,10 +155,10 @@ class AIAssessmentRepository(BaseRepository[AIAssessment]):
     Repository for AI assessments.
     Manages automated assessments via OpenAI.
     """
-    
+
     def __init__(self, db: AsyncSession):
         super().__init__(db, AIAssessment)
-    
+
     async def get_by_article_and_item(
         self,
         article_id: UUID | str,
@@ -178,7 +176,7 @@ class AIAssessmentRepository(BaseRepository[AIAssessment]):
             article_id = UUID(article_id)
         if isinstance(assessment_item_id, str):
             assessment_item_id = UUID(assessment_item_id)
-        
+
         result = await self.db.execute(
             select(AIAssessment)
             .where(AIAssessment.article_id == article_id)
@@ -187,7 +185,7 @@ class AIAssessmentRepository(BaseRepository[AIAssessment]):
             .limit(1)
         )
         return result.scalar_one_or_none()
-    
+
     async def get_by_article(
         self,
         article_id: UUID | str,
@@ -201,14 +199,14 @@ class AIAssessmentRepository(BaseRepository[AIAssessment]):
         """
         if isinstance(article_id, str):
             article_id = UUID(article_id)
-        
+
         result = await self.db.execute(
             select(AIAssessment)
             .where(AIAssessment.article_id == article_id)
             .order_by(AIAssessment.created_at.desc())
         )
         return list(result.scalars().all())
-    
+
     async def get_pending_review(
         self,
         project_id: UUID | str,
@@ -222,7 +220,7 @@ class AIAssessmentRepository(BaseRepository[AIAssessment]):
         """
         if isinstance(project_id, str):
             project_id = UUID(project_id)
-        
+
         result = await self.db.execute(
             select(AIAssessment)
             .where(AIAssessment.project_id == project_id)
@@ -355,7 +353,7 @@ class AIAssessmentRunRepository(BaseRepository[AIAssessmentRun]):
 
         Args:
             project_id: Project ID.
-            status: Filtro por status (opcional).
+            status: Optional status filter.
 
         Returns:
             List of runs.
@@ -375,7 +373,7 @@ class AIAssessmentRunRepository(BaseRepository[AIAssessmentRun]):
 
 class AIAssessmentConfigRepository(BaseRepository[AIAssessmentConfig]):
     """
-    Repository para AI assessment configs.
+    Repository for AI assessment configs.
 
     Manages AI settings per project/instrument.
     """
@@ -400,7 +398,7 @@ class AIAssessmentConfigRepository(BaseRepository[AIAssessmentConfig]):
             select(AIAssessmentConfig)
             .where(
                 AIAssessmentConfig.project_id == project_id,
-                AIAssessmentConfig.is_active == True,  # noqa: E712
+                AIAssessmentConfig.is_active.is_(True),
             )
             .order_by(AIAssessmentConfig.created_at.desc())
         )
@@ -490,9 +488,7 @@ class AssessmentInstanceRepository(BaseRepository[AssessmentInstance]):
         if isinstance(article_id, str):
             article_id = UUID(article_id)
 
-        query = select(AssessmentInstance).where(
-            AssessmentInstance.article_id == article_id
-        )
+        query = select(AssessmentInstance).where(AssessmentInstance.article_id == article_id)
 
         if instrument_id:
             if isinstance(instrument_id, str):
@@ -502,6 +498,21 @@ class AssessmentInstanceRepository(BaseRepository[AssessmentInstance]):
         query = query.order_by(AssessmentInstance.created_at.desc())
 
         result = await self.db.execute(query)
+        return list(result.scalars().all())
+
+    async def get_roots(self, article_id: UUID | str) -> list[AssessmentInstance]:
+        """
+        List root instances for an article (no parent_instance_id).
+        """
+        if isinstance(article_id, str):
+            article_id = UUID(article_id)
+
+        result = await self.db.execute(
+            select(AssessmentInstance)
+            .where(AssessmentInstance.article_id == article_id)
+            .where(AssessmentInstance.parent_instance_id.is_(None))
+            .order_by(AssessmentInstance.created_at.desc())
+        )
         return list(result.scalars().all())
 
     async def get_by_extraction_instance(
@@ -521,9 +532,7 @@ class AssessmentInstanceRepository(BaseRepository[AssessmentInstance]):
 
         result = await self.db.execute(
             select(AssessmentInstance)
-            .where(
-                AssessmentInstance.extraction_instance_id == extraction_instance_id
-            )
+            .where(AssessmentInstance.extraction_instance_id == extraction_instance_id)
             .order_by(AssessmentInstance.created_at.desc())
         )
         return list(result.scalars().all())
@@ -632,9 +641,7 @@ class AssessmentResponseRepository(BaseRepository[AssessmentResponse]):
 
         result = await self.db.execute(
             select(AssessmentResponse)
-            .where(
-                AssessmentResponse.assessment_instance_id == assessment_instance_id
-            )
+            .where(AssessmentResponse.assessment_instance_id == assessment_instance_id)
             .order_by(AssessmentResponse.created_at)
         )
         return list(result.scalars().all())
@@ -669,26 +676,30 @@ class AssessmentResponseRepository(BaseRepository[AssessmentResponse]):
         self,
         article_id: UUID | str,
         reviewer_id: UUID | str | None = None,
+        source: AssessmentSource | str | None = None,
     ) -> list[AssessmentResponse]:
         """
         List responses for an article.
         Args:
             article_id: Article ID.
             reviewer_id: Filter by reviewer (optional).
+            source: Filter by source (human / ai / consensus) (optional).
         Returns:
             List of responses.
         """
         if isinstance(article_id, str):
             article_id = UUID(article_id)
 
-        query = select(AssessmentResponse).where(
-            AssessmentResponse.article_id == article_id
-        )
+        query = select(AssessmentResponse).where(AssessmentResponse.article_id == article_id)
 
         if reviewer_id:
             if isinstance(reviewer_id, str):
                 reviewer_id = UUID(reviewer_id)
             query = query.where(AssessmentResponse.reviewer_id == reviewer_id)
+
+        if source is not None:
+            src = source.value if isinstance(source, AssessmentSource) else source
+            query = query.where(AssessmentResponse.source == src)
 
         query = query.order_by(AssessmentResponse.created_at.desc())
 
@@ -849,14 +860,14 @@ class ProjectAssessmentInstrumentRepository(BaseRepository[ProjectAssessmentInst
         active_only: bool = True,
     ) -> list[ProjectAssessmentInstrument]:
         """
-        Lista instrumentos de um projeto.
+        List project instruments.
 
         Args:
             project_id: Project ID.
-            active_only: Se True, retorna apenas instrumentos ativos.
+            active_only: If True, return only active instruments.
 
         Returns:
-            Lista de instrumentos do projeto.
+            Project instrument list.
         """
         if isinstance(project_id, str):
             project_id = UUID(project_id)
@@ -868,7 +879,7 @@ class ProjectAssessmentInstrumentRepository(BaseRepository[ProjectAssessmentInst
         )
 
         if active_only:
-            query = query.where(ProjectAssessmentInstrument.is_active == True)  # noqa: E712
+            query = query.where(ProjectAssessmentInstrument.is_active.is_(True))
 
         query = query.order_by(ProjectAssessmentInstrument.created_at.desc())
 
@@ -880,13 +891,13 @@ class ProjectAssessmentInstrumentRepository(BaseRepository[ProjectAssessmentInst
         instrument_id: UUID | str,
     ) -> ProjectAssessmentInstrument | None:
         """
-        Busca instrumento com seus items carregados.
+        Fetch instrument with items loaded.
 
         Args:
-            instrument_id: ID do instrumento.
+            instrument_id: Instrument ID.
 
         Returns:
-            Instrumento com items ou None.
+            Instrument with items or None.
         """
         if isinstance(instrument_id, str):
             instrument_id = UUID(instrument_id)
@@ -904,14 +915,14 @@ class ProjectAssessmentInstrumentRepository(BaseRepository[ProjectAssessmentInst
         tool_type: str,
     ) -> ProjectAssessmentInstrument | None:
         """
-        Busca instrumento por tipo em um projeto.
+        Fetch project instrument by tool type.
 
         Args:
             project_id: Project ID.
-            tool_type: Tipo do instrumento (PROBAST, ROBIS, etc.).
+            tool_type: Instrument type (PROBAST, ROBIS, etc.).
 
         Returns:
-            Instrumento ou None.
+            Instrument or None.
         """
         if isinstance(project_id, str):
             project_id = UUID(project_id)
@@ -921,7 +932,7 @@ class ProjectAssessmentInstrumentRepository(BaseRepository[ProjectAssessmentInst
             .where(
                 ProjectAssessmentInstrument.project_id == project_id,
                 ProjectAssessmentInstrument.tool_type == tool_type,
-                ProjectAssessmentInstrument.is_active == True,  # noqa: E712
+                ProjectAssessmentInstrument.is_active.is_(True),
             )
             .order_by(ProjectAssessmentInstrument.created_at.desc())
             .limit(1)
@@ -934,14 +945,14 @@ class ProjectAssessmentInstrumentRepository(BaseRepository[ProjectAssessmentInst
         global_instrument_id: UUID | str,
     ) -> ProjectAssessmentInstrument | None:
         """
-        Busca instrumento clonado de um global em um projeto.
+        Fetch project instrument cloned from a global instrument.
 
         Args:
             project_id: Project ID.
-            global_instrument_id: ID do instrumento global.
+            global_instrument_id: Global instrument ID.
 
         Returns:
-            Instrumento do projeto ou None.
+            Project instrument or None.
         """
         if isinstance(project_id, str):
             project_id = UUID(project_id)
@@ -971,13 +982,13 @@ class ProjectAssessmentItemRepository(BaseRepository[ProjectAssessmentItem]):
         project_instrument_id: UUID | str,
     ) -> list[ProjectAssessmentItem]:
         """
-        Lista items de um instrumento.
+        List items for an instrument.
 
         Args:
-            project_instrument_id: ID do instrumento do projeto.
+            project_instrument_id: Project instrument ID.
 
         Returns:
-            Lista de items ordenados por sort_order.
+            Item list sorted by sort_order.
         """
         if isinstance(project_instrument_id, str):
             project_instrument_id = UUID(project_instrument_id)

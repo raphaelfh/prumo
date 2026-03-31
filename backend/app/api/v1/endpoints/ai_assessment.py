@@ -3,8 +3,8 @@ AI Assessment Endpoint.
 
 Migrado de: supabase/functions/ai-assessment/index.ts
 
-Endpoint para avaliação de artigos usando IA (OpenAI Responses API).
-Suporta leitura direta de PDF com fallback para File Search.
+Endpoint for avaliacao de articles usando IA (OpenAI Responses API).
+Suporta leitura direta de PDF with fallback for File Search.
 """
 
 import uuid
@@ -14,7 +14,6 @@ from fastapi import APIRouter, HTTPException, Request, status
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
 from app.core.factories import create_storage_adapter
 from app.core.logging import get_logger
-from app.services.api_key_service import APIKeyService
 from app.schemas.assessment import (
     AIAssessmentRequest,
     AIAssessmentResponseData,
@@ -27,6 +26,7 @@ from app.schemas.assessment import (
 )
 from app.schemas.common import ApiResponse
 from app.services.ai_assessment_service import AIAssessmentService
+from app.services.api_key_service import APIKeyService
 from app.utils.rate_limiter import limiter
 
 router = APIRouter()
@@ -36,31 +36,31 @@ logger = get_logger(__name__)
 @router.post(
     "/ai",
     response_model=ApiResponse,
-    summary="Avaliar artigo com IA",
-    description="Usa OpenAI para avaliar um item de assessment baseado no PDF do artigo.",
+    summary="Avaliar article with IA",
+    description="Usa OpenAI for avaliar um item de assessment baseado in the PDF do article.",
 )
 @limiter.limit("10/minute")
 async def ai_assessment(
-    request: Request,  # Necessário para o rate limiter
+    request: Request,  # noqa: ARG001
     payload: AIAssessmentRequest,
     db: DbSession,
     user: CurrentUser,
     supabase: SupabaseClient,
 ) -> ApiResponse:
     """
-    Executa avaliação AI de um item de assessment.
-    
-    Rate limit: 10 requisições por minuto por usuário.
-    
+    Executa avaliacao AI de um item de assessment.
+
+    Rate limit: 10 requisicoes por minuto por user.
+
     Args:
         request: Request HTTP (usado pelo rate limiter).
         payload: Dados do assessment a avaliar.
-        
+
     Returns:
-        ApiResponse com resultado da avaliação.
+        ApiResponse with resultado da avaliacao.
     """
     trace_id = str(uuid.uuid4())
-    
+
     logger.info(
         "ai_assessment_request",
         trace_id=trace_id,
@@ -69,13 +69,13 @@ async def ai_assessment(
         article_id=str(payload.article_id),
         assessment_item_id=str(payload.assessment_item_id),
     )
-    
+
     try:
         # Resolve user's stored API key (BYOK) with env var fallback
         api_key_service = APIKeyService(db=db, user_id=user.sub)
         user_openai_key = await api_key_service.get_key_for_provider("openai")
 
-        # Cria storage adapter via factory
+        # Create storage adapter via factory
         storage = create_storage_adapter(supabase)
 
         service = AIAssessmentService(
@@ -99,10 +99,10 @@ async def ai_assessment(
             model=payload.model or "gpt-4o-mini",
             extraction_instance_id=payload.extraction_instance_id,  # For PROBAST by model
         )
-        
-        # Commit explícito para persistir os resultados
+
+        # Commit explicito for persistir os resultados
         await db.commit()
-        
+
         logger.info(
             "ai_assessment_success",
             trace_id=trace_id,
@@ -111,8 +111,8 @@ async def ai_assessment(
             tokens_total=result.tokens_prompt + result.tokens_completion,
             method_used=result.method_used,
         )
-        
-        # Formatar resposta no formato camelCase para o frontend
+
+        # Formatar resposta in the formato camelCase for o frontend
         response_data = AIAssessmentResponseData(
             id=result.assessment_id,
             selected_level=result.selected_level,
@@ -127,9 +127,9 @@ async def ai_assessment(
                 "methodUsed": result.method_used,
             },
         ).model_dump(by_alias=True)
-        
+
         return ApiResponse(ok=True, data=response_data, trace_id=trace_id)
-        
+
     except ValueError as e:
         await db.rollback()
         logger.warning(
@@ -158,31 +158,31 @@ async def ai_assessment(
 @router.post(
     "/ai/batch",
     response_model=ApiResponse,
-    summary="Avaliar múltiplos itens com IA",
-    description="Usa OpenAI para avaliar múltiplos itens de assessment em batch.",
+    summary="Avaliar multiplos itens with IA",
+    description="Usa OpenAI for avaliar multiplos itens de assessment em batch.",
 )
 @limiter.limit("5/minute")
 async def ai_assessment_batch(
-    request: Request,
+    request: Request,  # noqa: ARG001
     payload: BatchAIAssessmentRequest,
     db: DbSession,
     user: CurrentUser,
     supabase: SupabaseClient,
 ) -> ApiResponse:
     """
-    Executa avaliação AI em batch para múltiplos itens.
-    
-    Rate limit: 5 requisições por minuto por usuário.
-    
+    Executa avaliacao AI em batch for multiplos itens.
+
+    Rate limit: 5 requisicoes por minuto por user.
+
     Args:
         request: Request HTTP (usado pelo rate limiter).
-        payload: Dados dos itens a avaliar.
-        
+        payload: Dados of the itens a avaliar.
+
     Returns:
-        ApiResponse com lista de resultados.
+        ApiResponse with lista de resultados.
     """
     trace_id = str(uuid.uuid4())
-    
+
     logger.info(
         "ai_assessment_batch_request",
         trace_id=trace_id,
@@ -191,7 +191,7 @@ async def ai_assessment_batch(
         article_id=str(payload.article_id),
         items_count=len(payload.item_ids),
     )
-    
+
     try:
         # Resolve user's stored API key (BYOK) with env var fallback
         api_key_service = APIKeyService(db=db, user_id=user.sub)
@@ -215,12 +215,12 @@ async def ai_assessment_batch(
             model=payload.model or "gpt-4o-mini",
             extraction_instance_id=payload.extraction_instance_id,  # For PROBAST by model
         )
-        
+
         await db.commit()
-        
+
         # Formatar respostas
         formatted_results = [service.to_dict(r) for r in results]
-        
+
         logger.info(
             "ai_assessment_batch_success",
             trace_id=trace_id,
@@ -228,7 +228,7 @@ async def ai_assessment_batch(
             total_items=len(payload.item_ids),
             successful_items=len(results),
         )
-        
+
         response_data = BatchAIAssessmentResponseData(
             results=formatted_results,
             total_items=len(payload.item_ids),
@@ -236,7 +236,7 @@ async def ai_assessment_batch(
         ).model_dump(by_alias=True)
 
         return ApiResponse(ok=True, data=response_data, trace_id=trace_id)
-        
+
     except Exception as e:
         await db.rollback()
         logger.error(
@@ -254,40 +254,40 @@ async def ai_assessment_batch(
 @router.get(
     "/ai/suggestions",
     response_model=ApiResponse,
-    summary="Listar sugestões de AI pendentes",
-    description="Lista sugestões de AI que aguardam revisão humana.",
+    summary="Listar suggestions de AI pendentes",
+    description="List suggestions de AI que aguardam revisao humana.",
 )
 @limiter.limit("30/minute")
 async def list_ai_suggestions(
-    request: Request,
+    request: Request,  # noqa: ARG001
     project_id: str,
     article_id: str,
     instrument_id: str | None = None,
     extraction_instance_id: str | None = None,
     status_filter: str | None = None,
     db: DbSession = None,
-    user: CurrentUser = None,
+    user: CurrentUser = None,  # noqa: ARG001
 ) -> ApiResponse:
     """
-    Lista sugestões de AI pendentes de revisão.
+    List suggestions de AI pendentes de revisao.
 
     Args:
-        project_id: ID do projeto.
-        article_id: ID do artigo.
-        instrument_id: Filtrar por instrumento (opcional).
-        extraction_instance_id: Filtrar por extraction instance (opcional).
-        status_filter: Filtrar por status: 'pending', 'accepted', 'rejected' (opcional).
+        project_id: project.
+        article_id: article.
+        instrument_id: Filtrar por instrument (optional).
+        extraction_instance_id: Filtrar por extraction instance (optional).
+        status_filter: Filtrar por status: 'pending', 'accepted', 'rejected' (optional).
 
     Returns:
-        ApiResponse com lista de sugestões.
+        ApiResponse with lista de suggestions.
     """
     trace_id = str(uuid.uuid4())
 
     try:
-        from app.repositories.extraction_repository import AISuggestionRepository
         from sqlalchemy import and_, or_, select
-        from app.models.extraction import AISuggestion
+
         from app.models.assessment import AIAssessmentRun
+        from app.models.extraction import AISuggestion
 
         # Build query - include both global and project-scoped assessment suggestions
         query = select(AISuggestion).where(
@@ -299,8 +299,7 @@ async def list_ai_suggestions(
 
         # Join with runs to filter by project/article
         query = query.join(
-            AIAssessmentRun,
-            AISuggestion.assessment_run_id == AIAssessmentRun.id
+            AIAssessmentRun, AISuggestion.assessment_run_id == AIAssessmentRun.id
         ).where(
             and_(
                 AIAssessmentRun.project_id == uuid.UUID(project_id),
@@ -326,8 +325,7 @@ async def list_ai_suggestions(
 
         # Format response
         suggestions_data = [
-            AISuggestionSchema.model_validate(s).model_dump(by_alias=True)
-            for s in suggestions
+            AISuggestionSchema.model_validate(s).model_dump(by_alias=True) for s in suggestions
         ]
 
         response_data = ListSuggestionsResponse(
@@ -353,31 +351,31 @@ async def list_ai_suggestions(
 @router.post(
     "/ai/suggestions/{suggestion_id}/review",
     response_model=ApiResponse,
-    summary="Revisar sugestão de AI",
-    description="Aceita, rejeita ou modifica uma sugestão de AI.",
+    summary="Revisar suggestion de AI",
+    description="Aceita, rejeita or modifica uma suggestion de AI.",
 )
 @limiter.limit("20/minute")
 async def review_ai_suggestion(
-    request: Request,
+    request: Request,  # noqa: ARG001
     suggestion_id: str,
     payload: ReviewAISuggestionRequest,
     db: DbSession,
     user: CurrentUser,
 ) -> ApiResponse:
     """
-    Revisa uma sugestão de AI (accept/reject/modify).
+    Revisa uma suggestion de AI (accept/reject/modify).
 
     Workflow:
-    - accept: Marca sugestão como aceita e cria AIAssessment final
-    - reject: Marca sugestão como rejeitada (não cria assessment)
-    - modify: Marca sugestão como aceita com valor modificado e cria AIAssessment
+    - accept: Marca suggestion como aceita and cria AIAssessment final
+    - reject: mark suggestion as rejected (does not create assessment)
+    - modify: Marca suggestion como aceita with valor modificado and cria AIAssessment
 
     Args:
-        suggestion_id: ID da sugestão.
-        payload: Ação de revisão e dados opcionais.
+        suggestion_id: suggestion.
+        payload: Acao de revisao and data optional.
 
     Returns:
-        ApiResponse com resultado da revisão.
+        ApiResponse with resultado da revisao.
     """
     trace_id = str(uuid.uuid4())
 
@@ -390,9 +388,9 @@ async def review_ai_suggestion(
     )
 
     try:
-        from app.repositories.extraction_repository import AISuggestionRepository
-        from app.repositories.assessment_repository import AIAssessmentRepository
         from app.models.assessment import AIAssessment
+        from app.repositories.assessment_repository import AIAssessmentRepository
+        from app.repositories.extraction_repository import AISuggestionRepository
 
         suggestion_repo = AISuggestionRepository(db)
         assessment_repo = AIAssessmentRepository(db)

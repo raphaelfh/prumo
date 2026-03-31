@@ -18,7 +18,7 @@ from app.api.v1.endpoints import (
 
 api_router = APIRouter()
 
-# Registrar routers dos endpoints
+# Registrar routers of the endpoints
 api_router.include_router(
     zotero_import.router,
     prefix="/zotero",

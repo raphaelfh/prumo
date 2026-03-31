@@ -1,7 +1,7 @@
 """
 Core Module.
 
-Exporta componentes centrais da aplicação.
+Exporta componentes centrais da aplicacao.
 """
 
 from app.core.config import Settings, get_settings, settings
@@ -73,4 +73,3 @@ __all__ = [
 ]
 
 """Core module - Configuration, security, and dependencies."""
-

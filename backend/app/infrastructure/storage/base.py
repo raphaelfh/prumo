@@ -1,8 +1,8 @@
 """
 Base Storage Adapter.
 
-Interface abstrata para adapters de storage.
-Permite trocar implementação (Supabase, S3, local) sem afetar services.
+Interface abstrata for adapters de storage.
+Permite trocar implementacao (Supabase, S3, local) sem afetar services.
 """
 
 from abc import ABC, abstractmethod
@@ -11,32 +11,32 @@ from typing import Any
 
 class StorageAdapter(ABC):
     """
-    Interface abstrata para storage de arquivos.
-    
-    Implementações:
+    Interface abstrata for storage de files.
+
+    Implementacoes:
     - SupabaseStorageAdapter: Supabase Storage
     - S3StorageAdapter: AWS S3 (futuro)
-    - LocalStorageAdapter: Sistema de arquivos local (dev/testes)
+    - LocalStorageAdapter: Sistema de files local (dev/testes)
     """
-    
+
     @abstractmethod
     async def download(self, bucket: str, path: str) -> bytes:
         """
-        Faz download de um arquivo.
-        
+        Faz download de um file.
+
         Args:
             bucket: Nome do bucket.
-            path: Caminho do arquivo no bucket.
-            
+            path: Caminho do file in the bucket.
+
         Returns:
-            Conteúdo do arquivo em bytes.
-            
+            Conteudo do file em bytes.
+
         Raises:
-            FileNotFoundError: Se arquivo não existir.
-            StorageError: Se erro de conexão/permissão.
+            FileNotFoundError: If file does not exist.
+            StorageError: On connection/permission error.
         """
         pass
-    
+
     @abstractmethod
     async def upload(
         self,
@@ -46,64 +46,64 @@ class StorageAdapter(ABC):
         content_type: str = "application/octet-stream",
     ) -> str:
         """
-        Faz upload de um arquivo.
-        
+        Faz upload de um file.
+
         Args:
             bucket: Nome do bucket.
-            path: Caminho de destino no bucket.
-            data: Conteúdo do arquivo.
-            content_type: MIME type do arquivo.
-            
+            path: Caminho de destino in the bucket.
+            data: Conteudo do file.
+            content_type: MIME type do file.
+
         Returns:
-            URL ou path do arquivo criado.
-            
+            URL or path do file criado.
+
         Raises:
-            StorageError: Se erro de upload.
+            StorageError: On upload error.
         """
         pass
-    
+
     @abstractmethod
     async def delete(self, bucket: str, path: str) -> bool:
         """
-        Remove um arquivo.
-        
+        Remove um file.
+
         Args:
             bucket: Nome do bucket.
-            path: Caminho do arquivo.
-            
+            path: Caminho do file.
+
         Returns:
-            True se removido, False se não existia.
+            True if removed, False if it did not exist.
         """
         pass
-    
+
     @abstractmethod
     async def exists(self, bucket: str, path: str) -> bool:
         """
-        Verifica se arquivo existe.
-        
+        Check se file existe.
+
         Args:
             bucket: Nome do bucket.
-            path: Caminho do arquivo.
-            
+            path: Caminho do file.
+
         Returns:
             True se existe.
         """
         pass
-    
+
     @abstractmethod
     async def get_public_url(self, bucket: str, path: str) -> str:
         """
-        Obtém URL pública do arquivo.
-        
+        Obtem URL publica do file.
+
         Args:
             bucket: Nome do bucket.
-            path: Caminho do arquivo.
-            
+            path: Caminho do file.
+
         Returns:
-            URL pública para acesso.
+            URL publica for acesso.
         """
         pass
-    
+
     @abstractmethod
     async def list_files(
         self,
@@ -112,22 +112,22 @@ class StorageAdapter(ABC):
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """
-        Lista arquivos em um bucket/path.
-        
+        List files em um bucket/path.
+
         Args:
             bucket: Nome do bucket.
-            prefix: Prefixo para filtrar.
-            limit: Máximo de resultados.
-            
+            prefix: Prefixo for filtrar.
+            limit: Maximo de resultados.
+
         Returns:
-            Lista de metadados dos arquivos.
+            List de metadata of the files.
         """
         pass
 
 
 class StorageError(Exception):
-    """Erro genérico de storage."""
-    
+    """Erro generico de storage."""
+
     def __init__(self, message: str, bucket: str = "", path: str = ""):
         self.bucket = bucket
         self.path = path

@@ -1,8 +1,8 @@
 """
 Read Models (CQRS).
 
-DTOs otimizados para leitura com dados desnormalizados.
-Usados para queries complexas com JOINs.
+DTOs otimizados for leitura with data desnormalizados.
+Usados for queries complexas with JOINs.
 """
 
 from app.schemas.read_models.article import ArticleDetailReadModel, ArticleListReadModel

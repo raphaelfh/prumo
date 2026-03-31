@@ -1,12 +1,12 @@
 """
 OpenAI Service.
 
-Wrapper completo para chamadas à API da OpenAI com suporte a:
-- Chat completions com JSON mode
+Comprehensive wrapper for OpenAI API calls with support for:
+- Chat completions with JSON mode
 - Structured outputs (json_schema)
-- Responses API para PDFs
+- Responses API for PDFs
 - Embeddings
-- Retry com backoff exponencial
+- Retry with exponential backoff
 - Token tracking
 """
 
@@ -31,16 +31,16 @@ T = TypeVar("T", bound=BaseModel)
 
 
 class OpenAIUsage(BaseModel):
-    """Uso de tokens da API."""
-    
+    """API token usage."""
+
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
 
 
 class OpenAIResponse(BaseModel):
-    """Response estruturada da OpenAI."""
-    
+    """Structured OpenAI response."""
+
     content: str
     usage: OpenAIUsage
     model: str
@@ -50,61 +50,61 @@ class OpenAIResponse(BaseModel):
 
 class OpenAIService(LoggerMixin):
     """
-    Service para interação com OpenAI API.
-    
-    Inclui retry automático, structured outputs e logging estruturado.
-    Suporta API key dinâmica (BYOK) com fallback para key global.
+    Service for OpenAI API interactions.
+
+    Includes automatic retry, structured outputs, and structured logging.
+    Supports dynamic API key (BYOK) with global-key fallback.
     """
-    
+
     def __init__(
         self,
         trace_id: str | None = None,
         api_key: str | None = None,
     ):
         """
-        Inicializa o service.
-        
+        Initialize the service.
+
         Args:
-            trace_id: ID de rastreamento para logs.
-            api_key: API key customizada (BYOK). Se None, usa key global.
+            trace_id: Trace ID for logs.
+            api_key: Custom API key (BYOK). If None, uses global key.
         """
         self.trace_id = trace_id
         self.base_url = "https://api.openai.com/v1"
         self._api_key = api_key
         self._client: httpx.AsyncClient | None = None
         self._using_user_key = api_key is not None
-    
+
     @property
     def api_key(self) -> str:
-        """Retorna API key (customizada ou global)."""
+        """Return API key (custom or global)."""
         if self._api_key:
             return self._api_key
         return settings.OPENAI_API_KEY
-    
+
     @property
     def is_using_user_key(self) -> bool:
-        """Indica se está usando key do usuário (BYOK)."""
+        """Indicates whether user key (BYOK) is active."""
         return self._using_user_key
-    
+
     def set_api_key(self, api_key: str | None) -> None:
         """
-        Define API key dinâmica.
-        
-        Invalida o cliente HTTP para usar a nova key.
-        
+        Set dynamic API key.
+
+        Invalidate HTTP client so the new key is used.
+
         Args:
-            api_key: Nova API key ou None para usar global.
+            api_key: New API key or None to use global key.
         """
         self._api_key = api_key
         self._using_user_key = api_key is not None
-        # Invalidar cliente para usar nova key
+        # Invalidate client to use new key
         if self._client and not self._client.is_closed:
-            # Não fechar aqui para evitar problemas com async
-            # O cliente será recriado na próxima chamada
+            # Do not close here to avoid async edge cases
+            # Client is recreated on next request
             self._client = None
-    
+
     async def _get_client(self) -> httpx.AsyncClient:
-        """Retorna cliente HTTP reutilizável."""
+        """Return reusable HTTP client."""
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
                 timeout=httpx.Timeout(120.0, connect=10.0),
@@ -114,13 +114,13 @@ class OpenAIService(LoggerMixin):
                 },
             )
         return self._client
-    
+
     async def close(self) -> None:
-        """Fecha cliente HTTP."""
+        """Close HTTP client."""
         if self._client and not self._client.is_closed:
             await self._client.aclose()
             self._client = None
-    
+
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
@@ -135,17 +135,17 @@ class OpenAIService(LoggerMixin):
         max_tokens: int | None = None,
     ) -> str:
         """
-        Executa chat completion.
-        
+        Execute chat completion.
+
         Args:
-            messages: Lista de mensagens.
-            model: Modelo a usar.
-            response_format: Formato de resposta (json_object ou json_schema).
-            temperature: Temperatura para geração.
-            max_tokens: Limite de tokens.
-            
+            messages: Message list.
+            model: Model to use.
+            response_format: Response format (json_object or json_schema).
+            temperature: Generation temperature.
+            max_tokens: Token limit.
+
         Returns:
-            Texto da resposta.
+            Response text.
         """
         response = await self.chat_completion_full(
             messages=messages,
@@ -155,7 +155,7 @@ class OpenAIService(LoggerMixin):
             max_tokens=max_tokens,
         )
         return response.content
-    
+
     async def chat_completion_full(
         self,
         messages: list[dict[str, Any]],
@@ -165,32 +165,32 @@ class OpenAIService(LoggerMixin):
         max_tokens: int | None = None,
     ) -> OpenAIResponse:
         """
-        Executa chat completion com resposta completa.
-        
-        Retorna objeto com content, usage e metadata.
+        Execute chat completion with full metadata.
+
+        Returns object with content, usage, and metadata.
         """
         start_time = time.time()
-        
+
         payload: dict[str, Any] = {
             "model": model,
             "messages": messages,
             "temperature": temperature,
         }
-        
+
         if response_format:
             payload["response_format"] = response_format
-        
+
         if max_tokens:
             payload["max_tokens"] = max_tokens
-        
+
         client = await self._get_client()
         response = await client.post(
             f"{self.base_url}/chat/completions",
             json=payload,
         )
-        
+
         duration = (time.time() - start_time) * 1000
-        
+
         if not response.is_success:
             error_text = response.text[:500]
             self.logger.error(
@@ -200,16 +200,16 @@ class OpenAIService(LoggerMixin):
                 error=error_text,
             )
             raise ValueError(f"OpenAI error: {response.status_code} - {error_text}")
-        
+
         result = response.json()
         usage_data = result.get("usage", {})
-        
+
         usage = OpenAIUsage(
             prompt_tokens=usage_data.get("prompt_tokens", 0),
             completion_tokens=usage_data.get("completion_tokens", 0),
             total_tokens=usage_data.get("total_tokens", 0),
         )
-        
+
         self.logger.info(
             "openai_completion",
             trace_id=self.trace_id,
@@ -218,7 +218,7 @@ class OpenAIService(LoggerMixin):
             prompt_tokens=usage.prompt_tokens,
             completion_tokens=usage.completion_tokens,
         )
-        
+
         choice = result["choices"][0]
         return OpenAIResponse(
             content=choice["message"]["content"],
@@ -227,7 +227,7 @@ class OpenAIService(LoggerMixin):
             finish_reason=choice.get("finish_reason", "stop"),
             duration_ms=duration,
         )
-    
+
     async def chat_completion_structured(
         self,
         messages: list[dict[str, Any]],
@@ -237,23 +237,23 @@ class OpenAIService(LoggerMixin):
         max_tokens: int | None = None,
     ) -> T:
         """
-        Executa chat completion com resposta estruturada Pydantic.
-        
-        Usa json_schema para garantir formato correto.
-        
+        Execute chat completion with Pydantic-structured response.
+
+        Uses json_schema to enforce output format.
+
         Args:
-            messages: Lista de mensagens.
-            response_model: Modelo Pydantic para validar resposta.
-            model: Modelo OpenAI.
-            temperature: Temperatura.
-            max_tokens: Limite de tokens.
-            
+            messages: Message list.
+            response_model: Pydantic model for response validation.
+            model: OpenAI model.
+            temperature: Sampling temperature.
+            max_tokens: Token limit.
+
         Returns:
-            Instância do modelo Pydantic.
+            Pydantic model instance.
         """
-        # Gerar JSON schema do modelo Pydantic
+        # Generate JSON schema from Pydantic model
         schema = response_model.model_json_schema()
-        
+
         response_format = {
             "type": "json_schema",
             "json_schema": {
@@ -262,7 +262,7 @@ class OpenAIService(LoggerMixin):
                 "schema": schema,
             },
         }
-        
+
         content = await self.chat_completion(
             messages=messages,
             model=model,
@@ -270,11 +270,11 @@ class OpenAIService(LoggerMixin):
             temperature=temperature,
             max_tokens=max_tokens,
         )
-        
-        # Parse e validar com Pydantic
+
+        # Parse and validate with Pydantic
         data = json.loads(content)
         return response_model.model_validate(data)
-    
+
     async def responses_api_with_pdf(
         self,
         pdf_data: bytes | str,
@@ -285,29 +285,29 @@ class OpenAIService(LoggerMixin):
         filename: str = "document.pdf",
     ) -> dict[str, Any]:
         """
-        Usa Responses API para analisar PDF diretamente.
-        
+        Use Responses API to analyze PDF directly.
+
         Args:
-            pdf_data: Bytes do PDF ou base64 string.
-            system_prompt: Prompt do sistema.
-            user_prompt: Prompt do usuário.
-            response_format: Formato de resposta estruturada.
-            model: Modelo a usar.
-            filename: Nome do arquivo.
-            
+            pdf_data: PDF bytes or base64 string.
+            system_prompt: System prompt.
+            user_prompt: User prompt.
+            response_format: Structured response format.
+            model: Model to use.
+            filename: File name.
+
         Returns:
-            Dict com output_text, input_tokens e output_tokens.
+            Dict with output_text, input_tokens, and output_tokens.
         """
         start_time = time.time()
-        
-        # Converter para base64 se necessário
+
+        # Convert to base64 if needed
         if isinstance(pdf_data, bytes):
             pdf_base64 = base64.b64encode(pdf_data).decode()
         else:
             pdf_base64 = pdf_data
-        
+
         data_url = f"data:application/pdf;base64,{pdf_base64}"
-        
+
         payload: dict[str, Any] = {
             "model": model,
             "input": [
@@ -328,18 +328,18 @@ class OpenAIService(LoggerMixin):
                 },
             ],
         }
-        
+
         if response_format:
             payload["text"] = {"format": response_format}
-        
+
         client = await self._get_client()
         response = await client.post(
             f"{self.base_url}/responses",
             json=payload,
         )
-        
+
         duration = (time.time() - start_time) * 1000
-        
+
         if not response.is_success:
             error_text = response.text[:500]
             self.logger.error(
@@ -349,10 +349,10 @@ class OpenAIService(LoggerMixin):
                 error=error_text,
             )
             raise ValueError(f"OpenAI Responses API error: {response.status_code}")
-        
+
         result = response.json()
-        
-        # Extrair output_text
+
+        # Extract output_text
         output_text = None
         for item in result.get("output", []):
             if item.get("type") == "message":
@@ -360,9 +360,9 @@ class OpenAIService(LoggerMixin):
                     if content.get("type") == "output_text":
                         output_text = content.get("text")
                         break
-        
+
         usage = result.get("usage", {})
-        
+
         self.logger.info(
             "openai_responses_completion",
             trace_id=self.trace_id,
@@ -371,28 +371,28 @@ class OpenAIService(LoggerMixin):
             input_tokens=usage.get("input_tokens"),
             output_tokens=usage.get("output_tokens"),
         )
-        
+
         return {
             "output_text": output_text,
             "input_tokens": usage.get("input_tokens"),
             "output_tokens": usage.get("output_tokens"),
             "duration_ms": duration,
         }
-    
+
     async def embeddings(
         self,
         texts: list[str],
         model: str = "text-embedding-3-small",
     ) -> list[list[float]]:
         """
-        Gera embeddings para textos.
-        
+        Generate embeddings for texts.
+
         Args:
-            texts: Lista de textos.
-            model: Modelo de embedding.
-            
+            texts: Text list.
+            model: Embedding model.
+
         Returns:
-            Lista de vetores de embedding.
+            List of embedding vectors.
         """
         client = await self._get_client()
         response = await client.post(
@@ -402,14 +402,14 @@ class OpenAIService(LoggerMixin):
                 "input": texts,
             },
         )
-        
+
         if not response.is_success:
             raise ValueError(f"OpenAI embeddings error: {response.status_code}")
-        
+
         result = response.json()
-        
+
         return [item["embedding"] for item in result["data"]]
-    
+
     def build_json_schema_format(
         self,
         schema: dict[str, Any],
@@ -417,15 +417,15 @@ class OpenAIService(LoggerMixin):
         strict: bool = True,
     ) -> dict[str, Any]:
         """
-        Constrói formato json_schema para response_format.
-        
+        Build json_schema payload for response_format.
+
         Args:
-            schema: JSON schema das propriedades.
-            name: Nome do schema.
-            strict: Se deve usar modo strict.
-            
+            schema: JSON schema for properties.
+            name: Schema name.
+            strict: Whether to enforce strict mode.
+
         Returns:
-            Dict para usar em response_format.
+            Dict to use as response_format.
         """
         return {
             "type": "json_schema",
@@ -435,4 +435,3 @@ class OpenAIService(LoggerMixin):
                 "schema": schema,
             },
         }
-

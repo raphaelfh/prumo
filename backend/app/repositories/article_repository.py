@@ -1,12 +1,11 @@
 """
 Article Repository.
 
-Gerencia acesso a dados de artigos e arquivos.
+Article and file persistence layer.
 """
 
+from datetime import UTC, datetime
 from uuid import UUID
-
-from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,14 +18,14 @@ from app.repositories.base import BaseRepository
 
 class ArticleRepository(BaseRepository[Article]):
     """
-    Repository para operações com artigos.
-    
-    Encapsula queries de artigos e arquivos relacionados.
+    Repository for article operations.
+
+    Encapsulates article and related-file queries.
     """
-    
+
     def __init__(self, db: AsyncSession):
         super().__init__(db, Article)
-    
+
     async def get_by_project(
         self,
         project_id: UUID | str,
@@ -36,67 +35,65 @@ class ArticleRepository(BaseRepository[Article]):
         include_files: bool = False,
     ) -> list[Article]:
         """
-        Lista artigos de um projeto.
-        
+        List articles for a project.
+
         Args:
-            project_id: ID do projeto.
-            skip: Offset para paginação.
-            limit: Limite de resultados.
-            include_files: Se deve incluir arquivos.
-            
+            project_id: Project ID.
+            skip: Pagination offset.
+            limit: Maximum number of results.
+            include_files: Whether to eager-load files.
+
         Returns:
-            Lista de artigos do projeto.
+            Project article list.
         """
         if isinstance(project_id, str):
             project_id = UUID(project_id)
-        
+
         query = select(Article).where(Article.project_id == project_id)
-        
+
         if include_files:
             query = query.options(selectinload(Article.files))
-        
+
         query = query.offset(skip).limit(limit)
-        
+
         result = await self.db.execute(query)
         return list(result.scalars().all())
-    
+
     async def get_with_files(self, article_id: UUID | str) -> Article | None:
         """
-        Busca artigo com seus arquivos.
+        Fetch article with files loaded.
 
         Args:
-            article_id: ID do artigo.
+            article_id: Article ID.
 
         Returns:
-            Artigo com arquivos ou None.
+            Article with files or None.
         """
         if isinstance(article_id, str):
             article_id = UUID(article_id)
 
         result = await self.db.execute(
-            select(Article)
-            .options(selectinload(Article.files))
-            .where(Article.id == article_id)
+            select(Article).options(selectinload(Article.files)).where(Article.id == article_id)
         )
         return result.scalar_one_or_none()
 
     async def get_by_ids(
-            self,
-            article_ids: list[UUID] | list[str],
-            project_id: UUID | str,
-            *,
-            include_files: bool = False,
+        self,
+        article_ids: list[UUID] | list[str],
+        project_id: UUID | str,
+        *,
+        include_files: bool = False,
     ) -> list[Article]:
         """
-        Busca artigos por lista de IDs, restritos ao projeto.
+        Fetch articles by ID list scoped to a project.
 
         Args:
-            article_ids: IDs dos artigos.
-            project_id: ID do projeto (artigos devem pertencer a este projeto).
-            include_files: Se deve carregar arquivos relacionados.
+            article_ids: Article IDs.
+            project_id: Project ID (articles must belong to it).
+            include_files: Whether to eager-load related files.
 
         Returns:
-            Lista de artigos encontrados, na ordem dos IDs solicitados.
+            Matching articles in the same order as requested IDs.
         """
         if not article_ids:
             return []
@@ -111,7 +108,7 @@ class ArticleRepository(BaseRepository[Article]):
             query = query.options(selectinload(Article.files))
         result = await self.db.execute(query)
         rows = list(result.scalars().all())
-        # Manter ordem dos IDs solicitados
+        # Preserve requested ID order.
         by_id = {a.id: a for a in rows}
         return [by_id[i] for i in ids if i in by_id]
 
@@ -121,14 +118,14 @@ class ArticleRepository(BaseRepository[Article]):
         zotero_item_key: str,
     ) -> Article | None:
         """
-        Busca artigo por zotero_item_key dentro de um projeto.
+        Fetch article by zotero_item_key within a project.
 
         Args:
-            project_id: ID do projeto.
-            zotero_item_key: Key do item no Zotero.
+            project_id: Project ID.
+            zotero_item_key: Zotero item key.
 
         Returns:
-            Artigo encontrado ou None.
+            Matching article or None.
         """
         if isinstance(project_id, str):
             project_id = UUID(project_id)
@@ -140,36 +137,34 @@ class ArticleRepository(BaseRepository[Article]):
             .limit(1)
         )
         return result.scalar_one_or_none()
-    
+
     async def count_by_project(self, project_id: UUID | str) -> int:
         """
-        Conta artigos de um projeto.
-        
+        Count articles in a project.
+
         Args:
-            project_id: ID do projeto.
-            
+            project_id: Project ID.
+
         Returns:
-            Número de artigos.
+            Article count.
         """
         from sqlalchemy import func
-        
+
         if isinstance(project_id, str):
             project_id = UUID(project_id)
-        
+
         result = await self.db.execute(
-            select(func.count())
-            .select_from(Article)
-            .where(Article.project_id == project_id)
+            select(func.count()).select_from(Article).where(Article.project_id == project_id)
         )
         return result.scalar_one()
 
     async def get_by_canonical_identity(
-            self,
-            project_id: UUID,
-            *,
-            zotero_item_key: str | None = None,
-            doi: str | None = None,
-            url_landing: str | None = None,
+        self,
+        project_id: UUID,
+        *,
+        zotero_item_key: str | None = None,
+        doi: str | None = None,
+        url_landing: str | None = None,
     ) -> Article | None:
         if zotero_item_key:
             return await self.get_by_zotero_item_key(project_id, zotero_item_key)
@@ -192,11 +187,11 @@ class ArticleRepository(BaseRepository[Article]):
         return result.scalar_one_or_none()
 
     async def upsert_by_canonical_identity(
-            self,
-            *,
-            project_id: UUID,
-            payload: dict,
-            canonical_identity: dict[str, str | None],
+        self,
+        *,
+        project_id: UUID,
+        payload: dict,
+        canonical_identity: dict[str, str | None],
     ) -> tuple[Article, bool]:
         existing = await self.get_by_canonical_identity(
             project_id,
@@ -207,14 +202,14 @@ class ArticleRepository(BaseRepository[Article]):
         if existing:
             for key, value in payload.items():
                 setattr(existing, key, value)
-            existing.last_synced_at = datetime.now(timezone.utc)
+            existing.last_synced_at = datetime.now(UTC)
             await self.db.flush()
             await self.db.refresh(existing)
             return existing, False
 
         article = Article(
             project_id=project_id,
-            last_synced_at=datetime.now(timezone.utc),
+            last_synced_at=datetime.now(UTC),
             **payload,
         )
         created = await self.create(article)
@@ -222,8 +217,8 @@ class ArticleRepository(BaseRepository[Article]):
 
     async def mark_removed_at_source(self, article: Article) -> Article:
         article.sync_state = "removed_at_source"
-        article.removed_at_source_at = datetime.now(timezone.utc)
-        article.last_synced_at = datetime.now(timezone.utc)
+        article.removed_at_source_at = datetime.now(UTC)
+        article.last_synced_at = datetime.now(UTC)
         await self.db.flush()
         await self.db.refresh(article)
         return article
@@ -231,12 +226,14 @@ class ArticleRepository(BaseRepository[Article]):
     async def mark_reactivated(self, article: Article) -> Article:
         article.sync_state = "reactivated"
         article.removed_at_source_at = None
-        article.last_synced_at = datetime.now(timezone.utc)
+        article.last_synced_at = datetime.now(UTC)
         await self.db.flush()
         await self.db.refresh(article)
         return article
 
-    async def get_zotero_project_articles(self, project_id: UUID, collection_key: str | None = None) -> list[Article]:
+    async def get_zotero_project_articles(
+        self, project_id: UUID, collection_key: str | None = None
+    ) -> list[Article]:
         query = select(Article).where(
             Article.project_id == project_id,
             Article.ingestion_source == "zotero",
@@ -253,17 +250,17 @@ class ArticleSyncRunRepository(BaseRepository[ArticleSyncRun]):
         super().__init__(db, ArticleSyncRun)
 
     async def create_run(
-            self,
-            *,
-            project_id: UUID,
-            requested_by_user_id: UUID,
-            source: str,
-            source_collection_key: str | None,
+        self,
+        *,
+        project_id: UUID,
+        requested_by_user_id: UUID,
+        source: str,
+        source_collection_key: str | None,
     ) -> ArticleSyncRun:
         run = ArticleSyncRun(
             project_id=project_id,
             requested_by_user_id=requested_by_user_id,
-            started_at=datetime.now(timezone.utc),
+            started_at=datetime.now(UTC),
             status="pending",
             source=source,
             source_collection_key=source_collection_key,
@@ -279,7 +276,9 @@ class ArticleSyncRunRepository(BaseRepository[ArticleSyncRun]):
         )
         return result.scalar_one_or_none()
 
-    async def update_counts(self, run: ArticleSyncRun, counts: dict[str, int], status: str) -> ArticleSyncRun:
+    async def update_counts(
+        self, run: ArticleSyncRun, counts: dict[str, int], status: str
+    ) -> ArticleSyncRun:
         run.total_received = counts.get("total_received", run.total_received)
         run.persisted = counts.get("persisted", run.persisted)
         run.updated = counts.get("updated", run.updated)
@@ -289,7 +288,7 @@ class ArticleSyncRunRepository(BaseRepository[ArticleSyncRun]):
         run.reactivated = counts.get("reactivated", run.reactivated)
         run.status = status
         if status in {"completed", "failed", "cancelled"}:
-            run.completed_at = datetime.now(timezone.utc)
+            run.completed_at = datetime.now(UTC)
         await self.db.flush()
         await self.db.refresh(run)
         return run
@@ -300,17 +299,17 @@ class ArticleSyncEventRepository(BaseRepository[ArticleSyncEvent]):
         super().__init__(db, ArticleSyncEvent)
 
     async def create_event(
-            self,
-            *,
-            project_id: UUID,
-            sync_run_id: UUID,
-            status: str,
-            zotero_item_key: str | None,
-            article_id: UUID | None = None,
-            authority_rule_applied: str | None = None,
-            error_code: str | None = None,
-            error_message: str | None = None,
-            event_payload: dict | None = None,
+        self,
+        *,
+        project_id: UUID,
+        sync_run_id: UUID,
+        status: str,
+        zotero_item_key: str | None,
+        article_id: UUID | None = None,
+        authority_rule_applied: str | None = None,
+        error_code: str | None = None,
+        error_message: str | None = None,
+        event_payload: dict | None = None,
     ) -> ArticleSyncEvent:
         event = ArticleSyncEvent(
             project_id=project_id,
@@ -322,21 +321,24 @@ class ArticleSyncEventRepository(BaseRepository[ArticleSyncEvent]):
             error_code=error_code,
             error_message=error_message,
             event_payload=event_payload,
-            processed_at=datetime.now(timezone.utc),
+            processed_at=datetime.now(UTC),
         )
         return await self.create(event)
 
     async def list_run_events(
-            self,
-            *,
-            sync_run_id: UUID,
-            offset: int = 0,
-            limit: int = 50,
-            status_filter: str | None = None,
+        self,
+        *,
+        sync_run_id: UUID,
+        offset: int = 0,
+        limit: int = 50,
+        status_filter: str | None = None,
     ) -> tuple[list[ArticleSyncEvent], int]:
         query = select(ArticleSyncEvent).where(ArticleSyncEvent.sync_run_id == sync_run_id)
-        count_query = select(func.count()).select_from(ArticleSyncEvent).where(
-            ArticleSyncEvent.sync_run_id == sync_run_id)
+        count_query = (
+            select(func.count())
+            .select_from(ArticleSyncEvent)
+            .where(ArticleSyncEvent.sync_run_id == sync_run_id)
+        )
         if status_filter:
             query = query.where(ArticleSyncEvent.status == status_filter)
             count_query = count_query.where(ArticleSyncEvent.status == status_filter)
@@ -347,7 +349,9 @@ class ArticleSyncEventRepository(BaseRepository[ArticleSyncEvent]):
         total_result = await self.db.execute(count_query)
         return list(result.scalars().all()), int(total_result.scalar_one())
 
-    async def list_failed_by_run(self, sync_run_id: UUID, limit: int = 100) -> list[ArticleSyncEvent]:
+    async def list_failed_by_run(
+        self, sync_run_id: UUID, limit: int = 100
+    ) -> list[ArticleSyncEvent]:
         result = await self.db.execute(
             select(ArticleSyncEvent)
             .where(ArticleSyncEvent.sync_run_id == sync_run_id)
@@ -360,55 +364,55 @@ class ArticleSyncEventRepository(BaseRepository[ArticleSyncEvent]):
 
 class ArticleFileRepository(BaseRepository[ArticleFile]):
     """
-    Repository para arquivos de artigos.
-    
-    Gerencia arquivos PDF e outros anexos.
+    Repository for article files.
+
+    Manages PDFs and other attachments.
     """
-    
+
     def __init__(self, db: AsyncSession):
         super().__init__(db, ArticleFile)
-    
+
     async def get_by_article(
         self,
         article_id: UUID | str,
         file_type: str | None = None,
     ) -> list[ArticleFile]:
         """
-        Lista arquivos de um artigo.
-        
+        List files for an article.
+
         Args:
-            article_id: ID do artigo.
-            file_type: Filtro por tipo (opcional).
-            
+            article_id: Article ID.
+            file_type: Optional type filter.
+
         Returns:
-            Lista de arquivos.
+            File list.
         """
         if isinstance(article_id, str):
             article_id = UUID(article_id)
-        
+
         query = select(ArticleFile).where(ArticleFile.article_id == article_id)
-        
+
         if file_type:
             query = query.where(ArticleFile.file_type.ilike(f"%{file_type}%"))
-        
+
         query = query.order_by(ArticleFile.created_at.desc())
-        
+
         result = await self.db.execute(query)
         return list(result.scalars().all())
-    
+
     async def get_latest_pdf(self, article_id: UUID | str) -> ArticleFile | None:
         """
-        Busca o PDF mais recente de um artigo.
-        
+        Fetch latest PDF for an article.
+
         Args:
-            article_id: ID do artigo.
-            
+            article_id: Article ID.
+
         Returns:
-            Arquivo PDF ou None.
+            PDF file or None.
         """
         if isinstance(article_id, str):
             article_id = UUID(article_id)
-        
+
         result = await self.db.execute(
             select(ArticleFile)
             .where(ArticleFile.article_id == article_id)
@@ -417,16 +421,16 @@ class ArticleFileRepository(BaseRepository[ArticleFile]):
             .limit(1)
         )
         return result.scalar_one_or_none()
-    
+
     async def get_by_storage_key(self, storage_key: str) -> ArticleFile | None:
         """
-        Busca arquivo por storage key.
-        
+        Fetch file by storage key.
+
         Args:
-            storage_key: Chave do storage.
-            
+            storage_key: Storage key.
+
         Returns:
-            Arquivo ou None.
+            File or None.
         """
         result = await self.db.execute(
             select(ArticleFile).where(ArticleFile.storage_key == storage_key)

@@ -102,7 +102,12 @@ ignore = [
     "E501",   # line too long (handled by formatter)
     "B008",   # do not perform function calls in argument defaults
     "B904",   # raise without from inside except
+    "UP042",  # str+Enum kept for SQLAlchemy/Pydantic compatibility (StrEnum migration deferred)
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Multiline fixture strings use indented blank lines; trailing space in SQL snippets.
+"tests/**" = ["W291", "W293"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]

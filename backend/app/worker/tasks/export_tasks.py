@@ -1,7 +1,7 @@
 """
 Export Tasks.
 
-Tasks Celery para exportação de artigos (CSV, RIS, RDF + arquivos).
+Tasks Celery for exportacao de articles (CSV, RIS, RDF + files).
 """
 
 import asyncio
@@ -26,28 +26,28 @@ def _run_in_worker_loop(coro):
     rate_limit="5/m",
 )
 def export_articles_task(
-        self,
-        project_id: str,
-        article_ids: list[str],
-        formats: list[str],
-        file_scope: str,
-        user_id: str,
+    self,
+    project_id: str,
+    article_ids: list[str],
+    formats: list[str],
+    file_scope: str,
+    user_id: str,
 ) -> dict:
     """
-    Task para exportação de artigos em background.
+    Task for exportacao de articles em background.
 
-    Gera ZIP com metadados (CSV/RIS/RDF) e opcionalmente arquivos;
-    faz upload para storage e retorna URL assinada.
+    Gera ZIP with metadata (CSV/RIS/RDF) and optionalmente files;
+    faz upload for storage and retorna URL assinada.
 
     Args:
-        project_id: ID do projeto.
-        article_ids: Lista de IDs dos artigos (UUID strings).
-        formats: Lista de formatos: csv, ris, rdf.
+        project_id: project.
+        article_ids: List de IDs of the articles (UUID strings).
+        formats: List de formatos: csv, ris, rdf.
         file_scope: none, main_only, all.
-        user_id: ID do usuário (para ownership do job).
+        user_id: user (para ownership do job).
 
     Returns:
-        Dict com download_url, expires_at, skipped_files, user_id.
+        Dict with download_url, expires_at, skipped_files, user_id.
     """
     from app.core.deps import AsyncSessionLocal, get_supabase_client
     from app.core.factories import create_storage_adapter

@@ -1,11 +1,11 @@
 """
 Security Module - JWT Validation with Supabase Auth.
 
-Este módulo implementa validação de JWT compatível com:
+Este modulo implementa validacao de JWT compativel com:
 - Supabase Cloud (RS256 via JWKS)
 - Supabase Local (HS256 via JWT_SECRET)
 
-Referência: https://supabase.com/docs/guides/auth/jwts
+Referencia: https://supabase.com/docs/guides/auth/jwts
 """
 
 import hashlib
@@ -23,15 +23,15 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Security scheme para extrair Bearer token
-# FastAPI gera automaticamente o security scheme no OpenAPI
+# Security scheme for extrair Bearer token
+# FastAPI gera automaticamente o security scheme in the OpenAPI
 security = HTTPBearer(
     scheme_name="Supabase JWT",
     description="JWT token do Supabase Auth",
 )
 
-# JWT Secret para Supabase local (HS256)
-# Em produção, JWKS é usado (RS256)
+# JWT Secret for Supabase local (HS256)
+# Em producao, JWKS e usado (RS256)
 SUPABASE_LOCAL_JWT_SECRET = "super-secret-jwt-token-with-at-least-32-characters-long"
 LOCAL_JWT_ALGS = {"HS256"}
 JWKS_JWT_ALGS = {"RS256", "ES256"}
@@ -39,22 +39,22 @@ JWKS_JWT_ALGS = {"RS256", "ES256"}
 
 class TokenPayload(BaseModel):
     """
-    Payload extraído do JWT do Supabase.
-    
-    Contém claims padrão do Supabase Auth.
+    Payload extraido do JWT do Supabase.
+
+    Contem claims padrao do Supabase Auth.
     """
-    
+
     sub: str  # User ID (UUID)
     email: str | None = None
     phone: str | None = None
     role: str = "authenticated"
     aal: str = "aal1"  # Authenticator Assurance Level
     session_id: str | None = None
-    
+
     # Timestamps
     iat: int | None = None  # Issued at
     exp: int | None = None  # Expiration
-    
+
     # App metadata
     app_metadata: dict[str, Any] | None = None
     user_metadata: dict[str, Any] | None = None
@@ -62,63 +62,63 @@ class TokenPayload(BaseModel):
 
 class JWKSCache:
     """
-    Cache para JWKS do Supabase.
-    
-    Evita requisições repetidas ao endpoint JWKS mantendo
-    as chaves em cache por um período configurável.
+    Cache for JWKS do Supabase.
+
+    Evita requisicoes repetidas ao endpoint JWKS mantendo
+    as keys em cache por um periodo configuravel.
     """
-    
+
     def __init__(self, ttl_seconds: int = 300):
         self._jwks: dict[str, Any] | None = None
         self._expires_at: datetime | None = None
         self._ttl = timedelta(seconds=ttl_seconds)
-    
+
     async def get_jwks(self, jwks_url: str) -> dict[str, Any]:
         """
-        Retorna JWKS, buscando do endpoint se cache expirado.
-        
+        Return JWKS, buscando do endpoint se cache expirado.
+
         Args:
             jwks_url: URL do endpoint JWKS.
-            
+
         Returns:
-            Dict com as chaves públicas (JWKS).
+            Dict with as keys publicas (JWKS).
         """
         now = datetime.utcnow()
-        
+
         if self._jwks and self._expires_at and now < self._expires_at:
             return self._jwks
-        
+
         async with httpx.AsyncClient() as client:
             response = await client.get(jwks_url, timeout=10.0)
             response.raise_for_status()
             self._jwks = response.json()
             self._expires_at = now + self._ttl
-        
+
         return self._jwks
-    
+
     def invalidate(self) -> None:
-        """Invalida o cache forçando nova busca."""
+        """Invalida o cache forcando nova busca."""
         self._jwks = None
         self._expires_at = None
 
 
-# Instância global do cache
+# Instancia global do cache
 _jwks_cache = JWKSCache()
 
 
 async def get_jwks() -> dict[str, Any]:
     """
-    Busca JWKS do Supabase com cache.
-    
+    Fetch JWKS do Supabase with cache.
+
     Returns:
-        Dict com as chaves públicas JWKS.
+        Dict with as keys publicas JWKS.
     """
     jwks_url = f"{settings.SUPABASE_URL}/auth/v1/.well-known/jwks.json"
     return await _jwks_cache.get_jwks(jwks_url)
 
 
 def _expected_issuer() -> str:
-    """Retorna o issuer esperado com base no SUPABASE_URL."""
+    """Return o issuer esperado with base in the SUPABASE_URL."""
     return f"{settings.SUPABASE_URL.rstrip('/')}/auth/v1"
 
 
@@ -167,17 +167,17 @@ async def verify_supabase_jwt(
     Valida JWT do Supabase Auth.
 
     Suporta dois modos:
-    - Supabase Cloud: Validação via JWKS (RS256)
-    - Supabase Local: Validação via JWT_SECRET (HS256)
+    - Supabase Cloud: Validacao via JWKS (RS256)
+    - Supabase Local: Validacao via JWT_SECRET (HS256)
 
     Args:
-        credentials: Credenciais extraídas do header Authorization.
+        credentials: Credenciais extraidas do header Authorization.
 
     Returns:
-        TokenPayload com dados do usuário.
+        TokenPayload with data do user.
 
     Raises:
-        HTTPException 401: Token inválido ou expirado.
+        HTTPException 401: Token invalid or expirado.
     """
     token = credentials.credentials
 
@@ -187,17 +187,17 @@ async def verify_supabase_jwt(
     )
 
     try:
-        # Decodificar header sem verificar para pegar algoritmo
+        # Decodificar header sem verificar for pegar algoritmo
         unverified_header = jwt.get_unverified_header(token)
         kid = unverified_header.get("kid")
         alg = unverified_header.get("alg", "HS256")
         expected_issuer = _expected_issuer()
         supabase_env = settings.supabase_env
-        
-        # Segredo para validação local (HS256)
+
+        # Segredo for validacao local (HS256)
         jwt_secret = settings.SUPABASE_JWT_SECRET or SUPABASE_LOCAL_JWT_SECRET
-        
-        # Supabase Local usa HS256 com JWT_SECRET
+
+        # Supabase Local usa HS256 with JWT_SECRET
         if supabase_env == "local":
             if alg in LOCAL_JWT_ALGS:
                 logger.debug(
@@ -206,7 +206,7 @@ async def verify_supabase_jwt(
                     supabase_env=supabase_env,
                 )
 
-                # Em local, se falhar a primeira vez, tentamos ser mais flexíveis
+                # Em local, se falhar a primeira vez, tentamos ser mais flexiveis
                 try:
                     payload = jwt.decode(
                         token,
@@ -220,12 +220,12 @@ async def verify_supabase_jwt(
                         "jwt_validation_local_strict_failed_retrying_flexible",
                         error=str(e),
                     )
-                    # Tenta sem verificar issuer e audience se for local
+                    # Tenta sem verificar issuer and audience se for local
                     payload = jwt.decode(
                         token,
                         jwt_secret,
                         algorithms=["HS256"],
-                        options={"verify_aud": False, "verify_iss": False}
+                        options={"verify_aud": False, "verify_iss": False},
                     )
             elif alg in JWKS_JWT_ALGS:
                 logger.debug(
@@ -262,8 +262,8 @@ async def verify_supabase_jwt(
                 detail="Invalid token: expected RS256/ES256 for SUPABASE_ENV=production",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        
-        # Supabase Cloud usa RS256 com JWKS
+
+        # Supabase Cloud usa RS256 with JWKS
         logger.debug(
             "jwt_validation_mode",
             mode=alg,
@@ -311,7 +311,7 @@ async def verify_supabase_jwt(
         ) from e
 
 
-# Alias para uso mais legível
+# Alias for uso mais legivel
 get_current_user = verify_supabase_jwt
 
 
@@ -319,11 +319,11 @@ async def get_current_active_user(
     user: TokenPayload = Depends(get_current_user),
 ) -> TokenPayload:
     """
-    Retorna usuário atual verificando se está ativo.
-    
-    Pode ser expandido para verificar status do usuário no banco.
+    Return user atual verificando se esta ativo.
+
+    Pode ser expandido for verificar status do user in the banco.
     """
-    # Verificar se token não expirou (já feito pelo jwt.decode, mas double-check)
+    # Verify token is not expired (already done by jwt.decode, but double-check)
     if user.exp:
         exp_datetime = datetime.fromtimestamp(user.exp)
         if datetime.utcnow() > exp_datetime:
@@ -332,15 +332,15 @@ async def get_current_active_user(
                 detail="Token expired",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-    
+
     return user
 
 
 def require_aal2(user: TokenPayload = Depends(get_current_user)) -> TokenPayload:
     """
     Dependency que exige MFA (AAL2).
-    
-    Use em endpoints que requerem autenticação multi-fator.
+
+    Use em endpoints que requerem autenticacao multi-fator.
     """
     if user.aal != "aal2":
         raise HTTPException(
@@ -352,17 +352,18 @@ def require_aal2(user: TokenPayload = Depends(get_current_user)) -> TokenPayload
 
 # =================== ENCRYPTION UTILS ===================
 
+
 def derive_encryption_key(user_id: str) -> bytes:
     """
-    Deriva chave de criptografia única por usuário.
-    
-    Usado para criptografar dados sensíveis como API keys.
-    
+    Deriva key de criptografia unica por user.
+
+    Usado for criptografar data sensiveis como API keys.
+
     Args:
-        user_id: ID do usuário para derivar chave.
-        
+        user_id: user for derivar key.
+
     Returns:
-        Bytes da chave derivada.
+        Bytes da key derivada.
     """
     combined = f"{settings.ENCRYPTION_KEY}{user_id}".encode()
     return hashlib.pbkdf2_hmac(

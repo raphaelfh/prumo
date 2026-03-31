@@ -1,23 +1,17 @@
 """
 SQLAlchemy Models.
 
-Exporta todos os modelos para facilitar importação e
+Exporta todos os modelos for facilitar importacao e
 garantir que o Alembic detecte todas as tabelas.
 
-IMPORTANTE: A ordem de importação importa!
+IMPORTANTE: A ordem de importacao importa!
 - Modelos base primeiro (Base, BaseModel)
-- Modelos sem dependências (User, Project)
+- Modelos sem dependencias (User, Project)
 - Modelos que dependem de outros (Article, Extraction, etc.)
 """
 
 # Base models primeiro
-from app.models.base import Base, BaseModel, TimestampMixin, UUIDMixin
-
-# Modelos sem dependências (ou com dependências mínimas)
-from app.models.user import Profile
-from app.models.project import Project, ProjectMember, ProjectMemberRole, ReviewType
-
-# Modelos que dependem dos anteriores
+# Modelos que dependem of the anteriores
 from app.models.article import Article, ArticleFile, FileRole
 from app.models.article_author import (
     ArticleAuthor,
@@ -25,6 +19,22 @@ from app.models.article_author import (
     ArticleSyncEvent,
     ArticleSyncRun,
 )
+from app.models.assessment import (
+    AIAssessment,
+    AIAssessmentConfig,
+    AIAssessmentPrompt,
+    AIAssessmentRun,
+    AssessmentEvidence,
+    AssessmentInstance,
+    AssessmentInstrument,
+    AssessmentItem,
+    AssessmentResponse,
+    AssessmentSource,
+    AssessmentStatus,
+    ProjectAssessmentInstrument,
+    ProjectAssessmentItem,
+)
+from app.models.base import Base, BaseModel, TimestampMixin, UUIDMixin
 from app.models.extraction import (
     AISuggestion,
     ExtractedValue,
@@ -43,60 +53,51 @@ from app.models.extraction import (
     ProjectExtractionTemplate,
     SuggestionStatus,
 )
-from app.models.assessment import (
-    AIAssessment,
-    AIAssessmentConfig,
-    AIAssessmentPrompt,
-    AIAssessmentRun,
-    AssessmentEvidence,
-    AssessmentInstance,
-    AssessmentInstrument,
-    AssessmentItem,
-    AssessmentResponse,
-    AssessmentSource,
-    AssessmentStatus,
-    ProjectAssessmentInstrument,
-    ProjectAssessmentItem,
-)
 from app.models.integration import ZoteroIntegration
-from app.models.user_api_key import UserAPIKey, SUPPORTED_PROVIDERS
+from app.models.project import Project, ProjectMember, ProjectMemberRole, ReviewType
 
-# Força o registro de todas as tabelas no metadata
+# Modelos sem dependencias (ou with dependencias minimas)
+from app.models.user import Profile
+from app.models.user_api_key import SUPPORTED_PROVIDERS, UserAPIKey
+
+
+# Forca o registro de todas as tabelas in the metadata
 # Isso garante que todas as foreign keys sejam resolvidas corretamente
 def _prepare_metadata() -> None:
     """
     Prepara o metadata do SQLAlchemy registrando todas as tabelas.
-    
+
     Isso garante que todas as foreign keys sejam resolvidas corretamente,
-    mesmo quando há dependências circulares entre modelos.
-    
-    A estratégia é forçar o processamento de cada modelo na ordem correta
+    mesmo quando ha dependencias circulares entre modelos.
+
+    A estrategia e forcar o processamento de cada modelo in the ordem correta
     acessando seus atributos de tabela, garantindo que todas as foreign keys
     sejam resolvidas antes de processar modelos dependentes.
     """
-    # Forçar o processamento de cada modelo na ordem de dependência
+    # Forcar o processamento de cada modelo in the ordem de dependencia
     # Isso garante que as tabelas sejam registradas antes de serem referenciadas
-    
-    # 1. Profile primeiro (sem dependências)
-    Profile.__table__  # type: ignore
-    
+
+    # 1. Profile primeiro (sem dependencias)
+    _ = Profile.__table__  # type: ignore[union-attr]
+
     # 2. Project (depende de Profile)
-    Project.__table__  # type: ignore
-    ProjectMember.__table__  # type: ignore
-    
+    _ = Project.__table__  # type: ignore[union-attr]
+    _ = ProjectMember.__table__  # type: ignore[union-attr]
+
     # 3. Article (depende de Project)
-    Article.__table__  # type: ignore
-    ArticleFile.__table__  # type: ignore
-    ArticleAuthor.__table__  # type: ignore
-    ArticleAuthorLink.__table__  # type: ignore
-    ArticleSyncRun.__table__  # type: ignore
-    ArticleSyncEvent.__table__  # type: ignore
-    
+    _ = Article.__table__  # type: ignore[union-attr]
+    _ = ArticleFile.__table__  # type: ignore[union-attr]
+    _ = ArticleAuthor.__table__  # type: ignore[union-attr]
+    _ = ArticleAuthorLink.__table__  # type: ignore[union-attr]
+    _ = ArticleSyncRun.__table__  # type: ignore[union-attr]
+    _ = ArticleSyncEvent.__table__  # type: ignore[union-attr]
+
     # 4. Extraction models (dependem de Article, Project, etc.)
-    # Apenas acessar o metadata já força o processamento de todos
+    # Apenas acessar o metadata ja forca o processamento de todos
     _ = Base.metadata.tables
 
-# Executar preparação do metadata após todas as importações
+
+# Executar preparacao do metadata apos todas as importacoes
 _prepare_metadata()
 
 __all__ = [

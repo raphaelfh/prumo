@@ -3,8 +3,8 @@ Section Extraction Endpoint.
 
 Migrado de: supabase/functions/section-extraction/index.ts
 
-Endpoint para extração de seções específicas de templates.
-Suporta extração individual ou em batch de todas as seções.
+Endpoint for extraction de sections especificas de templates.
+Suporta extraction individual or em batch de todas as sections.
 """
 
 import uuid
@@ -31,35 +31,35 @@ logger = get_logger(__name__)
 @router.post(
     "",
     response_model=ApiResponse,
-    summary="Extrair seção(ões) de template",
-    description="Extrai dados de uma seção específica ou todas as seções de um modelo.",
+    summary="Extrair section(oes) de template",
+    description="Extrai data de uma section especifica or todas as sections de um modelo.",
 )
 @limiter.limit("10/minute")
 async def extract_section(
-    request: Request,  # Necessário para o rate limiter
+    request: Request,  # noqa: ARG001
     payload: SectionExtractionRequest,
     db: DbSession,
     user: CurrentUser,
     supabase: SupabaseClient,
 ) -> ApiResponse:
     """
-    Executa extração de seção(ões) de um template.
-    
-    Rate limit: 10 requisições por minuto por usuário.
-    
-    Modos de operação:
-    1. Seção única: entity_type_id obrigatório
-    2. Todas as seções: extract_all_sections=true, parent_instance_id obrigatório
-    
+    Executa extraction de section(oes) de um template.
+
+    Rate limit: 10 requisicoes por minuto por user.
+
+    Modos de operacao:
+    1. Secao unica: entity_type_id obrigatorio
+    2. Todas as sections: extract_all_sections=true, parent_instance_id obrigatorio
+
     Args:
         request: Request HTTP (usado pelo rate limiter).
-        payload: Parâmetros de extração.
-        
+        payload: Parametros de extraction.
+
     Returns:
-        ApiResponse com resultado da extração.
+        ApiResponse with resultado da extraction.
     """
     trace_id = str(uuid.uuid4())
-    
+
     logger.info(
         "section_extraction_request",
         trace_id=trace_id,
@@ -71,15 +71,15 @@ async def extract_section(
         extract_all_sections=payload.extract_all_sections,
         model=payload.model,
     )
-    
+
     try:
-        # Cria storage adapter via factory
+        # Create storage adapter via factory
         storage = create_storage_adapter(supabase)
-        
-        # Buscar API key do usuário (BYOK) com fallback para global
+
+        # Buscar API key do user (BYOK) with fallback for global
         api_key_service = APIKeyService(db=db, user_id=user.sub)
         user_openai_key = await api_key_service.get_key_for_provider("openai")
-        
+
         service = SectionExtractionService(
             db=db,
             user_id=user.sub,
@@ -87,9 +87,9 @@ async def extract_section(
             trace_id=trace_id,
             openai_api_key=user_openai_key,
         )
-        
+
         if payload.extract_all_sections:
-            # Extração em batch de todas as seções
+            # Extracao em batch de todas as sections
             result = await service.extract_all_sections(
                 project_id=payload.project_id,
                 article_id=payload.article_id,
@@ -99,10 +99,10 @@ async def extract_section(
                 pdf_text=payload.pdf_text,
                 model=payload.model or "gpt-4o-mini",
             )
-            
-            # Commit explícito para persistir instâncias e sugestões criadas
+
+            # Commit explicito for persistir instances and suggestions criadas
             await db.commit()
-            
+
             logger.info(
                 "batch_section_extraction_success",
                 trace_id=trace_id,
@@ -113,7 +113,7 @@ async def extract_section(
                 tokens_total=result.total_tokens_used,
             )
 
-            # Formatar resposta no formato camelCase para o frontend
+            # Formatar resposta in the formato camelCase for o frontend
             response_data = BatchSectionResult(
                 extraction_run_id=result.extraction_run_id,
                 total_sections=result.total_sections,
@@ -125,7 +125,7 @@ async def extract_section(
                 sections=result.sections,
             ).model_dump(by_alias=True)
         else:
-            # Extração de seção única
+            # Extracao de section unica
             result = await service.extract_section(
                 project_id=payload.project_id,
                 article_id=payload.article_id,
@@ -134,10 +134,10 @@ async def extract_section(
                 parent_instance_id=payload.parent_instance_id,
                 model=payload.model or "gpt-4o-mini",
             )
-            
-            # Commit explícito para persistir instâncias e sugestões criadas
+
+            # Commit explicito for persistir instances and suggestions criadas
             await db.commit()
-            
+
             logger.info(
                 "section_extraction_success",
                 trace_id=trace_id,
@@ -146,7 +146,7 @@ async def extract_section(
                 tokens_total=result.tokens_total,
             )
 
-            # Formatar resposta no formato camelCase para o frontend
+            # Formatar resposta in the formato camelCase for o frontend
             response_data = SingleSectionResult(
                 extraction_run_id=result.extraction_run_id,
                 entity_type_id=result.entity_type_id,
@@ -156,9 +156,9 @@ async def extract_section(
                 tokens_total=result.tokens_total,
                 duration_ms=result.duration_ms,
             ).model_dump(by_alias=True)
-        
+
         return ApiResponse(ok=True, data=response_data, trace_id=trace_id)
-        
+
     except ValueError as e:
         await db.rollback()
         logger.warning(

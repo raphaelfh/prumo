@@ -1,7 +1,7 @@
 """
 Dependencies Module.
 
-Contém todas as dependencies compartilhadas da aplicação:
+Contem todas as dependencies compartilhadas da aplicacao:
 - Database session
 - Supabase client
 - Current user
@@ -23,8 +23,8 @@ logger = get_logger(__name__)
 
 # =================== DATABASE ===================
 
-# Engine async para PostgreSQL
-# NOTA: O workaround de ::VARCHAR para ENUMs foi REMOVIDO.
+# Engine async for PostgreSQL
+# NOTA: O workaround de ::VARCHAR for ENUMs foi REMOVIDO.
 # Agora usamos PostgreSQLEnumType (em app.models.base) que resolve o problema
 # de forma declarativa diretamente nos models SQLAlchemy.
 engine = create_async_engine(
@@ -34,9 +34,9 @@ engine = create_async_engine(
     pool_size=10,
     max_overflow=20,
     connect_args={
-        "statement_cache_size": 0,  # ✅ Desabilita prepared statements (compatível com pgbouncer)
+        "statement_cache_size": 0,  # ✅ Desabilita prepared statements (compativel with pgbouncer)
         "server_settings": {
-            "jit": "off",  # Desabilita JIT para melhor performance em queries complexas
+            "jit": "off",  # Desabilita JIT for melhor performance em queries complexas
         },
     },
 )
@@ -52,12 +52,12 @@ AsyncSessionLocal = async_sessionmaker(
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
-    Dependency que fornece uma sessão de banco de dados.
-    
-    A sessão é automaticamente fechada ao final da request.
-    
+    Dependency que fornece uma sessao de banco de data.
+
+    A sessao e automaticamente fechada ao final da request.
+
     Yields:
-        AsyncSession: Sessão do SQLAlchemy.
+        AsyncSession: Sessao do SQLAlchemy.
     """
     async with AsyncSessionLocal() as session:
         try:
@@ -66,21 +66,22 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
-# Type alias para uso nas rotas
+# Type alias for uso nas rotas
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 
 
 # =================== SUPABASE CLIENT ===================
 
+
 @lru_cache
 def get_supabase_client() -> Client:
     """
-    Retorna cliente Supabase configurado com service role.
-    
-    Usado para operações que precisam de acesso elevado:
+    Return cliente Supabase configurado with service role.
+
+    Usado for operacoes que precisam de acesso elevado:
     - Storage operations
-    - Bypass RLS quando necessário
-    
+    - Bypass RLS quando necessario
+
     Returns:
         Client: Supabase client configurado.
     """
@@ -91,7 +92,7 @@ def get_supabase_client() -> Client:
 
 
 def get_supabase() -> Client:
-    """Dependency para obter Supabase client."""
+    """Dependency for obter Supabase client."""
     return get_supabase_client()
 
 
@@ -105,13 +106,14 @@ CurrentUser = Annotated[TokenPayload, Depends(get_current_user)]
 
 # =================== COMBINED DEPENDENCIES ===================
 
+
 class RequestContext:
     """
-    Contexto da requisição com todas as dependencies comuns.
-    
-    Agrupa db, user e supabase para facilitar passagem para services.
+    Contexto da requisicao with todas as dependencies comuns.
+
+    Agrupa db, user and supabase for facilitar passagem for services.
     """
-    
+
     def __init__(
         self,
         db: AsyncSession,
@@ -121,10 +123,10 @@ class RequestContext:
         self.db = db
         self.user = user
         self.supabase = supabase
-    
+
     @property
     def user_id(self) -> str:
-        """ID do usuário atual."""
+        """user atual."""
         return self.user.sub
 
 
@@ -134,12 +136,11 @@ async def get_request_context(
     supabase: SupabaseClient,
 ) -> RequestContext:
     """
-    Dependency que fornece contexto completo da requisição.
-    
-    Útil para services que precisam de múltiplas dependencies.
+    Dependency que fornece contexto completo da requisicao.
+
+    Util for services que precisam de multiplas dependencies.
     """
     return RequestContext(db=db, user=user, supabase=supabase)
 
 
 RequestCtx = Annotated[RequestContext, Depends(get_request_context)]
-

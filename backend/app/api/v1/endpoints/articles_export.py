@@ -1,7 +1,7 @@
 """
 Articles Export Endpoint.
 
-Endpoints para exportação de artigos (CSV, RIS, RDF) com opção de incluir arquivos.
+Endpoints for exportacao de articles (CSV, RIS, RDF) with opcao de incluir files.
 """
 
 import uuid
@@ -31,7 +31,7 @@ from app.worker.tasks.export_tasks import export_articles_task
 router = APIRouter()
 logger = get_logger(__name__)
 
-# Limite para executar export de metadados de forma síncrona (sem Celery)
+# Limite for executar export de metadata de forma sincrona (sem Celery)
 SYNC_METADATA_ONLY_MAX_ARTICLES = 50
 
 
@@ -50,18 +50,18 @@ def _is_queue_available() -> bool:
 @router.post(
     "",
     response_model=None,
-    summary="Iniciar exportação de artigos",
-    description="Exporta artigos em CSV, RIS e/ou RDF; opcionalmente inclui arquivos. Retorna 200 com arquivo (sync) ou 202 com jobId (async).",
+    summary="Iniciar exportacao de articles",
+    description="Exporta articles em CSV, RIS e/ou RDF; optionalmente inclui files. Return 200 with file (sync) or 202 with jobId (async).",
 )
 @limiter.limit("10/minute")
 async def start_export(
-        request: Request,
-        payload: ExportRequest,
-        db: DbSession,
-        user: CurrentUser,
-        supabase: SupabaseClient,
+    request: Request,  # noqa: ARG001
+    payload: ExportRequest,
+    db: DbSession,
+    user: CurrentUser,
+    supabase: SupabaseClient,
 ) -> Response | ApiResponse[ExportStartedResponse]:
-    """Inicia exportação. Metadados-only e poucos artigos → 200 com arquivo; caso contrário → 202 com job_id."""
+    """Inicia exportacao. Metadata-only and poucos articles → 200 with file; caso contrario → 202 with job_id."""
     trace_id = str(uuid.uuid4())
     project_id = payload.project_id
     article_ids = payload.article_ids
@@ -122,7 +122,7 @@ async def start_export(
             trace_id=trace_id,
         )
 
-    # Sync: metadados-only e até SYNC_METADATA_ONLY_MAX_ARTICLES artigos
+    # Sync: metadata-only and ate SYNC_METADATA_ONLY_MAX_ARTICLES articles
     if file_scope == "none" and len(article_ids) <= SYNC_METADATA_ONLY_MAX_ARTICLES:
         content, media_type, filename, skipped = await service.run_export(
             project_id, article_ids, formats, file_scope, job_id=None
@@ -174,15 +174,15 @@ async def start_export(
 @router.get(
     "/status/{job_id}",
     response_model=ApiResponse[ExportStatusResponse],
-    summary="Status do job de exportação",
+    summary="Status do job de exportacao",
 )
 @limiter.limit("30/minute")
 async def get_export_status(
-        request: Request,
-        job_id: str,
-        user: CurrentUser,
+    request: Request,  # noqa: ARG001
+    job_id: str,
+    user: CurrentUser,
 ) -> ApiResponse[ExportStatusResponse]:
-    """Retorna status do job; quando completed, inclui downloadUrl e expiresAt."""
+    """Return status do job; quando completed, inclui downloadUrl and expiresAt."""
     from celery.result import AsyncResult
 
     from app.worker.celery_app import celery_app
@@ -228,7 +228,9 @@ async def get_export_status(
         if skipped:
             skipped_entries = [
                 SkippedFileEntry(
-                    article_id=UUID(s["articleId"]) if isinstance(s.get("articleId"), str) else s["articleId"],
+                    article_id=UUID(s["articleId"])
+                    if isinstance(s.get("articleId"), str)
+                    else s["articleId"],
                     storage_key=s["storageKey"],
                     reason=s["reason"],
                 )
@@ -261,20 +263,20 @@ async def get_export_status(
 @router.post(
     "/status/{job_id}/cancel",
     response_model=ApiResponse[ExportCancelResponse],
-    summary="Cancelar exportação (POST)",
+    summary="Cancelar exportacao (POST)",
 )
 @router.delete(
     "/status/{job_id}",
     response_model=ApiResponse[ExportCancelResponse],
-    summary="Cancelar exportação (DELETE)",
+    summary="Cancelar exportacao (DELETE)",
 )
 @limiter.limit("20/minute")
 async def cancel_export(
-        request: Request,
-        job_id: str,
-        user: CurrentUser,
+    request: Request,  # noqa: ARG001
+    job_id: str,
+    user: CurrentUser,  # noqa: ARG001
 ) -> ApiResponse[ExportCancelResponse]:
-    """Revoga o job de exportação. Se já concluído, no-op."""
+    """Revoga o job de exportacao. Se ja concluido, no-op."""
     from celery.result import AsyncResult
 
     from app.worker.celery_app import celery_app

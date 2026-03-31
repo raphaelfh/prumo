@@ -1,15 +1,15 @@
 """
 Domain Events.
 
-Eventos de domínio para desacoplamento e comunicação entre componentes.
+Eventos de dominio for desacoplamento and comunicacao entre componentes.
 """
 
-from app.domain.events.base import DomainEvent, EventBus
 from app.domain.events.assessment_events import (
     ArticleAssessed,
     AssessmentApproved,
     AssessmentRejected,
 )
+from app.domain.events.base import DomainEvent, EventBus
 from app.domain.events.extraction_events import (
     ExtractionCompleted,
     ModelsExtracted,

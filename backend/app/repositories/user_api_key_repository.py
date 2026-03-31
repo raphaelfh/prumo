@@ -1,12 +1,11 @@
 """
-User API Key Repository.
+User API Key repository.
 
-Gerencia acesso a dados de API keys de usuários.
-A criptografia/descriptografia é feita no nível do Service (Fernet),
-seguindo o mesmo padrão de ZoteroIntegration.
+Persistence for per-user API keys. Encryption/decryption stays in the service
+layer (Fernet), same pattern as Zotero integration.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -18,73 +17,67 @@ from app.repositories.base import BaseRepository
 
 
 class UserAPIKeyRepository(BaseRepository[UserAPIKey]):
-    """
-    Repository para API keys de usuários.
-    
-    Gerencia CRUD das keys. A criptografia é feita no Service layer.
-    """
-    
+    """CRUD for user API keys (encrypted values are handled by services)."""
+
     def __init__(self, db: AsyncSession):
         super().__init__(db, UserAPIKey)
-    
+
     async def list_by_user(
         self,
         user_id: UUID | str,
         active_only: bool = True,
     ) -> list[UserAPIKey]:
         """
-        Lista API keys de um usuário.
-        
+        List API keys for a user.
+
         Args:
-            user_id: ID do usuário.
-            active_only: Se deve filtrar apenas ativas.
-            
+            user_id: User ID.
+            active_only: Whether to return only active keys.
+
         Returns:
-            Lista de API keys.
+            API key list.
         """
         if isinstance(user_id, str):
             user_id = UUID(user_id)
-        
-        query = select(UserAPIKey).where(
-            UserAPIKey.user_id == user_id
-        )
-        
+
+        query = select(UserAPIKey).where(UserAPIKey.user_id == user_id)
+
         if active_only:
-            query = query.where(UserAPIKey.is_active == True)  # noqa: E712
-        
+            query = query.where(UserAPIKey.is_active.is_(True))
+
         query = query.order_by(UserAPIKey.created_at.desc())
-        
+
         result = await self.db.execute(query)
         return list(result.scalars().all())
-    
+
     async def get_default(
         self,
         user_id: UUID | str,
         provider: str,
     ) -> UserAPIKey | None:
         """
-        Busca a API key default de um provedor para um usuário.
-        
+        Get the default key for a provider and user.
+
         Args:
-            user_id: ID do usuário.
-            provider: Provedor (openai, anthropic, gemini, grok).
-            
+            user_id: User ID.
+            provider: Provider name (openai, anthropic, gemini, grok).
+
         Returns:
-            API key default ou None.
+            Default API key or None.
         """
         if isinstance(user_id, str):
             user_id = UUID(user_id)
-        
+
         query = select(UserAPIKey).where(
             UserAPIKey.user_id == user_id,
             UserAPIKey.provider == provider,
-            UserAPIKey.is_active == True,  # noqa: E712
-            UserAPIKey.is_default == True,  # noqa: E712
+            UserAPIKey.is_active.is_(True),
+            UserAPIKey.is_default.is_(True),
         )
-        
+
         result = await self.db.execute(query)
         return result.scalar_one_or_none()
-    
+
     async def get_by_user_and_provider(
         self,
         user_id: UUID | str,
@@ -92,58 +85,58 @@ class UserAPIKeyRepository(BaseRepository[UserAPIKey]):
         active_only: bool = True,
     ) -> list[UserAPIKey]:
         """
-        Lista API keys de um usuário para um provedor específico.
-        
+        List API keys for a user and provider.
+
         Args:
-            user_id: ID do usuário.
-            provider: Provedor.
-            active_only: Se deve filtrar apenas ativas.
-            
+            user_id: User ID.
+            provider: Provider name.
+            active_only: Whether to return only active keys.
+
         Returns:
-            Lista de API keys.
+            API key list.
         """
         if isinstance(user_id, str):
             user_id = UUID(user_id)
-        
+
         query = select(UserAPIKey).where(
             UserAPIKey.user_id == user_id,
             UserAPIKey.provider == provider,
         )
-        
+
         if active_only:
-            query = query.where(UserAPIKey.is_active == True)  # noqa: E712
-        
+            query = query.where(UserAPIKey.is_active.is_(True))
+
         result = await self.db.execute(query)
         return list(result.scalars().all())
-    
+
     async def get_by_id_and_user(
         self,
         key_id: UUID | str,
         user_id: UUID | str,
     ) -> UserAPIKey | None:
         """
-        Busca API key por ID validando ownership.
-        
+        Fetch a key by ID and validate ownership.
+
         Args:
-            key_id: ID da API key.
-            user_id: ID do usuário (para validação de ownership).
-            
+            key_id: API key ID.
+            user_id: User ID for ownership validation.
+
         Returns:
-            API key ou None se não encontrada.
+            API key or None.
         """
         if isinstance(key_id, str):
             key_id = UUID(key_id)
         if isinstance(user_id, str):
             user_id = UUID(user_id)
-        
+
         query = select(UserAPIKey).where(
             UserAPIKey.id == key_id,
             UserAPIKey.user_id == user_id,
         )
-        
+
         result = await self.db.execute(query)
         return result.scalar_one_or_none()
-    
+
     async def create_key(
         self,
         user_id: UUID | str,
@@ -154,24 +147,24 @@ class UserAPIKeyRepository(BaseRepository[UserAPIKey]):
         metadata: dict[str, Any] | None = None,
     ) -> UserAPIKey:
         """
-        Cria nova API key.
-        
-        NOTA: A API key deve ser criptografada pelo Service antes de chamar este método.
-        
+        Create a new API key.
+
+        NOTE: The API key must already be encrypted in the service layer.
+
         Args:
-            user_id: ID do usuário.
-            provider: Provedor.
-            encrypted_api_key: API key já criptografada via Fernet.
-            key_name: Nome opcional.
-            is_default: Se deve ser a default.
-            metadata: Metadados extras.
-            
+            user_id: User ID.
+            provider: Provider name.
+            encrypted_api_key: Fernet-encrypted API key value.
+            key_name: Optional display name.
+            is_default: Whether this key should become default.
+            metadata: Extra metadata.
+
         Returns:
-            API key criada.
+            Created API key.
         """
         if isinstance(user_id, str):
             user_id = UUID(user_id)
-        
+
         key = UserAPIKey(
             user_id=user_id,
             provider=provider,
@@ -182,9 +175,9 @@ class UserAPIKeyRepository(BaseRepository[UserAPIKey]):
             validation_status="pending",
             key_metadata=metadata or {},
         )
-        
+
         return await self.create(key)
-    
+
     async def unset_default(
         self,
         user_id: UUID | str,
@@ -192,137 +185,135 @@ class UserAPIKeyRepository(BaseRepository[UserAPIKey]):
         exclude_id: UUID | str | None = None,
     ) -> int:
         """
-        Desmarca todas as keys default de um provedor.
-        
+        Unset default for all keys of a provider.
+
         Args:
-            user_id: ID do usuário.
-            provider: Provedor.
-            exclude_id: ID de key para excluir da operação.
-            
+            user_id: User ID.
+            provider: Provider name.
+            exclude_id: Optional key ID to exclude from update.
+
         Returns:
-            Número de keys atualizadas.
+            Number of updated keys.
         """
         if isinstance(user_id, str):
             user_id = UUID(user_id)
-        
+
         stmt = (
             update(UserAPIKey)
             .where(
                 UserAPIKey.user_id == user_id,
                 UserAPIKey.provider == provider,
-                UserAPIKey.is_default == True,  # noqa: E712
+                UserAPIKey.is_default.is_(True),
             )
             .values(is_default=False)
         )
-        
+
         if exclude_id:
             if isinstance(exclude_id, str):
                 exclude_id = UUID(exclude_id)
             stmt = stmt.where(UserAPIKey.id != exclude_id)
-        
+
         result = await self.db.execute(stmt)
         await self.db.flush()
         return result.rowcount
-    
+
     async def set_default(
         self,
         key_id: UUID | str,
         user_id: UUID | str,
     ) -> bool:
         """
-        Define uma key como default para seu provedor.
-        
-        Desmarca automaticamente outras keys do mesmo provedor.
-        
+        Set a key as provider default.
+
+        Automatically unsets any other default key for the same provider.
+
         Args:
-            key_id: ID da key.
-            user_id: ID do usuário.
-            
+            key_id: Key ID.
+            user_id: User ID.
+
         Returns:
-            True se atualizada.
+            True if updated.
         """
         if isinstance(key_id, str):
             key_id = UUID(key_id)
         if isinstance(user_id, str):
             user_id = UUID(user_id)
-        
-        # Buscar a key e seu provedor
+
+        # Fetch key and provider.
         key = await self.get_by_id(key_id)
         if not key or key.user_id != user_id:
             return False
-        
-        # Desmarcar outras defaults do mesmo provedor
+
+        # Unset other defaults for this provider.
         await self.unset_default(user_id, key.provider, exclude_id=key_id)
-        
-        # Marcar esta como default
+
+        # Mark this key as default.
         key.is_default = True
         await self.db.flush()
         await self.db.refresh(key)
-        
+
         return True
-    
+
     async def update_last_used(self, key_id: UUID | str) -> None:
         """
-        Atualiza timestamp de último uso.
-        
+        Update last-used timestamp.
+
         Args:
-            key_id: ID da key.
+            key_id: Key ID.
         """
         if isinstance(key_id, str):
             key_id = UUID(key_id)
-        
+
         await self.db.execute(
-            update(UserAPIKey)
-            .where(UserAPIKey.id == key_id)
-            .values(last_used_at=datetime.now(timezone.utc))
+            update(UserAPIKey).where(UserAPIKey.id == key_id).values(last_used_at=datetime.now(UTC))
         )
         await self.db.flush()
-    
+
     async def set_validation_status(
         self,
         key_id: UUID | str,
         status: str,
     ) -> None:
         """
-        Atualiza status de validação.
-        
+        Update validation status.
+
         Args:
-            key_id: ID da key.
-            status: Status (valid, invalid, pending).
+            key_id: Key ID.
+            status: Validation status (valid, invalid, pending).
         """
         if isinstance(key_id, str):
             key_id = UUID(key_id)
-        
+
         await self.db.execute(
             update(UserAPIKey)
             .where(UserAPIKey.id == key_id)
             .values(
                 validation_status=status,
-                last_validated_at=datetime.now(timezone.utc),
+                last_validated_at=datetime.now(UTC),
             )
         )
         await self.db.flush()
-    
+
     async def deactivate(
         self,
         key_id: UUID | str,
         user_id: UUID | str,
     ) -> bool:
         """
-        Desativa uma API key.
-        
+        Deactivate an API key.
+
         Args:
-            key_id: ID da key.
-            user_id: ID do usuário (para validação).
-            
+            key_id: Key ID.
+            user_id: User ID for ownership validation.
+
         Returns:
-            True se desativada.
+            True if deactivated.
         """
         if isinstance(key_id, str):
             key_id = UUID(key_id)
         if isinstance(user_id, str):
             user_id = UUID(user_id)
-        
+
         result = await self.db.execute(
             update(UserAPIKey)
             .where(
@@ -333,30 +324,29 @@ class UserAPIKeyRepository(BaseRepository[UserAPIKey]):
         )
         await self.db.flush()
         return result.rowcount > 0
-    
+
     async def hard_delete(
         self,
         key_id: UUID | str,
         user_id: UUID | str,
     ) -> bool:
         """
-        Remove permanentemente uma API key.
-        
+        Permanently delete an API key.
+
         Args:
-            key_id: ID da key.
-            user_id: ID do usuário (para validação).
-            
+            key_id: Key ID.
+            user_id: User ID for ownership validation.
+
         Returns:
-            True se removida.
+            True if deleted.
         """
         if isinstance(key_id, str):
             key_id = UUID(key_id)
         if isinstance(user_id, str):
             user_id = UUID(user_id)
-        
+
         result = await self.db.execute(
-            delete(UserAPIKey)
-            .where(
+            delete(UserAPIKey).where(
                 UserAPIKey.id == key_id,
                 UserAPIKey.user_id == user_id,
             )
