@@ -174,3 +174,132 @@ def normalize_manual_entry(entry: dict[str, Any]) -> CanonicalArticlePayload:
         creator_rows=creator_rows,
         source_lineage="manual",
     )
+
+
+def normalize_scopus_csv_row(row: dict[str, str]) -> CanonicalArticlePayload:
+    """Normalize a single Scopus CSV row into a CanonicalArticlePayload."""
+    title = _clean(row.get("Title")) or "Untitled"
+    doi = normalize_doi(row.get("DOI"))
+    url_landing = normalize_url(row.get("Link"))
+
+    # Parse authors from "LastName, First; LastName2, First2" format
+    authors_raw = _clean(row.get("Authors"))
+    authors = [a.strip() for a in authors_raw.split(";") if a.strip()] if authors_raw else []
+    creator_rows = [
+        {"creator_type": "author", "display_name": name, "raw": {"name": name}}
+        for name in authors
+    ]
+
+    # Parse year
+    publication_year = extract_year(row.get("Year"))
+
+    # Parse pages from start/end
+    page_start = _clean(row.get("Page start"))
+    page_end = _clean(row.get("Page end"))
+    pages = None
+    if page_start and page_end:
+        pages = f"{page_start}-{page_end}"
+    elif page_start:
+        pages = page_start
+
+    # Parse keywords (semicolon-separated, deduplicated)
+    keywords: list[str] = []
+    for kw_field in ("Author Keywords", "Index Keywords"):
+        raw = _clean(row.get(kw_field))
+        if raw:
+            for k in raw.split(";"):
+                k = k.strip()
+                if k and k not in keywords:
+                    keywords.append(k)
+
+    # Parse open access
+    oa_raw = _clean(row.get("Open Access"))
+    open_access = None
+    if oa_raw:
+        open_access = oa_raw.lower() not in ("", "no", "false", "0")
+
+    article_fields: dict[str, Any] = {
+        "title": title,
+        "abstract": _clean(row.get("Abstract")),
+        "authors": authors or None,
+        "publication_year": publication_year,
+        "journal_title": _clean(row.get("Source title")),
+        "volume": _clean(row.get("Volume")),
+        "issue": _clean(row.get("Issue")),
+        "pages": pages,
+        "doi": doi,
+        "keywords": keywords or None,
+        "article_type": _clean(row.get("Document Type")),
+        "open_access": open_access,
+        "url_landing": url_landing,
+        "publication_status": _clean(row.get("Publication Stage")),
+        "ingestion_source": "CSV_SCOPUS",
+        "source_payload": {
+            "eid": _clean(row.get("EID")),
+            "cited_by": _clean(row.get("Cited by")),
+            "source_db": _clean(row.get("Source")),
+            "author_full_names": _clean(row.get("Author full names")),
+            "author_ids": _clean(row.get("Author(s) ID")),
+            "art_no": _clean(row.get("Art. No.")),
+        },
+        "sync_state": "active",
+        "source_lineage": "csv_scopus",
+    }
+
+    return CanonicalArticlePayload(
+        canonical_identity={"zotero_item_key": None, "doi": doi, "url_landing": url_landing},
+        article_fields=article_fields,
+        creator_rows=creator_rows,
+        source_lineage="csv_scopus",
+    )
+
+
+def normalize_pdf_ai_entry(metadata: dict[str, Any]) -> CanonicalArticlePayload:
+    """Normalize AI-extracted PDF metadata into a CanonicalArticlePayload."""
+    doi = normalize_doi(metadata.get("doi"))
+    url_landing = normalize_url(metadata.get("url_landing"))
+
+    authors_raw = metadata.get("authors") or []
+    if isinstance(authors_raw, str):
+        authors_raw = [a.strip() for a in authors_raw.split(",") if a.strip()]
+    creator_rows = [
+        {"creator_type": "author", "display_name": str(name).strip(), "raw": {"name": name}}
+        for name in authors_raw
+        if str(name).strip()
+    ]
+
+    keywords_raw = metadata.get("keywords") or []
+    if isinstance(keywords_raw, str):
+        keywords_raw = [k.strip() for k in keywords_raw.split(",") if k.strip()]
+
+    article_fields: dict[str, Any] = {
+        "title": _clean(metadata.get("title")) or "Untitled",
+        "abstract": _clean(metadata.get("abstract")),
+        "authors": [row["display_name"] for row in creator_rows] or None,
+        "publication_year": metadata.get("publication_year"),
+        "publication_month": metadata.get("publication_month"),
+        "journal_title": _clean(metadata.get("journal_title")),
+        "journal_issn": _clean(metadata.get("journal_issn")),
+        "volume": _clean(metadata.get("volume")),
+        "issue": _clean(metadata.get("issue")),
+        "pages": _clean(metadata.get("pages")),
+        "doi": doi,
+        "pmid": _clean(metadata.get("pmid")),
+        "pmcid": _clean(metadata.get("pmcid")),
+        "keywords": keywords_raw or None,
+        "article_type": _clean(metadata.get("article_type")),
+        "language": _clean(metadata.get("language")),
+        "url_landing": url_landing,
+        "study_design": _clean(metadata.get("study_design")),
+        "ingestion_source": "PDF_AI",
+        "source_payload": metadata,
+        "sync_state": "active",
+        "source_lineage": "pdf_ai",
+    }
+
+    return CanonicalArticlePayload(
+        canonical_identity={"zotero_item_key": None, "doi": doi, "url_landing": url_landing},
+        article_fields=article_fields,
+        creator_rows=creator_rows,
+        source_lineage="pdf_ai",
+    )

@@ -18,6 +18,7 @@ from app.models.screening import (
     ScreeningConflict,
     ScreeningDecision,
 )
+from app.repositories.article_repository import ArticleRepository
 from app.repositories.screening_repository import (
     ScreeningConfigRepository,
     ScreeningConflictRepository,
@@ -38,6 +39,7 @@ class ScreeningService(LoggerMixin):
         self.config_repo = ScreeningConfigRepository(db)
         self.decision_repo = ScreeningDecisionRepository(db)
         self.conflict_repo = ScreeningConflictRepository(db)
+        self.article_repo = ArticleRepository(db)
 
     # =================== CONFIG ===================
 
@@ -161,15 +163,7 @@ class ScreeningService(LoggerMixin):
         self, article_id: UUID, phase: str, decision: str
     ) -> None:
         """Update the denormalized screening_phase on the article."""
-        article = await self.db.get(Article, article_id)
-        if article:
-            if decision == "include" and phase == "full_text":
-                article.screening_phase = "included"
-            elif decision == "exclude":
-                article.screening_phase = f"excluded_{phase}"
-            else:
-                article.screening_phase = phase
-            await self.db.flush()
+        await self.article_repo.update_screening_phase(article_id, phase, decision)
 
     # =================== CONFLICTS ===================
 
