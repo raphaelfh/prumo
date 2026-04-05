@@ -81,3 +81,37 @@ class CSVImportResult(BaseModel):
     errors: list[str] = []
 
     model_config = ConfigDict(populate_by_name=True)
+
+
+# =================== PDF ARTICLE CREATION ===================
+
+
+class PDFCreateArticleRequest(BaseModel):
+    """Request to create an article from AI-extracted PDF metadata."""
+
+    project_id: UUID = Field(..., alias="projectId")
+    storage_key: str = Field(..., alias="storageKey")
+    original_filename: str = Field(..., alias="originalFilename")
+    file_bytes: int = Field(default=0, alias="fileBytes")
+
+    # Article metadata (reviewed by user)
+    title: str
+    abstract: str | None = None
+    authors: list[str] | None = None
+    publication_year: int | None = Field(default=None, alias="publicationYear")
+    publication_month: int | None = Field(default=None, alias="publicationMonth")
+    journal_title: str | None = Field(default=None, alias="journalTitle")
+    journal_issn: str | None = Field(default=None, alias="journalIssn")
+    volume: str | None = None
+    issue: str | None = None
+    pages: str | None = None
+    doi: str | None = None
+    pmid: str | None = None
+    pmcid: str | None = None
+    keywords: list[str] | None = None
+    article_type: str | None = Field(default=None, alias="articleType")
+    language: str | None = None
+    url_landing: str | None = Field(default=None, alias="urlLanding")
+    study_design: str | None = Field(default=None, alias="studyDesign")
+
+    model_config = ConfigDict(populate_by_name=True)

@@ -236,6 +236,33 @@ class ArticleRepository(BaseRepository[Article]):
         await self.db.refresh(article)
         return article
 
+    async def update_screening_phase(
+        self,
+        article_id: UUID | str,
+        phase: str,
+        decision: str,
+    ) -> None:
+        """
+        Update the denormalized screening_phase on an article.
+
+        Args:
+            article_id: ID of the article.
+            phase: Current screening phase (title_abstract or full_text).
+            decision: Screening decision (include, exclude, maybe).
+        """
+        if isinstance(article_id, str):
+            article_id = UUID(article_id)
+
+        article = await self.db.get(Article, article_id)
+        if article:
+            if decision == "include" and phase == "full_text":
+                article.screening_phase = "included"
+            elif decision == "exclude":
+                article.screening_phase = f"excluded_{phase}"
+            else:
+                article.screening_phase = phase
+            await self.db.flush()
+
     async def get_zotero_project_articles(self, project_id: UUID, collection_key: str | None = None) -> list[Article]:
         query = select(Article).where(
             Article.project_id == project_id,

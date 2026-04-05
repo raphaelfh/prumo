@@ -28,8 +28,7 @@ import {Brain, CheckCircle2, FileUp, Loader2, Upload} from 'lucide-react';
 import {supabase} from '@/integrations/supabase/client';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
-import {detectFileFormat, validateFile} from '@/lib/file-validation';
-import {FILE_ROLES} from '@/lib/file-constants';
+import {validateFile} from '@/lib/file-validation';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
@@ -226,17 +225,25 @@ export function PDFImportDialog({
                 return isNaN(num) ? null : num;
             };
 
-            const articleData = {
-                project_id: projectId,
+            const {data: {session}} = await supabase.auth.getSession();
+            if (!session?.access_token) {
+                throw new Error('Authentication required');
+            }
+
+            const payload = {
+                projectId: projectId,
+                storageKey: storageKey,
+                originalFilename: pdfFile.name,
+                fileBytes: pdfFile.size,
                 title: formData.title.trim(),
                 abstract: formData.abstract.trim() || null,
                 authors: formData.authors.trim()
                     ? formData.authors.split(',').map(a => a.trim())
                     : null,
-                publication_year: parseDateValue(formData.publication_year),
-                publication_month: parseDateValue(formData.publication_month),
-                journal_title: formData.journal_title.trim() || null,
-                journal_issn: formData.journal_issn.trim() || null,
+                publicationYear: parseDateValue(formData.publication_year),
+                publicationMonth: parseDateValue(formData.publication_month),
+                journalTitle: formData.journal_title.trim() || null,
+                journalIssn: formData.journal_issn.trim() || null,
                 volume: formData.volume.trim() || null,
                 issue: formData.issue.trim() || null,
                 pages: formData.pages.trim() || null,
@@ -246,54 +253,25 @@ export function PDFImportDialog({
                 keywords: formData.keywords.trim()
                     ? formData.keywords.split(',').map(k => k.trim())
                     : null,
-                article_type: formData.article_type.trim() || null,
+                articleType: formData.article_type.trim() || null,
                 language: formData.language.trim() || null,
-                url_landing: formData.url_landing.trim() || null,
-                study_design: formData.study_design.trim() || null,
-                ingestion_source: 'PDF_AI',
+                urlLanding: formData.url_landing.trim() || null,
+                studyDesign: formData.study_design.trim() || null,
             };
 
-            // Insert article
-            const {data: article, error: articleError} = await supabase
-                .from('articles')
-                .insert([articleData])
-                .select()
-                .single();
+            const response = await fetch(`${API_BASE_URL}/api/v1/article-import/pdf-create-article`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${session.access_token}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(payload),
+            });
 
-            if (articleError) throw articleError;
+            const result = await response.json();
 
-            // Move the PDF storage key to use the real article ID
-            const newKey = `${projectId}/${article.id}/${pdfFile.name}`;
-
-            // Copy to new location
-            const {error: copyError} = await supabase.storage
-                .from('articles')
-                .copy(storageKey, newKey);
-
-            const finalKey = copyError ? storageKey : newKey;
-
-            // Remove old key if copy succeeded
-            if (!copyError && storageKey !== newKey) {
-                await supabase.storage.from('articles').remove([storageKey]);
-            }
-
-            // Create article_files record
-            const detectedFormat = detectFileFormat(pdfFile);
-            const {error: fileError} = await supabase.from('article_files').insert([{
-                project_id: projectId,
-                article_id: article.id,
-                file_type: detectedFormat,
-                file_role: FILE_ROLES.MAIN,
-                storage_key: finalKey,
-                original_filename: pdfFile.name,
-                bytes: pdfFile.size,
-            }]);
-
-            if (fileError) {
-                // Rollback
-                await supabase.storage.from('articles').remove([finalKey]);
-                await supabase.from('articles').delete().eq('id', article.id);
-                throw new Error(`Error registering file: ${fileError.message}`);
+            if (!result.ok) {
+                throw new Error(result.error?.message || 'Failed to create article');
             }
 
             toast.success(t('articles', 'articleCreatedSuccess'));

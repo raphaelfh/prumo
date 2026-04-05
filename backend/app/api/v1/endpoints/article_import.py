@@ -14,119 +14,17 @@ from app.core.deps import CurrentUser, DbSession, SupabaseClient
 from app.core.factories import create_storage_adapter
 from app.core.logging import get_logger
 from app.schemas.article_import import (
-    CSVImportResult,
-    ExtractedArticleMetadata,
+    PDFCreateArticleRequest,
     PDFMetadataExtractionResponse,
 )
 from app.schemas.common import ApiResponse
 from app.services.api_key_service import APIKeyService
+from app.services.article_import_service import ArticleImportService
 from app.services.pdf_metadata_extraction_service import PDFMetadataExtractionService
 from app.utils.rate_limiter import limiter
 
 router = APIRouter()
 logger = get_logger(__name__)
-
-
-# =================== SCOPUS CSV COLUMN MAPPING ===================
-
-SCOPUS_COLUMN_MAP = {
-    "Title": "title",
-    "Abstract": "abstract",
-    "Authors": "authors",
-    "Year": "publication_year",
-    "Source title": "journal_title",
-    "Volume": "volume",
-    "Issue": "issue",
-    "Page start": "page_start",
-    "Page end": "page_end",
-    "DOI": "doi",
-    "Author Keywords": "author_keywords",
-    "Index Keywords": "index_keywords",
-    "Document Type": "article_type",
-    "Open Access": "open_access",
-    "Link": "url_landing",
-    "Art. No.": "art_no",
-    "Cited by": "cited_by",
-    "EID": "eid",
-    "Source": "source_db",
-    "Author full names": "author_full_names",
-    "Author(s) ID": "author_ids",
-    "Publication Stage": "publication_status",
-}
-
-
-def _parse_scopus_row(row: dict[str, str], project_id: str) -> dict:
-    """Parse a single Scopus CSV row into article insert data."""
-    title = (row.get("Title") or "").strip()
-    if not title:
-        return {}
-
-    # Parse authors from "LastName, First; LastName2, First2" format
-    authors_raw = (row.get("Authors") or "").strip()
-    authors = [a.strip() for a in authors_raw.split(";") if a.strip()] if authors_raw else None
-
-    # Parse year
-    year_raw = (row.get("Year") or "").strip()
-    publication_year = None
-    if year_raw:
-        try:
-            publication_year = int(year_raw)
-        except ValueError:
-            pass
-
-    # Parse pages from start/end
-    page_start = (row.get("Page start") or "").strip()
-    page_end = (row.get("Page end") or "").strip()
-    pages = None
-    if page_start and page_end:
-        pages = f"{page_start}-{page_end}"
-    elif page_start:
-        pages = page_start
-
-    # Parse keywords (semicolon-separated)
-    author_kw = (row.get("Author Keywords") or "").strip()
-    index_kw = (row.get("Index Keywords") or "").strip()
-    keywords = []
-    if author_kw:
-        keywords.extend(k.strip() for k in author_kw.split(";") if k.strip())
-    if index_kw:
-        keywords.extend(k.strip() for k in index_kw.split(";") if k.strip() and k.strip() not in keywords)
-
-    # Parse open access
-    oa_raw = (row.get("Open Access") or "").strip()
-    open_access = None
-    if oa_raw:
-        open_access = oa_raw.lower() not in ("", "no", "false", "0")
-
-    # DOI normalization
-    doi = (row.get("DOI") or "").strip() or None
-
-    return {
-        "project_id": project_id,
-        "title": title,
-        "abstract": (row.get("Abstract") or "").strip() or None,
-        "authors": authors,
-        "publication_year": publication_year,
-        "journal_title": (row.get("Source title") or "").strip() or None,
-        "volume": (row.get("Volume") or "").strip() or None,
-        "issue": (row.get("Issue") or "").strip() or None,
-        "pages": pages,
-        "doi": doi,
-        "keywords": keywords or None,
-        "article_type": (row.get("Document Type") or "").strip() or None,
-        "open_access": open_access,
-        "url_landing": (row.get("Link") or "").strip() or None,
-        "publication_status": (row.get("Publication Stage") or "").strip() or None,
-        "ingestion_source": "CSV_SCOPUS",
-        "source_payload": {
-            "eid": (row.get("EID") or "").strip() or None,
-            "cited_by": (row.get("Cited by") or "").strip() or None,
-            "source_db": (row.get("Source") or "").strip() or None,
-            "author_full_names": (row.get("Author full names") or "").strip() or None,
-            "author_ids": (row.get("Author(s) ID") or "").strip() or None,
-            "art_no": (row.get("Art. No.") or "").strip() or None,
-        },
-    }
 
 
 @router.post(
@@ -215,6 +113,82 @@ async def extract_pdf_metadata(
 
 
 @router.post(
+    "/pdf-create-article",
+    response_model=ApiResponse,
+    summary="Create article from AI-extracted PDF metadata",
+    description="Creates an article record, moves the PDF to permanent storage, and links the file.",
+)
+@limiter.limit("10/minute")
+async def pdf_create_article(
+    request: Request,
+    body: PDFCreateArticleRequest,
+    db: DbSession = None,
+    user: CurrentUser = None,
+    supabase: SupabaseClient = None,
+) -> ApiResponse:
+    """
+    Create an article from reviewed AI-extracted PDF metadata.
+
+    The frontend calls this after the user reviews and confirms the extracted metadata.
+    This endpoint normalizes the data, upserts the article (with deduplication),
+    moves the PDF to permanent storage, and creates the article_files record.
+    """
+    trace_id = str(uuid.uuid4())
+
+    logger.info(
+        "pdf_create_article_request",
+        trace_id=trace_id,
+        user_id=user.sub,
+        project_id=str(body.project_id),
+        storage_key=body.storage_key,
+    )
+
+    try:
+        storage = create_storage_adapter(supabase)
+        service = ArticleImportService(db=db, storage=storage)
+
+        metadata = body.model_dump(
+            exclude={"project_id", "storage_key", "original_filename", "file_bytes"},
+            by_alias=False,
+        )
+
+        article = await service.create_from_pdf_metadata(
+            project_id=body.project_id,
+            metadata=metadata,
+            storage_key=body.storage_key,
+            original_filename=body.original_filename,
+            file_bytes=body.file_bytes,
+        )
+
+        await db.commit()
+
+        logger.info(
+            "pdf_create_article_success",
+            trace_id=trace_id,
+            article_id=str(article.id),
+            title=article.title[:80] if article.title else None,
+        )
+
+        return ApiResponse.success(
+            data={"id": str(article.id), "title": article.title},
+            trace_id=trace_id,
+        )
+
+    except Exception as e:
+        await db.rollback()
+        logger.error(
+            "pdf_create_article_error",
+            trace_id=trace_id,
+            error=str(e),
+        )
+        return ApiResponse.failure(
+            code="PDF_CREATE_ARTICLE_ERROR",
+            message=str(e),
+            trace_id=trace_id,
+        )
+
+
+@router.post(
     "/csv-import",
     response_model=ApiResponse,
     summary="Import articles from Scopus CSV file",
@@ -232,8 +206,8 @@ async def csv_import(
     """
     Import articles from a Scopus-format CSV file.
 
-    Parses the CSV, maps columns to article fields, and inserts articles.
-    Duplicates are detected by DOI.
+    Parses the CSV, normalizes via CanonicalArticlePayload, and upserts articles
+    using ArticleRepository for consistent deduplication.
     """
     trace_id = str(uuid.uuid4())
 
@@ -266,22 +240,6 @@ async def csv_import(
                 trace_id=trace_id,
             )
 
-        # Fetch existing DOIs for deduplication
-        from sqlalchemy import select, func
-        from app.models.article import Article
-
-        existing_dois_result = await db.execute(
-            select(func.lower(Article.doi))
-            .where(Article.project_id == project_id)
-            .where(Article.doi.isnot(None))
-        )
-        existing_dois = {row[0] for row in existing_dois_result.all()}
-
-        success_count = 0
-        fail_count = 0
-        duplicate_count = 0
-        errors: list[str] = []
-
         rows = list(reader)
 
         logger.info(
@@ -291,49 +249,20 @@ async def csv_import(
             columns=fieldnames[:10],
         )
 
-        for i, row in enumerate(rows):
-            try:
-                article_data = _parse_scopus_row(row, project_id)
-                if not article_data:
-                    fail_count += 1
-                    errors.append(f"Row {i + 2}: Missing title")
-                    continue
-
-                # Check for DOI duplicates
-                doi = article_data.get("doi")
-                if doi and doi.lower() in existing_dois:
-                    duplicate_count += 1
-                    continue
-
-                # Insert via Supabase (respects RLS)
-                result = supabase.table("articles").insert(article_data).execute()
-
-                if result.data:
-                    success_count += 1
-                    if doi:
-                        existing_dois.add(doi.lower())
-                else:
-                    fail_count += 1
-                    errors.append(f"Row {i + 2}: Insert returned no data")
-
-            except Exception as e:
-                fail_count += 1
-                title = (row.get("Title") or "?")[:50]
-                errors.append(f"Row {i + 2} ({title}): {str(e)[:100]}")
-
-        import_result = CSVImportResult(
-            success_count=success_count,
-            fail_count=fail_count,
-            duplicate_count=duplicate_count,
-            errors=errors[:20],  # Limit to first 20 errors
+        service = ArticleImportService(db=db)
+        import_result = await service.import_csv_scopus(
+            project_id=uuid.UUID(project_id),
+            rows=rows,
         )
+
+        await db.commit()
 
         logger.info(
             "csv_import_complete",
             trace_id=trace_id,
-            success=success_count,
-            failed=fail_count,
-            duplicates=duplicate_count,
+            success=import_result.success_count,
+            failed=import_result.fail_count,
+            duplicates=import_result.duplicate_count,
         )
 
         return ApiResponse.success(
@@ -342,6 +271,7 @@ async def csv_import(
         )
 
     except Exception as e:
+        await db.rollback()
         logger.error(
             "csv_import_error",
             trace_id=trace_id,
