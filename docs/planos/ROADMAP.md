@@ -1,4 +1,4 @@
-# Roadmap - Review Hub
+# Roadmap - Prumo
 
 ## 🗄️ Database & Infraestrutura
 
@@ -141,6 +141,14 @@
 - **Baixa:** Nice-to-have ou otimização
 
 ---
+
+---
+
+## Fazer uma secão de escrita de artigo
+
+- Aplicação para usar: https://github.com/ether/etherpad
+- Objetivo: fazer um esquema de anotação robusta para o artigo onde é possível conectar com diversos canais para a escrita compartilhada
+
 
 ## 🔗 Documentos Relacionados
 

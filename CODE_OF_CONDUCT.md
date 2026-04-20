@@ -60,7 +60,7 @@ representative at an online or offline event.
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported privately to project maintainers using GitHub Security Advisories:
-https://github.com/raphaelfh/review-ai-hub/security/advisories/new
+https://github.com/raphaelfh/prumo/security/advisories/new
 
 All complaints will be reviewed and investigated promptly and fairly.
 

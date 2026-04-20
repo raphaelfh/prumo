@@ -56,7 +56,7 @@ export const pdf = {
     settingsAboutTitle: 'About',
     settingsAboutVersion: 'PDF Viewer v2.0',
     settingsAboutBased: 'Based on PDF.js and React-PDF',
-    settingsAboutCopyright: '© 2025 Review Hub – Systematic Review System',
+    settingsAboutCopyright: '© 2025 Prumo – Systematic Review System',
     settingsShortcutsAvailable: 'Available keyboard shortcuts',
     settingsShortcutNavigatePages: 'Navigate between pages',
     settingsShortcutFirstLastPage: 'First / Last page',

@@ -23,7 +23,7 @@
   Follow-up TODOs: None
 -->
 
-# Review Hub Constitution
+# Prumo Constitution
 
 ## Core Principles
 
@@ -222,7 +222,7 @@ No merges are permitted when any gate fails.
 
 ## Governance
 
-This constitution is the authoritative reference for all architectural and process decisions in Review Hub. It supersedes informal conventions and ad-hoc patterns found elsewhere in the codebase.
+This constitution is the authoritative reference for all architectural and process decisions in Prumo. It supersedes informal conventions and ad-hoc patterns found elsewhere in the codebase.
 
 ### Amendment Procedure
 

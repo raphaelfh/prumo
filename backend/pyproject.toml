@@ -1,7 +1,7 @@
 [project]
 name = "review-hub-backend"
 version = "0.1.0"
-description = "Backend FastAPI para Review Hub - Plataforma de Revisão Sistemática"
+description = "Backend FastAPI para Prumo - Plataforma de Revisão Sistemática"
 readme = "README.md"
 license = { text = "AGPL-3.0" }
 requires-python = ">=3.11"

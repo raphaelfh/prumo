@@ -1,4 +1,4 @@
-# Review Hub - Estrutura e Comandos
+# Prumo - Estrutura e Comandos
 
 ## 🚀 Início Rápido com Makefile
 

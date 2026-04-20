@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Project Development Guide for AI Assistants
 
-This guide provides the essential architectural and procedural rules for working on the Review Hub project. Adhere to
+This guide provides the essential architectural and procedural rules for working on the Prumo project. Adhere to
 these instructions to ensure your contributions are consistent and correct.
 
 ## 1. Language

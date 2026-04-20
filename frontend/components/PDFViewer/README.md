@@ -523,5 +523,5 @@ Para contribuir com melhorias:
 
 ---
 
-**Desenvolvido com ❤️ para o Review Hub**
+**Desenvolvido com ❤️ para o Prumo**
 

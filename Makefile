@@ -22,7 +22,7 @@ NC := \033[0m # No Color
 ##@ Comandos Principais
 
 help: ## Mostra esta mensagem de ajuda
-	@echo "$(GREEN)Review Hub - Comandos Disponíveis$(NC)"
+	@echo "$(GREEN)Prumo - Comandos Disponíveis$(NC)"
 	@echo ""
 	@awk 'BEGIN {FS = ":.*##"; printf "\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  $(YELLOW)%-20s$(NC) %s\n", $$1, $$2 } /^##@/ { printf "\n$(GREEN)%s$(NC)\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
@@ -31,7 +31,7 @@ setup: ## Configura o ambiente completo (primeira vez)
 	@./scripts/setup.sh
 
 start: ## Inicia todos os serviços (Supabase, Backend, Frontend)
-	@echo "$(GREEN)🚀 Iniciando Review Hub...$(NC)"
+	@echo "$(GREEN)🚀 Iniciando Prumo...$(NC)"
 	@$(MAKE) supabase-start
 	@echo "$(YELLOW)⏳ Aguardando Supabase inicializar...$(NC)"
 	@sleep 5

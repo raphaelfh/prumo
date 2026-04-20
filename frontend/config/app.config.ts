@@ -9,7 +9,7 @@ import {SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL} from '@/config/supabase-env';
 export const APP_CONFIG = {
     // Application settings
   app: {
-    name: 'Review Hub',
+    name: 'Prumo',
     version: '1.0.0',
     environment: import.meta.env.MODE,
     isDevelopment: import.meta.env.DEV,

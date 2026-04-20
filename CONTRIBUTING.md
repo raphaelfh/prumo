@@ -1,6 +1,6 @@
-# Contributing to Review AI Hub
+# Contributing to Prumo
 
-Thank you for your interest in contributing to Review AI Hub.
+Thank you for your interest in contributing to Prumo.
 This guide explains how to contribute effectively and consistently.
 
 ## Submitting issues

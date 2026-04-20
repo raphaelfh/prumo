@@ -1,13 +1,13 @@
 # Security Policy
 
-This document outlines vulnerability reporting guidelines for Review AI Hub.
+This document outlines vulnerability reporting guidelines for Prumo.
 We highly value responsible disclosure and community support.
 
 ## Reporting a vulnerability
 
 If you identify a security vulnerability, submit it privately through GitHub Security Advisories:
 
-- https://github.com/raphaelfh/review-ai-hub/security/advisories/new
+- https://github.com/raphaelfh/prumo/security/advisories/new
 
 Include enough detail for reproduction and impact assessment.
 If relevant, include the affected endpoint, URL, or component.

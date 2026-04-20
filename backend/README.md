@@ -1,6 +1,6 @@
-# Review Hub Backend
+# Prumo Backend
 
-Backend FastAPI para Review Hub - Plataforma de Revisão Sistemática.
+Backend FastAPI para Prumo - Plataforma de Revisão Sistemática.
 
 ## Stack
 

@@ -109,7 +109,7 @@ def create_app() -> FastAPI:
     """
     app = FastAPI(
         title=settings.PROJECT_NAME,
-        description="Backend API for Review Hub - Systematic Review Platform",
+        description="Backend API for Prumo - Systematic Review Platform",
         version="0.1.0",
         openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
         docs_url=f"{settings.API_V1_PREFIX}/docs",

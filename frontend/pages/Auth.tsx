@@ -85,7 +85,7 @@ function LeftPanel() {
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15">
                     <BookOpen className="h-5 w-5 text-white"/>
                 </div>
-                <span className="text-lg font-bold text-white">Review Hub</span>
+                <span className="text-lg font-bold text-white">Prumo</span>
             </div>
 
             <div className="space-y-8">
@@ -117,7 +117,7 @@ function LeftPanel() {
             </div>
 
             <p className="text-xs text-indigo-300">
-                © {new Date().getFullYear()} Review Hub · {t("auth", "rightsReserved")}
+                © {new Date().getFullYear()} Prumo · {t("auth", "rightsReserved")}
             </p>
         </div>
     );
@@ -580,7 +580,7 @@ export default function Auth() {
                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary">
                         <BookOpen className="h-5 w-5 text-primary-foreground"/>
                     </div>
-                    <span className="text-lg font-bold">Review Hub</span>
+                    <span className="text-lg font-bold">Prumo</span>
                 </div>
 
                 <div className="w-full max-w-md">

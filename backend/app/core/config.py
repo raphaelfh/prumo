@@ -28,12 +28,12 @@ class Settings(BaseSettings):
     )
 
     # =================== APP ===================
-    PROJECT_NAME: str = "Review Hub API"
+    PROJECT_NAME: str = "Prumo API"
     DEBUG: bool = False
     API_V1_PREFIX: str = "/api/v1"
 
     # =================== CORS ===================
-    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://localhost:8080,http://127.0.0.1:8080,https://review-ai-hub.vercel.app"
+    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://localhost:8080,http://127.0.0.1:8080,https://prumo.vercel.app"
 
     @property
     def cors_origins_list(self) -> list[str]:
@@ -46,7 +46,7 @@ class Settings(BaseSettings):
             "http://localhost:3000",
             "http://localhost:8080",
             "http://127.0.0.1:8080",
-            "https://review-ai-hub.vercel.app",
+            "https://prumo.vercel.app",
         ]
         merged: list[str] = []
         for origin in [*configured, *defaults]:

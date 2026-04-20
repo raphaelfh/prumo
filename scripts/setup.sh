@@ -1,5 +1,5 @@
 #!/bin/bash
-# Script de setup completo do Review Hub
+# Script de setup completo do Prumo
 # 
 # Uso: ./scripts/setup.sh
 #
@@ -26,7 +26,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}  Review Hub - Setup Completo${NC}"
+echo -e "${BLUE}  Prumo - Setup Completo${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 echo -e "${YELLOW}📁 Diretório do projeto: ${PROJECT_ROOT}${NC}"

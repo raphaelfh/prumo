@@ -19,7 +19,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}  Review Hub Backend - Setup Script${NC}"
+echo -e "${BLUE}  Prumo Backend - Setup Script${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
@@ -67,12 +67,12 @@ if [ ! -f .env ]; then
         echo -e "${GREEN}✓ .env criado a partir de .env.example${NC}"
     else
         cat > .env << 'EOF'
-# Review Hub Backend - Environment Variables
+# Prumo Backend - Environment Variables
 # Copie este arquivo para .env e preencha os valores
 
 # App
 DEBUG=true
-PROJECT_NAME="Review Hub API"
+PROJECT_NAME="Prumo API"
 API_V1_PREFIX="/api/v1"
 
 # CORS

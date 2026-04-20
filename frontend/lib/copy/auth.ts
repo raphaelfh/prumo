@@ -78,7 +78,7 @@ export const auth = {
     welcomeBack: 'Welcome back',
     welcomeBackSubtitle: 'Sign in to your account to continue',
     createAccountTitle: 'Create account',
-    createAccountSubtitle: 'Sign up to start using Review Hub',
+    createAccountSubtitle: 'Sign up to start using Prumo',
     resetPasswordTitle: 'Reset password',
     resetPasswordSubtitle: 'Enter your email to recover access',
 
