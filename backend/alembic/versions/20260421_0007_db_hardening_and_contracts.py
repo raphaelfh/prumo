@@ -4,8 +4,9 @@ Revision ID: 20260421_0007
 Revises: 20260328_006
 Create Date: 2026-04-21
 
-Nota: não usar split por ';' — blocos DO $$ e funções PL/pgSQL contêm ';' internos
-e quebrariam o SQL. Cada op.execute() abaixo é um comando PostgreSQL completo.
+Do not use naive ``split(";")``: ``DO $$`` blocks and PL/pgSQL functions contain
+internal semicolons and would break. Each ``op.execute()`` below is one complete
+PostgreSQL command.
 """
 
 from alembic import op
