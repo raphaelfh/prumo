@@ -183,10 +183,10 @@ class TestComplexQueries:
                 SELECT 
                     a.id,
                     a.title,
-                    COUNT(DISTINCT ass.id) as assessment_count,
+                    COUNT(DISTINCT ai2.id) as assessment_count,
                     COUNT(DISTINCT ai.id) as ai_assessment_count
                 FROM articles a
-                LEFT JOIN assessments ass ON a.id = ass.article_id
+                LEFT JOIN assessment_instances ai2 ON a.id = ai2.article_id
                 LEFT JOIN ai_assessments ai ON a.id = ai.article_id
                 GROUP BY a.id, a.title
                 ORDER BY a.created_at DESC

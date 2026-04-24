@@ -62,7 +62,7 @@ export function TeamMembersSection({ projectId }: TeamMembersSectionProps) {
     setLoading(true);
     try {
         const {data: userId, error: rpcError} = await supabase.rpc('find_user_id_by_email', {
-            search_email: email,
+            p_email: email,
         });
       if (rpcError) {
           console.error('Error finding user:', rpcError);

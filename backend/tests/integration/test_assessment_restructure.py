@@ -61,8 +61,8 @@ class TestAssessmentTablesExist:
         assert row is not None
         assert row[0] == "assessment_evidence"
 
-    async def test_assessments_legacy_table_exists(self, db_session: AsyncSession) -> None:
-        """Verify legacy table was renamed."""
+    async def test_assessments_legacy_table_absent(self, db_session: AsyncSession) -> None:
+        """Verify there is no legacy physical assessments table."""
         result = await db_session.execute(
             text("""
                 SELECT table_name
@@ -72,8 +72,7 @@ class TestAssessmentTablesExist:
             """)
         )
         row = result.fetchone()
-        assert row is not None
-        assert row[0] == "assessments_legacy"
+        assert row is None
 
 
 @pytest.mark.asyncio
@@ -107,19 +106,30 @@ class TestAssessmentCompatibilityView:
         )
         columns = [row[0] for row in result.fetchall()]
 
-        # Should have old column names for compatibility
+        # Should expose the compatibility contract of the current VIEW.
         expected_columns = [
             "id",
             "project_id",
             "article_id",
             "user_id",
+            "tool_type",
+            "instrument_id",
+            "extraction_instance_id",
             "responses",
             "overall_assessment",
-            "notes",
+            "confidence_level",
             "status",
+            "completion_percentage",
+            "version",
+            "is_current_version",
+            "parent_assessment_id",
             "is_blind",
             "can_see_others",
-            "metadata",
+            "comments",
+            "private_notes",
+            "assessed_by_type",
+            "run_id",
+            "row_version",
             "created_at",
             "updated_at",
         ]
@@ -231,18 +241,59 @@ class TestAssessmentFunctions:
         assert row is not None
         assert row[0] == "calculate_assessment_instance_progress"
 
-    async def test_rollback_function_exists(self, db_session: AsyncSession) -> None:
-        """Verify rollback function exists."""
+    async def test_create_project_with_member_function_exists(self, db_session: AsyncSession) -> None:
+        """Verify core RPC helper function exists."""
         result = await db_session.execute(
             text("""
                 SELECT proname
                 FROM pg_proc
-                WHERE proname = 'rollback_assessment_restructure'
+                WHERE proname = 'create_project_with_member'
             """)
         )
         row = result.fetchone()
         assert row is not None
-        assert row[0] == "rollback_assessment_restructure"
+        assert row[0] == "create_project_with_member"
+
+
+@pytest.mark.asyncio
+class TestRpcFunctions:
+    """Verify presence of critical RPC functions used by the app."""
+
+    async def test_get_project_members_function_exists(self, db_session: AsyncSession) -> None:
+        result = await db_session.execute(
+            text("""
+                SELECT proname
+                FROM pg_proc
+                WHERE proname = 'get_project_members'
+            """)
+        )
+        row = result.fetchone()
+        assert row is not None
+        assert row[0] == "get_project_members"
+
+    async def test_find_user_id_by_email_function_exists(self, db_session: AsyncSession) -> None:
+        result = await db_session.execute(
+            text("""
+                SELECT proname
+                FROM pg_proc
+                WHERE proname = 'find_user_id_by_email'
+            """)
+        )
+        row = result.fetchone()
+        assert row is not None
+        assert row[0] == "find_user_id_by_email"
+
+    async def test_check_cardinality_one_function_exists(self, db_session: AsyncSession) -> None:
+        result = await db_session.execute(
+            text("""
+                SELECT proname
+                FROM pg_proc
+                WHERE proname = 'check_cardinality_one'
+            """)
+        )
+        row = result.fetchone()
+        assert row is not None
+        assert row[0] == "check_cardinality_one"
 
 
 @pytest.mark.asyncio
@@ -445,26 +496,26 @@ class TestAssessmentMigrationStatus:
                 SELECT table_name
                 FROM information_schema.tables
                 WHERE table_schema = 'public'
-                AND table_name = 'assessment_migration_status'
+                AND table_name = 'migration_status'
             """)
         )
         row = result.fetchone()
         assert row is not None
-        assert row[0] == "assessment_migration_status"
+        assert row[0] == "migration_status"
 
-    async def test_migration_marked_complete(self, db_session: AsyncSession) -> None:
-        """Verify migration is marked as completed."""
+    async def test_migration_seed_row_exists(self, db_session: AsyncSession) -> None:
+        """Verify consolidated migration bookkeeping row exists."""
         result = await db_session.execute(
             text("""
-                SELECT status, completed_at
-                FROM assessment_migration_status
-                WHERE id = 1
+                SELECT migration_name, notes
+                FROM migration_status
+                WHERE migration_name = '0032_cleanup_legacy_assessment'
             """)
         )
         row = result.fetchone()
         assert row is not None
-        assert row[0] == "completed"
-        assert row[1] is not None  # Should have completion timestamp
+        assert row[0] == "0032_cleanup_legacy_assessment"
+        assert row[1] is not None
 
 
 @pytest.mark.asyncio
@@ -485,10 +536,93 @@ class TestAssessmentCheckConstraints:
         )
         constraints = [row[0] for row in result.fetchall()]
 
-        # Should have constraint preventing extraction_instance_id on non-root
-        assert any("extraction" in c.lower() for c in constraints), (
-            "Missing extraction_instance_id constraint"
+        assert any("instrument_xor" in c.lower() for c in constraints), (
+            "Missing instrument XOR constraint"
         )
+
+
+@pytest.mark.asyncio
+class TestHardeningConstraints:
+    """Test new hardening constraints added by migrations."""
+
+    async def test_ai_suggestions_has_run_xor_constraint(self, db_session: AsyncSession) -> None:
+        result = await db_session.execute(
+            text("""
+                SELECT conname
+                FROM pg_constraint
+                WHERE conrelid = (
+                    SELECT oid FROM pg_class WHERE relname = 'ai_suggestions'
+                )
+                AND contype = 'c'
+            """)
+        )
+        constraints = [row[0] for row in result.fetchall()]
+        assert any("run_xor" in c.lower() for c in constraints), (
+            "Missing ai_suggestions run XOR constraint"
+        )
+
+    async def test_extraction_entity_types_has_template_xor_constraint(
+        self, db_session: AsyncSession
+    ) -> None:
+        result = await db_session.execute(
+            text("""
+                SELECT conname
+                FROM pg_constraint
+                WHERE conrelid = (
+                    SELECT oid FROM pg_class WHERE relname = 'extraction_entity_types'
+                )
+                AND contype = 'c'
+            """)
+        )
+        constraints = [row[0] for row in result.fetchall()]
+        assert any("template_xor" in c.lower() for c in constraints), (
+            "Missing extraction_entity_types template XOR constraint"
+        )
+
+
+@pytest.mark.asyncio
+class TestAssessmentPolicyHardening:
+    """Validate manager-only write policies for project assessment config."""
+
+    async def test_project_instrument_write_policies_require_manager(
+        self, db_session: AsyncSession
+    ) -> None:
+        result = await db_session.execute(
+            text("""
+                SELECT policyname, COALESCE(with_check, qual, '')
+                FROM pg_policies
+                WHERE schemaname = 'public'
+                  AND tablename = 'project_assessment_instruments'
+                  AND policyname IN (
+                    'Managers can insert project instruments',
+                    'Managers can update project instruments',
+                    'Managers can delete project instruments'
+                  )
+            """)
+        )
+        rows = result.fetchall()
+        assert len(rows) == 3
+        for _, expression in rows:
+            assert "pm.role = 'manager'" in expression
+
+    async def test_project_items_write_policies_require_manager(self, db_session: AsyncSession) -> None:
+        result = await db_session.execute(
+            text("""
+                SELECT policyname, COALESCE(with_check, qual, '')
+                FROM pg_policies
+                WHERE schemaname = 'public'
+                  AND tablename = 'project_assessment_items'
+                  AND policyname IN (
+                    'Managers can insert project items',
+                    'Managers can update project items',
+                    'Managers can delete project items'
+                  )
+            """)
+        )
+        rows = result.fetchall()
+        assert len(rows) == 3
+        for _, expression in rows:
+            assert "pm.role = 'manager'" in expression
 
 
 @pytest.mark.asyncio

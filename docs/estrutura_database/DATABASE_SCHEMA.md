@@ -831,9 +831,12 @@ run.results = {"suggestions_count": 10}
 ```sql
 ai_suggestions
 ├── id (UUID, PK)
-├── run_id (UUID, FK → extraction_runs, CASCADE)
+├── extraction_run_id (UUID, FK → extraction_runs, CASCADE, NULLABLE)
+├── assessment_run_id (UUID, FK → ai_assessment_runs, CASCADE, NULLABLE)
 ├── instance_id (UUID, FK → extraction_instances, CASCADE, NULLABLE)
-├── field_id (UUID, FK → extraction_fields, RESTRICT)
+├── field_id (UUID, FK → extraction_fields, RESTRICT, NULLABLE)
+├── assessment_item_id (UUID, FK → assessment_items, RESTRICT, NULLABLE)
+├── project_assessment_item_id (UUID, FK → project_assessment_items, RESTRICT, NULLABLE)
 ├── suggested_value (jsonb, NOT NULL)   # Valor sugerido
 ├── confidence_score (numeric)          # 0.0 a 1.0
 ├── reasoning (text)                    # Explicação da IA
@@ -849,12 +852,16 @@ ai_suggestions
   - `pending`: Aguardando revisão
   - `accepted`: Aceita pelo revisor (pode gerar `extracted_value`)
   - `rejected`: Rejeitada
+- **Modos suportados**:
+  - Sugestão de extração: `extraction_run_id` preenchido.
+  - Sugestão de assessment: `assessment_run_id` preenchido.
+  - O schema atual aplica constraints de XOR para evitar linhas híbridas inválidas.
 - **Reasoning**: Explicação do LLM sobre por que sugeriu esse valor
 - Quando aceita, pode criar um `extracted_value` correspondente
 
 **Relacionamentos**:
-- ➡️ Pertence a: `extraction_runs` (CASCADE)
-- ➡️ Opcional: `extraction_instances`, `extraction_fields`
+- ➡️ Pertence a: `extraction_runs` **ou** `ai_assessment_runs` (XOR)
+- ➡️ Opcional: `extraction_instances`, `extraction_fields`, `assessment_items`, `project_assessment_items`
 - ➡️ Opcional: `profiles` (reviewer)
 - ➡️ Um para muitos: `extracted_values` (via `ai_suggestion_id`)
 
@@ -1375,6 +1382,12 @@ Anotações podem ter respostas, criando threads de discussão sobre partes espe
 
 ## 📚 Referências
 
+- **Checklist de Governança de Migrações**
+  - Toda invariante crítica de domínio deve existir no banco (`CHECK`, `UNIQUE`, trigger), não apenas no código da aplicação.
+  - Toda função `SECURITY DEFINER` deve definir `search_path` explicitamente.
+  - Toda mudança em funções RPC deve ser acompanhada de sincronização em `frontend/integrations/supabase/types.ts`.
+  - Toda mudança estrutural relevante deve ter teste de integração cobrindo o caso de sucesso e o caso inválido.
+
 - **Migrations**: `supabase/migrations/`
 - **Modelos**: `backend/app/models/`
 - **Repositories**: `backend/app/repositories/`
@@ -1406,6 +1419,6 @@ R: Sim, se `cardinality = 'many'`. Cada instância terá um `label` diferente (e
 
 ---
 
-**Última atualização**: 2025-01-XX  
-**Versão do Schema**: Baseado em migrations até `0011_indexes.sql`
+**Última atualização**: 2026-04-21  
+**Versão do Schema**: Baseado no consolidado Alembic `0001_initial_public_schema.py` + revisões incrementais até `20260421_0007_db_hardening_and_contracts.py`
 

@@ -1843,13 +1843,14 @@ export type Database = {
         Args: {
           p_description?: string
           p_name: string
-          p_review_title?: string
+          p_created_by?: string
+          p_review_type?: Database["public"]["Enums"]["review_type"]
         }
         Returns: string
       }
       find_user_id_by_email: {
         Args: {
-          search_email: string
+          p_email: string
         }
         Returns: string | null
       }
