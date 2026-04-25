@@ -65,7 +65,7 @@ class TestSectionExtractionEndpoints:
             mock_service = mock_service_class.return_value
             mock_service.extract_section = AsyncMock(
                 return_value=SectionExtractionResult(
-                    run_id=str(uuid4()),
+                    extraction_run_id=str(uuid4()),
                     entity_type_id=str(uuid4()),
                     suggestions_created=5,
                     tokens_prompt=100,
@@ -103,7 +103,7 @@ class TestSectionExtractionEndpoints:
             mock_service = mock_service_class.return_value
             mock_service.extract_all_sections = AsyncMock(
                 return_value=BatchExtractionResult(
-                    run_id=str(uuid4()),
+                    extraction_run_id=str(uuid4()),
                     total_sections=10,
                     successful_sections=8,
                     failed_sections=2,
@@ -161,7 +161,7 @@ class TestModelExtractionEndpoints:
             mock_service = mock_service_class.return_value
             mock_service.extract = AsyncMock(
                 return_value=ModelExtractionResult(
-                    run_id=str(uuid4()),
+                    extraction_run_id=str(uuid4()),
                     models_created=[],
                     total_models=0,
                     child_instances_created=0,

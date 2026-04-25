@@ -20,7 +20,7 @@ class TestAIAssessmentEndpoints:
         """Test AI assessment validation."""
         # No required fields
         response = await client.post(
-            "/api/v1/assessment/ai",
+            "/api/v1/ai-assessment/ai",
             json={},
         )
 
@@ -51,7 +51,7 @@ class TestAIAssessmentEndpoints:
             )
 
             response = await client.post(
-                "/api/v1/assessment/ai",
+                "/api/v1/ai-assessment/ai",
                 json={
                     "projectId": str(uuid4()),
                     "articleId": str(uuid4()),
@@ -89,7 +89,7 @@ class TestAIAssessmentEndpoints:
             )
 
             response = await client.post(
-                "/api/v1/assessment/ai",
+                "/api/v1/ai-assessment/ai",
                 json={
                     "projectId": str(uuid4()),
                     "articleId": str(uuid4()),
@@ -126,7 +126,7 @@ class TestAIAssessmentEndpoints:
             )
 
             response = await client.post(
-                "/api/v1/assessment/ai",
+                "/api/v1/ai-assessment/ai",
                 json={
                     "projectId": str(uuid4()),
                     "articleId": str(uuid4()),
