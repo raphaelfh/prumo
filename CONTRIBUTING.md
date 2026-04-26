@@ -51,4 +51,4 @@ The app is available at:
 
 ## Code of conduct
 
-By participating, you agree to follow [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
+By participating, you agree to follow `[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)`.

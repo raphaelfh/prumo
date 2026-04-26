@@ -1,5 +1,5 @@
 import {useCallback, useEffect, useMemo, useState} from 'react';
-import {articleCache, assessmentCache, globalCache} from '@/services/cacheService';
+import {articleCache, globalCache} from '@/services/cacheService';
 
 /**
  * Hook otimizado para cache de dados com invalidação inteligente
@@ -9,7 +9,7 @@ import {articleCache, assessmentCache, globalCache} from '@/services/cacheServic
 interface UseOptimizedCacheOptions<T> {
   cacheKey: string;
   fetchFn: () => Promise<T>;
-  cache?: typeof globalCache | typeof assessmentCache | typeof articleCache;
+  cache?: typeof globalCache | typeof articleCache;
   ttl?: number;
   staleWhileRevalidate?: boolean;
   enabled?: boolean;

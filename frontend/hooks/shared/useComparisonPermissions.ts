@@ -4,9 +4,7 @@
  * Centralizes all permission logic for comparing
  * extractions/assessments across users.
  *
- * Used in:
- * - ExtractionFullScreen
- * - AssessmentFullScreen
+ * Used in ExtractionFullScreen and other comparison-enabled screens.
  *
  * Eliminates code duplication and ensures consistency.
  *

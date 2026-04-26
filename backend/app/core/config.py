@@ -86,6 +86,9 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str | None = None
     OPENAI_DEFAULT_MODEL: str = "gpt-4o-mini"
 
+    # =================== EVALUATION ===================
+    EVALUATION_EVIDENCE_BUCKET: str = "articles"
+
     # =================== RATE LIMITING ===================
     RATE_LIMIT_PER_MINUTE: int = 60
 

@@ -2,7 +2,6 @@
 Celery Worker.
 
 Processamento assincrono de tarefas longas:
-- Batch assessments
 - Extracoes em lote
 - Importacoes do Zotero
 """

@@ -282,7 +282,6 @@ class ArticleListItem(BaseModel):
 
     has_pdf: bool = Field(default=False, alias="hasPdf")
     extraction_status: str | None = Field(default=None, alias="extractionStatus")
-    assessment_status: str | None = Field(default=None, alias="assessmentStatus")
 
     created_at: datetime = Field(..., alias="createdAt")
 

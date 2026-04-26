@@ -17,7 +17,6 @@ export const layout = {
     navArticles: 'Articles',
     navSettings: 'Settings',
     navDataExtraction: 'Data extraction',
-    navQualityAssessment: 'Quality assessment',
 } as const;
 
 export type LayoutCopy = typeof layout;

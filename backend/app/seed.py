@@ -2,12 +2,7 @@
 Standalone script to seed the database with initial data.
 
 This script is idempotent and can be run multiple times without creating
-duplicate data. It seeds the following:
-
-  1. PROBAST – global assessment instrument for prediction model studies
-     (20 items across 4 domains: participants, predictors, outcome, analysis)
-  2. CHARMS 2.0 – global extraction template for prediction model data
-     (14 entity types, ~82 extraction fields)
+duplicate data. It seeds CHARMS 2.0 global extraction template data.
 
 Run from the project root:
     python -m backend.app.seed
@@ -19,7 +14,6 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import AsyncSessionLocal
-from app.models.assessment import AssessmentInstrument, AssessmentItem
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionField,
@@ -30,7 +24,6 @@ from app.models.extraction import (
 # Fixed UUIDs — never change; enable deterministic, repeatable deployments
 # ---------------------------------------------------------------------------
 
-_PROBAST_ID = UUID("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
 _CHARMS_TEMPLATE_ID = UUID("000c0000-0000-0000-0000-000000000001")
 
 _ET_PREDICTION_MODELS = UUID("000c0001-0000-0000-0000-000000000000")
@@ -48,149 +41,10 @@ _ET_MODEL_RESULTS = UUID("000c000c-0000-0000-0000-000000000000")
 _ET_MODEL_INTERP = UUID("000c000d-0000-0000-0000-000000000000")
 _ET_MODEL_OBS = UUID("000c000e-0000-0000-0000-000000000000")
 
-# Standard response level lists
-_PROBAST_LEVELS = ["yes", "probably yes", "probably no", "no", "no information"]
 _YES_NO_UNCLEAR = ["Yes", "No", "Unclear", "No information"]
 _YES_NO_NI = ["Yes", "No", "No information"]
 _YES_NO_NOTEVAL_NI = ["Yes", "No", "Not evaluated", "No information"]
 _YES_NO_NOTAPP_NI = ["Yes", "No", "Not applicable", "No information"]
-
-
-# ---------------------------------------------------------------------------
-# PROBAST
-# ---------------------------------------------------------------------------
-
-
-async def seed_probast(session: AsyncSession) -> None:
-    """Seeds the PROBAST instrument and its 20 items."""
-    print("Seeding PROBAST instrument...")
-
-    instrument = await session.get(AssessmentInstrument, _PROBAST_ID)
-    if instrument:
-        print("  PROBAST already exists — skipping.")
-        return
-
-    instrument = AssessmentInstrument(
-        id=_PROBAST_ID,
-        name="PROBAST",
-        tool_type="PROBAST",
-        version="1.0.0",
-        mode="human",
-        target_mode="per_model",
-        is_active=True,
-        aggregation_rules={"domains": ["participants", "predictors", "outcome", "analysis"]},
-        schema_={},
-    )
-    session.add(instrument)
-
-    items_data = [
-        # (domain, code, question, sort_order)
-        (
-            "participants",
-            "1.1",
-            "Were appropriate data sources used, e.g. cohort, RCT or nested case-control study data?",
-            0,
-        ),
-        (
-            "participants",
-            "1.2",
-            "Were all inclusions and exclusions of participants appropriate?",
-            1,
-        ),
-        (
-            "predictors",
-            "2.1",
-            "Were predictors defined and assessed in a similar way for all participants?",
-            2,
-        ),
-        (
-            "predictors",
-            "2.2",
-            "Were predictor assessments made without knowledge of outcome data?",
-            3,
-        ),
-        (
-            "predictors",
-            "2.3",
-            "Are all predictors available at the time the model is intended to be used?",
-            4,
-        ),
-        ("outcome", "3.1", "Was the outcome determined appropriately?", 5),
-        ("outcome", "3.2", "Was a prespecified or standard outcome definition used?", 6),
-        ("outcome", "3.3", "Were predictors excluded from the outcome definition?", 7),
-        (
-            "outcome",
-            "3.4",
-            "Was the outcome defined and determined in a similar way for all participants?",
-            8,
-        ),
-        (
-            "outcome",
-            "3.5",
-            "Was the outcome determined without knowledge of predictor information?",
-            9,
-        ),
-        (
-            "outcome",
-            "3.6",
-            "Was the time interval between predictor assessment and outcome determination appropriate?",
-            10,
-        ),
-        ("analysis", "4.1", "Were there a reasonable number of participants with the outcome?", 11),
-        (
-            "analysis",
-            "4.2",
-            "Were continuous and categorical predictors handled appropriately?",
-            12,
-        ),
-        ("analysis", "4.3", "Were all enrolled participants included in the analysis?", 13),
-        ("analysis", "4.4", "Were participants with missing data handled appropriately?", 14),
-        (
-            "analysis",
-            "4.5",
-            "Was selection of predictors based on univariable analysis avoided?",
-            15,
-        ),
-        (
-            "analysis",
-            "4.6",
-            "Were complexities in the data (e.g. censoring, competing risks, sampling) accounted for appropriately?",
-            16,
-        ),
-        (
-            "analysis",
-            "4.7",
-            "Were relevant model performance measures evaluated appropriately?",
-            17,
-        ),
-        (
-            "analysis",
-            "4.8",
-            "Were model overfitting and optimism in model performance accounted for?",
-            18,
-        ),
-        (
-            "analysis",
-            "4.9",
-            "Do predictors and their assigned weights in the final model correspond to the results from the reported multivariable analysis?",
-            19,
-        ),
-    ]
-
-    for domain, code, question, sort in items_data:
-        instrument.items.append(
-            AssessmentItem(
-                instrument_id=_PROBAST_ID,
-                domain=domain,
-                item_code=code,
-                question=question,
-                sort_order=sort,
-                required=True,
-                allowed_levels=_PROBAST_LEVELS,
-            )
-        )
-
-    print(f"  Created PROBAST with {len(items_data)} items.")
 
 
 # ---------------------------------------------------------------------------
@@ -1291,7 +1145,6 @@ async def main() -> None:
     print("Starting database seeding process...")
     async with AsyncSessionLocal() as session:
         try:
-            await seed_probast(session)
             await seed_charms(session)
             await session.commit()
             print("Seeding completed successfully.")

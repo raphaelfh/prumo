@@ -127,14 +127,12 @@ class CacheService {
 
 // Pre-configured cache instances
 export const globalCache = new CacheService('global');
-export const assessmentCache = new CacheService('assessment');
 export const articleCache = new CacheService('article');
 
 // Auto cleanup every 5 minutes
 if (typeof window !== 'undefined') {
   setInterval(() => {
     globalCache.cleanup();
-    assessmentCache.cleanup();
     articleCache.cleanup();
   }, 5 * 60 * 1000);
 }

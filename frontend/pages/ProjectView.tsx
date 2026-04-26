@@ -14,7 +14,6 @@ import {ArticlesList, type ArticlesListHandle} from "@/components/articles/Artic
 import {ArticleForm} from "@/components/articles/ArticleForm";
 import {Sheet, SheetContent} from "@/components/ui/sheet";
 import {ProjectSettings} from "@/components/project/ProjectSettings";
-import {AssessmentInterface} from "@/components/assessment/AssessmentInterface";
 import {ExtractionInterface} from "@/components/extraction/ExtractionInterface";
 import {ZoteroImportDialog} from "@/components/articles/ZoteroImportDialog";
 import {RISImportDialog} from "@/components/articles/RISImportDialog";
@@ -79,7 +78,6 @@ type ProjectArticle = Article;
 
 const TAB_DESCRIPTIONS: Record<string, string> = {
     extraction: 'Extract structured data using standard templates',
-    assessment: 'Assess methodological quality of articles',
 };
 
 export default function ProjectView() {
@@ -202,7 +200,7 @@ export default function ProjectView() {
         .from("projects")
         .select(`
           id, name, description, review_title, review_type,
-          settings, assessment_scope, assessment_entity_type_id,
+          settings,
           condition_studied,
           created_at, updated_at
         `)
@@ -276,9 +274,6 @@ export default function ProjectView() {
 
       case 'extraction':
         return <ExtractionInterface projectId={projectId || ''} />;
-
-      case 'assessment':
-        return <AssessmentInterface projectId={projectId || ''} />;
 
       case 'settings':
         return <ProjectSettings projectId={projectId || ''} />;

@@ -93,19 +93,6 @@ class TestDatabaseEnums:
         assert row is not None
         assert row[0] is True
 
-    async def test_assessment_status_enum_exists(self, db_session: AsyncSession) -> None:
-        """Verifica se o enum assessment_status existe."""
-        result = await db_session.execute(
-            text("""
-                SELECT EXISTS (
-                    SELECT 1 FROM pg_type WHERE typname = 'assessment_status'
-                )
-            """)
-        )
-        row = result.fetchone()
-        assert row is not None
-        assert row[0] is True
-
     async def test_project_member_role_enum_exists(self, db_session: AsyncSession) -> None:
         """Verifica se o enum project_member_role existe."""
         result = await db_session.execute(
@@ -159,25 +146,6 @@ class TestDatabaseSchema:
         expected_columns = ["id", "project_id", "title", "created_at"]
         for col in expected_columns:
             assert col in columns, f"Column {col} not found in articles"
-
-    async def test_assessment_instruments_columns(self, db_session: AsyncSession) -> None:
-        """Verifica colunas da tabela assessment_instruments."""
-        result = await db_session.execute(
-            text("""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_schema = 'public' 
-                AND table_name = 'assessment_instruments'
-                ORDER BY ordinal_position
-            """)
-        )
-        columns = [row[0] for row in result.fetchall()]
-
-        # Required columns (real schema uses tool_type, name, version)
-        expected_columns = ["id", "name", "tool_type", "created_at"]
-        for col in expected_columns:
-            assert col in columns, f"Column {col} not found in assessment_instruments"
-
 
 @pytest.mark.asyncio
 class TestDatabaseRLS:

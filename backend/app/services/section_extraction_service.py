@@ -999,7 +999,6 @@ Example response format:
 
             suggestion = AISuggestion(
                 extraction_run_id=run.id,  # For extraction suggestions
-                assessment_run_id=None,  # Not used for extractions
                 instance_id=instance.id,
                 field_id=field_id,
                 suggested_value=suggested_value,

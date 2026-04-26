@@ -6,7 +6,6 @@ import {common} from './common';
 import {pages} from './pages';
 import {auth} from './auth';
 import {extraction} from './extraction';
-import {assessment} from './assessment';
 import {articles} from './articles';
 import {project} from './project';
 import {user} from './user';
@@ -22,7 +21,6 @@ export {
     pages,
     auth,
     extraction,
-    assessment,
     articles,
     project,
     user,
@@ -39,7 +37,6 @@ const copy = {
     pages,
     auth,
     extraction,
-    assessment,
     articles,
     project,
     user,

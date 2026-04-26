@@ -322,9 +322,9 @@ def upgrade() -> None:
         "published_states",
         "evidence_records",
     ):
+        op.execute(f"DROP TRIGGER IF EXISTS update_{table_name}_updated_at ON public.{table_name};")
         op.execute(
             f"""
-            DROP TRIGGER IF EXISTS update_{table_name}_updated_at ON public.{table_name};
             CREATE TRIGGER update_{table_name}_updated_at
             BEFORE UPDATE ON public.{table_name}
             FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();

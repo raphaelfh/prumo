@@ -71,7 +71,7 @@ export class ApiError extends Error {
 /**
  * Client for FastAPI requests.
  *
- * @param endpoint - Endpoint path (e.g. "/api/v1/assessment/ai")
+ * @param endpoint - Endpoint path (e.g. "/api/v1/extraction/models")
  * @param options - Request options
  * @returns Promise with typed response
  * @throws ApiError if the request fails
@@ -79,8 +79,8 @@ export class ApiError extends Error {
  * @example
  * ```typescript
  * // POST request
- * const result = await apiClient<AssessmentResult>(
- *   '/api/v1/assessment/ai',
+ * const result = await apiClient<ExtractionResult>(
+ *   '/api/v1/extraction/models',
  *   {
  *     method: 'POST',
  *     body: { projectId: '...', articleId: '...' },
@@ -235,19 +235,6 @@ export async function zoteroClient<T>(
   return apiClient<T>(`/api/v1/zotero/${action}`, {
     method: "POST",
     body,
-  });
-}
-
-/**
- * Client for AI Assessment endpoints.
- */
-export async function aiAssessmentClient<T>(
-  body: Record<string, unknown>
-): Promise<T> {
-  return apiClient<T>("/api/v1/assessment/ai", {
-    method: "POST",
-    body,
-      timeout: 120000, // 2 minutes for AI operations
   });
 }
 

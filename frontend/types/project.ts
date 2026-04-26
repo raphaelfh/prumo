@@ -118,9 +118,6 @@ export interface ProjectData extends Project {
   review_context: string | null;
   search_strategy: string | null;
   settings: ProjectSettings;
-  assessment_scope?: 'article' | 'extraction_instance';
-  assessment_entity_type_id?: string | null;
-  risk_of_bias_instrument_id?: string | null;
 }
 
 export interface ProjectSettings {

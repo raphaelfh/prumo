@@ -25,8 +25,6 @@ export const navigation = {
     timeAgo: 'ago',
     zoteroImport: 'Zotero import',
     noNotifications: 'No notifications',
-    notifNewAssessmentTitle: 'New assessment available',
-    notifNewAssessmentMessage: 'You have a new pending assessment in the project',
     notifProjectCompletedTitle: 'Project completed',
     notifProjectCompletedMessage: 'The project was completed successfully',
     topbarBrand: 'Prumo',

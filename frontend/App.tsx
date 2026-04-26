@@ -17,7 +17,6 @@ import {t} from "@/lib/copy";
 const Auth = lazy(() => import("./pages/Auth"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const ProjectView = lazy(() => import("./pages/ProjectView"));
-const AssessmentFullScreen = lazy(() => import("./pages/AssessmentFullScreen"));
 const ExtractionFullScreen = lazy(() => import("./pages/ExtractionFullScreen"));
 const AddArticle = lazy(() => import("./pages/AddArticle"));
 const EditArticle = lazy(() => import("./pages/EditArticle"));
@@ -85,16 +84,6 @@ const App = () => {
                               </ProjectLayout>
                             </SidebarProvider>
                           </ProjectProvider>
-                        </ErrorBoundary>
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
-                    path="/projects/:projectId/assessment/:articleId/:instrumentId"
-                    element={
-                      <ProtectedRoute>
-                          <ErrorBoundary context={t('common', 'errorContextAssessment')}>
-                          <AssessmentFullScreen />
                         </ErrorBoundary>
                       </ProtectedRoute>
                     }

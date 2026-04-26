@@ -12,7 +12,6 @@ export {
   listReviewQueue,
   triggerProposalGeneration,
   zoteroClient,
-  aiAssessmentClient,
   sectionExtractionClient,
   modelExtractionClient,
   ApiError,

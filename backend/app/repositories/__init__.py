@@ -6,18 +6,6 @@ Facilitates testing, maintenance and query migration.
 """
 
 from app.repositories.article_repository import ArticleFileRepository, ArticleRepository
-from app.repositories.assessment_repository import (
-    AIAssessmentConfigRepository,
-    AIAssessmentPromptRepository,
-    AIAssessmentRepository,
-    AIAssessmentRunRepository,
-    AssessmentEvidenceRepository,
-    AssessmentInstanceRepository,
-    AssessmentInstrumentRepository,
-    AssessmentItemRepository,
-    AssessmentResponseRepository,
-    ProjectAssessmentItemRepository,
-)
 from app.repositories.base import BaseRepository
 from app.repositories.extraction_repository import (
     AISuggestionRepository,
@@ -42,17 +30,6 @@ __all__ = [
     # Project
     "ProjectRepository",
     "ProjectMemberRepository",
-    # Assessment (new structure)
-    "AssessmentInstanceRepository",
-    "AssessmentResponseRepository",
-    "AssessmentEvidenceRepository",
-    "AssessmentInstrumentRepository",
-    "AssessmentItemRepository",
-    "ProjectAssessmentItemRepository",
-    "AIAssessmentRepository",
-    "AIAssessmentRunRepository",
-    "AIAssessmentConfigRepository",
-    "AIAssessmentPromptRepository",
     # Extraction
     "ExtractionTemplateRepository",
     "GlobalTemplateRepository",

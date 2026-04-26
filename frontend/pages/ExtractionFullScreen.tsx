@@ -2,7 +2,7 @@
  * Full-screen data extraction interface
  *
  * Main page where the user extracts data from a specific article.
- * Similar to AssessmentFullScreen, with PDF viewer beside extraction form.
+ * Uses full-screen layout with PDF viewer beside extraction form.
  *
  * Features:
  * - PDF viewer with toggle

@@ -46,9 +46,6 @@ POSTGRESQL_ENUM_VALUES: dict[str, list[str]] = {
     "extraction_run_status": ["pending", "running", "completed", "failed"],
     "suggestion_status": ["pending", "accepted", "rejected"],
     "extraction_instance_status": ["pending", "in_progress", "completed", "reviewed", "archived"],
-    # Assessment enums
-    "assessment_status": ["in_progress", "submitted", "locked", "archived"],
-    "assessment_source": ["human", "ai", "consensus"],
     # Unified evaluation enums
     "evaluation_schema_version_status": ["draft", "published", "archived"],
     "evaluation_item_type": ["text", "number", "boolean", "date", "choice_single", "choice_multi"],

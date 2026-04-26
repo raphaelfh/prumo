@@ -4,7 +4,7 @@
  */
 
 import type {LucideIcon} from 'lucide-react';
-import {BarChart3, ClipboardCheck, FileText, Settings} from 'lucide-react';
+import {ClipboardCheck, FileText, Settings} from 'lucide-react';
 import {t} from '@/lib/copy';
 
 export interface SidebarNavItem {
@@ -30,7 +30,6 @@ export const sidebarSections: SidebarSection[] = [
         title: t('layout', 'sectionReview'),
         items: [
             {id: 'extraction', label: t('layout', 'navDataExtraction'), icon: ClipboardCheck},
-            {id: 'assessment', label: t('layout', 'navQualityAssessment'), icon: BarChart3},
         ],
     },
 ];
@@ -39,6 +38,5 @@ export const sidebarSections: SidebarSection[] = [
 export const tabIdToLabel: Record<string, string> = {
     articles: t('layout', 'navArticles'),
     extraction: t('layout', 'navDataExtraction'),
-    assessment: t('layout', 'navQualityAssessment'),
     settings: t('layout', 'navSettings'),
 };

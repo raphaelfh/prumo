@@ -38,7 +38,6 @@ export const common = {
     errorContextAuth: 'Authentication',
     errorContextDashboard: 'Dashboard',
     errorContextProjectView: 'Project view',
-    errorContextAssessment: 'Full assessment',
     errorContextExtraction: 'Data extraction',
     errorContextAddArticle: 'Add article',
     errorContextEditArticle: 'Edit article',

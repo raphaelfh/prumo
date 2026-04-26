@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Request
 
 from app.api.deps.security import get_current_user_sub
-from app.core.deps import DbSession
+from app.core.deps import DbSession, SupabaseClient
 from app.schemas.common import ApiResponse
 from app.schemas.evaluation_consensus import (
     CreateConsensusDecisionRequest,
@@ -40,9 +40,10 @@ async def create_evidence_upload_url(
     request: Request,  # noqa: ARG001
     payload: CreateEvidenceUploadRequest,
     db: DbSession,
+    supabase: SupabaseClient,
     user_id: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse:
     trace_id = str(uuid.uuid4())
-    service = EvaluationEvidenceService(db=db, user_id=user_id, trace_id=trace_id)
+    service = EvaluationEvidenceService(db=db, user_id=user_id, trace_id=trace_id, supabase=supabase)
     response = await service.create_upload_url(payload)
     return ApiResponse.success(response.model_dump(mode="json"), trace_id=trace_id)

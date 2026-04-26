@@ -643,23 +643,18 @@ class AISuggestion(Base, UUIDMixin):
     """
     Sugestao especifica gerada pela IA.
 
-    Suporta dois tipos de suggestions (mutualmente exclusivos):
-    1. Extraction suggestions: extraction_run_id + instance_id + field_id
-    2. Assessment suggestions: assessment_run_id + assessment_item_id
-
-    Constraint: Exatamente UM tipo de run_id deve ser preenchido (XOR):
-    - (extraction_run_id NOT NULL AND assessment_run_id IS NULL) OR
-    - (extraction_run_id IS NULL AND assessment_run_id NOT NULL)
+    Suggestions are extraction-only:
+    extraction_run_id + instance_id + field_id.
 
     Indices:
-    - extraction_run_id, assessment_run_id: FKs indexadas
-    - instance_id, field_id, assessment_item_id: FKs indexadas
+    - extraction_run_id: FK indexada
+    - instance_id, field_id: FKs indexadas
     - suggested_value, metadata: GIN for busca em JSONB
     """
 
     __tablename__ = "ai_suggestions"
 
-    # === Run FKs (mutually exclusive) ===
+    # === Extraction run FK ===
     extraction_run_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("public.extraction_runs.id", ondelete="CASCADE"),
@@ -667,14 +662,7 @@ class AISuggestion(Base, UUIDMixin):
         index=True,
     )
 
-    assessment_run_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.ai_assessment_runs.id", ondelete="CASCADE"),
-        nullable=True,
-        index=True,
-    )
-
-    # === Extraction suggestion fields (mutually exclusive with assessment fields) ===
+    # === Extraction suggestion fields ===
     instance_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("public.extraction_instances.id", ondelete="CASCADE"),
@@ -685,22 +673,6 @@ class AISuggestion(Base, UUIDMixin):
     field_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("public.extraction_fields.id", ondelete="RESTRICT"),
-        nullable=True,
-        index=True,
-    )
-
-    # === Assessment suggestion fields (mutually exclusive with extraction fields) ===
-    # Global instrument items
-    assessment_item_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.assessment_items.id", ondelete="RESTRICT"),
-        nullable=True,
-        index=True,
-    )
-    # Project-scoped instrument items (XOR with assessment_item_id)
-    project_assessment_item_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.project_assessment_items.id", ondelete="RESTRICT"),
         nullable=True,
         index=True,
     )
@@ -739,12 +711,6 @@ class AISuggestion(Base, UUIDMixin):
         foreign_keys=[extraction_run_id],
         back_populates="suggestions",
     )
-
-    # Note: assessment_run relationship pode ser adicionado quando necessario
-    # assessment_run: Mapped["AIAssessmentRun | None"] = relationship(
-    #     "AIAssessmentRun",
-    #     foreign_keys=[assessment_run_id],
-    # )
 
     # Indices definidos via __table_args__
     __table_args__ = (

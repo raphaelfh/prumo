@@ -13,7 +13,6 @@ import pytest
 
 # Importar todos os ENUMs Python para validação
 from app.models.article import FileRole
-from app.models.assessment import AssessmentStatus
 from app.models.base import POSTGRESQL_ENUM_VALUES, PostgreSQLEnumType
 from app.models.extraction import (
     ExtractionCardinality,
@@ -95,8 +94,6 @@ class TestPostgreSQLEnumValuesMapping:
             "extraction_run_status",
             "suggestion_status",
             "extraction_instance_status",
-            "assessment_status",
-            "assessment_source",
             "evaluation_schema_version_status",
             "evaluation_item_type",
             "evaluation_run_status",
@@ -138,7 +135,6 @@ class TestPythonEnumsMatchPostgreSQL:
             (ExtractionRunStatus, "extraction_run_status"),
             (SuggestionStatus, "suggestion_status"),
             (ExtractionInstanceStatus, "extraction_instance_status"),
-            (AssessmentStatus, "assessment_status"),
         ],
     )
     def test_python_enum_matches_postgresql(
@@ -172,7 +168,6 @@ class TestPythonEnumsMatchPostgreSQL:
             (ExtractionRunStatus, "extraction_run_status"),
             (SuggestionStatus, "suggestion_status"),
             (ExtractionInstanceStatus, "extraction_instance_status"),
-            (AssessmentStatus, "assessment_status"),
         ],
     )
     def test_python_enum_is_str_subclass(self, python_enum: type[PyEnum], postgres_enum_name: str):
@@ -197,10 +192,6 @@ class TestEnumDefaults:
     def test_suggestion_status_default(self):
         """Verifica valor padrão de SuggestionStatus."""
         assert SuggestionStatus.PENDING.value == "pending"
-
-    def test_assessment_status_default(self):
-        """Verifica valor padrão de AssessmentStatus."""
-        assert AssessmentStatus.IN_PROGRESS.value == "in_progress"
 
     def test_file_role_default(self):
         """Verifica valor padrão de FileRole."""
@@ -232,7 +223,6 @@ class TestEnumCreationFromString:
             (ExtractionRunStatus, "pending"),
             (SuggestionStatus, "pending"),
             (ExtractionInstanceStatus, "pending"),
-            (AssessmentStatus, "in_progress"),
         ],
     )
     def test_enum_from_valid_string(self, python_enum: type[PyEnum], valid_value: str):
@@ -254,7 +244,6 @@ class TestEnumCreationFromString:
             ExtractionRunStatus,
             SuggestionStatus,
             ExtractionInstanceStatus,
-            AssessmentStatus,
         ],
     )
     def test_enum_from_invalid_string_raises(self, python_enum: type[PyEnum]):

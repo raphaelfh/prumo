@@ -96,19 +96,12 @@ class ProjectDetailReadModel(BaseModel):
     articles_in_progress: int = 0
     articles_completed: int = 0
 
-    # Estatisticas de assessments
-    assessments_total: int = 0
-    assessments_completed: int = 0
-    ai_assessments_total: int = 0
-    ai_assessments_pending_review: int = 0
-
     # Estatisticas de extractions
     extractions_total: int = 0
     extractions_completed: int = 0
     models_extracted: int = 0
 
     # Progresso geral
-    assessment_progress: float = 0.0
     extraction_progress: float = 0.0
     overall_progress: float = 0.0
 
@@ -125,8 +118,7 @@ class ProjectDetailReadModel(BaseModel):
     @classmethod
     def compute_overall_progress(
         cls,
-        assessment_progress: float,
         extraction_progress: float,
     ) -> float:
         """Calcula progresso geral como media ponderada."""
-        return round((assessment_progress + extraction_progress) / 2, 1)
+        return round(extraction_progress, 1)

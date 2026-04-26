@@ -7,14 +7,12 @@ Agrega todas as rotas da API v1.
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
-    ai_assessment,
     articles_export,
     evaluation_consensus,
     evaluation_review,
     evaluation_runs,
     evaluation_schema_versions,
     model_extraction,
-    project_assessment_instruments,
     section_extraction,
     user_api_keys,
     zotero_import,
@@ -27,12 +25,6 @@ api_router.include_router(
     zotero_import.router,
     prefix="/zotero",
     tags=["Zotero Integration"],
-)
-
-api_router.include_router(
-    ai_assessment.router,
-    prefix="/ai-assessment",
-    tags=["AI Assessment"],
 )
 
 api_router.include_router(
@@ -51,12 +43,6 @@ api_router.include_router(
     user_api_keys.router,
     prefix="/user-api-keys",
     tags=["User API Keys"],
-)
-
-api_router.include_router(
-    project_assessment_instruments.router,
-    prefix="/assessment-instruments",
-    tags=["Project Assessment Instruments"],
 )
 
 api_router.include_router(

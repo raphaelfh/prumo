@@ -19,21 +19,6 @@ from app.models.article_author import (
     ArticleSyncEvent,
     ArticleSyncRun,
 )
-from app.models.assessment import (
-    AIAssessment,
-    AIAssessmentConfig,
-    AIAssessmentPrompt,
-    AIAssessmentRun,
-    AssessmentEvidence,
-    AssessmentInstance,
-    AssessmentInstrument,
-    AssessmentItem,
-    AssessmentResponse,
-    AssessmentSource,
-    AssessmentStatus,
-    ProjectAssessmentInstrument,
-    ProjectAssessmentItem,
-)
 from app.models.base import Base, BaseModel, TimestampMixin, UUIDMixin
 from app.models.evaluation_decision import (
     ConsensusDecisionMode,
@@ -164,20 +149,6 @@ __all__ = [
     "ExtractionRunStage",
     "ExtractionRunStatus",
     "SuggestionStatus",
-    # Assessment (new structure)
-    "AssessmentInstrument",
-    "AssessmentItem",
-    "AssessmentInstance",
-    "AssessmentResponse",
-    "AssessmentEvidence",
-    "AssessmentSource",
-    "AssessmentStatus",
-    "AIAssessmentConfig",
-    "AIAssessmentPrompt",
-    "AIAssessmentRun",
-    "AIAssessment",
-    "ProjectAssessmentInstrument",
-    "ProjectAssessmentItem",
     # Integration
     "ZoteroIntegration",
     # User API Keys
