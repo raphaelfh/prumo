@@ -19,6 +19,7 @@ celery_app = Celery(
     include=[
         "app.worker.tasks.extraction_tasks",
         "app.worker.tasks.import_tasks",
+        "app.worker.tasks.export_tasks",
     ],
 )
 

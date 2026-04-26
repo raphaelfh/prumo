@@ -27,13 +27,13 @@ async function waitForExportCompletion(input: {
 }
 
 test.describe("Articles export async lifecycle", () => {
-  test("starts async export and allows cancel endpoint", async (ctx) => {
+  test("starts async export and allows cancel endpoint", async ({ request }) => {
     const env = loadE2EEnv();
     const required = missingEnvKeys(["E2E_AUTH_TOKEN", "E2E_PROJECT_ID", "E2E_ARTICLE_ID"]);
     test.skip(required.length > 0, `Missing required env: ${required.join(", ")}`);
 
     const traceId = createTraceId("e2e-export-async");
-    const createResponse = await ctx.request.post(`${env.apiUrl}/api/v1/articles-export`, {
+    const createResponse = await request.post(`${env.apiUrl}/api/v1/articles-export`, {
       headers: authHeaders(env.authToken!, traceId),
       data: {
         projectId: env.projectId,
@@ -52,9 +52,9 @@ test.describe("Articles export async lifecycle", () => {
       return;
     }
 
-    const createBody = await parseEnvelope<{ jobId: string }>(createResponse);
+    const createBody = await parseEnvelope<{ job_id?: string; jobId?: string }>(createResponse);
     expect(createBody.ok).toBeTruthy();
-    const jobId = createBody.data.jobId;
+    const jobId = createBody.data.job_id ?? createBody.data.jobId;
     expect(jobId).toBeTruthy();
 
     const finalStatus = await waitForExportCompletion({
@@ -62,11 +62,11 @@ test.describe("Articles export async lifecycle", () => {
       token: env.authToken!,
       jobId,
       traceId,
-      request: ctx.request,
+      request: request,
     });
     expect(["completed", "failed", "cancelled"]).toContain(finalStatus.status);
 
-    const cancelResponse = await ctx.request.post(
+    const cancelResponse = await request.post(
       `${env.apiUrl}/api/v1/articles-export/status/${jobId}/cancel`,
       {
         headers: authHeaders(env.authToken!, traceId),
@@ -78,7 +78,7 @@ test.describe("Articles export async lifecycle", () => {
     expect(typeof cancelBody.data.cancelled).toBe("boolean");
     expect(cancelBody.data.cancelled).toBe(false);
 
-    const deleteResponse = await ctx.request.delete(`${env.apiUrl}/api/v1/articles-export/status/${jobId}`, {
+    const deleteResponse = await request.delete(`${env.apiUrl}/api/v1/articles-export/status/${jobId}`, {
       headers: authHeaders(env.authToken!, traceId),
     });
     expect(deleteResponse.ok()).toBeTruthy();

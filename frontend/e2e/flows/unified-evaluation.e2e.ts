@@ -45,7 +45,7 @@ async function bootstrapRunContext(input: {
 }
 
 test.describe("Unified evaluation API flow", () => {
-  test("full happy path with proposal seed, review, consensus and evidence upload", async (ctx) => {
+  test("full happy path with proposal seed, review, consensus and evidence upload", async ({ request, page }) => {
     const env = loadE2EEnv();
     const required = missingEnvKeys([
       "E2E_PROJECT_ID",
@@ -57,9 +57,9 @@ test.describe("Unified evaluation API flow", () => {
     ]);
     test.skip(required.length > 0, `Missing required env: ${required.join(", ")}`);
 
-    const token = await resolveAuthToken(ctx.page);
+    const token = await resolveAuthToken(page);
     const traceId = createTraceId("e2e-unified-happy");
-    const { runId, schemaVersionId } = await bootstrapRunContext({ token, request: ctx.request });
+    const { runId, schemaVersionId } = await bootstrapRunContext({ token, request: request });
 
     await seedProposalRecordViaServiceRole({
       projectId: env.projectId!,
@@ -70,7 +70,7 @@ test.describe("Unified evaluation API flow", () => {
       value: { extracted: "baseline-value" },
     });
 
-    const queueResponse = await ctx.request.get(`${env.apiUrl}/api/v1/review-queue?runId=${runId}`, {
+    const queueResponse = await request.get(`${env.apiUrl}/api/v1/review-queue?runId=${runId}`, {
       headers: authHeaders(token, traceId),
     });
     expect(queueResponse.ok()).toBeTruthy();
@@ -92,7 +92,7 @@ test.describe("Unified evaluation API flow", () => {
     ).toBeDefined();
     expect(seededItem!.latest_proposal_id).toBeTruthy();
 
-    const decisionResponse = await ctx.request.post(`${env.apiUrl}/api/v1/reviewer-decisions`, {
+    const decisionResponse = await request.post(`${env.apiUrl}/api/v1/reviewer-decisions`, {
       headers: authHeaders(token, traceId),
       data: {
         project_id: env.projectId,
@@ -108,7 +108,7 @@ test.describe("Unified evaluation API flow", () => {
     expect(decisionBody.ok).toBeTruthy();
     expect(decisionBody.data.id).toBeTruthy();
 
-    const consensusResponse = await ctx.request.post(`${env.apiUrl}/api/v1/consensus-decisions`, {
+    const consensusResponse = await request.post(`${env.apiUrl}/api/v1/consensus-decisions`, {
       headers: authHeaders(token, traceId),
       data: {
         project_id: env.projectId,
@@ -125,13 +125,13 @@ test.describe("Unified evaluation API flow", () => {
     expect(consensusBody.ok).toBeTruthy();
     expect(consensusBody.data.id).toBeTruthy();
 
-    const evidenceResponse = await ctx.request.post(`${env.apiUrl}/api/v1/evidence-attachments/presign`, {
+    const evidenceResponse = await request.post(`${env.apiUrl}/api/v1/evidence-attachments/presign`, {
       headers: authHeaders(token, traceId),
       data: {
         project_id: env.projectId,
         entity_type: "published_state",
         entity_id: consensusBody.data.id,
-        filename: "e2e-evidence.txt",
+        filename: `e2e-evidence-${traceId}.txt`,
         mime_type: "text/plain",
         size_bytes: 128,
       },
@@ -143,7 +143,7 @@ test.describe("Unified evaluation API flow", () => {
     await uploadToPresignedUrl(evidenceBody.data.upload_url, "e2e-evidence-content", "text/plain");
   });
 
-  test("rejects edit decision without edited_value", async (ctx) => {
+  test("rejects edit decision without edited_value", async ({ request, page }) => {
     const env = loadE2EEnv();
     const required = missingEnvKeys([
       "E2E_PROJECT_ID",
@@ -153,10 +153,10 @@ test.describe("Unified evaluation API flow", () => {
     ]);
     test.skip(required.length > 0, `Missing required env: ${required.join(", ")}`);
 
-    const token = await resolveAuthToken(ctx.page);
-    const { runId, schemaVersionId } = await bootstrapRunContext({ token, request: ctx.request });
+    const token = await resolveAuthToken(page);
+    const { runId, schemaVersionId } = await bootstrapRunContext({ token, request: request });
 
-    const response = await ctx.request.post(`${env.apiUrl}/api/v1/reviewer-decisions`, {
+    const response = await request.post(`${env.apiUrl}/api/v1/reviewer-decisions`, {
       headers: authHeaders(token, createTraceId("e2e-unified-edit-invalid")),
       data: {
         project_id: env.projectId,
@@ -171,7 +171,7 @@ test.describe("Unified evaluation API flow", () => {
     expect(response.status()).toBe(422);
   });
 
-  test("rejects manual override without justification", async (ctx) => {
+  test("rejects manual override without justification", async ({ request, page }) => {
     const env = loadE2EEnv();
     const required = missingEnvKeys([
       "E2E_PROJECT_ID",
@@ -181,10 +181,10 @@ test.describe("Unified evaluation API flow", () => {
     ]);
     test.skip(required.length > 0, `Missing required env: ${required.join(", ")}`);
 
-    const token = await resolveAuthToken(ctx.page);
-    const { runId, schemaVersionId } = await bootstrapRunContext({ token, request: ctx.request });
+    const token = await resolveAuthToken(page);
+    const { runId, schemaVersionId } = await bootstrapRunContext({ token, request: request });
 
-    const response = await ctx.request.post(`${env.apiUrl}/api/v1/consensus-decisions`, {
+    const response = await request.post(`${env.apiUrl}/api/v1/consensus-decisions`, {
       headers: authHeaders(token, createTraceId("e2e-unified-manual-invalid")),
       data: {
         project_id: env.projectId,
@@ -200,7 +200,7 @@ test.describe("Unified evaluation API flow", () => {
     expect(response.status()).toBe(422);
   });
 
-  test("returns 422 for invalid evidence mime and oversized file", async (ctx) => {
+  test("returns 422 for invalid evidence mime and oversized file", async ({ request, page }) => {
     const env = loadE2EEnv();
     const required = missingEnvKeys([
       "E2E_PROJECT_ID",
@@ -210,10 +210,10 @@ test.describe("Unified evaluation API flow", () => {
     ]);
     test.skip(required.length > 0, `Missing required env: ${required.join(", ")}`);
 
-    const token = await resolveAuthToken(ctx.page);
-    const { runId, schemaVersionId } = await bootstrapRunContext({ token, request: ctx.request });
+    const token = await resolveAuthToken(page);
+    const { runId, schemaVersionId } = await bootstrapRunContext({ token, request: request });
 
-    const invalidMime = await ctx.request.post(`${env.apiUrl}/api/v1/evidence-attachments/presign`, {
+    const invalidMime = await request.post(`${env.apiUrl}/api/v1/evidence-attachments/presign`, {
       headers: authHeaders(token, createTraceId("e2e-unified-evidence-mime")),
       data: {
         project_id: env.projectId,
@@ -226,7 +226,7 @@ test.describe("Unified evaluation API flow", () => {
     });
     expect(invalidMime.status()).toBe(422);
 
-    const oversized = await ctx.request.post(`${env.apiUrl}/api/v1/evidence-attachments/presign`, {
+    const oversized = await request.post(`${env.apiUrl}/api/v1/evidence-attachments/presign`, {
       headers: authHeaders(token, createTraceId("e2e-unified-evidence-size")),
       data: {
         project_id: env.projectId,

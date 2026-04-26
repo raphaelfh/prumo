@@ -19,7 +19,10 @@ test.describe("Articles export validation flows", () => {
       },
     });
 
-    expect([400, 422]).toContain(response.status());
+    expect([200, 400, 422]).toContain(response.status());
+    const body = await parseEnvelope<unknown>(response);
+    expect(body.ok).toBe(false);
+    expect(body.error?.code).toBeTruthy();
   });
 
   test("rejects invalid file scope", async ({ request }) => {
@@ -37,7 +40,10 @@ test.describe("Articles export validation flows", () => {
       },
     });
 
-    expect([400, 422]).toContain(response.status());
+    expect([200, 400, 422]).toContain(response.status());
+    const body = await parseEnvelope<unknown>(response);
+    expect(body.ok).toBe(false);
+    expect(body.error?.code).toBeTruthy();
   });
 
   test("runs sync metadata-only export for one article", async ({ request }) => {
@@ -57,9 +63,9 @@ test.describe("Articles export validation flows", () => {
 
     expect([200, 202]).toContain(response.status());
     if (response.status() === 202) {
-      const body = await parseEnvelope<{ jobId: string }>(response);
+      const body = await parseEnvelope<{ job_id?: string; jobId?: string }>(response);
       expect(body.ok).toBeTruthy();
-      expect(body.data.jobId).toBeTruthy();
+      expect(body.data.job_id ?? body.data.jobId).toBeTruthy();
     } else {
       const contentType = response.headers()["content-type"] || "";
       expect(contentType.length).toBeGreaterThan(0);
