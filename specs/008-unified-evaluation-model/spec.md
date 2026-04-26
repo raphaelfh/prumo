@@ -96,6 +96,7 @@ As a final decision maker, I can publish a consensus outcome by selecting an exi
 - **FR-017**: The system MUST include a repeatable schema consistency verification step that confirms the resulting database structure matches the approved data model before release.
 - **FR-018**: The system MUST enforce optimistic concurrency on consensus publication so only the first valid publish for a target-item-schema version succeeds, and later concurrent attempts fail with an explicit conflict requiring retry.
 - **FR-022**: The system MUST emit structured logs and core operational metrics covering run duration, stage-level failures, consensus publish conflict count, and proposal/review queue backlog.
+- **FR-023**: The system MUST trigger an operational scale alert when proposal/review queue backlog stays above 500 items for 15 consecutive minutes.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -132,3 +133,4 @@ As a final decision maker, I can publish a consensus outcome by selecting an exi
 - **SC-006**: In release validation, 100% of schema consistency checks pass by confirming the deployed database structure matches the approved model definition.
 - **SC-007**: In operational validation, 100% of run executions emit structured logs and metrics for run duration, stage failures, publish conflicts, and queue backlog.
 - **SC-008**: In development environment verification, a full data reset followed by migration and test execution completes successfully with no requirement to migrate legacy records.
+- **SC-009**: In load-monitoring validation, a backlog above 500 items sustained for 15 minutes emits a scale alert in 100% of simulated runs.

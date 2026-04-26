@@ -17,8 +17,8 @@ Deliver a unified evaluation lifecycle that joins extraction proposals, independ
 **Testing**: pytest (unit/integration), Vitest + Testing Library, Playwright for end-to-end flows  
 **Target Platform**: Linux containerized backend + modern desktop browsers  
 **Project Type**: Full-stack web application (FastAPI backend + React frontend)  
-**Performance Goals**: Non-blocking run progression with asynchronous proposal generation; observability must expose run duration, stage failures, publish conflicts, and queue backlog for every run  
-**Constraints**: Immutable append-only proposal/decision/consensus history; optimistic locking for consensus publish; 25 MB evidence cap with PDF/PNG/JPG/JPEG/TXT only; item type locked after first extraction in schema version; dev-mode clean-slate rollout (no legacy data migration)  
+**Performance Goals**: Non-blocking run progression with asynchronous proposal generation; observability must expose run duration, stage failures, publish conflicts, and queue backlog for every run; trigger a scale alert when backlog remains above 500 items for 15 consecutive minutes  
+**Constraints**: Immutable append-only proposal/decision/consensus history; optimistic locking for consensus publish; 25 MB evidence cap with PDF/PNG/JPG/JPEG/TXT only; item type locked after first extraction in schema version; dev-mode clean-slate rollout (no legacy data migration); scaling trigger threshold fixed at backlog >500 for 15 minutes  
 **Scale/Scope**: Multi-project evaluation workflows with append-only growth, reviewer concurrency on the same item, and schema version evolution without mutating historical outcomes
 
 ## Constitution Check
