@@ -1,61 +1,89 @@
 #!/usr/bin/env bash
-# Bulk-upload Codespaces secrets from a local env file using `gh`.
+# Upload Codespaces secrets without maintaining a separate file.
+# For each secret in SECRETS, the value is resolved from (first match wins):
+#   1. Process environment    (export DATABASE_URL=... before running)
+#   2. backend/.env           (your existing local backend config)
+#   3. .env                   (your existing local frontend config)
+#   4. Optional file passed as $1
 #
-# Usage:
-#   .devcontainer/upload-secrets.sh                       # uses .devcontainer/secrets.local.env
-#   .devcontainer/upload-secrets.sh path/to/file.env
-#   SCOPE=user .devcontainer/upload-secrets.sh            # user-level (default: repo-level)
-#
-# Requires: gh CLI authenticated (`gh auth login`) with the `codespace` scope.
-# The env file must NEVER be committed (already covered by .gitignore: **/.env*).
+# Requires: gh CLI authenticated with the `codespace` scope
+#   gh auth refresh -s codespace
 set -euo pipefail
 
-FILE="${1:-.devcontainer/secrets.local.env}"
-SCOPE="${SCOPE:-repo}"  # repo | user
+SECRETS=(
+  DATABASE_URL
+  DIRECT_DATABASE_URL
+  SUPABASE_URL
+  SUPABASE_ANON_KEY
+  SUPABASE_SERVICE_ROLE_KEY
+  OPENAI_API_KEY
+  OPENAI_DEFAULT_MODEL
+  ENCRYPTION_KEY
+)
+
+EXTRA_FILE="${1:-}"
+SCOPE="${SCOPE:-repo}"   # repo | user
 
 if ! command -v gh >/dev/null 2>&1; then
-  echo "ERROR: gh CLI not installed (https://cli.github.com)" >&2
-  exit 1
-fi
-if [ ! -f "$FILE" ]; then
-  echo "ERROR: $FILE not found." >&2
-  echo "Create it from .devcontainer/secrets.local.env.example and fill in your values." >&2
-  exit 1
+  echo "ERROR: gh CLI not installed" >&2; exit 1
 fi
 
-REPO=""
+read_var_from_file() {
+  local file="$1" var="$2" line val
+  [ -f "$file" ] || return 1
+  line=$(grep -E "^[[:space:]]*${var}=" "$file" | head -1) || return 1
+  [ -z "$line" ] && return 1
+  val="${line#*=}"
+  val="${val%\"}"; val="${val#\"}"
+  val="${val%\'}"; val="${val#\'}"
+  printf '%s' "$val"
+}
+
+resolve() {
+  local var="$1" v
+  v="${!var:-}"
+  [ -n "$v" ] && { printf '%s' "$v"; return 0; }
+  for f in backend/.env .env "$EXTRA_FILE"; do
+    [ -z "$f" ] && continue
+    v=$(read_var_from_file "$f" "$var" 2>/dev/null || true)
+    [ -n "$v" ] && { printf '%s' "$v"; return 0; }
+  done
+  return 1
+}
+
 if [ "$SCOPE" = "repo" ]; then
   REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
   echo "==> Uploading Codespaces secrets to repo: $REPO"
 else
+  REPO=""
   echo "==> Uploading Codespaces secrets at user level"
 fi
 
 count=0
-while IFS= read -r line || [ -n "$line" ]; do
-  # Skip blanks and comments
-  [[ -z "${line// }" ]] && continue
-  [[ "$line" =~ ^[[:space:]]*# ]] && continue
-
-  key="${line%%=*}"
-  val="${line#*=}"
-  # Strip surrounding quotes
-  val="${val%\"}"; val="${val#\"}"
-  val="${val%\'}"; val="${val#\'}"
-
-  [[ -z "$key" || "$key" == "$line" ]] && continue
-  if [ -z "$val" ]; then
-    echo "  - $key: empty, skipping"
-    continue
-  fi
-
-  if [ "$SCOPE" = "repo" ]; then
-    printf '%s' "$val" | gh secret set "$key" --app codespaces --repo "$REPO" --body -
+skipped=()
+for var in "${SECRETS[@]}"; do
+  if val=$(resolve "$var") && [ -n "$val" ]; then
+    # Reject obviously-placeholder values that would break the codespace.
+    if [[ "$val" == *"<"*">"* || "$val" == "your_"* || "$val" == "sk-your-"* ]]; then
+      echo "  ! $var: looks like a placeholder, skipping"
+      skipped+=("$var")
+      continue
+    fi
+    if [ "$SCOPE" = "repo" ]; then
+      printf '%s' "$val" | gh secret set "$var" --app codespaces --repo "$REPO" --body -
+    else
+      printf '%s' "$val" | gh secret set "$var" --user --body -
+    fi
+    echo "  + $var"
+    count=$((count + 1))
   else
-    printf '%s' "$val" | gh secret set "$key" --user --body -
+    echo "  - $var: not found in env / backend/.env / .env${EXTRA_FILE:+ / $EXTRA_FILE} (skipping)"
+    skipped+=("$var")
   fi
-  echo "  + $key"
-  count=$((count + 1))
-done < "$FILE"
+done
 
-echo "==> Uploaded $count secret(s). Rebuild your codespace to pick them up."
+echo "==> Uploaded $count secret(s)"
+if [ "${#skipped[@]}" -gt 0 ]; then
+  echo "==> Skipped: ${skipped[*]}"
+  echo "    Provide them via shell env, backend/.env, .env, or as a file argument."
+fi

@@ -160,8 +160,4 @@ supabase/.branches/*
 **/.env.*
 !**/.env.example
 
-# Devcontainer local secrets (filled by hand, uploaded via upload-secrets.sh)
-.devcontainer/secrets.local.env
-
-
 /.ai/mcp/mcp.json
