@@ -77,7 +77,7 @@ async def start_export(
     if not article_ids:
         return ApiResponse.failure(
             code="VALIDATION_ERROR",
-            message="articleIds cannot be empty.",
+            message="article_ids cannot be empty.",
             trace_id=trace_id,
         )
     valid_formats = {"csv", "ris", "rdf"}
@@ -90,7 +90,7 @@ async def start_export(
     if file_scope not in ("none", "main_only", "all"):
         return ApiResponse.failure(
             code="VALIDATION_ERROR",
-            message="fileScope must be one of: none, main_only, all.",
+            message="file_scope must be one of: none, main_only, all.",
             trace_id=trace_id,
         )
 
@@ -178,7 +178,7 @@ async def start_export(
 )
 @limiter.limit("30/minute")
 async def get_export_status(
-    request: Request,  # noqa: ARG001
+    request: Request,
     job_id: str,
     user: CurrentUser,
 ) -> ApiResponse[ExportStatusResponse]:
@@ -187,11 +187,14 @@ async def get_export_status(
 
     from app.worker.celery_app import celery_app
 
+    trace_id = request.headers.get("x-trace-id") or str(uuid.uuid4())
+
     result = AsyncResult(job_id, app=celery_app)
     if not result.backend:
         return ApiResponse.failure(
             code="NOT_FOUND",
             message="Job not found or expired.",
+            trace_id=trace_id,
         )
     state = result.state
     if state == "PENDING":
@@ -200,6 +203,7 @@ async def get_export_status(
                 job_id=job_id,
                 status="pending",
             ),
+            trace_id=trace_id,
         )
     if state == "STARTED" or state == "RETRY":
         return ApiResponse.success(
@@ -207,6 +211,7 @@ async def get_export_status(
                 job_id=job_id,
                 status="running",
             ),
+            trace_id=trace_id,
         )
     if state == "FAILURE":
         return ApiResponse.success(
@@ -215,6 +220,7 @@ async def get_export_status(
                 status="failed",
                 error=str(result.result) if result.result else "Task failed.",
             ),
+            trace_id=trace_id,
         )
     if state == "SUCCESS" and result.result:
         data = result.result
@@ -222,6 +228,7 @@ async def get_export_status(
             return ApiResponse.failure(
                 code="FORBIDDEN",
                 message="Job does not belong to current user.",
+                trace_id=trace_id,
             )
         skipped = data.get("skipped_files") or []
         skipped_entries = None
@@ -244,6 +251,7 @@ async def get_export_status(
                 expires_at=data.get("expires_at"),
                 skipped_files=skipped_entries,
             ),
+            trace_id=trace_id,
         )
     if state == "REVOKED":
         return ApiResponse.success(
@@ -251,12 +259,14 @@ async def get_export_status(
                 job_id=job_id,
                 status="cancelled",
             ),
+            trace_id=trace_id,
         )
     return ApiResponse.success(
         data=ExportStatusResponse(
             job_id=job_id,
             status=state.lower() if state else "pending",
         ),
+        trace_id=trace_id,
     )
 
 
@@ -272,7 +282,7 @@ async def get_export_status(
 )
 @limiter.limit("20/minute")
 async def cancel_export(
-    request: Request,  # noqa: ARG001
+    request: Request,
     job_id: str,
     user: CurrentUser,  # noqa: ARG001
 ) -> ApiResponse[ExportCancelResponse]:
@@ -281,12 +291,16 @@ async def cancel_export(
 
     from app.worker.celery_app import celery_app
 
+    trace_id = request.headers.get("x-trace-id") or str(uuid.uuid4())
+
     result = AsyncResult(job_id, app=celery_app)
     if result.state in ("SUCCESS", "FAILURE", "REVOKED"):
         return ApiResponse.success(
             data=ExportCancelResponse(cancelled=False),
+            trace_id=trace_id,
         )
     celery_app.control.revoke(job_id, terminate=True)
     return ApiResponse.success(
         data=ExportCancelResponse(cancelled=True),
+        trace_id=trace_id,
     )

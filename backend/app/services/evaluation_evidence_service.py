@@ -1,5 +1,8 @@
 """Service for evidence upload validation and metadata handling."""
 
+import os
+import re
+import uuid
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
@@ -15,6 +18,29 @@ from app.services.evaluation_observability_service import log_evaluation_event
 
 ALLOWED_MIME_TYPES = {"application/pdf", "image/png", "image/jpeg", "text/plain"}
 MAX_EVIDENCE_SIZE_BYTES = 25 * 1024 * 1024
+_FILENAME_SAFE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _versioned_storage_path(
+    project_id: UUID, entity_type: str, entity_id: UUID, filename: str
+) -> str:
+    """Return a unique storage path so re-uploads never overwrite prior evidence.
+
+    Audit-grade requirement: every upload of evidence must produce a distinct
+    object key, preserving the full history. We achieve that by injecting a
+    short version segment (UTC timestamp + random uuid suffix) between the
+    entity id and the original filename.
+    """
+    base, ext = os.path.splitext(filename)
+    safe_base = _FILENAME_SAFE.sub("_", base) or "evidence"
+    safe_ext = _FILENAME_SAFE.sub("", ext)
+    version_segment = (
+        f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
+    )
+    versioned_filename = f"{safe_base}__{version_segment}{safe_ext}"
+    return (
+        f"evidence/{project_id}/{entity_type}/{entity_id}/{versioned_filename}"
+    )
 
 
 class EvaluationEvidenceService:
@@ -33,7 +59,12 @@ class EvaluationEvidenceService:
         if payload.size_bytes > MAX_EVIDENCE_SIZE_BYTES:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Evidence exceeds 25MB")
 
-        storage_path = f"evidence/{payload.project_id}/{payload.entity_type}/{payload.entity_id}/{payload.filename}"
+        storage_path = _versioned_storage_path(
+            payload.project_id,
+            payload.entity_type,
+            payload.entity_id,
+            payload.filename,
+        )
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
         signed_upload = self.supabase.storage.from_(settings.EVALUATION_EVIDENCE_BUCKET).create_signed_upload_url(
             storage_path
