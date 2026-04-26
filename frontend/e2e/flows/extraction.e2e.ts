@@ -83,6 +83,6 @@ test.describe("Extraction flow (UI + API)", () => {
       },
     });
 
-    expect([400, 404, 500]).toContain(response.status());
+    expect([400, 404, 422]).toContain(response.status());
   });
 });

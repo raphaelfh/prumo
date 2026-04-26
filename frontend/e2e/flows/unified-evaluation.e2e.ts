@@ -74,9 +74,23 @@ test.describe("Unified evaluation API flow", () => {
       headers: authHeaders(token, traceId),
     });
     expect(queueResponse.ok()).toBeTruthy();
-    const queueBody = await parseEnvelope<{ items: Array<{ latest_proposal_id: string | null }> }>(queueResponse);
+    const queueBody = await parseEnvelope<{
+      items: Array<{
+        target_id: string;
+        item_id: string;
+        latest_proposal_id: string | null;
+      }>;
+    }>(queueResponse);
     expect(queueBody.ok).toBeTruthy();
     expect(Array.isArray(queueBody.data.items)).toBeTruthy();
+    const seededItem = queueBody.data.items.find(
+      (entry) => entry.target_id === env.targetId && entry.item_id === env.itemId
+    );
+    expect(
+      seededItem,
+      `Expected seeded proposal for target ${env.targetId} / item ${env.itemId} in review queue`
+    ).toBeDefined();
+    expect(seededItem!.latest_proposal_id).toBeTruthy();
 
     const decisionResponse = await ctx.request.post(`${env.apiUrl}/api/v1/reviewer-decisions`, {
       headers: authHeaders(token, traceId),

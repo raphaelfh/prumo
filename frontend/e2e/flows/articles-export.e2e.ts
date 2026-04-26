@@ -10,18 +10,18 @@ async function waitForExportCompletion(input: {
   traceId: string;
   request: APIRequestContext;
 }) {
-  const statuses = new Set(["pending", "running", "retry"]);
-  for (let idx = 0; idx < 15; idx += 1) {
+  const inflight = new Set(["pending", "running", "retry"]);
+  for (let idx = 0; idx < 30; idx += 1) {
     const statusResponse = await input.request.get(`${input.apiUrl}/api/v1/articles-export/status/${input.jobId}`, {
       headers: authHeaders(input.token, input.traceId),
     });
     expect(statusResponse.ok()).toBeTruthy();
     const statusBody = await parseEnvelope<{ status: string; downloadUrl?: string }>(statusResponse);
     expect(statusBody.ok).toBeTruthy();
-    if (!statuses.has(statusBody.data.status)) {
+    if (!inflight.has(statusBody.data.status)) {
       return statusBody.data;
     }
-    await new Promise((resolve) => setTimeout(resolve, 1200));
+    await new Promise((resolve) => setTimeout(resolve, 1500));
   }
   return { status: "timeout" };
 }
@@ -64,7 +64,7 @@ test.describe("Articles export async lifecycle", () => {
       traceId,
       request: ctx.request,
     });
-    expect(["completed", "failed", "cancelled", "timeout"]).toContain(finalStatus.status);
+    expect(["completed", "failed", "cancelled"]).toContain(finalStatus.status);
 
     const cancelResponse = await ctx.request.post(
       `${env.apiUrl}/api/v1/articles-export/status/${jobId}/cancel`,
@@ -73,10 +73,17 @@ test.describe("Articles export async lifecycle", () => {
       }
     );
     expect(cancelResponse.ok()).toBeTruthy();
+    const cancelBody = await parseEnvelope<{ cancelled: boolean }>(cancelResponse);
+    expect(cancelBody.ok).toBeTruthy();
+    expect(typeof cancelBody.data.cancelled).toBe("boolean");
+    expect(cancelBody.data.cancelled).toBe(false);
 
     const deleteResponse = await ctx.request.delete(`${env.apiUrl}/api/v1/articles-export/status/${jobId}`, {
       headers: authHeaders(env.authToken!, traceId),
     });
     expect(deleteResponse.ok()).toBeTruthy();
+    const deleteBody = await parseEnvelope<{ cancelled: boolean }>(deleteResponse);
+    expect(deleteBody.ok).toBeTruthy();
+    expect(typeof deleteBody.data.cancelled).toBe("boolean");
   });
 });

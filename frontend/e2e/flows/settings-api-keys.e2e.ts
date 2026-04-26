@@ -60,7 +60,7 @@ test.describe("Settings and API key flows", () => {
     const validateResponse = await request.post(`${env.apiUrl}/api/v1/user-api-keys/${keyId}/validate`, {
       headers: authHeaders(token, traceId),
     });
-    expect([200, 500]).toContain(validateResponse.status());
+    expect([200, 400, 401, 422]).toContain(validateResponse.status());
 
     const deleteResponse = await request.delete(`${env.apiUrl}/api/v1/user-api-keys/${keyId}`, {
       headers: authHeaders(token, traceId),

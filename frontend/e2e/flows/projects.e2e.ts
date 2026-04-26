@@ -29,7 +29,7 @@ test.describe("Projects navigation flows", () => {
     const env = loadE2EEnv();
     await loginViaUi(page);
     await page.goto(`${env.frontendUrl}/projects/00000000-0000-0000-0000-000000000000`);
-    await page.waitForTimeout(800);
+    await expect(page.getByText("Project not found")).toBeVisible({ timeout: 10000 });
     expect(page.url()).toContain("/projects/00000000-0000-0000-0000-000000000000");
   });
 });
