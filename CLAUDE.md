@@ -1,8 +1,10 @@
 # prumo Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-03-28
+Auto-generated from all feature plans. Last updated: 2026-04-26
 
 ## Active Technologies
+- Python 3.11+ (backend), TypeScript strict (frontend) + FastAPI, SQLAlchemy 2.0 async, Alembic, Celery + Redis, Pydantic, structlog, React 18, TanStack Query, Zustand (008-unified-evaluation-model)
+- PostgreSQL (`public` schema, Alembic-managed), Supabase Storage for evidence binaries (008-unified-evaluation-model)
 
 - Python 3.11+ (backend), TypeScript strict (frontend) + FastAPI, SQLAlchemy 2.0 async, Alembic, Celery + Redis,
   Supabase Auth/Storage, React 18, (006-zotero-articles-sync)
@@ -34,6 +36,7 @@ npm test && npm run lint
 - TypeScript (strict), React 18.3: Follow standard conventions
 
 ## Recent Changes
+- 008-unified-evaluation-model: Added Python 3.11+ (backend), TypeScript strict (frontend) + FastAPI, SQLAlchemy 2.0 async, Alembic, Celery + Redis, Pydantic, structlog, React 18, TanStack Query, Zustand
 
 - 006-zotero-articles-sync: Added Python 3.11+ (backend), TypeScript strict (frontend) + FastAPI, SQLAlchemy 2.0 async,
   Alembic, Celery + Redis, Supabase Auth/Storage, React 18,
@@ -41,7 +44,6 @@ npm test && npm run lint
 - 005-articles-export: Added Python 3.11+ (backend), TypeScript strict (frontend) + FastAPI, SQLAlchemy 2.0 async,
   Celery + Redis, Supabase (auth + storage); React 18, Vite, TanStack Query, Zustand, shadcn/Radix
 
-- 004-frontend-i18n: Added TypeScript (strict), React 18.3 + Vite, TanStack Query, Zustand, shadcn/Radix,
   react-hook-form, Zod; **i18n/copy**: módulo customizado em `frontend/lib/copy/` (namespaces por área, sem lib
   externa); ver research.md
 

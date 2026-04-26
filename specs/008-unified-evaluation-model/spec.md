@@ -116,7 +116,7 @@ As a final decision maker, I can publish a consensus outcome by selecting an exi
 - Project roles and permissions already exist and can identify reviewer and final decision-maker capabilities.
 - Downstream consumers can read authoritative published state by schema version.
 - Historical append-only data volume will grow over time and operational monitoring will guide scaling adjustments.
-- The initial release may rebuild existing development data, and preserving old development records is not required.
+- The current scope is development-only clean-slate delivery: existing development data may be deleted/reset, and no legacy data migration is required for this release.
 - All feature-facing written deliverables are authored in English, and implementation outputs provide complete code blocks rather than partial fragments when code is requested.
 - Database lifecycle ownership follows the backend migration standard for application schema evolution.
 
@@ -131,3 +131,4 @@ As a final decision maker, I can publish a consensus outcome by selecting an exi
 - **SC-005**: For cross-project authorization tests, 100% of unauthorized read/write attempts are blocked.
 - **SC-006**: In release validation, 100% of schema consistency checks pass by confirming the deployed database structure matches the approved model definition.
 - **SC-007**: In operational validation, 100% of run executions emit structured logs and metrics for run duration, stage failures, publish conflicts, and queue backlog.
+- **SC-008**: In development environment verification, a full data reset followed by migration and test execution completes successfully with no requirement to migrate legacy records.

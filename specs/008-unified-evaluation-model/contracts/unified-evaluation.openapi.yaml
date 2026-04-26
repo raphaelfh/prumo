@@ -1,0 +1,495 @@
+openapi: 3.1.0
+info:
+  title: Unified Evaluation API
+  version: 0.1.0
+  description: Contracts for unified extraction-review-consensus workflow.
+servers:
+  - url: /api/v1
+paths:
+  /evaluation-runs:
+    post:
+      summary: Create a unified evaluation run
+      operationId: createEvaluationRun
+      tags: [EvaluationRuns]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEvaluationRunRequest'
+      responses:
+        '201':
+          description: Run created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseEvaluationRun'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /evaluation-runs/{runId}:
+    get:
+      summary: Get run summary and stage metrics
+      operationId: getEvaluationRun
+      tags: [EvaluationRuns]
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '200':
+          description: Run fetched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseEvaluationRun'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /evaluation-runs/{runId}/proposal-generation:
+    post:
+      summary: Trigger asynchronous proposal generation for run targets
+      operationId: triggerProposalGeneration
+      tags: [EvaluationRuns]
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+      responses:
+        '202':
+          description: Proposal generation accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseAsyncAccepted'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /review-queue:
+    get:
+      summary: List reviewer queue items for current user
+      operationId: listReviewQueue
+      tags: [Review]
+      parameters:
+        - in: query
+          name: runId
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [pending, decided]
+      responses:
+        '200':
+          description: Queue fetched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseReviewQueue'
+
+  /reviewer-decisions:
+    post:
+      summary: Submit an independent reviewer decision
+      operationId: createReviewerDecision
+      tags: [Review]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReviewerDecisionRequest'
+      responses:
+        '201':
+          description: Decision recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseReviewerDecision'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+
+  /consensus-decisions:
+    post:
+      summary: Publish final consensus decision for target-item
+      operationId: createConsensusDecision
+      tags: [Consensus]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateConsensusDecisionRequest'
+      responses:
+        '201':
+          description: Consensus published and authoritative state updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponsePublishedState'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+
+  /evidence-attachments/presign:
+    post:
+      summary: Request upload URL for evidence attachment
+      operationId: createEvidenceUploadUrl
+      tags: [Evidence]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEvidenceUploadRequest'
+      responses:
+        '200':
+          description: Upload URL generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseEvidenceUpload'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+
+components:
+  parameters:
+    RunId:
+      in: path
+      name: runId
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseError'
+    Forbidden:
+      description: User lacks project permission
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseError'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseError'
+    Conflict:
+      description: Optimistic concurrency conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseError'
+    Unprocessable:
+      description: Validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiResponseError'
+
+  schemas:
+    ApiResponseMeta:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        trace_id:
+          type: string
+          format: uuid
+      required: [ok, trace_id]
+
+    ApiResponseError:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseMeta'
+        - type: object
+          properties:
+            ok:
+              const: false
+            error:
+              type: object
+              properties:
+                code:
+                  type: string
+                message:
+                  type: string
+              required: [code, message]
+          required: [error]
+
+    CreateEvaluationRunRequest:
+      type: object
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        schema_version_id:
+          type: string
+          format: uuid
+        target_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 1
+      required: [project_id, schema_version_id, target_ids]
+
+    EvaluationRun:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        schema_version_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, active, completed, failed, cancelled]
+        current_stage:
+          type: string
+          enum: [proposal, review, consensus, finalized]
+      required: [id, project_id, schema_version_id, status, current_stage]
+
+    ApiResponseEvaluationRun:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseMeta'
+        - type: object
+          properties:
+            ok:
+              const: true
+            data:
+              $ref: '#/components/schemas/EvaluationRun'
+          required: [data]
+
+    ApiResponseAsyncAccepted:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseMeta'
+        - type: object
+          properties:
+            ok:
+              const: true
+            data:
+              type: object
+              properties:
+                accepted:
+                  type: boolean
+                  const: true
+              required: [accepted]
+          required: [data]
+
+    ReviewQueueItem:
+      type: object
+      properties:
+        run_id:
+          type: string
+          format: uuid
+        target_id:
+          type: string
+          format: uuid
+        item_id:
+          type: string
+          format: uuid
+        latest_proposal_id:
+          type: string
+          format: uuid
+          nullable: true
+        reviewer_state:
+          type: string
+          enum: [pending, accept, reject, edit]
+      required: [run_id, target_id, item_id, reviewer_state]
+
+    ApiResponseReviewQueue:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseMeta'
+        - type: object
+          properties:
+            ok:
+              const: true
+            data:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ReviewQueueItem'
+              required: [items]
+          required: [data]
+
+    CreateReviewerDecisionRequest:
+      type: object
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        run_id:
+          type: string
+          format: uuid
+        target_id:
+          type: string
+          format: uuid
+        item_id:
+          type: string
+          format: uuid
+        schema_version_id:
+          type: string
+          format: uuid
+        proposal_id:
+          type: string
+          format: uuid
+          nullable: true
+        decision:
+          type: string
+          enum: [accept, reject, edit]
+        edited_value:
+          nullable: true
+        rationale:
+          type: string
+          nullable: true
+      required:
+        [project_id, run_id, target_id, item_id, schema_version_id, decision]
+
+    ReviewerDecision:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        reviewer_id:
+          type: string
+          format: uuid
+        decision:
+          type: string
+          enum: [accept, reject, edit]
+      required: [id, reviewer_id, decision]
+
+    ApiResponseReviewerDecision:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseMeta'
+        - type: object
+          properties:
+            ok:
+              const: true
+            data:
+              $ref: '#/components/schemas/ReviewerDecision'
+          required: [data]
+
+    CreateConsensusDecisionRequest:
+      type: object
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        run_id:
+          type: string
+          format: uuid
+          nullable: true
+        target_id:
+          type: string
+          format: uuid
+        item_id:
+          type: string
+          format: uuid
+        schema_version_id:
+          type: string
+          format: uuid
+        mode:
+          type: string
+          enum: [select_existing, manual_override]
+        selected_reviewer_decision_id:
+          type: string
+          format: uuid
+          nullable: true
+        override_value:
+          nullable: true
+        override_justification:
+          type: string
+          nullable: true
+      required:
+        [project_id, target_id, item_id, schema_version_id, mode]
+
+    PublishedState:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        target_id:
+          type: string
+          format: uuid
+        item_id:
+          type: string
+          format: uuid
+        schema_version_id:
+          type: string
+          format: uuid
+        latest_consensus_decision_id:
+          type: string
+          format: uuid
+      required:
+        [id, project_id, target_id, item_id, schema_version_id, latest_consensus_decision_id]
+
+    ApiResponsePublishedState:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseMeta'
+        - type: object
+          properties:
+            ok:
+              const: true
+            data:
+              $ref: '#/components/schemas/PublishedState'
+          required: [data]
+
+    CreateEvidenceUploadRequest:
+      type: object
+      properties:
+        project_id:
+          type: string
+          format: uuid
+        entity_type:
+          type: string
+          enum: [proposal, reviewer_decision, consensus_decision, published_state]
+        entity_id:
+          type: string
+          format: uuid
+        filename:
+          type: string
+        mime_type:
+          type: string
+          enum: [application/pdf, image/png, image/jpeg, text/plain]
+        size_bytes:
+          type: integer
+          maximum: 26214400
+      required: [project_id, entity_type, entity_id, filename, mime_type, size_bytes]
+
+    EvidenceUploadData:
+      type: object
+      properties:
+        upload_url:
+          type: string
+          format: uri
+        storage_path:
+          type: string
+      required: [upload_url, storage_path]
+
+    ApiResponseEvidenceUpload:
+      allOf:
+        - $ref: '#/components/schemas/ApiResponseMeta'
+        - type: object
+          properties:
+            ok:
+              const: true
+            data:
+              $ref: '#/components/schemas/EvidenceUploadData'
+          required: [data]
