@@ -123,6 +123,10 @@ ignore_missing_imports = true
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+markers = [
+    "e2e: end-to-end tests against live stack",
+    "performance: performance-sensitive or long-running tests",
+]
 
 
 [tool.coverage.run]

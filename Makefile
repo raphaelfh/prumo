@@ -1,4 +1,4 @@
-.PHONY: help setup start start-remote verify-remote-db stop restart status backend frontend supabase install install-backend install-frontend logs logs-backend logs-frontend clean reset-db health db-migrate db-migrate-remote db-rollback db-history db-current db-generate db-setup dev dev-remote
+.PHONY: help setup start start-remote verify-remote-db stop restart status backend frontend supabase install install-backend install-frontend logs logs-backend logs-frontend clean reset-db health db-migrate db-migrate-remote db-rollback db-history db-current db-generate db-setup dev dev-remote e2e-local e2e-remote test-backend-e2e
 
 # Variáveis
 BACKEND_DIR := backend
@@ -271,6 +271,18 @@ test-backend: ## Executa testes do backend
 test-frontend: ## Executa testes do frontend
 	@echo "$(GREEN)🧪 Executando testes do Frontend...$(NC)"
 	@cd $(FRONTEND_DIR) && npm test
+
+test-backend-e2e: ## Executa testes e2e do backend (pytest -m e2e)
+	@echo "$(GREEN)🧪 Executando testes E2E do Backend...$(NC)"
+	@cd $(BACKEND_DIR) && uv run pytest -m e2e
+
+e2e-local: ## Roda suíte E2E local do frontend
+	@echo "$(GREEN)🧪 Executando E2E local (Playwright)...$(NC)"
+	@cd $(FRONTEND_DIR) && npm run test:e2e:local
+
+e2e-remote: ## Roda smoke E2E remoto do frontend
+	@echo "$(GREEN)🧪 Executando E2E remoto (Playwright)...$(NC)"
+	@cd $(FRONTEND_DIR) && npm run test:e2e:remote
 
 lint-backend: ## Executa linter do backend
 	@echo "$(GREEN)🔍 Executando linter do Backend...$(NC)"

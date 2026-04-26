@@ -15,7 +15,10 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
-    "test:e2e:baseline": "playwright test frontend/e2e/extraction-observability.e2e.ts --reporter=list"
+    "test:e2e:baseline": "playwright test frontend/e2e/extraction-observability.e2e.ts --reporter=list",
+    "test:e2e:local": "playwright test --project=local-api --project=local-ui",
+    "test:e2e:remote": "playwright test --project=remote-smoke",
+    "test:e2e:all": "npm run test:e2e:local && npm run test:e2e:remote"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

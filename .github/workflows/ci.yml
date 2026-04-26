@@ -124,6 +124,70 @@ jobs:
           flags: backend
           fail_ci_if_error: false
 
+  # =================== BACKEND E2E ===================
+  backend-e2e:
+    name: Backend E2E
+    runs-on: ubuntu-latest
+    needs: [backend-test]
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres_test
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ENCRYPTION_KEY: test_encryption_key_32_characters
+      DEBUG: "true"
+      CORS_ORIGINS: "http://localhost:5173"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Bootstrap auth schema stub
+        run: |
+          psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE SCHEMA IF NOT EXISTS auth;
+          CREATE TABLE IF NOT EXISTS auth.users (
+            id UUID PRIMARY KEY,
+            email TEXT
+          );
+          SQL
+
+      - name: Apply Alembic migrations
+        run: uv run alembic upgrade head
+
+      - name: Run backend E2E marker suite
+        run: uv run pytest -m e2e
+
   # =================== BACKEND BUILD ===================
   backend-build:
     name: Backend Docker Build
@@ -194,11 +258,11 @@ jobs:
           VITE_API_URL: http://localhost:8000
 
   # =================== FRONTEND E2E BASELINE ===================
-  frontend-e2e-baseline:
-    name: Frontend E2E Baseline (Remote)
+  frontend-e2e-local:
+    name: Frontend E2E Local
     runs-on: ubuntu-latest
-    needs: [frontend-build, backend-test]
-    if: ${{ secrets.E2E_USER_EMAIL != '' && secrets.E2E_USER_PASSWORD != '' && secrets.E2E_PROJECT_ID != '' && secrets.E2E_ARTICLE_ID != '' && secrets.E2E_TEMPLATE_ID != '' && secrets.E2E_ENTITY_TYPE_ID != '' }}
+    needs: [frontend-build, backend-e2e]
+    if: ${{ secrets.E2E_API_URL != '' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -215,8 +279,8 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
-      - name: Run E2E extraction baseline
-        run: npm run test:e2e:baseline
+      - name: Run frontend E2E local projects
+        run: npm run test:e2e:local
         env:
           E2E_FRONTEND_URL: ${{ secrets.E2E_FRONTEND_URL }}
           E2E_API_URL: ${{ secrets.E2E_API_URL }}
@@ -228,3 +292,58 @@ jobs:
           E2E_ARTICLE_ID: ${{ secrets.E2E_ARTICLE_ID }}
           E2E_TEMPLATE_ID: ${{ secrets.E2E_TEMPLATE_ID }}
           E2E_ENTITY_TYPE_ID: ${{ secrets.E2E_ENTITY_TYPE_ID }}
+
+      - name: Upload Playwright local artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-local-results
+          path: |
+            playwright-report
+            test-results
+
+  # =================== FRONTEND E2E REMOTE ===================
+  frontend-e2e-remote:
+    name: Frontend E2E Remote Smoke
+    runs-on: ubuntu-latest
+    needs: [frontend-e2e-local]
+    if: ${{ secrets.E2E_FRONTEND_URL != '' && secrets.E2E_API_URL != '' && secrets.E2E_USER_EMAIL != '' && secrets.E2E_USER_PASSWORD != '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run remote smoke project
+        run: npm run test:e2e:remote
+        env:
+          E2E_FRONTEND_URL: ${{ secrets.E2E_FRONTEND_URL }}
+          E2E_API_URL: ${{ secrets.E2E_API_URL }}
+          E2E_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
+          E2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.E2E_SUPABASE_SERVICE_ROLE_KEY }}
+          E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL }}
+          E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
+          E2E_AUTH_TOKEN: ${{ secrets.E2E_AUTH_TOKEN }}
+          E2E_PROJECT_ID: ${{ secrets.E2E_PROJECT_ID }}
+          E2E_ARTICLE_ID: ${{ secrets.E2E_ARTICLE_ID }}
+          E2E_TEMPLATE_ID: ${{ secrets.E2E_TEMPLATE_ID }}
+          E2E_ENTITY_TYPE_ID: ${{ secrets.E2E_ENTITY_TYPE_ID }}
+
+      - name: Upload Playwright remote artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-remote-results
+          path: |
+            playwright-report
+            test-results
