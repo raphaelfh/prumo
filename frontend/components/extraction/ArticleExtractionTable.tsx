@@ -8,6 +8,7 @@
  * - Contextual actions
  */
 
+import type {CSSProperties} from 'react';
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {useLocation, useNavigate} from 'react-router-dom';
 import {supabase} from '@/integrations/supabase/client';
@@ -17,10 +18,9 @@ import {Progress} from '@/components/ui/progress';
 import {
     AlertCircle,
     Calendar,
+    Circle,
     CheckCircle,
-    ChevronDown,
-    ChevronsUpDown,
-    ChevronUp,
+    CheckCircle2,
     Clock,
     Database,
     Edit,
@@ -62,9 +62,12 @@ import {
     ListDisplaySortPopover,
     ListFilterPanel,
     ListRowCard,
+    SortIconHeader,
     ListToolbarSearch,
     ResponsiveList,
+    useResizableTableColumns,
 } from '@/components/shared/list';
+import {DataTableWrapper} from '@/components/shared/list/DataTableWrapper';
 import {useIsNarrow} from '@/hooks/use-mobile';
 
 interface Article {
@@ -144,6 +147,16 @@ const INITIAL_EXTRACTION_FILTER_VALUES: FilterValues = {
     authors: '',
 };
 
+const EXTRACTION_COLUMN_WIDTHS_KEY = 'extraction-list-column-widths-v1';
+const EXTRACTION_DEFAULT_COLUMN_WIDTHS: Record<string, number> = {
+    title: 320,
+    authors: 150,
+    year: 100,
+    progress: 170,
+    status: 96,
+    actions: 96,
+};
+const RESIZABLE_COLUMN_ORDER = ['title', 'authors', 'year', 'progress', 'status', 'actions'] as const;
 export function ArticleExtractionTable({ projectId, templateId }: ArticleExtractionTableProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -160,6 +173,24 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     const [filterValues, setFilterValues] = useState<FilterValues>(INITIAL_EXTRACTION_FILTER_VALUES);
   const [sortField, setSortField] = useState<SortField>('created_at');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+    const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
+        if (typeof window === 'undefined') return {...EXTRACTION_DEFAULT_COLUMN_WIDTHS};
+        try {
+            const stored = localStorage.getItem(EXTRACTION_COLUMN_WIDTHS_KEY);
+            if (!stored) return {...EXTRACTION_DEFAULT_COLUMN_WIDTHS};
+            const parsed = JSON.parse(stored) as Record<string, number>;
+            return {...EXTRACTION_DEFAULT_COLUMN_WIDTHS, ...parsed};
+        } catch (_) {
+            return {...EXTRACTION_DEFAULT_COLUMN_WIDTHS};
+        }
+    });
+    const {registerHeaderRef, startResize} = useResizableTableColumns({
+        columnWidths,
+        setColumnWidths,
+        defaultColumnWidths: EXTRACTION_DEFAULT_COLUMN_WIDTHS,
+        orderedColumns: [...RESIZABLE_COLUMN_ORDER],
+        storageKey: EXTRACTION_COLUMN_WIDTHS_KEY,
+    });
 
     // Ref to track last visited route (avoid unnecessary refresh)
   const lastPathRef = useRef<string>('');
@@ -332,7 +363,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     const instancesWithValues = article.instances.filter(instance =>
       article.extractedValues.some(value => value.instance_id === instance.id)
     ).length;
-    
+
     return Math.round((instancesWithValues / article.instances.length) * 100);
   };
 
@@ -370,10 +401,9 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
         const statusFilter = filterValues.status as string[] | undefined;
         if (statusFilter?.length) {
         const progress = calculateExtractionProgress(article);
-        const hasInstances = article.instances.length > 0;
+        const roundedProgress = Math.max(0, Math.min(100, Math.round(progress)));
         const isComplete = progress >= 100;
-        const isInProgress = hasInstances && progress > 0 && progress < 100;
-            const _isNotStarted = !hasInstances;
+        const isInProgress = roundedProgress > 0 && roundedProgress < 100;
             const articleStatus = isComplete ? 'complete' : isInProgress ? 'in_progress' : 'not_started';
             if (!statusFilter.includes(articleStatus)) return false;
       }
@@ -543,15 +573,6 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     }
   };
 
-  const getSortIcon = (field: SortField) => {
-    if (sortField !== field) {
-        return <ChevronsUpDown className="h-3 w-3 text-muted-foreground opacity-50"/>;
-    }
-      return sortDirection === 'asc'
-          ? <ChevronUp className="h-3 w-3 text-foreground shrink-0"/>
-          : <ChevronDown className="h-3 w-3 text-foreground shrink-0"/>;
-  };
-
   const handleStartExtraction = (articleId: string) => {
     navigate(`/projects/${projectId}/extraction/${articleId}`);
   };
@@ -560,33 +581,74 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     navigate(`/projects/${projectId}/extraction/${articleId}`);
   };
 
+    const getColumnStyle = (columnId: string): CSSProperties => {
+        const w = columnWidths[columnId] ?? EXTRACTION_DEFAULT_COLUMN_WIDTHS[columnId];
+        return {width: w, minWidth: 80};
+    };
+
   const getStatusBadge = (article: ArticleWithExtraction) => {
     const progress = calculateExtractionProgress(article);
-    const hasInstances = article.instances.length > 0;
-
-    if (!hasInstances) {
+    const roundedProgress = Math.max(0, Math.min(100, Math.round(progress)));
+    const uiStatus = roundedProgress >= 100 ? 'complete' : roundedProgress > 0 ? 'in_progress' : 'not_started';
+    if (uiStatus === 'not_started') {
       return (
-        <Badge variant="secondary" className="gap-1 text-xs">
-          <Clock className="h-3 w-3" />
-            {t('extraction', 'listStatusNotStarted')}
-        </Badge>
+          <TooltipProvider>
+              <Tooltip>
+                  <TooltipTrigger asChild>
+                      <Badge
+                          variant="secondary"
+                          className="h-7 w-7 cursor-default justify-center rounded-full border border-blue-200/70 bg-blue-50/60 p-0 text-blue-700 shadow-none dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-300"
+                          aria-label={t('extraction', 'listStatusNotStarted')}
+                      >
+                          <Circle className="h-3 w-3"/>
+                      </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                      <p>{t('extraction', 'listStatusNotStarted')}</p>
+                  </TooltipContent>
+              </Tooltip>
+          </TooltipProvider>
       );
     }
 
-    if (progress >= 100) {
+    if (uiStatus === 'complete') {
       return (
-        <Badge variant="default" className="gap-1 bg-green-500 text-xs">
-          <CheckCircle className="h-3 w-3" />
-            {t('extraction', 'listStatusComplete')}
-        </Badge>
+          <TooltipProvider>
+              <Tooltip>
+                  <TooltipTrigger asChild>
+                      <Badge
+                          variant="secondary"
+                          className="h-7 w-7 cursor-default justify-center rounded-full border border-emerald-200/70 bg-emerald-50/60 p-0 text-emerald-700 shadow-none dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300"
+                          aria-label={t('extraction', 'listStatusComplete')}
+                      >
+                          <CheckCircle2 className="h-3 w-3"/>
+                      </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                      <p>{t('extraction', 'listStatusComplete')}</p>
+                  </TooltipContent>
+              </Tooltip>
+          </TooltipProvider>
       );
     }
 
     return (
-      <Badge variant="default" className="gap-1 bg-blue-500 text-xs">
-        <Edit className="h-3 w-3" />
-          {t('extraction', 'listStatusInProgress')}
-      </Badge>
+        <TooltipProvider>
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <Badge
+                        variant="secondary"
+                        className="h-7 w-7 cursor-default justify-center rounded-full border border-amber-200/80 bg-amber-50/70 p-0 text-amber-700 shadow-none dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300"
+                        aria-label={t('extraction', 'listStatusInProgress')}
+                    >
+                        <span className="text-[9px] font-semibold leading-none">{roundedProgress}%</span>
+                    </Badge>
+                </TooltipTrigger>
+                <TooltipContent>
+                    <p>{t('extraction', 'listStatusInProgress')}</p>
+                </TooltipContent>
+            </Tooltip>
+        </TooltipProvider>
     );
   };
 
@@ -728,7 +790,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
 
     // Ready state — render table
   return (
-      <div className="space-y-3">
+      <div className="space-y-2">
           {/* Single toolbar: search + Filter + count/selection (Linear-style) */}
           <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center gap-2 w-full">
@@ -829,7 +891,8 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
           <ResponsiveList
               isNarrow={isNarrow}
               tableContent={
-                  <Table className="table-fixed w-full">
+                  <DataTableWrapper className="overflow-hidden rounded-md border border-border/40">
+                      <Table className="table-fixed w-max min-w-full">
                   <TableHeader className="bg-transparent">
                       <TableRow className="hover:bg-transparent border-b border-border/40 h-8">
                           <TableHead className={`w-[40px] min-w-[40px] ${TABLE_CELL_CLASS} text-left align-middle`}>
@@ -865,48 +928,109 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                   </Tooltip>
                 </TooltipProvider>
               </TableHead>
-                          <TableHead className={`w-[30%] ${TABLE_CELL_CLASS}`}>
-                              <div className="flex items-center gap-1 pr-4 min-w-0">
-                                  <Button variant="ghost" size="sm" onClick={() => handleSort('title')}
-                                          className="h-auto p-0 min-w-0 text-[11px] font-medium text-muted-foreground uppercase tracking-wider hover:bg-transparent hover:text-foreground transition-colors">
-                                      {t('extraction', 'tableColumnTitle')}
-                  </Button>
-                  {getSortIcon('title')}
-                </div>
-              </TableHead>
-                          <TableHead className={`w-[12%] hidden md:table-cell ${TABLE_CELL_CLASS}`}>
-                              <span
-                                  className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{t('extraction', 'tableColumnAuthors')}</span>
-              </TableHead>
-                          <TableHead className={`w-[10%] hidden md:table-cell ${TABLE_CELL_CLASS}`}>
-                              <div className="flex items-center gap-1">
-                                  <Button variant="ghost" size="sm" onClick={() => handleSort('publication_year')}
-                                          className="h-auto p-0 min-w-0 text-[11px] font-medium text-muted-foreground uppercase tracking-wider hover:bg-transparent hover:text-foreground transition-colors">
-                                      {t('extraction', 'tableColumnYear')}
-                  </Button>
-                  {getSortIcon('publication_year')}
-                </div>
-              </TableHead>
-                          <TableHead className={`w-[18%] hidden lg:table-cell ${TABLE_CELL_CLASS}`}>
-                              <div className="flex items-center gap-1">
-                                  <Button variant="ghost" size="sm" onClick={() => handleSort('extraction_progress')}
-                                          className="h-auto p-0 min-w-0 text-[11px] font-medium text-muted-foreground uppercase tracking-wider hover:bg-transparent hover:text-foreground transition-colors">
-                                      {t('extraction', 'tableColumnProgress')}
-                  </Button>
-                  {getSortIcon('extraction_progress')}
-                </div>
-              </TableHead>
-                          <TableHead className={`w-[10%] ${TABLE_CELL_CLASS}`}>
-                              <div className="flex items-center gap-1">
-                                  <Button variant="ghost" size="sm" onClick={() => handleSort('status')}
-                                          className="h-auto p-0 min-w-0 text-[11px] font-medium text-muted-foreground uppercase tracking-wider hover:bg-transparent hover:text-foreground transition-colors">
-                                      {t('extraction', 'tableColumnStatus')}
-                  </Button>
-                  {getSortIcon('status')}
-                </div>
+                          <TableHead
+                              ref={(el) => registerHeaderRef('title', el)}
+                              className={`relative ${TABLE_CELL_CLASS}`} style={getColumnStyle('title')}>
+                              <div className="pr-4 min-w-0">
+                                  <SortIconHeader
+                                      label={t('extraction', 'tableColumnTitle')}
+                                      direction={sortField === 'title' ? sortDirection : null}
+                                      onSort={() => handleSort('title')}
+                                  />
+                              </div>
+                              <div
+                                  role="separator"
+                                  aria-label={t('extraction', 'tableColumnTitle')}
+                                  onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      startResize('title', e.clientX);
+                                  }}
+                                  className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/20 shrink-0"
+                              />
               </TableHead>
                           <TableHead
-                              className={`w-[15%] ${TABLE_CELL_CLASS} text-right`}>{t('extraction', 'tableActions')}</TableHead>
+                              ref={(el) => registerHeaderRef('authors', el)}
+                              className={`relative hidden md:table-cell ${TABLE_CELL_CLASS}`} style={getColumnStyle('authors')}>
+                              <span
+                                  className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{t('extraction', 'tableColumnAuthors')}</span>
+                              <div
+                                  role="separator"
+                                  aria-label={t('extraction', 'tableColumnAuthors')}
+                                  onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      startResize('authors', e.clientX);
+                                  }}
+                                  className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/20 shrink-0"
+                              />
+              </TableHead>
+                          <TableHead
+                              ref={(el) => registerHeaderRef('year', el)}
+                              className={`relative hidden md:table-cell ${TABLE_CELL_CLASS}`} style={getColumnStyle('year')}>
+                              <SortIconHeader
+                                  label={t('extraction', 'tableColumnYear')}
+                                  direction={sortField === 'publication_year' ? sortDirection : null}
+                                  onSort={() => handleSort('publication_year')}
+                              />
+                              <div
+                                  role="separator"
+                                  aria-label={t('extraction', 'tableColumnYear')}
+                                  onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      startResize('year', e.clientX);
+                                  }}
+                                  className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/20 shrink-0"
+                              />
+              </TableHead>
+                          <TableHead
+                              ref={(el) => registerHeaderRef('progress', el)}
+                              className={`relative hidden lg:table-cell ${TABLE_CELL_CLASS}`} style={getColumnStyle('progress')}>
+                              <SortIconHeader
+                                  label={t('extraction', 'tableColumnProgress')}
+                                  direction={sortField === 'extraction_progress' ? sortDirection : null}
+                                  onSort={() => handleSort('extraction_progress')}
+                              />
+                              <div
+                                  role="separator"
+                                  aria-label={t('extraction', 'tableColumnProgress')}
+                                  onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      startResize('progress', e.clientX);
+                                  }}
+                                  className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/20 shrink-0"
+                              />
+              </TableHead>
+                          <TableHead
+                              ref={(el) => registerHeaderRef('status', el)}
+                              className={`relative ${TABLE_CELL_CLASS} text-center`} style={getColumnStyle('status')}>
+                              <SortIconHeader
+                                  label={t('extraction', 'tableColumnStatus')}
+                                  direction={sortField === 'status' ? sortDirection : null}
+                                  onSort={() => handleSort('status')}
+                              />
+                              <div
+                                  role="separator"
+                                  aria-label={t('extraction', 'tableColumnStatus')}
+                                  onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      startResize('status', e.clientX);
+                                  }}
+                                  className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/20 shrink-0"
+                              />
+              </TableHead>
+                          <TableHead
+                              ref={(el) => registerHeaderRef('actions', el)}
+                              className={`relative ${TABLE_CELL_CLASS} text-center`} style={getColumnStyle('actions')}>
+                              {t('extraction', 'tableActions')}
+                              <div
+                                  role="separator"
+                                  aria-label={t('extraction', 'tableActions')}
+                                  onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      startResize('actions', e.clientX);
+                                  }}
+                                  className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/20 shrink-0"
+                              />
+                          </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -917,7 +1041,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
 
               return (
                   <TableRow key={article.id}
-                            className="border-b border-border/40 hover:bg-muted/50 transition-colors duration-75 group h-8">
+                            className="border-b border-border/40 hover:bg-muted/40 transition-colors duration-75 group h-10">
                       <TableCell className={`w-[40px] ${TABLE_CELL_CLASS}`}>
                     <Checkbox
                       checked={isSelected(article.id)}
@@ -925,39 +1049,40 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                       aria-label={`Select article: ${article.title}`}
                     />
                   </TableCell>
-                      <TableCell className={`${TABLE_CELL_CLASS} font-medium text-[13px]`}>
+                      <TableCell className={`${TABLE_CELL_CLASS} font-medium text-[12px]`} style={getColumnStyle('title')}>
                           <div className="line-clamp-1 leading-tight text-foreground font-medium">{article.title}</div>
                   </TableCell>
                       <TableCell
-                          className={`max-w-[120px] hidden md:table-cell ${TABLE_CELL_CLASS} text-[13px] text-muted-foreground`}>
+                          className={`max-w-[120px] hidden md:table-cell ${TABLE_CELL_CLASS} text-[12px] text-muted-foreground`}
+                          style={getColumnStyle('authors')}>
                     {article.authors && article.authors.length > 0 ? (
-                      <div
-                          className="flex items-center gap-1 cursor-help group relative"
-                        title={article.authors.join(', ')}
-                      >
-                        <User className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                        <span className="truncate block min-w-0">
-                          {article.authors.slice(0, 1).join(', ')}
-                          {article.authors.length > 1 && ` +${article.authors.length - 1}`}
-                        </span>
-                          {/* Tooltip on hover */}
-                        <div className="absolute left-0 top-full mt-1 z-10 hidden group-hover:block bg-popover border rounded-md shadow-lg p-2 max-w-xs">
-                          <div className="text-xs text-popover-foreground">
-                            {article.authors.join(', ')}
-                          </div>
-                        </div>
-                      </div>
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <div className="flex items-center gap-1 cursor-help">
+                                        <User className="h-3 w-3 text-muted-foreground flex-shrink-0"/>
+                                        <span className="truncate block min-w-0">
+                                          {article.authors.slice(0, 1).join(', ')}
+                                            {article.authors.length > 1 && ` +${article.authors.length - 1}`}
+                                        </span>
+                                    </div>
+                                </TooltipTrigger>
+                                <TooltipContent className="max-w-xs">
+                                    <p className="text-xs">{article.authors.join(', ')}</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
                     ) : (
                         <span className="text-muted-foreground">N/A</span>
                     )}
                   </TableCell>
-                      <TableCell className={`hidden md:table-cell ${TABLE_CELL_CLASS} text-[13px]`}>
+                      <TableCell className={`hidden md:table-cell ${TABLE_CELL_CLASS} text-[12px]`} style={getColumnStyle('year')}>
                           <div className="flex items-center gap-1">
                       <Calendar className="h-3 w-3 text-muted-foreground" />
                       {article.publication_year || 'N/A'}
                     </div>
                   </TableCell>
-                      <TableCell className={`hidden lg:table-cell ${TABLE_CELL_CLASS} text-[13px]`}>
+                      <TableCell className={`hidden lg:table-cell ${TABLE_CELL_CLASS} text-[13px]`} style={getColumnStyle('progress')}>
                     {hasInstances ? (
                       <div className="space-y-1">
                           <div className="flex items-center justify-between">
@@ -973,45 +1098,69 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                       </div>
                     )}
                   </TableCell>
-                      <TableCell className={`${TABLE_CELL_CLASS} text-[13px]`}>
+                      <TableCell className={`${TABLE_CELL_CLASS} text-center`} style={getColumnStyle('status')}>
                     {getStatusBadge(article)}
                   </TableCell>
-                      <TableCell className={`${TABLE_CELL_CLASS} text-right text-[13px]`}>
+                      <TableCell className={`${TABLE_CELL_CLASS} text-center`} style={getColumnStyle('actions')}>
                     {!hasInstances ? (
-                      <Button 
-                        onClick={() => handleStartExtraction(article.id)}
-                        disabled={article.isLoading}
-                        size="sm"
-                        className="gap-1 h-8"
-                      >
-                        {article.isLoading ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : (
-                          <PlayCircle className="h-3 w-3" />
-                        )}
-                          {t('extraction', 'tableStart')}
-                      </Button>
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        onClick={() => handleStartExtraction(article.id)}
+                                        disabled={article.isLoading}
+                                        variant="outline"
+                                        size="sm"
+                                        aria-label={t('extraction', 'tableStart')}
+                                        className="h-8 w-8 rounded-full border-border/60 bg-background p-0 shadow-none hover:bg-muted/60"
+                                    >
+                                        {article.isLoading ? (
+                                            <Loader2 className="h-3.5 w-3.5 animate-spin"/>
+                                        ) : (
+                                            <PlayCircle className="h-3.5 w-3.5"/>
+                                        )}
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                    <p>{t('extraction', 'tableStart')}</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
                     ) : (
-                      <Button 
-                        onClick={() => handleContinueExtraction(article.id)}
-                        variant={isComplete ? "outline" : "default"}
-                        size="sm"
-                        className="gap-1 h-8"
-                      >
-                        {isComplete ? (
-                          <CheckCircle className="h-3 w-3" />
-                        ) : (
-                          <Edit className="h-3 w-3" />
-                        )}
-                          {isComplete ? t('extraction', 'tableView') : t('extraction', 'tableContinue')}
-                      </Button>
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        onClick={() => handleContinueExtraction(article.id)}
+                                        variant="outline"
+                                        size="sm"
+                                        aria-label={isComplete ? t('extraction', 'tableView') : t('extraction', 'tableContinue')}
+                                        className={`h-8 w-8 rounded-full p-0 shadow-none ${
+                                            isComplete
+                                                ? 'border-border/60 bg-background hover:bg-muted/60'
+                                                : 'border-blue-200/80 bg-blue-50/60 text-blue-700 hover:bg-blue-100/70 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-300 dark:hover:bg-blue-900/40'
+                                        }`}
+                                    >
+                                        {isComplete ? (
+                                            <CheckCircle className="h-3.5 w-3.5"/>
+                                        ) : (
+                                            <Edit className="h-3.5 w-3.5"/>
+                                        )}
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                    <p>{isComplete ? t('extraction', 'tableView') : t('extraction', 'tableContinue')}</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
                     )}
                   </TableCell>
                 </TableRow>
               );
             })}
           </TableBody>
-        </Table>
+                      </Table>
+                  </DataTableWrapper>
               }
               cardContent={
                   <>
@@ -1039,24 +1188,48 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                                   }
                                   primaryAction={
                                       !hasInstances ? (
-                                          <Button onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleStartExtraction(article.id);
-                                          }} size="sm" className="h-8 gap-1" disabled={article.isLoading}>
-                                              {article.isLoading ? <Loader2 className="h-3 w-3 animate-spin"/> :
-                                                  <PlayCircle className="h-3 w-3"/>}
-                                              {t('extraction', 'tableStart')}
-                                          </Button>
+                                          <TooltipProvider>
+                                              <Tooltip>
+                                                  <TooltipTrigger asChild>
+                                                      <Button onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          handleStartExtraction(article.id);
+                                                      }} variant="outline" size="sm"
+                                                              aria-label={t('extraction', 'tableStart')}
+                                                              className="h-8 w-8 rounded-full border-border/60 bg-background p-0 shadow-none hover:bg-muted/60"
+                                                              disabled={article.isLoading}>
+                                                          {article.isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin"/> :
+                                                              <PlayCircle className="h-3.5 w-3.5"/>}
+                                                      </Button>
+                                                  </TooltipTrigger>
+                                                  <TooltipContent>
+                                                      <p>{t('extraction', 'tableStart')}</p>
+                                                  </TooltipContent>
+                                              </Tooltip>
+                                          </TooltipProvider>
                                       ) : (
-                                          <Button onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleContinueExtraction(article.id);
-                                          }} variant={isComplete ? 'outline' : 'default'} size="sm"
-                                                  className="h-8 gap-1">
-                                              {isComplete ? <CheckCircle className="h-3 w-3"/> :
-                                                  <Edit className="h-3 w-3"/>}
-                                              {isComplete ? t('extraction', 'tableView') : t('extraction', 'tableContinue')}
-                                          </Button>
+                                          <TooltipProvider>
+                                              <Tooltip>
+                                                  <TooltipTrigger asChild>
+                                                      <Button onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          handleContinueExtraction(article.id);
+                                                      }} variant="outline" size="sm"
+                                                              aria-label={isComplete ? t('extraction', 'tableView') : t('extraction', 'tableContinue')}
+                                                              className={`h-8 w-8 rounded-full p-0 shadow-none ${
+                                                                  isComplete
+                                                                      ? 'border-border/60 bg-background hover:bg-muted/60'
+                                                                      : 'border-blue-200/80 bg-blue-50/60 text-blue-700 hover:bg-blue-100/70 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-300 dark:hover:bg-blue-900/40'
+                                                              }`}>
+                                                          {isComplete ? <CheckCircle className="h-3.5 w-3.5"/> :
+                                                              <Edit className="h-3.5 w-3.5"/>}
+                                                      </Button>
+                                                  </TooltipTrigger>
+                                                  <TooltipContent>
+                                                      <p>{isComplete ? t('extraction', 'tableView') : t('extraction', 'tableContinue')}</p>
+                                                  </TooltipContent>
+                                              </Tooltip>
+                                          </TooltipProvider>
                                       )
                                   }
                                   onClick={() => (hasInstances ? handleContinueExtraction(article.id) : handleStartExtraction(article.id))}

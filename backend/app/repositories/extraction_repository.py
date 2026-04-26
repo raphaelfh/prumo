@@ -5,11 +5,13 @@ Extraction domain persistence layer.
 """
 
 from uuid import UUID
+from time import perf_counter
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.logging import get_logger
 from app.models.extraction import (
     AISuggestion,
     ExtractionEntityType,
@@ -18,6 +20,8 @@ from app.models.extraction import (
     ProjectExtractionTemplate,
 )
 from app.repositories.base import BaseRepository
+
+logger = get_logger(__name__)
 
 
 class ExtractionTemplateRepository(BaseRepository[ProjectExtractionTemplate]):
@@ -42,10 +46,17 @@ class ExtractionTemplateRepository(BaseRepository[ProjectExtractionTemplate]):
         if isinstance(project_id, str):
             project_id = UUID(project_id)
 
+        query_start = perf_counter()
         result = await self.db.execute(
             select(ProjectExtractionTemplate).where(
                 ProjectExtractionTemplate.project_id == project_id
             )
+        )
+        logger.debug(
+            "repository_query_db_latency",
+            repository=self.__class__.__name__,
+            operation="get_by_project",
+            db_duration_ms=(perf_counter() - query_start) * 1000,
         )
         return list(result.scalars().all())
 
@@ -65,10 +76,17 @@ class ExtractionTemplateRepository(BaseRepository[ProjectExtractionTemplate]):
         if isinstance(template_id, str):
             template_id = UUID(template_id)
 
+        query_start = perf_counter()
         result = await self.db.execute(
             select(ProjectExtractionTemplate)
             .options(selectinload(ProjectExtractionTemplate.entity_types))
             .where(ProjectExtractionTemplate.id == template_id)
+        )
+        logger.debug(
+            "repository_query_db_latency",
+            repository=self.__class__.__name__,
+            operation="get_with_entity_types",
+            db_duration_ms=(perf_counter() - query_start) * 1000,
         )
         return result.scalar_one_or_none()
 
@@ -127,7 +145,14 @@ class ExtractionEntityTypeRepository(BaseRepository[ExtractionEntityType]):
 
         query = query.order_by(ExtractionEntityType.sort_order)
 
+        query_start = perf_counter()
         result = await self.db.execute(query)
+        logger.debug(
+            "repository_query_db_latency",
+            repository=self.__class__.__name__,
+            operation="get_by_template",
+            db_duration_ms=(perf_counter() - query_start) * 1000,
+        )
         return list(result.scalars().all())
 
     async def get_with_fields(
@@ -146,10 +171,17 @@ class ExtractionEntityTypeRepository(BaseRepository[ExtractionEntityType]):
         if isinstance(entity_type_id, str):
             entity_type_id = UUID(entity_type_id)
 
+        query_start = perf_counter()
         result = await self.db.execute(
             select(ExtractionEntityType)
             .options(selectinload(ExtractionEntityType.fields))
             .where(ExtractionEntityType.id == entity_type_id)
+        )
+        logger.debug(
+            "repository_query_db_latency",
+            repository=self.__class__.__name__,
+            operation="get_with_fields",
+            db_duration_ms=(perf_counter() - query_start) * 1000,
         )
         return result.scalar_one_or_none()
 
@@ -180,7 +212,14 @@ class ExtractionEntityTypeRepository(BaseRepository[ExtractionEntityType]):
         else:
             query = query.where(ExtractionEntityType.template_id == template_id)
 
+        query_start = perf_counter()
         result = await self.db.execute(query.limit(1))
+        logger.debug(
+            "repository_query_db_latency",
+            repository=self.__class__.__name__,
+            operation="get_by_name",
+            db_duration_ms=(perf_counter() - query_start) * 1000,
+        )
         return result.scalar_one_or_none()
 
     async def get_children(
@@ -212,7 +251,14 @@ class ExtractionEntityTypeRepository(BaseRepository[ExtractionEntityType]):
 
         query = query.order_by(ExtractionEntityType.sort_order)
 
+        query_start = perf_counter()
         result = await self.db.execute(query)
+        logger.debug(
+            "repository_query_db_latency",
+            repository=self.__class__.__name__,
+            operation="get_children",
+            db_duration_ms=(perf_counter() - query_start) * 1000,
+        )
         return list(result.scalars().all())
 
 
@@ -249,7 +295,14 @@ class ExtractionInstanceRepository(BaseRepository[ExtractionInstance]):
 
         query = query.order_by(ExtractionInstance.sort_order)
 
+        query_start = perf_counter()
         result = await self.db.execute(query)
+        logger.debug(
+            "repository_query_db_latency",
+            repository=self.__class__.__name__,
+            operation="get_by_article",
+            db_duration_ms=(perf_counter() - query_start) * 1000,
+        )
         return list(result.scalars().all())
 
     async def get_children(
@@ -268,10 +321,17 @@ class ExtractionInstanceRepository(BaseRepository[ExtractionInstance]):
         if isinstance(parent_instance_id, str):
             parent_instance_id = UUID(parent_instance_id)
 
+        query_start = perf_counter()
         result = await self.db.execute(
             select(ExtractionInstance)
             .where(ExtractionInstance.parent_instance_id == parent_instance_id)
             .order_by(ExtractionInstance.sort_order)
+        )
+        logger.debug(
+            "repository_query_db_latency",
+            repository=self.__class__.__name__,
+            operation="get_children",
+            db_duration_ms=(perf_counter() - query_start) * 1000,
         )
         return list(result.scalars().all())
 

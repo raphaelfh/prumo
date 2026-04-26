@@ -19,9 +19,6 @@ import {
     BarChart3,
     Calendar,
     CheckCircle,
-    ChevronDown,
-    ChevronsUpDown,
-    ChevronUp,
     Clock,
     Edit,
     FileText,
@@ -47,6 +44,7 @@ import {
     ListCount,
     ListFilterPanel,
     ListRowCard,
+    SortIconHeader,
     ListToolbarSearch,
     ResponsiveList,
 } from '@/components/shared/list';
@@ -118,7 +116,6 @@ const INITIAL_ASSESSMENT_FILTER_VALUES: FilterValues = Object.fromEntries(
         max: undefined
     } : ''])
 ) as FilterValues;
-
 export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAssessmentTableProps) {
   const navigate = useNavigate();
     const isNarrow = useIsNarrow();
@@ -300,15 +297,6 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
     }
   };
 
-  const getSortIcon = (field: SortField) => {
-    if (sortField !== field) {
-      return <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />;
-    }
-    return sortDirection === 'asc' 
-      ? <ChevronUp className="h-4 w-4 text-foreground" />
-      : <ChevronDown className="h-4 w-4 text-foreground" />;
-  };
-
   const handleStartAssessment = (articleId: string) => {
     navigate(`/projects/${projectId}/assessment/${articleId}/${instrumentId}`);
   };
@@ -462,17 +450,14 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
               <TableRow className="border-b border-border/40">
                   <TableHead
                       className="w-[30%] h-8 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleSort('title')}
-                    className="h-auto p-0 font-semibold hover:bg-transparent"
-                  >
-                      {t('assessment', 'tableColumnTitle')}
-                  </Button>
-                  {getSortIcon('title')}
-                </div>
+                <SortIconHeader
+                    label={t('assessment', 'tableColumnTitle')}
+                    direction={sortField === 'title' ? sortDirection : null}
+                    onSort={() => handleSort('title')}
+                    containerClassName="flex items-center gap-2"
+                    labelClassName="text-[11px] font-medium text-muted-foreground uppercase tracking-wider"
+                    iconClassName={sortField === 'title' ? 'h-4 w-4 text-foreground' : 'h-4 w-4 text-muted-foreground'}
+                />
               </TableHead>
                   <TableHead
                       className="w-[15%] hidden md:table-cell h-8 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
@@ -480,45 +465,36 @@ export function ArticleAssessmentTable({ projectId, instrumentId }: ArticleAsses
               </TableHead>
                   <TableHead
                       className="w-[10%] hidden md:table-cell h-8 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleSort('publication_year')}
-                    className="h-auto p-0 font-semibold hover:bg-transparent"
-                  >
-                      {t('assessment', 'tableColumnYear')}
-                  </Button>
-                  {getSortIcon('publication_year')}
-                </div>
+                <SortIconHeader
+                    label={t('assessment', 'tableColumnYear')}
+                    direction={sortField === 'publication_year' ? sortDirection : null}
+                    onSort={() => handleSort('publication_year')}
+                    containerClassName="flex items-center gap-2"
+                    labelClassName="text-[11px] font-medium text-muted-foreground uppercase tracking-wider"
+                    iconClassName={sortField === 'publication_year' ? 'h-4 w-4 text-foreground' : 'h-4 w-4 text-muted-foreground'}
+                />
               </TableHead>
                   <TableHead
                       className="w-[15%] hidden lg:table-cell h-8 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleSort('completion_percentage')}
-                    className="h-auto p-0 font-semibold hover:bg-transparent"
-                  >
-                      {t('assessment', 'tableColumnProgress')}
-                  </Button>
-                  {getSortIcon('completion_percentage')}
-                </div>
+                <SortIconHeader
+                    label={t('assessment', 'tableColumnProgress')}
+                    direction={sortField === 'completion_percentage' ? sortDirection : null}
+                    onSort={() => handleSort('completion_percentage')}
+                    containerClassName="flex items-center gap-2"
+                    labelClassName="text-[11px] font-medium text-muted-foreground uppercase tracking-wider"
+                    iconClassName={sortField === 'completion_percentage' ? 'h-4 w-4 text-foreground' : 'h-4 w-4 text-muted-foreground'}
+                />
               </TableHead>
                   <TableHead
                       className="w-[10%] h-8 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleSort('status')}
-                    className="h-auto p-0 font-semibold hover:bg-transparent"
-                  >
-                      {t('assessment', 'tableColumnStatus')}
-                  </Button>
-                  {getSortIcon('status')}
-                </div>
+                <SortIconHeader
+                    label={t('assessment', 'tableColumnStatus')}
+                    direction={sortField === 'status' ? sortDirection : null}
+                    onSort={() => handleSort('status')}
+                    containerClassName="flex items-center gap-2"
+                    labelClassName="text-[11px] font-medium text-muted-foreground uppercase tracking-wider"
+                    iconClassName={sortField === 'status' ? 'h-4 w-4 text-foreground' : 'h-4 w-4 text-muted-foreground'}
+                />
               </TableHead>
                   <TableHead
                       className="w-[15%] text-center h-8 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">

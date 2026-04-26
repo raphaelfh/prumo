@@ -15,6 +15,13 @@ import {t} from "@/lib/copy";
 const API_BASE_URL =
   import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
+function createTraceId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `trace-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+}
+
 /**
  * Standard API response (compatible with backend format).
  */
@@ -99,6 +106,7 @@ export async function apiClient<T>(
   // Preparar headers
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    "X-Trace-Id": createTraceId(),
     ...Object.fromEntries(
       Object.entries(customHeaders).map(([k, v]) => [k, String(v)])
     ),

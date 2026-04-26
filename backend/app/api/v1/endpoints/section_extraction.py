@@ -7,7 +7,7 @@ Endpoint for extraction de sections especificas de templates.
 Suporta extraction individual or em batch de todas as sections.
 """
 
-import uuid
+from time import perf_counter
 
 from fastapi import APIRouter, HTTPException, Request, status
 
@@ -58,7 +58,8 @@ async def extract_section(
     Returns:
         ApiResponse with resultado da extraction.
     """
-    trace_id = str(uuid.uuid4())
+    trace_id = getattr(request.state, "trace_id", None) or "missing-trace-id"
+    endpoint_start = perf_counter()
 
     logger.info(
         "section_extraction_request",
@@ -100,8 +101,9 @@ async def extract_section(
                 model=payload.model or "gpt-4o-mini",
             )
 
-            # Commit explicito for persistir instances and suggestions criadas
+            db_commit_start = perf_counter()
             await db.commit()
+            db_commit_duration_ms = (perf_counter() - db_commit_start) * 1000
 
             logger.info(
                 "batch_section_extraction_success",
@@ -111,6 +113,8 @@ async def extract_section(
                 successful=result.successful_sections,
                 failed=result.failed_sections,
                 tokens_total=result.total_tokens_used,
+                db_commit_duration_ms=db_commit_duration_ms,
+                endpoint_duration_ms=(perf_counter() - endpoint_start) * 1000,
             )
 
             # Formatar resposta in the formato camelCase for o frontend
@@ -135,8 +139,9 @@ async def extract_section(
                 model=payload.model or "gpt-4o-mini",
             )
 
-            # Commit explicito for persistir instances and suggestions criadas
+            db_commit_start = perf_counter()
             await db.commit()
+            db_commit_duration_ms = (perf_counter() - db_commit_start) * 1000
 
             logger.info(
                 "section_extraction_success",
@@ -144,6 +149,8 @@ async def extract_section(
                 run_id=result.extraction_run_id,
                 suggestions_created=result.suggestions_created,
                 tokens_total=result.tokens_total,
+                db_commit_duration_ms=db_commit_duration_ms,
+                endpoint_duration_ms=(perf_counter() - endpoint_start) * 1000,
             )
 
             # Formatar resposta in the formato camelCase for o frontend
@@ -160,33 +167,43 @@ async def extract_section(
         return ApiResponse(ok=True, data=response_data, trace_id=trace_id)
 
     except ValueError as e:
+        rollback_start = perf_counter()
         await db.rollback()
+        rollback_duration_ms = (perf_counter() - rollback_start) * 1000
         logger.warning(
             "section_extraction_validation_error",
             trace_id=trace_id,
             error=str(e),
+            rollback_duration_ms=rollback_duration_ms,
         )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         ) from e
     except FileNotFoundError as e:
+        rollback_start = perf_counter()
         await db.rollback()
+        rollback_duration_ms = (perf_counter() - rollback_start) * 1000
         logger.warning(
             "section_extraction_pdf_not_found",
             trace_id=trace_id,
             error=str(e),
+            rollback_duration_ms=rollback_duration_ms,
         )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="PDF not found. Upload a PDF first.",
         ) from e
     except Exception as e:
+        rollback_start = perf_counter()
         await db.rollback()
+        rollback_duration_ms = (perf_counter() - rollback_start) * 1000
         logger.error(
             "section_extraction_error",
             trace_id=trace_id,
             error=str(e),
+            rollback_duration_ms=rollback_duration_ms,
+            endpoint_duration_ms=(perf_counter() - endpoint_start) * 1000,
             exc_info=True,
         )
         raise HTTPException(

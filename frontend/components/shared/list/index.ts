@@ -24,6 +24,8 @@ export {ResponsiveList, type ResponsiveListProps} from './ResponsiveList';
 export {buildActiveFiltersList} from './activeFilters';
 export type {ActiveFilterChip} from './activeFilters';
 export {ActiveFilterChips, type ActiveFilterChipsProps} from './ActiveFilterChips';
+export {SortIconHeader} from './SortIconHeader';
+export {useResizableTableColumns} from './useResizableTableColumns';
 export {
     ListDisplaySortPopover,
     type ListDisplaySortPopoverProps,

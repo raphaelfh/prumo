@@ -12,8 +12,8 @@ Implements:
 """
 
 import json
-import time
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Any
 from uuid import UUID
 
@@ -131,7 +131,8 @@ class SectionExtractionService(LoggerMixin):
         Returns:
             SectionExtractionResult with extraction_run_id, suggestions, and tokens.
         """
-        start_time = time.time()
+        start_time = perf_counter()
+        phase_durations_ms: dict[str, float] = {}
 
         # 1. Create extraction_run in database
         run = await self._runs.create_run(
@@ -154,31 +155,43 @@ class SectionExtractionService(LoggerMixin):
             "section_extraction_start",
             trace_id=self.trace_id,
             run_id=str(run.id),
+            operation_id=str(run.id),
             entity_type_id=str(entity_type_id),
         )
 
         try:
             # 2. Fetch PDF
+            phase_start = perf_counter()
             pdf_data = await self._get_pdf(article_id)
+            phase_durations_ms["fetch_pdf"] = (perf_counter() - phase_start) * 1000
 
             # 3. Process text
+            phase_start = perf_counter()
             pdf_text = await self.pdf_processor.extract_text(pdf_data)
+            phase_durations_ms["extract_pdf_text"] = (perf_counter() - phase_start) * 1000
 
             # 4. Fetch entity type and fields
+            phase_start = perf_counter()
             entity_type = await self._get_entity_type(entity_type_id)
+            phase_durations_ms["fetch_entity_type"] = (perf_counter() - phase_start) * 1000
 
             # 5. Build extraction schema
+            phase_start = perf_counter()
             extraction_schema = self._build_extraction_schema(entity_type)
+            phase_durations_ms["build_schema"] = (perf_counter() - phase_start) * 1000
 
             # 6. Run LLM extraction (with token tracking)
+            phase_start = perf_counter()
             extracted_data, llm_response = await self._extract_with_llm(
                 pdf_text=pdf_text,
                 entity_type=entity_type,
                 schema=extraction_schema,
                 model=model,
             )
+            phase_durations_ms["extract_llm"] = (perf_counter() - phase_start) * 1000
 
             # 7. Create suggestions in database
+            phase_start = perf_counter()
             suggestions_created = await self._create_suggestions(
                 project_id=project_id,
                 article_id=article_id,
@@ -187,10 +200,14 @@ class SectionExtractionService(LoggerMixin):
                 extracted_data=extracted_data,
                 run=run,
             )
+            phase_durations_ms["create_suggestions"] = (
+                perf_counter() - phase_start
+            ) * 1000
 
-            duration = (time.time() - start_time) * 1000
+            duration = (perf_counter() - start_time) * 1000
 
             # 8. Complete run with results
+            phase_start = perf_counter()
             await self._runs.complete_run(
                 run_id=run.id,
                 results={
@@ -200,16 +217,20 @@ class SectionExtractionService(LoggerMixin):
                     "tokens_total": llm_response.usage.total_tokens,
                     "duration_ms": duration,
                     "fields_extracted": len(extracted_data) if extracted_data else 0,
+                    "phase_durations_ms": phase_durations_ms,
                 },
             )
+            phase_durations_ms["complete_run"] = (perf_counter() - phase_start) * 1000
 
             self.logger.info(
                 "section_extraction_complete",
                 trace_id=self.trace_id,
                 run_id=str(run.id),
+                operation_id=str(run.id),
                 suggestions_created=suggestions_created,
                 tokens_total=llm_response.usage.total_tokens,
                 duration_ms=duration,
+                phase_durations_ms=phase_durations_ms,
             )
 
             return SectionExtractionResult(
@@ -229,7 +250,9 @@ class SectionExtractionService(LoggerMixin):
                 "section_extraction_failed",
                 trace_id=self.trace_id,
                 run_id=str(run.id),
+                operation_id=str(run.id),
                 error=str(e),
+                phase_durations_ms=phase_durations_ms,
             )
             raise
 
@@ -263,7 +286,8 @@ class SectionExtractionService(LoggerMixin):
         Returns:
             BatchExtractionResult with extraction statistics.
         """
-        start_time = time.time()
+        start_time = perf_counter()
+        phase_durations_ms: dict[str, float] = {}
 
         # Create primary run for batch extraction
         run = await self._runs.create_run(
@@ -286,6 +310,7 @@ class SectionExtractionService(LoggerMixin):
             "batch_extraction_start",
             trace_id=self.trace_id,
             run_id=str(run.id),
+            operation_id=str(run.id),
             parent_instance_id=str(parent_instance_id),
         )
 
@@ -297,15 +322,23 @@ class SectionExtractionService(LoggerMixin):
         try:
             # 1. Fetch/process PDF (once)
             if not pdf_text:
+                phase_start = perf_counter()
                 pdf_data = await self._get_pdf(article_id)
                 pdf_text = await self.pdf_processor.extract_text(pdf_data)
+                phase_durations_ms["fetch_and_extract_pdf_text"] = (
+                    perf_counter() - phase_start
+                ) * 1000
 
             # 2. Fetch child entity types
+            phase_start = perf_counter()
             child_types = await self._get_child_entity_types(
                 template_id=template_id,
                 parent_instance_id=parent_instance_id,
                 section_ids=section_ids,
             )
+            phase_durations_ms["fetch_child_entity_types"] = (
+                perf_counter() - phase_start
+            ) * 1000
 
             total_sections = len(child_types)
             successful = 0
@@ -366,9 +399,10 @@ class SectionExtractionService(LoggerMixin):
                         }
                     )
 
-            duration = (time.time() - start_time) * 1000
+            duration = (perf_counter() - start_time) * 1000
 
             # 4. Complete primary run
+            phase_start = perf_counter()
             await self._runs.complete_run(
                 run_id=run.id,
                 results={
@@ -378,18 +412,22 @@ class SectionExtractionService(LoggerMixin):
                     "total_suggestions_created": total_suggestions,
                     "total_tokens_used": total_tokens,
                     "duration_ms": duration,
+                    "phase_durations_ms": phase_durations_ms,
                 },
             )
+            phase_durations_ms["complete_run"] = (perf_counter() - phase_start) * 1000
 
             self.logger.info(
                 "batch_extraction_complete",
                 trace_id=self.trace_id,
                 run_id=str(run.id),
+                operation_id=str(run.id),
                 total_sections=total_sections,
                 successful=successful,
                 failed=failed,
                 tokens_total=total_tokens,
                 duration_ms=duration,
+                phase_durations_ms=phase_durations_ms,
             )
 
             return BatchExtractionResult(
@@ -434,6 +472,9 @@ class SectionExtractionService(LoggerMixin):
         Returns:
             Dict with suggestions_created, tokens_total, and summary.
         """
+        section_start = perf_counter()
+        section_phase_durations_ms: dict[str, float] = {}
+
         # Create run for this specific section
         run = await self._runs.create_run(
             project_id=project_id,
@@ -454,9 +495,12 @@ class SectionExtractionService(LoggerMixin):
 
         try:
             # Build schema
+            phase_start = perf_counter()
             extraction_schema = self._build_extraction_schema(entity_type)
+            section_phase_durations_ms["build_schema"] = (perf_counter() - phase_start) * 1000
 
             # Run extraction with memory context
+            phase_start = perf_counter()
             extracted_data, llm_response = await self._extract_with_llm(
                 pdf_text=pdf_text,
                 entity_type=entity_type,
@@ -464,8 +508,10 @@ class SectionExtractionService(LoggerMixin):
                 model=model,
                 memory_context=memory_history,
             )
+            section_phase_durations_ms["extract_llm"] = (perf_counter() - phase_start) * 1000
 
             # Create suggestions
+            phase_start = perf_counter()
             suggestions_created = await self._create_suggestions(
                 project_id=project_id,
                 article_id=article_id,
@@ -474,11 +520,15 @@ class SectionExtractionService(LoggerMixin):
                 extracted_data=extracted_data,
                 run=run,
             )
+            section_phase_durations_ms["create_suggestions"] = (
+                perf_counter() - phase_start
+            ) * 1000
 
             # Generate memory summary (max 200 chars)
             summary = self._generate_extraction_summary(entity_type, extracted_data)
 
             # Complete run
+            phase_start = perf_counter()
             await self._runs.complete_run(
                 run_id=run.id,
                 results={
@@ -487,13 +537,17 @@ class SectionExtractionService(LoggerMixin):
                     "tokens_completion": llm_response.usage.completion_tokens,
                     "tokens_total": llm_response.usage.total_tokens,
                     "summary": summary,
+                    "duration_ms": (perf_counter() - section_start) * 1000,
+                    "phase_durations_ms": section_phase_durations_ms,
                 },
             )
+            section_phase_durations_ms["complete_run"] = (perf_counter() - phase_start) * 1000
 
             return {
                 "suggestions_created": suggestions_created,
                 "tokens_total": llm_response.usage.total_tokens,
                 "summary": summary,
+                "phase_durations_ms": section_phase_durations_ms,
             }
 
         except Exception as e:

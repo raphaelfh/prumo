@@ -75,6 +75,7 @@ class TestSectionExtractionEndpoints:
                 )
             )
 
+            trace_id = "test-section-trace-id"
             response = await client.post(
                 "/api/v1/extraction/sections",
                 json={
@@ -83,11 +84,15 @@ class TestSectionExtractionEndpoints:
                     "templateId": str(uuid4()),
                     "entityTypeId": str(uuid4()),
                 },
+                headers={"X-Trace-Id": trace_id},
             )
 
             assert response.status_code == 200
             data = response.json()
             assert data.get("ok") is True
+            assert data.get("trace_id") == trace_id
+            assert response.headers.get("X-Trace-Id") == trace_id
+            assert mock_service_class.call_args.kwargs["trace_id"] == trace_id
 
     @pytest.mark.asyncio
     async def test_section_extraction_batch_valid_request(
@@ -114,6 +119,7 @@ class TestSectionExtractionEndpoints:
                 )
             )
 
+            trace_id = "test-batch-trace-id"
             response = await client.post(
                 "/api/v1/extraction/sections",
                 json={
@@ -123,11 +129,14 @@ class TestSectionExtractionEndpoints:
                     "extractAllSections": True,
                     "parentInstanceId": str(uuid4()),
                 },
+                headers={"X-Trace-Id": trace_id},
             )
 
             assert response.status_code == 200
             data = response.json()
             assert data.get("ok") is True
+            assert data.get("trace_id") == trace_id
+            assert mock_service_class.call_args.kwargs["trace_id"] == trace_id
 
 
 class TestModelExtractionEndpoints:
@@ -172,6 +181,7 @@ class TestModelExtractionEndpoints:
                 )
             )
 
+            trace_id = "test-model-trace-id"
             response = await client.post(
                 "/api/v1/extraction/models",
                 json={
@@ -179,8 +189,12 @@ class TestModelExtractionEndpoints:
                     "articleId": str(uuid4()),
                     "templateId": str(uuid4()),
                 },
+                headers={"X-Trace-Id": trace_id},
             )
 
             assert response.status_code == 200
             data = response.json()
             assert data.get("ok") is True
+            assert data.get("trace_id") == trace_id
+            assert response.headers.get("X-Trace-Id") == trace_id
+            assert mock_service_class.call_args.kwargs["trace_id"] == trace_id

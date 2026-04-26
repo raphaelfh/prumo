@@ -11,7 +11,7 @@ Implements:
 - Repository Pattern with SQLAlchemy
 """
 
-import time
+from time import perf_counter
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -113,7 +113,8 @@ class ModelExtractionService(LoggerMixin):
         Returns:
             ModelExtractionResult with extraction_run_id, models and tokens.
         """
-        start_time = time.time()
+        start_time = perf_counter()
+        phase_durations_ms: dict[str, float] = {}
 
         # 1. Create extraction_run in DB
         run = await self._runs.create_run(
@@ -135,22 +136,32 @@ class ModelExtractionService(LoggerMixin):
             trace_id=self.trace_id,
             run_id=str(run.id),
             article_id=str(article_id),
+            operation_id=str(run.id),
         )
 
         try:
             # 2. Fetch PDF
+            phase_start = perf_counter()
             pdf_data = await self._get_pdf(article_id)
+            phase_durations_ms["fetch_pdf"] = (perf_counter() - phase_start) * 1000
 
             # 3. Processar texto do PDF
+            phase_start = perf_counter()
             pdf_text = await self.pdf_processor.extract_text(pdf_data)
+            phase_durations_ms["extract_pdf_text"] = (perf_counter() - phase_start) * 1000
 
             # 4. Fetch template and entity types
+            phase_start = perf_counter()
             template = await self._get_template(template_id)
+            phase_durations_ms["fetch_template"] = (perf_counter() - phase_start) * 1000
 
             # 5. Identificar modelos usando LLM (com tracking de tokens)
+            phase_start = perf_counter()
             models, llm_response = await self._identify_models(pdf_text, template, model)
+            phase_durations_ms["identify_models_llm"] = (perf_counter() - phase_start) * 1000
 
             # 6. Create instances in DB (model + children)
+            phase_start = perf_counter()
             created_models, total_children = await self._create_model_instances(
                 project_id=project_id,
                 article_id=article_id,
@@ -158,10 +169,14 @@ class ModelExtractionService(LoggerMixin):
                 models=models,
                 run=run,
             )
+            phase_durations_ms["create_model_instances"] = (
+                perf_counter() - phase_start
+            ) * 1000
 
-            duration = (time.time() - start_time) * 1000
+            duration = (perf_counter() - start_time) * 1000
 
             # 7. Completar run with resultados
+            phase_start = perf_counter()
             await self._runs.complete_run(
                 run_id=run.id,
                 results={
@@ -172,17 +187,21 @@ class ModelExtractionService(LoggerMixin):
                     "tokens_completion": llm_response.usage.completion_tokens,
                     "tokens_total": llm_response.usage.total_tokens,
                     "duration_ms": duration,
+                    "phase_durations_ms": phase_durations_ms,
                 },
             )
+            phase_durations_ms["complete_run"] = (perf_counter() - phase_start) * 1000
 
             self.logger.info(
                 "model_extraction_complete",
                 trace_id=self.trace_id,
                 run_id=str(run.id),
+                operation_id=str(run.id),
                 models_count=len(created_models),
                 children_count=total_children,
                 tokens_total=llm_response.usage.total_tokens,
                 duration_ms=duration,
+                phase_durations_ms=phase_durations_ms,
             )
 
             # Formatar modelos criados in the formato esperado pelo frontend (camelCase)
@@ -212,7 +231,9 @@ class ModelExtractionService(LoggerMixin):
                 "model_extraction_failed",
                 trace_id=self.trace_id,
                 run_id=str(run.id),
+                operation_id=str(run.id),
                 error=str(e),
+                phase_durations_ms=phase_durations_ms,
             )
             raise
 
