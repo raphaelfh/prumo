@@ -277,3 +277,152 @@ export async function modelExtractionClient<T>(
   });
 }
 
+// =================== UNIFIED EVALUATION DTOs & CLIENTS ===================
+
+export interface CreateEvaluationRunRequest {
+  project_id: string;
+  schema_version_id: string;
+  target_ids: string[];
+}
+
+export interface EvaluationRunResponse {
+  id: string;
+  project_id: string;
+  schema_version_id: string;
+  status: "pending" | "active" | "completed" | "failed" | "cancelled";
+  current_stage: "proposal" | "review" | "consensus" | "finalized";
+}
+
+export interface AsyncAcceptedResponse {
+  accepted: true;
+}
+
+export interface ReviewQueueItemResponse {
+  run_id: string;
+  target_id: string;
+  item_id: string;
+  latest_proposal_id: string | null;
+  reviewer_state: "pending" | "accept" | "reject" | "edit";
+}
+
+export interface EvaluationReviewQueueResponse {
+  items: ReviewQueueItemResponse[];
+}
+
+export interface CreateReviewerDecisionRequest {
+  project_id: string;
+  run_id: string;
+  target_id: string;
+  item_id: string;
+  schema_version_id: string;
+  proposal_id?: string | null;
+  decision: "accept" | "reject" | "edit";
+  edited_value?: unknown;
+  rationale?: string | null;
+}
+
+export interface ReviewerDecisionResponse {
+  id: string;
+  reviewer_id: string;
+  decision: "accept" | "reject" | "edit";
+}
+
+export interface CreateConsensusDecisionRequest {
+  project_id: string;
+  run_id?: string | null;
+  target_id: string;
+  item_id: string;
+  schema_version_id: string;
+  mode: "select_existing" | "manual_override";
+  selected_reviewer_decision_id?: string | null;
+  override_value?: unknown;
+  override_justification?: string | null;
+}
+
+export interface PublishedStateResponse {
+  id: string;
+  project_id: string;
+  target_id: string;
+  item_id: string;
+  schema_version_id: string;
+  latest_consensus_decision_id: string;
+}
+
+export interface CreateEvidenceUploadRequest {
+  project_id: string;
+  entity_type: "proposal" | "reviewer_decision" | "consensus_decision" | "published_state";
+  entity_id: string;
+  filename: string;
+  mime_type: "application/pdf" | "image/png" | "image/jpeg" | "text/plain";
+  size_bytes: number;
+}
+
+export interface EvidenceUploadResponse {
+  upload_url: string;
+  storage_path: string;
+}
+
+export async function createEvaluationRun(
+  body: CreateEvaluationRunRequest
+): Promise<EvaluationRunResponse> {
+  return apiClient<EvaluationRunResponse>("/api/v1/evaluation-runs", {
+    method: "POST",
+    body,
+  });
+}
+
+export async function getEvaluationRun(runId: string): Promise<EvaluationRunResponse> {
+  return apiClient<EvaluationRunResponse>(`/api/v1/evaluation-runs/${runId}`);
+}
+
+export async function triggerProposalGeneration(runId: string): Promise<AsyncAcceptedResponse> {
+  return apiClient<AsyncAcceptedResponse>(`/api/v1/evaluation-runs/${runId}/proposal-generation`, {
+    method: "POST",
+  });
+}
+
+export async function listReviewQueue(params: {
+  runId?: string;
+  status?: "pending" | "decided";
+}): Promise<EvaluationReviewQueueResponse> {
+  const searchParams = new URLSearchParams();
+
+  if (params.runId) {
+    searchParams.set("runId", params.runId);
+  }
+  if (params.status) {
+    searchParams.set("status", params.status);
+  }
+
+  const query = searchParams.toString();
+  const endpoint = query ? `/api/v1/review-queue?${query}` : "/api/v1/review-queue";
+  return apiClient<EvaluationReviewQueueResponse>(endpoint);
+}
+
+export async function createReviewerDecision(
+  body: CreateReviewerDecisionRequest
+): Promise<ReviewerDecisionResponse> {
+  return apiClient<ReviewerDecisionResponse>("/api/v1/reviewer-decisions", {
+    method: "POST",
+    body,
+  });
+}
+
+export async function createConsensusDecision(
+  body: CreateConsensusDecisionRequest
+): Promise<PublishedStateResponse> {
+  return apiClient<PublishedStateResponse>("/api/v1/consensus-decisions", {
+    method: "POST",
+    body,
+  });
+}
+
+export async function createEvidenceUploadUrl(
+  body: CreateEvidenceUploadRequest
+): Promise<EvidenceUploadResponse> {
+  return apiClient<EvidenceUploadResponse>("/api/v1/evidence-attachments/presign", {
+    method: "POST",
+    body,
+  });
+}
+

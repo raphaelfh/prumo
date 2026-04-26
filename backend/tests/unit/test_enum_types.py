@@ -97,6 +97,15 @@ class TestPostgreSQLEnumValuesMapping:
             "extraction_instance_status",
             "assessment_status",
             "assessment_source",
+            "evaluation_schema_version_status",
+            "evaluation_item_type",
+            "evaluation_run_status",
+            "evaluation_run_stage",
+            "evaluation_proposal_source_type",
+            "reviewer_decision_type",
+            "consensus_decision_mode",
+            "published_state_status",
+            "evidence_entity_type",
         }
 
         actual_enums = set(POSTGRESQL_ENUM_VALUES.keys())

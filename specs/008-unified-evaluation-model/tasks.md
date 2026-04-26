@@ -17,10 +17,10 @@
 
 **Purpose**: Initialize feature scaffolding and planning traceability.
 
-- [ ] T001 Create evaluation domain migration skeleton in `backend/alembic/versions/` for unified model rollout
-- [ ] T002 Export all new evaluation domain models in `backend/app/models/__init__.py` to ensure consistent import surface across repositories/services
-- [ ] T003 [P] Implement evaluation query-key factory and read hooks (`useEvaluationRun`, `useReviewQueue`) in `frontend/hooks/evaluation/useEvaluationQueries.ts`
-- [ ] T004 [P] Implement concrete `apiClient` DTOs and methods for evaluation runs/review/consensus/evidence endpoints in `frontend/integrations/api/client.ts`
+- [X] T001 Create evaluation domain migration skeleton in `backend/alembic/versions/` for unified model rollout
+- [X] T002 Export all new evaluation domain models in `backend/app/models/__init__.py` to ensure consistent import surface across repositories/services
+- [X] T003 [P] Implement evaluation query-key factory and read hooks (`useEvaluationRun`, `useReviewQueue`) in `frontend/hooks/evaluation/useEvaluationQueries.ts`
+- [X] T004 [P] Implement concrete `apiClient` DTOs and methods for evaluation runs/review/consensus/evidence endpoints in `frontend/integrations/api/client.ts`
 
 ---
 
@@ -30,17 +30,17 @@
 
 **⚠️ CRITICAL**: No user story implementation begins before this phase completes.
 
-- [ ] T005 Implement shared PostgreSQL enums and registration updates in `backend/app/models/base.py`
-- [ ] T006 Implement core evaluation SQLAlchemy models in `backend/app/models/evaluation_schema.py`
-- [ ] T007 [P] Implement run and proposal SQLAlchemy models in `backend/app/models/evaluation_run.py`
-- [ ] T008 [P] Implement review/consensus/published/evidence SQLAlchemy models in `backend/app/models/evaluation_decision.py`
-- [ ] T009 Create Alembic migration for all evaluation tables, constraints, indexes, and RLS in `backend/alembic/versions/*_unified_evaluation_data_model.py`
-- [ ] T010 Implement shared evaluation Pydantic base schemas in `backend/app/schemas/evaluation_common.py`
-- [ ] T011 [P] Implement evaluation repository base helpers (project scope + optimistic lock guard) in `backend/app/repositories/evaluation_repository_base.py`
-- [ ] T012 [P] Register evaluation API router and dependency wiring in `backend/app/api/v1/router.py`
-- [ ] T013 Implement structured evaluation log and metric helper functions in `backend/app/services/evaluation_observability_service.py`
-- [ ] T053 Implement endpoint security dependency helpers (JWT `user.sub` extraction and project-scope guards) in `backend/app/api/deps/security.py`
-- [ ] T054 [P] Add API contract assertion helpers for `ApiResponse` envelope and `trace_id` in `backend/tests/integration/helpers/api_contract_assertions.py`
+- [X] T005 Implement shared PostgreSQL enums and registration updates in `backend/app/models/base.py`
+- [X] T006 Implement core evaluation SQLAlchemy models in `backend/app/models/evaluation_schema.py`
+- [X] T007 [P] Implement run and proposal SQLAlchemy models in `backend/app/models/evaluation_run.py`
+- [X] T008 [P] Implement review/consensus/published/evidence SQLAlchemy models in `backend/app/models/evaluation_decision.py`
+- [X] T009 Create Alembic migration for all evaluation tables, constraints, indexes, and RLS in `backend/alembic/versions/*_unified_evaluation_data_model.py`
+- [X] T010 Implement shared evaluation Pydantic base schemas in `backend/app/schemas/evaluation_common.py`
+- [X] T011 [P] Implement evaluation repository base helpers (project scope + optimistic lock guard) in `backend/app/repositories/evaluation_repository_base.py`
+- [X] T012 [P] Register evaluation API router and dependency wiring in `backend/app/api/v1/router.py`
+- [X] T013 Implement structured evaluation log and metric helper functions in `backend/app/services/evaluation_observability_service.py`
+- [X] T053 Implement endpoint security dependency helpers (JWT `user.sub` extraction and project-scope guards) in `backend/app/api/deps/security.py`
+- [X] T054 [P] Add API contract assertion helpers for `ApiResponse` envelope and `trace_id` in `backend/tests/integration/helpers/api_contract_assertions.py`
 
 **Checkpoint**: Foundation ready - user story work can proceed.
 
@@ -54,23 +54,23 @@
 
 ### Tests for User Story 1
 
-- [ ] T014 [P] [US1] Add integration test for run creation and stage progression in `backend/tests/integration/test_evaluation_runs.py`
-- [ ] T015 [P] [US1] Add integration test for async proposal kickoff endpoint in `backend/tests/integration/test_evaluation_proposal_generation.py`
-- [ ] T016 [P] [US1] Add frontend run-flow test for create-and-start action in `frontend/test/unified-evaluation-run.test.ts`
+- [X] T014 [P] [US1] Add integration test for run creation and stage progression in `backend/tests/integration/test_evaluation_runs.py`
+- [X] T015 [P] [US1] Add integration test for async proposal kickoff endpoint in `backend/tests/integration/test_evaluation_proposal_generation.py`
+- [X] T016 [P] [US1] Add frontend run-flow test for create-and-start action in `frontend/test/unified-evaluation-run.test.ts`
 
 ### Implementation for User Story 1
 
-- [ ] T017 [P] [US1] Implement run repository and run-target persistence in `backend/app/repositories/evaluation_run_repository.py`
-- [ ] T018 [P] [US1] Implement proposal repository append-only write/query methods in `backend/app/repositories/evaluation_proposal_repository.py`
-- [ ] T019 [US1] Implement run lifecycle service and stage transition rules in `backend/app/services/evaluation_run_service.py`
-- [ ] T020 [US1] Implement async proposal kickoff orchestration in `backend/app/services/evaluation_proposal_service.py`
-- [ ] T021 [US1] Implement run request/response schemas in `backend/app/schemas/evaluation_runs.py`
-- [ ] T022 [US1] Implement run endpoints (`POST /evaluation-runs`, `GET /evaluation-runs/{runId}`, `POST /evaluation-runs/{runId}/proposal-generation`) in `backend/app/api/v1/endpoints/evaluation_runs.py`
-- [ ] T023 [P] [US1] Implement frontend API methods for run creation/status/proposal kickoff in `frontend/services/evaluationService.ts`
-- [ ] T024 [US1] Implement run management UI and hook integration in `frontend/components/extraction/UnifiedEvaluationRunPanel.tsx`
-- [ ] T055 [US1] Implement schema version repository and service for create/publish workflow in `backend/app/repositories/evaluation_schema_version_repository.py` and `backend/app/services/evaluation_schema_version_service.py`
-- [ ] T056 [US1] Implement schema version endpoints for create/publish in `backend/app/api/v1/endpoints/evaluation_schema_versions.py`
-- [ ] T057 [P] [US1] Add integration tests for schema version create/publish lifecycle in `backend/tests/integration/test_evaluation_schema_versions.py`
+- [X] T017 [P] [US1] Implement run repository and run-target persistence in `backend/app/repositories/evaluation_run_repository.py`
+- [X] T018 [P] [US1] Implement proposal repository append-only write/query methods in `backend/app/repositories/evaluation_proposal_repository.py`
+- [X] T019 [US1] Implement run lifecycle service and stage transition rules in `backend/app/services/evaluation_run_service.py`
+- [X] T020 [US1] Implement async proposal kickoff orchestration in `backend/app/services/evaluation_proposal_service.py`
+- [X] T021 [US1] Implement run request/response schemas in `backend/app/schemas/evaluation_runs.py`
+- [X] T022 [US1] Implement run endpoints (`POST /evaluation-runs`, `GET /evaluation-runs/{runId}`, `POST /evaluation-runs/{runId}/proposal-generation`) in `backend/app/api/v1/endpoints/evaluation_runs.py`
+- [X] T023 [P] [US1] Implement frontend API methods for run creation/status/proposal kickoff in `frontend/services/evaluationService.ts`
+- [X] T024 [US1] Implement run management UI and hook integration in `frontend/components/extraction/UnifiedEvaluationRunPanel.tsx`
+- [X] T055 [US1] Implement schema version repository and service for create/publish workflow in `backend/app/repositories/evaluation_schema_version_repository.py` and `backend/app/services/evaluation_schema_version_service.py`
+- [X] T056 [US1] Implement schema version endpoints for create/publish in `backend/app/api/v1/endpoints/evaluation_schema_versions.py`
+- [X] T057 [P] [US1] Add integration tests for schema version create/publish lifecycle in `backend/tests/integration/test_evaluation_schema_versions.py`
 
 **Checkpoint**: User Story 1 is independently functional and testable (MVP slice).
 
@@ -84,19 +84,19 @@
 
 ### Tests for User Story 2
 
-- [ ] T025 [P] [US2] Add integration test for independent reviewer decisions on same item in `backend/tests/integration/test_evaluation_reviewer_decisions.py`
-- [ ] T026 [P] [US2] Add integration test for reviewer state materialization updates in `backend/tests/integration/test_evaluation_reviewer_state.py`
-- [ ] T027 [P] [US2] Add frontend review queue interaction test in `frontend/test/unified-evaluation-review-queue.test.ts`
+- [X] T025 [P] [US2] Add integration test for independent reviewer decisions on same item in `backend/tests/integration/test_evaluation_reviewer_decisions.py`
+- [X] T026 [P] [US2] Add integration test for reviewer state materialization updates in `backend/tests/integration/test_evaluation_reviewer_state.py`
+- [X] T027 [P] [US2] Add frontend review queue interaction test in `frontend/test/unified-evaluation-review-queue.test.ts`
 
 ### Implementation for User Story 2
 
-- [ ] T028 [P] [US2] Implement reviewer decision repository in `backend/app/repositories/evaluation_reviewer_decision_repository.py`
-- [ ] T029 [P] [US2] Implement reviewer state repository in `backend/app/repositories/evaluation_reviewer_state_repository.py`
-- [ ] T030 [US2] Implement reviewer decision service (append history + state upsert) in `backend/app/services/evaluation_review_service.py`
-- [ ] T031 [US2] Implement review queue and reviewer decision schemas in `backend/app/schemas/evaluation_review.py`
-- [ ] T032 [US2] Implement reviewer endpoints (`GET /review-queue`, `POST /reviewer-decisions`) in `backend/app/api/v1/endpoints/evaluation_review.py`
-- [ ] T033 [P] [US2] Implement frontend review queue and submit decision methods in `frontend/services/evaluationReviewService.ts`
-- [ ] T034 [US2] Implement reviewer queue table with accept/reject/edit actions in `frontend/components/assessment/UnifiedReviewQueueTable.tsx`
+- [X] T028 [P] [US2] Implement reviewer decision repository in `backend/app/repositories/evaluation_reviewer_decision_repository.py`
+- [X] T029 [P] [US2] Implement reviewer state repository in `backend/app/repositories/evaluation_reviewer_state_repository.py`
+- [X] T030 [US2] Implement reviewer decision service (append history + state upsert) in `backend/app/services/evaluation_review_service.py`
+- [X] T031 [US2] Implement review queue and reviewer decision schemas in `backend/app/schemas/evaluation_review.py`
+- [X] T032 [US2] Implement reviewer endpoints (`GET /review-queue`, `POST /reviewer-decisions`) in `backend/app/api/v1/endpoints/evaluation_review.py`
+- [X] T033 [P] [US2] Implement frontend review queue and submit decision methods in `frontend/services/evaluationReviewService.ts`
+- [X] T034 [US2] Implement reviewer queue table with accept/reject/edit actions in `frontend/components/assessment/UnifiedReviewQueueTable.tsx`
 
 **Checkpoint**: User Story 2 works independently while preserving US1 behavior.
 
@@ -110,27 +110,27 @@
 
 ### Tests for User Story 3
 
-- [ ] T035 [P] [US3] Add integration test for consensus publish success paths in `backend/tests/integration/test_evaluation_consensus_publish.py`
-- [ ] T036 [P] [US3] Add integration test for optimistic concurrency conflict (`409`) in `backend/tests/integration/test_evaluation_consensus_conflicts.py`
-- [ ] T037 [P] [US3] Add integration test for evidence attachment validation constraints in `backend/tests/integration/test_evaluation_evidence_upload.py`
-- [ ] T038 [P] [US3] Add frontend consensus publish flow test in `frontend/test/unified-evaluation-consensus.test.ts`
+- [X] T035 [P] [US3] Add integration test for consensus publish success paths in `backend/tests/integration/test_evaluation_consensus_publish.py`
+- [X] T036 [P] [US3] Add integration test for optimistic concurrency conflict (`409`) in `backend/tests/integration/test_evaluation_consensus_conflicts.py`
+- [X] T037 [P] [US3] Add integration test for evidence attachment validation constraints in `backend/tests/integration/test_evaluation_evidence_upload.py`
+- [X] T038 [P] [US3] Add frontend consensus publish flow test in `frontend/test/unified-evaluation-consensus.test.ts`
 
 ### Implementation for User Story 3
 
-- [ ] T039 [P] [US3] Implement consensus decision repository in `backend/app/repositories/evaluation_consensus_repository.py`
-- [ ] T040 [P] [US3] Implement published-state repository with optimistic lock update in `backend/app/repositories/evaluation_published_state_repository.py`
-- [ ] T041 [P] [US3] Implement evidence repository and metadata persistence in `backend/app/repositories/evaluation_evidence_repository.py`
-- [ ] T042 [US3] Implement consensus publication service with override rules in `backend/app/services/evaluation_consensus_service.py`
-- [ ] T043 [US3] Implement evidence upload service (size/type allowlist + storage path generation) in `backend/app/services/evaluation_evidence_service.py`
-- [ ] T044 [US3] Implement consensus/evidence schemas in `backend/app/schemas/evaluation_consensus.py`
-- [ ] T045 [US3] Implement consensus endpoints (`POST /consensus-decisions`, `POST /evidence-attachments/presign`) in `backend/app/api/v1/endpoints/evaluation_consensus.py`
-- [ ] T046 [P] [US3] Implement frontend consensus/evidence API methods in `frontend/services/evaluationConsensusService.ts`
-- [ ] T047 [US3] Implement final decision + evidence upload UI in `frontend/components/assessment/UnifiedConsensusPanel.tsx`
-- [ ] T058 [US3] Implement schema promotion service for version compatibility initialization and no-recopy rules in `backend/app/services/evaluation_schema_promotion_service.py`
-- [ ] T059 [P] [US3] Add integration tests to preserve prior-version published outcomes after promotion in `backend/tests/integration/test_evaluation_schema_promotion_history.py`
-- [ ] T060 [P] [US3] Add integration tests for new/incompatible item status initialization during promotion in `backend/tests/integration/test_evaluation_schema_promotion_initialization.py`
-- [ ] T061 [P] [US3] Add integration tests enforcing item type immutability after extraction in `backend/tests/integration/test_evaluation_item_type_immutability.py`
-- [ ] T062 [P] [US3] Add integration tests preventing automatic value recopy on add/remove schema evolution in `backend/tests/integration/test_evaluation_schema_no_recopy.py`
+- [X] T039 [P] [US3] Implement consensus decision repository in `backend/app/repositories/evaluation_consensus_repository.py`
+- [X] T040 [P] [US3] Implement published-state repository with optimistic lock update in `backend/app/repositories/evaluation_published_state_repository.py`
+- [X] T041 [P] [US3] Implement evidence repository and metadata persistence in `backend/app/repositories/evaluation_evidence_repository.py`
+- [X] T042 [US3] Implement consensus publication service with override rules in `backend/app/services/evaluation_consensus_service.py`
+- [X] T043 [US3] Implement evidence upload service (size/type allowlist + storage path generation) in `backend/app/services/evaluation_evidence_service.py`
+- [X] T044 [US3] Implement consensus/evidence schemas in `backend/app/schemas/evaluation_consensus.py`
+- [X] T045 [US3] Implement consensus endpoints (`POST /consensus-decisions`, `POST /evidence-attachments/presign`) in `backend/app/api/v1/endpoints/evaluation_consensus.py`
+- [X] T046 [P] [US3] Implement frontend consensus/evidence API methods in `frontend/services/evaluationConsensusService.ts`
+- [X] T047 [US3] Implement final decision + evidence upload UI in `frontend/components/assessment/UnifiedConsensusPanel.tsx`
+- [X] T058 [US3] Implement schema promotion service for version compatibility initialization and no-recopy rules in `backend/app/services/evaluation_schema_promotion_service.py`
+- [X] T059 [P] [US3] Add integration tests to preserve prior-version published outcomes after promotion in `backend/tests/integration/test_evaluation_schema_promotion_history.py`
+- [X] T060 [P] [US3] Add integration tests for new/incompatible item status initialization during promotion in `backend/tests/integration/test_evaluation_schema_promotion_initialization.py`
+- [X] T061 [P] [US3] Add integration tests enforcing item type immutability after extraction in `backend/tests/integration/test_evaluation_item_type_immutability.py`
+- [X] T062 [P] [US3] Add integration tests preventing automatic value recopy on add/remove schema evolution in `backend/tests/integration/test_evaluation_schema_no_recopy.py`
 
 **Checkpoint**: User Story 3 is independently functional and all stories remain compatible.
 
@@ -140,16 +140,16 @@
 
 **Purpose**: End-to-end hardening, clean-slate verification, and documentation.
 
-- [ ] T048 [P] Add end-to-end unified workflow scenario (run -> review -> publish) in `frontend/e2e/unified-evaluation-flow.e2e.ts`
-- [ ] T049 Add clean-slate reset and migration verification guide in `docs/unified-evaluation-clean-slate.md`
-- [ ] T050 [P] Add quickstart verification notes and command outcomes in `specs/008-unified-evaluation-model/quickstart.md`
-- [ ] T051 Add observability dashboard/query examples for required metrics in `docs/extraction-e2e-observability.md`
-- [ ] T052 Run full validation checklist and record execution evidence in `docs/unified-evaluation-validation.md`
-- [ ] T063 Implement reviewer turnaround SLA metric/reporting pipeline for one-business-day target in `backend/app/services/evaluation_sla_metrics_service.py`
-- [ ] T064 [P] Add integration tests for unauthorized read/write attempts across run/review/consensus endpoints in `backend/tests/integration/test_evaluation_authorization.py`
-- [ ] T065 [P] Add integration tests for endpoint rate limiting and uniform `ApiResponse` + `trace_id` conformance in `backend/tests/integration/test_evaluation_api_contract_security.py`
-- [ ] T066 Apply `@limiter.limit(...)`, `ApiResponse` envelope, and trace propagation across evaluation endpoints in `backend/app/api/v1/endpoints/evaluation_runs.py`, `backend/app/api/v1/endpoints/evaluation_review.py`, `backend/app/api/v1/endpoints/evaluation_consensus.py`, and `backend/app/api/v1/endpoints/evaluation_schema_versions.py`
-- [ ] T067 Implement queue-backlog scaling trigger (`>500 items for 15 minutes`) and alert emission in `backend/app/services/evaluation_observability_service.py`
+- [X] T048 [P] Add end-to-end unified workflow scenario (run -> review -> publish) in `frontend/e2e/unified-evaluation-flow.e2e.ts`
+- [X] T049 Add clean-slate reset and migration verification guide in `docs/unified-evaluation-clean-slate.md`
+- [X] T050 [P] Add quickstart verification notes and command outcomes in `specs/008-unified-evaluation-model/quickstart.md`
+- [X] T051 Add observability dashboard/query examples for required metrics in `docs/extraction-e2e-observability.md`
+- [X] T052 Run full validation checklist and record execution evidence in `docs/unified-evaluation-validation.md`
+- [X] T063 Implement reviewer turnaround SLA metric/reporting pipeline for one-business-day target in `backend/app/services/evaluation_sla_metrics_service.py`
+- [X] T064 [P] Add integration tests for unauthorized read/write attempts across run/review/consensus endpoints in `backend/tests/integration/test_evaluation_authorization.py`
+- [X] T065 [P] Add integration tests for endpoint rate limiting and uniform `ApiResponse` + `trace_id` conformance in `backend/tests/integration/test_evaluation_api_contract_security.py`
+- [X] T066 Apply `@limiter.limit(...)`, `ApiResponse` envelope, and trace propagation across evaluation endpoints in `backend/app/api/v1/endpoints/evaluation_runs.py`, `backend/app/api/v1/endpoints/evaluation_review.py`, `backend/app/api/v1/endpoints/evaluation_consensus.py`, and `backend/app/api/v1/endpoints/evaluation_schema_versions.py`
+- [X] T067 Implement queue-backlog scaling trigger (`>500 items for 15 minutes`) and alert emission in `backend/app/services/evaluation_observability_service.py`
 
 ---
 

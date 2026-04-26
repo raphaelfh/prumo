@@ -93,3 +93,12 @@
   - verify add/remove/new choice item behavior through new schema version
 - Clean-slate reliability:
   - verify full reset -> migration -> test run passes without legacy data migration steps
+
+## 8) Verification notes (implementation run)
+
+- Backend focused suites executed with `uv run pytest`:
+  - `tests/integration/test_evaluation_runs.py` + `test_evaluation_proposal_generation.py` + `test_evaluation_schema_versions.py` -> `5 passed`
+  - `tests/integration/test_evaluation_reviewer_decisions.py` + `test_evaluation_reviewer_state.py` -> `2 passed`
+  - `tests/integration/test_evaluation_consensus_publish.py` + `test_evaluation_consensus_conflicts.py` + `test_evaluation_evidence_upload.py` + schema-promotion suites -> `7 passed`
+- Repository lint status:
+  - `npm run lint` completed with no errors (existing unrelated warnings remain in extraction e2e/table files).

@@ -1,3 +1,29 @@
+# Unified Evaluation Observability
+
+## Core metrics
+
+- `evaluation_duration_metric`: emitted by run and stage timers.
+- `evaluation_stage_failure`: emitted whenever a stage transition fails.
+- `evaluation_publish_conflict`: emitted on optimistic-lock publish conflicts.
+- `evaluation_queue_backlog_check`: backlog gauge event with threshold metadata.
+- `evaluation_queue_backlog_scale_alert`: alert event when backlog is greater than 500 for at least 15 minutes.
+
+## Structured event examples
+
+- `evaluation_event` with `event_name=evaluation_run_created`
+- `evaluation_event` with `event_name=evaluation_reviewer_decision_submitted`
+- `evaluation_event` with `event_name=evaluation_consensus_published`
+- `evaluation_event` with `event_name=evaluation_schema_promoted`
+
+## Suggested queries
+
+- Run duration trend:
+  - filter `metric_name=evaluation_run_total_duration_ms`
+- Publish conflict counter:
+  - count `evaluation_publish_conflict` by `schema_version_id`
+- Backlog scaling alert:
+  - filter `evaluation_queue_backlog_scale_alert`
+  - group by `project_id`
 # Extraction E2E and Database Observability
 
 ## Goal
