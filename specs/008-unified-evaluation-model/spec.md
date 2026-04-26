@@ -79,6 +79,8 @@ As a final decision maker, I can publish a consensus outcome by selecting an exi
 - **FR-013**: The system MUST preserve all results from prior schema versions when a newer schema version is promoted.
 - **FR-014**: The system MUST initialize reviewer and publication status for newly introduced or incompatible items when a newer schema version is promoted.
 - **FR-015**: The system MUST track run status and stage transitions so stakeholders can distinguish pending, active, completed, failed, and cancelled runs.
+- **FR-016**: The system MUST keep application data model changes managed through the backend migration workflow, with schema evolution tracked as versioned migrations.
+- **FR-017**: The system MUST include a repeatable schema consistency verification step that confirms the resulting database structure matches the approved data model before release.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -101,6 +103,7 @@ As a final decision maker, I can publish a consensus outcome by selecting an exi
 - Historical append-only data volume will grow over time and operational monitoring will guide scaling adjustments.
 - The initial release may rebuild existing development data, and preserving old development records is not required.
 - All feature-facing written deliverables are authored in English, and implementation outputs provide complete code blocks rather than partial fragments when code is requested.
+- Database lifecycle ownership follows the backend migration standard for application schema evolution.
 
 ## Success Criteria *(mandatory)*
 
@@ -111,3 +114,4 @@ As a final decision maker, I can publish a consensus outcome by selecting an exi
 - **SC-003**: In governance audit sampling, 100% of published items can be traced to a consensus decision with actor identity, timestamp, and rationale when override mode is used.
 - **SC-004**: In schema promotion tests, 100% of previously published outcomes remain available under their original schema version after introducing a new version.
 - **SC-005**: For cross-project authorization tests, 100% of unauthorized read/write attempts are blocked.
+- **SC-006**: In release validation, 100% of schema consistency checks pass by confirming the deployed database structure matches the approved model definition.
