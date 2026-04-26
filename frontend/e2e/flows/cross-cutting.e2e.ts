@@ -60,9 +60,11 @@ test.describe("Cross-cutting API contracts", () => {
   });
 
   test("rate-limits run creation endpoint after burst", async ({ request }) => {
+    // Uses a dedicated rate-limit user/token so the burst does not deplete the
+    // budget for the primary E2E user running other tests in parallel.
     const env = loadE2EEnv();
     const required = missingEnvKeys([
-      "E2E_AUTH_TOKEN",
+      "E2E_RATE_LIMIT_TOKEN",
       "E2E_PROJECT_ID",
       "E2E_SCHEMA_VERSION_ID",
       "E2E_TARGET_ID",
@@ -75,7 +77,7 @@ test.describe("Cross-cutting API contracts", () => {
 
     for (let idx = 0; idx < 25; idx += 1) {
       const response = await request.post(`${env.apiUrl}/api/v1/evaluation-runs`, {
-        headers: authHeaders(env.authToken!, traceId),
+        headers: authHeaders(env.rateLimitToken!, traceId),
         data: {
           project_id: env.projectId,
           schema_version_id: env.schemaVersionId,

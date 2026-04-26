@@ -6,6 +6,7 @@ export default defineConfig({
   testDir: "./frontend/e2e",
   testMatch: "**/*.e2e.ts",
   globalSetup: "./frontend/e2e/_fixtures/global-setup.ts",
+  globalTeardown: "./frontend/e2e/_fixtures/global-teardown.ts",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

@@ -2,6 +2,7 @@ import { APIRequestContext, expect } from "@playwright/test";
 
 import { authHeaders, parseEnvelope } from "./api";
 import { createTraceId, loadE2EEnv } from "./env";
+import { recordResource } from "./registry";
 
 type CreateSchemaVersionResponse = {
   id: string;
@@ -31,6 +32,7 @@ export async function createAndPublishSchemaVersion(
   expect(createBody.ok).toBeTruthy();
 
   const versionId = createBody.data.id;
+  recordResource({ kind: "evaluation_schema_version", id: versionId });
   const publishResponse = await request.post(
     `${env.apiUrl}/api/v1/evaluation-schema-versions/${versionId}/publish`,
     {
@@ -67,6 +69,7 @@ export async function createEvaluationRun(
   expect(createRunResponse.ok()).toBeTruthy();
   const createRunBody = await parseEnvelope<CreateRunResponse>(createRunResponse);
   expect(createRunBody.ok).toBeTruthy();
+  recordResource({ kind: "evaluation_run", id: createRunBody.data.id });
   return createRunBody.data.id;
 }
 

@@ -4,6 +4,9 @@ export type E2EEnvConfig = {
   authToken?: string;
   userEmail?: string;
   userPassword?: string;
+  rateLimitToken?: string;
+  rateLimitEmail?: string;
+  rateLimitPassword?: string;
   projectId?: string;
   articleId?: string;
   templateId?: string;
@@ -24,6 +27,9 @@ export function loadE2EEnv(): E2EEnvConfig {
     authToken: process.env.E2E_AUTH_TOKEN,
     userEmail: process.env.E2E_USER_EMAIL,
     userPassword: process.env.E2E_USER_PASSWORD,
+    rateLimitToken: process.env.E2E_RATE_LIMIT_TOKEN,
+    rateLimitEmail: process.env.E2E_RATE_LIMIT_EMAIL,
+    rateLimitPassword: process.env.E2E_RATE_LIMIT_PASSWORD,
     projectId: process.env.E2E_PROJECT_ID,
     articleId: process.env.E2E_ARTICLE_ID,
     templateId: process.env.E2E_TEMPLATE_ID,

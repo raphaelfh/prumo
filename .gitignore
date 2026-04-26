@@ -96,6 +96,7 @@ coverage.xml
 .pytest_cache/
 playwright-report/
 test-results/
+.playwright/
 
 # Translations
 *.mo

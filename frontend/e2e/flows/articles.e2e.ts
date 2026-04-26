@@ -12,10 +12,10 @@ test.describe("Articles export validation flows", () => {
     const response = await request.post(`${env.apiUrl}/api/v1/articles-export`, {
       headers: authHeaders(env.authToken!, createTraceId("e2e-articles-empty")),
       data: {
-        projectId: env.projectId,
-        articleIds: [],
+        project_id: env.projectId,
+        article_ids: [],
         formats: ["csv"],
-        fileScope: "none",
+        file_scope: "none",
       },
     });
 
@@ -33,10 +33,10 @@ test.describe("Articles export validation flows", () => {
     const response = await request.post(`${env.apiUrl}/api/v1/articles-export`, {
       headers: authHeaders(env.authToken!, createTraceId("e2e-articles-scope")),
       data: {
-        projectId: env.projectId,
-        articleIds: [env.articleId],
+        project_id: env.projectId,
+        article_ids: [env.articleId],
         formats: ["csv"],
-        fileScope: "invalid_scope",
+        file_scope: "invalid_scope",
       },
     });
 
@@ -54,18 +54,18 @@ test.describe("Articles export validation flows", () => {
     const response = await request.post(`${env.apiUrl}/api/v1/articles-export`, {
       headers: authHeaders(env.authToken!, createTraceId("e2e-articles-sync")),
       data: {
-        projectId: env.projectId,
-        articleIds: [env.articleId],
+        project_id: env.projectId,
+        article_ids: [env.articleId],
         formats: ["csv"],
-        fileScope: "none",
+        file_scope: "none",
       },
     });
 
     expect([200, 202]).toContain(response.status());
     if (response.status() === 202) {
-      const body = await parseEnvelope<{ job_id?: string; jobId?: string }>(response);
+      const body = await parseEnvelope<{ job_id: string }>(response);
       expect(body.ok).toBeTruthy();
-      expect(body.data.job_id ?? body.data.jobId).toBeTruthy();
+      expect(body.data.job_id).toBeTruthy();
     } else {
       const contentType = response.headers()["content-type"] || "";
       expect(contentType.length).toBeGreaterThan(0);

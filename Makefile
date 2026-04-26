@@ -1,4 +1,4 @@
-.PHONY: help setup start start-remote verify-remote-db stop restart status backend frontend supabase install install-backend install-frontend logs logs-backend logs-frontend clean reset-db health db-migrate db-migrate-remote db-rollback db-history db-current db-generate db-setup dev dev-remote e2e-local e2e-remote test-backend-e2e
+.PHONY: help setup start start-remote start-cloud _print-env-banner supabase-migrate verify-remote-db stop restart status backend frontend supabase install install-backend install-frontend logs logs-backend logs-frontend clean reset-db health db-migrate db-migrate-remote db-rollback db-history db-current db-generate db-setup dev dev-remote e2e-local e2e-remote test-backend-e2e
 
 # Variáveis
 BACKEND_DIR := backend
@@ -33,21 +33,47 @@ setup: ## Configura o ambiente completo (primeira vez)
 	@echo "$(GREEN)🔧 Configurando ambiente de desenvolvimento...$(NC)"
 	@./scripts/setup.sh
 
-start: ## Inicia todos os serviços (Supabase, Backend, Frontend)
-	@echo "$(GREEN)🚀 Iniciando Prumo...$(NC)"
+start: ## Inicia todos os serviços LOCAIS (Supabase Docker + Backend + Frontend)
+	@echo "$(GREEN)🚀 Iniciando Prumo (ambiente LOCAL)$(NC)"
+	@$(MAKE) _print-env-banner ENV_LABEL=LOCAL
 	@$(MAKE) supabase-start
 	@echo "$(YELLOW)⏳ Aguardando Supabase inicializar...$(NC)"
 	@sleep 5
+	@$(MAKE) supabase-migrate
 	@$(MAKE) backend-start
 	@$(MAKE) frontend-start
-	@echo "$(GREEN)✅ Todos os serviços iniciados!$(NC)"
+	@echo "$(GREEN)✅ Todos os serviços LOCAIS iniciados!$(NC)"
 	@$(MAKE) status
 
-start-remote: verify-remote-db ## Inicia ambiente com Supabase remoto (apenas Backend + Frontend)
-	@echo "$(GREEN)🚀 Iniciando Prumo (Supabase remoto)...$(NC)"
+start-cloud: start-remote ## Alias para start-remote (mais explícito)
+
+_print-env-banner:
+	@echo ""
+	@echo "$(YELLOW)╭──────────────────────────────────────────────╮$(NC)"
+	@echo "$(YELLOW)│$(NC) Ambiente: $(GREEN)$(ENV_LABEL)$(NC)"
+	@echo "$(YELLOW)│$(NC) backend/.env DATABASE_URL deve apontar para esse alvo"
+	@echo "$(YELLOW)╰──────────────────────────────────────────────╯$(NC)"
+	@echo ""
+
+supabase-migrate: ## Aplica migrations Supabase (auth/storage) no banco local
+	@echo "$(GREEN)📜 Aplicando migrations Supabase locais...$(NC)"
+	@if ( cd $(SUPABASE_DIR) && supabase db push --local >/dev/null 2>&1 ); then \
+		echo "  via supabase db push --local"; \
+	else \
+		echo "$(YELLOW)ℹ️  supabase db push --local indisponível; aplicando via psql.$(NC)"; \
+		for f in $$(ls -1 $(SUPABASE_DIR)/migrations/*.sql 2>/dev/null); do \
+			echo "  -> $$f"; \
+			docker exec -i supabase_db_supabase_local psql -U postgres -d postgres -v ON_ERROR_STOP=0 -q < "$$f" >/dev/null 2>&1 || true; \
+		done; \
+	fi
+	@echo "$(GREEN)✅ Migrations Supabase aplicadas$(NC)"
+
+start-remote: verify-remote-db ## Inicia ambiente com Supabase REMOTO (apenas Backend + Frontend)
+	@echo "$(RED)⚠️  ATENÇÃO: subindo backend contra Supabase REMOTO$(NC)"
+	@$(MAKE) _print-env-banner ENV_LABEL=REMOTE
 	@$(MAKE) backend-start
 	@$(MAKE) frontend-start
-	@echo "$(GREEN)✅ Backend e Frontend iniciados (Supabase remoto)$(NC)"
+	@echo "$(GREEN)✅ Backend e Frontend iniciados (Supabase REMOTO)$(NC)"
 	@$(MAKE) status
 
 verify-remote-db: ## Valida se DATABASE_URL aponta para host remoto antes do start-remote

@@ -36,10 +36,10 @@ test.describe("Articles export async lifecycle", () => {
     const createResponse = await request.post(`${env.apiUrl}/api/v1/articles-export`, {
       headers: authHeaders(env.authToken!, traceId),
       data: {
-        projectId: env.projectId,
-        articleIds: [env.articleId],
+        project_id: env.projectId,
+        article_ids: [env.articleId],
         formats: ["csv", "ris"],
-        fileScope: "all",
+        file_scope: "all",
       },
     });
 
@@ -52,9 +52,9 @@ test.describe("Articles export async lifecycle", () => {
       return;
     }
 
-    const createBody = await parseEnvelope<{ job_id?: string; jobId?: string }>(createResponse);
+    const createBody = await parseEnvelope<{ job_id: string }>(createResponse);
     expect(createBody.ok).toBeTruthy();
-    const jobId = createBody.data.job_id ?? createBody.data.jobId;
+    const jobId = createBody.data.job_id;
     expect(jobId).toBeTruthy();
 
     const finalStatus = await waitForExportCompletion({

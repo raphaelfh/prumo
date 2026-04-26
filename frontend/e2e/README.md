@@ -22,6 +22,8 @@ Core:
 - `E2E_API_URL` (default: `http://127.0.0.1:8000`)
 - `E2E_AUTH_TOKEN` (optional if UI login is used)
 - `E2E_USER_EMAIL`, `E2E_USER_PASSWORD` (required for UI login fallback)
+- `E2E_RATE_LIMIT_TOKEN` (dedicated token used only by the burst/rate-limit
+  test so it does not exhaust the primary user's bucket)
 
 Dataset identifiers:
 

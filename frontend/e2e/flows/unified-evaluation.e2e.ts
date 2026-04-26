@@ -131,7 +131,7 @@ test.describe("Unified evaluation API flow", () => {
         project_id: env.projectId,
         entity_type: "published_state",
         entity_id: consensusBody.data.id,
-        filename: `e2e-evidence-${traceId}.txt`,
+        filename: "e2e-evidence.txt",
         mime_type: "text/plain",
         size_bytes: 128,
       },
