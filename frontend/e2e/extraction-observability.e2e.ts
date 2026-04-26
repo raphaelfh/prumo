@@ -196,7 +196,7 @@ test.describe("Extraction E2E Observability", () => {
       description: `model_api_ms=${modelDurationMs}, model_status=${modelResponse.status()}, section_api_ms=${sectionDurationMs}, section_status=${sectionResponse.status()}, trace_id=${traceId}`,
     });
 
-    console.log(
+    console.warn(
       `[E2E extraction baseline] trace_id=${traceId} model_status=${modelResponse.status()} model_api_ms=${modelDurationMs} section_status=${sectionResponse.status()} section_api_ms=${sectionDurationMs}`
     );
   });

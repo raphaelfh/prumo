@@ -79,11 +79,11 @@ export function NotificationCenter() {
                                     : undefined,
                                 metadata: {
                                     ...job.metadata,
-                                    downloadUrl: status.downloadUrl ?? job.metadata.downloadUrl,
+                                    downloadUrl: status.download_url ?? job.metadata.downloadUrl,
                                 },
                                 stats:
-                                    status.skippedFiles && status.skippedFiles.length > 0
-                                        ? {skipped: status.skippedFiles.length}
+                                    status.skipped_files && status.skipped_files.length > 0
+                                        ? {skipped: status.skipped_files.length}
                                         : undefined,
                             });
                         } catch (error) {
