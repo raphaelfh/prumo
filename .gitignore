@@ -94,6 +94,8 @@ coverage.xml
 *.cover
 .hypothesis/
 .pytest_cache/
+playwright-report/
+test-results/
 
 # Translations
 *.mo

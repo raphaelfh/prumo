@@ -7,7 +7,7 @@ Endpoint for extraction automatica de modelos de predicao de articles.
 Identifica and cria instances de modelos with its hierarquias completas.
 """
 
-import uuid
+from time import perf_counter
 
 from fastapi import APIRouter, HTTPException, Request, status
 
@@ -56,7 +56,8 @@ async def extract_models(
     Returns:
         ApiResponse with created models.
     """
-    trace_id = str(uuid.uuid4())
+    trace_id = getattr(request.state, "trace_id", None) or "missing-trace-id"
+    endpoint_start = perf_counter()
 
     logger.info(
         "model_extraction_request",
@@ -91,8 +92,10 @@ async def extract_models(
             model=payload.model or "gpt-4o-mini",
         )
 
-        # Commit explicito for persistir as instances criadas
+        db_commit_start = perf_counter()
         await db.commit()
+        db_commit_duration_ms = (perf_counter() - db_commit_start) * 1000
+        endpoint_duration_ms = (perf_counter() - endpoint_start) * 1000
 
         logger.info(
             "model_extraction_success",
@@ -102,6 +105,8 @@ async def extract_models(
             models_count=result.total_models,
             children_count=result.child_instances_created,
             tokens_total=result.tokens_total,
+            db_commit_duration_ms=db_commit_duration_ms,
+            endpoint_duration_ms=endpoint_duration_ms,
         )
 
         # Formatar resposta in the formato camelCase for o frontend
@@ -122,33 +127,43 @@ async def extract_models(
         return ApiResponse(ok=True, data=response_data, trace_id=trace_id)
 
     except ValueError as e:
+        rollback_start = perf_counter()
         await db.rollback()
+        rollback_duration_ms = (perf_counter() - rollback_start) * 1000
         logger.warning(
             "model_extraction_validation_error",
             trace_id=trace_id,
             error=str(e),
+            rollback_duration_ms=rollback_duration_ms,
         )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         ) from e
     except FileNotFoundError as e:
+        rollback_start = perf_counter()
         await db.rollback()
+        rollback_duration_ms = (perf_counter() - rollback_start) * 1000
         logger.warning(
             "model_extraction_pdf_not_found",
             trace_id=trace_id,
             error=str(e),
+            rollback_duration_ms=rollback_duration_ms,
         )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="PDF not found. Upload a PDF first.",
         ) from e
     except Exception as e:
+        rollback_start = perf_counter()
         await db.rollback()
+        rollback_duration_ms = (perf_counter() - rollback_start) * 1000
         logger.error(
             "model_extraction_error",
             trace_id=trace_id,
             error=str(e),
+            rollback_duration_ms=rollback_duration_ms,
+            endpoint_duration_ms=(perf_counter() - endpoint_start) * 1000,
             exc_info=True,
         )
         raise HTTPException(
