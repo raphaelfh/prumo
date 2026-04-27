@@ -1,8 +1,6 @@
 """
 Section Extraction Endpoint.
 
-Migrado de: supabase/functions/section-extraction/index.ts
-
 Endpoint for extraction de sections especificas de templates.
 Suporta extraction individual or em batch de todas as sections.
 """

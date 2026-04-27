@@ -1,8 +1,6 @@
 """
 Model Extraction Endpoint.
 
-Migrado de: supabase/functions/model-extraction/index.ts
-
 Endpoint for extraction automatica de modelos de predicao de articles.
 Identifica and cria instances de modelos with its hierarquias completas.
 """

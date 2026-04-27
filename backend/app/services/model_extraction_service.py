@@ -1,8 +1,6 @@
 """
 Model Extraction Service.
 
-Migrated from: supabase/functions/model-extraction/index.ts
-
 Service for automatic extraction of article prediction models.
 Implements:
 - Model identification via LLM

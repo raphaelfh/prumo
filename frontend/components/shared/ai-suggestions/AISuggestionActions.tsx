@@ -1,6 +1,5 @@
 /**
- * Action buttons for AI suggestions (Accept/Reject)
- * Shared component between extraction and assessment
+ * Action buttons for AI suggestions (Accept/Reject) used in extraction flows.
  */
 
 import {Button} from '@/components/ui/button';

@@ -1,8 +1,6 @@
 """
 Section Extraction Service.
 
-Migrated from: supabase/functions/section-extraction/index.ts
-
 Service for extracting specific template sections.
 Implements:
 - Single-section extraction
