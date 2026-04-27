@@ -55,7 +55,12 @@ POSTGRESQL_ENUM_VALUES: dict[str, list[str]] = {
     "reviewer_decision_type": ["accept", "reject", "edit"],
     "consensus_decision_mode": ["select_existing", "manual_override"],
     "published_state_status": ["published", "superseded"],
-    "evidence_entity_type": ["proposal", "reviewer_decision", "consensus_decision", "published_state"],
+    "evidence_entity_type": [
+        "proposal",
+        "reviewer_decision",
+        "consensus_decision",
+        "published_state",
+    ],
     # Extraction versioning + HITL config enums
     "hitl_config_scope_kind": ["project", "template"],
     "consensus_rule": ["unanimous", "majority", "arbitrator"],

@@ -148,9 +148,7 @@ def upgrade() -> None:
 
     # Triggers to maintain updated_at on UPDATE.
     for table_name in ("extraction_template_versions", "extraction_hitl_configs"):
-        op.execute(
-            f"DROP TRIGGER IF EXISTS update_{table_name}_updated_at ON public.{table_name};"
-        )
+        op.execute(f"DROP TRIGGER IF EXISTS update_{table_name}_updated_at ON public.{table_name};")
         op.execute(
             f"""
             CREATE TRIGGER update_{table_name}_updated_at
@@ -301,9 +299,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     for table_name in ("extraction_template_versions", "extraction_hitl_configs"):
-        op.execute(
-            f"DROP TRIGGER IF EXISTS update_{table_name}_updated_at ON public.{table_name};"
-        )
+        op.execute(f"DROP TRIGGER IF EXISTS update_{table_name}_updated_at ON public.{table_name};")
     op.execute("DROP TABLE IF EXISTS public.extraction_hitl_configs CASCADE;")
     op.execute("DROP TABLE IF EXISTS public.extraction_template_versions CASCADE;")
     op.execute("DROP TYPE IF EXISTS consensus_rule;")
