@@ -14,6 +14,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     Numeric,
@@ -601,6 +602,27 @@ class ExtractionRun(Base, UUIDMixin):
         index=True,
     )
 
+    kind: Mapped[str] = mapped_column(
+        PostgreSQLEnumType("template_kind"),
+        nullable=False,
+        default=TemplateKind.EXTRACTION.value,
+        server_default=TemplateKind.EXTRACTION.value,
+    )
+
+    version_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.extraction_template_versions.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+
+    hitl_config_snapshot: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
+
     stage: Mapped[str] = mapped_column(
         PostgreSQLEnumType("extraction_run_stage"),
         nullable=False,
@@ -650,6 +672,14 @@ class ExtractionRun(Base, UUIDMixin):
         # Indices GIN for JSONB
         Index("idx_extraction_runs_parameters_gin", "parameters", postgresql_using="gin"),
         Index("idx_extraction_runs_results_gin", "results", postgresql_using="gin"),
+        ForeignKeyConstraint(
+            ["template_id", "kind"],
+            [
+                "public.project_extraction_templates.id",
+                "public.project_extraction_templates.kind",
+            ],
+            name="fk_extraction_runs_template_kind_coherence",
+        ),
         {"schema": "public"},
     )
 
