@@ -47,9 +47,7 @@ def upgrade() -> None:
     )
 
     # Restore a sensible default for new rows.
-    op.execute(
-        "ALTER TABLE public.extraction_runs ALTER COLUMN stage SET DEFAULT 'pending';"
-    )
+    op.execute("ALTER TABLE public.extraction_runs ALTER COLUMN stage SET DEFAULT 'pending';")
 
     # Drop the old enum now that nothing references it.
     op.execute("DROP TYPE public.extraction_run_stage_old;")
@@ -84,7 +82,5 @@ def downgrade() -> None:
             );
         """
     )
-    op.execute(
-        "ALTER TABLE public.extraction_runs ALTER COLUMN stage SET DEFAULT 'data_suggest';"
-    )
+    op.execute("ALTER TABLE public.extraction_runs ALTER COLUMN stage SET DEFAULT 'data_suggest';")
     op.execute("DROP TYPE public.extraction_run_stage_new;")

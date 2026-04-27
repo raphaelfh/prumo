@@ -65,13 +65,11 @@ class ExtractionProposalRecord(BaseModel):
         PG_UUID(as_uuid=True),
         ForeignKey("public.extraction_runs.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     instance_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("public.extraction_instances.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     field_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -118,7 +116,6 @@ class ExtractionReviewerDecision(BaseModel):
         PG_UUID(as_uuid=True),
         ForeignKey("public.extraction_runs.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     instance_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -231,7 +228,6 @@ class ExtractionConsensusDecision(BaseModel):
         PG_UUID(as_uuid=True),
         ForeignKey("public.extraction_runs.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
     instance_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),

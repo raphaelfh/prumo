@@ -45,7 +45,7 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
             project_id: project.
             article_id: article.
             template_id: template.
-            stage: Estagio da execucao (data_suggest, parsing, etc.).
+            stage: Estagio da execucao (pending, proposal, review, consensus, finalized, cancelled).
             created_by: user que criou.
             parameters: Parametros da execucao (modelo, etc.).
 

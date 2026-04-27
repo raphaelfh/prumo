@@ -555,7 +555,6 @@ class ExtractionEvidence(BaseModel):
         PG_UUID(as_uuid=True),
         ForeignKey("public.extraction_runs.id", ondelete="CASCADE"),
         nullable=True,
-        index=True,
     )
     proposal_record_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),

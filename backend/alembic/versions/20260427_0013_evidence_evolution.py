@@ -70,18 +70,8 @@ def downgrade() -> None:
     # NOT NULL would fail. The columns remain nullable on downgrade.
 
     op.execute(
-        "ALTER TABLE public.extraction_evidence "
-        "DROP COLUMN IF EXISTS consensus_decision_id;"
+        "ALTER TABLE public.extraction_evidence DROP COLUMN IF EXISTS consensus_decision_id;"
     )
-    op.execute(
-        "ALTER TABLE public.extraction_evidence "
-        "DROP COLUMN IF EXISTS reviewer_decision_id;"
-    )
-    op.execute(
-        "ALTER TABLE public.extraction_evidence "
-        "DROP COLUMN IF EXISTS proposal_record_id;"
-    )
-    op.execute(
-        "ALTER TABLE public.extraction_evidence "
-        "DROP COLUMN IF EXISTS run_id;"
-    )
+    op.execute("ALTER TABLE public.extraction_evidence DROP COLUMN IF EXISTS reviewer_decision_id;")
+    op.execute("ALTER TABLE public.extraction_evidence DROP COLUMN IF EXISTS proposal_record_id;")
+    op.execute("ALTER TABLE public.extraction_evidence DROP COLUMN IF EXISTS run_id;")

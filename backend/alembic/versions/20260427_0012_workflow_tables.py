@@ -216,9 +216,7 @@ def upgrade() -> None:
 
     # Triggers: maintain updated_at on UPDATE for each workflow table.
     for table_name in _WORKFLOW_TABLES:
-        op.execute(
-            f"DROP TRIGGER IF EXISTS update_{table_name}_updated_at ON public.{table_name};"
-        )
+        op.execute(f"DROP TRIGGER IF EXISTS update_{table_name}_updated_at ON public.{table_name};")
         op.execute(
             f"""
             CREATE TRIGGER update_{table_name}_updated_at
@@ -307,9 +305,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     # Drop triggers first.
     for table_name in _WORKFLOW_TABLES:
-        op.execute(
-            f"DROP TRIGGER IF EXISTS update_{table_name}_updated_at ON public.{table_name};"
-        )
+        op.execute(f"DROP TRIGGER IF EXISTS update_{table_name}_updated_at ON public.{table_name};")
 
     # Drop tables in reverse dependency order so we honor:
     #   - reviewer_states.current_decision_id -> reviewer_decisions.id
