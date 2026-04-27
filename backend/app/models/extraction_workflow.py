@@ -100,7 +100,7 @@ class ExtractionProposalRecord(BaseModel):
         ),
         CheckConstraint(
             "source <> 'human' OR source_user_id IS NOT NULL",
-            name="ck_extraction_proposal_records_human_has_user",
+            name="human_has_user",
         ),
         {"schema": "public"},
     )
@@ -158,11 +158,11 @@ class ExtractionReviewerDecision(BaseModel):
         ),
         CheckConstraint(
             "decision <> 'accept_proposal' OR proposal_record_id IS NOT NULL",
-            name="ck_extraction_reviewer_decisions_accept_has_proposal",
+            name="accept_has_proposal",
         ),
         CheckConstraint(
             "decision <> 'edit' OR value IS NOT NULL",
-            name="ck_extraction_reviewer_decisions_edit_has_value",
+            name="edit_has_value",
         ),
         {"schema": "public"},
     )
@@ -269,11 +269,11 @@ class ExtractionConsensusDecision(BaseModel):
         ),
         CheckConstraint(
             "mode <> 'select_existing' OR selected_decision_id IS NOT NULL",
-            name="ck_extraction_consensus_decisions_select_existing_has_decision",
+            name="select_existing_has_decision",
         ),
         CheckConstraint(
             "mode <> 'manual_override' OR (value IS NOT NULL AND rationale IS NOT NULL)",
-            name="ck_extraction_consensus_decisions_manual_override_has_value_rationale",
+            name="manual_override_has_value_rationale",
         ),
         {"schema": "public"},
     )
