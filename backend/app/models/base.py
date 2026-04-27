@@ -65,6 +65,9 @@ POSTGRESQL_ENUM_VALUES: dict[str, list[str]] = {
     "hitl_config_scope_kind": ["project", "template"],
     "consensus_rule": ["unanimous", "majority", "arbitrator"],
     "template_kind": ["extraction", "quality_assessment"],
+    "extraction_proposal_source": ["ai", "human", "system"],
+    "extraction_reviewer_decision": ["accept_proposal", "reject", "edit"],
+    "extraction_consensus_mode": ["select_existing", "manual_override"],
 }
 
 
