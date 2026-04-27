@@ -2,8 +2,6 @@
 
 from uuid import uuid4
 
-import pytest
-
 from app.models.extraction_versioning import (
     ConsensusRule,
     ExtractionTemplateVersion,
