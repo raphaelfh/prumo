@@ -35,6 +35,19 @@ const mapAuthError = (msg: string): string => {
     return key ? t("auth", AUTH_ERROR_KEYS[key]) : msg;
 };
 
+const getAuthRedirectBaseUrl = (): string => {
+    const configuredUrl = import.meta.env.VITE_SITE_URL?.trim();
+    if (!configuredUrl) {
+        return window.location.origin;
+    }
+
+    try {
+        return new URL(configuredUrl).origin;
+    } catch {
+        return window.location.origin;
+    }
+};
+
 // ─── Password helpers ─────────────────────────────────────────────────────────
 
 function validatePassword(password: string): string | null {
@@ -294,6 +307,7 @@ function RegisterForm({onSwitchToLogin}: { onSwitchToLogin: () => void }) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [emailSent, setEmailSent] = useState(false);
+    const authRedirectBaseUrl = getAuthRedirectBaseUrl();
 
     const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -316,7 +330,7 @@ function RegisterForm({onSwitchToLogin}: { onSwitchToLogin: () => void }) {
           password: form.password,
         options: {
             data: {full_name: form.fullName},
-          emailRedirectTo: `${window.location.origin}/`,
+          emailRedirectTo: `${authRedirectBaseUrl}/`,
         },
       });
       if (error) throw error;
@@ -466,6 +480,7 @@ function ForgotPasswordForm({onBack}: { onBack: () => void }) {
     const [loading, setLoading] = useState(false);
     const [sent, setSent] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const authRedirectBaseUrl = getAuthRedirectBaseUrl();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -473,7 +488,7 @@ function ForgotPasswordForm({onBack}: { onBack: () => void }) {
         setLoading(true);
         try {
             const {error} = await supabase.auth.resetPasswordForEmail(email, {
-                redirectTo: `${window.location.origin}/auth/reset-password`,
+                redirectTo: `${authRedirectBaseUrl}/auth/reset-password`,
             });
             if (error) throw error;
             setSent(true);
