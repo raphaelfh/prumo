@@ -12,6 +12,21 @@
   font-weight: 500 !important;
 }
 
+/* Brief highlight applied to a field whose value was just updated by an
+ * AI extraction refresh. The hook (useJustUpdatedValue) keeps the class on
+ * for ~1.5s; this animation fades from a soft amber tint back to transparent
+ * so the user can see at a glance which fields the system filled in. */
+@keyframes field-just-updated-fade {
+  0% { background-color: rgba(253, 224, 71, 0.32); }
+  60% { background-color: rgba(253, 224, 71, 0.20); }
+  100% { background-color: transparent; }
+}
+
+.field-just-updated {
+  animation: field-just-updated-fade 1.5s ease-out forwards;
+  border-radius: 4px;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

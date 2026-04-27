@@ -13,6 +13,7 @@
 import {useCallback, useEffect, useState} from 'react';
 import {supabase} from '@/integrations/supabase/client';
 import {extractValueForSave, extractValueFromDb} from '@/lib/validations/selectOther';
+import {dispatchValueUpdates, shallowValueEqual} from '@/lib/extraction/valueUpdates';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 
@@ -60,17 +61,14 @@ export function useExtractedValues(props: UseExtractedValuesProps): UseExtracted
     loadValues();
   }, [articleId, enabled]);
 
-  const loadValues = async () => {
-    setLoading(true);
+  const loadValues = async (silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
 
     try {
-        console.warn('Loading extracted values for article:', articleId);
-
         // Fetch existing values for current user
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-          console.warn('User not authenticated');
         setValues({});
         return;
       }
@@ -104,18 +102,54 @@ export function useExtractedValues(props: UseExtractedValuesProps): UseExtracted
         valuesMap[key] = extractValueFromDb(item);
       });
 
-      setValues(valuesMap);
-      setInitialized(true); // ✅ Marca como inicializado
-        console.warn(`✅ Carregados ${Object.keys(valuesMap).length} valores extraídos`);
-
+      setValues(prev => mergeValuesById(prev, valuesMap));
+      setInitialized(true);
     } catch (err: any) {
-      console.error('❌ Erro ao carregar valores:', err);
-        setError(err.message || t('extraction', 'errors_loadExtractedValues'));
-        toast.error(t('extraction', 'errors_loadExtractedValues'));
+      console.error('Erro ao carregar valores extraídos:', err);
+      setError(err.message || t('extraction', 'errors_loadExtractedValues'));
+      toast.error(t('extraction', 'errors_loadExtractedValues'));
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
+
+  /**
+   * Shallow merge keyed by `${instanceId}_${fieldId}`. Preserves the
+   * reference of unchanged entries so React's diff sees stable identities;
+   * only the values that the backend actually returned (or that user touched)
+   * trigger downstream re-renders. Values present in `prev` but absent in
+   * `next` are kept (an in-flight refresh shouldn't visually drop them).
+   *
+   * Side effect: keys whose values changed get marked as "just-updated" so
+   * the UI can briefly highlight them — better feedback than the previous
+   * "everything bounces" refresh + scroll-to-top.
+   */
+  function mergeValuesById(
+    prev: Record<string, any>,
+    next: Record<string, any>
+  ): Record<string, any> {
+    let changed = false;
+    const updatedKeys: string[] = [];
+    const out = { ...prev };
+    for (const [key, value] of Object.entries(next)) {
+      const before = out[key];
+      const isDifferent = !shallowValueEqual(before, value);
+      if (isDifferent) {
+        out[key] = value;
+        changed = true;
+        if (before !== undefined) {
+          updatedKeys.push(key);
+        }
+      }
+    }
+    if (updatedKeys.length > 0) {
+      // Defer to next paint so the new render commits before the highlight
+      // class lands. `dispatchValueUpdates` is a no-op when there are no
+      // listeners.
+      requestAnimationFrame(() => dispatchValueUpdates(updatedKeys));
+    }
+    return changed ? out : prev;
+  }
 
   const updateValue = useCallback((instanceId: string, fieldId: string, value: any) => {
     const key = `${instanceId}_${fieldId}`;
@@ -214,16 +248,16 @@ export function useExtractedValues(props: UseExtractedValuesProps): UseExtracted
         if (insertError) throw insertError;
       }
 
-        console.warn(`✅ Salvos ${upserts.length} valores`);
-
     } catch (err: any) {
-      console.error('❌ Erro ao salvar valores:', err);
+      console.error('Erro ao salvar valores extraídos:', err);
       throw err;
     }
   };
 
   const refresh = useCallback(async () => {
-    await loadValues();
+    // Silent refresh — keeps the form mounted while we re-fetch in the
+    // background, so the user does not see a loading flash + scroll reset.
+    await loadValues(true);
   }, [articleId]);
 
   return {

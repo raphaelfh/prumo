@@ -5,7 +5,7 @@
  * Renders only visible pages + buffer using Intersection Observer.
  */
 
-import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {useCallback, useMemo, useRef, useState} from 'react';
 import {usePDFStore} from '@/stores/usePDFStore';
 import {usePDFVirtualization} from '@/hooks/usePDFVirtualization';
 import {CONTINUOUS_SCROLL_CONFIG} from '@/lib/pdf-config';
@@ -27,13 +27,6 @@ export function PDFCanvas() {
     searchResults,
   } = usePDFStore();
 
-    // Debug: check if searchQuery is in store
-  useEffect(() => {
-    if (searchQuery) {
-        console.warn(`[PDFCanvas] searchQuery in store: "${searchQuery}", ${searchResults?.length || 0} results`);
-    }
-  }, [searchQuery, searchResults]);
-  
   const viewMode = ui?.viewMode || 'continuous';
 
     // Compute estimated page height from scale
@@ -82,9 +75,6 @@ export function PDFCanvas() {
   });
 
   const handlePageLoadSuccess = useCallback((page: any) => {
-      // Page loaded successfully - can be used for future metrics
-      console.warn('Page loaded:', page.pageNumber);
-      // Mark page as rendered and no longer loading
     if (markPageRendered) {
       markPageRendered(page.pageNumber);
     }

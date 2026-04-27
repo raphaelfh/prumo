@@ -44,7 +44,15 @@ import {FullAIExtractionProgress} from '@/components/extraction/FullAIExtraction
 
 // Hooks adicionais
 import {useModelManagement} from '@/hooks/extraction/useModelManagement';
+import {usePreserveScroll} from '@/hooks/usePreserveScroll';
 import {t} from '@/lib/copy';
+
+const SCROLL_CONTAINERS_TO_PRESERVE = [
+  // Form panel — actual scroll happens on radix' inner viewport node.
+  '[data-scroll-container="extraction-form"] [data-radix-scroll-area-viewport]',
+  // PDFViewerCore container.
+  '[data-scroll-container="true"]',
+];
 
 // =================== COMPONENT ===================
 
@@ -108,8 +116,13 @@ export default function ExtractionFullScreen() {
   });
 
   // Hook para calcular progresso
-  const { completedFields, totalFields, completionPercentage, isComplete } = 
+  const { completedFields, totalFields, completionPercentage, isComplete } =
     useExtractionProgress(values, entityTypes);
+
+  // Captures the scroll position of the form + PDF panels around async
+  // refreshes so the user does not get bounced back to the top after an AI
+  // extraction completes. See usePreserveScroll for the rAF dance.
+  const preserveScroll = usePreserveScroll(SCROLL_CONTAINERS_TO_PRESERVE);
 
     // Auto-save hook (only enable after values initialized)
   const { isSaving, lastSaved } = useExtractionAutoSave({
@@ -267,18 +280,12 @@ export default function ExtractionFullScreen() {
   };
 
   const handleConfirmAddModel = async (modelName: string, modellingMethod: string) => {
-      console.warn('Starting model creation:', modelName);
     const result = await createModel(modelName, modellingMethod);
-    
     if (result) {
-        console.warn('Model created successfully:', result.model);
       setShowAddModelDialog(false);
-
-        // Reload instances only (child instances will be included)
-        // Do not call refreshModels() - hook already updates local state
-      await refreshInstances();
-
-        console.warn('State updated, fields should appear immediately');
+      // Reload instances (child instances will be included).
+      // refreshModels() is NOT called — the createModel hook already updated local state.
+      await preserveScroll(refreshInstances);
     }
   };
 
@@ -721,90 +728,55 @@ export default function ExtractionFullScreen() {
    *
    * IMPORTANT: This function must not block - runs in background.
    */
-  const handleExtractionComplete = (runId?: string) => {
-      console.warn('✅ Extraction completed', runId ? `runId: ${runId}` : '');
-
-      // Run refresh in background (do not block)
-      // Hook loading should be reset regardless of this callback
+  const handleExtractionComplete = (_runId?: string) => {
+      // Run refresh in background (do not block).
+      // Wrapped in preserveScroll so the form + PDF panels keep their scroll
+      // position even though the underlying state updates trigger a re-render.
     (async () => {
       try {
-          // IMPORTANT: Reload instances first (backend may have created new ones for cardinality="many")
-          // Wait long enough for backend to finish creating instances
-          // and that Supabase synced changes to the DB
         await new Promise(resolve => setTimeout(resolve, 1500));
 
-          // 1. Reload instances (backend may have created new ones for cardinality="many")
-        if (template) {
-            console.warn('Reloading instances after extraction...');
-          try {
-            await refreshInstances();
-              console.warn('Instances reloaded successfully');
-          } catch (err) {
+        await preserveScroll(async () => {
+          if (template) {
+            try {
+              await refreshInstances();
+            } catch (err) {
               console.error('Error reloading instances (non-critical):', err);
-              // Do not block flow - instances will be reloaded on next refresh
+            }
           }
-        }
+          await refreshValues();
+        });
 
-          // Immediate refresh of extracted values
-        await refreshValues();
-
-          // IMPORTANT: Wait longer before fetching suggestions
-          // Ensures newly reloaded instances are available when we fetch suggestions
+          // Wait briefly before suggestion polling so newly created
+          // instances are queryable.
         await new Promise(resolve => setTimeout(resolve, 500));
 
-          // Optimized polling: use refresh result directly instead of React state
-          // Removes async state dependency and makes polling more reliable
+          // Polling for AI suggestions. Each attempt is wrapped in
+          // preserveScroll so suggestion-driven re-renders also keep the
+          // user's place. We use the direct result (not React state) to
+          // decide when to stop, which avoids racing the next render.
         let attempts = 0;
-          const maxAttempts = 5; // 5 attempts = ~5 seconds total
-        const pollDelay = 1000; // 1 segundo entre tentativas
+        const maxAttempts = 5;
+        const pollDelay = 1000;
 
-          // First attempt (after delays above)
-          console.warn('Reloading AI suggestions...');
-        let result = await refreshAISuggestions();
-
-          // Check for suggestions using direct result (not React state)
+        let result = await preserveScroll(refreshAISuggestions);
         let foundSuggestions = result.count > 0;
-        
-        if (foundSuggestions) {
-            console.warn(`${result.count} suggestion(s) found immediately`);
-          return;
-        }
+        if (foundSuggestions) return;
 
-          // Continue polling if we did not find suggestions
         while (!foundSuggestions && attempts < maxAttempts) {
           attempts++;
-
-            console.warn(`Attempt ${attempts + 1}/${maxAttempts + 1}: Reloading suggestions...`);
-
-            // Wait before reload (give backend time to create suggestions)
           await new Promise(resolve => setTimeout(resolve, pollDelay));
-
-            // Reload suggestions and get result directly
-          result = await refreshAISuggestions();
-
-            // Check using direct result (more reliable than React state)
+          result = await preserveScroll(refreshAISuggestions);
           foundSuggestions = result.count > 0;
-          
-          if (foundSuggestions) {
-              console.warn(`${result.count} suggestion(s) found after ${attempts + 1} attempt(s)`);
-            return;
-          }
+          if (foundSuggestions) return;
         }
 
-          // If we got here without finding suggestions
-        if (!foundSuggestions) {
-            console.warn('No suggestions found after multiple attempts');
-            console.warn('   Possible reasons:');
-            console.warn('   - Suggestions were not created (fields already filled, etc)');
-            console.warn('   - Suggestions were created but not yet available in the database');
-            console.warn('   - There is an issue loading suggestions');
-        }
       } catch (error) {
           console.error('Error reloading suggestions:', error);
           // Do not show error toast - suggestions may not have been created
           // (already handled by extraction hook)
       }
-    })(); // IIFE - executar imediatamente sem bloquear
+    })();
   };
 
   return (

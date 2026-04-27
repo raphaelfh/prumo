@@ -28,6 +28,52 @@ export interface EntityTypeWithFields extends ExtractionEntityType {
   fields: ExtractionField[];
 }
 
+/**
+ * Returns a new array only when something actually changed (added, removed,
+ * or shallow-different at the entry level keyed by id). Preserves the
+ * reference of unchanged entries so React reuses the same Fiber and the
+ * extraction form does not remount + scroll-reset on every refresh.
+ */
+function mergeInstancesById(
+  prev: ExtractionInstance[],
+  next: ExtractionInstance[]
+): ExtractionInstance[] {
+  const prevById = new Map(prev.map((i) => [i.id, i] as const));
+  const nextById = new Map(next.map((i) => [i.id, i] as const));
+
+  let changed = prev.length !== next.length;
+  const merged = next.map((incoming) => {
+    const existing = prevById.get(incoming.id);
+    if (!existing) {
+      changed = true;
+      return incoming;
+    }
+    // Cheap shallow check on the surface fields the form actually reads.
+    const sameShape =
+      existing.label === incoming.label &&
+      existing.sort_order === incoming.sort_order &&
+      existing.status === incoming.status &&
+      existing.parent_instance_id === incoming.parent_instance_id;
+    if (!sameShape) {
+      changed = true;
+      return { ...existing, ...incoming };
+    }
+    return existing;
+  });
+
+  if (!changed) {
+    // Detect removals.
+    for (const id of prevById.keys()) {
+      if (!nextById.has(id)) {
+        changed = true;
+        break;
+      }
+    }
+  }
+
+  return changed ? merged : prev;
+}
+
 interface UseExtractionDataReturn {
     // Loaded data
   article: Article | null;
@@ -106,7 +152,11 @@ export function useExtractionData({
     }
   }, [articleId, projectId]);
 
-    // Load existing instances (without creating)
+    // Load existing instances (without creating). Uses merge-by-id so a
+    // refresh keeps existing React keys stable for instances that didn't
+    // change — only added/updated entries trigger downstream re-renders. This
+    // removes the visual flash + scroll reset that came from replacing the
+    // whole array on every refresh.
   const loadInstances = useCallback(async (templateId: string) => {
     if (!articleId || !templateId) {
       setInstances([]);
@@ -118,12 +168,14 @@ export function useExtractionData({
         articleId,
         templateId
       });
-      
-      setInstances(refreshedInstances.map(instance => ({
+
+      const normalised: ExtractionInstance[] = refreshedInstances.map(instance => ({
         ...instance,
         article_id: instance.article_id!,
         metadata: instance.metadata as unknown,
-      })));
+      }));
+
+      setInstances(prev => mergeInstancesById(prev, normalised));
     } catch (err: unknown) {
         const message = err instanceof Error ? err.message : t('extraction', 'errors_loadInstances');
         console.error('Error loading instances:', err);

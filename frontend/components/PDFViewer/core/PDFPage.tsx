@@ -43,13 +43,6 @@ export const PDFPage = React.memo<PDFPageProps>(({
   const lastEmittedHeightRef = useRef<number | null>(null);
   const [pageProxy, setPageProxy] = useState<PDFPageProxy | null>(null);
 
-    // Debug: check if props are received
-  useEffect(() => {
-    if (searchQuery) {
-        console.warn(`[PDFPage ${pageNumber}] Props recebidas: searchQuery="${searchQuery}", isHighlighted=${isHighlighted}, currentMatchIndex=${currentMatchIndex}`);
-    }
-  }, [pageNumber, searchQuery, isHighlighted, currentMatchIndex]);
-
     // Reset counter when query or page changes
   useEffect(() => {
     matchCounterRef.current = 0;
@@ -58,11 +51,8 @@ export const PDFPage = React.memo<PDFPageProps>(({
     // Function to highlight found text
   const customTextRenderer = useMemo(() => {
     if (!searchQuery || !searchQuery.trim()) {
-        console.warn(`[PDFPage ${pageNumber}] customTextRenderer: query vazia, retornando undefined`);
       return undefined;
     }
-
-      console.warn(`[PDFPage ${pageNumber}] customTextRenderer criado para query: "${searchQuery}"`);
 
       // Create regex for search (case insensitive by default)
     const escapedQuery = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -72,11 +62,6 @@ export const PDFPage = React.memo<PDFPageProps>(({
       const text = textItem.str;
       const parts = text.split(pattern);
 
-        // Debug: check if processing
-      if (parts.length > 1) {
-          console.warn(`[PDFPage ${pageNumber}] customTextRenderer processando texto com ${parts.length - 1} match(es)`);
-      }
-      
       return parts.map((part, index) => {
           // Check if part matches pattern
         // Usar matchAll para evitar problemas com lastIndex
@@ -151,10 +136,7 @@ export const PDFPage = React.memo<PDFPageProps>(({
     }
     
     if (pdfPage) {
-        console.warn(`[PDFPage ${pageNumber}] pageProxy definido:`, pdfPage);
       setPageProxy(pdfPage);
-    } else {
-        console.warn(`[PDFPage ${pageNumber}] Could not get pageProxy from page object:`, page);
     }
     
     if (onLoadSuccess) {

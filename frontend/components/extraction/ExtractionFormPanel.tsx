@@ -41,15 +41,21 @@ export function ExtractionFormPanel({
   }
 
   return (
-    <ScrollArea className="h-full bg-slate-50">
-      <div className="p-8 space-y-4">
-        {viewMode === 'extract' && formViewProps ? (
-          <ExtractionFormView {...formViewProps} />
-        ) : viewMode === 'compare' && compareViewProps ? (
-          <ExtractionCompareView {...compareViewProps} />
-        ) : null}
-      </div>
-    </ScrollArea>
+    // data-scroll-container is consumed by usePreserveScroll so the form
+    // keeps its scroll position around async refreshes (e.g. after AI
+    // extraction). Pair the marker with the inner radix viewport selector
+    // because radix ScrollArea renders the actual scroll node beneath.
+    <div data-scroll-container="extraction-form" className="h-full">
+      <ScrollArea className="h-full bg-slate-50">
+        <div className="p-8 space-y-4">
+          {viewMode === 'extract' && formViewProps ? (
+            <ExtractionFormView {...formViewProps} />
+          ) : viewMode === 'compare' && compareViewProps ? (
+            <ExtractionCompareView {...compareViewProps} />
+          ) : null}
+        </div>
+      </ScrollArea>
+    </div>
   );
 }
 
