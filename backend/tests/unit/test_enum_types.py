@@ -103,6 +103,9 @@ class TestPostgreSQLEnumValuesMapping:
             "consensus_decision_mode",
             "published_state_status",
             "evidence_entity_type",
+            "hitl_config_scope_kind",
+            "consensus_rule",
+            "template_kind",
         }
 
         actual_enums = set(POSTGRESQL_ENUM_VALUES.keys())
