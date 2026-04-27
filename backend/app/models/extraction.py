@@ -679,6 +679,7 @@ class ExtractionRun(Base, UUIDMixin):
                 "public.project_extraction_templates.kind",
             ],
             name="fk_extraction_runs_template_kind_coherence",
+            ondelete="CASCADE",
         ),
         {"schema": "public"},
     )
