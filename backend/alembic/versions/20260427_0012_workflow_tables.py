@@ -172,7 +172,7 @@ def upgrade() -> None:
             updated_at timestamptz NOT NULL DEFAULT now(),
             CONSTRAINT ck_extraction_consensus_decisions_select_existing_has_decision
                 CHECK (mode <> 'select_existing' OR selected_decision_id IS NOT NULL),
-            CONSTRAINT ck_extraction_consensus_decisions_manual_override_has_value_rationale
+            CONSTRAINT ck_extraction_consensus_decisions_manual_override_complete
                 CHECK (mode <> 'manual_override' OR (value IS NOT NULL AND rationale IS NOT NULL))
         );
         """

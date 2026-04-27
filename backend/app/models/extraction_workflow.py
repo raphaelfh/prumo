@@ -273,7 +273,7 @@ class ExtractionConsensusDecision(BaseModel):
         ),
         CheckConstraint(
             "mode <> 'manual_override' OR (value IS NOT NULL AND rationale IS NOT NULL)",
-            name="manual_override_has_value_rationale",
+            name="manual_override_complete",
         ),
         {"schema": "public"},
     )
