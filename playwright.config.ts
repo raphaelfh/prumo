@@ -1,4 +1,35 @@
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { defineConfig, devices } from "@playwright/test";
+
+// Lightweight .env loader so E2E_*, OPENAI_API_KEY, etc. defined at the project
+// root flow into the Playwright runner without requiring an extra dependency.
+// Each line `KEY=VALUE` is honored unless KEY is already set in process.env.
+function loadDotEnv(path: string): void {
+  if (!existsSync(path)) return;
+  const content = readFileSync(path, "utf-8");
+  for (const rawLine of content.split("\n")) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    if (eq <= 0) continue;
+    const key = line.slice(0, eq).trim();
+    let value = line.slice(eq + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    if (!(key in process.env)) {
+      process.env[key] = value;
+    }
+  }
+}
+
+loadDotEnv(resolve(process.cwd(), ".env.e2e"));
+loadDotEnv(resolve(process.cwd(), ".env"));
 
 const baseURL = process.env.E2E_FRONTEND_URL || "http://127.0.0.1:8080";
 

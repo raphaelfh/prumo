@@ -10,6 +10,7 @@ Suporta extraction individual or em batch de todas as sections.
 from time import perf_counter
 
 from fastapi import APIRouter, HTTPException, Request, status
+from sqlalchemy.exc import IntegrityError
 
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
 from app.core.factories import create_storage_adapter
@@ -179,6 +180,20 @@ async def extract_section(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
+        ) from e
+    except IntegrityError as e:
+        rollback_start = perf_counter()
+        await db.rollback()
+        rollback_duration_ms = (perf_counter() - rollback_start) * 1000
+        logger.warning(
+            "section_extraction_integrity_error",
+            trace_id=trace_id,
+            error=str(e),
+            rollback_duration_ms=rollback_duration_ms,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Referenced project, article, template or entity_type does not exist.",
         ) from e
     except FileNotFoundError as e:
         rollback_start = perf_counter()
