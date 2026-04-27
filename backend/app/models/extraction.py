@@ -70,12 +70,14 @@ class ExtractionSource(str, PyEnum):
 
 
 class ExtractionRunStage(str, PyEnum):
-    """Estagio da execucao de extraction."""
+    """Estagio da execucao de extraction (HITL lifecycle)."""
 
-    DATA_SUGGEST = "data_suggest"
-    PARSING = "parsing"
-    VALIDATION = "validation"
+    PENDING = "pending"
+    PROPOSAL = "proposal"
+    REVIEW = "review"
     CONSENSUS = "consensus"
+    FINALIZED = "finalized"
+    CANCELLED = "cancelled"
 
 
 class ExtractionRunStatus(str, PyEnum):

@@ -42,7 +42,7 @@ POSTGRESQL_ENUM_VALUES: dict[str, list[str]] = {
     "extraction_field_type": ["text", "number", "date", "select", "multiselect", "boolean"],
     "extraction_cardinality": ["one", "many"],
     "extraction_source": ["human", "ai", "rule"],
-    "extraction_run_stage": ["data_suggest", "parsing", "validation", "consensus"],
+    "extraction_run_stage": ["pending", "proposal", "review", "consensus", "finalized", "cancelled"],
     "extraction_run_status": ["pending", "running", "completed", "failed"],
     "suggestion_status": ["pending", "accepted", "rejected"],
     "extraction_instance_status": ["pending", "in_progress", "completed", "reviewed", "archived"],

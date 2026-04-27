@@ -225,7 +225,7 @@ class TestEnumCreationFromString:
             (ExtractionFieldType, "text"),
             (ExtractionCardinality, "one"),
             (ExtractionSource, "human"),
-            (ExtractionRunStage, "data_suggest"),
+            (ExtractionRunStage, "proposal"),
             (ExtractionRunStatus, "pending"),
             (SuggestionStatus, "pending"),
             (ExtractionInstanceStatus, "pending"),

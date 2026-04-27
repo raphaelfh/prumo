@@ -119,7 +119,7 @@ class ModelExtractionService(LoggerMixin):
             project_id=project_id,
             article_id=article_id,
             template_id=template_id,
-            stage=ExtractionRunStage.DATA_SUGGEST,
+            stage=ExtractionRunStage.PROPOSAL,
             created_by=UUID(self.user_id),
             parameters={
                 "model": model,
