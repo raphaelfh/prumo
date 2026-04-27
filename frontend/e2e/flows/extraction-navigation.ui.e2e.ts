@@ -5,27 +5,9 @@ import { loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
 
 const REQUIRED = ["E2E_USER_EMAIL", "E2E_USER_PASSWORD", "E2E_PROJECT_ID", "E2E_ARTICLE_ID"];
 
-/**
- * Wait until the extraction page renders the Back button. If the page hits the
- * ErrorBoundary first (Something went wrong), skip the test with a clear
- * message — those navigation tests cannot meaningfully run when the underlying
- * page has crashed; the failure mode is captured by other tests + the console
- * error filter and we surface it explicitly so the suite still tells the truth.
- */
-async function waitForExtractionPageOrSkip(page: Page): Promise<void> {
+async function waitForBackButton(page: Page): Promise<void> {
   const backButton = page.getByRole("button", { name: /^back$/i }).first();
-  const errorBoundary = page.getByRole("heading", { name: /something went wrong/i });
-  const visible = await Promise.race([
-    backButton.waitFor({ state: "visible", timeout: 15000 }).then(() => "back"),
-    errorBoundary.waitFor({ state: "visible", timeout: 15000 }).then(() => "error"),
-  ]).catch(() => "timeout");
-  if (visible !== "back") {
-    test.skip(
-      true,
-      `Extraction page did not render Back button (state: ${visible}); known crash in ` +
-        "ExtractionFormView with CHARMS-style allowed_values — see KNOWN_ISSUES."
-    );
-  }
+  await expect(backButton).toBeVisible({ timeout: 15000 });
 }
 
 // These tests share a single project + article + template so we run them
@@ -42,7 +24,7 @@ test.describe("Extraction page navigation", () => {
     await loginViaUi(page);
     await page.goto(`${env.frontendUrl}/projects/${env.projectId}/extraction/${env.articleId}`);
 
-    await waitForExtractionPageOrSkip(page);
+    await waitForBackButton(page);
     const backButton = page.getByRole("button", { name: /^back$/i }).first();
     await backButton.click();
 
@@ -62,7 +44,7 @@ test.describe("Extraction page navigation", () => {
     await loginViaUi(page);
     await page.goto(`${env.frontendUrl}/projects/${env.projectId}/extraction/${env.articleId}`);
 
-    await waitForExtractionPageOrSkip(page);
+    await waitForBackButton(page);
     // Breadcrumb shows the project name as a clickable link on viewports >= md.
     // The breadcrumb is rendered inside a navigation landmark with role="navigation" name "breadcrumb".
     const breadcrumb = page.getByRole("navigation", { name: /breadcrumb/i });
@@ -84,10 +66,10 @@ test.describe("Extraction page navigation", () => {
     const extractionUrl = `${env.frontendUrl}/projects/${env.projectId}/extraction/${env.articleId}`;
     await page.goto(extractionUrl);
 
-    await waitForExtractionPageOrSkip(page);
+    await waitForBackButton(page);
     await page.reload();
     expect(page.url()).toBe(extractionUrl);
-    await waitForExtractionPageOrSkip(page);
+    await waitForBackButton(page);
   });
 
   test("authenticated user lands on extraction page without unexpected console errors", async ({
@@ -97,41 +79,34 @@ test.describe("Extraction page navigation", () => {
     test.skip(missing.length > 0, `Missing required env: ${missing.join(", ")}`);
 
     const env = loadE2EEnv();
-    // Known issues we accept temporarily — each entry must have a tracked
-    // follow-up. New unrelated console errors still fail the test, so a
-    // regression in any other surface area cannot slip in silently.
-    const KNOWN_ISSUES = [
-      // PDFCanvas/PDFPage re-renders trigger React's "Maximum update depth
-      // exceeded" warning on PDF mount. Partial mitigation in PDFCanvas
-      // (handlePageHeightMeasured short-circuits when the height is unchanged)
-      // landed in the same change that introduced this test; the residual loop
-      // lives in the react-pdf <Page> + virtualization interplay and needs a
-      // dedicated investigation. Remove this entry once the root cause is fixed.
-      "Maximum update depth exceeded",
-      // SelectWithOther / FieldInput intermittently throws "Objects are not
-      // valid as a React child" with CHARMS-style allowed_values when the
-      // <SelectValue> is asked to render a value that is still an object. Race
-      // condition between value hydration and the first paint; only surfaces
-      // when the page is opened directly under contention. Remove once the
-      // value hydration in extracted_values is hardened.
-      "Objects are not valid as a React child",
-    ];
+    // PDFCanvas + react-pdf <Document>/<Page> still emit one or two
+    // "Maximum update depth exceeded" warnings during the very first
+    // measurement pass on a fresh PDF. The page reaches steady state
+    // immediately after; we keep this allowance narrow (only this exact
+    // warning text) so any other error in the extraction surface still
+    // fails the test. Mitigations applied so far:
+    //  * PDFCanvas.handlePageHeightMeasured short-circuits on unchanged
+    //    height (bails out before invalidating the actualPageHeights Map).
+    //  * PDFPage.handleLoadSuccess rounds to integer + bails when the
+    //    last emitted height matches the new measurement.
+    //  * usePDFVirtualization split the IntersectionObserver lifecycle
+    //    from the observe()/unobserve() pass so pageRefs mutations no
+    //    longer tear down + recreate the observer on every page mount.
+    const KNOWN_PDF_VIEWER_WARNING = "Maximum update depth exceeded";
     const unexpectedErrors: string[] = [];
     page.on("console", (msg) => {
       if (msg.type() !== "error") return;
       const text = msg.text();
-      // Ignore noise from the Vite dev server / HMR / asset 404s; everything
-      // else (except KNOWN_ISSUES) fails the test so a real regression cannot
-      // slip in silently.
+      // Ignore noise from the Vite dev server / HMR / asset 404s.
       if (/Failed to load resource|HMR|hot-update|favicon\.ico/i.test(text)) return;
-      if (KNOWN_ISSUES.some((needle) => text.includes(needle))) return;
+      if (text.includes(KNOWN_PDF_VIEWER_WARNING)) return;
       unexpectedErrors.push(text);
     });
 
     await loginViaUi(page);
     await page.goto(`${env.frontendUrl}/projects/${env.projectId}/extraction/${env.articleId}`);
 
-    await waitForExtractionPageOrSkip(page);
+    await waitForBackButton(page);
     await page.waitForTimeout(500);
 
     expect(

@@ -40,6 +40,7 @@ export const PDFPage = React.memo<PDFPageProps>(({
   const pageRef = useRef<HTMLDivElement>(null);
   const isLoadingRef = useRef(true);
   const matchCounterRef = useRef(0);
+  const lastEmittedHeightRef = useRef<number | null>(null);
   const [pageProxy, setPageProxy] = useState<PDFPageProxy | null>(null);
 
     // Debug: check if props are received
@@ -164,14 +165,17 @@ export const PDFPage = React.memo<PDFPageProps>(({
       onLoadingChange(pageNumber, false);
     }
 
-      // Measure actual page height after load
+      // Measure actual page height after load. We record the last height we
+      // emitted so successive loads (e.g. after a search re-render) don't
+      // re-emit the same value and trigger React's "Maximum update depth"
+      // warning when the parent's measurement Map keeps invalidating.
     if (pageRef.current && onHeightMeasured) {
-      // Usar requestAnimationFrame para garantir que o DOM foi atualizado
       requestAnimationFrame(() => {
-        if (pageRef.current) {
-          const height = pageRef.current.offsetHeight;
-          onHeightMeasured(pageNumber, height);
-        }
+        if (!pageRef.current) return;
+        const height = Math.round(pageRef.current.offsetHeight);
+        if (lastEmittedHeightRef.current === height) return;
+        lastEmittedHeightRef.current = height;
+        onHeightMeasured(pageNumber, height);
       });
     }
   }, [onLoadSuccess, onHeightMeasured, onLoadingChange, pageNumber]);

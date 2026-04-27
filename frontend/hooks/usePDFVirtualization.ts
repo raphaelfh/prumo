@@ -108,30 +108,49 @@ export function usePDFVirtualization({
     });
   }, [calculateVisibleRange]);
 
-  // Configurar Intersection Observer
+  // Create the IntersectionObserver once per container/rootMargin/handler
+  // identity. Observing newly-registered page refs is handled by a separate
+  // effect below so we don't tear down + recreate the observer on every
+  // pageRefs mutation — that recreation is what produced the "Maximum update
+  // depth exceeded" loop because PDFPage re-mounts caused setPageRefs which
+  // re-fired this effect synchronously.
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // Criar observer
-    observerRef.current = new IntersectionObserver(handleIntersection, {
+    const observer = new IntersectionObserver(handleIntersection, {
       root: containerRef.current,
       rootMargin,
-        threshold: 0.01, // Trigger when any part of page is visible
+      threshold: 0.01,
     });
-
-      // Observe all registered page refs
-    pageRefs.forEach((element) => {
-      if (element && observerRef.current) {
-        observerRef.current.observe(element);
-      }
-    });
+    observerRef.current = observer;
 
     return () => {
-      if (observerRef.current) {
-        observerRef.current.disconnect();
+      observer.disconnect();
+      if (observerRef.current === observer) {
+        observerRef.current = null;
       }
     };
-  }, [containerRef, handleIntersection, pageRefs, rootMargin]);
+  }, [containerRef, handleIntersection, rootMargin]);
+
+  // Observe newly-registered page refs. When pageRefs changes we (re-)observe
+  // every entry; the observer itself is reused and IntersectionObserver
+  // tolerates being asked to observe the same element twice.
+  useEffect(() => {
+    const observer = observerRef.current;
+    if (!observer) return;
+    pageRefs.forEach((element) => {
+      if (element) {
+        observer.observe(element);
+      }
+    });
+    return () => {
+      pageRefs.forEach((element) => {
+        if (element) {
+          observer.unobserve(element);
+        }
+      });
+    };
+  }, [pageRefs]);
 
     // Mark page as rendered
   const markPageRendered = useCallback((pageNumber: number) => {
