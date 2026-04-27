@@ -87,7 +87,14 @@ async def test_template_version_only_one_active_per_template(
 async def test_template_version_backfill_created_v1_for_each_existing_template(
     db_session: AsyncSession,
 ) -> None:
-    # Every existing project_extraction_template should have at least one version row
+    template_count_row = await db_session.execute(
+        text("SELECT COUNT(*) FROM public.project_extraction_templates"),
+    )
+    template_count = template_count_row.scalar()
+    if template_count == 0:
+        pytest.skip("No project_extraction_templates rows; backfill is vacuously satisfied.")
+
+    # Every existing project_extraction_template must have a v=1 row.
     result = await db_session.execute(
         text(
             """
@@ -100,4 +107,12 @@ async def test_template_version_backfill_created_v1_for_each_existing_template(
         )
     )
     missing = result.fetchall()
-    assert missing == []
+    assert missing == [], f"Templates missing v=1: {missing}"
+
+    # And the count of distinct templates with v=1 must equal the template count.
+    distinct_row = await db_session.execute(
+        text(
+            "SELECT COUNT(DISTINCT project_template_id) FROM public.extraction_template_versions WHERE version = 1",
+        )
+    )
+    assert distinct_row.scalar() == template_count

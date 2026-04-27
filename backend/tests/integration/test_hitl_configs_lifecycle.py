@@ -50,3 +50,27 @@ async def test_hitl_config_insert_project_scope_and_unique_per_scope(
     with pytest.raises(IntegrityError):
         await db_session.flush()
     await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_hitl_config_arbitrator_required_when_rule_is_arbitrator(
+    db_session: AsyncSession,
+) -> None:
+    project_row = await db_session.execute(
+        text("SELECT id FROM public.projects LIMIT 1"),
+    )
+    project_id = project_row.scalar()
+    if project_id is None:
+        pytest.skip("No projects rows.")
+
+    bad = ExtractionHitlConfig(
+        scope_kind=HitlConfigScopeKind.PROJECT.value,
+        scope_id=project_id,
+        reviewer_count=1,
+        consensus_rule=ConsensusRule.ARBITRATOR.value,
+        arbitrator_id=None,
+    )
+    db_session.add(bad)
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+    await db_session.rollback()

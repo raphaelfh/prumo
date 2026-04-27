@@ -146,8 +146,164 @@ def upgrade() -> None:
         """
     )
 
+    # Triggers to maintain updated_at on UPDATE.
+    for table_name in ("extraction_template_versions", "extraction_hitl_configs"):
+        op.execute(
+            f"DROP TRIGGER IF EXISTS update_{table_name}_updated_at ON public.{table_name};"
+        )
+        op.execute(
+            f"""
+            CREATE TRIGGER update_{table_name}_updated_at
+            BEFORE UPDATE ON public.{table_name}
+            FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+            """
+        )
+
+    # RLS — extraction_template_versions inherits project membership from its template.
+    op.execute("ALTER TABLE public.extraction_template_versions ENABLE ROW LEVEL SECURITY;")
+    op.execute(
+        """
+        CREATE POLICY extraction_template_versions_select
+          ON public.extraction_template_versions FOR SELECT
+          USING (
+              EXISTS (
+                  SELECT 1 FROM public.project_extraction_templates t
+                  WHERE t.id = extraction_template_versions.project_template_id
+                    AND public.is_project_member(t.project_id, auth.uid())
+              )
+          );
+        """
+    )
+    op.execute(
+        """
+        CREATE POLICY extraction_template_versions_insert
+          ON public.extraction_template_versions FOR INSERT
+          WITH CHECK (
+              EXISTS (
+                  SELECT 1 FROM public.project_extraction_templates t
+                  WHERE t.id = extraction_template_versions.project_template_id
+                    AND public.is_project_manager(t.project_id, auth.uid())
+              )
+          );
+        """
+    )
+    op.execute(
+        """
+        CREATE POLICY extraction_template_versions_update
+          ON public.extraction_template_versions FOR UPDATE
+          USING (
+              EXISTS (
+                  SELECT 1 FROM public.project_extraction_templates t
+                  WHERE t.id = extraction_template_versions.project_template_id
+                    AND public.is_project_manager(t.project_id, auth.uid())
+              )
+          )
+          WITH CHECK (
+              EXISTS (
+                  SELECT 1 FROM public.project_extraction_templates t
+                  WHERE t.id = extraction_template_versions.project_template_id
+                    AND public.is_project_manager(t.project_id, auth.uid())
+              )
+          );
+        """
+    )
+    op.execute(
+        """
+        CREATE POLICY extraction_template_versions_delete
+          ON public.extraction_template_versions FOR DELETE
+          USING (
+              EXISTS (
+                  SELECT 1 FROM public.project_extraction_templates t
+                  WHERE t.id = extraction_template_versions.project_template_id
+                    AND public.is_project_manager(t.project_id, auth.uid())
+              )
+          );
+        """
+    )
+
+    # RLS — extraction_hitl_configs derives membership from scope (project or template).
+    op.execute("ALTER TABLE public.extraction_hitl_configs ENABLE ROW LEVEL SECURITY;")
+    op.execute(
+        """
+        CREATE POLICY extraction_hitl_configs_select
+          ON public.extraction_hitl_configs FOR SELECT
+          USING (
+              (extraction_hitl_configs.scope_kind = 'project'
+                  AND public.is_project_member(extraction_hitl_configs.scope_id, auth.uid()))
+              OR (extraction_hitl_configs.scope_kind = 'template'
+                  AND EXISTS (
+                      SELECT 1 FROM public.project_extraction_templates t
+                      WHERE t.id = extraction_hitl_configs.scope_id
+                        AND public.is_project_member(t.project_id, auth.uid())
+                  ))
+          );
+        """
+    )
+    op.execute(
+        """
+        CREATE POLICY extraction_hitl_configs_insert
+          ON public.extraction_hitl_configs FOR INSERT
+          WITH CHECK (
+              (extraction_hitl_configs.scope_kind = 'project'
+                  AND public.is_project_manager(extraction_hitl_configs.scope_id, auth.uid()))
+              OR (extraction_hitl_configs.scope_kind = 'template'
+                  AND EXISTS (
+                      SELECT 1 FROM public.project_extraction_templates t
+                      WHERE t.id = extraction_hitl_configs.scope_id
+                        AND public.is_project_manager(t.project_id, auth.uid())
+                  ))
+          );
+        """
+    )
+    op.execute(
+        """
+        CREATE POLICY extraction_hitl_configs_update
+          ON public.extraction_hitl_configs FOR UPDATE
+          USING (
+              (extraction_hitl_configs.scope_kind = 'project'
+                  AND public.is_project_manager(extraction_hitl_configs.scope_id, auth.uid()))
+              OR (extraction_hitl_configs.scope_kind = 'template'
+                  AND EXISTS (
+                      SELECT 1 FROM public.project_extraction_templates t
+                      WHERE t.id = extraction_hitl_configs.scope_id
+                        AND public.is_project_manager(t.project_id, auth.uid())
+                  ))
+          )
+          WITH CHECK (
+              (extraction_hitl_configs.scope_kind = 'project'
+                  AND public.is_project_manager(extraction_hitl_configs.scope_id, auth.uid()))
+              OR (extraction_hitl_configs.scope_kind = 'template'
+                  AND EXISTS (
+                      SELECT 1 FROM public.project_extraction_templates t
+                      WHERE t.id = extraction_hitl_configs.scope_id
+                        AND public.is_project_manager(t.project_id, auth.uid())
+                  ))
+          );
+        """
+    )
+    op.execute(
+        """
+        CREATE POLICY extraction_hitl_configs_delete
+          ON public.extraction_hitl_configs FOR DELETE
+          USING (
+              (extraction_hitl_configs.scope_kind = 'project'
+                  AND public.is_project_manager(extraction_hitl_configs.scope_id, auth.uid()))
+              OR (extraction_hitl_configs.scope_kind = 'template'
+                  AND EXISTS (
+                      SELECT 1 FROM public.project_extraction_templates t
+                      WHERE t.id = extraction_hitl_configs.scope_id
+                        AND public.is_project_manager(t.project_id, auth.uid())
+                  ))
+          );
+        """
+    )
+
 
 def downgrade() -> None:
+    for table_name in ("extraction_template_versions", "extraction_hitl_configs"):
+        op.execute(
+            f"DROP TRIGGER IF EXISTS update_{table_name}_updated_at ON public.{table_name};"
+        )
     op.execute("DROP TABLE IF EXISTS public.extraction_hitl_configs CASCADE;")
     op.execute("DROP TABLE IF EXISTS public.extraction_template_versions CASCADE;")
     op.execute("DROP TYPE IF EXISTS consensus_rule;")
