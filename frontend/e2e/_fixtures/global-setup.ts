@@ -24,7 +24,7 @@ async function resolveSupabaseToken(
   anonKey: string,
   email: string,
   password: string
-): Promise<string | null> {
+): Promise<{ accessToken: string | null; userId: string | null }> {
   try {
     const response = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
       method: "POST",
@@ -34,11 +34,17 @@ async function resolveSupabaseToken(
       },
       body: JSON.stringify({ email, password }),
     });
-    if (!response.ok) return null;
-    const body = (await response.json()) as { access_token?: string };
-    return body.access_token ?? null;
+    if (!response.ok) return { accessToken: null, userId: null };
+    const body = (await response.json()) as {
+      access_token?: string;
+      user?: { id?: string };
+    };
+    return {
+      accessToken: body.access_token ?? null,
+      userId: body.user?.id ?? null,
+    };
   } catch {
-    return null;
+    return { accessToken: null, userId: null };
   }
 }
 
@@ -47,23 +53,26 @@ export default async function globalSetup(_config: FullConfig): Promise<void> {
   await waitForHealthcheck(`${env.apiUrl}/health`, 60_000);
   await waitForHealthcheck(env.frontendUrl, 60_000);
 
-  // Auto-resolve the primary E2E_AUTH_TOKEN from email/password if needed, so
-  // API-only tests do not skip when the caller only supplies credentials.
+  // Auto-resolve the primary E2E_AUTH_TOKEN + E2E_USER_ID from email/password
+  // when needed, so API-only tests do not skip and admin seeds have a created_by.
   if (
-    !process.env.E2E_AUTH_TOKEN &&
+    (!process.env.E2E_AUTH_TOKEN || !process.env.E2E_USER_ID) &&
     env.userEmail &&
     env.userPassword &&
     env.supabaseUrl &&
     env.supabaseAnonKey
   ) {
-    const token = await resolveSupabaseToken(
+    const { accessToken, userId } = await resolveSupabaseToken(
       env.supabaseUrl,
       env.supabaseAnonKey,
       env.userEmail,
       env.userPassword
     );
-    if (token) {
-      process.env.E2E_AUTH_TOKEN = token;
+    if (accessToken && !process.env.E2E_AUTH_TOKEN) {
+      process.env.E2E_AUTH_TOKEN = accessToken;
+    }
+    if (userId && !process.env.E2E_USER_ID) {
+      process.env.E2E_USER_ID = userId;
     }
   }
 
@@ -77,14 +86,14 @@ export default async function globalSetup(_config: FullConfig): Promise<void> {
     env.supabaseUrl &&
     env.supabaseAnonKey
   ) {
-    const token = await resolveSupabaseToken(
+    const { accessToken } = await resolveSupabaseToken(
       env.supabaseUrl,
       env.supabaseAnonKey,
       env.rateLimitEmail,
       env.rateLimitPassword
     );
-    if (token) {
-      process.env.E2E_RATE_LIMIT_TOKEN = token;
+    if (accessToken) {
+      process.env.E2E_RATE_LIMIT_TOKEN = accessToken;
     }
   }
 

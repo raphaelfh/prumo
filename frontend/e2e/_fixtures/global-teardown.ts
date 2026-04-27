@@ -76,8 +76,13 @@ export default async function globalTeardown(_config: FullConfig): Promise<void>
 
   const grouped: Record<string, string[]> = {
     evaluation_runs: [],
+    evaluation_schemas: [],
     evaluation_schema_versions: [],
+    evaluation_items: [],
     evidence_records: [],
+    extraction_instances: [],
+    extraction_fields: [],
+    extraction_entity_types: [],
   };
   const authUserIds: string[] = [];
   const storageObjects: Array<{ bucket: string; path: string }> = [];
@@ -87,11 +92,26 @@ export default async function globalTeardown(_config: FullConfig): Promise<void>
       case "evaluation_run":
         grouped.evaluation_runs.push(entry.id);
         break;
+      case "evaluation_schema":
+        grouped.evaluation_schemas.push(entry.id);
+        break;
       case "evaluation_schema_version":
         grouped.evaluation_schema_versions.push(entry.id);
         break;
+      case "evaluation_item":
+        grouped.evaluation_items.push(entry.id);
+        break;
       case "evidence_record":
         grouped.evidence_records.push(entry.id);
+        break;
+      case "extraction_instance":
+        grouped.extraction_instances.push(entry.id);
+        break;
+      case "extraction_field":
+        grouped.extraction_fields.push(entry.id);
+        break;
+      case "extraction_entity_type":
+        grouped.extraction_entity_types.push(entry.id);
         break;
       case "auth_user":
         authUserIds.push(entry.id);
@@ -113,17 +133,47 @@ export default async function globalTeardown(_config: FullConfig): Promise<void>
     "evidence_records",
     grouped.evidence_records
   );
+  summary.extraction_instances = await deleteFromTable(
+    env.supabaseUrl,
+    env.supabaseServiceRoleKey,
+    "extraction_instances",
+    grouped.extraction_instances
+  );
+  summary.extraction_fields = await deleteFromTable(
+    env.supabaseUrl,
+    env.supabaseServiceRoleKey,
+    "extraction_fields",
+    grouped.extraction_fields
+  );
+  summary.extraction_entity_types = await deleteFromTable(
+    env.supabaseUrl,
+    env.supabaseServiceRoleKey,
+    "extraction_entity_types",
+    grouped.extraction_entity_types
+  );
   summary.evaluation_runs = await deleteFromTable(
     env.supabaseUrl,
     env.supabaseServiceRoleKey,
     "evaluation_runs",
     grouped.evaluation_runs
   );
+  summary.evaluation_items = await deleteFromTable(
+    env.supabaseUrl,
+    env.supabaseServiceRoleKey,
+    "evaluation_items",
+    grouped.evaluation_items
+  );
   summary.evaluation_schema_versions = await deleteFromTable(
     env.supabaseUrl,
     env.supabaseServiceRoleKey,
     "evaluation_schema_versions",
     grouped.evaluation_schema_versions
+  );
+  summary.evaluation_schemas = await deleteFromTable(
+    env.supabaseUrl,
+    env.supabaseServiceRoleKey,
+    "evaluation_schemas",
+    grouped.evaluation_schemas
   );
 
   let storageDeleted = 0;
@@ -147,9 +197,7 @@ export default async function globalTeardown(_config: FullConfig): Promise<void>
     "[e2e] global teardown summary:",
     JSON.stringify(
       {
-        evaluation_runs: summary.evaluation_runs,
-        evaluation_schema_versions: summary.evaluation_schema_versions,
-        evidence_records: summary.evidence_records,
+        ...summary,
         storage_objects_deleted: storageDeleted,
         auth_users_deleted: authDeleted,
       },

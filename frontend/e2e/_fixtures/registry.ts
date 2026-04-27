@@ -4,8 +4,13 @@ import { dirname, join } from "node:path";
 export type ResourceKind =
   | "auth_user"
   | "evaluation_run"
+  | "evaluation_schema"
   | "evaluation_schema_version"
+  | "evaluation_item"
   | "evidence_record"
+  | "extraction_instance"
+  | "extraction_entity_type"
+  | "extraction_field"
   | "storage_object";
 
 export type ResourceEntry = {
