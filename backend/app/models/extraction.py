@@ -540,8 +540,8 @@ class ExtractionEvidence(BaseModel):
         index=True,
     )
 
-    target_type: Mapped[str] = mapped_column(String, nullable=False)
-    target_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    target_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    target_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
 
     article_file_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
