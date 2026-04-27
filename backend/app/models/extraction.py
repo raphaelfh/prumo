@@ -12,6 +12,7 @@ from uuid import UUID
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
@@ -548,6 +549,28 @@ class ExtractionEvidence(BaseModel):
         nullable=True,
     )
 
+    run_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.extraction_runs.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    proposal_record_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.extraction_proposal_records.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    reviewer_decision_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.extraction_reviewer_decisions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    consensus_decision_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.extraction_consensus_decisions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     position: Mapped[dict] = mapped_column(JSONB, default={}, nullable=True)
     text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -562,6 +585,16 @@ class ExtractionEvidence(BaseModel):
     __table_args__ = (
         # Indice GIN for position JSONB
         Index("idx_extraction_evidence_position_gin", "position", postgresql_using="gin"),
+        CheckConstraint(
+            """
+            (run_id IS NOT NULL
+             AND (proposal_record_id IS NOT NULL
+                  OR reviewer_decision_id IS NOT NULL
+                  OR consensus_decision_id IS NOT NULL))
+            OR (target_type IS NOT NULL AND target_id IS NOT NULL)
+            """,
+            name="workflow_or_legacy_target",
+        ),
         {"schema": "public"},
     )
 
