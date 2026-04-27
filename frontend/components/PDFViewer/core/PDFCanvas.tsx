@@ -48,9 +48,17 @@ export function PDFCanvas() {
     return actualPageHeights.get(pageNum) || estimatedPageHeight;
   }, [actualPageHeights, estimatedPageHeight]);
 
-    // Callback to update actual page height
+    // Callback to update actual page height. Bails out when the measured value
+    // matches what is already cached so we avoid creating a new Map identity on
+    // every measure pass — that loop is what triggers React's "Maximum update
+    // depth exceeded" warning when a page re-measures with the same height
+    // after each parent re-render.
   const handlePageHeightMeasured = useCallback((pageNum: number, height: number) => {
     setActualPageHeights((prev) => {
+      const previous = prev.get(pageNum);
+      if (previous !== undefined && Math.abs(previous - height) < 0.5) {
+        return prev;
+      }
       const next = new Map(prev);
       next.set(pageNum, height);
       return next;

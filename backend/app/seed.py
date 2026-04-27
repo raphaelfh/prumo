@@ -6,6 +6,48 @@ duplicate data. It seeds CHARMS 2.0 global extraction template data.
 
 Run from the project root:
     python -m backend.app.seed
+
+Storage approach for canonical templates (CHARMS, PROBAST, TRIPOD, ...)
+======================================================================
+
+Canonical templates live in three normalized tables:
+
+* ``extraction_templates_global`` — one row per published checklist
+  (framework + version + free-form ``schema`` JSONB for visualization
+  hints).
+* ``extraction_entity_types`` — one row per domain/section. Hierarchy is
+  expressed via ``parent_entity_type_id`` (so e.g. CHARMS makes
+  ``prediction_models`` the parent of all 13 study/model sub-sections).
+  ``cardinality`` (``one`` vs ``many``) drives whether the UI treats the
+  section as a single editable form or a list-of-instances.
+* ``extraction_fields`` — one row per variable (text/number/boolean/date/
+  select/multiselect) with ``allowed_values`` / ``allowed_units`` /
+  ``validation_schema`` / ``llm_description`` so the UI and the LLM both
+  know how to handle each field.
+
+Why normalized + ``schema`` JSONB instead of a single document blob:
+
+1. **Queryability** — RLS, search, ad-hoc reports, and indexes all need
+   real columns. We frequently filter ``extraction_fields`` by
+   ``field_type`` or join ``extraction_instances`` to ``entity_types``;
+   doing that against a JSONB blob requires GIN indexes per access path
+   and is much harder to migrate.
+2. **Per-project overrides** — every project that adopts CHARMS clones
+   the global rows into ``project_extraction_templates`` +
+   ``extraction_entity_types`` (with ``project_template_id`` set). That
+   lets one project add fields, mark items required, or drop sections
+   without forking the canonical checklist.
+3. **Versionable seed code** — this file is the single source of truth.
+   New checklists ship as a new ``seed_<framework>`` function with fixed
+   UUIDs, and CI replays the seed against a fresh database to catch
+   drift. The free-form ``schema`` JSONB on ``extraction_templates_global``
+   is reserved for visualization hints (column widths, default expanded
+   sections, custom icons) that don't need their own columns.
+
+Adding a new checklist (e.g., PROBAST or TRIPOD-AI) means: pick fixed
+UUIDs (so deterministic across environments), build the entity_types +
+fields tree here, expose a ``seed_<name>`` function, and call it from
+``main()`` next to ``seed_charms``.
 """
 
 import asyncio
