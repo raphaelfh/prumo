@@ -9,8 +9,8 @@ Implements:
 - Repository Pattern with SQLAlchemy
 """
 
-from time import perf_counter
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Any
 from uuid import UUID
 
@@ -167,9 +167,7 @@ class ModelExtractionService(LoggerMixin):
                 models=models,
                 run=run,
             )
-            phase_durations_ms["create_model_instances"] = (
-                perf_counter() - phase_start
-            ) * 1000
+            phase_durations_ms["create_model_instances"] = (perf_counter() - phase_start) * 1000
 
             duration = (perf_counter() - start_time) * 1000
 

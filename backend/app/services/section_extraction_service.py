@@ -198,9 +198,7 @@ class SectionExtractionService(LoggerMixin):
                 extracted_data=extracted_data,
                 run=run,
             )
-            phase_durations_ms["create_suggestions"] = (
-                perf_counter() - phase_start
-            ) * 1000
+            phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
 
             duration = (perf_counter() - start_time) * 1000
 
@@ -334,9 +332,7 @@ class SectionExtractionService(LoggerMixin):
                 parent_instance_id=parent_instance_id,
                 section_ids=section_ids,
             )
-            phase_durations_ms["fetch_child_entity_types"] = (
-                perf_counter() - phase_start
-            ) * 1000
+            phase_durations_ms["fetch_child_entity_types"] = (perf_counter() - phase_start) * 1000
 
             total_sections = len(child_types)
             successful = 0
@@ -518,9 +514,7 @@ class SectionExtractionService(LoggerMixin):
                 extracted_data=extracted_data,
                 run=run,
             )
-            section_phase_durations_ms["create_suggestions"] = (
-                perf_counter() - phase_start
-            ) * 1000
+            section_phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
 
             # Generate memory summary (max 200 chars)
             summary = self._generate_extraction_summary(entity_type, extracted_data)

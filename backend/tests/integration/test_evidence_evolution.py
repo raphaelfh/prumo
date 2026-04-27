@@ -30,7 +30,8 @@ async def test_evidence_column_added(db_session: AsyncSession, column: str) -> N
 @pytest.mark.asyncio
 @pytest.mark.parametrize("column", ["target_type", "target_id"])
 async def test_evidence_legacy_columns_now_nullable(
-    db_session: AsyncSession, column: str,
+    db_session: AsyncSession,
+    column: str,
 ) -> None:
     result = await db_session.execute(
         text(
@@ -83,8 +84,6 @@ async def test_evidence_check_blocks_empty_insert(db_session: AsyncSession) -> N
 @pytest.mark.asyncio
 async def test_evidence_run_id_index(db_session: AsyncSession) -> None:
     result = await db_session.execute(
-        text(
-            "SELECT indexname FROM pg_indexes WHERE indexname = 'idx_extraction_evidence_run_id'"
-        )
+        text("SELECT indexname FROM pg_indexes WHERE indexname = 'idx_extraction_evidence_run_id'")
     )
     assert result.scalar() == "idx_extraction_evidence_run_id"

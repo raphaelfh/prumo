@@ -55,7 +55,9 @@ async def test_workflow_table_updated_at_trigger(
 
 @pytest.mark.asyncio
 async def test_proposal_record_human_requires_user_check(db_session: AsyncSession) -> None:
-    run_id = (await db_session.execute(text("SELECT id FROM public.extraction_runs LIMIT 1"))).scalar()
+    run_id = (
+        await db_session.execute(text("SELECT id FROM public.extraction_runs LIMIT 1"))
+    ).scalar()
     if run_id is None:
         pytest.skip("No extraction_runs rows.")
     instance_id = (
@@ -63,7 +65,9 @@ async def test_proposal_record_human_requires_user_check(db_session: AsyncSessio
     ).scalar()
     if instance_id is None:
         pytest.skip("No extraction_instances rows.")
-    field_id = (await db_session.execute(text("SELECT id FROM public.extraction_fields LIMIT 1"))).scalar()
+    field_id = (
+        await db_session.execute(text("SELECT id FROM public.extraction_fields LIMIT 1"))
+    ).scalar()
     if field_id is None:
         pytest.skip("No extraction_fields rows.")
 
@@ -85,7 +89,9 @@ async def test_proposal_record_human_requires_user_check(db_session: AsyncSessio
 async def test_reviewer_decision_accept_requires_proposal_check(
     db_session: AsyncSession,
 ) -> None:
-    run_id = (await db_session.execute(text("SELECT id FROM public.extraction_runs LIMIT 1"))).scalar()
+    run_id = (
+        await db_session.execute(text("SELECT id FROM public.extraction_runs LIMIT 1"))
+    ).scalar()
     if run_id is None:
         pytest.skip("No extraction_runs rows.")
     instance_id = (
@@ -93,10 +99,14 @@ async def test_reviewer_decision_accept_requires_proposal_check(
     ).scalar()
     if instance_id is None:
         pytest.skip("No extraction_instances rows.")
-    field_id = (await db_session.execute(text("SELECT id FROM public.extraction_fields LIMIT 1"))).scalar()
+    field_id = (
+        await db_session.execute(text("SELECT id FROM public.extraction_fields LIMIT 1"))
+    ).scalar()
     if field_id is None:
         pytest.skip("No extraction_fields rows.")
-    reviewer_id = (await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
+    reviewer_id = (
+        await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))
+    ).scalar()
     if reviewer_id is None:
         pytest.skip("No profiles rows.")
 
@@ -123,7 +133,9 @@ async def test_reviewer_decision_accept_requires_proposal_check(
 async def test_reviewer_decision_edit_requires_value_check(
     db_session: AsyncSession,
 ) -> None:
-    run_id = (await db_session.execute(text("SELECT id FROM public.extraction_runs LIMIT 1"))).scalar()
+    run_id = (
+        await db_session.execute(text("SELECT id FROM public.extraction_runs LIMIT 1"))
+    ).scalar()
     if run_id is None:
         pytest.skip("No extraction_runs rows.")
     instance_id = (
@@ -131,10 +143,14 @@ async def test_reviewer_decision_edit_requires_value_check(
     ).scalar()
     if instance_id is None:
         pytest.skip("No extraction_instances rows.")
-    field_id = (await db_session.execute(text("SELECT id FROM public.extraction_fields LIMIT 1"))).scalar()
+    field_id = (
+        await db_session.execute(text("SELECT id FROM public.extraction_fields LIMIT 1"))
+    ).scalar()
     if field_id is None:
         pytest.skip("No extraction_fields rows.")
-    reviewer_id = (await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
+    reviewer_id = (
+        await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))
+    ).scalar()
     if reviewer_id is None:
         pytest.skip("No profiles rows.")
 
@@ -161,7 +177,9 @@ async def test_reviewer_decision_edit_requires_value_check(
 async def test_consensus_decision_select_existing_requires_decision_check(
     db_session: AsyncSession,
 ) -> None:
-    run_id = (await db_session.execute(text("SELECT id FROM public.extraction_runs LIMIT 1"))).scalar()
+    run_id = (
+        await db_session.execute(text("SELECT id FROM public.extraction_runs LIMIT 1"))
+    ).scalar()
     if run_id is None:
         pytest.skip("No extraction_runs rows.")
     instance_id = (
@@ -169,7 +187,9 @@ async def test_consensus_decision_select_existing_requires_decision_check(
     ).scalar()
     if instance_id is None:
         pytest.skip("No extraction_instances rows.")
-    field_id = (await db_session.execute(text("SELECT id FROM public.extraction_fields LIMIT 1"))).scalar()
+    field_id = (
+        await db_session.execute(text("SELECT id FROM public.extraction_fields LIMIT 1"))
+    ).scalar()
     if field_id is None:
         pytest.skip("No extraction_fields rows.")
     consensus_user_id = (
