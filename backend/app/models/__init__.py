@@ -64,6 +64,13 @@ from app.models.extraction import (
     ProjectExtractionTemplate,
     SuggestionStatus,
 )
+from app.models.extraction_versioning import (
+    ConsensusRule,
+    ExtractionHitlConfig,
+    ExtractionTemplateVersion,
+    HitlConfigScopeKind,
+    TemplateKind,
+)
 from app.models.integration import ZoteroIntegration
 from app.models.project import Project, ProjectMember, ProjectMemberRole, ReviewType
 
@@ -149,6 +156,12 @@ __all__ = [
     "ExtractionRunStage",
     "ExtractionRunStatus",
     "SuggestionStatus",
+    # Extraction versioning
+    "ConsensusRule",
+    "ExtractionHitlConfig",
+    "ExtractionTemplateVersion",
+    "HitlConfigScopeKind",
+    "TemplateKind",
     # Integration
     "ZoteroIntegration",
     # User API Keys
