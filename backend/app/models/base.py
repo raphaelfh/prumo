@@ -59,6 +59,7 @@ POSTGRESQL_ENUM_VALUES: dict[str, list[str]] = {
     # Extraction versioning + HITL config enums
     "hitl_config_scope_kind": ["project", "template"],
     "consensus_rule": ["unanimous", "majority", "arbitrator"],
+    "template_kind": ["extraction", "quality_assessment"],
 }
 
 

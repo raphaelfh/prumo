@@ -19,6 +19,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -26,6 +27,7 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, BaseModel, PostgreSQLEnumType, UUIDMixin
+from app.models.extraction_versioning import TemplateKind
 
 if TYPE_CHECKING:
     pass
@@ -123,6 +125,13 @@ class ExtractionTemplateGlobal(BaseModel):
     )
     version: Mapped[str] = mapped_column(String, default="1.0.0", nullable=False)
 
+    kind: Mapped[str] = mapped_column(
+        PostgreSQLEnumType("template_kind"),
+        nullable=False,
+        default=TemplateKind.EXTRACTION.value,
+        server_default=TemplateKind.EXTRACTION.value,
+    )
+
     is_global: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     schema_: Mapped[dict] = mapped_column("schema", JSONB, default={}, nullable=False)
 
@@ -136,6 +145,7 @@ class ExtractionTemplateGlobal(BaseModel):
     # Indices definidos via __table_args__
     __table_args__ = (
         Index("idx_extraction_templates_global_schema_gin", "schema", postgresql_using="gin"),
+        UniqueConstraint("id", "kind", name="uq_extraction_templates_global_id_kind"),
         {"schema": "public"},
     )
 
@@ -176,6 +186,13 @@ class ProjectExtractionTemplate(BaseModel):
     )
     version: Mapped[str] = mapped_column(String, default="1.0.0", nullable=False)
 
+    kind: Mapped[str] = mapped_column(
+        PostgreSQLEnumType("template_kind"),
+        nullable=False,
+        default=TemplateKind.EXTRACTION.value,
+        server_default=TemplateKind.EXTRACTION.value,
+    )
+
     schema_: Mapped[dict] = mapped_column("schema", JSONB, default={}, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
@@ -199,6 +216,7 @@ class ProjectExtractionTemplate(BaseModel):
     # Indices definidos via __table_args__
     __table_args__ = (
         Index("idx_project_extraction_templates_schema_gin", "schema", postgresql_using="gin"),
+        UniqueConstraint("id", "kind", name="uq_project_extraction_templates_id_kind"),
         {"schema": "public"},
     )
 
