@@ -106,6 +106,9 @@ class TestPostgreSQLEnumValuesMapping:
             "hitl_config_scope_kind",
             "consensus_rule",
             "template_kind",
+            "extraction_proposal_source",
+            "extraction_reviewer_decision",
+            "extraction_consensus_mode",
         }
 
         actual_enums = set(POSTGRESQL_ENUM_VALUES.keys())

@@ -71,6 +71,16 @@ from app.models.extraction_versioning import (
     HitlConfigScopeKind,
     TemplateKind,
 )
+from app.models.extraction_workflow import (
+    ExtractionConsensusDecision,
+    ExtractionConsensusMode,
+    ExtractionProposalRecord,
+    ExtractionProposalSource,
+    ExtractionPublishedState,
+    ExtractionReviewerDecision,
+    ExtractionReviewerDecisionType,
+    ExtractionReviewerState,
+)
 from app.models.integration import ZoteroIntegration
 from app.models.project import Project, ProjectMember, ProjectMemberRole, ReviewType
 
@@ -162,6 +172,15 @@ __all__ = [
     "ExtractionTemplateVersion",
     "HitlConfigScopeKind",
     "TemplateKind",
+    # Extraction workflow
+    "ExtractionConsensusDecision",
+    "ExtractionConsensusMode",
+    "ExtractionProposalRecord",
+    "ExtractionProposalSource",
+    "ExtractionPublishedState",
+    "ExtractionReviewerDecision",
+    "ExtractionReviewerDecisionType",
+    "ExtractionReviewerState",
     # Integration
     "ZoteroIntegration",
     # User API Keys
