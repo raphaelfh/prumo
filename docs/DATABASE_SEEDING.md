@@ -6,8 +6,24 @@ Este guia explica como aplicar seed data (dados iniciais) no banco de dados apó
 
 O seed data inclui:
 
-- **PROBAST**: Instrumento de avaliação global para estudos de modelos preditivos (20 items em 4 domínios)
-- **CHARMS 2.0**: Template global de extração para dados de modelos preditivos (14 tipos de entidades, ~80 campos)
+- **CHARMS 2.0**: Template global de extração (`kind=extraction`) para
+  dados de modelos preditivos — ~14 entity_types, ~80 fields. Função:
+  `seed_charms()` em [`backend/app/seed.py`](../backend/app/seed.py).
+- **PROBAST**: Template global de quality-assessment
+  (`kind=quality_assessment`) — 5 domains (Participants, Predictors,
+  Outcome, Analysis, Overall) e 22 fields signaling + summary. UUID
+  determinístico. Função: `seed_probast()`.
+- **QUADAS-2**: Template global de quality-assessment para estudos de
+  acurácia diagnóstica — 5 domains + Overall, 11 signaling questions +
+  summary fields com `allowed_values=['Y','N','Unclear']`. UUID
+  determinístico. Função: `seed_quadas2()`.
+
+> Os templates QA são seedados como `kind=quality_assessment` em
+> `extraction_templates_global`; quando o frontend abre uma assessment via
+> `POST /api/v1/qa-assessments`, o backend clona para
+> `project_extraction_templates` (idempotente). Veja
+> [`docs/architecture/extraction-hitl-architecture.md`](architecture/extraction-hitl-architecture.md)
+> para o fluxo completo.
 
 ## 🏠 Ambiente Local (Desenvolvimento)
 

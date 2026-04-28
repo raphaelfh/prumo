@@ -57,10 +57,24 @@ This is the most important rule. We use two different migration systems.
 - **Alembic Migrations**: `backend/alembic/versions/`
 - **Supabase Migrations**: `supabase/migrations/`
 - **Data Seeding Script**: `backend/app/seed.py`
-- **Frontend Components**: `src/components/`
-- **Frontend Pages**: `src/pages/`
+- **Frontend Components**: `frontend/components/`
+- **Frontend Pages**: `frontend/pages/`
 
-## 6. Common Development Commands
+## 6. Architecture references
+
+The extraction + quality-assessment stack is the project's structural
+heart — read these before touching anything in `extraction_*` or
+`/api/v1/runs/...`:
+
+- **Canonical reference:**
+  `docs/architecture/extraction-hitl-architecture.md` — schema, glossary,
+  conceptual flow, and the legacy-in-transition map.
+- **Original design spec (immutable):**
+  `docs/superpowers/specs/2026-04-27-extraction-hitl-and-qa-design.md`.
+- **Archived execution plans (historical only):**
+  `docs/superpowers/plans/archive/2026-04-27-hitl-unification/`.
+
+## 7. Common Development Commands
 
 Use the `Makefile` for most tasks.
 

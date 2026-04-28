@@ -1,14 +1,20 @@
 # Roadmap - Prumo
 
+> Status snapshot post 2026-04-28 cleanup wave. Items marked ✅ shipped.
+> See [`docs/architecture/extraction-hitl-architecture.md`](../architecture/extraction-hitl-architecture.md)
+> for the canonical state of the extraction + HITL stack.
+
 ## 🗄️ Database & Infraestrutura
 
 ### Limpeza e Otimização
-- [ ] **Limpar database com tabelas não utilizadas**
-  - Identificar tabelas órfãs ou sem uso
-  - Entender para o que serviria o batch extraction ao utilizar FastAPI
-  - Avaliar impacto antes de remover
-  - **Prioridade:** Média
-  - **Dependências:** Análise do código atual
+- ✅ **Limpar database com tabelas não utilizadas (2026-04-27/28)**
+  - 008 evaluation skeleton dropado (`evaluation_*`, `proposal_records`,
+    `reviewer_*`, `consensus_*`, `published_states`, `evidence_records` +
+    9 enums) na migration 0016.
+  - Legacy `extraction_evidence.target_type/target_id` dropados (0017).
+  - `ai_suggestions` e `extracted_values` permanecem como shim de
+    transição até a UI extraction migrar para `/v1/runs/{id}` —
+    documentado como dívida explícita em `extraction-hitl-architecture.md`.
 
 ---
 
@@ -125,12 +131,12 @@
 ## 🎨 UI/UX e Avaliação
 
 ### Redesign de Componentes
-- [ ] **Redesenhar a seção de risk of bias assessment**
-  - Melhorar usabilidade
-  - Copiar da secao de extraction e ver se podemos copiar ou usar as tabelas de extraction que já estao otimizadas para backend fastapi e também para o fluxo com templates
-  - Otimizar fluxo de avaliação
-  - **Prioridade:** Média
-  - **Impacto:** Experiência do usuário e eficiência
+- ✅ **Redesenhar a seção de risk of bias assessment (2026-04-27/28)**
+  - QA agora reusa o stack de extraction via `kind=quality_assessment`.
+  - PROBAST + QUADAS-2 seedados como global templates.
+  - `QualityAssessmentFullScreen` persiste valores via
+    `/api/v1/qa-assessments` → ProposalRecord → manual_override consensus
+    → PublishedState. Botão "Publish assessment" finaliza o Run.
 
 ---
 
