@@ -140,3 +140,24 @@ class RunDetailResponse(BaseModel):
     decisions: list[ReviewerDecisionResponse]
     consensus_decisions: list[ConsensusDecisionResponse]
     published_states: list[PublishedStateResponse]
+
+
+class RunReviewerProfile(BaseModel):
+    """Display profile for a reviewer who participated in a run."""
+
+    id: UUID
+    full_name: str | None = None
+    avatar_url: str | None = None
+
+
+class RunReviewersResponse(BaseModel):
+    """Lookup table {reviewer_id: profile} for the consensus UI.
+
+    Built from the union of distinct reviewer ids appearing on
+    ProposalRecord (source='human'), ReviewerDecision, and
+    ConsensusDecision rows for the given run. The frontend uses it to
+    render names + avatars instead of raw UUIDs in the consensus
+    panel and the divergence indicators.
+    """
+
+    reviewers: list[RunReviewerProfile]

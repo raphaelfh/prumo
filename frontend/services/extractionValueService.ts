@@ -107,6 +107,45 @@ export const ExtractionValueService = {
   },
 
   /**
+   * Resolve the latest finalized run for (article × project_template).
+   * Used purely for reopen detection on the extraction page — the
+   * "Reopen for revision" button only renders when this returns a row
+   * and `findActiveRun` returns null. The returned id is then passed
+   * to `useReopenRun` which spawns a fresh REVIEW-stage run that seeds
+   * proposals from the published values.
+   */
+  async findLatestFinalizedRun(
+    articleId: string,
+    projectTemplateId: string | null,
+  ): Promise<RunRef | null> {
+    let query = supabase
+      .from('extraction_runs')
+      .select('id, stage, status, template_id, created_at')
+      .eq('article_id', articleId)
+      .eq('stage', 'finalized')
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (projectTemplateId) {
+      query = query.eq('template_id', projectTemplateId);
+    }
+    const { data, error } = await query.maybeSingle();
+    if (error) {
+      throw new APIError(
+        `Failed to load latest finalized run: ${error.message}`,
+        undefined,
+        { error },
+      );
+    }
+    if (!data) return null;
+    return {
+      id: data.id,
+      stage: data.stage,
+      status: data.status,
+      template_id: data.template_id,
+    };
+  },
+
+  /**
    * Load the current value per (instance, field) for the given user
    * within a run. Latest decision wins via the materialized
    * reviewer_states pointer.

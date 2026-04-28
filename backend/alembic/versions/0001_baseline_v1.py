@@ -41,11 +41,48 @@ _BASELINE_SQL_PATH = Path(__file__).parent / "baseline_v1.sql"
 
 
 def upgrade() -> None:
+    """Replay the baseline DDL against the connection bound to alembic.
+
+    The dump produced by ``supabase db dump`` contains multiple
+    semicolon-separated statements. asyncpg (the driver wired through
+    ``alembic/env.py``) refuses prepared statements with multiple
+    commands, so we drop down to the raw asyncpg connection's
+    ``execute()`` (no prepare) which accepts a script verbatim.
+
+    PL/pgSQL function bodies are checked at CREATE time by default
+    (``check_function_bodies = on``); the dump intersperses CREATE
+    FUNCTION before the tables those bodies reference, so we disable
+    body validation for the duration of the script. The setting is
+    session-local — no persistent effect on the database.
+    """
     sql = _BASELINE_SQL_PATH.read_text(encoding="utf-8")
-    op.execute(sql)
+    # `supabase db dump --schema=public` strips CREATE EXTENSION lines,
+    # but `idx_articles_trgm_title` references `public.gin_trgm_ops`.
+    # Re-create the extension defensively (a no-op when Supabase already
+    # provisioned it) so a fresh DB can replay the baseline.
+    preamble = (
+        "CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;\n"
+        "SET check_function_bodies = false;\n"
+    )
+    script = preamble + sql
+
+    bind = op.get_bind()
+    raw_connection = bind.connection
+    asyncpg_connection = raw_connection.driver_connection
+    awaitable_runner = raw_connection.await_
+
+    awaitable_runner(asyncpg_connection.execute(script))
 
 
 def downgrade() -> None:
     """Reset the public schema. Destructive — only meaningful in dev."""
-    op.execute("DROP SCHEMA IF EXISTS public CASCADE;")
-    op.execute("CREATE SCHEMA public;")
+    bind = op.get_bind()
+    raw_connection = bind.connection
+    asyncpg_connection = raw_connection.driver_connection
+    awaitable_runner = raw_connection.await_
+
+    awaitable_runner(
+        asyncpg_connection.execute(
+            "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;"
+        )
+    )

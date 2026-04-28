@@ -35,6 +35,7 @@ import {
   useReopenRun,
   useReviewerSummary,
   useRun,
+  useRunReviewers,
 } from "@/hooks/runs";
 import { ReviewerProgressBadge } from "@/components/runs/ReviewerProgressBadge";
 import { ConsensusPanel } from "@/components/runs/ConsensusPanel";
@@ -86,6 +87,9 @@ export default function QualityAssessmentFullScreen() {
   const consensusMutation = useCreateConsensus(session?.runId ?? "");
   const reopenMutation = useReopenRun();
   const reviewerSummary = useReviewerSummary(runDetail);
+  const reviewerProfiles = useRunReviewers(session?.runId ?? null, {
+    enabled: !!session?.runId,
+  });
 
   // Local input state for the form. Hydrated from the latest proposal per
   // (instance, field) once the Run detail loads.
@@ -401,6 +405,8 @@ export default function QualityAssessmentFullScreen() {
           runDetail={runDetail}
           summary={reviewerSummary}
           fieldLabelByCoord={fieldLabelByCoord}
+          reviewerLabelById={reviewerProfiles.labelById}
+          avatarById={reviewerProfiles.avatarById}
           onSelectExisting={handleSelectExisting}
           onManualOverride={handleManualOverride}
           onFinalize={handleFinalizeFromConsensus}
@@ -443,6 +449,12 @@ export default function QualityAssessmentFullScreen() {
                     projectId={projectId}
                     articleId={articleId}
                     defaultOpen={idx === 0}
+                    reviewerActivity={{
+                      decisionsByCoord: reviewerSummary.decisionsByCoord,
+                      labelById: reviewerProfiles.labelById,
+                      avatarById: reviewerProfiles.avatarById,
+                      instanceId,
+                    }}
                   />
                 );
               })}

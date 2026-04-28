@@ -28,6 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
+import { ReviewerAvatarStack } from "@/components/runs/ReviewerAvatarStack";
 import { cn } from "@/lib/utils";
 
 import type {
@@ -45,6 +46,8 @@ export interface ConsensusPanelProps {
   fieldLabelByCoord?: Record<string, string>;
   /** Pretty label per reviewer_id; falls back to a short UUID when missing. */
   reviewerLabelById?: Record<string, string>;
+  /** Avatar URL per reviewer_id (nullable). Drives the avatar stack. */
+  avatarById?: Record<string, string | null>;
   /** Resolve via select_existing: accept reviewer X's decision verbatim. */
   onSelectExisting: (params: {
     instanceId: string;
@@ -71,6 +74,7 @@ interface CoordRowProps {
   fieldLabel: string;
   decisions: ReviewerDecisionResponse[];
   reviewerLabelById: Record<string, string>;
+  avatarById: Record<string, string | null>;
   resolved: ConsensusDecisionResponse | undefined;
   disabled: boolean;
   onSelectExisting: (decisionId: string) => Promise<void> | void;
@@ -104,6 +108,7 @@ function CoordRow({
   fieldLabel,
   decisions,
   reviewerLabelById,
+  avatarById,
   resolved,
   disabled,
   onSelectExisting,
@@ -114,6 +119,11 @@ function CoordRow({
   const [overrideRationale, setOverrideRationale] = useState("");
 
   const isResolved = !!resolved;
+  const stack = decisions.map((d) => ({
+    id: d.reviewer_id,
+    name: reviewerLabel(d.reviewer_id, reviewerLabelById),
+    avatarUrl: avatarById[d.reviewer_id] ?? null,
+  }));
 
   return (
     <Card
@@ -135,9 +145,15 @@ function CoordRow({
             )}
             <CardTitle className="text-sm font-semibold">{fieldLabel}</CardTitle>
           </div>
-          <p className="text-xs text-muted-foreground">
-            {decisions.length} reviewer{decisions.length === 1 ? "" : "s"} disagreed.
-          </p>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <ReviewerAvatarStack
+              reviewers={stack}
+              testId={`consensus-coord-avatar-${coordKey}`}
+            />
+            <span>
+              {decisions.length} reviewer{decisions.length === 1 ? "" : "s"} disagreed.
+            </span>
+          </div>
         </div>
         {isResolved ? (
           <Badge
@@ -285,6 +301,7 @@ export function ConsensusPanel({
   summary,
   fieldLabelByCoord = {},
   reviewerLabelById = {},
+  avatarById = {},
   onSelectExisting,
   onManualOverride,
   onFinalize,
@@ -374,6 +391,7 @@ export function ConsensusPanel({
               fieldLabel={fieldLabel}
               decisions={decisions}
               reviewerLabelById={reviewerLabelById}
+              avatarById={avatarById}
               resolved={resolved}
               disabled={isResolving}
               onSelectExisting={async (decisionId) => {

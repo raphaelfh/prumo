@@ -22,6 +22,10 @@ import {
 } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { FieldInput } from "@/components/extraction/FieldInput";
+import {
+  ReviewerAvatarStack,
+  type ReviewerAvatarEntry,
+} from "@/components/runs/ReviewerAvatarStack";
 import type { QADomain } from "@/hooks/qa/useQATemplate";
 
 interface QASectionAccordionProps {
@@ -31,6 +35,19 @@ interface QASectionAccordionProps {
   projectId: string;
   articleId: string;
   defaultOpen?: boolean;
+  /**
+   * Display profiles + activity per (instance, field) within this
+   * domain. When provided, the accordion header surfaces a stacked
+   * avatar of reviewers who have written at least one decision in any
+   * field of the domain, and each FieldInput row shows a small stack
+   * of the reviewers active on that specific field.
+   */
+  reviewerActivity?: {
+    decisionsByCoord: Map<string, { reviewer_id: string }[]>;
+    labelById: Record<string, string>;
+    avatarById: Record<string, string | null>;
+    instanceId: string;
+  };
 }
 
 const SUMMARY_FIELD_NAMES = new Set([
@@ -47,17 +64,59 @@ export function QASectionAccordion({
   projectId,
   articleId,
   defaultOpen = false,
+  reviewerActivity,
 }: QASectionAccordionProps) {
   const { entityType, fields } = domain;
   const signaling = fields.filter((f) => !SUMMARY_FIELD_NAMES.has(f.name));
   const summary = fields.filter((f) => SUMMARY_FIELD_NAMES.has(f.name));
 
-  // Synthetic instanceId per domain — QA is 1:1 per (article × domain),
-  // so we use the entityType.id as a stable handle for FieldInput's
-  // `${instanceId}_${fieldId}` cache keys.
+  // The synthetic id when running QA standalone is just the entity_type
+  // id; when the QA page is wired to a real run the parent passes the
+  // run instance id via reviewerActivity. The visual stack uses that
+  // — but FieldInput's cache key still keys off entityType.id.
   const instanceId = entityType.id;
   const sectionLabel = entityType.label || entityType.name;
   const itemValue = `qa-domain-${entityType.id}`;
+
+  // Build a per-field avatar map so each FieldInput row shows just the
+  // reviewers that touched THAT field. Fall back to the empty stack
+  // (renders nothing) when no activity data was provided.
+  function fieldStack(fieldId: string): ReviewerAvatarEntry[] {
+    if (!reviewerActivity) return [];
+    const coordKey = `${reviewerActivity.instanceId}::${fieldId}`;
+    const decisions = reviewerActivity.decisionsByCoord.get(coordKey) ?? [];
+    const seen = new Set<string>();
+    const stack: ReviewerAvatarEntry[] = [];
+    for (const d of decisions) {
+      if (seen.has(d.reviewer_id)) continue;
+      seen.add(d.reviewer_id);
+      stack.push({
+        id: d.reviewer_id,
+        name:
+          reviewerActivity.labelById[d.reviewer_id] ??
+          `Reviewer ${d.reviewer_id.slice(0, 8)}…`,
+        avatarUrl: reviewerActivity.avatarById[d.reviewer_id] ?? null,
+      });
+    }
+    return stack;
+  }
+
+  // Domain-level: union of everyone who touched any field of this
+  // domain. Render in the accordion trigger so users can scan
+  // participation without expanding.
+  const domainStack: ReviewerAvatarEntry[] = (() => {
+    if (!reviewerActivity) return [];
+    const seen = new Set<string>();
+    const stack: ReviewerAvatarEntry[] = [];
+    for (const f of fields) {
+      for (const d of fieldStack(f.id)) {
+        if (seen.has(d.id)) continue;
+        seen.add(d.id);
+        stack.push(d);
+      }
+    }
+    return stack;
+  })();
 
   return (
     <Accordion
@@ -82,6 +141,13 @@ export function QASectionAccordion({
                 </Badge>
               ) : null}
             </div>
+            {domainStack.length > 0 ? (
+              <ReviewerAvatarStack
+                reviewers={domainStack}
+                sizeClass="size-5"
+                testId={`qa-domain-avatars-${entityType.name}`}
+              />
+            ) : null}
           </div>
         </AccordionTrigger>
         <AccordionContent className="px-4 pb-4 pt-0">
@@ -93,18 +159,34 @@ export function QASectionAccordion({
 
           {signaling.length > 0 ? (
             <div className="space-y-1 divide-y">
-              {signaling.map((field) => (
-                <div key={field.id} className="pt-1">
-                  <FieldInput
-                    field={field}
-                    instanceId={instanceId}
-                    value={values[field.id]}
-                    onChange={(v) => onValueChange(field.id, v)}
-                    projectId={projectId}
-                    articleId={articleId}
-                  />
-                </div>
-              ))}
+              {signaling.map((field) => {
+                const stack = fieldStack(field.id);
+                return (
+                  <div
+                    key={field.id}
+                    className="pt-1"
+                    data-testid={`qa-field-row-${field.name}`}
+                  >
+                    <FieldInput
+                      field={field}
+                      instanceId={instanceId}
+                      value={values[field.id]}
+                      onChange={(v) => onValueChange(field.id, v)}
+                      projectId={projectId}
+                      articleId={articleId}
+                    />
+                    {stack.length > 0 ? (
+                      <div className="mt-1 flex justify-end">
+                        <ReviewerAvatarStack
+                          reviewers={stack}
+                          sizeClass="size-5"
+                          testId={`qa-field-avatars-${field.name}`}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           ) : null}
 
@@ -117,18 +199,30 @@ export function QASectionAccordion({
                 Domain judgment
               </p>
               <div className="space-y-1 divide-y">
-                {summary.map((field) => (
-                  <div key={field.id} className="pt-1">
-                    <FieldInput
-                      field={field}
-                      instanceId={instanceId}
-                      value={values[field.id]}
-                      onChange={(v) => onValueChange(field.id, v)}
-                      projectId={projectId}
-                      articleId={articleId}
-                    />
-                  </div>
-                ))}
+                {summary.map((field) => {
+                  const stack = fieldStack(field.id);
+                  return (
+                    <div key={field.id} className="pt-1">
+                      <FieldInput
+                        field={field}
+                        instanceId={instanceId}
+                        value={values[field.id]}
+                        onChange={(v) => onValueChange(field.id, v)}
+                        projectId={projectId}
+                        articleId={articleId}
+                      />
+                      {stack.length > 0 ? (
+                        <div className="mt-1 flex justify-end">
+                          <ReviewerAvatarStack
+                            reviewers={stack}
+                            sizeClass="size-5"
+                            testId={`qa-field-avatars-${field.name}`}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           ) : null}

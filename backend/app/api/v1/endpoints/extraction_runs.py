@@ -16,7 +16,13 @@ from app.api.deps.security import get_current_user_sub
 from app.core.deps import DbSession
 from app.core.logging import get_logger
 from app.models.extraction import ExtractionRun
-from app.models.extraction_workflow import ExtractionPublishedState
+from app.models.extraction_workflow import (
+    ExtractionConsensusDecision,
+    ExtractionProposalRecord,
+    ExtractionPublishedState,
+    ExtractionReviewerDecision,
+)
+from app.models.user import Profile
 from app.repositories.extraction_consensus_decision_repository import (
     ExtractionConsensusDecisionRepository,
 )
@@ -39,6 +45,8 @@ from app.schemas.extraction_run import (
     PublishedStateResponse,
     ReviewerDecisionResponse,
     RunDetailResponse,
+    RunReviewerProfile,
+    RunReviewersResponse,
     RunSummaryResponse,
 )
 from app.services.coordinate_coherence import CoordinateMismatchError
@@ -360,6 +368,95 @@ async def advance_run(
     return ApiResponse.success(
         RunSummaryResponse.model_validate(run),
         trace_id=getattr(request.state, "trace_id", None),
+    )
+
+
+@router.get("/{run_id}/reviewers")
+async def list_run_reviewers(
+    run_id: UUID,
+    request: Request,
+    db: DbSession,
+    current_user_sub: UUID = Depends(get_current_user_sub),  # noqa: ARG001
+) -> ApiResponse[RunReviewersResponse]:
+    """Display profiles for everyone who participated in the run.
+
+    Sources of "participation":
+      · ProposalRecord with `source='human'` (the proposer's user id)
+      · ReviewerDecision (the reviewer's user id)
+      · ConsensusDecision (the arbitrator's user id)
+
+    Returns the union as a list of {id, full_name, avatar_url}. The
+    consensus panel and divergence indicators consume this to render
+    real names / avatars instead of bare UUIDs.
+    """
+    run = await db.get(ExtractionRun, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+
+    user_ids: set[UUID] = set()
+
+    proposal_users = (
+        (
+            await db.execute(
+                select(ExtractionProposalRecord.source_user_id).where(
+                    ExtractionProposalRecord.run_id == run_id,
+                    ExtractionProposalRecord.source_user_id.is_not(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    user_ids.update(uid for uid in proposal_users if uid is not None)
+
+    decision_users = (
+        (
+            await db.execute(
+                select(ExtractionReviewerDecision.reviewer_id).where(
+                    ExtractionReviewerDecision.run_id == run_id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    user_ids.update(decision_users)
+
+    consensus_users = (
+        (
+            await db.execute(
+                select(ExtractionConsensusDecision.consensus_user_id).where(
+                    ExtractionConsensusDecision.run_id == run_id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    user_ids.update(consensus_users)
+
+    if not user_ids:
+        return ApiResponse.success(
+            RunReviewersResponse(reviewers=[]),
+            trace_id=_trace(request),
+        )
+
+    profiles = (
+        (await db.execute(select(Profile).where(Profile.id.in_(list(user_ids))))).scalars().all()
+    )
+
+    return ApiResponse.success(
+        RunReviewersResponse(
+            reviewers=[
+                RunReviewerProfile(
+                    id=p.id,
+                    full_name=p.full_name,
+                    avatar_url=p.avatar_url,
+                )
+                for p in profiles
+            ]
+        ),
+        trace_id=_trace(request),
     )
 
 

@@ -24,16 +24,19 @@ import {extractionLogger} from '@/lib/extraction/observability';
 import {errorTracker} from '@/services/errorTracking';
 import {ResizablePanel, ResizablePanelGroup} from '@/components/ui/resizable';
 import {Button} from '@/components/ui/button';
-import {Loader2} from 'lucide-react';
+import {Badge} from '@/components/ui/badge';
+import {CheckCircle2, Loader2, RotateCcw} from 'lucide-react';
 
 // Hooks
 import {useExtractionData} from '@/hooks/extraction/useExtractionData';
 import {useExtractedValues} from '@/hooks/extraction/useExtractedValues';
+import {useFinalizedExtractionRun} from '@/hooks/extraction/useFinalizedExtractionRun';
 import {useExtractionProgress} from '@/hooks/extraction/useExtractionProgress';
 import {useExtractionAutoSave} from '@/hooks/extraction/useExtractionAutoSave';
 import {useOtherExtractions} from '@/hooks/extraction/colaboracao/useOtherExtractions';
 import {useAISuggestions} from '@/hooks/extraction/ai/useAISuggestions';
 import {useComparisonPermissions} from '@/hooks/shared/useComparisonPermissions';
+import {useReopenRun, useRun} from '@/hooks/runs';
 
 // Components
 import {ExtractionHeader} from '@/components/extraction/ExtractionHeader';
@@ -108,13 +111,62 @@ export default function ExtractionFullScreen() {
     loading: valuesLoading,
     initialized: valuesInitialized,
     save: saveValues,
-    refresh: refreshValues
+    refresh: refreshValues,
+    runId: activeRunId
   } = useExtractedValues({
     articleId: articleId || '',
     projectId: projectId || '',
     templateId: template?.id,
     enabled: !!articleId && !!projectId
   });
+
+  // Reopen wiring: when no active run is in flight (because the previous
+  // run was finalized), surface the latest finalized run so the user can
+  // re-open it. The reopen mutation creates a new REVIEW-stage run with
+  // proposals seeded from the published values.
+  const {
+    finalizedRun,
+    refresh: refreshFinalizedRun,
+  } = useFinalizedExtractionRun({
+    articleId: articleId || '',
+    projectTemplateId: template?.id ?? null,
+    enabled: !!articleId && !!template?.id && !activeRunId,
+  });
+  const reopenMutation = useReopenRun();
+  const [reopening, setReopening] = useState(false);
+
+  // Detail fetch on the active run — drives the "Revision" badge when
+  // `parameters.parent_run_id` is present (i.e. this run was reopened
+  // from a finalized predecessor).
+  const { data: runDetail } = useRun(activeRunId ?? null, {
+    enabled: !!activeRunId,
+  });
+  const parentRunId =
+    runDetail?.run.parameters &&
+    typeof runDetail.run.parameters === 'object' &&
+    'parent_run_id' in runDetail.run.parameters
+      ? String(runDetail.run.parameters.parent_run_id)
+      : null;
+
+  const handleReopen = useCallback(async () => {
+    if (!finalizedRun?.id) return;
+    setReopening(true);
+    try {
+      await reopenMutation.mutateAsync(finalizedRun.id);
+      // The reopen endpoint creates a fresh REVIEW-stage run linked via
+      // parameters.parent_run_id. Refreshing the active-run resolver
+      // (refreshValues) plus the finalized-run lookup picks up the new
+      // run on the next render. We also clear the local Reopen banner.
+      await Promise.all([refreshValues(), refreshFinalizedRun()]);
+      toast.success('Extraction reopened for revision.');
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to reopen extraction',
+      );
+    } finally {
+      setReopening(false);
+    }
+  }, [finalizedRun?.id, reopenMutation, refreshValues, refreshFinalizedRun]);
 
   // Hook para calcular progresso
   const { completedFields, totalFields, completionPercentage, isComplete } =
@@ -837,6 +889,50 @@ export default function ExtractionFullScreen() {
               setIsProgressMinimized(true);
             }}
           />
+        </div>
+      ) : null}
+
+      {/* HITL banner: revision indicator + reopen affordance */}
+      {(parentRunId || (!activeRunId && finalizedRun)) ? (
+        <div
+          className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/40 px-4 py-2 text-xs"
+          data-testid="extraction-hitl-banner"
+        >
+          <div className="flex items-center gap-2">
+            {parentRunId ? (
+              <Badge
+                variant="outline"
+                className="border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-200"
+                data-testid="extraction-revision-badge"
+                title={`Derived from run ${parentRunId}`}
+              >
+                <RotateCcw className="mr-1 h-3 w-3" />
+                Revision
+              </Badge>
+            ) : null}
+            {!activeRunId && finalizedRun ? (
+              <Badge
+                variant="outline"
+                className="border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
+                data-testid="extraction-finalized-badge"
+              >
+                <CheckCircle2 className="mr-1 h-3 w-3" />
+                Published
+              </Badge>
+            ) : null}
+          </div>
+          {!activeRunId && finalizedRun ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void handleReopen()}
+              disabled={reopening}
+              data-testid="extraction-reopen-button"
+            >
+              <RotateCcw className="mr-1 h-3 w-3" />
+              {reopening ? 'Reopening…' : 'Reopen for revision'}
+            </Button>
+          ) : null}
         </div>
       ) : null}
 

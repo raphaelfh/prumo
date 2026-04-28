@@ -14,6 +14,11 @@ export {
   type CurrentDecisionEntry,
   type ReviewerSummary,
 } from "./useReviewerSummary";
+export {
+  useRunReviewers,
+  type RunReviewerProfile,
+  type UseRunReviewersResult,
+} from "./useRunReviewers";
 
 export {
   runsKeys,
