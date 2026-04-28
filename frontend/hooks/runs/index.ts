@@ -9,6 +9,11 @@ export { useCreateDecision } from "./useCreateDecision";
 export { useCreateConsensus } from "./useCreateConsensus";
 export { useAdvanceRun } from "./useAdvanceRun";
 export { useReopenRun } from "./useReopenRun";
+export {
+  useReviewerSummary,
+  type CurrentDecisionEntry,
+  type ReviewerSummary,
+} from "./useReviewerSummary";
 
 export {
   runsKeys,

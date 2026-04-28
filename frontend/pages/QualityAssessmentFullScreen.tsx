@@ -33,8 +33,11 @@ import {
   useCreateConsensus,
   useCreateProposal,
   useReopenRun,
+  useReviewerSummary,
   useRun,
 } from "@/hooks/runs";
+import { ReviewerProgressBadge } from "@/components/runs/ReviewerProgressBadge";
+import { ConsensusPanel } from "@/components/runs/ConsensusPanel";
 
 interface FieldKey {
   instanceId: string;
@@ -82,6 +85,7 @@ export default function QualityAssessmentFullScreen() {
   const advanceMutation = useAdvanceRun(session?.runId ?? "");
   const consensusMutation = useCreateConsensus(session?.runId ?? "");
   const reopenMutation = useReopenRun();
+  const reviewerSummary = useReviewerSummary(runDetail);
 
   // Local input state for the form. Hydrated from the latest proposal per
   // (instance, field) once the Run detail loads.
@@ -144,6 +148,64 @@ export default function QualityAssessmentFullScreen() {
 
   const [publishing, setPublishing] = useState(false);
   const [reopening, setReopening] = useState(false);
+
+  const fieldLabelByCoord = useMemo(() => {
+    const map: Record<string, string> = {};
+    if (!session) return map;
+    for (const domain of domains) {
+      const instanceId = session.instancesByEntityType[domain.entityType.id];
+      if (!instanceId) continue;
+      for (const f of domain.fields) {
+        map[`${instanceId}::${f.id}`] = `${domain.entityType.label} · ${f.label}`;
+      }
+    }
+    return map;
+  }, [session, domains]);
+
+  const inConsensusStage = runDetail?.run.stage === "consensus";
+
+  const handleSelectExisting = useCallback(
+    async (params: {
+      instanceId: string;
+      fieldId: string;
+      decisionId: string;
+    }) => {
+      await consensusMutation.mutateAsync({
+        instance_id: params.instanceId,
+        field_id: params.fieldId,
+        mode: "select_existing",
+        selected_decision_id: params.decisionId,
+      });
+      await refetchRun();
+    },
+    [consensusMutation, refetchRun],
+  );
+
+  const handleManualOverride = useCallback(
+    async (params: {
+      instanceId: string;
+      fieldId: string;
+      value: unknown;
+      rationale: string;
+    }) => {
+      await consensusMutation.mutateAsync({
+        instance_id: params.instanceId,
+        field_id: params.fieldId,
+        mode: "manual_override",
+        value: { value: params.value },
+        rationale: params.rationale,
+      });
+      await refetchRun();
+    },
+    [consensusMutation, refetchRun],
+  );
+
+  const handleFinalizeFromConsensus = useCallback(async () => {
+    if (!session) return;
+    await advanceMutation.mutateAsync({ target_stage: "finalized" });
+    await refetchRun();
+    toast.success("Run finalized.");
+  }, [session, advanceMutation, refetchRun]);
 
   const handleReopen = useCallback(async () => {
     if (!session?.runId) return;
@@ -276,6 +338,13 @@ export default function QualityAssessmentFullScreen() {
             Revision
           </Badge>
         ) : null}
+        {runDetail ? (
+          <ReviewerProgressBadge
+            reviewerCount={reviewerSummary.reviewers.length}
+            requiredReviewerCount={reviewerSummary.requiredReviewerCount}
+            divergentCount={reviewerSummary.divergentCoords.size}
+          />
+        ) : null}
       </div>
       <div className="flex items-center gap-2">
         {finalized ? (
@@ -324,7 +393,20 @@ export default function QualityAssessmentFullScreen() {
         </div>
       ) : null}
 
-      {!loading && !error && template && session ? (
+      {!loading && !error && template && session && inConsensusStage && runDetail ? (
+        <ConsensusPanel
+          runDetail={runDetail}
+          summary={reviewerSummary}
+          fieldLabelByCoord={fieldLabelByCoord}
+          onSelectExisting={handleSelectExisting}
+          onManualOverride={handleManualOverride}
+          onFinalize={handleFinalizeFromConsensus}
+          isResolving={consensusMutation.isPending}
+          isFinalizing={advanceMutation.isPending}
+        />
+      ) : null}
+
+      {!loading && !error && template && session && !inConsensusStage ? (
         <>
           {template.description ? (
             <p className="text-sm text-muted-foreground">
