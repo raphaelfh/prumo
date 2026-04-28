@@ -60,3 +60,9 @@ api_router.include_router(
     prefix="/projects",
     tags=["qa-templates"],
 )
+
+api_router.include_router(
+    qa_templates.qa_router,
+    prefix="",
+    tags=["qa-assessments"],
+)

@@ -105,9 +105,24 @@ async def test_existing_templates_backfilled_to_extraction_kind(
 async def test_existing_runs_backfilled_to_extraction_kind(
     db_session: AsyncSession,
 ) -> None:
+    # Legacy runs (those whose template has no QA lineage) must be
+    # backfilled to 'extraction'. Runs against QA-cloned templates
+    # legitimately carry kind='quality_assessment' and are excluded.
     result = await db_session.execute(
         text(
-            "SELECT COUNT(*) FROM public.extraction_runs WHERE kind <> 'extraction'",
+            """
+            SELECT COUNT(*) FROM public.extraction_runs r
+            JOIN public.project_extraction_templates t ON t.id = r.template_id
+            WHERE r.kind <> 'extraction'
+              AND (
+                t.global_template_id IS NULL
+                OR NOT EXISTS (
+                    SELECT 1 FROM public.extraction_templates_global g
+                    WHERE g.id = t.global_template_id
+                      AND g.kind = 'quality_assessment'
+                )
+              )
+            """
         )
     )
     assert result.scalar() == 0

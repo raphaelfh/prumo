@@ -64,8 +64,34 @@ async def test_clone_qa_template_creates_full_tree(
         pytest.skip("Need projects + a seeded QA template")
 
     # Drop any prior clone for (project, global_template) so this test is
-    # repeatable against a non-rolled-back db_session fixture. CASCADE wipes
-    # entity_types, fields, and versions in one shot.
+    # repeatable against a non-rolled-back db_session fixture. ExtractionRun
+    # and ExtractionInstance ON DELETE RESTRICT against the template, so wipe
+    # them first; CASCADE on the template then handles entity_types + fields
+    # + versions.
+    await db_session.execute(
+        text(
+            """
+            DELETE FROM public.extraction_runs
+            WHERE template_id IN (
+                SELECT id FROM public.project_extraction_templates
+                WHERE project_id = :pid AND global_template_id = :gid
+            )
+            """
+        ),
+        {"pid": str(project_id), "gid": str(global_template_id)},
+    )
+    await db_session.execute(
+        text(
+            """
+            DELETE FROM public.extraction_instances
+            WHERE template_id IN (
+                SELECT id FROM public.project_extraction_templates
+                WHERE project_id = :pid AND global_template_id = :gid
+            )
+            """
+        ),
+        {"pid": str(project_id), "gid": str(global_template_id)},
+    )
     await db_session.execute(
         text(
             """
@@ -183,3 +209,88 @@ async def test_clone_qa_template_returns_404_when_template_missing(
         json={"global_template_id": "00000000-0000-0000-0000-000000000000"},
     )
     assert res.status_code == 404
+
+
+async def _pick_article(db: AsyncSession) -> tuple[UUID, UUID] | None:
+    raw = (await db.execute(text("SELECT id, project_id FROM public.articles LIMIT 1"))).first()
+    if raw is None:
+        return None
+    return UUID(str(raw[0])), UUID(str(raw[1]))
+
+
+@pytest.mark.asyncio
+async def test_open_qa_assessment_creates_run_instances_and_advances_to_proposal(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    article = await _pick_article(db_session)
+    global_template_id = await _pick_qa_global_template(db_session)
+    if article is None or global_template_id is None:
+        pytest.skip("Need an article + a seeded QA template")
+    article_id, project_id = article
+
+    # Wipe any prior assessment artifacts so this test exercises the
+    # create branch (Run lookup reuses non-finalized runs by design).
+    await db_session.execute(
+        text(
+            """
+            DELETE FROM public.extraction_runs
+            WHERE article_id = :aid AND project_id = :pid
+              AND template_id IN (
+                SELECT id FROM public.project_extraction_templates
+                WHERE project_id = :pid AND global_template_id = :gid
+              )
+            """
+        ),
+        {"aid": str(article_id), "pid": str(project_id), "gid": str(global_template_id)},
+    )
+    await db_session.commit()
+
+    res = await db_client.post(
+        "/api/v1/qa-assessments",
+        json={
+            "project_id": str(project_id),
+            "article_id": str(article_id),
+            "global_template_id": str(global_template_id),
+        },
+    )
+    assert res.status_code == 201, res.text
+    body = res.json()["data"]
+    assert UUID(body["run_id"])
+    assert UUID(body["project_template_id"])
+    assert len(body["instances_by_entity_type"]) >= 1
+
+    stage = (
+        await db_session.execute(
+            text("SELECT stage FROM public.extraction_runs WHERE id = :rid"),
+            {"rid": body["run_id"]},
+        )
+    ).scalar()
+    assert stage == "proposal"
+
+
+@pytest.mark.asyncio
+async def test_open_qa_assessment_reuses_in_flight_run(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    article = await _pick_article(db_session)
+    global_template_id = await _pick_qa_global_template(db_session)
+    if article is None or global_template_id is None:
+        pytest.skip("Need an article + a seeded QA template")
+    article_id, project_id = article
+
+    payload = {
+        "project_id": str(project_id),
+        "article_id": str(article_id),
+        "global_template_id": str(global_template_id),
+    }
+    first = await db_client.post("/api/v1/qa-assessments", json=payload)
+    assert first.status_code == 201
+    first_run = first.json()["data"]["run_id"]
+
+    second = await db_client.post("/api/v1/qa-assessments", json=payload)
+    assert second.status_code == 201
+    assert second.json()["data"]["run_id"] == first_run

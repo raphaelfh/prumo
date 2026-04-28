@@ -1,4 +1,4 @@
-"""Schemas for the Quality-Assessment template clone endpoint."""
+"""Schemas for the Quality-Assessment template clone + assessment endpoints."""
 
 from uuid import UUID
 
@@ -15,3 +15,15 @@ class CloneQaTemplateResponse(BaseModel):
     entity_type_count: int
     field_count: int
     created: bool
+
+
+class OpenQaAssessmentRequest(BaseModel):
+    project_id: UUID
+    article_id: UUID
+    global_template_id: UUID
+
+
+class OpenQaAssessmentResponse(BaseModel):
+    run_id: UUID
+    project_template_id: UUID
+    instances_by_entity_type: dict[str, str]
