@@ -4,14 +4,27 @@ Modular, headless PDF viewer for the Prumo research platform.
 
 ## Status
 
-**Phase 0** — Foundation only. The module currently exposes only a version constant.
+**Phase 1a** — Headless core types and per-instance store. The package now
+exposes:
+
+- Type definitions: `PDFSource`, `PDFRect`, `PDFTextRange`, `Citation`,
+  `PDFEngine` (interface only — no implementation yet), `ViewerState`.
+- Runtime: `createViewerStore(initial?)` factory, `<ViewerProvider>`,
+  `useViewerStore<T>(selector)`, `useViewerStoreApi()`.
+
+Multi-instance is verified: two `<ViewerProvider>`s on the same page have
+fully isolated state.
+
+**Not yet:** concrete PDF.js engine (Phase 1b), compound primitives
+(`<Viewer.Root>`, `<Viewer.Page>`) (Phase 2a), plugins (Phase 2b),
+citation rendering (Phase 3), annotations (Phase 4), reader view (Phase 5).
 
 The full refactor is split across the following plans (one per subsystem):
 
 | Phase | Plan filename | Title |
 |---|---|---|
 | 0 | `2026-04-28-pdf-viewer-phase0-foundation.md` | Foundation: stack upgrade + scaffolding |
-| 1a | `2026-XX-XX-pdf-viewer-phase1a-core-types-store.md` | Headless core: types + store factory |
+| 1a | `2026-04-28-pdf-viewer-phase1a-core-types-store.md` | Headless core: types + store factory |
 | 1b | `2026-XX-XX-pdf-viewer-phase1b-pdfjs-engine.md` | PDF.js engine + multi-instance demo |
 | 2a | `2026-XX-XX-pdf-viewer-phase2a-plugins-primitives.md` | Plugin system + compound primitives |
 | 2b | `2026-XX-XX-pdf-viewer-phase2b-plugin-migration.md` | Plugin migration (zoom/search/nav/virt/thumbnails) |
