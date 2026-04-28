@@ -16,6 +16,7 @@ from app.repositories.extraction_reviewer_decision_repository import (
 from app.repositories.extraction_reviewer_state_repository import (
     ExtractionReviewerStateRepository,
 )
+from app.services.coordinate_coherence import assert_coords_coherent
 
 
 class InvalidDecisionError(Exception):
@@ -49,6 +50,13 @@ class ExtractionReviewService:
             raise InvalidDecisionError(
                 f"Cannot record decision: run stage is {run.stage}, not 'review'"
             )
+
+        await assert_coords_coherent(
+            self.db,
+            run_id=run_id,
+            instance_id=instance_id,
+            field_id=field_id,
+        )
 
         decision_value = (
             decision.value if isinstance(decision, ExtractionReviewerDecisionType) else decision

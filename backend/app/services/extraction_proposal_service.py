@@ -12,6 +12,7 @@ from app.models.extraction_workflow import (
 from app.repositories.extraction_proposal_repository import (
     ExtractionProposalRepository,
 )
+from app.services.coordinate_coherence import assert_coords_coherent
 
 
 class InvalidProposalError(Exception):
@@ -44,6 +45,13 @@ class ExtractionProposalService:
             raise InvalidProposalError(
                 f"Cannot record proposal: run stage is {run.stage}, not 'proposal'"
             )
+
+        await assert_coords_coherent(
+            self.db,
+            run_id=run_id,
+            instance_id=instance_id,
+            field_id=field_id,
+        )
 
         source_value = source.value if isinstance(source, ExtractionProposalSource) else source
         if source_value == "human" and source_user_id is None:

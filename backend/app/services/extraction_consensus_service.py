@@ -19,6 +19,7 @@ from app.repositories.extraction_published_state_repository import (
 from app.repositories.extraction_reviewer_decision_repository import (
     ExtractionReviewerDecisionRepository,
 )
+from app.services.coordinate_coherence import assert_coords_coherent
 
 
 class InvalidConsensusError(Exception):
@@ -57,6 +58,13 @@ class ExtractionConsensusService:
             raise InvalidConsensusError(
                 f"Cannot record consensus: run stage is {run.stage}, not 'consensus'"
             )
+
+        await assert_coords_coherent(
+            self.db,
+            run_id=run_id,
+            instance_id=instance_id,
+            field_id=field_id,
+        )
 
         mode_value = mode.value if isinstance(mode, ExtractionConsensusMode) else mode
 

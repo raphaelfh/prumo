@@ -32,12 +32,26 @@ async def _setup_consensus_run(
         await db.execute(text("SELECT id FROM public.project_extraction_templates LIMIT 1"))
     ).scalar()
     profile_id = (await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
-    instance_id = (
-        await db.execute(text("SELECT id FROM public.extraction_instances LIMIT 1"))
-    ).scalar()
-    field_id = (await db.execute(text("SELECT id FROM public.extraction_fields LIMIT 1"))).scalar()
-    if not all((project_id, article_id, template_id, profile_id, instance_id, field_id)):
+    if not all((project_id, article_id, template_id, profile_id)):
         return None
+    # Pick instance and field that match the same template and entity_type.
+    row = await db.execute(
+        text(
+            """
+            SELECT i.id, f.id
+            FROM public.extraction_instances i
+            JOIN public.extraction_entity_types et ON et.id = i.entity_type_id
+            JOIN public.extraction_fields f ON f.entity_type_id = et.id
+            WHERE i.template_id = :tid
+            LIMIT 1
+            """
+        ),
+        {"tid": template_id},
+    )
+    pair = row.first()
+    if pair is None:
+        return None
+    instance_id, field_id = pair
 
     lifecycle = RunLifecycleService(db)
     run = await lifecycle.create_run(
@@ -143,6 +157,47 @@ async def test_manual_override_requires_value_and_rationale(
             mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
             value=None,
             rationale=None,
+        )
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_record_consensus_rejects_incoherent_coordinates(
+    db_session: AsyncSession,
+) -> None:
+    fx = await _setup_consensus_run(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    run_id, instance_id, _, profile_id, _ = fx
+    # Pick a field from a different entity_type
+    other_field_row = await db_session.execute(
+        text(
+            """
+            SELECT f.id FROM public.extraction_fields f
+            WHERE f.entity_type_id <> (
+                SELECT entity_type_id FROM public.extraction_instances WHERE id = :iid
+            )
+            LIMIT 1
+            """
+        ),
+        {"iid": instance_id},
+    )
+    other_field_id = other_field_row.scalar()
+    if other_field_id is None:
+        pytest.skip("Need >=2 entity_types with fields.")
+
+    from app.services.coordinate_coherence import CoordinateMismatchError
+
+    service = ExtractionConsensusService(db_session)
+    with pytest.raises(CoordinateMismatchError):
+        await service.record_consensus(
+            run_id=run_id,
+            instance_id=instance_id,
+            field_id=other_field_id,
+            consensus_user_id=profile_id,
+            mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
+            value={"v": "x"},
+            rationale="test",
         )
     await db_session.rollback()
 
