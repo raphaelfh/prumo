@@ -8,7 +8,8 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {Plus, ChevronDown, Upload, FileText, Download} from "lucide-react";
+import {Plus, ChevronDown, Upload, FileText, Download, FileBarChart, LayoutDashboard, ListChecks, Users} from "lucide-react";
+import {ComingSoonPanel} from "@/components/layout/ComingSoonPanel";
 import {toast} from "sonner";
 import {ArticlesList, type ArticlesListHandle} from "@/components/articles/ArticlesList";
 import {ArticleForm} from "@/components/articles/ArticleForm";
@@ -278,6 +279,18 @@ export default function ProjectView() {
       case 'settings':
         return <ProjectSettings projectId={projectId || ''} />;
 
+      case 'overview':
+        return <ComingSoonPanel title={t('layout', 'navOverview')} icon={LayoutDashboard} />;
+
+      case 'members':
+        return <ComingSoonPanel title={t('layout', 'navMembers')} icon={Users} />;
+
+      case 'screening':
+        return <ComingSoonPanel title={t('layout', 'navScreening')} icon={ListChecks} />;
+
+      case 'prisma':
+        return <ComingSoonPanel title={t('layout', 'navPrismaReport')} icon={FileBarChart} />;
+
       default:
         return null;
     }
@@ -290,11 +303,15 @@ export default function ProjectView() {
         (articleEditorMode === 'add' ||
             (articleEditorMode === 'edit' && Boolean(editorArticleIdFromUrl)));
 
+    // Tabs that render a full-bleed placeholder/page without the articles-style action bar.
+    const FULL_BLEED_TABS = new Set(['settings', 'overview', 'members', 'screening', 'prisma']);
+    const isFullBleed = FULL_BLEED_TABS.has(activeTab);
+
   return (
       <div className="h-full bg-background flex flex-col">
 
           {/* Sticky action bar — stack on narrow (flex-col md:flex-row), single row from md */}
-        {activeTab !== 'settings' && (
+        {!isFullBleed && (
             <div
                 className="flex-shrink-0 min-h-12 md:h-12 flex flex-col md:flex-row md:items-center md:justify-between items-stretch gap-2 md:gap-0 py-3 md:py-0 border-b border-border/40 bg-background/80 backdrop-blur-sm px-6 lg:px-10">
           <span className="text-[13px] text-muted-foreground/70 w-full min-w-0 md:flex-1 md:truncate">
@@ -397,7 +414,7 @@ export default function ProjectView() {
             </div>
         )}
 
-      {activeTab === 'settings' ? (
+      {isFullBleed ? (
           <div className="flex-1 overflow-y-auto">{renderContent()}</div>
       ) : (
           <div className="flex-1 overflow-y-auto px-6 py-4 lg:px-10">

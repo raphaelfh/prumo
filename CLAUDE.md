@@ -35,6 +35,10 @@ npm test && npm run lint
 
 ## Recent Changes
 
+- 2026-04-27: Sidebar revitalization — show/hide-binary sidebar with drag resize, G-prefixed nav shortcuts, theme toggle,
+  restructured user menu, mobile parity. See docs/superpowers/specs/2026-04-27-sidebar-revitalization-design.md
+  and docs/superpowers/design-system/sidebar-and-panels.md.
+
 - 008-unified-evaluation-model: Added Python 3.11+ (backend), TypeScript strict (frontend) + FastAPI, SQLAlchemy 2.0 async, Alembic, Celery + Redis, Pydantic, structlog, React 18, TanStack Query, Zustand
 - 006-zotero-articles-sync: Added Python 3.11+ (backend), TypeScript strict (frontend) + FastAPI, SQLAlchemy 2.0 async,
 Alembic, Celery + Redis, Supabase Auth/Storage, React 18,

@@ -28,7 +28,7 @@ export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) =>
 
     // Read tab from URL or use default
   const tabFromUrl = searchParams.get('tab');
-  const initialTab = (tabFromUrl && ['articles', 'extraction', 'settings'].includes(tabFromUrl))
+  const initialTab = (tabFromUrl && ['articles', 'extraction', 'settings', 'overview', 'members', 'screening', 'prisma'].includes(tabFromUrl))
     ? tabFromUrl 
     : 'articles';
   
@@ -37,7 +37,7 @@ export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) =>
     // Sync activeTab when URL changes (coming from other pages)
   useEffect(() => {
     const tabFromUrl = searchParams.get('tab');
-    if (tabFromUrl && ['articles', 'extraction', 'settings'].includes(tabFromUrl)) {
+    if (tabFromUrl && ['articles', 'extraction', 'settings', 'overview', 'members', 'screening', 'prisma'].includes(tabFromUrl)) {
         // Update only if different to avoid loops
       setActiveTab(prevTab => {
         return prevTab !== tabFromUrl ? tabFromUrl : prevTab;
