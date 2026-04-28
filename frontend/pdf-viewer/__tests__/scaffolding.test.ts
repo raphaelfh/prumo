@@ -4,7 +4,7 @@ import {describe, expect, it, vi} from 'vitest';
 // imports the pdfjs engine. pdfjs-dist's main build uses DOMMatrix at module
 // init which is browser-only. Shim it with the legacy Node-compatible build.
 import * as legacyPdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
-vi.mock('react-pdf', () => ({pdfjs: legacyPdfjs}));
+vi.mock('pdfjs-dist', () => legacyPdfjs);
 
 // articleFileSource imports the supabase client which crashes at module load
 // when VITE_SUPABASE_URL is unset (test environment). Mock it to a no-op

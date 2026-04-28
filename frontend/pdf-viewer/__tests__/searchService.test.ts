@@ -7,17 +7,21 @@ import {beforeAll, describe, expect, it, vi} from 'vitest';
 // In the jsdom test environment we shim it with the pdfjs-dist legacy build,
 // which is the Node-compatible variant of the same version family.
 import * as legacyPdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
-vi.mock('react-pdf', () => ({pdfjs: legacyPdfjs}));
+vi.mock('pdfjs-dist', () => legacyPdfjs);
 
 // Set up the worker for the legacy pdfjs using a file:// URL (required by Node ESM loader).
 import {createRequire} from 'node:module';
 const require = createRequire(import.meta.url);
 const workerPath = require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs');
-legacyPdfjs.GlobalWorkerOptions.workerSrc = `file://${workerPath}`;
 
 // Import AFTER the mock is registered so the engine sees the shim.
 const {pdfJsEngine} = await import('../engines/pdfjs');
 const {searchDocument} = await import('../services/searchService');
+
+// The engine module unconditionally writes a Vite-resolved worker URL to
+// GlobalWorkerOptions.workerSrc. Override it back to the file:// path AFTER
+// engine import so the legacy pdfjs in jsdom can spawn its fake worker.
+legacyPdfjs.GlobalWorkerOptions.workerSrc = `file://${workerPath}`;
 import type {PDFDocumentHandle} from '../core/engine';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

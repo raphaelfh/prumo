@@ -7,7 +7,7 @@ import {beforeAll, describe, expect, it, vi} from 'vitest';
 // In the jsdom test environment we shim it with the pdfjs-dist legacy build,
 // which is the Node-compatible variant of the same version family.
 import * as legacyPdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
-vi.mock('react-pdf', () => ({pdfjs: legacyPdfjs}));
+vi.mock('pdfjs-dist', () => legacyPdfjs);
 
 // Import AFTER the mock is registered so the engine sees the shim.
 const {pdfJsEngine} = await import('../engines/pdfjs');

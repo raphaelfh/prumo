@@ -7,16 +7,19 @@ import {beforeAll, describe, expect, it, vi} from 'vitest';
 // react-pdf's bundled pdfjs-dist is browser-only.
 // Shim it with the Node-compatible legacy build (same version family).
 import * as legacyPdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
-vi.mock('react-pdf', () => ({pdfjs: legacyPdfjs}));
+vi.mock('pdfjs-dist', () => legacyPdfjs);
 
 // Set up the worker for the legacy pdfjs.
 import {createRequire} from 'node:module';
 const require = createRequire(import.meta.url);
 const workerPath = require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs');
-legacyPdfjs.GlobalWorkerOptions.workerSrc = `file://${workerPath}`;
 
 // Import AFTER the mock is registered so components see the shim.
 const {PrumoPdfViewer} = await import('../PrumoPdfViewer');
+
+// Override workerSrc AFTER engine import — the engine module unconditionally
+// writes a Vite-bundled URL that doesn't exist in Node.
+legacyPdfjs.GlobalWorkerOptions.workerSrc = `file://${workerPath}`;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixturePath = resolve(__dirname, '../__fixtures__/three-page.pdf');

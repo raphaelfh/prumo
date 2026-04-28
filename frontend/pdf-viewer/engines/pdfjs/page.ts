@@ -92,7 +92,7 @@ export class PdfJsPageHandle implements PDFPageHandle {
     container.innerHTML = '';
     container.style.setProperty('--total-scale-factor', String(scale));
 
-    const {pdfjs} = await import('react-pdf');
+    const pdfjs = await import('pdfjs-dist');
     const textLayer = new pdfjs.TextLayer({
       textContentSource: this.proxy.streamTextContent({includeMarkedContent: true, disableNormalization: true}),
       container,
