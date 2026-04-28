@@ -1,69 +1,57 @@
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { useEvaluationRun } from "@/hooks/evaluation/useEvaluationQueries";
-import { evaluationService } from "@/services/evaluationService";
+import { useAdvanceRun, useCreateRun, useRun } from "@/hooks/runs";
 
 interface UnifiedEvaluationRunPanelProps {
   projectId: string;
-  schemaVersionId: string;
-  defaultTargetIds: string[];
+  articleId: string;
+  projectTemplateId: string;
 }
 
 export function UnifiedEvaluationRunPanel({
   projectId,
-  schemaVersionId,
-  defaultTargetIds,
+  articleId,
+  projectTemplateId,
 }: UnifiedEvaluationRunPanelProps) {
-  const [runName, setRunName] = useState("");
   const [currentRunId, setCurrentRunId] = useState<string | null>(null);
-  const runQuery = useEvaluationRun({ runId: currentRunId });
+  const runQuery = useRun(currentRunId);
 
-  const createRunMutation = useMutation({
-    mutationFn: async () =>
-      evaluationService.createRun({
-        project_id: projectId,
-        schema_version_id: schemaVersionId,
-        target_ids: defaultTargetIds,
-        name: runName || undefined,
-      }),
-    onSuccess: (run) => setCurrentRunId(run.id),
-  });
-
-  const startMutation = useMutation({
-    mutationFn: async () => {
-      if (!currentRunId) {
-        throw new Error("Missing current run id");
-      }
-      await evaluationService.startProposalGeneration(currentRunId);
-    },
-  });
+  const createRunMutation = useCreateRun();
+  const advanceMutation = useAdvanceRun(currentRunId ?? "");
 
   return (
     <div className="space-y-3 rounded-md border p-4">
       <h3 className="font-medium">Unified Evaluation Run</h3>
-      <Input
-        value={runName}
-        onChange={(event) => setRunName(event.target.value)}
-        placeholder="Optional run name"
-      />
       <div className="flex gap-2">
-        <Button onClick={() => createRunMutation.mutate()} disabled={createRunMutation.isPending}>
+        <Button
+          onClick={() =>
+            createRunMutation.mutate(
+              {
+                project_id: projectId,
+                article_id: articleId,
+                project_template_id: projectTemplateId,
+              },
+              {
+                onSuccess: (run) => setCurrentRunId(run.id),
+              },
+            )
+          }
+          disabled={createRunMutation.isPending}
+        >
           Create run
         </Button>
         <Button
           variant="secondary"
-          onClick={() => startMutation.mutate()}
-          disabled={!currentRunId || startMutation.isPending}
+          onClick={() => advanceMutation.mutate({ target_stage: "proposal" })}
+          disabled={!currentRunId || advanceMutation.isPending}
         >
-          Start proposal generation
+          Advance to proposal
         </Button>
       </div>
       {currentRunId && (
         <p className="text-sm text-muted-foreground">
-          Current run: {currentRunId} ({runQuery.data?.status ?? "loading"})
+          Current run: {currentRunId} ({runQuery.data?.run.stage ?? "loading"})
         </p>
       )}
     </div>
