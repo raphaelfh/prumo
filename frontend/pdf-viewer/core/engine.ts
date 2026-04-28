@@ -16,9 +16,17 @@ export type PageRotation = 0 | 90 | 180 | 270;
 export interface PDFEngine {
   /**
    * Load a PDF document. Returns a handle whose lifecycle is owned by
-   * the caller — call `destroy()` when the handle is no longer needed.
+   * the caller — call `destroy()` on the handle when no longer needed.
    */
   load(source: PDFSource, opts?: LoadOptions): Promise<PDFDocumentHandle>;
+
+  /**
+   * Release engine-level resources (e.g., PDF.js worker threads).
+   * Outstanding document handles are NOT destroyed implicitly — the
+   * caller is responsible for destroying handles before destroying
+   * the engine. Idempotent.
+   */
+  destroy(): void;
 }
 
 export interface LoadOptions {

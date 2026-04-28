@@ -11,6 +11,10 @@ export interface ViewerProviderProps {
    * its own — useful when a parent wants to lift store ownership (e.g., to
    * keep state across an unmount/remount, or to imperatively control it
    * from outside the React tree).
+   *
+   * Captured at mount via `useState` lazy init. Changing this prop on
+   * subsequent renders has NO effect — the originally-passed store remains
+   * in use until the Provider unmounts.
    */
   store?: StoreApi<ViewerState>;
   /**

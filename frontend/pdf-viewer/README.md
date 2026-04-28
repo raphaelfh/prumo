@@ -38,7 +38,7 @@ Filenames marked `XX-XX` are placeholder dates — set when each plan is written
 
 ```
 @prumo/pdf-viewer/
-├── core/             — IPDFEngine interface, store factory, primitives
+├── core/             — PDFEngine interface, store factory, primitives
 ├── engines/pdfjs/    — concrete PDF.js v5 implementation
 ├── engines/pdfium/   — (reserved) future PDFium-WASM implementation
 ├── plugins/          — toolbar, search, zoom, nav, virtualization,
@@ -46,12 +46,36 @@ Filenames marked `XX-XX` are placeholder dates — set when each plan is written
 └── ui/               — opt-in shadcn-style toolbar components
 ```
 
-Engine swappable behind `IPDFEngine`. State per-instance (Zustand factory + Context). Plugins tree-shakable.
+Engine swappable behind `PDFEngine`. State per-instance (Zustand factory + Context). Plugins tree-shakable.
 
 ## Importing
 
 ```ts
-import { PDF_VIEWER_MODULE_VERSION } from '@prumo/pdf-viewer';
+import {
+  createViewerStore,
+  ViewerProvider,
+  useViewerStore,
+  useViewerStoreApi,
+} from '@prumo/pdf-viewer';
+import type {
+  ViewerState,
+  PDFSource,
+  Citation,
+  PDFEngine,
+} from '@prumo/pdf-viewer';
 ```
 
-This README will expand with consumer-facing API documentation as Phase 1+ ships.
+Multi-instance use:
+
+```tsx
+function TwoViewers() {
+  return (
+    <>
+      <ViewerProvider><LeftViewer /></ViewerProvider>
+      <ViewerProvider><RightViewer /></ViewerProvider>
+    </>
+  );
+}
+```
+
+This README will continue to expand with consumer-facing API documentation as Phase 1b+ ships.
