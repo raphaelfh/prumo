@@ -6,7 +6,12 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionRun, ExtractionRunStage, ExtractionRunStatus
+from app.models.extraction import (
+    ExtractionRun,
+    ExtractionRunStage,
+    ExtractionRunStatus,
+    ProjectExtractionTemplate,
+)
 from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.services.hitl_config_service import HitlConfigService
 
@@ -17,6 +22,10 @@ class InvalidStageTransitionError(Exception):
 
 class TemplateVersionNotFoundError(Exception):
     """Raised when no active TemplateVersion exists for a template."""
+
+
+class TemplateNotFoundError(Exception):
+    """Raised when no ProjectExtractionTemplate exists for the supplied id."""
 
 
 # Allowed transitions: from -> set of valid target stages
@@ -58,6 +67,11 @@ class RunLifecycleService:
         user_id: UUID,
         parameters: dict[str, Any] | None = None,
     ) -> ExtractionRun:
+        # Resolve template (for kind) — must exist
+        template = await self.db.get(ProjectExtractionTemplate, project_template_id)
+        if template is None:
+            raise TemplateNotFoundError(f"Template {project_template_id} not found")
+
         # Resolve active TemplateVersion
         version_stmt = select(ExtractionTemplateVersion).where(
             ExtractionTemplateVersion.project_template_id == project_template_id,
@@ -75,7 +89,7 @@ class RunLifecycleService:
             project_id=project_id,
             article_id=article_id,
             template_id=project_template_id,
-            kind="extraction",
+            kind=template.kind,
             version_id=version.id,
             hitl_config_snapshot=snapshot,
             stage=ExtractionRunStage.PENDING.value,

@@ -147,3 +147,54 @@ async def test_cannot_advance_from_cancelled(db_session: AsyncSession) -> None:
             user_id=profile_id,
         )
     await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_create_run_derives_kind_from_template(db_session: AsyncSession) -> None:
+    """Run.kind should equal the template's kind, not be hardcoded."""
+    from sqlalchemy import text as _text
+
+    fx = await _fixtures(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    project_id, article_id, template_id, profile_id = fx
+
+    template_kind = (
+        await db_session.execute(
+            _text("SELECT kind FROM public.project_extraction_templates WHERE id = :id"),
+            {"id": template_id},
+        )
+    ).scalar()
+    assert template_kind is not None
+
+    service = RunLifecycleService(db_session)
+    run = await service.create_run(
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=template_id,
+        user_id=profile_id,
+    )
+    assert run.kind == template_kind
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_create_run_with_nonexistent_template_raises(db_session: AsyncSession) -> None:
+    from uuid import uuid4
+
+    from app.services.run_lifecycle_service import TemplateNotFoundError
+
+    fx = await _fixtures(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    project_id, article_id, _, profile_id = fx
+
+    service = RunLifecycleService(db_session)
+    with pytest.raises(TemplateNotFoundError):
+        await service.create_run(
+            project_id=project_id,
+            article_id=article_id,
+            project_template_id=uuid4(),
+            user_id=profile_id,
+        )
+    await db_session.rollback()
