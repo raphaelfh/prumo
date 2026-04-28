@@ -23,6 +23,8 @@ export type {
   LoadOptions,
   RenderOptions,
   RenderResult,
+  TextLayerRenderOptions,
+  TextLayerHandle,
   PDFMetadata,
   OutlineNode,
   TextContent,
@@ -40,4 +42,11 @@ export type {
   CitationStyle,
 } from './citation';
 
-export type {LoadStatus, ViewerState, ViewerActions} from './state';
+export type {
+  LoadStatus,
+  ViewerState,
+  ViewerActions,
+  SearchMatch,
+  SearchOptions,
+  SearchState,
+} from './state';

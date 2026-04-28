@@ -3,7 +3,7 @@ export * from './core';
 
 // Compound primitives
 export {Viewer, CanvasLayer, TextLayer} from './primitives';
-export type {RootProps, CanvasLayerProps} from './primitives';
+export type {RootProps, CanvasLayerProps, TextLayerProps} from './primitives';
 
 // UI shell components
 export {
@@ -12,8 +12,9 @@ export {
   ZoomControls,
   LoadingState,
   ErrorState,
+  SearchBar,
 } from './ui';
-export type {ErrorStateProps} from './ui';
+export type {ErrorStateProps, SearchBarProps} from './ui';
 
 // Hooks
 export {useDocumentLoader} from './hooks/useDocumentLoader';

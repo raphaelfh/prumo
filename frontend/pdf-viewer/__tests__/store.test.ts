@@ -165,3 +165,110 @@ describe('createViewerStore', () => {
     expect(store.getState().currentPage).toBe(7);
   });
 });
+
+describe('search actions', () => {
+  it('initial search state is empty with no active match', () => {
+    const store = createViewerStore();
+    const {search} = store.getState();
+    expect(search.query).toBe('');
+    expect(search.matches).toHaveLength(0);
+    expect(search.activeIndex).toBe(-1);
+    expect(search.searching).toBe(false);
+    expect(search.options.caseSensitive).toBe(false);
+    expect(search.options.wholeWords).toBe(false);
+  });
+
+  it('setSearchMatches sets matches and sets activeIndex to 0', () => {
+    const store = createViewerStore();
+    const {actions} = store.getState();
+    actions.setSearchMatches([
+      {pageNumber: 1, charStart: 0, charEnd: 4, context: 'test'},
+      {pageNumber: 2, charStart: 10, charEnd: 14, context: 'test'},
+    ]);
+    const {search} = store.getState();
+    expect(search.matches).toHaveLength(2);
+    expect(search.activeIndex).toBe(0);
+  });
+
+  it('setSearchMatches with empty array resets activeIndex to -1', () => {
+    const store = createViewerStore();
+    const {actions} = store.getState();
+    actions.setSearchMatches([
+      {pageNumber: 1, charStart: 0, charEnd: 4, context: 'test'},
+    ]);
+    actions.setSearchMatches([]);
+    expect(store.getState().search.activeIndex).toBe(-1);
+  });
+
+  it('goToNextMatch wraps around and calls goToPage', () => {
+    const store = createViewerStore();
+    const {actions} = store.getState();
+    actions.setDocument({
+      numPages: 5,
+      fingerprint: 'x',
+      metadata: async () => ({}),
+      outline: async () => [],
+      getPage: async () => {throw new Error('stub');},
+      destroy: () => {},
+    });
+    actions.setSearchMatches([
+      {pageNumber: 1, charStart: 0, charEnd: 4, context: 'a'},
+      {pageNumber: 3, charStart: 5, charEnd: 9, context: 'b'},
+    ]);
+    expect(store.getState().search.activeIndex).toBe(0);
+    actions.goToNextMatch();
+    expect(store.getState().search.activeIndex).toBe(1);
+    expect(store.getState().currentPage).toBe(3);
+    // Wraps around.
+    actions.goToNextMatch();
+    expect(store.getState().search.activeIndex).toBe(0);
+    expect(store.getState().currentPage).toBe(1);
+  });
+
+  it('goToPrevMatch wraps around', () => {
+    const store = createViewerStore();
+    const {actions} = store.getState();
+    actions.setDocument({
+      numPages: 5,
+      fingerprint: 'x',
+      metadata: async () => ({}),
+      outline: async () => [],
+      getPage: async () => {throw new Error('stub');},
+      destroy: () => {},
+    });
+    actions.setSearchMatches([
+      {pageNumber: 1, charStart: 0, charEnd: 4, context: 'a'},
+      {pageNumber: 2, charStart: 5, charEnd: 9, context: 'b'},
+    ]);
+    // activeIndex is 0; going prev should wrap to 1.
+    actions.goToPrevMatch();
+    expect(store.getState().search.activeIndex).toBe(1);
+    expect(store.getState().currentPage).toBe(2);
+  });
+
+  it('clearSearch resets all search state', () => {
+    const store = createViewerStore();
+    const {actions} = store.getState();
+    actions.setSearchQuery('hello');
+    actions.setSearchMatches([{pageNumber: 1, charStart: 0, charEnd: 5, context: 'hello'}]);
+    actions.setSearchSearching(true);
+    actions.clearSearch();
+    const {search} = store.getState();
+    expect(search.query).toBe('');
+    expect(search.matches).toHaveLength(0);
+    expect(search.activeIndex).toBe(-1);
+    expect(search.searching).toBe(false);
+  });
+
+  it('reset also clears search state', () => {
+    const store = createViewerStore();
+    const {actions} = store.getState();
+    actions.setSearchQuery('hello');
+    actions.setSearchMatches([{pageNumber: 1, charStart: 0, charEnd: 5, context: 'hello'}]);
+    actions.reset();
+    const {search} = store.getState();
+    expect(search.query).toBe('');
+    expect(search.matches).toHaveLength(0);
+    expect(search.activeIndex).toBe(-1);
+  });
+});

@@ -10,6 +10,29 @@ import type {PDFSource} from './source';
  */
 export type LoadStatus = 'idle' | 'loading' | 'ready' | 'error';
 
+export interface SearchMatch {
+  pageNumber: number;
+  charStart: number;
+  charEnd: number;
+  /** Surrounding text context of the match. */
+  context: string;
+}
+
+export interface SearchOptions {
+  caseSensitive: boolean;
+  wholeWords: boolean;
+}
+
+export interface SearchState {
+  query: string;
+  options: SearchOptions;
+  matches: ReadonlyArray<SearchMatch>;
+  /** Index in `matches` of the currently-active match, or -1 if none. */
+  activeIndex: number;
+  /** True while a search is in progress. */
+  searching: boolean;
+}
+
 /**
  * The full viewer state.
  *
@@ -38,6 +61,9 @@ export interface ViewerState {
   citations: ReadonlyMap<CitationId, Citation>;
   activeCitationId: CitationId | null;
 
+  // Search
+  search: SearchState;
+
   // Actions namespace — stable object reference across all updates.
   actions: ViewerActions;
 }
@@ -60,6 +86,16 @@ export interface ViewerActions {
   removeCitation(id: CitationId): void;
   clearCitations(): void;
   setActiveCitation(id: CitationId | null): void;
+
+  // Search
+  setSearchQuery(query: string): void;
+  setSearchOptions(opts: Partial<SearchOptions>): void;
+  setSearchMatches(matches: ReadonlyArray<SearchMatch>): void;
+  setSearchSearching(searching: boolean): void;
+  goToNextMatch(): void;
+  goToPrevMatch(): void;
+  setActiveMatchIndex(index: number): void;
+  clearSearch(): void;
 
   // Lifecycle
   /** Reset the store to its initial state. Calls `document.destroy()` if present. */

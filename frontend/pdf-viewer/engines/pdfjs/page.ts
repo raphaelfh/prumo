@@ -5,6 +5,8 @@ import type {
   RenderResult,
   TextContent,
   TextItem,
+  TextLayerRenderOptions,
+  TextLayerHandle,
 } from '../../core/engine';
 import type {PDFRect} from '../../core/coordinates';
 
@@ -81,6 +83,42 @@ export class PdfJsPageHandle implements PDFPageHandle {
       charOffset = charEnd;
     }
     return {items};
+  }
+
+  async renderTextLayer({container, scale, rotation, signal}: TextLayerRenderOptions): Promise<TextLayerHandle> {
+    const viewport = this.proxy.getViewport({scale, rotation: rotation ?? 0});
+
+    // Clear previous content (idempotent re-render)
+    container.innerHTML = '';
+    container.style.setProperty('--total-scale-factor', String(scale));
+
+    const {pdfjs} = await import('react-pdf');
+    const textLayer = new pdfjs.TextLayer({
+      textContentSource: this.proxy.streamTextContent({includeMarkedContent: true, disableNormalization: true}),
+      container,
+      viewport,
+    });
+
+    if (signal?.aborted) {
+      textLayer.cancel();
+      throw new DOMException('aborted', 'AbortError');
+    }
+
+    const renderPromise = textLayer.render();
+
+    if (signal) {
+      const onAbort = () => textLayer.cancel();
+      signal.addEventListener('abort', onAbort, {once: true});
+      try {
+        await renderPromise;
+      } finally {
+        signal.removeEventListener('abort', onAbort);
+      }
+    } else {
+      await renderPromise;
+    }
+
+    return {cancel: () => textLayer.cancel()};
   }
 
   cleanup(): void {

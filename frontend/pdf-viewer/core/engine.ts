@@ -52,8 +52,25 @@ export interface PDFPageHandle {
   readonly size: {width: number; height: number};
   render(opts: RenderOptions): Promise<RenderResult>;
   getTextContent(): Promise<TextContent>;
+  /**
+   * Render a TextLayer for this page into the given container.
+   * Returns a cancellable handle.
+   */
+  renderTextLayer(opts: TextLayerRenderOptions): Promise<TextLayerHandle>;
   /** Release page-level resources (canvas, text layer caches). Idempotent. */
   cleanup(): void;
+}
+
+export interface TextLayerRenderOptions {
+  container: HTMLElement;
+  scale: number;
+  rotation?: PageRotation;
+  signal?: AbortSignal;
+}
+
+export interface TextLayerHandle {
+  /** Cancel rendering and detach resources. Idempotent. */
+  cancel(): void;
 }
 
 export interface RenderOptions {

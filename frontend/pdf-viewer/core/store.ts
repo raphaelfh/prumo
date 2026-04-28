@@ -2,9 +2,17 @@ import {createStore, type StoreApi} from 'zustand';
 import type {Citation, CitationId} from './citation';
 import type {PDFDocumentHandle, PageRotation} from './engine';
 import type {PDFSource} from './source';
-import type {LoadStatus, ViewerActions, ViewerState} from './state';
+import type {LoadStatus, SearchState, ViewerActions, ViewerState} from './state';
 
 type ViewerData = Omit<ViewerState, 'actions'>;
+
+const initialSearch: SearchState = {
+  query: '',
+  options: {caseSensitive: false, wholeWords: false},
+  matches: [],
+  activeIndex: -1,
+  searching: false,
+};
 
 const initialData: ViewerData = {
   source: null,
@@ -17,6 +25,7 @@ const initialData: ViewerData = {
   rotation: 0,
   citations: new Map<CitationId, Citation>(),
   activeCitationId: null,
+  search: initialSearch,
 };
 
 /**
@@ -96,6 +105,49 @@ export function createViewerStore(
 
       setActiveCitation(id: CitationId | null) {
         set({activeCitationId: id});
+      },
+
+      setSearchQuery(query: string) {
+        set({search: {...get().search, query}});
+      },
+
+      setSearchOptions(opts) {
+        set({search: {...get().search, options: {...get().search.options, ...opts}}});
+      },
+
+      setSearchMatches(matches) {
+        set({search: {...get().search, matches, activeIndex: matches.length > 0 ? 0 : -1}});
+      },
+
+      setSearchSearching(searching: boolean) {
+        set({search: {...get().search, searching}});
+      },
+
+      goToNextMatch() {
+        const s = get().search;
+        if (s.matches.length === 0) return;
+        const next = (s.activeIndex + 1) % s.matches.length;
+        set({search: {...s, activeIndex: next}});
+        get().actions.goToPage(s.matches[next].pageNumber);
+      },
+
+      goToPrevMatch() {
+        const s = get().search;
+        if (s.matches.length === 0) return;
+        const next = (s.activeIndex - 1 + s.matches.length) % s.matches.length;
+        set({search: {...s, activeIndex: next}});
+        get().actions.goToPage(s.matches[next].pageNumber);
+      },
+
+      setActiveMatchIndex(index: number) {
+        const s = get().search;
+        if (index < -1 || index >= s.matches.length) return;
+        set({search: {...s, activeIndex: index}});
+        if (index >= 0) get().actions.goToPage(s.matches[index].pageNumber);
+      },
+
+      clearSearch() {
+        set({search: initialSearch});
       },
 
       reset() {

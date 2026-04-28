@@ -1,5 +1,5 @@
 import {useEffect, useRef, type ReactNode} from 'react';
-import {ViewerProvider, useViewerStore} from '../core/context';
+import {ViewerProvider, useViewerStore, useViewerStoreApi} from '../core/context';
 import {useDocumentLoader} from '../hooks/useDocumentLoader';
 import type {PDFSource} from '../core/source';
 import type {StoreApi} from 'zustand';
@@ -44,12 +44,21 @@ function RootInner({
 function Body({children, className}: {children: ReactNode; className?: string}) {
   const ref = useRef<HTMLDivElement>(null);
   const currentPage = useViewerStore((s) => s.currentPage);
+  const numPages = useViewerStore((s) => s.numPages);
+  const storeApi = useViewerStoreApi();
 
-  // Scroll to the current page when it changes programmatically (nav buttons, input).
-  // A ref suppresses the inverse observer-update (see TODO below) during smooth scroll.
+  // The two-way scroll-sync coordination:
+  //   - When `currentPage` changes from outside (nav buttons, page input,
+  //     `goToCitation`), this Body smoothly scrolls to that page.
+  //   - When the user scrolls manually, an IntersectionObserver finds the
+  //     page closest to the viewport top and writes it back to `currentPage`.
+  // The ref below suppresses the observer feedback for ~500ms after a
+  // programmatic scroll so the smooth-scroll animation does not race with
+  // the observer firing for transient intermediate pages.
   const isProgrammaticScrollRef = useRef(false);
   const programmaticScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Programmatic scroll: page → scroll position.
   useEffect(() => {
     const container = ref.current;
     if (!container) return;
@@ -75,9 +84,63 @@ function Body({children, className}: {children: ReactNode; className?: string}) 
     }
   }, [currentPage]);
 
-  // TODO: Add IntersectionObserver-driven currentPage update on scroll.
-  // Use isProgrammaticScrollRef to suppress observer updates during smooth-scroll.
-  // Deferred to keep this dispatch focused on the core render flow.
+  // Inverse: scroll position → currentPage via IntersectionObserver.
+  useEffect(() => {
+    const container = ref.current;
+    if (!container || numPages <= 0) return;
+    if (typeof IntersectionObserver === 'undefined') return; // SSR / jsdom safety
+
+    // Track which pages are currently intersecting and pick the one closest
+    // to the viewport top on each batch.
+    const visibleEntries = new Map<number, IntersectionObserverEntry>();
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const pageAttr = (entry.target as HTMLElement).dataset.pageNumber;
+          const page = pageAttr ? parseInt(pageAttr, 10) : NaN;
+          if (Number.isNaN(page)) continue;
+          if (entry.isIntersecting) {
+            visibleEntries.set(page, entry);
+          } else {
+            visibleEntries.delete(page);
+          }
+        }
+
+        if (isProgrammaticScrollRef.current) return;
+        if (visibleEntries.size === 0) return;
+
+        // Pick the page whose top is closest to (but not below) the
+        // container's top edge. This matches what the user feels is the
+        // "current" page while scrolling.
+        let bestPage = -1;
+        let bestDistance = Infinity;
+        for (const [page, entry] of visibleEntries) {
+          const distance = Math.abs(entry.boundingClientRect.top);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            bestPage = page;
+          }
+        }
+
+        if (bestPage > 0 && bestPage !== storeApi.getState().currentPage) {
+          storeApi.getState().actions.goToPage(bestPage);
+        }
+      },
+      {
+        root: container,
+        threshold: [0, 0.1, 0.5, 1],
+        // Pages at the top of the viewport are "current"; pages below
+        // contribute only when they cross the upper half.
+        rootMargin: '0px 0px -50% 0px',
+      },
+    );
+
+    const pageEls = container.querySelectorAll<HTMLElement>('[data-page-number]');
+    pageEls.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+    // Re-attach when numPages changes (new page elements appear after load).
+  }, [numPages, storeApi]);
 
   return (
     <div

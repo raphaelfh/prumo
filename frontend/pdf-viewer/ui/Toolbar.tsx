@@ -1,4 +1,6 @@
 import type {ReactNode} from 'react';
+import {Search} from 'lucide-react';
+import {Button} from '@/components/ui/button';
 import {NavigationControls} from './NavigationControls';
 import {ZoomControls} from './ZoomControls';
 
@@ -6,10 +8,13 @@ export function Toolbar({
   className,
   leading,
   trailing,
+  onSearchToggle,
 }: {
   className?: string;
   leading?: ReactNode;
   trailing?: ReactNode;
+  /** When provided, renders a search button in the trailing controls. */
+  onSearchToggle?: () => void;
 }) {
   return (
     <div
@@ -21,6 +26,17 @@ export function Toolbar({
       </div>
       <div className="flex items-center gap-3">
         <ZoomControls />
+        {onSearchToggle && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={onSearchToggle}
+            aria-label="Toggle search"
+          >
+            <Search className="h-4 w-4" />
+          </Button>
+        )}
         {trailing}
       </div>
     </div>
