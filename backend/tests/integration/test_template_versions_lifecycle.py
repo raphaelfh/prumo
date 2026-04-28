@@ -84,35 +84,50 @@ async def test_template_version_only_one_active_per_template(
 
 
 @pytest.mark.asyncio
-async def test_template_version_backfill_created_v1_for_each_existing_template(
+async def test_run_lifecycle_lazy_creates_v1_for_template_without_version(
     db_session: AsyncSession,
 ) -> None:
-    template_count_row = await db_session.execute(
-        text("SELECT COUNT(*) FROM public.project_extraction_templates"),
-    )
-    template_count = template_count_row.scalar()
-    if template_count == 0:
-        pytest.skip("No project_extraction_templates rows; backfill is vacuously satisfied.")
+    """Templates created via the frontend skip alembic 0010 backfill, so
+    RunLifecycleService.create_run lazily snapshots v=1 the first time a
+    Run touches them. Validates the self-healing invariant."""
+    from app.services.run_lifecycle_service import RunLifecycleService
 
-    # Every existing project_extraction_template must have a v=1 row.
-    result = await db_session.execute(
+    pick = await db_session.execute(
         text(
             """
             SELECT t.id
             FROM public.project_extraction_templates t
             LEFT JOIN public.extraction_template_versions v
-              ON v.project_template_id = t.id AND v.version = 1
+              ON v.project_template_id = t.id AND v.is_active
             WHERE v.id IS NULL
+            LIMIT 1
             """
         )
     )
-    missing = result.fetchall()
-    assert missing == [], f"Templates missing v=1: {missing}"
+    template_id = pick.scalar()
+    if template_id is None:
+        pytest.skip("All templates already have an active version; nothing to heal.")
 
-    # And the count of distinct templates with v=1 must equal the template count.
-    distinct_row = await db_session.execute(
-        text(
-            "SELECT COUNT(DISTINCT project_template_id) FROM public.extraction_template_versions WHERE version = 1",
-        )
+    profile_row = await db_session.execute(
+        text("SELECT id FROM public.profiles LIMIT 1"),
     )
-    assert distinct_row.scalar() == template_count
+    profile_id = profile_row.scalar()
+    assert profile_id is not None
+
+    service = RunLifecycleService(db_session)
+    version = await service._snapshot_initial_version(
+        project_template_id=template_id,
+        user_id=profile_id,
+    )
+    assert version.version == 1
+    assert version.is_active is True
+    assert version.project_template_id == template_id
+
+    confirm = await db_session.execute(
+        text(
+            "SELECT COUNT(*) FROM public.extraction_template_versions "
+            "WHERE project_template_id = :tid AND version = 1"
+        ),
+        {"tid": str(template_id)},
+    )
+    assert confirm.scalar() == 1

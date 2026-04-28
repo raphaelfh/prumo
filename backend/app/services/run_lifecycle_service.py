@@ -1,9 +1,10 @@
 """Run lifecycle service: create + advance stage with precondition checks."""
 
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import (
@@ -72,15 +73,18 @@ class RunLifecycleService:
         if template is None:
             raise TemplateNotFoundError(f"Template {project_template_id} not found")
 
-        # Resolve active TemplateVersion
+        # Resolve active TemplateVersion. Templates created directly through
+        # the frontend (Supabase client) skip the backend backfill from
+        # alembic 0010, so lazily snapshot v=1 on first Run.
         version_stmt = select(ExtractionTemplateVersion).where(
             ExtractionTemplateVersion.project_template_id == project_template_id,
             ExtractionTemplateVersion.is_active.is_(True),
         )
         version = (await self.db.execute(version_stmt)).scalar_one_or_none()
         if version is None:
-            raise TemplateVersionNotFoundError(
-                f"No active ExtractionTemplateVersion for template {project_template_id}"
+            version = await self._snapshot_initial_version(
+                project_template_id=project_template_id,
+                user_id=user_id,
             )
 
         snapshot = await self._hitl.resolve_snapshot(project_id, project_template_id)
@@ -127,3 +131,72 @@ class RunLifecycleService:
         await self.db.flush()
         await self.db.refresh(run)
         return run
+
+    async def _snapshot_initial_version(
+        self,
+        *,
+        project_template_id: UUID,
+        user_id: UUID,
+    ) -> ExtractionTemplateVersion:
+        """Mirror alembic 0010's backfill query for a single template.
+
+        Captures the current entity_types + fields tree as the v=1 snapshot.
+        Marked active so subsequent runs reuse it via the ``is_active`` index.
+        """
+        snapshot_row = await self.db.execute(
+            text(
+                """
+                SELECT jsonb_build_object(
+                    'entity_types', COALESCE(
+                        (
+                            SELECT jsonb_agg(
+                                jsonb_build_object(
+                                    'id', et.id,
+                                    'name', et.name,
+                                    'label', et.label,
+                                    'parent_entity_type_id', et.parent_entity_type_id,
+                                    'cardinality', et.cardinality,
+                                    'sort_order', et.sort_order,
+                                    'is_required', et.is_required,
+                                    'fields', COALESCE(
+                                        (
+                                            SELECT jsonb_agg(jsonb_build_object(
+                                                'id', f.id,
+                                                'name', f.name,
+                                                'label', f.label,
+                                                'field_type', f.field_type,
+                                                'is_required', f.is_required,
+                                                'allowed_values', f.allowed_values,
+                                                'sort_order', f.sort_order
+                                            ) ORDER BY f.sort_order)
+                                            FROM public.extraction_fields f
+                                            WHERE f.entity_type_id = et.id
+                                        ),
+                                        '[]'::jsonb
+                                    )
+                                ) ORDER BY et.sort_order
+                            )
+                            FROM public.extraction_entity_types et
+                            WHERE et.project_template_id = :tid
+                        ),
+                        '[]'::jsonb
+                    )
+                )
+                """
+            ),
+            {"tid": str(project_template_id)},
+        )
+        snapshot = snapshot_row.scalar_one()
+
+        version = ExtractionTemplateVersion(
+            project_template_id=project_template_id,
+            version=1,
+            schema_=snapshot,
+            published_at=datetime.now(UTC),
+            published_by=user_id,
+            is_active=True,
+        )
+        self.db.add(version)
+        await self.db.flush()
+        await self.db.refresh(version)
+        return version
