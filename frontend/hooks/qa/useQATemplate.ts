@@ -2,10 +2,10 @@
  * Hook to load a quality-assessment template (PROBAST / QUADAS-2 / ...)
  * from the global template registry.
  *
- * Differs from the extraction-side `useExtractionTemplates` in that:
- * - it filters by `kind = 'quality_assessment'`
- * - it keys on the global template id (no per-project clone)
- * - it returns domains with their fields pre-grouped, ready to render
+ * Differs from `useHITLProjectTemplates` in that this one fetches a
+ * single template's full entity_types + fields tree (so the form can
+ * render its inputs), not just a flat list of templates available to
+ * the project.
  */
 
 import { useEffect, useState } from "react";

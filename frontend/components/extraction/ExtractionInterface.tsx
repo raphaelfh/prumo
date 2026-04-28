@@ -11,8 +11,10 @@ import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/compo
 import {Button} from '@/components/ui/button';
 import {Skeleton} from '@/components/ui/skeleton';
 import {AlertCircle, CheckCircle, Download, FileText, PlusCircle, Settings} from 'lucide-react';
-import {ProjectExtractionTemplate} from '@/types/extraction';
-import {useExtractionTemplates} from '@/hooks/extraction/useExtractionTemplates';
+import {
+    type ProjectTemplate,
+    useHITLProjectTemplates,
+} from '@/hooks/hitl/useHITLProjectTemplates';
 import {useProjectMemberRole} from '@/hooks/useProjectMemberRole';
 import {ArticleExtractionTable} from './ArticleExtractionTable';
 import {ConfigureTemplateFirst} from './config/ConfigureTemplateFirst';
@@ -37,7 +39,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     ? tabFromUrl 
     : 'extraction';
   
-  const [activeTemplate, setActiveTemplate] = useState<ProjectExtractionTemplate | null>(null);
+  const [activeTemplate, setActiveTemplate] = useState<ProjectTemplate | null>(null);
   const [activeTab, setActiveTab] = useState<'extraction' | 'dashboard' | 'configuration'>(initialTab);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showCreateCustomDialog, setShowCreateCustomDialog] = useState(false);
@@ -50,13 +52,13 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   });
 
     // Hook to manage templates
-  const { 
+  const {
     templates,
       globalTemplates,
-    loading: templatesLoading, 
+    loading: templatesLoading,
     error: templatesError,
-    refreshTemplates
-  } = useExtractionTemplates({ projectId });
+    refresh: refreshTemplates,
+  } = useHITLProjectTemplates({ projectId, kind: 'extraction' });
 
     // Pre-select template when opening import dialog from config list
     const [importInitialTemplateId, setImportInitialTemplateId] = useState<string | null>(null);
@@ -524,7 +526,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
           handleTabChange('configuration');
             // Select the newly imported template
           if (templateId && updatedTemplates.length > 0) {
-            const newTemplate = updatedTemplates.find((t: ProjectExtractionTemplate) => t.id === templateId);
+            const newTemplate = updatedTemplates.find((t: ProjectTemplate) => t.id === templateId);
             if (newTemplate) {
               setActiveTemplate(newTemplate);
             } else {
@@ -550,7 +552,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
           handleTabChange('configuration');
             // Select the newly created template
           if (templateId && updatedTemplates.length > 0) {
-            const newTemplate = updatedTemplates.find((t: ProjectExtractionTemplate) => t.id === templateId);
+            const newTemplate = updatedTemplates.find((t: ProjectTemplate) => t.id === templateId);
             if (newTemplate) {
               setActiveTemplate(newTemplate);
             } else {
