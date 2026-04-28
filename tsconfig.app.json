@@ -25,6 +25,12 @@
     "paths": {
       "@/*": [
         "./frontend/*"
+      ],
+      "@prumo/pdf-viewer": [
+        "./frontend/pdf-viewer/index.ts"
+      ],
+      "@prumo/pdf-viewer/*": [
+        "./frontend/pdf-viewer/*"
       ]
     }
   },
