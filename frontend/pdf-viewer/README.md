@@ -4,19 +4,38 @@ Modular, headless PDF viewer for the Prumo research platform.
 
 ## Status
 
-**Phase 1a** — Headless core types and per-instance store. The package now
-exposes:
+**Phase 2** — React rendering layer on top of PdfJsEngine. The package now
+exposes (in addition to everything in Phase 1):
+
+### Phase 2 additions
+
+- **Compound primitives**: `Viewer.Root`, `Viewer.Body`, `Viewer.Pages`, `Viewer.Page`
+- **CanvasLayer**: Renders each page to a `<canvas>` via the engine with
+  AbortSignal-aware re-render on scale/rotation change and DPR-aware sharpness
+- **TextLayer**: Stub — full text-selection/highlight implementation comes with
+  the search plugin in the next dispatch
+- **UI components**: `<Toolbar>`, `<NavigationControls>`, `<ZoomControls>`,
+  `<LoadingState>`, `<ErrorState>` — matching the project's shadcn style
+- **Hooks**: `useDocumentLoader`, `usePageHandle`
+- **`<PrumoPdfViewer>`**: High-level all-in-one component for the common case
+  (mount, load, render, continuous scroll, prev/next, zoom)
+
+Core flow (load → render → continuous scroll → prev/next → zoom) is at parity
+with the legacy viewer. Search and thumbnails come in the next dispatch.
+
+**Phase 1 (still active):** Headless core types and per-instance store.
 
 - Type definitions: `PDFSource`, `PDFRect`, `PDFTextRange`, `Citation`,
   `PDFEngine` (interface only — no implementation yet), `ViewerState`.
 - Runtime: `createViewerStore(initial?)` factory, `<ViewerProvider>`,
   `useViewerStore<T>(selector)`, `useViewerStoreApi()`.
+- `pdfJsEngine` concrete implementation (Phase 1b)
 
 Multi-instance is verified: two `<ViewerProvider>`s on the same page have
 fully isolated state.
 
-**Not yet:** concrete PDF.js engine (Phase 1b), compound primitives
-(`<Viewer.Root>`, `<Viewer.Page>`) (Phase 2a), plugins (Phase 2b),
+**Not yet:** IntersectionObserver-driven currentPage sync on scroll (stubbed
+with TODO), TextLayer (stubbed), search plugin (Phase 2b), thumbnails,
 citation rendering (Phase 3), annotations (Phase 4), reader view (Phase 5).
 
 The full refactor is split across the following plans (one per subsystem):

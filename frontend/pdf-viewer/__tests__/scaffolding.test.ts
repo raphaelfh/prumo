@@ -1,4 +1,10 @@
-import {describe, expect, it} from 'vitest';
+import {describe, expect, it, vi} from 'vitest';
+
+// The main package entry now re-exports PrumoPdfViewer which transitively
+// imports the pdfjs engine. pdfjs-dist's main build uses DOMMatrix at module
+// init which is browser-only. Shim it with the legacy Node-compatible build.
+import * as legacyPdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
+vi.mock('react-pdf', () => ({pdfjs: legacyPdfjs}));
 
 describe('@prumo/pdf-viewer public API', () => {
   it('exports the runtime entry points from the package root', async () => {
@@ -15,5 +21,28 @@ describe('@prumo/pdf-viewer public API', () => {
     expect(typeof store.getState).toBe('function');
     expect(typeof store.setState).toBe('function');
     expect(typeof store.subscribe).toBe('function');
+  });
+
+  it('exports Phase 2 public API surface', async () => {
+    const mod = await import('@prumo/pdf-viewer');
+    // Compound primitives
+    expect(typeof mod.Viewer).toBe('object');
+    expect(typeof mod.Viewer.Root).toBe('function');
+    expect(typeof mod.Viewer.Body).toBe('function');
+    expect(typeof mod.Viewer.Pages).toBe('function');
+    expect(typeof mod.Viewer.Page).toBe('function');
+    expect(typeof mod.CanvasLayer).toBe('function');
+    expect(typeof mod.TextLayer).toBe('function');
+    // UI components
+    expect(typeof mod.Toolbar).toBe('function');
+    expect(typeof mod.NavigationControls).toBe('function');
+    expect(typeof mod.ZoomControls).toBe('function');
+    expect(typeof mod.LoadingState).toBe('function');
+    expect(typeof mod.ErrorState).toBe('function');
+    // Hooks
+    expect(typeof mod.useDocumentLoader).toBe('function');
+    expect(typeof mod.usePageHandle).toBe('function');
+    // High-level component
+    expect(typeof mod.PrumoPdfViewer).toBe('function');
   });
 });
