@@ -148,22 +148,27 @@ async def test_composite_fk_blocks_kind_mismatch(
     db_session: AsyncSession,
 ) -> None:
     # Composite FK on (template_id, kind) must reject a Run.kind that doesn't
-    # match its Template.kind. PostgreSQL enforces FKs at statement time when
-    # NOT DEFERRABLE (the default), so the UPDATE itself raises.
-    row_count = await db_session.execute(
-        text("SELECT COUNT(*) FROM public.extraction_runs"),
-    )
-    if row_count.scalar() == 0:
-        pytest.skip("No extraction_runs rows to test FK coherence.")
-
-    with pytest.raises(IntegrityError):
+    # match its Template.kind. Pick a run whose template is 'extraction' and
+    # try to flip the run's kind — that breaks coherence and the UPDATE raises.
+    target_id = (
         await db_session.execute(
             text(
                 """
-                UPDATE public.extraction_runs
-                SET kind = 'quality_assessment'
-                WHERE id = (SELECT id FROM public.extraction_runs LIMIT 1)
+                SELECT r.id
+                FROM public.extraction_runs r
+                JOIN public.project_extraction_templates t ON t.id = r.template_id
+                WHERE t.kind = 'extraction'
+                LIMIT 1
                 """
             )
+        )
+    ).scalar()
+    if target_id is None:
+        pytest.skip("No extraction-kind runs available.")
+
+    with pytest.raises(IntegrityError):
+        await db_session.execute(
+            text("UPDATE public.extraction_runs SET kind = 'quality_assessment' WHERE id = :rid"),
+            {"rid": target_id},
         )
     await db_session.rollback()

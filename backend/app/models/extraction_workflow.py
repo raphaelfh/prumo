@@ -19,6 +19,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     Numeric,
@@ -153,6 +154,11 @@ class ExtractionReviewerDecision(BaseModel):
             "field_id",
             "created_at",
         ),
+        UniqueConstraint(
+            "run_id",
+            "id",
+            name="uq_extraction_reviewer_decisions_run_id",
+        ),
         CheckConstraint(
             "decision <> 'accept_proposal' OR proposal_record_id IS NOT NULL",
             name="accept_has_proposal",
@@ -195,7 +201,6 @@ class ExtractionReviewerState(BaseModel):
     )
     current_decision_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("public.extraction_reviewer_decisions.id", ondelete="RESTRICT"),
         nullable=False,
     )
     last_updated: Mapped[datetime] = mapped_column(
@@ -211,6 +216,15 @@ class ExtractionReviewerState(BaseModel):
             "instance_id",
             "field_id",
             name="uq_extraction_reviewer_states_run_reviewer_item",
+        ),
+        ForeignKeyConstraint(
+            ["run_id", "current_decision_id"],
+            [
+                "public.extraction_reviewer_decisions.run_id",
+                "public.extraction_reviewer_decisions.id",
+            ],
+            name="fk_extraction_reviewer_states_decision_run_match",
+            ondelete="RESTRICT",
         ),
         {"schema": "public"},
     )

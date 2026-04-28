@@ -56,9 +56,9 @@ async def test_migration_0002_round_trip(db_session: AsyncSession) -> None:
     ).scalar()
     assert pre is None, "extracted_values must be absent at HEAD"
 
-    _run_alembic("downgrade", "-1")
+    _run_alembic("downgrade", "0001_baseline_v1")
     try:
-        # After downgrade -1 the legacy table + enum should exist.
+        # Below 0002 the legacy table + enum should exist again.
         await db_session.commit()
         post_down = (
             await db_session.execute(
@@ -104,6 +104,6 @@ async def test_alembic_head_is_expected_revision() -> None:
     out = _run_alembic("current")
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0002_drop_extracted_values" in out, (
-        f"Expected head revision '0002_drop_extracted_values', got:\n{out}"
+    assert "0005_hitl_invariants" in out, (
+        f"Expected head revision '0005_hitl_invariants', got:\n{out}"
     )

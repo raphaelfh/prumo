@@ -71,17 +71,17 @@ class QaTemplateCloneService:
             entity_types = await self._count_entity_types(existing.id)
             fields = await self._count_fields(existing.id)
             version = await self._active_version(existing.id)
-            if version is None:
-                # The template row survived but its active version row
-                # didn't — likely a partial transaction from a previous
-                # clone attempt that crashed between flushes (e.g. the
-                # backend was restarted mid-request). Self-heal by
-                # generating the missing version snapshot in place
-                # instead of leaving the project unable to open the QA
-                # form.
-                version = await self._repair_missing_version(
-                    project_template_id=existing.id, user_id=user_id
-                )
+            # The deferred constraint trigger
+            # ``project_extraction_templates_active_version`` (migration
+            # 0004) makes a template-without-active-version state
+            # unrepresentable — every transaction that creates one must
+            # also create an active version row by COMMIT, or the whole
+            # transaction aborts. So this lookup is a hard guarantee,
+            # not a defensive check.
+            assert version is not None, (
+                f"Active-version invariant violated for project_extraction_template "
+                f"{existing.id}; the DB trigger should have prevented this."
+            )
             return QaTemplateClone(
                 project_template_id=existing.id,
                 version_id=version.id,
@@ -224,40 +224,6 @@ class QaTemplateCloneService:
             ExtractionTemplateVersion.is_active.is_(True),
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
-
-    async def _repair_missing_version(
-        self,
-        *,
-        project_template_id: UUID,
-        user_id: UUID,
-    ) -> ExtractionTemplateVersion:
-        """Re-issue version v1 for a clone that lost its versioning row.
-
-        Picks the next available ``version`` number to coexist with any
-        inactive history rows (defensive — there shouldn't be any, but
-        the unique ``(project_template_id, version)`` index would
-        otherwise fail). Snapshots whatever entity_types + fields are
-        currently attached to the project template so the version is
-        replayable.
-        """
-        from sqlalchemy import func
-
-        next_version_stmt = select(
-            func.coalesce(func.max(ExtractionTemplateVersion.version), 0) + 1
-        ).where(ExtractionTemplateVersion.project_template_id == project_template_id)
-        next_version = int((await self.db.execute(next_version_stmt)).scalar_one())
-
-        version = ExtractionTemplateVersion(
-            project_template_id=project_template_id,
-            version=next_version,
-            schema_=await self._snapshot(project_template_id),
-            published_at=datetime.now(UTC),
-            published_by=user_id,
-            is_active=True,
-        )
-        self.db.add(version)
-        await self.db.flush()
-        return version
 
     async def _snapshot(self, project_template_id: UUID) -> dict:
         from sqlalchemy import text

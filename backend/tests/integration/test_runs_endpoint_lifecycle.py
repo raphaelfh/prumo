@@ -57,7 +57,12 @@ async def _pick_fixtures(db: AsyncSession) -> tuple[str, str, str, str, str] | N
     project_id = (await db.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
     article_id = (await db.execute(text("SELECT id FROM public.articles LIMIT 1"))).scalar()
     template_id = (
-        await db.execute(text("SELECT id FROM public.project_extraction_templates LIMIT 1"))
+        await db.execute(
+            text(
+                "SELECT id FROM public.project_extraction_templates "
+                "WHERE kind = 'extraction' LIMIT 1"
+            )
+        )
     ).scalar()
     if not (project_id and article_id and template_id):
         return None

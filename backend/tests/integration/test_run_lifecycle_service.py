@@ -18,7 +18,12 @@ async def _fixtures(db: AsyncSession) -> tuple[UUID, UUID, UUID, UUID] | None:
     project_id = (await db.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
     article_id = (await db.execute(text("SELECT id FROM public.articles LIMIT 1"))).scalar()
     template_id = (
-        await db.execute(text("SELECT id FROM public.project_extraction_templates LIMIT 1"))
+        await db.execute(
+            text(
+                "SELECT id FROM public.project_extraction_templates "
+                "WHERE kind = 'extraction' LIMIT 1"
+            )
+        )
     ).scalar()
     profile_id = (await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
     if not all((project_id, article_id, template_id, profile_id)):

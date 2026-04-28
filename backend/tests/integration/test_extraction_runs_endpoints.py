@@ -41,7 +41,12 @@ async def _resolve_fixtures(
     project_id = (await db.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
     article_id = (await db.execute(text("SELECT id FROM public.articles LIMIT 1"))).scalar()
     template_id = (
-        await db.execute(text("SELECT id FROM public.project_extraction_templates LIMIT 1"))
+        await db.execute(
+            text(
+                "SELECT id FROM public.project_extraction_templates "
+                "WHERE kind = 'extraction' LIMIT 1"
+            )
+        )
     ).scalar()
     profile_id = (await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
     if not all((project_id, article_id, template_id, profile_id)):
@@ -156,7 +161,7 @@ async def test_create_run_returns_201_and_summary(
     assert UUID(data["id"])
     assert data["stage"] == "pending"
     assert data["status"] == "pending"
-    assert data["kind"] in {"extraction", "evaluation"}
+    assert data["kind"] == "extraction"
     assert data["template_id"] == str(template_id)
     assert data["project_id"] == str(project_id)
     assert data["article_id"] == str(article_id)
