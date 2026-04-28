@@ -43,12 +43,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Restore the legacy table + enum. Data is gone — only schema returns."""
-    op.execute(
-        """
-        CREATE TYPE public.extraction_source AS ENUM ('human', 'ai', 'rule');
-        """
-    )
+    """Restore the legacy table + enum. Data is gone — only schema returns.
+
+    asyncpg refuses prepared statements containing multiple commands, so
+    each DDL goes through its own ``op.execute`` call.
+    """
+    op.execute("CREATE TYPE public.extraction_source AS ENUM ('human', 'ai', 'rule');")
     op.execute(
         """
         CREATE TABLE public.extracted_values (
@@ -69,19 +69,33 @@ def downgrade() -> None:
             created_at timestamptz NOT NULL DEFAULT now(),
             updated_at timestamptz NOT NULL DEFAULT now()
         );
-        CREATE INDEX idx_extracted_values_project_id
-            ON public.extracted_values (project_id);
-        CREATE INDEX idx_extracted_values_article_id
-            ON public.extracted_values (article_id);
-        CREATE INDEX idx_extracted_values_instance_id
-            ON public.extracted_values (instance_id);
-        CREATE INDEX idx_extracted_values_field_id
-            ON public.extracted_values (field_id);
-        CREATE INDEX idx_extracted_values_instance_field
-            ON public.extracted_values (instance_id, field_id);
-        CREATE INDEX idx_extracted_values_value_gin
-            ON public.extracted_values USING gin (value);
-        CREATE INDEX idx_extracted_values_evidence_gin
-            ON public.extracted_values USING gin (evidence);
         """
+    )
+    op.execute(
+        "CREATE INDEX idx_extracted_values_project_id "
+        "ON public.extracted_values (project_id);"
+    )
+    op.execute(
+        "CREATE INDEX idx_extracted_values_article_id "
+        "ON public.extracted_values (article_id);"
+    )
+    op.execute(
+        "CREATE INDEX idx_extracted_values_instance_id "
+        "ON public.extracted_values (instance_id);"
+    )
+    op.execute(
+        "CREATE INDEX idx_extracted_values_field_id "
+        "ON public.extracted_values (field_id);"
+    )
+    op.execute(
+        "CREATE INDEX idx_extracted_values_instance_field "
+        "ON public.extracted_values (instance_id, field_id);"
+    )
+    op.execute(
+        "CREATE INDEX idx_extracted_values_value_gin "
+        "ON public.extracted_values USING gin (value);"
+    )
+    op.execute(
+        "CREATE INDEX idx_extracted_values_evidence_gin "
+        "ON public.extracted_values USING gin (evidence);"
     )

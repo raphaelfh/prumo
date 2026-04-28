@@ -419,3 +419,19 @@ class TestSectionExtractionFullFlow:
         assert result.entity_type_id == str(entity_type_id)
         assert result.tokens_total == 150
         service._proposals.record_proposal.assert_awaited()
+
+        # The run lifecycle gets two distinct stage advances: pending → proposal
+        # before the LLM call, and proposal → review after recording proposals
+        # so the form can immediately accept ReviewerDecisions.
+        from app.models.extraction import ExtractionRunStage
+
+        advance_calls = service._lifecycle.advance_stage.await_args_list
+        target_stages = [
+            call.kwargs.get("target_stage") for call in advance_calls
+        ]
+        assert ExtractionRunStage.PROPOSAL in target_stages
+        assert ExtractionRunStage.REVIEW in target_stages
+        # And REVIEW comes after PROPOSAL.
+        assert target_stages.index(ExtractionRunStage.REVIEW) > target_stages.index(
+            ExtractionRunStage.PROPOSAL
+        )
