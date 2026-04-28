@@ -1,17 +1,27 @@
-import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+/**
+ * Quality Assessment full-screen page (PROBAST / QUADAS-2 / future tools).
+ *
+ * Mounts the shared `AssessmentShell` (PDF panel + form panel + header)
+ * with the PDF panel collapsed by default. The form panel renders one
+ * `QASectionAccordion` per domain (entity_type) of the chosen QA template,
+ * reusing the extraction `FieldInput` for signaling questions and a
+ * domain-judgment summary card (Risk of Bias + Applicability concerns).
+ *
+ * Local-only state for now; wiring to the HITL backend (Run / proposal /
+ * decision / consensus) is a follow-up — this page is the inspector view.
+ */
+
+import { useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+
+import { ArrowLeft, Loader2 } from "lucide-react";
 
 import { AssessmentShell } from "@/components/assessment/AssessmentShell";
+import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
+import { PDFViewer } from "@/components/PDFViewer";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
-
-interface ProjectExtractionTemplate {
-  id: string;
-  name: string;
-  description?: string | null;
-  kind: string;
-  framework: string;
-}
+import { useQATemplate } from "@/hooks/qa/useQATemplate";
 
 export default function QualityAssessmentFullScreen() {
   const { projectId, articleId, templateId } = useParams<{
@@ -20,34 +30,19 @@ export default function QualityAssessmentFullScreen() {
     templateId: string;
   }>();
   const navigate = useNavigate();
-  const [template, setTemplate] = useState<ProjectExtractionTemplate | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!templateId) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch(
-          `${import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000"}/api/v1/extraction-templates/${templateId}`,
-        );
-        if (!res.ok) {
-          throw new Error(`Failed to load template (${res.status})`);
-        }
-        const body = await res.json();
-        if (!cancelled) {
-          setTemplate(body.data ?? body);
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Failed to load");
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [templateId]);
+  const { template, domains, loading, error } = useQATemplate({
+    templateId,
+    enabled: !!templateId,
+  });
+
+  // Local-only values store keyed by field_id. Persistence to the HITL
+  // stack (proposal/decision) lands in a follow-up; this page is the
+  // structured inspector view.
+  const [values, setValues] = useState<Record<string, unknown>>({});
+  const handleValueChange = (fieldId: string, value: unknown) => {
+    setValues((prev) => ({ ...prev, [fieldId]: value }));
+  };
 
   if (!projectId || !articleId || !templateId) {
     return (
@@ -58,7 +53,7 @@ export default function QualityAssessmentFullScreen() {
   }
 
   const header = (
-    <div className="flex items-center justify-between border-b px-4 py-3">
+    <div className="flex items-center justify-between border-b bg-background px-4 py-3">
       <div className="flex items-center gap-3">
         <Button
           variant="ghost"
@@ -66,49 +61,81 @@ export default function QualityAssessmentFullScreen() {
           onClick={() => navigate(`/projects/${projectId}`)}
           aria-label="Back"
         >
-          <ArrowLeft className="h-4 w-4 mr-1" />
+          <ArrowLeft className="mr-1 h-4 w-4" />
           Back
         </Button>
-        <span
-          className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-200"
+        <Badge
+          variant="outline"
+          className="border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
           data-testid="qa-kind-badge"
         >
           Quality Assessment
-        </span>
-        <h1 className="text-base font-medium" data-testid="qa-template-name">
-          {template?.name ?? "Loading…"}
+        </Badge>
+        <h1
+          className="truncate text-base font-medium"
+          data-testid="qa-template-name"
+        >
+          {template?.name ?? (loading ? "Loading…" : "—")}
         </h1>
+        {template ? (
+          <span className="text-xs text-muted-foreground">
+            v{template.version}
+          </span>
+        ) : null}
       </div>
     </div>
   );
 
   const pdfPanel = (
-    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-      PDF viewer for article {articleId}
-    </div>
+    <PDFViewer articleId={articleId} projectId={projectId} className="h-full" />
   );
 
   const formPanel = (
-    <div className="space-y-4 p-6" data-testid="qa-form-panel">
+    <div className="space-y-3 p-4" data-testid="qa-form-panel">
       {error ? (
-        <div className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+        <div
+          className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
+          data-testid="qa-error"
+        >
           {error}
         </div>
       ) : null}
-      {template ? (
-        <div className="space-y-2">
-          <h2 className="text-sm font-semibold">{template.name}</h2>
-          {template.description ? (
-            <p className="text-sm text-muted-foreground">{template.description}</p>
-          ) : null}
-          <p className="text-sm text-muted-foreground">
-            Quality-assessment form rendering will be added in a follow-up.
-            The shared HITL stack (proposal/review/consensus) is wired and
-            ready; this page mounts the shared shell with the QA template.
-          </p>
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading template…
         </div>
-      ) : !error ? (
-        <p className="text-sm text-muted-foreground">Loading template…</p>
+      ) : null}
+
+      {!loading && !error && template ? (
+        <>
+          {template.description ? (
+            <p className="text-sm text-muted-foreground">
+              {template.description}
+            </p>
+          ) : null}
+
+          {domains.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              This template has no domains defined.
+            </p>
+          ) : (
+            <div data-testid="qa-domains">
+              {domains.map((domain, idx) => (
+                <QASectionAccordion
+                  key={domain.entityType.id}
+                  domain={domain}
+                  values={values}
+                  onValueChange={handleValueChange}
+                  projectId={projectId}
+                  articleId={articleId}
+                  defaultOpen={idx === 0}
+                />
+              ))}
+            </div>
+          )}
+        </>
       ) : null}
     </div>
   );
