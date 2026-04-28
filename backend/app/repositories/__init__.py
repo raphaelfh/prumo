@@ -7,7 +7,13 @@ Facilitates testing, maintenance and query migration.
 
 from app.repositories.article_repository import ArticleFileRepository, ArticleRepository
 from app.repositories.base import BaseRepository
+from app.repositories.extraction_consensus_decision_repository import (
+    ExtractionConsensusDecisionRepository,
+)
 from app.repositories.extraction_proposal_repository import ExtractionProposalRepository
+from app.repositories.extraction_published_state_repository import (
+    ExtractionPublishedStateRepository,
+)
 from app.repositories.extraction_repository import (
     AISuggestionRepository,
     ExtractionEntityTypeRepository,
@@ -48,6 +54,8 @@ __all__ = [
     "ExtractionProposalRepository",
     "ExtractionReviewerDecisionRepository",
     "ExtractionReviewerStateRepository",
+    "ExtractionConsensusDecisionRepository",
+    "ExtractionPublishedStateRepository",
     # HITL
     "HitlConfigRepository",
     # Integration
