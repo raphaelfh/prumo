@@ -84,10 +84,14 @@ vi.mock("@/integrations/supabase/client", () => {
   };
 });
 
-// PDFViewer pulls in worker / canvas globals that aren't worth wiring up
-// for a unit test — stub it out.
-vi.mock("@/components/PDFViewer", () => ({
-  PDFViewer: () => <div data-testid="qa-pdf-viewer-stub">PDF</div>,
+// The PDF viewer pulls in worker / canvas globals that aren't worth wiring
+// up for a unit test — stub it out.
+vi.mock("@prumo/pdf-viewer", () => ({
+  PrumoPdfViewer: () => <div data-testid="qa-pdf-viewer-stub">PDF</div>,
+  articleFileSource: (articleId: string) => ({
+    kind: "lazy" as const,
+    load: async () => ({kind: "url" as const, url: `stub://articles/${articleId}.pdf`}),
+  }),
 }));
 
 // apiClient gets called from the QA hooks; map by URL so the test isn't

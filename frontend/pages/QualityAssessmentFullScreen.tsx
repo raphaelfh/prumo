@@ -23,7 +23,7 @@ import { ArrowLeft, CheckCircle2, Loader2, RotateCcw } from "lucide-react";
 
 import { AssessmentShell } from "@/components/assessment/AssessmentShell";
 import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
-import { PDFViewer } from "@/components/PDFViewer";
+import { PrumoPdfViewer, articleFileSource } from "@prumo/pdf-viewer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useProjectQATemplate } from "@/hooks/qa/useProjectQATemplate";
@@ -372,7 +372,10 @@ export default function QualityAssessmentFullScreen() {
   );
 
   const pdfPanel = (
-    <PDFViewer articleId={articleId} projectId={projectId} className="h-full" />
+    <PrumoPdfViewer
+      source={articleId ? articleFileSource(articleId) : null}
+      className="h-full"
+    />
   );
 
   const formPanel = (

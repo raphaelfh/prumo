@@ -3,6 +3,14 @@ import type {LoadOptions, PDFDocumentHandle, PDFEngine} from '../../core/engine'
 import type {PDFSource} from '../../core/source';
 import {PdfJsDocumentHandle} from './document';
 import {sourceToGetDocumentParams} from './source';
+import {PDF_WORKER_SRC} from '@/lib/pdf-worker';
+
+// Configure the PDF.js worker URL once on module load. This makes the engine
+// self-sufficient — consumers do not need to import a separate config module
+// to wire up the worker. Idempotent: re-assignment is harmless.
+if (typeof pdfjs !== 'undefined' && !pdfjs.GlobalWorkerOptions.workerSrc) {
+  pdfjs.GlobalWorkerOptions.workerSrc = PDF_WORKER_SRC;
+}
 
 class PdfJsEngineImpl implements PDFEngine {
   async load(source: PDFSource, opts?: LoadOptions): Promise<PDFDocumentHandle> {
