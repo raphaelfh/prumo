@@ -148,37 +148,52 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     if (!activeTemplate || !user) return;
 
     try {
-        // Fetch instances and values in parallel (reduces total time)
-        const [instancesResult, valuesResult] = await Promise.all([
+        // Fetch instances + reviewer_states (current decision per item)
+        // for the active user, both filtered by template, in parallel.
+        const [instancesResult, statesResult] = await Promise.all([
             supabase
                 .from("extraction_instances" as any)
                 .select("article_id")
                 .eq("project_id", projectId)
                 .eq("template_id", activeTemplate.id),
             supabase
-                .from("extracted_values" as any)
+                .from("extraction_reviewer_states" as any)
                 .select(`
-            instance_id,
-            extraction_instances!inner(article_id, template_id)
+            current_decision_id,
+            reviewer_decision:current_decision_id(decision),
+            extraction_instances!inner(article_id, template_id, project_id)
           `)
+                .eq("reviewer_id", user.id)
                 .eq("extraction_instances.project_id", projectId)
-                .eq("extraction_instances.template_id", activeTemplate.id)
-                .eq("reviewer_id", user.id),
+                .eq("extraction_instances.template_id", activeTemplate.id),
         ]);
 
         const {data: instances, error: instancesError} = instancesResult;
-        const {data: extractedValues, error: valuesError} = valuesResult;
+        const {data: states, error: statesError} = statesResult;
 
         if (instancesError) throw instancesError;
-      if (valuesError) throw valuesError;
+      if (statesError) throw statesError;
 
         // Compute statistics
       const totalArticles = articles.length;
       const articlesWithInstances = new Set(instances?.map((i: any) => i.article_id) || []);
       const extractionsStarted = articlesWithInstances.size;
 
-        // Count articles with extraction complete (at least one instance with values)
-      const articlesWithValues = new Set(extractedValues?.map((v: any) => v.extraction_instances?.article_id).filter(Boolean) || []);
+        // Count articles where the user has at least one non-reject
+        // decision; that's the post-HITL definition of "extraction made
+        // progress for this article".
+      const articlesWithValues = new Set(
+        (states ?? [])
+          .filter((s: any) => {
+            if (!s.current_decision_id) return false;
+            const dec = Array.isArray(s.reviewer_decision)
+              ? s.reviewer_decision[0]
+              : s.reviewer_decision;
+            return dec && dec.decision !== "reject";
+          })
+          .map((s: any) => s.extraction_instances?.article_id)
+          .filter(Boolean),
+      );
       const extractionsCompleted = articlesWithValues.size;
       
       const progressPercentage = totalArticles > 0 

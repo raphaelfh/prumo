@@ -179,6 +179,14 @@ class ModelExtractionService(LoggerMixin):
             )
             phase_durations_ms["create_model_instances"] = (perf_counter() - phase_start) * 1000
 
+            # Advance proposal → review so the form UI can write
+            # ReviewerDecisions on top of the instances we just created.
+            await self._lifecycle.advance_stage(
+                run_id=run.id,
+                target_stage=ExtractionRunStage.REVIEW,
+                user_id=UUID(self.user_id),
+            )
+
             duration = (perf_counter() - start_time) * 1000
 
             # 7. Completar run with resultados

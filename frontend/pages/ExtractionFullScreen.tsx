@@ -112,6 +112,7 @@ export default function ExtractionFullScreen() {
   } = useExtractedValues({
     articleId: articleId || '',
     projectId: projectId || '',
+    templateId: template?.id,
     enabled: !!articleId && !!projectId
   });
 
@@ -128,6 +129,7 @@ export default function ExtractionFullScreen() {
   const { isSaving, lastSaved } = useExtractionAutoSave({
     articleId: articleId || '',
     projectId: projectId || '',
+    templateId: template?.id,
     values,
     enabled: !!articleId && !!projectId && !loading && valuesInitialized
   });
@@ -142,6 +144,7 @@ export default function ExtractionFullScreen() {
   const { otherExtractions } = useOtherExtractions({
     articleId: articleId || '',
     projectId: projectId || '',
+    templateId: template?.id,
     currentUserId,
     enabled: permissions.canSeeOthers && !!currentUserId
   });

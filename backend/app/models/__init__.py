@@ -21,7 +21,6 @@ from app.models.article_author import (
 )
 from app.models.base import Base, BaseModel, TimestampMixin, UUIDMixin
 from app.models.extraction import (
-    ExtractedValue,
     ExtractionCardinality,
     ExtractionEntityType,
     ExtractionEvidence,
@@ -32,7 +31,6 @@ from app.models.extraction import (
     ExtractionRun,
     ExtractionRunStage,
     ExtractionRunStatus,
-    ExtractionSource,
     ExtractionTemplateGlobal,
     ProjectExtractionTemplate,
 )
@@ -127,13 +125,11 @@ __all__ = [
     "ExtractionEntityType",
     "ExtractionField",
     "ExtractionInstance",
-    "ExtractedValue",
     "ExtractionEvidence",
     "ExtractionRun",
     "ExtractionFramework",
     "ExtractionFieldType",
     "ExtractionCardinality",
-    "ExtractionSource",
     "ExtractionRunStage",
     "ExtractionRunStatus",
     # Extraction versioning

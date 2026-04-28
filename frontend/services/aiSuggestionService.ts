@@ -1,24 +1,22 @@
 /**
- * AI suggestions service — reads ProposalRecord, derives status from
- * ExtractedValue presence.
+ * AI suggestions service — reads ProposalRecord, persists accept/reject
+ * as ReviewerDecisions on the active extraction run.
  *
- * Post-migration 0019: no more `ai_suggestions` table. The shape returned
- * here still matches the legacy `AISuggestion` so the existing extraction
- * UI keeps working without component-level changes.
+ * Post-migration off `ai_suggestions` AND `extracted_values`: the only
+ * persistent state is now the HITL workflow tables. Specifically:
  *
  * - Source of truth for proposed values: `extraction_proposal_records`
  *   (filtered by `source='ai'` for the suggestions panel).
- * - "Accepted" status: derived from a matching `extracted_values` row
- *   (instance_id, field_id, reviewer_id) — i.e. the user has saved a
- *   value for that field.
- * - "Rejected" status: not persisted across reloads. The hook tracks it
- *   in local state for the duration of the session.
+ * - "Accepted" status: there's a non-reject ReviewerDecision in the
+ *   `reviewer_state` row for that (instance, field) pointing back at the
+ *   proposal.
+ * - "Rejected" persists as a ReviewerDecision with `decision='reject'`.
  *
  * Evidence (text + page_number) is loaded from `extraction_evidence`
  * rows linked to each proposal via `proposal_record_id`.
  */
-
 import { supabase } from '@/integrations/supabase/client';
+import { ExtractionValueService } from '@/services/extractionValueService';
 import type {
   AISuggestion,
   AISuggestionHistoryItem,
@@ -45,9 +43,10 @@ interface EvidenceRow {
   page_number: number | null;
 }
 
-interface ExtractedValueKeyRow {
+interface ReviewerStateKeyRow {
   instance_id: string;
   field_id: string;
+  reviewer_decision: { decision: string } | { decision: string }[] | null;
 }
 
 function unwrapValue(raw: ProposalRow['proposed_value']): unknown {
@@ -58,12 +57,26 @@ function unwrapValue(raw: ProposalRow['proposed_value']): unknown {
   return raw;
 }
 
+function decisionFromState(state: ReviewerStateKeyRow): string | null {
+  if (!state.reviewer_decision) return null;
+  const dec = Array.isArray(state.reviewer_decision)
+    ? state.reviewer_decision[0]
+    : state.reviewer_decision;
+  return dec?.decision ?? null;
+}
+
 function mapProposalToSuggestion(
   row: ProposalRow,
   evidenceByProposalId: Map<string, EvidenceRow>,
   acceptedKeys: Set<string>,
+  rejectedKeys: Set<string>,
 ): AISuggestion {
-  const accepted = acceptedKeys.has(getSuggestionKey(row.instance_id, row.field_id));
+  const key = getSuggestionKey(row.instance_id, row.field_id);
+  const status = acceptedKeys.has(key)
+    ? 'accepted'
+    : rejectedKeys.has(key)
+      ? 'rejected'
+      : 'pending';
   const evidence = evidenceByProposalId.get(row.id);
   return {
     id: row.id,
@@ -71,7 +84,7 @@ function mapProposalToSuggestion(
     value: unwrapValue(row.proposed_value),
     confidence: row.confidence_score ?? 0,
     reasoning: row.rationale ?? '',
-    status: accepted ? 'accepted' : 'pending',
+    status,
     timestamp: new Date(row.created_at),
     evidence: evidence?.text_content
       ? {
@@ -83,13 +96,6 @@ function mapProposalToSuggestion(
 }
 
 export class AISuggestionService {
-  /**
-   * Loads AI proposals for an article's instances and derives their
-   * accepted/pending status from `extracted_values`.
-   *
-   * @param _articleId reserved for future filtering — currently unused
-   *                   because instance ids already scope the query.
-   */
   static async loadSuggestions(
     _articleId: string,
     instanceIds: string[],
@@ -131,14 +137,33 @@ export class AISuggestionService {
       }
     }
 
+    // Derive accepted/rejected status from the current user's
+    // reviewer_state for each (instance, field). We deliberately ignore
+    // other users' decisions — each user sees their own status.
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     const acceptedKeys = new Set<string>();
-    const acceptedRes = await supabase
-      .from('extracted_values')
-      .select('instance_id, field_id')
-      .in('instance_id', instanceIds);
-    if (!acceptedRes.error) {
-      for (const row of (acceptedRes.data ?? []) as ExtractedValueKeyRow[]) {
-        acceptedKeys.add(getSuggestionKey(row.instance_id, row.field_id));
+    const rejectedKeys = new Set<string>();
+    if (user) {
+      const statesRes = await supabase
+        .from('extraction_reviewer_states')
+        .select(
+          'instance_id, field_id, current_decision_id, reviewer_decision:current_decision_id(decision)',
+        )
+        .in('instance_id', instanceIds)
+        .eq('reviewer_id', user.id);
+      if (!statesRes.error) {
+        for (const state of (statesRes.data ?? []) as ReviewerStateKeyRow[]) {
+          const decision = decisionFromState(state);
+          if (!decision) continue;
+          const key = getSuggestionKey(state.instance_id, state.field_id);
+          if (decision === 'reject') {
+            rejectedKeys.add(key);
+          } else {
+            acceptedKeys.add(key);
+          }
+        }
       }
     }
 
@@ -150,6 +175,7 @@ export class AISuggestionService {
         row,
         evidenceByProposalId,
         acceptedKeys,
+        rejectedKeys,
       );
     }
 
@@ -199,29 +225,20 @@ export class AISuggestionService {
       }
     }
 
-    const acceptedKeys = new Set<string>([getSuggestionKey(instanceId, fieldId)]);
-    const acceptedRes = await supabase
-      .from('extracted_values')
-      .select('instance_id, field_id')
-      .eq('instance_id', instanceId)
-      .eq('field_id', fieldId)
-      .maybeSingle();
-    // History is informational; status derivation matters less here
-    // because the user is browsing past proposals, but we keep the same
-    // mapping for shape parity.
-    if (acceptedRes.error || !acceptedRes.data) {
-      acceptedKeys.delete(getSuggestionKey(instanceId, fieldId));
-    }
-
     return proposals.map((row) =>
-      mapProposalToSuggestion(row, evidenceByProposalId, acceptedKeys),
+      mapProposalToSuggestion(
+        row,
+        evidenceByProposalId,
+        /* acceptedKeys */ new Set(),
+        /* rejectedKeys */ new Set(),
+      ),
     );
   }
 
   /**
-   * Accept a proposal: write the value to `extracted_values`. The
-   * proposal record itself is append-only and stays as-is; "accepted"
-   * is derived from the existence of this row.
+   * Accept an AI proposal: post a ReviewerDecision with
+   * `decision='accept_proposal'`. The proposal id (which is now the
+   * `suggestionId`) is the `proposal_record_id`.
    */
   static async acceptSuggestion(params: {
     suggestionId: string;
@@ -233,74 +250,25 @@ export class AISuggestionService {
     confidence: number;
     reviewerId: string;
   }): Promise<void> {
-    const {
-      projectId,
-      articleId,
-      instanceId,
-      fieldId,
-      value,
-      confidence,
-      reviewerId,
-    } = params;
-
-    const { data: existing, error: selectError } = await supabase
-      .from('extracted_values')
-      .select('id')
-      .eq('instance_id', instanceId)
-      .eq('field_id', fieldId)
-      .eq('reviewer_id', reviewerId)
-      .maybeSingle();
-    if (selectError) {
+    const { suggestionId, articleId, instanceId, fieldId } = params;
+    const run = await ExtractionValueService.findActiveRun(articleId, null);
+    if (!run) {
       throw new APIError(
-        `Failed to check existing extracted value: ${selectError.message}`,
-        undefined,
-        { selectError },
+        'No active extraction run for this article — cannot accept proposal.',
       );
     }
-
-    const valueData = {
-      project_id: projectId,
-      article_id: articleId,
-      instance_id: instanceId,
-      field_id: fieldId,
-      value: { value },
-      source: 'ai' as const,
-      confidence_score: confidence,
-      reviewer_id: reviewerId,
-      is_consensus: false,
-    };
-
-    if (existing) {
-      const { error: updateError } = await supabase
-        .from('extracted_values')
-        .update(valueData)
-        .eq('id', existing.id);
-      if (updateError) {
-        throw new APIError(
-          `Failed to update extracted value: ${updateError.message}`,
-          undefined,
-          { updateError },
-        );
-      }
-    } else {
-      const { error: insertError } = await supabase
-        .from('extracted_values')
-        .insert(valueData);
-      if (insertError) {
-        throw new APIError(
-          `Failed to create extracted value: ${insertError.message}`,
-          undefined,
-          { insertError },
-        );
-      }
-    }
+    await ExtractionValueService.acceptProposal(
+      run.id,
+      instanceId,
+      fieldId,
+      suggestionId,
+    );
   }
 
   /**
-   * Reject a proposal: if a value was previously written for this
-   * (instance, field, reviewer), delete it. Rejected state itself is
-   * not persisted — the hook's local state shows the rejected UI for
-   * the rest of the session.
+   * Reject an AI proposal: post a ReviewerDecision with
+   * `decision='reject'`. The historical proposal stays in
+   * `extraction_proposal_records` for audit.
    */
   static async rejectSuggestion(params: {
     suggestionId: string;
@@ -311,28 +279,13 @@ export class AISuggestionService {
     projectId?: string;
     articleId?: string;
   }): Promise<void> {
-    const { reviewerId, wasAccepted, instanceId, fieldId, articleId } = params;
-
-    if (wasAccepted && instanceId && fieldId && articleId) {
-      const { error: deleteError } = await supabase
-        .from('extracted_values')
-        .delete()
-        .eq('instance_id', instanceId)
-        .eq('field_id', fieldId)
-        .eq('reviewer_id', reviewerId)
-        .eq('article_id', articleId);
-      if (deleteError) {
-        console.warn(
-          `Error removing extracted_value on reject: ${deleteError.message}`,
-        );
-      }
-    }
+    const { instanceId, fieldId, articleId } = params;
+    if (!instanceId || !fieldId || !articleId) return;
+    const run = await ExtractionValueService.findActiveRun(articleId, null);
+    if (!run) return;
+    await ExtractionValueService.rejectValue(run.id, instanceId, fieldId);
   }
 
-  /**
-   * Fetch instance ids for an article. Used to scope subsequent
-   * proposal/extracted_values queries.
-   */
   static async getArticleInstanceIds(articleId: string): Promise<string[]> {
     const { data, error } = await supabase
       .from('extraction_instances')

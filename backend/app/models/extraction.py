@@ -18,7 +18,6 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
-    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -59,14 +58,6 @@ class ExtractionCardinality(str, PyEnum):
 
     ONE = "one"
     MANY = "many"
-
-
-class ExtractionSource(str, PyEnum):
-    """Fonte do valor extraido."""
-
-    HUMAN = "human"
-    AI = "ai"
-    RULE = "rule"
 
 
 class ExtractionRunStage(str, PyEnum):
@@ -400,11 +391,6 @@ class ExtractionInstance(BaseModel):
         "ProjectExtractionTemplate",
         back_populates="instances",
     )
-    values: Mapped[list["ExtractedValue"]] = relationship(
-        "ExtractedValue",
-        back_populates="instance",
-        cascade="all, delete-orphan",
-    )
 
     # Indices definidos via __table_args__
     __table_args__ = (
@@ -422,85 +408,6 @@ class ExtractionInstance(BaseModel):
 
     def __repr__(self) -> str:
         return f"<ExtractionInstance {self.label}>"
-
-
-class ExtractedValue(BaseModel):
-    """
-    Valor extraido for cada field de cada instance.
-
-    Indices:
-    - project_id, article_id, instance_id, field_id: FKs indexadas
-    - (instance_id, field_id): busca mais comum
-    - value, evidence: GIN for busca em JSONB
-    """
-
-    __tablename__ = "extracted_values"
-
-    project_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.projects.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-
-    article_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.articles.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-
-    instance_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.extraction_instances.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-
-    field_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.extraction_fields.id", ondelete="RESTRICT"),
-        nullable=False,
-        index=True,
-    )
-
-    value: Mapped[dict] = mapped_column(JSONB, default={}, nullable=False)
-    source: Mapped[str] = mapped_column(
-        PostgreSQLEnumType("extraction_source"),
-        nullable=False,
-    )
-
-    confidence_score: Mapped[float | None] = mapped_column(Numeric, nullable=True)
-    evidence: Mapped[dict] = mapped_column(JSONB, default=[], nullable=False)
-
-    reviewer_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.profiles.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-
-    is_consensus: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-
-    unit: Mapped[str | None] = mapped_column(String, nullable=True)
-
-    # Relationships
-    instance: Mapped["ExtractionInstance"] = relationship(
-        "ExtractionInstance",
-        back_populates="values",
-    )
-
-    # Indices definidos via __table_args__
-    __table_args__ = (
-        # Indice composto mais usado (busca por instance + field)
-        Index("idx_extracted_values_instance_field", "instance_id", "field_id"),
-        # Indices GIN for JSONB
-        Index("idx_extracted_values_value_gin", "value", postgresql_using="gin"),
-        Index("idx_extracted_values_evidence_gin", "evidence", postgresql_using="gin"),
-        {"schema": "public"},
-    )
-
-    def __repr__(self) -> str:
-        return f"<ExtractedValue field={self.field_id}>"
 
 
 class ExtractionEvidence(BaseModel):

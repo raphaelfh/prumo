@@ -21,7 +21,6 @@ from app.models.extraction import (
     ExtractionInstanceStatus,
     ExtractionRunStage,
     ExtractionRunStatus,
-    ExtractionSource,
 )
 from app.models.project import ProjectMemberRole, ReviewType
 
@@ -88,7 +87,6 @@ class TestPostgreSQLEnumValuesMapping:
             "extraction_framework",
             "extraction_field_type",
             "extraction_cardinality",
-            "extraction_source",
             "extraction_run_stage",
             "extraction_run_status",
             "extraction_instance_status",
@@ -125,7 +123,6 @@ class TestPythonEnumsMatchPostgreSQL:
             (ExtractionFramework, "extraction_framework"),
             (ExtractionFieldType, "extraction_field_type"),
             (ExtractionCardinality, "extraction_cardinality"),
-            (ExtractionSource, "extraction_source"),
             (ExtractionRunStage, "extraction_run_stage"),
             (ExtractionRunStatus, "extraction_run_status"),
             (ExtractionInstanceStatus, "extraction_instance_status"),
@@ -157,7 +154,6 @@ class TestPythonEnumsMatchPostgreSQL:
             (ExtractionFramework, "extraction_framework"),
             (ExtractionFieldType, "extraction_field_type"),
             (ExtractionCardinality, "extraction_cardinality"),
-            (ExtractionSource, "extraction_source"),
             (ExtractionRunStage, "extraction_run_stage"),
             (ExtractionRunStatus, "extraction_run_status"),
             (ExtractionInstanceStatus, "extraction_instance_status"),
@@ -207,7 +203,6 @@ class TestEnumCreationFromString:
             (ExtractionFramework, "CHARMS"),
             (ExtractionFieldType, "text"),
             (ExtractionCardinality, "one"),
-            (ExtractionSource, "human"),
             (ExtractionRunStage, "proposal"),
             (ExtractionRunStatus, "pending"),
             (ExtractionInstanceStatus, "pending"),
@@ -227,7 +222,6 @@ class TestEnumCreationFromString:
             ExtractionFramework,
             ExtractionFieldType,
             ExtractionCardinality,
-            ExtractionSource,
             ExtractionRunStage,
             ExtractionRunStatus,
             ExtractionInstanceStatus,

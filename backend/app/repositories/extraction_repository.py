@@ -356,5 +356,3 @@ class ExtractionInstanceRepository(BaseRepository[ExtractionInstance]):
             .where(ExtractionInstance.id == instance_id)
         )
         return result.scalar_one_or_none()
-
-

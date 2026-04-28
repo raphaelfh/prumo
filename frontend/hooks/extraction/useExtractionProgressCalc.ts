@@ -75,16 +75,27 @@ export function useExtractionProgressCalc(): UseExtractionProgressCalcReturn {
 
       const instanceIds = instances.map(i => i.id);
 
-        // 4. Count filled values
-      const { data: values, error: valuesError } = await supabase
-        .from('extracted_values')
-        .select('field_id, instance_id')
-        .in('instance_id', instanceIds)
-        .not('value', 'is', null);
+        // 4. Count filled values via reviewer_states (latest non-reject
+        //    decision per reviewer × item). Any (instance, field) that any
+        //    reviewer has a non-reject decision for counts as "completed".
+      const { data: states, error: statesError } = await supabase
+        .from('extraction_reviewer_states')
+        .select('field_id, instance_id, current_decision_id, reviewer_decision:current_decision_id(decision)')
+        .in('instance_id', instanceIds);
 
-      if (valuesError) throw valuesError;
+      if (statesError) throw statesError;
 
-      const completedFieldIds = new Set(values?.map(v => v.field_id) || []);
+      const completedFieldIds = new Set(
+        (states || [])
+          .filter((s: { current_decision_id: string | null; reviewer_decision: { decision: string } | { decision: string }[] | null }) => {
+            if (!s.current_decision_id) return false;
+            const dec = Array.isArray(s.reviewer_decision)
+              ? s.reviewer_decision[0]
+              : s.reviewer_decision;
+            return dec && dec.decision !== 'reject';
+          })
+          .map((s: { field_id: string }) => s.field_id),
+      );
 
       const completedRequired = requiredFields.filter(f => completedFieldIds.has(f.id)).length;
       const completedOptional = optionalFields.filter(f => completedFieldIds.has(f.id)).length;

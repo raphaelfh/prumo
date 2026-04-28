@@ -255,25 +255,52 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
         throw instancesError;
       }
 
-        // 3. Fetch extracted values for current user
-      const { data: valuesData, error: valuesError } = await supabase
-        .from('extracted_values')
-        .select('*')
-        .eq('project_id', projectId)
-        .eq('reviewer_id', currentUserId);
-
-      if (valuesError) {
-          console.error('Error fetching extracted values:', valuesError);
-        throw valuesError;
+        // 3. Fetch the user's current ReviewerDecisions via reviewer_states
+        //    for instances in this template. Map each into the legacy
+        //    ExtractedValue shape so the row-level rendering stays the same.
+      const instanceIds = (instancesData || []).map((i) => i.id);
+      let valuesData: any[] = [];
+      if (instanceIds.length > 0) {
+        const { data: statesData, error: statesError } = await supabase
+          .from('extraction_reviewer_states')
+          .select(
+            `instance_id, current_decision_id,
+             reviewer_decision:current_decision_id(field_id, value, decision, created_at)`,
+          )
+          .in('instance_id', instanceIds)
+          .eq('reviewer_id', currentUserId);
+        if (statesError) {
+          console.error('Error fetching reviewer states:', statesError);
+          throw statesError;
+        }
+        valuesData = (statesData || [])
+          .map((s: any) => {
+            if (!s.current_decision_id) return null;
+            const dec = Array.isArray(s.reviewer_decision)
+              ? s.reviewer_decision[0]
+              : s.reviewer_decision;
+            if (!dec || dec.decision === 'reject') return null;
+            return {
+              id: s.current_decision_id,
+              instance_id: s.instance_id,
+              field_id: dec.field_id,
+              value: dec.value,
+              source: 'human',
+              reviewer_id: currentUserId,
+              created_at: dec.created_at,
+              updated_at: dec.created_at,
+            };
+          })
+          .filter((v: any) => v !== null);
       }
 
         // 4. Combine articles with their extractions
       const articlesWithExtraction: ArticleWithExtraction[] = articlesData.map(article => {
         const articleInstances = instancesData?.filter(i => i.article_id === article.id) || [];
-        const articleValues = valuesData?.filter(v => 
-          articleInstances.some(instance => instance.id === v.instance_id)
-        ) || [];
-        
+        const articleValues = valuesData.filter((v) =>
+          articleInstances.some((instance) => instance.id === v.instance_id),
+        );
+
         return {
           ...article,
           instances: articleInstances as ExtractionInstance[],

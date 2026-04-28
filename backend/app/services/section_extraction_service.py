@@ -212,6 +212,16 @@ class SectionExtractionService(LoggerMixin):
             )
             phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
 
+            # 7b. Advance proposal → review so the extraction UI can record
+            #     ReviewerDecisions (edit / accept_proposal) without an extra
+            #     UX gesture. Equivalent of "AI is done proposing; humans now
+            #     review and decide".
+            await self._lifecycle.advance_stage(
+                run_id=run.id,
+                target_stage=ExtractionRunStage.REVIEW,
+                user_id=UUID(self.user_id),
+            )
+
             duration = (perf_counter() - start_time) * 1000
 
             # 8. Complete run with results
@@ -409,6 +419,14 @@ class SectionExtractionService(LoggerMixin):
                         }
                     )
 
+            # Advance the primary batch run proposal → review now that all
+            # AI proposals have been written across child sections.
+            await self._lifecycle.advance_stage(
+                run_id=run.id,
+                target_stage=ExtractionRunStage.REVIEW,
+                user_id=UUID(self.user_id),
+            )
+
             duration = (perf_counter() - start_time) * 1000
 
             # 4. Complete primary run
@@ -538,6 +556,13 @@ class SectionExtractionService(LoggerMixin):
 
             # Generate memory summary (max 200 chars)
             summary = self._generate_extraction_summary(entity_type, extracted_data)
+
+            # Advance proposal → review now that AI proposing is done.
+            await self._lifecycle.advance_stage(
+                run_id=run.id,
+                target_stage=ExtractionRunStage.REVIEW,
+                user_id=UUID(self.user_id),
+            )
 
             # Complete run
             phase_start = perf_counter()

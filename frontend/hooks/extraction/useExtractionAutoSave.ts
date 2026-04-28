@@ -1,27 +1,28 @@
 /**
- * Auto-save hook for extracted values
+ * Auto-save hook — debounces user edits and persists them as
+ * `ReviewerDecision(decision='edit')` rows on the active extraction run.
  *
- * Features:
- * - 3-second debounce after last change
- * - Batch upsert for performance
- * - Last save tracking
- * - Error handling
- *
- * @hook
+ * Drop-in replacement for the legacy `extracted_values` upserts: same
+ * 3-second debounce + last-saved tracking, but writes go through
+ * `POST /v1/runs/{runId}/decisions`. Run resolution is internal —
+ * find the latest non-finalized run for `(article × project_template)`
+ * and use it; if none, the autosave is a no-op until extraction kicks
+ * one off.
  */
 
-import {useEffect, useRef, useState} from 'react';
-import {supabase} from '@/integrations/supabase/client';
-import {toast} from 'sonner';
-import {extractValueForSave} from '@/lib/validations/selectOther';
-import {t} from '@/lib/copy';
+import { useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 
-// =================== INTERFACES ===================
+import { supabase } from '@/integrations/supabase/client';
+import { extractValueForSave } from '@/lib/validations/selectOther';
+import { t } from '@/lib/copy';
+import { ExtractionValueService } from '@/services/extractionValueService';
 
 interface UseExtractionAutoSaveProps {
   articleId: string;
   projectId: string;
-  values: Record<string, any>; // { instanceId_fieldId: value }
+  templateId?: string;
+  values: Record<string, any>;
   enabled?: boolean;
 }
 
@@ -32,180 +33,98 @@ export interface UseExtractionAutoSaveReturn {
   saveNow: () => Promise<void>;
 }
 
-// =================== HOOK ===================
-
 export function useExtractionAutoSave(
-  props: UseExtractionAutoSaveProps
+  props: UseExtractionAutoSaveProps,
 ): UseExtractionAutoSaveReturn {
-  const { articleId, projectId, values, enabled = true } = props;
+  const { articleId, projectId: _projectId, templateId, values, enabled = true } = props;
 
   const [isSaving, setIsSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const saveTimeoutRef = useRef<NodeJS.Timeout>();
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>();
   const previousValuesRef = useRef<string>('');
 
-    // Auto-save with 3-second debounce
+  // 3-second debounce — same UX as the legacy autosave.
   useEffect(() => {
-    if (!enabled || !articleId || !projectId) return;
+    if (!enabled || !articleId) return;
 
-      // Serialize values to string to detect changes
     const currentValuesStr = JSON.stringify(values);
-
-      // Skip if unchanged
-    if (currentValuesStr === previousValuesRef.current) {
-      return;
-    }
-
+    if (currentValuesStr === previousValuesRef.current) return;
     previousValuesRef.current = currentValuesStr;
 
-      // Cancel previously scheduled save
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
-
-      // Schedule new save after 3 seconds
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
-      saveValues();
+      void saveValues();
     }, 3000);
 
-    // Cleanup
     return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
-  }, [values, enabled, articleId, projectId]);
+  }, [values, enabled, articleId, templateId]);
 
   const saveValues = async () => {
     setIsSaving(true);
     setError(null);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) {
-          throw new Error(t('common', 'errors_userNotAuthenticated'));
+        throw new Error(t('common', 'errors_userNotAuthenticated'));
       }
 
-        // Keep only non-empty values
-      const valuesToSave = Object.entries(values).filter(([, value]) => {
-        return value !== null && value !== undefined && value !== '';
-      });
-
+      const valuesToSave = Object.entries(values).filter(
+        ([, value]) => value !== null && value !== undefined && value !== '',
+      );
       if (valuesToSave.length === 0) {
-          console.warn('No values to save (all empty)');
         setIsSaving(false);
         return;
       }
 
-        // Prepare batch upserts
-      const upserts = valuesToSave.map(([key, valueData]) => {
-        const [instanceId, fieldId] = key.split('_');
-
-          // Use DRY helper to extract value
-        const { value: actualValue, unit: unitValue, isOther } = extractValueForSave(valueData);
-
-        return {
-          project_id: projectId,
-          article_id: articleId,
-          instance_id: instanceId,
-          field_id: fieldId,
-            value: isOther ? actualValue : {value: actualValue}, // Preserve "other" object or wrap simple value
-          unit: unitValue,
-          source: 'human' as const,
-          reviewer_id: user.id,
-          is_consensus: false
-        };
-      });
-
-        console.warn(`Auto-saving ${upserts.length} values...`);
-
-        // Check which values already exist (batch SELECT)
-      const { data: existingValues, error: selectError } = await supabase
-        .from('extracted_values' as any)
-        .select('id, instance_id, field_id, reviewer_id')
-        .eq('article_id', articleId)
-        .eq('reviewer_id', user.id)
-        .in('instance_id', [...new Set(upserts.map(u => u.instance_id))]);
-
-      if (selectError) throw selectError;
-
-        // Build map of existing IDs: key => id
-      const existingMap = new Map<string, string>();
-      (existingValues || []).forEach((ev: any) => {
-        const key = `${ev.instance_id}_${ev.field_id}_${ev.reviewer_id}`;
-        existingMap.set(key, ev.id);
-      });
-
-        // Split into UPDATEs and INSERTs
-      const toUpdate: Array<{ id: string; data: any }> = [];
-      const toInsert: any[] = [];
-
-      upserts.forEach(upsert => {
-        const key = `${upsert.instance_id}_${upsert.field_id}_${upsert.reviewer_id}`;
-        const existingId = existingMap.get(key);
-        
-        if (existingId) {
-          toUpdate.push({ id: existingId, data: upsert });
-        } else {
-          toInsert.push(upsert);
-        }
-      });
-
-        // Run UPDATEs in batch (if any)
-      if (toUpdate.length > 0) {
-        const updatePromises = toUpdate.map(({ id, data }) =>
-          supabase
-            .from('extracted_values' as any)
-            .update(data)
-            .eq('id', id)
-        );
-        const updateResults = await Promise.all(updatePromises);
-        const updateErrors = updateResults.filter(r => r.error).map(r => r.error);
-        if (updateErrors.length > 0) {
-            throw new Error(
-                t('extraction', 'errors_autoSaveUpdateValues')
-                    .replace('{{n}}', String(updateErrors.length))
-                    .replace('{{message}}', updateErrors[0]?.message ?? '')
-            );
-        }
+      const run = await ExtractionValueService.findActiveRun(
+        articleId,
+        templateId ?? null,
+      );
+      if (!run) {
+        // No active run yet — autosave silently no-ops. The form will
+        // pick this up once extraction has been triggered.
+        setIsSaving(false);
+        return;
       }
 
-        // Run INSERTs in batch (if any)
-      if (toInsert.length > 0) {
-        const { error: insertError } = await supabase
-          .from('extracted_values' as any)
-          .insert(toInsert);
-        if (insertError) throw insertError;
-      }
+      await Promise.all(
+        valuesToSave.map(([key, valueData]) => {
+          const [instanceId, fieldId] = key.split('_');
+          const { value: actualValue, unit, isOther } = extractValueForSave(valueData);
+          const writeValue = isOther
+            ? actualValue
+            : unit !== null && unit !== undefined
+              ? { value: actualValue, unit }
+              : actualValue;
+          return ExtractionValueService.saveValue(
+            run.id,
+            instanceId,
+            fieldId,
+            writeValue,
+          );
+        }),
+      );
 
       setLastSaved(new Date());
-        console.warn(`Auto-save completed: ${upserts.length} values saved`);
-
     } catch (err: any) {
-        console.error('Auto-save error:', err);
-        setError(err.message || t('extraction', 'errors_autoSaveFailed'));
-        toast.error(t('extraction', 'errors_autoSaveFailed'));
+      console.error('Auto-save error:', err);
+      setError(err.message || t('extraction', 'errors_autoSaveFailed'));
+      toast.error(t('extraction', 'errors_autoSaveFailed'));
     } finally {
       setIsSaving(false);
     }
   };
 
   const saveNow = async () => {
-      // Cancel scheduled save
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
-
-      // Save immediately
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     await saveValues();
   };
 
-  return {
-    isSaving,
-    lastSaved,
-    error,
-    saveNow
-  };
+  return { isSaving, lastSaved, error, saveNow };
 }
-

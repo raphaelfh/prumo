@@ -143,17 +143,28 @@ export function useFieldManagement({
     fieldId: string
   ): Promise<FieldValidationResult> => {
     try {
-        // Count extracted values and affected articles
-      const { data: valuesData, error: valuesError } = await supabase
-        .from('extracted_values')
-        .select('id, article_id')
-        .eq('field_id', fieldId);
+        // Count reviewer decisions referencing this field, grouped by
+        // article via the run. A field is "in use" when any reviewer has
+        // a non-reject decision against it; that triggers the safety
+        // gate on delete / type-change.
+      const { data: decisionRows, error: decisionsError } = await supabase
+        .from('extraction_reviewer_decisions')
+        .select('id, decision, run:run_id(article_id)')
+        .eq('field_id', fieldId)
+        .neq('decision', 'reject');
 
-      if (valuesError) throw valuesError;
+      if (decisionsError) throw decisionsError;
 
-      const extractedCount = valuesData?.length || 0;
+      const extractedCount = decisionRows?.length || 0;
       const affectedArticles = Array.from(
-        new Set(valuesData?.map(v => v.article_id) || [])
+        new Set(
+          (decisionRows || [])
+            .map((d: { run: { article_id: string } | { article_id: string }[] | null }) => {
+              const run = Array.isArray(d.run) ? d.run[0] : d.run;
+              return run?.article_id;
+            })
+            .filter((id): id is string => Boolean(id)),
+        ),
       );
       const hasValues = extractedCount > 0;
 
