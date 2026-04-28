@@ -82,7 +82,7 @@ export default function ExtractionFullScreen() {
   const [currentUserId, setCurrentUserId] = useState<string>('');
 
   // UI state
-  const [showPDF, setShowPDF] = useState(true);
+  const [showPDF, setShowPDF] = useState(false);
   const [viewMode, setViewMode] = useState<'extract' | 'compare'>('extract');
 
     // AI extraction progress state
