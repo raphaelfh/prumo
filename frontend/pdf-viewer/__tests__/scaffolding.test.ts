@@ -1,13 +1,19 @@
 import {describe, expect, it} from 'vitest';
 
-describe('@prumo/pdf-viewer scaffolding', () => {
-  it('exposes a version constant from the package root', async () => {
+describe('@prumo/pdf-viewer public API', () => {
+  it('exports the runtime entry points from the package root', async () => {
     const mod = await import('@prumo/pdf-viewer');
-    expect(mod.PDF_VIEWER_MODULE_VERSION).toBe('0.0.0-phase0');
+    expect(typeof mod.createViewerStore).toBe('function');
+    expect(typeof mod.ViewerProvider).toBe('function');
+    expect(typeof mod.useViewerStore).toBe('function');
+    expect(typeof mod.useViewerStoreApi).toBe('function');
   });
 
-  it('exposes the same constant from the core barrel via relative import', async () => {
-    const mod = await import('../core');
-    expect(mod.PDF_VIEWER_MODULE_VERSION).toBe('0.0.0-phase0');
+  it('createViewerStore returns a store with getState/setState/subscribe', async () => {
+    const {createViewerStore} = await import('@prumo/pdf-viewer');
+    const store = createViewerStore();
+    expect(typeof store.getState).toBe('function');
+    expect(typeof store.setState).toBe('function');
+    expect(typeof store.subscribe).toBe('function');
   });
 });
