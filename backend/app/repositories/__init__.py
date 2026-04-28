@@ -7,6 +7,7 @@ Facilitates testing, maintenance and query migration.
 
 from app.repositories.article_repository import ArticleFileRepository, ArticleRepository
 from app.repositories.base import BaseRepository
+from app.repositories.extraction_proposal_repository import ExtractionProposalRepository
 from app.repositories.extraction_repository import (
     AISuggestionRepository,
     ExtractionEntityTypeRepository,
@@ -38,6 +39,7 @@ __all__ = [
     "ExtractionInstanceRepository",
     "AISuggestionRepository",
     "ExtractionRunRepository",
+    "ExtractionProposalRepository",
     # HITL
     "HitlConfigRepository",
     # Integration
