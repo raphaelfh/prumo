@@ -26,6 +26,9 @@ const Auth = lazy(() => import("./pages/Auth"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const ProjectView = lazy(() => import("./pages/ProjectView"));
 const ExtractionFullScreen = lazy(() => import("./pages/ExtractionFullScreen"));
+const QualityAssessmentFullScreen = lazy(
+  () => import("./pages/QualityAssessmentFullScreen"),
+);
 const AddArticle = lazy(() => import("./pages/AddArticle"));
 const EditArticle = lazy(() => import("./pages/EditArticle"));
 const UserSettings = lazy(() => import("./pages/UserSettings"));
@@ -104,6 +107,16 @@ const App = () => {
                       <ProtectedRoute>
                           <ErrorBoundary context={t('common', 'errorContextExtraction')}>
                           <ExtractionFullScreen />
+                        </ErrorBoundary>
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/projects/:projectId/articles/:articleId/quality-assessment/:templateId"
+                    element={
+                      <ProtectedRoute>
+                        <ErrorBoundary context="quality-assessment">
+                          <QualityAssessmentFullScreen />
                         </ErrorBoundary>
                       </ProtectedRoute>
                     }
