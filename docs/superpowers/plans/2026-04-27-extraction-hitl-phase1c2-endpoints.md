@@ -175,23 +175,16 @@ Commit: `test(extraction): API contract tests for /v1/runs endpoints (~25 tests)
 
 ---
 
-## Task 7: Refactor `model_extraction_service` to use `ExtractionProposalService`
+## Tasks 7+8: Refactor `model_extraction_service` / `section_extraction_service` — DEFERRED
 
-**Modify:** `backend/app/services/model_extraction_service.py`. Where it currently writes to `ai_suggestions`, replace with calls to `ExtractionProposalService.record_proposal(...)` and `RunLifecycleService.create_run(...)`. The Run goes from `pending → proposal` automatically before recording.
+**Status:** Deferred to a future plan (after 1D/1E/2 complete).
 
-Update existing tests in `tests/unit/test_model_extraction_service.py` if they assert on `ai_suggestions` shape.
+**Why:** The existing services write to `ai_suggestions` + `extracted_values` and are working + tested. Refactoring them to use `RunLifecycleService.create_run` + `ExtractionProposalService.record_proposal` is a real rewrite that requires:
+- Restructuring how `ExtractionInstance`s are created (must exist before proposal is recorded for coordinate-coherence to pass).
+- Updating ~21 unit tests that mock the existing repository pattern.
+- Plan 1D's synthetic-Run migration is the bridge for existing `extracted_values` data — until that lands, dual-writing is the only safe option.
 
-Commit: `refactor(extraction): model_extraction_service writes proposals via new HITL stack`
-
----
-
-## Task 8: Refactor `section_extraction_service` similarly
-
-**Modify:** `backend/app/services/section_extraction_service.py`. Same pattern as Task 7.
-
-Update tests in `tests/unit/test_section_extraction_service.py`.
-
-Commit: `refactor(extraction): section_extraction_service writes proposals via new HITL stack`
+**When to revisit:** After Plan 1D's synthetic-Run migration ships and the legacy `ai_suggestions`/`extracted_values` writers are no longer the source of truth. At that point a focused "1F" plan can do the refactor cleanly.
 
 ---
 
