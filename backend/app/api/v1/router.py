@@ -12,6 +12,7 @@ from app.api.v1.endpoints import (
     evaluation_review,
     evaluation_runs,
     evaluation_schema_versions,
+    extraction_runs,
     model_extraction,
     section_extraction,
     user_api_keys,
@@ -73,4 +74,10 @@ api_router.include_router(
     evaluation_schema_versions.router,
     prefix="",
     tags=["Unified Evaluation Schema Versions"],
+)
+
+api_router.include_router(
+    extraction_runs.router,
+    prefix="/runs",
+    tags=["extraction-runs"],
 )
