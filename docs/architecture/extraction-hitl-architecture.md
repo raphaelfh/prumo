@@ -70,12 +70,17 @@ All tables live in the `public` schema with RLS enabled. Migration head:
 | `extraction_runs` | + `kind`, `version_id` FK, `hitl_config_snapshot`; composite FK `(template_id, kind)` enforces template-run kind coherence; stage enum reconstructed | 0011 + 0014 |
 | `extraction_evidence` | + `run_id`, `proposal_record_id`, `reviewer_decision_id`, `consensus_decision_id`. Legacy `target_type`/`target_id` columns dropped in 0017; CHECK now requires the workflow path. | 0013 + 0017 |
 
-### Legacy tables in transition (still referenced by frontend)
+### Legacy tables — fully removed
 
-| Table | Status | Path forward |
+The original 2026-04-27 cut had two transition shims (`ai_suggestions`,
+`extracted_values`). Both are gone. Status today:
+
+| Former table | Removed in | Replacement |
 |---|---|---|
-| `ai_suggestions` | Read+write — `section_extraction_service` mirrors every new `ProposalRecord` here so the existing extraction UI keeps working until it migrates to `/v1/runs/{id}`. | Drop after frontend reads from `extraction_proposal_records`. |
-| `extracted_values` | Read-only legacy. Migration 0015 created synthetic finalized Runs + PublishedStates so historical data is reachable through the new stack. New code does not write here. | Drop alongside `ai_suggestions`. |
+| `ai_suggestions` | Migration `20260428_0019` (now in archive) | `extraction_proposal_records` (filter `source='ai'`) — `aiSuggestionService` reads here, derives status from the current reviewer_state. |
+| `extracted_values` | Migration `0002_drop_extracted_values` | `extraction_reviewer_decisions` for per-user values, `extraction_published_states` for canonical post-consensus values. `ExtractionValueService` (frontend) wraps the read/write path. |
+| `suggestion_status` enum | Migration `20260428_0019` (archived) | Status derived from reviewer_state's current decision (accept_proposal / edit / reject). |
+| `extraction_source` enum | Migration `0002_drop_extracted_values` | `extraction_proposal_source` (ai/human/system) on ProposalRecord. |
 
 ### Enums introduced or modified
 
@@ -205,15 +210,22 @@ advances to `finalized`.
 - **ConsensusRule** — `unanimous` / `majority` / `arbitrator`. Drives
   when consensus triggers and how it resolves.
 
-### Legacy (still alive, deprecation in flight)
+### Legacy (fully removed)
 
-- **AISuggestion** — Old AI-suggestion table with `status` mutated by
-  accept/reject. Replaced by `ProposalRecord` (source=ai). Currently
-  written as a mirror by `section_extraction_service` so the existing UI
-  keeps working until it migrates to `/v1/runs/{id}`.
-- **ExtractedValue** — Old canonical value table without versioning.
-  Replaced by `PublishedState`. Migration 0015 backfilled synthetic Runs
-  and PublishedStates for historical rows.
+- **AISuggestion** — Old AI-suggestion table; status was mutated by
+  accept/reject. Replaced by `ProposalRecord` (source=ai). Removed in
+  migration `20260428_0019`.
+- **ExtractedValue** — Old per-user value store. Replaced by
+  `ReviewerDecision` (per-user, with run-stage REVIEW required) for
+  in-flight values, and `PublishedState` for canonical post-consensus
+  values. Removed in migration `0002_drop_extracted_values`.
+
+  The frontend's `ExtractionValueService`
+  (`frontend/services/extractionValueService.ts`) is the single
+  read/write entry point: `findActiveRun` → `loadValuesForUser` /
+  `saveValue` / `acceptProposal` / `rejectValue`. AI extraction
+  auto-advances the Run from PROPOSAL → REVIEW after recording proposals
+  so the form can write decisions immediately.
 
 ## 7. References
 
@@ -227,12 +239,19 @@ advances to `finalized`.
     with precondition matrix; lazy v=1 TemplateVersion creation.
   - `app/services/extraction_proposal_service.py` — append-only proposals
     with stage / coherence checks.
-  - `app/services/extraction_review_service.py` — reviewer decisions.
+  - `app/services/extraction_review_service.py` — reviewer decisions
+    (the per-user value store now flows through here).
   - `app/services/extraction_consensus_service.py` — consensus resolution
     + PublishedState materialization (with optimistic concurrency).
   - `app/services/qa_template_clone_service.py` — global → project clone
     (idempotent on `(project_id, global_template_id)`).
   - `app/services/qa_assessment_session_service.py` — one-shot QA setup
     (clone + instances + Run + advance to PROPOSAL).
+- **Frontend services:**
+  - `frontend/services/extractionValueService.ts` — single entry point
+    for run resolution + per-user value reads/writes.
+  - `frontend/services/aiSuggestionService.ts` — AI proposals shaped
+    as the legacy `AISuggestion` view; accept/reject route through
+    extractionValueService.
 - **Frontend hooks:** `frontend/hooks/runs/` (run-scoped TanStack Query
   hooks), `frontend/hooks/qa/` (QA-specific orchestration).

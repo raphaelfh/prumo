@@ -54,6 +54,14 @@ docs/                     # architecture/, superpowers/, planos/, ...
 
 ## Recent Changes
 
+- **2026-04-28** (later): Squashed 18 migrations into a single
+  `0001_baseline_v1` baseline. Dropped `ai_suggestions` (migration
+  archived under that baseline) and `extracted_values` (migration 0002
+  on top of the baseline). The extraction UI now reads/writes through
+  `extraction_reviewer_decisions` + `extraction_published_states` via a
+  single `ExtractionValueService` on the frontend; AI extraction
+  auto-advances the Run PROPOSAL → REVIEW after recording proposals.
+  See `docs/architecture/migrations.md`.
 - **2026-04-28**: Cleanup wave on top of the HITL unification — migration
   0017 dropped `extraction_evidence.target_type/target_id`; 0018 added the
   `is_project_reviewer` SECURITY DEFINER helper and relaxed workflow-table
