@@ -22,8 +22,10 @@ export interface EvidencePassage {
 
 export interface Evidence {
   id: string;
-  target_type: 'value' | 'instance';
-  target_id: string;
+  run_id: string;
+  proposal_record_id: string | null;
+  reviewer_decision_id: string | null;
+  consensus_decision_id: string | null;
   article_file_id: string | null;
   page_number: number | null;
   position: Record<string, unknown>;

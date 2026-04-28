@@ -29,34 +29,37 @@ async def test_evidence_column_added(db_session: AsyncSession, column: str) -> N
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("column", ["target_type", "target_id"])
-async def test_evidence_legacy_columns_now_nullable(
+async def test_evidence_legacy_columns_dropped(
     db_session: AsyncSession,
     column: str,
 ) -> None:
+    """Migration 0017 removes the polymorphic legacy target columns."""
     result = await db_session.execute(
         text(
             f"""
-            SELECT is_nullable FROM information_schema.columns
+            SELECT 1 FROM information_schema.columns
             WHERE table_schema = 'public'
               AND table_name = 'extraction_evidence'
               AND column_name = '{column}'
             """
         )
     )
-    assert result.scalar() == "YES"
+    assert result.scalar() is None
 
 
 @pytest.mark.asyncio
 async def test_evidence_check_constraint_present(db_session: AsyncSession) -> None:
+    """Post-0017: workflow path is mandatory (run_id + at least one
+    proposal/decision/consensus FK)."""
     result = await db_session.execute(
         text(
             """
             SELECT conname FROM pg_constraint
-            WHERE conname = 'ck_extraction_evidence_workflow_or_legacy_target'
+            WHERE conname = 'workflow_target_present'
             """
         )
     )
-    assert result.scalar() == "ck_extraction_evidence_workflow_or_legacy_target"
+    assert result.scalar() == "workflow_target_present"
 
 
 @pytest.mark.asyncio

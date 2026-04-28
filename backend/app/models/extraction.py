@@ -542,9 +542,6 @@ class ExtractionEvidence(BaseModel):
         index=True,
     )
 
-    target_type: Mapped[str | None] = mapped_column(String, nullable=True)
-    target_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
-
     article_file_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("public.article_files.id", ondelete="SET NULL"),
@@ -588,19 +585,20 @@ class ExtractionEvidence(BaseModel):
         Index("idx_extraction_evidence_position_gin", "position", postgresql_using="gin"),
         CheckConstraint(
             """
-            (run_id IS NOT NULL
-             AND (proposal_record_id IS NOT NULL
-                  OR reviewer_decision_id IS NOT NULL
-                  OR consensus_decision_id IS NOT NULL))
-            OR (target_type IS NOT NULL AND target_id IS NOT NULL)
+            run_id IS NOT NULL
+            AND (
+                proposal_record_id IS NOT NULL
+                OR reviewer_decision_id IS NOT NULL
+                OR consensus_decision_id IS NOT NULL
+            )
             """,
-            name="workflow_or_legacy_target",
+            name="workflow_target_present",
         ),
         {"schema": "public"},
     )
 
     def __repr__(self) -> str:
-        return f"<ExtractionEvidence {self.target_type}:{self.target_id}>"
+        return f"<ExtractionEvidence run={self.run_id}>"
 
 
 class ExtractionRun(Base, UUIDMixin):
