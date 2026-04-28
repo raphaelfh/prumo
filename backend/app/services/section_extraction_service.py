@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import LoggerMixin
 from app.infrastructure.storage import StorageAdapter
 from app.models.extraction import (
+    AISuggestion,
     ExtractionEvidence,
     ExtractionInstance,
     ExtractionInstanceStatus,
@@ -28,6 +29,7 @@ from app.models.extraction import (
 )
 from app.models.extraction_workflow import ExtractionProposalSource
 from app.repositories import (
+    AISuggestionRepository,
     ArticleFileRepository,
     ExtractionEntityTypeRepository,
     ExtractionInstanceRepository,
@@ -106,11 +108,15 @@ class SectionExtractionService(LoggerMixin):
         self._entity_types = ExtractionEntityTypeRepository(db)
         self._instances = ExtractionInstanceRepository(db)
         self._runs = ExtractionRunRepository(db)
+        # Legacy writer kept alongside the new HITL stack so the existing
+        # extraction UI keeps working until the frontend migrates to read
+        # from /v1/runs/{id}. Removed in Onda 4 (drop ai_suggestions).
+        self._suggestions = AISuggestionRepository(db)
         # Lifecycle service: owns Run creation + stage transitions and ensures
         # version_id + hitl_config_snapshot are populated correctly.
         self._lifecycle = RunLifecycleService(db)
         # Proposal service: append-only writes to extraction_proposal_records
-        # (the new HITL stack — replaces the legacy ai_suggestions writer).
+        # (the new HITL stack — primary data source going forward).
         self._proposals = ExtractionProposalService(db)
 
     async def extract_section(
@@ -953,8 +959,11 @@ Example response format:
                 entity_type_id=str(entity_type_id),
             )
 
-        # Record one ProposalRecord per extracted field, with evidence linked
-        # via extraction_evidence (proposal_record_id) when the LLM cited it.
+        # Record one ProposalRecord per extracted field (the new HITL stack)
+        # AND mirror to ai_suggestions so the existing extraction UI keeps
+        # working until the frontend migrates to /v1/runs/{id}. Evidence
+        # cited by the LLM is stored as a real extraction_evidence row
+        # linked to the proposal.
         for field_name, value in extracted_data.items():
             if value is None:
                 continue
@@ -1014,9 +1023,31 @@ Example response format:
                         created_by=UUID(self.user_id),
                     )
                 )
-                await self.db.flush()
+
+            legacy_metadata: dict = {
+                "field_name": field_name,
+                "extraction_trace_id": self.trace_id,
+                "proposal_record_id": str(proposal.id),
+            }
+            if evidence_meta:
+                legacy_metadata["evidence"] = evidence_meta
+
+            await self._suggestions.create(
+                AISuggestion(
+                    extraction_run_id=run.id,
+                    instance_id=instance.id,
+                    field_id=field_id,
+                    suggested_value=proposed_value,
+                    confidence_score=confidence_score,
+                    reasoning=reasoning,
+                    status="pending",
+                    metadata_=legacy_metadata,
+                )
+            )
 
             count += 1
+
+        await self.db.flush()
 
         self.logger.info(
             "proposals_recorded",
