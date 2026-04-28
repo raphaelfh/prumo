@@ -15,6 +15,12 @@ from app.repositories.extraction_repository import (
     ExtractionTemplateRepository,
     GlobalTemplateRepository,
 )
+from app.repositories.extraction_reviewer_decision_repository import (
+    ExtractionReviewerDecisionRepository,
+)
+from app.repositories.extraction_reviewer_state_repository import (
+    ExtractionReviewerStateRepository,
+)
 from app.repositories.extraction_run_repository import ExtractionRunRepository
 from app.repositories.hitl_config_repository import HitlConfigRepository
 from app.repositories.integration_repository import ZoteroIntegrationRepository
@@ -40,6 +46,8 @@ __all__ = [
     "AISuggestionRepository",
     "ExtractionRunRepository",
     "ExtractionProposalRepository",
+    "ExtractionReviewerDecisionRepository",
+    "ExtractionReviewerStateRepository",
     # HITL
     "HitlConfigRepository",
     # Integration
