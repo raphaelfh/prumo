@@ -20,19 +20,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import LoggerMixin
 from app.infrastructure.storage import StorageAdapter
 from app.models.extraction import (
-    AISuggestion,
+    ExtractionEvidence,
     ExtractionInstance,
     ExtractionInstanceStatus,
     ExtractionRun,
     ExtractionRunStage,
 )
+from app.models.extraction_workflow import ExtractionProposalSource
 from app.repositories import (
-    AISuggestionRepository,
     ArticleFileRepository,
     ExtractionEntityTypeRepository,
     ExtractionInstanceRepository,
     ExtractionRunRepository,
 )
+from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.openai_service import OpenAIResponse, OpenAIService
 from app.services.pdf_processor import PDFProcessor
 from app.services.run_lifecycle_service import RunLifecycleService
@@ -104,11 +105,13 @@ class SectionExtractionService(LoggerMixin):
         self._article_files = ArticleFileRepository(db)
         self._entity_types = ExtractionEntityTypeRepository(db)
         self._instances = ExtractionInstanceRepository(db)
-        self._suggestions = AISuggestionRepository(db)
         self._runs = ExtractionRunRepository(db)
         # Lifecycle service: owns Run creation + stage transitions and ensures
         # version_id + hitl_config_snapshot are populated correctly.
         self._lifecycle = RunLifecycleService(db)
+        # Proposal service: append-only writes to extraction_proposal_records
+        # (the new HITL stack — replaces the legacy ai_suggestions writer).
+        self._proposals = ExtractionProposalService(db)
 
     async def extract_section(
         self,
@@ -950,12 +953,12 @@ Example response format:
                 entity_type_id=str(entity_type_id),
             )
 
-        # Create suggestions for each extracted field
+        # Record one ProposalRecord per extracted field, with evidence linked
+        # via extraction_evidence (proposal_record_id) when the LLM cited it.
         for field_name, value in extracted_data.items():
             if value is None:
                 continue
 
-            # Resolve matching field_id
             field_id = field_map.get(field_name)
             if not field_id:
                 self.logger.warning(
@@ -966,63 +969,57 @@ Example response format:
                 )
                 continue
 
-            # Extract confidence/reasoning/evidence when value is enriched object
-            confidence_score = None
-            reasoning = None
-            evidence_meta = None
+            confidence_score: float | None = None
+            reasoning: str | None = None
+            evidence_meta: dict | None = None
 
             if isinstance(value, dict):
-                # Enriched format: {"value": ..., "confidence": ..., "reasoning": ..., "evidence": ...}
                 confidence_score = value.get("confidence")
                 reasoning = value.get("reasoning")
                 raw_evidence = value.get("evidence")
                 if isinstance(raw_evidence, dict) and raw_evidence.get("text"):
                     evidence_meta = {
                         "text": str(raw_evidence["text"]).strip(),
-                        "page_number": raw_evidence.get("page_number")
-                        if raw_evidence.get("page_number") is not None
-                        else None,
+                        "page_number": raw_evidence.get("page_number"),
                     }
-
-                # suggested_value should contain only the actual value
-                if "value" in value:
-                    actual_value = value["value"]
-                    suggested_value = (
-                        {"value": actual_value}
-                        if not isinstance(actual_value, (dict, list))
-                        else actual_value
-                    )
-                else:
-                    # If "value" is missing, keep full dict
-                    suggested_value = value
-            elif isinstance(value, list):
-                suggested_value = value
+                inner_value = value.get("value", value)
             else:
-                suggested_value = {"value": value}
+                inner_value = value
 
-            metadata_: dict = {
-                "field_name": field_name,
-                "extraction_trace_id": self.trace_id,
-            }
-            if evidence_meta:
-                metadata_["evidence"] = evidence_meta
+            # JSONB column on proposed_value is dict-typed; always wrap so
+            # scalars/lists round-trip predictably and the frontend can read
+            # `proposed_value.value` uniformly.
+            proposed_value = {"value": inner_value}
 
-            suggestion = AISuggestion(
-                extraction_run_id=run.id,  # For extraction suggestions
+            proposal = await self._proposals.record_proposal(
+                run_id=run.id,
                 instance_id=instance.id,
                 field_id=field_id,
-                suggested_value=suggested_value,
+                source=ExtractionProposalSource.AI,
+                proposed_value=proposed_value,
                 confidence_score=confidence_score,
-                reasoning=reasoning,
-                status="pending",
-                metadata_=metadata_,
+                rationale=reasoning,
             )
 
-            await self._suggestions.create(suggestion)
+            if evidence_meta:
+                self.db.add(
+                    ExtractionEvidence(
+                        project_id=project_id,
+                        article_id=article_id,
+                        run_id=run.id,
+                        proposal_record_id=proposal.id,
+                        page_number=evidence_meta.get("page_number"),
+                        text_content=evidence_meta.get("text"),
+                        position={},
+                        created_by=UUID(self.user_id),
+                    )
+                )
+                await self.db.flush()
+
             count += 1
 
         self.logger.info(
-            "suggestions_created",
+            "proposals_recorded",
             trace_id=self.trace_id,
             count=count,
             instance_id=str(instance.id),
