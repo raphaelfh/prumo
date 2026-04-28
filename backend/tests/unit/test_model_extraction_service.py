@@ -50,6 +50,7 @@ def service(mock_db, mock_storage):
             "app.services.model_extraction_service.ExtractionInstanceRepository"
         ) as mock_instance_repo,
         patch("app.services.model_extraction_service.ExtractionRunRepository") as mock_run_repo,
+        patch("app.services.model_extraction_service.RunLifecycleService") as mock_lifecycle_cls,
     ):
         mock_pdf_instance = MagicMock()
         mock_pdf.return_value = mock_pdf_instance
@@ -76,6 +77,15 @@ def service(mock_db, mock_storage):
         mock_run_repo_instance = MagicMock()
         mock_run_repo.return_value = mock_run_repo_instance
 
+        # The new service uses RunLifecycleService for run creation; we
+        # mock it here so the fixture stays decoupled from the lifecycle
+        # repository chain. Tests that need a specific run can override
+        # `mock_lifecycle.create_run.return_value` and `.advance_stage`.
+        mock_lifecycle_instance = MagicMock()
+        mock_lifecycle_instance.create_run = AsyncMock()
+        mock_lifecycle_instance.advance_stage = AsyncMock()
+        mock_lifecycle_cls.return_value = mock_lifecycle_instance
+
         svc = ModelExtractionService(
             db=mock_db,
             user_id="12345678-1234-1234-1234-123456789012",
@@ -90,6 +100,7 @@ def service(mock_db, mock_storage):
         svc._entity_types = mock_entity_repo_instance
         svc._instances = mock_instance_repo_instance
         svc._runs = mock_run_repo_instance
+        svc._lifecycle = mock_lifecycle_instance
 
         return svc
 
@@ -357,7 +368,9 @@ class TestFullExtractionFlow:
         # Mock run creation
         mock_run = MagicMock()
         mock_run.id = run_id
-        service._runs.create_run = AsyncMock(return_value=mock_run)
+        # Run creation now flows through the lifecycle service
+        service._lifecycle.create_run = AsyncMock(return_value=mock_run)
+        service._lifecycle.advance_stage = AsyncMock(return_value=mock_run)
         service._runs.start_run = AsyncMock()
         service._runs.complete_run = AsyncMock()
         service._runs.fail_run = AsyncMock()
@@ -442,7 +455,9 @@ class TestFullExtractionFlow:
         # Mock run creation
         mock_run = MagicMock()
         mock_run.id = run_id
-        service._runs.create_run = AsyncMock(return_value=mock_run)
+        # Run creation now flows through the lifecycle service
+        service._lifecycle.create_run = AsyncMock(return_value=mock_run)
+        service._lifecycle.advance_stage = AsyncMock(return_value=mock_run)
         service._runs.start_run = AsyncMock()
         service._runs.complete_run = AsyncMock()
         service._runs.fail_run = AsyncMock()

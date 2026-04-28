@@ -33,6 +33,7 @@ from app.repositories import (
 )
 from app.services.openai_service import OpenAIService
 from app.services.pdf_processor import PDFProcessor
+from app.services.run_lifecycle_service import RunLifecycleService
 from app.utils.json_parser import extract_models_from_response
 
 
@@ -91,6 +92,9 @@ class ModelExtractionService(LoggerMixin):
         self._entity_types = ExtractionEntityTypeRepository(db)
         self._instances = ExtractionInstanceRepository(db)
         self._runs = ExtractionRunRepository(db)
+        # Lifecycle service: owns Run creation + stage transitions and ensures
+        # version_id + hitl_config_snapshot are populated correctly.
+        self._lifecycle = RunLifecycleService(db)
 
     async def extract(
         self,
@@ -114,17 +118,23 @@ class ModelExtractionService(LoggerMixin):
         start_time = perf_counter()
         phase_durations_ms: dict[str, float] = {}
 
-        # 1. Create extraction_run in DB
-        run = await self._runs.create_run(
+        # 1. Create extraction_run via the unified lifecycle service so the new
+        # NOT NULL columns (version_id, hitl_config_snapshot) and the kind
+        # discriminator are populated correctly. Then advance pending → proposal.
+        run = await self._lifecycle.create_run(
             project_id=project_id,
             article_id=article_id,
-            template_id=template_id,
-            stage=ExtractionRunStage.PROPOSAL,
-            created_by=UUID(self.user_id),
+            project_template_id=template_id,
+            user_id=UUID(self.user_id),
             parameters={
                 "model": model,
                 "extraction_type": "model_identification",
             },
+        )
+        run = await self._lifecycle.advance_stage(
+            run_id=run.id,
+            target_stage=ExtractionRunStage.PROPOSAL,
+            user_id=UUID(self.user_id),
         )
 
         await self._runs.start_run(run.id)

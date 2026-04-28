@@ -35,6 +35,7 @@ from app.repositories import (
 )
 from app.services.openai_service import OpenAIResponse, OpenAIService
 from app.services.pdf_processor import PDFProcessor
+from app.services.run_lifecycle_service import RunLifecycleService
 from app.utils.json_parser import parse_json_safe
 
 
@@ -105,6 +106,9 @@ class SectionExtractionService(LoggerMixin):
         self._instances = ExtractionInstanceRepository(db)
         self._suggestions = AISuggestionRepository(db)
         self._runs = ExtractionRunRepository(db)
+        # Lifecycle service: owns Run creation + stage transitions and ensures
+        # version_id + hitl_config_snapshot are populated correctly.
+        self._lifecycle = RunLifecycleService(db)
 
     async def extract_section(
         self,
@@ -132,18 +136,24 @@ class SectionExtractionService(LoggerMixin):
         start_time = perf_counter()
         phase_durations_ms: dict[str, float] = {}
 
-        # 1. Create extraction_run in database
-        run = await self._runs.create_run(
+        # 1. Create extraction_run via the unified lifecycle service so the
+        # NOT NULL columns (version_id, hitl_config_snapshot) and kind
+        # discriminator are populated. Then advance pending → proposal.
+        run = await self._lifecycle.create_run(
             project_id=project_id,
             article_id=article_id,
-            template_id=template_id,
-            stage=ExtractionRunStage.PROPOSAL,
-            created_by=UUID(self.user_id),
+            project_template_id=template_id,
+            user_id=UUID(self.user_id),
             parameters={
                 "model": model,
                 "entity_type_id": str(entity_type_id),
                 "parent_instance_id": str(parent_instance_id) if parent_instance_id else None,
             },
+        )
+        run = await self._lifecycle.advance_stage(
+            run_id=run.id,
+            target_stage=ExtractionRunStage.PROPOSAL,
+            user_id=UUID(self.user_id),
         )
 
         # Mark as running
@@ -285,19 +295,23 @@ class SectionExtractionService(LoggerMixin):
         start_time = perf_counter()
         phase_durations_ms: dict[str, float] = {}
 
-        # Create primary run for batch extraction
-        run = await self._runs.create_run(
+        # Create primary run for batch extraction via lifecycle service.
+        run = await self._lifecycle.create_run(
             project_id=project_id,
             article_id=article_id,
-            template_id=template_id,
-            stage=ExtractionRunStage.PROPOSAL,
-            created_by=UUID(self.user_id),
+            project_template_id=template_id,
+            user_id=UUID(self.user_id),
             parameters={
                 "model": model,
                 "batch_extraction": True,
                 "parent_instance_id": str(parent_instance_id),
                 "section_ids": [str(sid) for sid in section_ids] if section_ids else None,
             },
+        )
+        run = await self._lifecycle.advance_stage(
+            run_id=run.id,
+            target_stage=ExtractionRunStage.PROPOSAL,
+            user_id=UUID(self.user_id),
         )
 
         await self._runs.start_run(run.id)
@@ -469,13 +483,12 @@ class SectionExtractionService(LoggerMixin):
         section_start = perf_counter()
         section_phase_durations_ms: dict[str, float] = {}
 
-        # Create run for this specific section
-        run = await self._runs.create_run(
+        # Create run for this specific section via lifecycle service.
+        run = await self._lifecycle.create_run(
             project_id=project_id,
             article_id=article_id,
-            template_id=template_id,
-            stage=ExtractionRunStage.PROPOSAL,
-            created_by=UUID(self.user_id),
+            project_template_id=template_id,
+            user_id=UUID(self.user_id),
             parameters={
                 "model": model,
                 "entity_type_id": str(entity_type.id),
@@ -483,6 +496,11 @@ class SectionExtractionService(LoggerMixin):
                 "batch_section": True,
                 "memory_context_size": len(memory_history),
             },
+        )
+        run = await self._lifecycle.advance_stage(
+            run_id=run.id,
+            target_stage=ExtractionRunStage.PROPOSAL,
+            user_id=UUID(self.user_id),
         )
 
         await self._runs.start_run(run.id)
