@@ -44,9 +44,11 @@ The refactor plan files:
 | 1b | `2026-04-28-pdf-viewer-phase1b-pdfjs-engine.md` | Shipped |
 | 2a | `2026-04-28-pdf-viewer-phase2a-primitives-ui.md` | Shipped |
 | 2b | `2026-04-28-pdf-viewer-phase2b-textlayer-search.md` | Shipped |
-| 3 | `2026-XX-XX-pdf-viewer-phase3-citation-api.md` | Pending — DB blocker |
-| 4 | `2026-XX-XX-pdf-viewer-phase4-annotations.md` | Pending — schema coordination |
-| 5 | `2026-XX-XX-pdf-viewer-phase5-reader-view-cleanup.md` | Pending |
+| 3 | `(implicit — Citations API + Pydantic v1 anchors)` | Shipped (commits `d2451e6` + `7b49725`) |
+| 3b | `2026-04-29-pdf-viewer-phase3b-citation-hook.md` | Pending — design decisions |
+| 4 | `2026-04-29-pdf-viewer-phase4-w3c-annotations.md` | Pending — cross-worktree schema coordination |
+| 5 | `2026-04-29-pdf-viewer-phase5-reader-view-cleanup.md` | Pending — design + a11y audit |
+| 6 | `2026-04-29-pdf-viewer-phase6-text-blocks-backfill.md` | Pending — pick text-block extractor |
 
 ## Architecture (target — end of Phase 5)
 
