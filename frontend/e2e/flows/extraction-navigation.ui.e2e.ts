@@ -1,6 +1,7 @@
 import { Page, expect, test } from "@playwright/test";
 
 import { loginViaUi } from "../_fixtures/auth";
+import { watchConsoleErrors } from "../_fixtures/console-errors";
 import { loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
 
 const REQUIRED = ["E2E_USER_EMAIL", "E2E_USER_PASSWORD", "E2E_PROJECT_ID", "E2E_ARTICLE_ID"];
@@ -79,29 +80,7 @@ test.describe("Extraction page navigation", () => {
     test.skip(missing.length > 0, `Missing required env: ${missing.join(", ")}`);
 
     const env = loadE2EEnv();
-    // PDFCanvas + react-pdf <Document>/<Page> still emit one or two
-    // "Maximum update depth exceeded" warnings during the very first
-    // measurement pass on a fresh PDF. The page reaches steady state
-    // immediately after; we keep this allowance narrow (only this exact
-    // warning text) so any other error in the extraction surface still
-    // fails the test. Mitigations applied so far:
-    //  * PDFCanvas.handlePageHeightMeasured short-circuits on unchanged
-    //    height (bails out before invalidating the actualPageHeights Map).
-    //  * PDFPage.handleLoadSuccess rounds to integer + bails when the
-    //    last emitted height matches the new measurement.
-    //  * usePDFVirtualization split the IntersectionObserver lifecycle
-    //    from the observe()/unobserve() pass so pageRefs mutations no
-    //    longer tear down + recreate the observer on every page mount.
-    const KNOWN_PDF_VIEWER_WARNING = "Maximum update depth exceeded";
-    const unexpectedErrors: string[] = [];
-    page.on("console", (msg) => {
-      if (msg.type() !== "error") return;
-      const text = msg.text();
-      // Ignore noise from the Vite dev server / HMR / asset 404s.
-      if (/Failed to load resource|HMR|hot-update|favicon\.ico/i.test(text)) return;
-      if (text.includes(KNOWN_PDF_VIEWER_WARNING)) return;
-      unexpectedErrors.push(text);
-    });
+    const watcher = watchConsoleErrors(page);
 
     await loginViaUi(page);
     await page.goto(`${env.frontendUrl}/projects/${env.projectId}/extraction/${env.articleId}`);
@@ -109,10 +88,7 @@ test.describe("Extraction page navigation", () => {
     await waitForBackButton(page);
     await page.waitForTimeout(500);
 
-    expect(
-      unexpectedErrors,
-      `Unexpected console errors on extraction page:\n${unexpectedErrors.join("\n")}`
-    ).toEqual([]);
+    watcher.assertNone();
   });
 
   test("unknown article id under valid project shows extraction empty/error state, not blank", async ({

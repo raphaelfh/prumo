@@ -162,7 +162,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
                 .from("extraction_reviewer_states" as any)
                 .select(`
             current_decision_id,
-            reviewer_decision:current_decision_id(decision),
+            reviewer_decision:extraction_reviewer_decisions!fk_extraction_reviewer_states_decision_run_match(decision),
             extraction_instances!inner(article_id, template_id, project_id)
           `)
                 .eq("reviewer_id", user.id)
