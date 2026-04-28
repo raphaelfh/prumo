@@ -9,7 +9,7 @@ import React from 'react';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {AlertCircle, Brain, CheckCircle, Clock, Play, XCircle} from 'lucide-react';
-import {ExtractedValue, ExtractionInstance, ProjectExtractionTemplate} from '@/types/extraction';
+import {ExtractionValueDisplay, ExtractionInstance, ProjectExtractionTemplate} from '@/types/extraction';
 import {t} from '@/lib/copy';
 
 interface AISuggestionsPanelProps {
@@ -17,7 +17,7 @@ interface AISuggestionsPanelProps {
   articleId: string | null;
   template: ProjectExtractionTemplate | null;
   instances: ExtractionInstance[];
-  values: ExtractedValue[];
+  values: ExtractionValueDisplay[];
 }
 
 export function AISuggestionsPanel({

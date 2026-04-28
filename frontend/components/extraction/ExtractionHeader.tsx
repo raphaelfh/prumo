@@ -17,7 +17,7 @@ import {HeaderFinalizeButton} from './header/HeaderFinalizeButton';
 import {HeaderAIActions} from './header/HeaderAIActions';
 import {HeaderMoreMenu} from './header/HeaderMoreMenu';
 import type {AISuggestion} from '@/types/ai-extraction';
-import type {ExtractedValue, ExtractionInstance, ProjectExtractionTemplate} from '@/types/extraction';
+import type {ExtractionValueDisplay, ExtractionInstance, ProjectExtractionTemplate} from '@/types/extraction';
 
 // =================== INTERFACES ===================
 
@@ -73,7 +73,7 @@ interface ExtractionHeaderProps {
     // Data for export (Zone 4 - More menu)
   template?: ProjectExtractionTemplate | null;
   instances?: ExtractionInstance[];
-  values?: ExtractedValue[];
+  values?: ExtractionValueDisplay[];
 
     // Callback to refresh after extraction
   onRefreshInstances?: () => Promise<void>;

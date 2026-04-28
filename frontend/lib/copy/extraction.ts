@@ -432,18 +432,8 @@ export const extraction = {
     tableExport: 'Export',
     tableInDevelopment: 'In development',
     tableClearSelection: 'Clear selection',
-    // ExtractionHistoryTab
-    historyNoRuns: 'No previous extractions',
-    historyRunToStart: 'Run an extraction to start the history',
+    // AI suggestion history popover
     historyExtractionRun: 'Extraction',
-    historyCompleted: 'Completed',
-    historyRunning: 'Running',
-    historySuggestionsCreated: 'Suggestions created:',
-    historyPdfPages: 'PDF pages:',
-    historyTokensUsed: 'Tokens used:',
-    historyFailed: 'Failed',
-    historyPending: 'Pending',
-    historyErrorLabel: 'Error:',
     historyProcessing: 'Processing…',
     // AISuggestionHistoryPopover
     historyInvalidDate: 'Invalid date',

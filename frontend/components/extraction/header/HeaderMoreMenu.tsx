@@ -18,7 +18,7 @@ import {Tooltip, TooltipContent, TooltipTrigger,} from '@/components/ui/tooltip'
 import {Download, ExternalLink, HelpCircle, Keyboard, MoreHorizontal, Sparkles} from 'lucide-react';
 import {ExtractionExport} from '@/components/extraction/ExtractionExport';
 import {useFullAIExtraction} from '@/hooks/extraction/useFullAIExtraction';
-import type {ExtractedValue, ExtractionInstance, ProjectExtractionTemplate} from '@/types/extraction';
+import type {ExtractionValueDisplay, ExtractionInstance, ProjectExtractionTemplate} from '@/types/extraction';
 import {t} from '@/lib/copy';
 
 interface HeaderMoreMenuProps {
@@ -29,7 +29,7 @@ interface HeaderMoreMenuProps {
   /** Instâncias para export */
   instances?: ExtractionInstance[];
     /** Extracted values for export */
-  values?: ExtractedValue[];
+  values?: ExtractionValueDisplay[];
   /** Modo compacto (apenas ícone) */
   compact?: boolean;
   /** Article ID para extração IA */

@@ -86,7 +86,7 @@ interface ExtractionInstance {
   created_at: string;
 }
 
-interface ExtractedValue {
+interface ExtractionValueDisplay {
   id: string;
   instance_id: string;
   field_id: string;
@@ -97,7 +97,7 @@ interface ExtractedValue {
 
 interface ArticleWithExtraction extends Article {
   instances: ExtractionInstance[];
-  extractedValues: ExtractedValue[];
+  extractedValues: ExtractionValueDisplay[];
   isLoading: boolean;
 }
 
@@ -257,7 +257,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
 
         // 3. Fetch the user's current ReviewerDecisions via reviewer_states
         //    for instances in this template. Map each into the legacy
-        //    ExtractedValue shape so the row-level rendering stays the same.
+        //    ExtractionValueDisplay shape so the row-level rendering stays the same.
       const instanceIds = (instancesData || []).map((i) => i.id);
       let valuesData: any[] = [];
       if (instanceIds.length > 0) {
@@ -304,7 +304,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
         return {
           ...article,
           instances: articleInstances as ExtractionInstance[],
-          extractedValues: articleValues as ExtractedValue[],
+          extractedValues: articleValues as ExtractionValueDisplay[],
           isLoading: false,
         };
       });

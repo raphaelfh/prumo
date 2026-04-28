@@ -10,14 +10,14 @@ import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/compo
 import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
 import {AlertCircle, Database, Download, FileText, Settings} from 'lucide-react';
-import {ExtractedValue, ExtractionInstance, ProjectExtractionTemplate} from '@/types/extraction';
+import {ExtractionValueDisplay, ExtractionInstance, ProjectExtractionTemplate} from '@/types/extraction';
 import {t} from '@/lib/copy';
 
 interface ExtractionExportProps {
   projectId: string;
   template: ProjectExtractionTemplate | null;
   instances: ExtractionInstance[];
-  values: ExtractedValue[];
+  values: ExtractionValueDisplay[];
 }
 
 export function ExtractionExport({
