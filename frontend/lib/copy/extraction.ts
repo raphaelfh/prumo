@@ -419,6 +419,7 @@ export const extraction = {
     tableSelectFiltered: 'Select filtered articles',
     tableSelectAll: 'Select all articles',
     tableActions: 'Actions',
+    tableActionOpen: 'Open',
     tableStart: 'Start',
     tableView: 'View',
     tableContinue: 'Continue',

@@ -91,7 +91,9 @@ export default function ProjectView() {
     // Use context for project state and navigation
   const { project, setProject: setContextProject, activeTab } = useProject();
 
-    const {isManager} = useProjectMemberRole(activeTab === 'extraction' ? projectId || '' : '');
+    const {isManager} = useProjectMemberRole(
+        activeTab === 'extraction' || activeTab === 'quality' ? projectId || '' : '',
+    );
     const extractionTab = searchParams.get('extractionTab') as 'extraction' | 'dashboard' | 'configuration' | null;
     const currentExtractionTab = (extractionTab && ['extraction', 'dashboard', 'configuration'].includes(extractionTab))
         ? extractionTab
@@ -100,6 +102,21 @@ export default function ProjectView() {
     const setExtractionTab = (tab: 'extraction' | 'dashboard' | 'configuration') => {
         const next = new URLSearchParams(searchParams);
         next.set('extractionTab', tab);
+        setSearchParams(next, {replace: true});
+    };
+
+    const qaTab = searchParams.get('qaTab') as
+        | 'assessment'
+        | 'dashboard'
+        | 'configuration'
+        | null;
+    const currentQaTab = (qaTab && ['assessment', 'dashboard', 'configuration'].includes(qaTab))
+        ? qaTab
+        : 'assessment';
+
+    const setQaTab = (tab: 'assessment' | 'dashboard' | 'configuration') => {
+        const next = new URLSearchParams(searchParams);
+        next.set('qaTab', tab);
         setSearchParams(next, {replace: true});
     };
 
@@ -345,6 +362,34 @@ export default function ProjectView() {
                                 onClick={() => setExtractionTab(value)}
                                 aria-selected={currentExtractionTab === value}
                                 role="tab"
+                            >
+                                {label}
+                            </Button>
+                        ))}
+                    </div>
+                )}
+                {activeTab === 'quality' && (
+                    <div className="flex items-center gap-0.5 w-full md:w-auto flex-shrink-0" role="tablist"
+                         aria-label="Quality assessment views">
+                        {[
+                            {value: 'assessment' as const, label: t('qa', 'tabAssessment')},
+                            {value: 'dashboard' as const, label: t('qa', 'tabDashboard')},
+                            ...(isManager ? [{
+                                value: 'configuration' as const,
+                                label: t('qa', 'tabConfiguration')
+                            }] : []),
+                        ].map(({value, label}) => (
+                            <Button
+                                key={value}
+                                variant="ghost"
+                                size="sm"
+                                className={`h-8 px-3 text-[13px] font-medium rounded-md transition-colors duration-75 ${
+                                    currentQaTab === value ? 'bg-muted/50 text-foreground' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                                }`}
+                                onClick={() => setQaTab(value)}
+                                aria-selected={currentQaTab === value}
+                                role="tab"
+                                data-testid={`hitl-quality_assessment-tab-${value}`}
                             >
                                 {label}
                             </Button>

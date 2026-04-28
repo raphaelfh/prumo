@@ -22,7 +22,7 @@ import {Tooltip, TooltipContent, TooltipTrigger,} from '@/components/ui/tooltip'
 import {Download, ExternalLink, HelpCircle, Keyboard, MoreHorizontal, ShieldAlert, Sparkles} from 'lucide-react';
 import {ExtractionExport} from '@/components/extraction/ExtractionExport';
 import {useFullAIExtraction} from '@/hooks/extraction/useFullAIExtraction';
-import {useGlobalQATemplates} from '@/hooks/qa/useGlobalQATemplates';
+import {useHITLProjectTemplates} from '@/hooks/hitl/useHITLProjectTemplates';
 import type {ExtractionValueDisplay, ExtractionInstance, ProjectExtractionTemplate} from '@/types/extraction';
 import {t} from '@/lib/copy';
 
@@ -62,7 +62,8 @@ export function HeaderMoreMenu({
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   const navigate = useNavigate();
-  const { templates: qaTemplates, loading: qaTemplatesLoading } = useGlobalQATemplates();
+  const { globalTemplates: qaTemplates, loading: qaTemplatesLoading } =
+    useHITLProjectTemplates({ projectId, kind: 'quality_assessment' });
 
     // Hook for full AI extraction
   const { extractFullAI, loading: extractingAI, progress: extractionProgress } = useFullAIExtraction({

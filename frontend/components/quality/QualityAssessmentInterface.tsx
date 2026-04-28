@@ -1,23 +1,24 @@
 /**
  * Quality Assessment landing — per-project view inside ProjectView.
  *
- * Lists every article in the project against the available global QA
- * templates (PROBAST, QUADAS-2, …). Each cell jumps to
- * /projects/:projectId/articles/:articleId/quality-assessment/:templateId
- * which opens the QualityAssessmentFullScreen for that pair.
+ * Three tabs synced to ``?qaTab=``:
  *
- * Mirrors the layout of `ExtractionInterface` but with a much simpler
- * model: QA templates are global (no per-project clone is visible to
- * the user — the assessment session endpoint clones lazily on first
- * open), and there's no AI extraction concept here.
+ * 1. ``assessment``: ``HITLActiveTemplateBar`` (switch between PROBAST /
+ *    QUADAS-2 / future tools enabled in Configuration) + ``HITLArticleTable``
+ *    showing every article with progress and status against the active tool.
+ * 2. ``dashboard``: project-level counters for the active tool.
+ * 3. ``configuration``: ``QualityAssessmentConfiguration`` lets the user
+ *    enable / disable each global QA template independently for the project.
+ *
+ * Each row's "Open" action navigates to
+ * ``/projects/:projectId/articles/:articleId/quality-assessment/:templateId``
+ * with the bar-selected template id, so the user lands on the right session.
  */
 
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { ShieldCheck } from "lucide-react";
-import { toast } from "sonner";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { CheckCircle, FileText, ShieldCheck } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -26,152 +27,199 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { useGlobalQATemplates } from "@/hooks/qa/useGlobalQATemplates";
 import { t } from "@/lib/copy";
+import {
+  HITLActiveTemplateBar,
+  useActiveTemplateSelection,
+} from "@/components/hitl/HITLActiveTemplateBar";
+import { HITLArticleTable } from "@/components/hitl/HITLArticleTable";
+import { QualityAssessmentConfiguration } from "@/components/quality/QualityAssessmentConfiguration";
+import { useHITLProjectTemplates } from "@/hooks/hitl/useHITLProjectTemplates";
 
-interface ArticleRow {
-  id: string;
-  title: string | null;
-  authors: string[] | null;
-  publication_year: number | null;
-}
+type QaTab = "assessment" | "dashboard" | "configuration";
 
-interface QualityAssessmentInterfaceProps {
+interface Props {
   projectId: string;
 }
 
-export function QualityAssessmentInterface({
-  projectId,
-}: QualityAssessmentInterfaceProps) {
-  const navigate = useNavigate();
-  const { templates: qaTemplates, loading: templatesLoading, error: templatesError } =
-    useGlobalQATemplates();
+export function QualityAssessmentInterface({ projectId }: Props) {
+  const [searchParams] = useSearchParams();
+  const { user } = useAuth();
 
-  const [articles, setArticles] = useState<ArticleRow[]>([]);
-  const [articlesLoading, setArticlesLoading] = useState(true);
+  const tabFromUrl = searchParams.get("qaTab") as QaTab | null;
+  const activeTab: QaTab =
+    tabFromUrl && ["assessment", "dashboard", "configuration"].includes(tabFromUrl)
+      ? tabFromUrl
+      : "assessment";
+
+  const {
+    templates,
+    loading: templatesLoading,
+    refresh,
+  } = useHITLProjectTemplates({
+    projectId,
+    kind: "quality_assessment",
+  });
+
+  const { activeTemplate, selectTemplate } = useActiveTemplateSelection(templates);
+
+  // Dashboard counters — same shape as extraction's stats card row.
+  const [stats, setStats] = useState({
+    totalArticles: 0,
+    assessmentsStarted: 0,
+    progressPercentage: 0,
+  });
 
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId || !activeTemplate || !user) return;
     let cancelled = false;
     void (async () => {
-      setArticlesLoading(true);
-      const { data, error } = await supabase
+      const articlesRes = await supabase
         .from("articles")
-        .select("id, title, authors, publication_year")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", projectId);
+      const totalArticles = articlesRes.count ?? 0;
+
+      const instancesRes = await supabase
+        .from("extraction_instances")
+        .select("article_id")
         .eq("project_id", projectId)
-        .order("created_at", { ascending: false });
+        .eq("template_id", activeTemplate.id);
+      const articlesWithInstances = new Set(
+        (instancesRes.data ?? []).map((row: any) => row.article_id),
+      );
+
       if (cancelled) return;
-      if (error) {
-        toast.error(t("qa", "loadArticlesError"));
-        setArticles([]);
-      } else {
-        setArticles(((data ?? []) as ArticleRow[]).slice(0, 200));
-      }
-      setArticlesLoading(false);
+      const started = articlesWithInstances.size;
+      setStats({
+        totalArticles,
+        assessmentsStarted: started,
+        progressPercentage:
+          totalArticles > 0 ? Math.round((started / totalArticles) * 100) : 0,
+      });
     })();
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectId, activeTemplate, user]);
 
-  const open = (articleId: string, templateId: string) => {
-    navigate(
-      `/projects/${projectId}/articles/${articleId}/quality-assessment/${templateId}`,
-    );
-  };
+  const tabContent = useMemo(() => {
+    if (activeTab === "configuration") {
+      return (
+        <QualityAssessmentConfiguration
+          projectId={projectId}
+          onAfterChange={() => void refresh()}
+        />
+      );
+    }
 
-  if (templatesError) {
+    if (activeTab === "dashboard") {
+      return (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+          <Card className="border-border/40 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4 pb-1 pt-4">
+              <CardTitle className="text-[13px] font-medium">
+                {t("extraction", "dashboardArticles")}
+              </CardTitle>
+              <FileText className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+            </CardHeader>
+            <CardContent className="px-4 pb-4">
+              <div className="text-xl font-bold">{stats.totalArticles}</div>
+              <p className="text-[13px] text-muted-foreground">
+                {t("extraction", "dashboardInProject")}
+              </p>
+            </CardContent>
+          </Card>
+          <Card className="border-border/40 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4 pb-1 pt-4">
+              <CardTitle className="text-[13px] font-medium">
+                {t("extraction", "dashboardExtractionsStarted")}
+              </CardTitle>
+              <CheckCircle className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+            </CardHeader>
+            <CardContent className="px-4 pb-4">
+              <div className="text-xl font-bold">{stats.assessmentsStarted}</div>
+              <p className="text-[13px] text-muted-foreground">
+                {activeTemplate?.name ?? "—"}
+              </p>
+            </CardContent>
+          </Card>
+          <Card className="border-border/40 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4 pb-1 pt-4">
+              <CardTitle className="text-[13px] font-medium">
+                {t("extraction", "dashboardProgress")}
+              </CardTitle>
+              <ShieldCheck className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+            </CardHeader>
+            <CardContent className="px-4 pb-4">
+              <div className="text-xl font-bold">{stats.progressPercentage}%</div>
+              <p className="text-[13px] text-muted-foreground">
+                {t("qa", "dashboardDesc")}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
+
+    // assessment tab
+    if (templatesLoading) {
+      return (
+        <div className="space-y-3">
+          <Skeleton className="h-10 w-full max-w-md" />
+          <Skeleton className="h-72 w-full" />
+        </div>
+      );
+    }
+
+    if (!activeTemplate) {
+      return (
+        <div className="space-y-3">
+          <HITLActiveTemplateBar
+            kind="quality_assessment"
+            templates={templates}
+            activeTemplate={null}
+            onSelect={selectTemplate}
+          />
+          <Card className="border-border/40">
+            <CardHeader>
+              <CardTitle className="text-base">
+                {t("qa", "noTemplatesTitle")}
+              </CardTitle>
+              <CardDescription>{t("qa", "activeTemplateNone")}</CardDescription>
+            </CardHeader>
+          </Card>
+        </div>
+      );
+    }
+
     return (
-      <div
-        className="m-4 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
-        data-testid="qa-interface-error"
-      >
-        {templatesError}
+      <div className="space-y-3">
+        <HITLActiveTemplateBar
+          kind="quality_assessment"
+          templates={templates}
+          activeTemplate={activeTemplate}
+          onSelect={selectTemplate}
+        />
+        <HITLArticleTable
+          kind="quality_assessment"
+          projectId={projectId}
+          templateId={activeTemplate.id}
+          rowActionHref={(articleId, templateId) =>
+            `/projects/${projectId}/articles/${articleId}/quality-assessment/${templateId}`
+          }
+          emptyTitle={t("qa", "noArticlesForListTitle")}
+          emptyDescription={t("qa", "noArticlesForListDesc")}
+        />
       </div>
     );
-  }
+  }, [activeTab, activeTemplate, projectId, refresh, selectTemplate, stats, templates, templatesLoading]);
 
   return (
-    <div className="space-y-4 p-4 lg:p-6" data-testid="qa-interface">
-      <div className="flex items-start gap-3">
-        <ShieldCheck className="mt-1 h-5 w-5 text-amber-600" />
-        <div>
-          <h2 className="text-lg font-semibold">
-            {t("qa", "interfaceTitle")}
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            {t("qa", "interfaceDesc")}
-          </p>
-        </div>
-      </div>
-
-      {templatesLoading || articlesLoading ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {[0, 1, 2].map((i) => (
-            <Skeleton key={i} className="h-32 w-full" />
-          ))}
-        </div>
-      ) : qaTemplates.length === 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              {t("qa", "noTemplatesTitle")}
-            </CardTitle>
-            <CardDescription>{t("qa", "noTemplatesDesc")}</CardDescription>
-          </CardHeader>
-        </Card>
-      ) : articles.length === 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              {t("qa", "noArticlesTitle")}
-            </CardTitle>
-            <CardDescription>{t("qa", "noArticlesDesc")}</CardDescription>
-          </CardHeader>
-        </Card>
-      ) : (
-        <div className="space-y-3" data-testid="qa-articles-list">
-          {articles.map((article) => (
-            <Card
-              key={article.id}
-              className="border-border/40"
-              data-testid={`qa-article-${article.id}`}
-            >
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium leading-snug">
-                  {article.title ?? t("qa", "untitledArticle")}
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  {article.authors?.length
-                    ? article.authors.slice(0, 3).join(", ") +
-                      (article.authors.length > 3 ? " et al." : "")
-                    : t("qa", "noAuthors")}
-                  {article.publication_year ? ` · ${article.publication_year}` : ""}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-wrap gap-2 pt-0">
-                {qaTemplates.map((tpl) => (
-                  <Button
-                    key={tpl.id}
-                    variant="outline"
-                    size="sm"
-                    className="h-8 gap-1 text-xs"
-                    onClick={() => open(article.id, tpl.id)}
-                    data-testid={`qa-open-${article.id}-${tpl.name}`}
-                  >
-                    <ShieldCheck className="h-3.5 w-3.5 text-amber-600" />
-                    {tpl.name}
-                    <span className="ml-1 text-[10px] text-muted-foreground">
-                      v{tpl.version}
-                    </span>
-                  </Button>
-                ))}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+    <div className="space-y-4 p-4 lg:p-6" data-testid="hitl-quality_assessment-interface">
+      {tabContent}
     </div>
   );
 }

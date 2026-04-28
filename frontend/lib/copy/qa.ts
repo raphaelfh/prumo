@@ -19,4 +19,31 @@ export const qa = {
   loadArticlesError: 'Failed to load articles for the quality-assessment view.',
   untitledArticle: 'Untitled article',
   noAuthors: 'Authors not provided',
+
+  // Tabs
+  tabAssessment: 'Assessment',
+  tabDashboard: 'Dashboard',
+  tabConfiguration: 'Configuration',
+
+  // Tab descriptions
+  assessmentDesc: 'Run risk-of-bias assessments article by article',
+  dashboardDesc: 'Project-level quality-assessment progress',
+  configurationDesc: 'Choose which quality-assessment tools the project runs',
+
+  // Configuration tab
+  configHeader: 'Quality-assessment tools',
+  configCountFormat: '{{enabled}}/{{total}} enabled',
+  configEmptyGlobals: 'No quality-assessment templates available. Seed PROBAST + QUADAS-2 first.',
+  configToggleEnable: 'Enable',
+  configToggleDisable: 'Disable',
+  configToggleEnabling: 'Enabling…',
+  configToggleDisabling: 'Disabling…',
+
+  // Active template bar
+  activeTemplateLabel: 'Active tool:',
+  activeTemplateNone: 'No tool enabled — open Configuration to enable PROBAST or QUADAS-2.',
+
+  // Empty article-table state
+  noArticlesForListTitle: 'No articles to assess',
+  noArticlesForListDesc: 'Once articles are added to the project they appear here.',
 };
