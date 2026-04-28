@@ -1,25 +1,30 @@
 import {pdfjs} from 'react-pdf';
+import {PDF_WORKER_SRC} from '@/lib/pdf-worker';
 
-// Configure PDF.js worker using the version bundled with react-pdf
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+// Configure PDF.js worker — served locally by Vite (was unpkg CDN previously).
+pdfjs.GlobalWorkerOptions.workerSrc = PDF_WORKER_SRC;
 
 export const PDF_OPTIONS = {
-  cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/cmaps/`,
-  cMapPacked: true,
-  standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/standard_fonts/`,
-    // Security hardening for untrusted PDFs.
-    // Keep scripting/eval disabled to reduce attack surface from malicious documents.
-    isEvalSupported: false,
-    enableScripting: false,
-  // Performance optimizations
-  enableXfa: false, // Disable XFA forms for better performance
-  disableAutoFetch: false, // Keep auto-fetch for better UX
-  disableStream: false, // Keep streaming for large files
-  disableRange: false, // Keep range requests for partial loading
+  // cMaps and standard fonts: PDF.js v5 falls back to defaults when these are
+  // unset. The research-paper PDFs we ingest are Latin-script with standard
+  // fonts; defaults are adequate. If non-Latin (CJK, Arabic) PDFs surface
+  // missing-glyph artifacts, follow up with local cMap/font serving.
+
+  // Security hardening for untrusted PDFs.
+  // Keeps scripting/eval disabled to reduce attack surface.
+  isEvalSupported: false,
+  enableScripting: false,
+
+  // Performance
+  enableXfa: false,
+  disableAutoFetch: false,
+  disableStream: false,
+  disableRange: false,
+
   // Memory management
-  maxImageSize: 16777216, // 16MB max image size
-  cacheSize: 100, // Cache up to 100 pages
-  useOnlyCssZoom: true, // Use CSS zoom instead of canvas scaling when possible
+  maxImageSize: 16777216,
+  cacheSize: 100,
+  useOnlyCssZoom: true,
 };
 
 // Performance settings for large PDFs
