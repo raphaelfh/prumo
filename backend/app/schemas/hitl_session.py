@@ -1,4 +1,4 @@
-"""Schemas for the unified HITL session endpoint."""
+"""Schemas for the HITL session and project-template management endpoints."""
 
 from typing import Literal
 from uuid import UUID
@@ -25,3 +25,25 @@ class OpenHITLSessionResponse(BaseModel):
     kind: Literal["extraction", "quality_assessment"]
     project_template_id: UUID
     instances_by_entity_type: dict[str, str]
+
+
+class CloneTemplateRequest(BaseModel):
+    global_template_id: UUID
+    kind: Literal["extraction", "quality_assessment"]
+
+
+class CloneTemplateResponse(BaseModel):
+    project_template_id: UUID
+    version_id: UUID
+    entity_type_count: int
+    field_count: int
+    created: bool
+
+
+class UpdateTemplateActiveRequest(BaseModel):
+    is_active: bool
+
+
+class UpdateTemplateActiveResponse(BaseModel):
+    project_template_id: UUID
+    is_active: bool

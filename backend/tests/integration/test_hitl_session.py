@@ -378,3 +378,143 @@ async def test_extraction_session_opens_run_for_existing_project_template(
     assert body["kind"] == "extraction"
     assert body["project_template_id"] == str(template_id)
     assert UUID(body["run_id"])
+
+
+# =================== Project-template management ===================
+
+
+@pytest.mark.asyncio
+async def test_clone_template_endpoint_is_idempotent(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    article = await _pick_article(db_session)
+    global_template_id = await _pick_qa_global_template(db_session)
+    if article is None or global_template_id is None:
+        pytest.skip("Need a project + a seeded QA template")
+    _, project_id = article
+
+    url = f"/api/v1/projects/{project_id}/templates/clone"
+    payload = {"global_template_id": str(global_template_id), "kind": "quality_assessment"}
+
+    first = await db_client.post(url, json=payload)
+    assert first.status_code == 201, first.text
+    first_body = first.json()["data"]
+    assert UUID(first_body["project_template_id"])
+    assert UUID(first_body["version_id"])
+
+    second = await db_client.post(url, json=payload)
+    assert second.status_code == 201
+    second_body = second.json()["data"]
+    assert second_body["project_template_id"] == first_body["project_template_id"]
+    assert second_body["created"] is False
+
+
+@pytest.mark.asyncio
+async def test_clone_template_endpoint_rejects_kind_mismatch(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    article = await _pick_article(db_session)
+    qa_global = await _pick_qa_global_template(db_session)
+    if article is None or qa_global is None:
+        pytest.skip("Need a project + a seeded QA global template")
+    _, project_id = article
+
+    res = await db_client.post(
+        f"/api/v1/projects/{project_id}/templates/clone",
+        json={"global_template_id": str(qa_global), "kind": "extraction"},
+    )
+    assert res.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_patch_template_active_toggles_qa_template(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    article = await _pick_article(db_session)
+    global_template_id = await _pick_qa_global_template(db_session)
+    if article is None or global_template_id is None:
+        pytest.skip("Need a project + a seeded QA template")
+    _, project_id = article
+
+    clone = await db_client.post(
+        f"/api/v1/projects/{project_id}/templates/clone",
+        json={"global_template_id": str(global_template_id), "kind": "quality_assessment"},
+    )
+    assert clone.status_code == 201
+    template_id = clone.json()["data"]["project_template_id"]
+
+    off = await db_client.patch(
+        f"/api/v1/projects/{project_id}/templates/{template_id}",
+        json={"is_active": False},
+    )
+    assert off.status_code == 200, off.text
+    assert off.json()["data"]["is_active"] is False
+
+    on = await db_client.patch(
+        f"/api/v1/projects/{project_id}/templates/{template_id}",
+        json={"is_active": True},
+    )
+    assert on.status_code == 200
+    assert on.json()["data"]["is_active"] is True
+
+
+@pytest.mark.asyncio
+async def test_patch_template_active_rejects_disabling_only_extraction_template(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    """Disabling the project's only active extraction template must 400 —
+    extraction's article-table view assumes a single active template."""
+    template_id = await _pick_extraction_project_template(db_session)
+    if template_id is None:
+        pytest.skip("Need an extraction project template")
+    project_id = (
+        await db_session.execute(
+            text("SELECT project_id FROM public.project_extraction_templates WHERE id = :tid"),
+            {"tid": str(template_id)},
+        )
+    ).scalar()
+
+    other_active = (
+        await db_session.execute(
+            text(
+                "SELECT COUNT(*) FROM public.project_extraction_templates "
+                "WHERE project_id = :pid AND kind = 'extraction' "
+                "AND is_active = true AND id <> :tid"
+            ),
+            {"pid": str(project_id), "tid": str(template_id)},
+        )
+    ).scalar()
+    if (other_active or 0) > 0:
+        pytest.skip("Project has more than one active extraction template; rule does not apply")
+
+    res = await db_client.patch(
+        f"/api/v1/projects/{project_id}/templates/{template_id}",
+        json={"is_active": False},
+    )
+    assert res.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_patch_template_active_returns_404_for_unknown_template(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    article = await _pick_article(db_session)
+    if article is None:
+        pytest.skip("Need a project")
+    _, project_id = article
+
+    res = await db_client.patch(
+        f"/api/v1/projects/{project_id}/templates/00000000-0000-0000-0000-000000000000",
+        json={"is_active": False},
+    )
+    assert res.status_code == 404

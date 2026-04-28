@@ -561,11 +561,15 @@ async def test_create_proposal_with_incoherent_coords_returns_422(
 
 
 @pytest.mark.asyncio
-async def test_create_proposal_human_without_user_id_returns_400(
+async def test_create_proposal_human_without_user_id_auto_fills_caller(
     db_client: AsyncClient,
     db_session: AsyncSession,
-    auth_as_profile: UUID,  # noqa: ARG001
+    auth_as_profile: UUID,
 ) -> None:
+    """A human proposal without ``source_user_id`` is not an error: the
+    endpoint defaults it to the authenticated caller so clients don't have
+    to thread it through. The CHECK constraint ``human_has_user`` then
+    trivially holds because the auto-filled value is non-null."""
     fx = await _resolve_fixtures(db_session)
     if fx is None:
         pytest.skip("Missing fixtures.")
@@ -587,10 +591,11 @@ async def test_create_proposal_human_without_user_id_returns_400(
             "field_id": str(field_id),
             "source": "human",
             "proposed_value": {"v": "x"},
-            # source_user_id intentionally omitted
+            # source_user_id intentionally omitted — endpoint auto-fills.
         },
     )
-    assert response.status_code == 400
+    assert response.status_code == 201, response.text
+    assert response.json()["data"]["source_user_id"] == str(auth_as_profile)
 
 
 # =================== POST /runs/{id}/decisions ===================

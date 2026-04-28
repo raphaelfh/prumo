@@ -163,10 +163,15 @@ async def create_proposal(
     body: CreateProposalRequest,
     request: Request,
     db: DbSession,
-    current_user_sub: UUID = Depends(get_current_user_sub),  # noqa: ARG001
+    current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[ProposalRecordResponse]:
     service = ExtractionProposalService(db)
     trace_id = _trace(request)
+    # source='human' requires a user attribution. Default to the
+    # authenticated caller so clients don't have to thread it through.
+    source_user_id = body.source_user_id
+    if body.source == "human" and source_user_id is None:
+        source_user_id = current_user_sub
     try:
         record = await service.record_proposal(
             run_id=run_id,
@@ -174,7 +179,7 @@ async def create_proposal(
             field_id=body.field_id,
             source=body.source,
             proposed_value=body.proposed_value,
-            source_user_id=body.source_user_id,
+            source_user_id=source_user_id,
             confidence_score=body.confidence_score,
             rationale=body.rationale,
         )

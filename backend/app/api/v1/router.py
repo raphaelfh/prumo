@@ -11,6 +11,7 @@ from app.api.v1.endpoints import (
     extraction_runs,
     hitl_sessions,
     model_extraction,
+    project_templates,
     section_extraction,
     user_api_keys,
     zotero_import,
@@ -59,4 +60,10 @@ api_router.include_router(
     hitl_sessions.router,
     prefix="/hitl",
     tags=["hitl-sessions"],
+)
+
+api_router.include_router(
+    project_templates.router,
+    prefix="/projects",
+    tags=["project-templates"],
 )
