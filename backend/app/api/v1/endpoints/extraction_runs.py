@@ -1,4 +1,11 @@
-"""Endpoints for the unified extraction HITL flow at /v1/runs/..."""
+"""Endpoints for the unified extraction HITL flow at /v1/runs/...
+
+Every error path here logs once with a structured event name + run_id +
+trace_id context so SRE can grep for the failure mode without parsing
+HTTP response bodies. The success paths log at info level for the
+state-transition events (run created, stage advanced) since those are
+the ones that drive consensus + publish later.
+"""
 
 from uuid import UUID
 
@@ -7,6 +14,7 @@ from sqlalchemy import select
 
 from app.api.deps.security import get_current_user_sub
 from app.core.deps import DbSession
+from app.core.logging import get_logger
 from app.models.extraction import ExtractionRun
 from app.models.extraction_workflow import ExtractionPublishedState
 from app.repositories.extraction_consensus_decision_repository import (
@@ -54,7 +62,13 @@ from app.services.run_lifecycle_service import (
     TemplateVersionNotFoundError,
 )
 
+logger = get_logger(__name__)
+
 router = APIRouter()
+
+
+def _trace(request: Request) -> str | None:
+    return getattr(request.state, "trace_id", None)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -65,6 +79,7 @@ async def create_run(
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[RunSummaryResponse]:
     service = RunLifecycleService(db)
+    trace_id = _trace(request)
     try:
         run = await service.create_run(
             project_id=body.project_id,
@@ -74,11 +89,27 @@ async def create_run(
             parameters=body.parameters,
         )
     except (TemplateNotFoundError, TemplateVersionNotFoundError) as e:
+        logger.warning(
+            "hitl_run_create_template_missing",
+            trace_id=trace_id,
+            project_template_id=str(body.project_template_id),
+            article_id=str(body.article_id),
+            error=str(e),
+        )
         raise HTTPException(status_code=404, detail=str(e)) from e
     await db.commit()
+    logger.info(
+        "hitl_run_created",
+        trace_id=trace_id,
+        run_id=str(run.id),
+        kind=run.kind,
+        stage=run.stage,
+        project_template_id=str(body.project_template_id),
+        article_id=str(body.article_id),
+    )
     return ApiResponse.success(
         RunSummaryResponse.model_validate(run),
-        trace_id=getattr(request.state, "trace_id", None),
+        trace_id=trace_id,
     )
 
 
@@ -126,6 +157,7 @@ async def create_proposal(
     current_user_sub: UUID = Depends(get_current_user_sub),  # noqa: ARG001
 ) -> ApiResponse[ProposalRecordResponse]:
     service = ExtractionProposalService(db)
+    trace_id = _trace(request)
     try:
         record = await service.record_proposal(
             run_id=run_id,
@@ -138,13 +170,30 @@ async def create_proposal(
             rationale=body.rationale,
         )
     except CoordinateMismatchError as e:
+        logger.warning(
+            "hitl_proposal_coord_mismatch",
+            trace_id=trace_id,
+            run_id=str(run_id),
+            instance_id=str(body.instance_id),
+            field_id=str(body.field_id),
+            error=str(e),
+        )
         raise HTTPException(status_code=422, detail=str(e)) from e
     except InvalidProposalError as e:
+        logger.warning(
+            "hitl_proposal_rejected",
+            trace_id=trace_id,
+            run_id=str(run_id),
+            instance_id=str(body.instance_id),
+            field_id=str(body.field_id),
+            source=str(body.source),
+            error=str(e),
+        )
         raise HTTPException(status_code=400, detail=str(e)) from e
     await db.commit()
     return ApiResponse.success(
         ProposalRecordResponse.model_validate(record),
-        trace_id=getattr(request.state, "trace_id", None),
+        trace_id=trace_id,
     )
 
 
@@ -157,6 +206,7 @@ async def create_decision(
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[ReviewerDecisionResponse]:
     service = ExtractionReviewService(db)
+    trace_id = _trace(request)
     try:
         record = await service.record_decision(
             run_id=run_id,
@@ -169,13 +219,30 @@ async def create_decision(
             rationale=body.rationale,
         )
     except CoordinateMismatchError as e:
+        logger.warning(
+            "hitl_decision_coord_mismatch",
+            trace_id=trace_id,
+            run_id=str(run_id),
+            instance_id=str(body.instance_id),
+            field_id=str(body.field_id),
+            error=str(e),
+        )
         raise HTTPException(status_code=422, detail=str(e)) from e
     except InvalidDecisionError as e:
+        logger.warning(
+            "hitl_decision_rejected",
+            trace_id=trace_id,
+            run_id=str(run_id),
+            decision=str(body.decision),
+            instance_id=str(body.instance_id),
+            field_id=str(body.field_id),
+            error=str(e),
+        )
         raise HTTPException(status_code=400, detail=str(e)) from e
     await db.commit()
     return ApiResponse.success(
         ReviewerDecisionResponse.model_validate(record),
-        trace_id=getattr(request.state, "trace_id", None),
+        trace_id=trace_id,
     )
 
 
@@ -188,6 +255,7 @@ async def create_consensus(
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[ConsensusResultResponse]:
     service = ExtractionConsensusService(db)
+    trace_id = _trace(request)
     try:
         consensus, published = await service.record_consensus(
             run_id=run_id,
@@ -200,18 +268,50 @@ async def create_consensus(
             rationale=body.rationale,
         )
     except CoordinateMismatchError as e:
+        logger.warning(
+            "hitl_consensus_coord_mismatch",
+            trace_id=trace_id,
+            run_id=str(run_id),
+            instance_id=str(body.instance_id),
+            field_id=str(body.field_id),
+            error=str(e),
+        )
         raise HTTPException(status_code=422, detail=str(e)) from e
     except InvalidConsensusError as e:
+        logger.warning(
+            "hitl_consensus_rejected",
+            trace_id=trace_id,
+            run_id=str(run_id),
+            mode=str(body.mode),
+            error=str(e),
+        )
         raise HTTPException(status_code=400, detail=str(e)) from e
     except OptimisticConcurrencyError as e:
+        logger.warning(
+            "hitl_consensus_optimistic_conflict",
+            trace_id=trace_id,
+            run_id=str(run_id),
+            instance_id=str(body.instance_id),
+            field_id=str(body.field_id),
+            error=str(e),
+        )
         raise HTTPException(status_code=409, detail=str(e)) from e
     await db.commit()
+    logger.info(
+        "hitl_consensus_published",
+        trace_id=trace_id,
+        run_id=str(run_id),
+        instance_id=str(body.instance_id),
+        field_id=str(body.field_id),
+        mode=str(body.mode),
+        published_version=published.version,
+    )
     return ApiResponse.success(
         ConsensusResultResponse(
             consensus=ConsensusDecisionResponse.model_validate(consensus),
             published=PublishedStateResponse.model_validate(published),
         ),
-        trace_id=getattr(request.state, "trace_id", None),
+        trace_id=trace_id,
     )
 
 
@@ -224,6 +324,7 @@ async def advance_run(
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[RunSummaryResponse]:
     service = RunLifecycleService(db)
+    trace_id = _trace(request)
     try:
         run = await service.advance_stage(
             run_id=run_id,
@@ -231,10 +332,30 @@ async def advance_run(
             user_id=current_user_sub,
         )
     except InvalidStageTransitionError as e:
+        logger.warning(
+            "hitl_stage_transition_rejected",
+            trace_id=trace_id,
+            run_id=str(run_id),
+            target_stage=str(body.target_stage),
+            error=str(e),
+        )
         raise HTTPException(status_code=400, detail=str(e)) from e
     except ValueError as e:
+        logger.warning(
+            "hitl_stage_transition_run_not_found",
+            trace_id=trace_id,
+            run_id=str(run_id),
+            error=str(e),
+        )
         raise HTTPException(status_code=404, detail=str(e)) from e
     await db.commit()
+    logger.info(
+        "hitl_stage_advanced",
+        trace_id=trace_id,
+        run_id=str(run.id),
+        new_stage=run.stage,
+        new_status=run.status,
+    )
     return ApiResponse.success(
         RunSummaryResponse.model_validate(run),
         trace_id=getattr(request.state, "trace_id", None),

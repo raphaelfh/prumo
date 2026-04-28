@@ -4,6 +4,7 @@
  */
 
 import {useEffect, useState} from 'react';
+import {useNavigate} from 'react-router-dom';
 import {Button} from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -11,13 +12,17 @@ import {
     DropdownMenuItem,
     DropdownMenuLabel,
     DropdownMenuSeparator,
+    DropdownMenuSub,
+    DropdownMenuSubContent,
+    DropdownMenuSubTrigger,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,} from '@/components/ui/dialog';
 import {Tooltip, TooltipContent, TooltipTrigger,} from '@/components/ui/tooltip';
-import {Download, ExternalLink, HelpCircle, Keyboard, MoreHorizontal, Sparkles} from 'lucide-react';
+import {Download, ExternalLink, HelpCircle, Keyboard, MoreHorizontal, ShieldAlert, Sparkles} from 'lucide-react';
 import {ExtractionExport} from '@/components/extraction/ExtractionExport';
 import {useFullAIExtraction} from '@/hooks/extraction/useFullAIExtraction';
+import {useGlobalQATemplates} from '@/hooks/qa/useGlobalQATemplates';
 import type {ExtractionValueDisplay, ExtractionInstance, ProjectExtractionTemplate} from '@/types/extraction';
 import {t} from '@/lib/copy';
 
@@ -55,6 +60,9 @@ export function HeaderMoreMenu({
 }: HeaderMoreMenuProps) {
   const [exportOpen, setExportOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+
+  const navigate = useNavigate();
+  const { templates: qaTemplates, loading: qaTemplatesLoading } = useGlobalQATemplates();
 
     // Hook for full AI extraction
   const { extractFullAI, loading: extractingAI, progress: extractionProgress } = useFullAIExtraction({
@@ -143,13 +151,46 @@ export function HeaderMoreMenu({
               {t('extraction', 'moreActions')}
           </DropdownMenuLabel>
           {articleId && templateId && (
-            <DropdownMenuItem 
+            <DropdownMenuItem
               onClick={handleFullAIExtraction}
               disabled={extractingAI}
             >
               <Sparkles className="mr-2 h-4 w-4" />
                 {extractingAI ? t('extraction', 'moreExtractingAI') : t('extraction', 'moreExtractAI')}
             </DropdownMenuItem>
+          )}
+          {articleId && qaTemplates.length > 0 && (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger data-testid="header-qa-trigger">
+                <ShieldAlert className="mr-2 h-4 w-4" />
+                {t('extraction', 'moreOpenQA')}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-56">
+                {qaTemplatesLoading ? (
+                  <DropdownMenuItem disabled>
+                    {t('common', 'loading')}
+                  </DropdownMenuItem>
+                ) : (
+                  qaTemplates.map((tpl) => (
+                    <DropdownMenuItem
+                      key={tpl.id}
+                      onClick={() =>
+                        navigate(
+                          `/projects/${projectId}/articles/${articleId}/quality-assessment/${tpl.id}`,
+                        )
+                      }
+                      data-testid={`header-qa-template-${tpl.name}`}
+                    >
+                      <ShieldAlert className="mr-2 h-4 w-4 text-amber-600" />
+                      <span>{tpl.name}</span>
+                      <span className="ml-auto text-[10px] text-muted-foreground">
+                        v{tpl.version}
+                      </span>
+                    </DropdownMenuItem>
+                  ))
+                )}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
           )}
           <DropdownMenuItem onClick={handleExport}>
             <Download className="mr-2 h-4 w-4" />

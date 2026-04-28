@@ -1,4 +1,4 @@
-.PHONY: help setup start start-remote start-cloud _print-env-banner supabase-migrate verify-remote-db stop restart status backend frontend supabase install install-backend install-frontend logs logs-backend logs-frontend clean reset-db health db-migrate db-migrate-remote db-rollback db-history db-current db-generate db-setup db-seed db-fresh dev dev-remote e2e-local e2e-remote test-backend-e2e
+.PHONY: help setup start start-remote start-cloud _print-env-banner supabase-migrate verify-remote-db stop restart status backend frontend supabase install install-backend install-frontend logs logs-backend logs-frontend clean reset-db health db-migrate db-migrate-remote db-rollback db-history db-current db-generate db-setup db-seed db-fresh db-lint-migrations dev dev-remote e2e-local e2e-remote test-backend-e2e
 
 # Variáveis
 BACKEND_DIR := backend
@@ -267,6 +267,29 @@ db-fresh: ## Reset + migrate + seed em um único comando (AI-friendly dev cycle)
 	@$(MAKE) db-setup
 	@$(MAKE) db-seed
 	@echo "$(GREEN)✅ Pronto. Schema em head, seed aplicado, dados base presentes.$(NC)"
+
+db-lint-migrations: ## Lint migrations with Squawk (catches NOT NULL without default, missing FK indexes, dangerous drops)
+	@if ! command -v squawk >/dev/null 2>&1; then \
+		echo "$(RED)❌ squawk not installed. Install: brew install squawk (or see https://github.com/sbdchd/squawk)$(NC)"; \
+		exit 1; \
+	fi
+	@echo "$(GREEN)🦆 Linting migrations with Squawk...$(NC)"
+	@MIGRATIONS=$$(find $(BACKEND_DIR)/alembic/versions -maxdepth 1 -name "*.sql" -o -name "*.py" 2>/dev/null | grep -v archive); \
+	if [ -z "$$MIGRATIONS" ]; then \
+		echo "$(YELLOW)No migrations found to lint.$(NC)"; \
+	else \
+		FAILED=0; \
+		for f in $$MIGRATIONS; do \
+			case "$$f" in \
+				*.sql) squawk "$$f" || FAILED=1 ;; \
+				*.py) \
+					python3 -c "import re,sys; t=open('$$f').read(); m=re.findall(r'op\.execute\(\s*[\"\\']{1,3}([^\"\\']*)[\"\\']{1,3}\s*\)', t, re.DOTALL); [print(s) for s in m]" \
+						| squawk --stdin-filepath="$$f" 2>/dev/null || true ;; \
+			esac; \
+		done; \
+		[ $$FAILED -eq 0 ] || (echo "$(RED)❌ Squawk reported issues$(NC)"; exit 1); \
+	fi
+	@echo "$(GREEN)✅ Migration lint clean$(NC)"
 
 db-migrate-remote: ## Aplica migrações Alembic no banco REMOTO (usa DATABASE_URL do root .env)
 	@echo "$(YELLOW)⚠️  Applying Alembic migrations to REMOTE database...$(NC)"

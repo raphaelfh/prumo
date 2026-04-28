@@ -299,6 +299,7 @@ export const extraction = {
     moreActions: 'Actions',
     moreExtractAI: 'Extract with AI',
     moreExtractingAI: 'Extracting with AI…',
+    moreOpenQA: 'Open Quality Assessment',
     moreExportData: 'Export Data',
     moreKeyboardShortcuts: 'Keyboard Shortcuts',
     moreHelp: 'Help',
