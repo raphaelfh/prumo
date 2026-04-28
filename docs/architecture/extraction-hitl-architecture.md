@@ -154,6 +154,24 @@ advances `proposal → review → consensus`, posts a `manual_override`
 consensus per filled field (which materializes PublishedState rows), and
 advances to `finalized`.
 
+### QA / Data-extraction code reuse boundary
+
+Both flows share the **field-level primitives** but diverge above that:
+
+| Layer | Shared? | Where |
+|---|---|---|
+| `FieldInput` (typed input per field) | ✅ Yes | `frontend/components/extraction/FieldInput.tsx`. Consumed by both `SectionAccordion` (extraction) and `QASectionAccordion` (QA). |
+| `AssessmentShell` (PDF panel + form panel + header) | ✅ Yes (QA today; extraction page predates it) | `frontend/components/assessment/AssessmentShell.tsx`. |
+| `ExtractionValueService` (find run, load/save values) | ✅ Yes | `frontend/services/extractionValueService.ts`. Both flows use it for read/write. |
+| `useGlobalQATemplates` / `useExtractionTemplates` | ❌ Distinct | QA needs `kind='quality_assessment'` filter; extraction operates on project clones. |
+| Form panel structure | ❌ Distinct | Extraction supports multi-instance (`cardinality='many'`) + AI suggestions panel; QA is 1:1 per domain. Trying to unify these creates over-engineering. |
+| Header actions | ❌ Distinct | Extraction has AI extraction triggers, view-mode toggle, full export menu. QA has Publish + finalized badge. |
+
+**Rule of thumb:** if you're adding behaviour that touches a *single field*
+(rendering, validation, evidence), put it in the shared primitive
+(`FieldInput` or the value service). If it touches *flow* (multi-instance,
+publish, AI), keep it in the page-specific component.
+
 ## 6. Glossary
 
 ### Modeling primitives

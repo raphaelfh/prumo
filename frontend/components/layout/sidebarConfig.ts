@@ -9,6 +9,7 @@ import {
     FileText,
     LayoutDashboard,
     ListChecks,
+    ShieldCheck,
     Users,
 } from 'lucide-react';
 import {t} from '@/lib/copy';
@@ -19,6 +20,7 @@ export type SidebarTabId =
     | 'articles'
     | 'screening'
     | 'extraction'
+    | 'quality'
     | 'prisma';
 
 export interface SidebarNavItem {
@@ -50,6 +52,7 @@ export const sidebarSections: SidebarSection[] = [
             {id: 'articles', label: t('layout', 'navArticles'), icon: FileText, shortcut: 'A'},
             {id: 'screening', label: t('layout', 'navScreening'), icon: ListChecks, shortcut: 'T', comingSoon: true},
             {id: 'extraction', label: t('layout', 'navDataExtraction'), icon: ClipboardCheck, shortcut: 'E'},
+            {id: 'quality', label: t('layout', 'navQualityAssessment'), icon: ShieldCheck, shortcut: 'Q'},
             {id: 'prisma', label: t('layout', 'navPrismaReport'), icon: FileBarChart, shortcut: 'R', comingSoon: true},
         ],
     },
@@ -65,6 +68,7 @@ export const tabIdToLabel: Record<string, string> = {
     articles: t('layout', 'navArticles'),
     screening: t('layout', 'navScreening'),
     extraction: t('layout', 'navDataExtraction'),
+    quality: t('layout', 'navQualityAssessment'),
     prisma: t('layout', 'navPrismaReport'),
     settings: t('layout', 'navSettings'),
 };

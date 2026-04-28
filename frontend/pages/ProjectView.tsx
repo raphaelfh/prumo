@@ -16,6 +16,7 @@ import {ArticleForm} from "@/components/articles/ArticleForm";
 import {Sheet, SheetContent} from "@/components/ui/sheet";
 import {ProjectSettings} from "@/components/project/ProjectSettings";
 import {ExtractionInterface} from "@/components/extraction/ExtractionInterface";
+import {QualityAssessmentInterface} from "@/components/quality/QualityAssessmentInterface";
 import {ZoteroImportDialog} from "@/components/articles/ZoteroImportDialog";
 import {RISImportDialog} from "@/components/articles/RISImportDialog";
 import {useProject} from "@/contexts/ProjectContext";
@@ -79,6 +80,7 @@ type ProjectArticle = Article;
 
 const TAB_DESCRIPTIONS: Record<string, string> = {
     extraction: 'Extract structured data using standard templates',
+    quality: 'Assess article quality with PROBAST, QUADAS-2, and other risk-of-bias tools',
 };
 
 export default function ProjectView() {
@@ -275,6 +277,9 @@ export default function ProjectView() {
 
       case 'extraction':
         return <ExtractionInterface projectId={projectId || ''} />;
+
+      case 'quality':
+        return <QualityAssessmentInterface projectId={projectId || ''} />;
 
       case 'settings':
         return <ProjectSettings projectId={projectId || ''} />;

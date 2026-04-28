@@ -22,6 +22,7 @@ export const layout = {
     navArticles: 'Articles',
     navScreening: 'Screening',
     navDataExtraction: 'Data extraction',
+    navQualityAssessment: 'Quality assessment',
     navPrismaReport: 'PRISMA report',
     navSettings: 'Settings',
 
