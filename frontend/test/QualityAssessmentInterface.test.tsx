@@ -45,7 +45,7 @@ vi.mock('@/integrations/supabase/client', () => {
               id: 'article-1',
               title: 'A predictive model for X',
               authors: ['Doe', 'Roe'],
-              year: 2024,
+              publication_year: 2024,
             },
           ]);
         }

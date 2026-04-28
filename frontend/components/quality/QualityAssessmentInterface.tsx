@@ -34,7 +34,7 @@ interface ArticleRow {
   id: string;
   title: string | null;
   authors: string[] | null;
-  year: number | null;
+  publication_year: number | null;
 }
 
 interface QualityAssessmentInterfaceProps {
@@ -58,7 +58,7 @@ export function QualityAssessmentInterface({
       setArticlesLoading(true);
       const { data, error } = await supabase
         .from("articles")
-        .select("id, title, authors, year")
+        .select("id, title, authors, publication_year")
         .eq("project_id", projectId)
         .order("created_at", { ascending: false });
       if (cancelled) return;
@@ -147,7 +147,7 @@ export function QualityAssessmentInterface({
                     ? article.authors.slice(0, 3).join(", ") +
                       (article.authors.length > 3 ? " et al." : "")
                     : t("qa", "noAuthors")}
-                  {article.year ? ` · ${article.year}` : ""}
+                  {article.publication_year ? ` · ${article.publication_year}` : ""}
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-wrap gap-2 pt-0">
