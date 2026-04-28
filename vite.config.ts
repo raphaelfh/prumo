@@ -15,7 +15,7 @@ export default defineConfig(({mode: _mode}) => ({
                 manualChunks(id) {
                     if (!id.includes("node_modules")) return undefined;
 
-                    if (id.includes("react-pdf") || id.includes("pdfjs-dist") || id.includes("@react-pdf-viewer")) {
+                    if (id.includes("react-pdf") || id.includes("pdfjs-dist")) {
                         return "pdf-vendor";
                     }
 
