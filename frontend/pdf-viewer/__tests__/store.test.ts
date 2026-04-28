@@ -136,4 +136,32 @@ describe('createViewerStore', () => {
     expect(store.getState().scale).toBe(1.5);
     expect(store.getState().currentPage).toBe(7);
   });
+
+  it('removeCitation of a non-existent id is a no-op', () => {
+    const store = createViewerStore();
+    expect(() => store.getState().actions.removeCitation('does-not-exist')).not.toThrow();
+    expect(store.getState().citations.size).toBe(0);
+  });
+
+  it('setActiveCitation accepts an id not present in the citations map', () => {
+    const store = createViewerStore();
+    store.getState().actions.setActiveCitation('not-in-map');
+    expect(store.getState().activeCitationId).toBe('not-in-map');
+  });
+
+  it('reset is idempotent — calling it twice does not throw', () => {
+    const store = createViewerStore();
+    store.getState().actions.reset();
+    expect(() => store.getState().actions.reset()).not.toThrow();
+    expect(store.getState().loadStatus).toBe('idle');
+  });
+
+  it('reset restores initial overrides supplied at factory time', () => {
+    const store = createViewerStore({scale: 1.5, currentPage: 7});
+    store.getState().actions.setScale(2);
+    store.getState().actions.goToPage(3);
+    store.getState().actions.reset();
+    expect(store.getState().scale).toBe(1.5);
+    expect(store.getState().currentPage).toBe(7);
+  });
 });

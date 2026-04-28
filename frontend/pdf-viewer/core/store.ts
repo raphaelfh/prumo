@@ -31,22 +31,31 @@ export function createViewerStore(
   initial?: Partial<ViewerData>,
 ): StoreApi<ViewerState> {
   return createStore<ViewerState>((set, get) => {
+    // Captured once so reset() restores caller-supplied overrides
+    // (not just module defaults) and uses a fresh citations Map
+    // to avoid sharing references across stores.
+    const buildResetState = (): ViewerData => ({
+      ...initialData,
+      ...initial,
+      citations: new Map<CitationId, Citation>(),
+    });
+
     const actions: ViewerActions = {
       setSource(source: PDFSource | null) {
         set({source});
       },
 
-      setDocument(document: PDFDocumentHandle | null) {
+      setDocument(doc: PDFDocumentHandle | null) {
         set({
-          document,
-          numPages: document?.numPages ?? 0,
+          document: doc,
+          numPages: doc?.numPages ?? 0,
         });
       },
 
-      setLoadStatus(status: LoadStatus, error: Error | null = null) {
+      setLoadStatus(status: LoadStatus, error?: Error | null) {
         set({
           loadStatus: status,
-          error: status === 'error' ? error : null,
+          error: status === 'error' ? (error ?? null) : null,
         });
       },
 
@@ -92,7 +101,7 @@ export function createViewerStore(
       reset() {
         const {document} = get();
         document?.destroy();
-        set({...initialData});
+        set(buildResetState());
       },
     };
 
