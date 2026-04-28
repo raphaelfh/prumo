@@ -75,23 +75,44 @@ test.describe("HITL AI proposal pipeline", () => {
     const token = await resolveAuthToken(page);
     const traceId = createTraceId("e2e-hitl-ai-proposal");
 
-    // Resolve a (instance, field) coordinate within the template.
+    // Ensure instances exist by opening a HITL session (idempotent).
+    await request.post(`${env.apiUrl}/api/v1/hitl/sessions`, {
+      headers: authHeaders(token, traceId),
+      data: {
+        kind: "extraction",
+        project_id: env.projectId,
+        article_id: env.articleId,
+        project_template_id: env.templateId,
+      },
+      timeout: 30000,
+    });
+
+    // Resolve a (instance, field) coordinate within the template — iterate
+    // until we find an entity_type that actually has fields, since the
+    // shared template may also host transient entity_types from other tests.
     const instances = await adminSelect<{
       id: string;
       entity_type_id: string;
     }>(
       "extraction_instances",
-      `select=id,entity_type_id&template_id=eq.${env.templateId}&article_id=eq.${env.articleId}&limit=1`,
+      `select=id,entity_type_id&template_id=eq.${env.templateId}&article_id=eq.${env.articleId}&limit=50`,
     );
     test.skip(instances.length === 0, "No extraction_instances seeded for this template+article");
-    const instance = instances[0];
 
-    const fields = await adminSelect<{ id: string; name: string }>(
-      "extraction_fields",
-      `select=id,name&entity_type_id=eq.${instance.entity_type_id}&limit=1`,
-    );
-    test.skip(fields.length === 0, "No fields under the resolved entity_type");
-    const field = fields[0];
+    let instance: { id: string; entity_type_id: string } | null = null;
+    let field: { id: string; name: string } | null = null;
+    for (const inst of instances) {
+      const fs = await adminSelect<{ id: string; name: string }>(
+        "extraction_fields",
+        `select=id,name&entity_type_id=eq.${inst.entity_type_id}&limit=1`,
+      );
+      if (fs.length > 0) {
+        instance = inst;
+        field = fs[0];
+        break;
+      }
+    }
+    test.skip(!instance || !field, "No (instance, field) coordinate available");
 
     // 1. Create a fresh run.
     const createRes = await request.post(`${env.apiUrl}/api/v1/runs`, {

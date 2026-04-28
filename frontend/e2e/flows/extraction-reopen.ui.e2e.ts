@@ -19,7 +19,7 @@ import { expect, test } from "@playwright/test";
 import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { loginViaUi, resolveAuthToken } from "../_fixtures/auth";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
-import { adminSelect } from "../_fixtures/supabase-admin";
+import { adminDelete, adminSelect } from "../_fixtures/supabase-admin";
 
 interface RunSummaryResponse {
   id: string;
@@ -45,23 +45,57 @@ test.describe("Extraction reopen UI flow", () => {
     const token = await resolveAuthToken(page);
     const traceId = createTraceId("e2e-extraction-reopen");
 
-    // Resolve a (instance, field) coordinate.
+    // Reset extraction-kind runs for the triple so the run we create below
+    // is the one the page latches onto. /hitl/sessions also seeds instances
+    // (idempotent), but afterward it leaves a pending run that would
+    // outrank the finalized one we're about to build — so we reset, then
+    // open the session purely for instance seeding.
+    await adminDelete(
+      "extraction_runs",
+      `project_id=eq.${env.projectId}&article_id=eq.${env.articleId}&kind=eq.extraction`,
+    );
+    await request.post(`${env.apiUrl}/api/v1/hitl/sessions`, {
+      headers: authHeaders(token, traceId),
+      data: {
+        kind: "extraction",
+        project_id: env.projectId,
+        article_id: env.articleId,
+        project_template_id: env.templateId,
+      },
+      timeout: 30000,
+    });
+    // Drop the pending run that hitl/sessions just created — the test
+    // intentionally builds its own run lifecycle below.
+    await adminDelete(
+      "extraction_runs",
+      `project_id=eq.${env.projectId}&article_id=eq.${env.articleId}&kind=eq.extraction`,
+    );
+
+    // Resolve a (instance, field) coordinate. Iterate until we find an
+    // entity_type that actually has fields.
     const instances = await adminSelect<{ id: string; entity_type_id: string }>(
       "extraction_instances",
-      `select=id,entity_type_id&template_id=eq.${env.templateId}&article_id=eq.${env.articleId}&limit=1`,
+      `select=id,entity_type_id&template_id=eq.${env.templateId}&article_id=eq.${env.articleId}&limit=50`,
     );
     test.skip(
       instances.length === 0,
       "No extraction_instances seeded — needs an article with extraction set up",
     );
-    const instance = instances[0];
 
-    const fields = await adminSelect<{ id: string; name: string }>(
-      "extraction_fields",
-      `select=id,name&entity_type_id=eq.${instance.entity_type_id}&limit=1`,
-    );
-    test.skip(fields.length === 0, "No fields under entity_type");
-    const field = fields[0];
+    let instance: { id: string; entity_type_id: string } | null = null;
+    let field: { id: string; name: string } | null = null;
+    for (const inst of instances) {
+      const fs = await adminSelect<{ id: string; name: string }>(
+        "extraction_fields",
+        `select=id,name&entity_type_id=eq.${inst.entity_type_id}&limit=1`,
+      );
+      if (fs.length > 0) {
+        instance = inst;
+        field = fs[0];
+        break;
+      }
+    }
+    test.skip(!instance || !field, "No (instance, field) coordinate available");
 
     // Build a run, drive it to FINALIZED so the page lands in the
     // "no active run, but a finalized one exists" state.
@@ -120,7 +154,11 @@ test.describe("Extraction reopen UI flow", () => {
     await expect(page.getByTestId("extraction-hitl-banner")).toBeVisible({
       timeout: 30000,
     });
-    await expect(page.getByTestId("extraction-finalized-badge")).toBeVisible();
+    // Banner can render the active-run progress first and only swap to the
+    // finalized state once useFinalizedExtractionRun resolves — give it room.
+    await expect(page.getByTestId("extraction-finalized-badge")).toBeVisible({
+      timeout: 20000,
+    });
     const reopenButton = page.getByTestId("extraction-reopen-button");
     await expect(reopenButton).toBeVisible();
     await expect(reopenButton).toBeEnabled();

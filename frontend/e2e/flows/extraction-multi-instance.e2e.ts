@@ -117,7 +117,7 @@ test.describe("Extraction multi-instance + all field types", () => {
         entity_type_id: manyEntity.id,
         label: `Model #${idx}`,
         sort_order: idx,
-        created_by: "b721f80d-fc3f-471f-923d-36f1208071c1",
+        created_by: process.env.E2E_USER_ID!,
         status: "pending",
         metadata: { variant: idx },
       }))
@@ -143,7 +143,7 @@ test.describe("Extraction multi-instance + all field types", () => {
         entity_type_id: oneEntity.id,
         label: "Single Study Summary",
         sort_order: 1,
-        created_by: "b721f80d-fc3f-471f-923d-36f1208071c1",
+        created_by: process.env.E2E_USER_ID!,
         status: "pending",
         metadata: {},
       },

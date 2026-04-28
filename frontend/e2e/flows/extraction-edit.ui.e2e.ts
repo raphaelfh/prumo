@@ -50,9 +50,25 @@ test.describe("Extraction edit + autosave persists through HITL stack", () => {
     const token = await resolveAuthToken(page);
     const traceId = createTraceId("e2e-extraction-edit");
 
-    // Resolve the active extraction Run via Supabase admin REST. There
-    // is no /api/v1/runs listing endpoint — the frontend resolves the
-    // active run via the same query (latest non-terminal stage).
+    // Ensure an active (non-terminal) extraction run exists by opening
+    // a HITL session — idempotent. If the existing active run is already
+    // past review (e.g. finalized by a prior consensus test), open a fresh
+    // session which creates a new pending run.
+    const sessionRes = await request.post(
+      `${env.apiUrl}/api/v1/hitl/sessions`,
+      {
+        headers: authHeaders(token, traceId),
+        data: {
+          kind: "extraction",
+          project_id: env.projectId,
+          article_id: env.articleId,
+          project_template_id: env.templateId,
+        },
+        timeout: 30000,
+      },
+    );
+    expect(sessionRes.ok()).toBeTruthy();
+
     const runsBefore = await adminSelect<{ id: string; stage: string }>(
       "extraction_runs",
       `select=id,stage&article_id=eq.${env.articleId}&template_id=eq.${env.templateId}` +
@@ -60,7 +76,7 @@ test.describe("Extraction edit + autosave persists through HITL stack", () => {
     );
     test.skip(
       runsBefore.length === 0,
-      "No active extraction run for this article+template — run AI extraction first",
+      "No active extraction run for this article+template",
     );
     const runIdBefore = runsBefore[0].id;
 

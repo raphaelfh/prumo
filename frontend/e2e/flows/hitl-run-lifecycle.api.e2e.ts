@@ -46,30 +46,56 @@ test.describe("HITL run lifecycle invariants", () => {
     const token = await resolveAuthToken(page);
     const traceId = createTraceId("e2e-run-lifecycle");
 
+    // Ensure instances exist under (template, article) by opening a HITL
+    // session — idempotent and creates one extraction_instance per
+    // entity_type when called for the first time on this triple.
+    await request.post(`${env.apiUrl}/api/v1/hitl/sessions`, {
+      headers: authHeaders(token, traceId),
+      data: {
+        kind: "extraction",
+        project_id: env.projectId,
+        article_id: env.articleId,
+        project_template_id: env.templateId,
+      },
+      timeout: 30000,
+    });
+
     // Pick TWO distinct (instance, field) coordinates so we can test
-    // coordinate-coherence failures.
+    // coordinate-coherence failures. The shared template can be polluted
+    // with transient entity_types from other tests that have no fields, so
+    // iterate to find an instance whose entity_type actually has at least
+    // one field.
     const instances = await adminSelect<{ id: string; entity_type_id: string }>(
       "extraction_instances",
-      `select=id,entity_type_id&template_id=eq.${env.templateId}&article_id=eq.${env.articleId}&limit=2`,
+      `select=id,entity_type_id&template_id=eq.${env.templateId}&article_id=eq.${env.articleId}&limit=50`,
     );
     test.skip(instances.length === 0, "No extraction_instances available");
 
-    const fieldsInstance0 = await adminSelect<{ id: string }>(
-      "extraction_fields",
-      `select=id&entity_type_id=eq.${instances[0].entity_type_id}&limit=1`,
+    let inst0: string | null = null;
+    let f0: string | null = null;
+    let inst0EntityTypeId: string | null = null;
+    for (const inst of instances) {
+      const fields = await adminSelect<{ id: string }>(
+        "extraction_fields",
+        `select=id&entity_type_id=eq.${inst.entity_type_id}&limit=1`,
+      );
+      if (fields.length > 0) {
+        inst0 = inst.id;
+        f0 = fields[0].id;
+        inst0EntityTypeId = inst.entity_type_id;
+        break;
+      }
+    }
+    test.skip(
+      !inst0 || !f0,
+      "No (instance, field) coordinate available under the template",
     );
-    test.skip(fieldsInstance0.length === 0, "No fields under first entity_type");
 
-    // For coordinate-mismatch, fetch any field NOT under instance0's
-    // entity_type. The `_otherEntityTypeId` reference is a hint to
-    // future maintainers about why we're querying with !=.
+    // For coordinate-mismatch, fetch any field NOT under inst0's entity_type.
     const fieldsOther = await adminSelect<{ id: string; entity_type_id: string }>(
       "extraction_fields",
-      `select=id,entity_type_id&entity_type_id=neq.${instances[0].entity_type_id}&limit=1`,
+      `select=id,entity_type_id&entity_type_id=neq.${inst0EntityTypeId}&limit=1`,
     );
-
-    const inst0 = instances[0].id;
-    const f0 = fieldsInstance0[0].id;
 
     // Create a fresh run.
     const createRes = await request.post(`${env.apiUrl}/api/v1/runs`, {

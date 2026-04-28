@@ -7,6 +7,9 @@ export type E2EEnvConfig = {
   rateLimitToken?: string;
   rateLimitEmail?: string;
   rateLimitPassword?: string;
+  reviewerCToken?: string;
+  reviewerCEmail?: string;
+  reviewerCPassword?: string;
   projectId?: string;
   articleId?: string;
   templateId?: string;
@@ -30,6 +33,9 @@ export function loadE2EEnv(): E2EEnvConfig {
     rateLimitToken: process.env.E2E_RATE_LIMIT_TOKEN,
     rateLimitEmail: process.env.E2E_RATE_LIMIT_EMAIL,
     rateLimitPassword: process.env.E2E_RATE_LIMIT_PASSWORD,
+    reviewerCToken: process.env.E2E_REVIEWER_C_TOKEN,
+    reviewerCEmail: process.env.E2E_REVIEWER_C_EMAIL,
+    reviewerCPassword: process.env.E2E_REVIEWER_C_PASSWORD,
     projectId: process.env.E2E_PROJECT_ID,
     articleId: process.env.E2E_ARTICLE_ID,
     templateId: process.env.E2E_TEMPLATE_ID,

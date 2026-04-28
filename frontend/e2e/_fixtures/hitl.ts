@@ -107,28 +107,57 @@ export async function prepareCleanQaRun(
   if (entries.length === 0) {
     throw new Error("QA session returned no instances_by_entity_type");
   }
-  const [firstEntityTypeId, firstInstanceId] = entries[0];
 
-  const fields = await adminSelect<{ id: string; name: string }>(
-    "extraction_fields",
-    `select=id,name&entity_type_id=eq.${firstEntityTypeId}&limit=1`,
-  );
-  if (fields.length === 0) {
+  // Iterate over entity_types until we find one with extraction_fields. The
+  // PROBAST clone can be polluted with transient test-only entity types
+  // (extraction-multi-instance test creates them under the same template),
+  // and Object.entries() ordering is not stable enough to rely on the first
+  // entry being the real PROBAST domain.
+  let firstEntityTypeId: string | null = null;
+  let firstInstanceId: string | null = null;
+  let firstField: { id: string; name: string } | null = null;
+  for (const [entityTypeId, instanceId] of entries) {
+    const fields = await adminSelect<{ id: string; name: string }>(
+      "extraction_fields",
+      `select=id,name&entity_type_id=eq.${entityTypeId}&limit=1`,
+    );
+    if (fields.length > 0) {
+      firstEntityTypeId = entityTypeId;
+      firstInstanceId = instanceId;
+      firstField = fields[0];
+      break;
+    }
+  }
+  if (!firstEntityTypeId || !firstInstanceId || !firstField) {
     throw new Error(
-      `QA template entity_type ${firstEntityTypeId} has no extraction_fields rows`,
+      "QA template has no entity_type with at least one extraction_field",
     );
   }
 
   if (targetStage === "review") {
-    const advanceRes = await opts.request.post(
-      `${opts.apiUrl}/api/v1/runs/${session.run_id}/advance`,
+    // /hitl/sessions can return a run already at `review` (the service
+    // opens at review for QA kind). Only advance when we still need to.
+    const detailRes = await opts.request.get(
+      `${opts.apiUrl}/api/v1/runs/${session.run_id}`,
       {
         headers: authHeaders(opts.token, opts.traceId),
-        data: { target_stage: "review" },
         timeout: 15000,
       },
     );
-    await expectOk(advanceRes, "advance proposal → review");
+    await expectOk(detailRes, "fetch run detail");
+    const detail = (await parseEnvelope<{ run: { stage: string } }>(detailRes))
+      .data;
+    if (detail.run.stage !== "review") {
+      const advanceRes = await opts.request.post(
+        `${opts.apiUrl}/api/v1/runs/${session.run_id}/advance`,
+        {
+          headers: authHeaders(opts.token, opts.traceId),
+          data: { target_stage: "review" },
+          timeout: 15000,
+        },
+      );
+      await expectOk(advanceRes, "advance proposal → review");
+    }
   }
 
   return {
@@ -137,6 +166,6 @@ export async function prepareCleanQaRun(
     instancesByEntityType: session.instances_by_entity_type,
     firstEntityTypeId,
     firstInstanceId,
-    firstField: fields[0],
+    firstField,
   };
 }
