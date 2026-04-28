@@ -56,6 +56,7 @@ from app.services.extraction_review_service import (
     InvalidDecisionError,
 )
 from app.services.run_lifecycle_service import (
+    CannotReopenRunError,
     InvalidStageTransitionError,
     RunLifecycleService,
     TemplateNotFoundError,
@@ -359,4 +360,52 @@ async def advance_run(
     return ApiResponse.success(
         RunSummaryResponse.model_validate(run),
         trace_id=getattr(request.state, "trace_id", None),
+    )
+
+
+@router.post("/{run_id}/reopen", status_code=status.HTTP_201_CREATED)
+async def reopen_run(
+    run_id: UUID,
+    request: Request,
+    db: DbSession,
+    current_user_sub: UUID = Depends(get_current_user_sub),
+) -> ApiResponse[RunSummaryResponse]:
+    """Create a new Run derived from a finalized one.
+
+    Implements the "Option C" reopen flow: previous PublishedState rows
+    are seeded into the new Run as ``source='system'`` proposals; the
+    new Run lands in stage=REVIEW so the form picks up where the old
+    one left off. Old Run is untouched (audit trail).
+    """
+    service = RunLifecycleService(db)
+    trace_id = _trace(request)
+    try:
+        new_run = await service.reopen_run(run_id=run_id, user_id=current_user_sub)
+    except CannotReopenRunError as e:
+        logger.warning(
+            "hitl_reopen_rejected",
+            trace_id=trace_id,
+            run_id=str(run_id),
+            error=str(e),
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except ValueError as e:
+        logger.warning(
+            "hitl_reopen_run_not_found",
+            trace_id=trace_id,
+            run_id=str(run_id),
+            error=str(e),
+        )
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    await db.commit()
+    logger.info(
+        "hitl_run_reopened",
+        trace_id=trace_id,
+        old_run_id=str(run_id),
+        new_run_id=str(new_run.id),
+        new_stage=new_run.stage,
+    )
+    return ApiResponse.success(
+        RunSummaryResponse.model_validate(new_run),
+        trace_id=trace_id,
     )

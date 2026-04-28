@@ -8,6 +8,7 @@ export { useCreateProposal } from "./useCreateProposal";
 export { useCreateDecision } from "./useCreateDecision";
 export { useCreateConsensus } from "./useCreateConsensus";
 export { useAdvanceRun } from "./useAdvanceRun";
+export { useReopenRun } from "./useReopenRun";
 
 export {
   runsKeys,

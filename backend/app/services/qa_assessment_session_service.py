@@ -137,8 +137,18 @@ class QaAssessmentSessionService:
         project_template_id: UUID,
         user_id: UUID,
     ) -> ExtractionRun:
-        # Reuse the most recent non-terminal run so reloading the page
-        # doesn't fork a new run for the same assessment in flight.
+        """Resolve the run to expose to the QA UI.
+
+        Lookup order:
+          1. Latest *non-terminal* run for (project, article, template) —
+             still editable, advance pending → proposal if needed.
+          2. Latest *finalized* run — read-only; the UI shows it with a
+             "Reopen for revision" button. We do NOT auto-create a new
+             run here because that would silently abandon the previously
+             published values. Reopen is an explicit action with its own
+             endpoint that seeds the new run from the published state.
+          3. No run at all → create a fresh one in PROPOSAL.
+        """
         active_stmt = (
             select(ExtractionRun)
             .where(
@@ -157,6 +167,20 @@ class QaAssessmentSessionService:
             .order_by(ExtractionRun.created_at.desc())
         )
         run = (await self.db.execute(active_stmt)).scalars().first()
+
+        if run is None:
+            finalized_stmt = (
+                select(ExtractionRun)
+                .where(
+                    ExtractionRun.project_id == project_id,
+                    ExtractionRun.article_id == article_id,
+                    ExtractionRun.template_id == project_template_id,
+                    ExtractionRun.stage == ExtractionRunStage.FINALIZED.value,
+                )
+                .order_by(ExtractionRun.created_at.desc())
+            )
+            run = (await self.db.execute(finalized_stmt)).scalars().first()
+
         if run is None:
             run = await self._lifecycle.create_run(
                 project_id=project_id,

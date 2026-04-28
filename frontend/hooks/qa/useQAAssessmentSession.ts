@@ -4,9 +4,13 @@
  *
  * Returns the Run id, the cloned project_template_id, and the
  * (entity_type_id → instance_id) map needed to record proposals.
+ *
+ * The returned `refetch` triggers a fresh open call. Used after
+ * `useReopenRun` so the page can pick up the newly-created
+ * non-terminal run without a hard navigate / reload.
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { apiClient } from "@/integrations/api";
 
@@ -27,6 +31,7 @@ interface UseQAAssessmentSessionResult {
   session: QAAssessmentSession | null;
   loading: boolean;
   error: string | null;
+  refetch: () => Promise<void>;
 }
 
 interface OpenResponse {
@@ -44,44 +49,46 @@ export function useQAAssessmentSession({
   const [session, setSession] = useState<QAAssessmentSession | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const cancelledRef = useRef(false);
+
+  const open = useCallback(async () => {
+    if (!enabled || !projectId || !articleId || !globalTemplateId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await apiClient<OpenResponse>("/api/v1/qa-assessments", {
+        method: "POST",
+        body: {
+          project_id: projectId,
+          article_id: articleId,
+          global_template_id: globalTemplateId,
+        },
+      });
+      if (!cancelledRef.current) {
+        setSession({
+          runId: data.run_id,
+          projectTemplateId: data.project_template_id,
+          instancesByEntityType: data.instances_by_entity_type,
+        });
+      }
+    } catch (err) {
+      if (!cancelledRef.current) {
+        setError(
+          err instanceof Error ? err.message : "Failed to open QA session",
+        );
+      }
+    } finally {
+      if (!cancelledRef.current) setLoading(false);
+    }
+  }, [enabled, projectId, articleId, globalTemplateId]);
 
   useEffect(() => {
-    if (!enabled || !projectId || !articleId || !globalTemplateId) return;
-
-    let cancelled = false;
-    void (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await apiClient<OpenResponse>("/api/v1/qa-assessments", {
-          method: "POST",
-          body: {
-            project_id: projectId,
-            article_id: articleId,
-            global_template_id: globalTemplateId,
-          },
-        });
-        if (!cancelled) {
-          setSession({
-            runId: data.run_id,
-            projectTemplateId: data.project_template_id,
-            instancesByEntityType: data.instances_by_entity_type,
-          });
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(
-            err instanceof Error ? err.message : "Failed to open QA session",
-          );
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
+    cancelledRef.current = false;
+    void open();
     return () => {
-      cancelled = true;
+      cancelledRef.current = true;
     };
-  }, [projectId, articleId, globalTemplateId, enabled]);
+  }, [open]);
 
-  return { session, loading, error };
+  return { session, loading, error, refetch: open };
 }

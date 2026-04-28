@@ -19,7 +19,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 
-import { ArrowLeft, CheckCircle2, Loader2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Loader2, RotateCcw } from "lucide-react";
 
 import { AssessmentShell } from "@/components/assessment/AssessmentShell";
 import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
@@ -32,6 +32,7 @@ import {
   useAdvanceRun,
   useCreateConsensus,
   useCreateProposal,
+  useReopenRun,
   useRun,
 } from "@/hooks/runs";
 
@@ -56,6 +57,7 @@ export default function QualityAssessmentFullScreen() {
     session,
     loading: sessionLoading,
     error: sessionError,
+    refetch: refetchSession,
   } = useQAAssessmentSession({
     projectId,
     articleId,
@@ -79,6 +81,7 @@ export default function QualityAssessmentFullScreen() {
   const proposalMutation = useCreateProposal(session?.runId ?? "");
   const advanceMutation = useAdvanceRun(session?.runId ?? "");
   const consensusMutation = useCreateConsensus(session?.runId ?? "");
+  const reopenMutation = useReopenRun();
 
   // Local input state for the form. Hydrated from the latest proposal per
   // (instance, field) once the Run detail loads.
@@ -132,8 +135,35 @@ export default function QualityAssessmentFullScreen() {
   );
 
   const finalized = runDetail?.run.stage === "finalized";
+  const parentRunId =
+    runDetail?.run.parameters &&
+    typeof runDetail.run.parameters === "object" &&
+    "parent_run_id" in runDetail.run.parameters
+      ? String(runDetail.run.parameters.parent_run_id)
+      : null;
 
   const [publishing, setPublishing] = useState(false);
+  const [reopening, setReopening] = useState(false);
+
+  const handleReopen = useCallback(async () => {
+    if (!session?.runId) return;
+    setReopening(true);
+    try {
+      await reopenMutation.mutateAsync(session.runId);
+      // The new run is now the latest non-terminal one for this triple,
+      // so refetching the session picks it up. Local form state is reset
+      // since the new run carries its own seeded proposals.
+      setValues({});
+      await refetchSession();
+      toast.success("Assessment reopened for revision.");
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to reopen assessment",
+      );
+    } finally {
+      setReopening(false);
+    }
+  }, [session?.runId, reopenMutation, refetchSession]);
   const handlePublish = useCallback(async () => {
     if (!session || !runDetail) return;
     setPublishing(true);
@@ -235,15 +265,40 @@ export default function QualityAssessmentFullScreen() {
             Published
           </Badge>
         ) : null}
+        {parentRunId ? (
+          <Badge
+            variant="outline"
+            className="border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-200"
+            data-testid="qa-revision-badge"
+            title={`Derived from run ${parentRunId}`}
+          >
+            <RotateCcw className="mr-1 h-3 w-3" />
+            Revision
+          </Badge>
+        ) : null}
       </div>
-      <Button
-        size="sm"
-        onClick={() => void handlePublish()}
-        disabled={publishing || finalized || !session}
-        data-testid="qa-publish-button"
-      >
-        {publishing ? "Publishing…" : finalized ? "Published" : "Publish assessment"}
-      </Button>
+      <div className="flex items-center gap-2">
+        {finalized ? (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void handleReopen()}
+            disabled={reopening || !session}
+            data-testid="qa-reopen-button"
+          >
+            <RotateCcw className="mr-1 h-3 w-3" />
+            {reopening ? "Reopening…" : "Reopen for revision"}
+          </Button>
+        ) : null}
+        <Button
+          size="sm"
+          onClick={() => void handlePublish()}
+          disabled={publishing || finalized || !session}
+          data-testid="qa-publish-button"
+        >
+          {publishing ? "Publishing…" : finalized ? "Published" : "Publish assessment"}
+        </Button>
+      </div>
     </div>
   );
 

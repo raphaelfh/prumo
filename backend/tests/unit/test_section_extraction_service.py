@@ -426,9 +426,7 @@ class TestSectionExtractionFullFlow:
         from app.models.extraction import ExtractionRunStage
 
         advance_calls = service._lifecycle.advance_stage.await_args_list
-        target_stages = [
-            call.kwargs.get("target_stage") for call in advance_calls
-        ]
+        target_stages = [call.kwargs.get("target_stage") for call in advance_calls]
         assert ExtractionRunStage.PROPOSAL in target_stages
         assert ExtractionRunStage.REVIEW in target_stages
         # And REVIEW comes after PROPOSAL.

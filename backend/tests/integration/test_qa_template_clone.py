@@ -294,3 +294,58 @@ async def test_open_qa_assessment_reuses_in_flight_run(
     second = await db_client.post("/api/v1/qa-assessments", json=payload)
     assert second.status_code == 201
     assert second.json()["data"]["run_id"] == first_run
+
+
+@pytest.mark.asyncio
+async def test_open_qa_assessment_returns_finalized_run_instead_of_forking(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    """When the only run for (project, article, template) is finalized,
+    the assessment endpoint must return THAT run instead of silently
+    creating a new one. The UI then shows the finalized run read-only
+    with a "Reopen" affordance. Without this, every page reload after
+    publish would orphan the published values."""
+    article = await _pick_article(db_session)
+    global_template_id = await _pick_qa_global_template(db_session)
+    if article is None or global_template_id is None:
+        pytest.skip("Need an article + a seeded QA template")
+    article_id, project_id = article
+
+    # Wipe in-flight + finalized runs for this (project, article, template)
+    # so we control the exact state we're testing.
+    await db_session.execute(
+        text(
+            """
+            DELETE FROM public.extraction_runs
+            WHERE article_id = :aid AND project_id = :pid
+              AND template_id IN (
+                SELECT id FROM public.project_extraction_templates
+                WHERE project_id = :pid AND global_template_id = :gid
+              )
+            """
+        ),
+        {"aid": str(article_id), "pid": str(project_id), "gid": str(global_template_id)},
+    )
+    await db_session.commit()
+
+    payload = {
+        "project_id": str(project_id),
+        "article_id": str(article_id),
+        "global_template_id": str(global_template_id),
+    }
+    first = await db_client.post("/api/v1/qa-assessments", json=payload)
+    assert first.status_code == 201
+    run_id = first.json()["data"]["run_id"]
+
+    # Drive that run to finalized through the lifecycle endpoints.
+    for stage in ("review", "consensus", "finalized"):
+        adv = await db_client.post(f"/api/v1/runs/{run_id}/advance", json={"target_stage": stage})
+        assert adv.status_code == 200, adv.text
+
+    # Re-opening the assessment now must NOT create a new run; it must
+    # surface the finalized one so the UI can offer Reopen.
+    second = await db_client.post("/api/v1/qa-assessments", json=payload)
+    assert second.status_code == 201
+    assert second.json()["data"]["run_id"] == run_id

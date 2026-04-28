@@ -30,8 +30,7 @@ def _run_alembic(*args: str) -> str:
     )
     if proc.returncode != 0:
         raise RuntimeError(
-            f"alembic {' '.join(args)} failed:\n"
-            f"stdout: {proc.stdout}\nstderr: {proc.stderr}"
+            f"alembic {' '.join(args)} failed:\nstdout: {proc.stdout}\nstderr: {proc.stderr}"
         )
     return proc.stdout
 
@@ -73,9 +72,7 @@ async def test_migration_0002_round_trip(db_session: AsyncSession) -> None:
 
         enum_row = (
             await db_session.execute(
-                text(
-                    "SELECT 1 FROM pg_type WHERE typname = 'extraction_source'"
-                )
+                text("SELECT 1 FROM pg_type WHERE typname = 'extraction_source'")
             )
         ).scalar()
         assert enum_row == 1, "extraction_source enum must be restored by downgrade"
@@ -94,9 +91,7 @@ async def test_migration_0002_round_trip(db_session: AsyncSession) -> None:
     assert after is None, "extracted_values must be re-dropped after upgrade head"
 
     enum_after = (
-        await db_session.execute(
-            text("SELECT 1 FROM pg_type WHERE typname = 'extraction_source'")
-        )
+        await db_session.execute(text("SELECT 1 FROM pg_type WHERE typname = 'extraction_source'"))
     ).scalar()
     assert enum_after is None, "extraction_source enum must be re-dropped"
 
