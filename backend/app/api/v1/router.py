@@ -10,6 +10,7 @@ from app.api.v1.endpoints import (
     articles_export,
     extraction_runs,
     model_extraction,
+    qa_templates,
     section_extraction,
     user_api_keys,
     zotero_import,
@@ -52,4 +53,10 @@ api_router.include_router(
     extraction_runs.router,
     prefix="/runs",
     tags=["extraction-runs"],
+)
+
+api_router.include_router(
+    qa_templates.router,
+    prefix="/projects",
+    tags=["qa-templates"],
 )

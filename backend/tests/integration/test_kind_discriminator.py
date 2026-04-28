@@ -63,12 +63,25 @@ async def test_kind_column_exists_on_run(
 async def test_existing_templates_backfilled_to_extraction_kind(
     db_session: AsyncSession,
 ) -> None:
-    # Project-level templates pre-date `kind` — the migration must have
-    # backfilled them all to 'extraction' (no project-level QA templates exist
-    # yet; QA today is global-only).
+    # Project-level templates pre-date `kind`; the migration backfilled the
+    # legacy rows to 'extraction'. QA clones (qa_template_clone_service) now
+    # legitimately produce 'quality_assessment' rows, so check the backfill
+    # by ensuring legacy rows (no global_template_id pointing at a QA template)
+    # are 'extraction'.
     result = await db_session.execute(
         text(
-            "SELECT COUNT(*) FROM public.project_extraction_templates WHERE kind <> 'extraction'",
+            """
+            SELECT COUNT(*) FROM public.project_extraction_templates p
+            WHERE p.kind <> 'extraction'
+              AND (
+                p.global_template_id IS NULL
+                OR NOT EXISTS (
+                    SELECT 1 FROM public.extraction_templates_global g
+                    WHERE g.id = p.global_template_id
+                      AND g.kind = 'quality_assessment'
+                )
+              )
+            """
         )
     )
     assert result.scalar() == 0
