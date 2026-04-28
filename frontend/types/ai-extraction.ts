@@ -22,7 +22,13 @@
 
 export type SuggestionStatus = 'pending' | 'accepted' | 'rejected';
 export type ExtractionRunStatus = 'pending' | 'running' | 'completed' | 'failed';
-export type ExtractionRunStage = 'data_suggest' | 'parsing' | 'validation' | 'consensus';
+export type ExtractionRunStage =
+  | 'pending'
+  | 'proposal'
+  | 'review'
+  | 'consensus'
+  | 'finalized'
+  | 'cancelled';
 
 /**
  * Supported models for AI extraction

@@ -15,9 +15,6 @@ export type ExtractionFramework = 'CHARMS' | 'PICOS' | 'CUSTOM';
 export type ExtractionFieldType = 'text' | 'number' | 'date' | 'select' | 'multiselect' | 'boolean';
 export type ExtractionCardinality = 'one' | 'many';
 export type ExtractionSource = 'human' | 'ai' | 'rule';
-export type ExtractionRunStage = 'data_suggest' | 'parsing' | 'validation' | 'consensus';
-export type ExtractionRunStatus = 'pending' | 'running' | 'completed' | 'failed';
-export type SuggestionStatus = 'pending' | 'accepted' | 'rejected';
 
 /**
  * Extraction value type by field type

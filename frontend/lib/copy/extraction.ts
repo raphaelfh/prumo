@@ -695,11 +695,9 @@ export const extraction = {
     addFieldTipName: 'Technical name is auto-generated from the label',
     addFieldTipUnitsEmpty: 'Leave units empty to use automatic suggestions based on context',
     addFieldTipSelectOptions: 'For selection fields, define at least 2 options',
-    // Placeholders and inline UI (FieldInput, EntityTreeNode, dialogs)
+    // Placeholders and inline UI (FieldInput, dialogs)
     selectFieldPlaceholder: 'Select {{label}}',
-    addingInstance: 'Adding…',
     addInstanceLabel: 'Add {{label}}',
-    noInstancesInSection: 'No instances created for this section',
     sectionConfirmPlaceholder: 'Type "{{name}}" to confirm',
     createModel: 'Create model',
     addNewModel: 'Add new model',
@@ -723,10 +721,6 @@ export const extraction = {
     selectTemplateToStart: 'Select an extraction template to get started',
     selectInstance: 'Select an instance',
     clickInstanceToEdit: 'Click an instance above to edit its fields',
-    confirmDeleteInstance: 'Are you sure you want to delete this instance? All extracted data will be lost.',
-    instanceCount: 'instance',
-    instanceCountPlural: 'instances',
-    fieldsRenderedByParent: 'Fields are rendered by the parent component.',
     instanceEditorTitle: 'Instance editor',
     instanceEditorDesc: 'Manage entity instances for template {{name}}',
     noTemplateSelected: 'No template selected',

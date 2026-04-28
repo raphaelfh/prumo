@@ -1892,10 +1892,12 @@ export type Database = {
         | "boolean"
       extraction_framework: "CHARMS" | "PICOS" | "CUSTOM"
       extraction_run_stage:
-        | "data_suggest"
-        | "parsing"
-        | "validation"
+        | "pending"
+        | "proposal"
+        | "review"
         | "consensus"
+        | "finalized"
+        | "cancelled"
       extraction_run_status: "pending" | "running" | "completed" | "failed"
       extraction_source: "human" | "ai" | "rule"
       file_role:
@@ -2057,10 +2059,12 @@ export const Constants = {
       ],
       extraction_framework: ["CHARMS", "PICOS", "CUSTOM"],
       extraction_run_stage: [
-        "data_suggest",
-        "parsing",
-        "validation",
+        "pending",
+        "proposal",
+        "review",
         "consensus",
+        "finalized",
+        "cancelled",
       ],
       extraction_run_status: ["pending", "running", "completed", "failed"],
       extraction_source: ["human", "ai", "rule"],
