@@ -15,6 +15,7 @@ from app.repositories.extraction_repository import (
     GlobalTemplateRepository,
 )
 from app.repositories.extraction_run_repository import ExtractionRunRepository
+from app.repositories.hitl_config_repository import HitlConfigRepository
 from app.repositories.integration_repository import ZoteroIntegrationRepository
 from app.repositories.project_repository import ProjectMemberRepository, ProjectRepository
 from app.repositories.unit_of_work import UnitOfWork
@@ -37,6 +38,8 @@ __all__ = [
     "ExtractionInstanceRepository",
     "AISuggestionRepository",
     "ExtractionRunRepository",
+    # HITL
+    "HitlConfigRepository",
     # Integration
     "ZoteroIntegrationRepository",
     # User API Keys
