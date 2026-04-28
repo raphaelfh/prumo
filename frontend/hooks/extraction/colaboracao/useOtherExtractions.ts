@@ -63,9 +63,13 @@ export function useOtherExtractions(
     setError(null);
 
     try {
+      if (!templateId) {
+        setOtherExtractions([]);
+        return;
+      }
       const run = await ExtractionValueService.findActiveRun(
         articleId,
-        templateId ?? null,
+        templateId,
       );
       if (!run) {
         setOtherExtractions([]);

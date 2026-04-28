@@ -18,7 +18,6 @@ export const layout = {
     sectionProject: 'Project',
     sectionReview: 'Review',
     navOverview: 'Overview',
-    navMembers: 'Members',
     navArticles: 'Articles',
     navScreening: 'Screening',
     navDataExtraction: 'Data extraction',

@@ -76,6 +76,11 @@ export const ExtractionValueService = {
    * Picks the most recent run still in flight (stage in pending /
    * proposal / review / consensus). Returns `null` if none — the UI
    * should treat that as "AI extraction hasn't run yet".
+   *
+   * Always filters by `kind='extraction'` so a Quality-Assessment run on
+   * the same article can never leak into the extraction surface — both
+   * kinds share `extraction_runs`, and the autosave/auto-resolve must
+   * not coordinate-mismatch by picking a QA run with foreign instances.
    */
   async findActiveRun(
     articleId: string,
@@ -85,6 +90,7 @@ export const ExtractionValueService = {
       .from('extraction_runs')
       .select('id, stage, status, template_id, created_at')
       .eq('article_id', articleId)
+      .eq('kind', 'extraction')
       .in('stage', [...NON_TERMINAL_STAGES])
       .order('created_at', { ascending: false })
       .limit(1);
@@ -112,7 +118,8 @@ export const ExtractionValueService = {
    * "Reopen for revision" button only renders when this returns a row
    * and `findActiveRun` returns null. The returned id is then passed
    * to `useReopenRun` which spawns a fresh REVIEW-stage run that seeds
-   * proposals from the published values.
+   * proposals from the published values. Same `kind='extraction'`
+   * guard as ``findActiveRun``.
    */
   async findLatestFinalizedRun(
     articleId: string,
@@ -122,6 +129,7 @@ export const ExtractionValueService = {
       .from('extraction_runs')
       .select('id, stage, status, template_id, created_at')
       .eq('article_id', articleId)
+      .eq('kind', 'extraction')
       .eq('stage', 'finalized')
       .order('created_at', { ascending: false })
       .limit(1);

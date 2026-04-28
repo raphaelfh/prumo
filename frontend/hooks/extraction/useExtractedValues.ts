@@ -65,6 +65,18 @@ export function useExtractedValues(props: UseExtractedValuesProps): UseExtracted
       setError(null);
 
       try {
+        // Wait for the active project template to be resolved before
+        // probing for a Run. Without the template filter, a parallel
+        // Quality-Assessment run on the same article can resolve as the
+        // "active" run, polluting the values map with foreign instance
+        // ids and tripping the coordinate-coherence check on the next
+        // autosave. See bug ticket: extraction autosave 422.
+        if (!templateId) {
+          setValues({});
+          setRunId(null);
+          return;
+        }
+
         const {
           data: { user },
         } = await supabase.auth.getUser();
@@ -75,7 +87,7 @@ export function useExtractedValues(props: UseExtractedValuesProps): UseExtracted
 
         const run = await ExtractionValueService.findActiveRun(
           articleId,
-          templateId ?? null,
+          templateId,
         );
         setRunId(run?.id ?? null);
         if (!run) {

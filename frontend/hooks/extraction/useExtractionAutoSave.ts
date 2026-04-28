@@ -82,9 +82,18 @@ export function useExtractionAutoSave(
         return;
       }
 
+      // Without a templateId we cannot safely scope the active-run lookup,
+      // and a stray Quality-Assessment run on the same article would leak
+      // through. Bail until the project's active extraction template is
+      // resolved by the parent page.
+      if (!templateId) {
+        setIsSaving(false);
+        return;
+      }
+
       const run = await ExtractionValueService.findActiveRun(
         articleId,
-        templateId ?? null,
+        templateId,
       );
       if (!run) {
         // No active run yet — autosave silently no-ops. The form will

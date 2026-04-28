@@ -9,19 +9,19 @@ import {
     FileText,
     LayoutDashboard,
     ListChecks,
+    Settings,
     ShieldCheck,
-    Users,
 } from 'lucide-react';
 import {t} from '@/lib/copy';
 
 export type SidebarTabId =
     | 'overview'
-    | 'members'
     | 'articles'
     | 'screening'
     | 'extraction'
     | 'quality'
-    | 'prisma';
+    | 'prisma'
+    | 'settings';
 
 export interface SidebarNavItem {
     id: SidebarTabId;
@@ -43,7 +43,7 @@ export const sidebarSections: SidebarSection[] = [
         title: t('layout', 'sectionProject'),
         items: [
             {id: 'overview', label: t('layout', 'navOverview'), icon: LayoutDashboard, shortcut: 'O', comingSoon: true},
-            {id: 'members', label: t('layout', 'navMembers'), icon: Users, shortcut: 'M', comingSoon: true},
+            {id: 'settings', label: t('layout', 'navSettings'), icon: Settings, shortcut: 'S'},
         ],
     },
     {
@@ -64,7 +64,6 @@ export const sidebarItems: SidebarNavItem[] = sidebarSections.flatMap((s) => s.i
 /** Map tab id -> display label for Topbar and other consumers. */
 export const tabIdToLabel: Record<string, string> = {
     overview: t('layout', 'navOverview'),
-    members: t('layout', 'navMembers'),
     articles: t('layout', 'navArticles'),
     screening: t('layout', 'navScreening'),
     extraction: t('layout', 'navDataExtraction'),

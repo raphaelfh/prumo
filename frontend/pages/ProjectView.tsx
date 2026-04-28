@@ -8,7 +8,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {Plus, ChevronDown, Upload, FileText, Download, FileBarChart, LayoutDashboard, ListChecks, Users} from "lucide-react";
+import {Plus, ChevronDown, Upload, FileText, Download, FileBarChart, LayoutDashboard, ListChecks} from "lucide-react";
 import {ComingSoonPanel} from "@/components/layout/ComingSoonPanel";
 import {toast} from "sonner";
 import {ArticlesList, type ArticlesListHandle} from "@/components/articles/ArticlesList";
@@ -304,9 +304,6 @@ export default function ProjectView() {
       case 'overview':
         return <ComingSoonPanel title={t('layout', 'navOverview')} icon={LayoutDashboard} />;
 
-      case 'members':
-        return <ComingSoonPanel title={t('layout', 'navMembers')} icon={Users} />;
-
       case 'screening':
         return <ComingSoonPanel title={t('layout', 'navScreening')} icon={ListChecks} />;
 
@@ -326,7 +323,7 @@ export default function ProjectView() {
             (articleEditorMode === 'edit' && Boolean(editorArticleIdFromUrl)));
 
     // Tabs that render a full-bleed placeholder/page without the articles-style action bar.
-    const FULL_BLEED_TABS = new Set(['settings', 'overview', 'members', 'screening', 'prisma']);
+    const FULL_BLEED_TABS = new Set(['settings', 'overview', 'screening', 'prisma']);
     const isFullBleed = FULL_BLEED_TABS.has(activeTab);
 
   return (
