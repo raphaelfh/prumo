@@ -264,7 +264,6 @@ class SaveValueRequest(BaseModel):
     source: Literal["human", "ai", "rule"] = "human"
     unit: str | None = None
     evidence: list[EvidencePassage] = []
-    ai_suggestion_id: UUID | None = Field(default=None, alias="aiSuggestionId")
 
     model_config = ConfigDict(populate_by_name=True)
 

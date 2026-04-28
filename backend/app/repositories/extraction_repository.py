@@ -13,7 +13,6 @@ from sqlalchemy.orm import selectinload
 
 from app.core.logging import get_logger
 from app.models.extraction import (
-    AISuggestion,
     ExtractionEntityType,
     ExtractionInstance,
     ExtractionTemplateGlobal,
@@ -359,58 +358,3 @@ class ExtractionInstanceRepository(BaseRepository[ExtractionInstance]):
         return result.scalar_one_or_none()
 
 
-class AISuggestionRepository(BaseRepository[AISuggestion]):
-    """Repository for AI suggestions."""
-
-    def __init__(self, db: AsyncSession):
-        super().__init__(db, AISuggestion)
-
-    async def get_by_instance(
-        self,
-        instance_id: UUID | str,
-        status: str | None = None,
-    ) -> list[AISuggestion]:
-        """
-        List suggestions for an instance.
-
-        Args:
-            instance_id: Instance ID.
-            status: Optional status filter.
-
-        Returns:
-            Suggestion list.
-        """
-        if isinstance(instance_id, str):
-            instance_id = UUID(instance_id)
-
-        query = select(AISuggestion).where(AISuggestion.instance_id == instance_id)
-
-        if status:
-            query = query.where(AISuggestion.status == status)
-
-        result = await self.db.execute(query)
-        return list(result.scalars().all())
-
-    async def get_pending_by_article(
-        self,
-        article_id: UUID | str,
-    ) -> list[AISuggestion]:
-        """
-        List pending suggestions for an article.
-
-        Args:
-            article_id: Article ID.
-
-        Returns:
-            Pending suggestion list.
-        """
-        if isinstance(article_id, str):
-            article_id = UUID(article_id)
-
-        result = await self.db.execute(
-            select(AISuggestion)
-            .join(ExtractionInstance)
-            .where(ExtractionInstance.article_id == article_id)
-            .where(AISuggestion.status == "pending")
-        )
-        return list(result.scalars().all())

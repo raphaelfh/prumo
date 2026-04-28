@@ -47,9 +47,6 @@ def service(mock_db, mock_storage):
             "app.services.section_extraction_service.ExtractionInstanceRepository"
         ) as mock_instance_repo,
         patch(
-            "app.services.section_extraction_service.AISuggestionRepository"
-        ) as mock_suggestion_repo,
-        patch(
             "app.services.section_extraction_service.ExtractionProposalService"
         ) as mock_proposal_cls,
         patch("app.services.section_extraction_service.ExtractionRunRepository") as mock_run_repo,
@@ -70,9 +67,6 @@ def service(mock_db, mock_storage):
 
         mock_instance_repo_instance = MagicMock()
         mock_instance_repo.return_value = mock_instance_repo_instance
-
-        mock_suggestion_repo_instance = MagicMock()
-        mock_suggestion_repo.return_value = mock_suggestion_repo_instance
 
         mock_proposal_instance = MagicMock()
         mock_proposal_instance.record_proposal = AsyncMock()
@@ -100,7 +94,6 @@ def service(mock_db, mock_storage):
         svc._article_files = mock_article_repo_instance
         svc._entity_types = mock_entity_repo_instance
         svc._instances = mock_instance_repo_instance
-        svc._suggestions = mock_suggestion_repo_instance
         svc._proposals = mock_proposal_instance
         svc._runs = mock_run_repo_instance
         svc._lifecycle = mock_lifecycle_instance
@@ -386,9 +379,6 @@ class TestSectionExtractionFullFlow:
         mock_proposal.id = uuid4()
         service._proposals.record_proposal = AsyncMock(return_value=mock_proposal)
 
-        # Legacy AISuggestion mirror is still in place during the transition.
-        service._suggestions.create = AsyncMock(return_value=MagicMock())
-
         # Mock instances (for _create_suggestions)
         service._instances.get_by_article = AsyncMock(return_value=[])
 
@@ -409,21 +399,14 @@ class TestSectionExtractionFullFlow:
         )
         service.openai_service.chat_completion_full = AsyncMock(return_value=mock_openai_response)
 
-        # Mock SQLAlchemy model classes to avoid mapper issues
-        with (
-            patch(
-                "app.services.section_extraction_service.ExtractionInstance"
-            ) as mock_instance_class,
-            patch("app.services.section_extraction_service.AISuggestion") as mock_suggestion_class,
-        ):
+        # Mock SQLAlchemy model class to avoid mapper issues
+        with patch(
+            "app.services.section_extraction_service.ExtractionInstance"
+        ) as mock_instance_class:
             mock_created_instance = MagicMock()
             mock_created_instance.id = uuid4()
             mock_instance_class.return_value = mock_created_instance
             service._instances.create = AsyncMock(return_value=mock_created_instance)
-
-            mock_suggestion = MagicMock()
-            mock_suggestion.id = uuid4()
-            mock_suggestion_class.return_value = mock_suggestion
 
             result = await service.extract_section(
                 project_id=project_id,
@@ -435,7 +418,4 @@ class TestSectionExtractionFullFlow:
         assert result.extraction_run_id is not None
         assert result.entity_type_id == str(entity_type_id)
         assert result.tokens_total == 150
-        # The new flow records to extraction_proposal_records and mirrors
-        # to ai_suggestions during the transition.
         service._proposals.record_proposal.assert_awaited()
-        service._suggestions.create.assert_awaited()

@@ -21,7 +21,6 @@ from app.models.article_author import (
 )
 from app.models.base import Base, BaseModel, TimestampMixin, UUIDMixin
 from app.models.extraction import (
-    AISuggestion,
     ExtractedValue,
     ExtractionCardinality,
     ExtractionEntityType,
@@ -36,7 +35,6 @@ from app.models.extraction import (
     ExtractionSource,
     ExtractionTemplateGlobal,
     ProjectExtractionTemplate,
-    SuggestionStatus,
 )
 from app.models.extraction_versioning import (
     ConsensusRule,
@@ -132,14 +130,12 @@ __all__ = [
     "ExtractedValue",
     "ExtractionEvidence",
     "ExtractionRun",
-    "AISuggestion",
     "ExtractionFramework",
     "ExtractionFieldType",
     "ExtractionCardinality",
     "ExtractionSource",
     "ExtractionRunStage",
     "ExtractionRunStatus",
-    "SuggestionStatus",
     # Extraction versioning
     "ConsensusRule",
     "ExtractionHitlConfig",

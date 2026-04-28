@@ -15,7 +15,6 @@ from app.repositories.extraction_published_state_repository import (
     ExtractionPublishedStateRepository,
 )
 from app.repositories.extraction_repository import (
-    AISuggestionRepository,
     ExtractionEntityTypeRepository,
     ExtractionInstanceRepository,
     ExtractionTemplateRepository,
@@ -49,7 +48,6 @@ __all__ = [
     "GlobalTemplateRepository",
     "ExtractionEntityTypeRepository",
     "ExtractionInstanceRepository",
-    "AISuggestionRepository",
     "ExtractionRunRepository",
     "ExtractionProposalRepository",
     "ExtractionReviewerDecisionRepository",

@@ -89,14 +89,6 @@ class ExtractionRunStatus(str, PyEnum):
     FAILED = "failed"
 
 
-class SuggestionStatus(str, PyEnum):
-    """Status da suggestion de IA."""
-
-    PENDING = "pending"
-    ACCEPTED = "accepted"
-    REJECTED = "rejected"
-
-
 class ExtractionInstanceStatus(str, PyEnum):
     """
     Status de uma instance de extraction.
@@ -489,12 +481,6 @@ class ExtractedValue(BaseModel):
 
     is_consensus: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    ai_suggestion_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.ai_suggestions.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-
     unit: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Relationships
@@ -690,13 +676,6 @@ class ExtractionRun(Base, UUIDMixin):
         nullable=False,
     )
 
-    # Relationships
-    suggestions: Mapped[list["AISuggestion"]] = relationship(
-        "AISuggestion",
-        back_populates="extraction_run",
-        cascade="all, delete-orphan",
-    )
-
     # Indices definidos via __table_args__
     __table_args__ = (
         # Indice composto for busca por status and estagio
@@ -718,88 +697,3 @@ class ExtractionRun(Base, UUIDMixin):
 
     def __repr__(self) -> str:
         return f"<ExtractionRun {self.id} stage={self.stage}>"
-
-
-class AISuggestion(Base, UUIDMixin):
-    """
-    Sugestao especifica gerada pela IA.
-
-    Suggestions are extraction-only:
-    extraction_run_id + instance_id + field_id.
-
-    Indices:
-    - extraction_run_id: FK indexada
-    - instance_id, field_id: FKs indexadas
-    - suggested_value, metadata: GIN for busca em JSONB
-    """
-
-    __tablename__ = "ai_suggestions"
-
-    # === Extraction run FK ===
-    extraction_run_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.extraction_runs.id", ondelete="CASCADE"),
-        nullable=True,
-        index=True,
-    )
-
-    # === Extraction suggestion fields ===
-    instance_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.extraction_instances.id", ondelete="CASCADE"),
-        nullable=True,
-        index=True,
-    )
-
-    field_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.extraction_fields.id", ondelete="RESTRICT"),
-        nullable=True,
-        index=True,
-    )
-
-    suggested_value: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    confidence_score: Mapped[float | None] = mapped_column(Numeric, nullable=True)
-    reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    status: Mapped[str] = mapped_column(
-        PostgreSQLEnumType("suggestion_status"),
-        default="pending",
-        nullable=False,
-    )
-
-    reviewed_by: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.profiles.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    reviewed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-    )
-
-    metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default={}, nullable=False)
-
-    # Relationships
-    extraction_run: Mapped["ExtractionRun | None"] = relationship(
-        "ExtractionRun",
-        foreign_keys=[extraction_run_id],
-        back_populates="suggestions",
-    )
-
-    # Indices definidos via __table_args__
-    __table_args__ = (
-        # Indices GIN for JSONB
-        Index("idx_ai_suggestions_suggested_value_gin", "suggested_value", postgresql_using="gin"),
-        Index("idx_ai_suggestions_metadata_gin", "metadata", postgresql_using="gin"),
-        {"schema": "public"},
-    )
-
-    def __repr__(self) -> str:
-        return f"<AISuggestion field={self.field_id} status={self.status}>"

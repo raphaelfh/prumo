@@ -80,7 +80,6 @@ from app.repositories.article_repository import (
     ArticleSyncRunRepository,
 )
 from app.repositories.extraction_repository import (
-    AISuggestionRepository,
     ExtractionEntityTypeRepository,
     ExtractionInstanceRepository,
     ExtractionTemplateRepository,
@@ -154,7 +153,6 @@ class UnitOfWork:
         self.global_templates = GlobalTemplateRepository(self.session)
         self.entity_types = ExtractionEntityTypeRepository(self.session)
         self.extraction_instances = ExtractionInstanceRepository(self.session)
-        self.ai_suggestions = AISuggestionRepository(self.session)
 
         # Integrations
         self.zotero_integrations = ZoteroIntegrationRepository(self.session)

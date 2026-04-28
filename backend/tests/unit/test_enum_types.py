@@ -22,7 +22,6 @@ from app.models.extraction import (
     ExtractionRunStage,
     ExtractionRunStatus,
     ExtractionSource,
-    SuggestionStatus,
 )
 from app.models.project import ProjectMemberRole, ReviewType
 
@@ -92,7 +91,6 @@ class TestPostgreSQLEnumValuesMapping:
             "extraction_source",
             "extraction_run_stage",
             "extraction_run_status",
-            "suggestion_status",
             "extraction_instance_status",
             "hitl_config_scope_kind",
             "consensus_rule",
@@ -130,7 +128,6 @@ class TestPythonEnumsMatchPostgreSQL:
             (ExtractionSource, "extraction_source"),
             (ExtractionRunStage, "extraction_run_stage"),
             (ExtractionRunStatus, "extraction_run_status"),
-            (SuggestionStatus, "suggestion_status"),
             (ExtractionInstanceStatus, "extraction_instance_status"),
         ],
     )
@@ -163,7 +160,6 @@ class TestPythonEnumsMatchPostgreSQL:
             (ExtractionSource, "extraction_source"),
             (ExtractionRunStage, "extraction_run_stage"),
             (ExtractionRunStatus, "extraction_run_status"),
-            (SuggestionStatus, "suggestion_status"),
             (ExtractionInstanceStatus, "extraction_instance_status"),
         ],
     )
@@ -185,10 +181,6 @@ class TestEnumDefaults:
     def test_extraction_run_status_default(self):
         """Verifica valor padrão de ExtractionRunStatus."""
         assert ExtractionRunStatus.PENDING.value == "pending"
-
-    def test_suggestion_status_default(self):
-        """Verifica valor padrão de SuggestionStatus."""
-        assert SuggestionStatus.PENDING.value == "pending"
 
     def test_file_role_default(self):
         """Verifica valor padrão de FileRole."""
@@ -218,7 +210,6 @@ class TestEnumCreationFromString:
             (ExtractionSource, "human"),
             (ExtractionRunStage, "proposal"),
             (ExtractionRunStatus, "pending"),
-            (SuggestionStatus, "pending"),
             (ExtractionInstanceStatus, "pending"),
         ],
     )
@@ -239,7 +230,6 @@ class TestEnumCreationFromString:
             ExtractionSource,
             ExtractionRunStage,
             ExtractionRunStatus,
-            SuggestionStatus,
             ExtractionInstanceStatus,
         ],
     )
