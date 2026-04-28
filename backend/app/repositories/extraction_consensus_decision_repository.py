@@ -14,17 +14,13 @@ class ExtractionConsensusDecisionRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def add(
-        self, record: ExtractionConsensusDecision
-    ) -> ExtractionConsensusDecision:
+    async def add(self, record: ExtractionConsensusDecision) -> ExtractionConsensusDecision:
         self.db.add(record)
         await self.db.flush()
         await self.db.refresh(record)
         return record
 
-    async def list_by_run(
-        self, run_id: UUID
-    ) -> list[ExtractionConsensusDecision]:
+    async def list_by_run(self, run_id: UUID) -> list[ExtractionConsensusDecision]:
         stmt = (
             select(ExtractionConsensusDecision)
             .where(ExtractionConsensusDecision.run_id == run_id)

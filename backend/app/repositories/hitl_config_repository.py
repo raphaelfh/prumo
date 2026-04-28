@@ -22,9 +22,7 @@ class HitlConfigRepository:
         scope_kind: HitlConfigScopeKind | str,
         scope_id: UUID,
     ) -> ExtractionHitlConfig | None:
-        kind_value = (
-            scope_kind.value if isinstance(scope_kind, HitlConfigScopeKind) else scope_kind
-        )
+        kind_value = scope_kind.value if isinstance(scope_kind, HitlConfigScopeKind) else scope_kind
         stmt = select(ExtractionHitlConfig).where(
             ExtractionHitlConfig.scope_kind == kind_value,
             ExtractionHitlConfig.scope_id == scope_id,

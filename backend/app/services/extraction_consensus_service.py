@@ -58,25 +58,17 @@ class ExtractionConsensusService:
                 f"Cannot record consensus: run stage is {run.stage}, not 'consensus'"
             )
 
-        mode_value = (
-            mode.value if isinstance(mode, ExtractionConsensusMode) else mode
-        )
+        mode_value = mode.value if isinstance(mode, ExtractionConsensusMode) else mode
 
         if mode_value == "select_existing" and selected_decision_id is None:
-            raise InvalidConsensusError(
-                "mode='select_existing' requires selected_decision_id"
-            )
+            raise InvalidConsensusError("mode='select_existing' requires selected_decision_id")
         if mode_value == "manual_override" and (value is None or rationale is None):
-            raise InvalidConsensusError(
-                "mode='manual_override' requires both value and rationale"
-            )
+            raise InvalidConsensusError("mode='manual_override' requires both value and rationale")
 
         # Resolve value to publish: from selected reviewer decision or from manual override
         if mode_value == "select_existing":
             decisions = await self._decisions.list_by_run(run_id)
-            selected = next(
-                (d for d in decisions if d.id == selected_decision_id), None
-            )
+            selected = next((d for d in decisions if d.id == selected_decision_id), None)
             if selected is None:
                 raise InvalidConsensusError(
                     f"selected_decision_id {selected_decision_id} not in run {run_id}"

@@ -51,14 +51,10 @@ class ExtractionReviewService:
             )
 
         decision_value = (
-            decision.value
-            if isinstance(decision, ExtractionReviewerDecisionType)
-            else decision
+            decision.value if isinstance(decision, ExtractionReviewerDecisionType) else decision
         )
         if decision_value == "accept_proposal" and proposal_record_id is None:
-            raise InvalidDecisionError(
-                "decision='accept_proposal' requires proposal_record_id"
-            )
+            raise InvalidDecisionError("decision='accept_proposal' requires proposal_record_id")
         if decision_value == "edit" and value is None:
             raise InvalidDecisionError("decision='edit' requires value")
 

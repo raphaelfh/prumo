@@ -97,18 +97,14 @@ class RunLifecycleService:
         user_id: UUID,  # noqa: ARG002 — captured for audit later
     ) -> ExtractionRun:
         target = (
-            target_stage.value
-            if isinstance(target_stage, ExtractionRunStage)
-            else target_stage
+            target_stage.value if isinstance(target_stage, ExtractionRunStage) else target_stage
         )
         run = await self.db.get(ExtractionRun, run_id)
         if run is None:
             raise ValueError(f"Run {run_id} not found")
         allowed = _ALLOWED_TRANSITIONS.get(run.stage, set())
         if target not in allowed:
-            raise InvalidStageTransitionError(
-                f"Cannot transition from {run.stage} to {target}"
-            )
+            raise InvalidStageTransitionError(f"Cannot transition from {run.stage} to {target}")
         run.stage = target
         if target == ExtractionRunStage.CANCELLED.value:
             run.status = ExtractionRunStatus.FAILED.value

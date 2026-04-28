@@ -57,7 +57,5 @@ class HitlConfigService:
             "scope_id": str(config.scope_id),
             "reviewer_count": config.reviewer_count,
             "consensus_rule": config.consensus_rule,
-            "arbitrator_id": (
-                str(config.arbitrator_id) if config.arbitrator_id else None
-            ),
+            "arbitrator_id": (str(config.arbitrator_id) if config.arbitrator_id else None),
         }

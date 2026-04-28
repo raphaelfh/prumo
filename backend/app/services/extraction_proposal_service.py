@@ -45,13 +45,9 @@ class ExtractionProposalService:
                 f"Cannot record proposal: run stage is {run.stage}, not 'proposal'"
             )
 
-        source_value = (
-            source.value if isinstance(source, ExtractionProposalSource) else source
-        )
+        source_value = source.value if isinstance(source, ExtractionProposalSource) else source
         if source_value == "human" and source_user_id is None:
-            raise InvalidProposalError(
-                "source='human' requires source_user_id"
-            )
+            raise InvalidProposalError("source='human' requires source_user_id")
 
         record = ExtractionProposalRecord(
             run_id=run_id,

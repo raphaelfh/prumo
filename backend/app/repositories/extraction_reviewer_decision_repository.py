@@ -14,17 +14,13 @@ class ExtractionReviewerDecisionRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def add(
-        self, record: ExtractionReviewerDecision
-    ) -> ExtractionReviewerDecision:
+    async def add(self, record: ExtractionReviewerDecision) -> ExtractionReviewerDecision:
         self.db.add(record)
         await self.db.flush()
         await self.db.refresh(record)
         return record
 
-    async def list_by_run(
-        self, run_id: UUID
-    ) -> list[ExtractionReviewerDecision]:
+    async def list_by_run(self, run_id: UUID) -> list[ExtractionReviewerDecision]:
         stmt = (
             select(ExtractionReviewerDecision)
             .where(ExtractionReviewerDecision.run_id == run_id)
