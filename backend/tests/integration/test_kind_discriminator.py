@@ -63,6 +63,9 @@ async def test_kind_column_exists_on_run(
 async def test_existing_templates_backfilled_to_extraction_kind(
     db_session: AsyncSession,
 ) -> None:
+    # Project-level templates pre-date `kind` — the migration must have
+    # backfilled them all to 'extraction' (no project-level QA templates exist
+    # yet; QA today is global-only).
     result = await db_session.execute(
         text(
             "SELECT COUNT(*) FROM public.project_extraction_templates WHERE kind <> 'extraction'",
@@ -70,9 +73,16 @@ async def test_existing_templates_backfilled_to_extraction_kind(
     )
     assert result.scalar() == 0
 
+    # Global extraction templates (CHARMS) must remain kind='extraction'.
+    # PROBAST / QUADAS-2 are seeded as kind='quality_assessment' on purpose, so
+    # we exclude them by name when verifying the backfill.
     result = await db_session.execute(
         text(
-            "SELECT COUNT(*) FROM public.extraction_templates_global WHERE kind <> 'extraction'",
+            """
+            SELECT COUNT(*) FROM public.extraction_templates_global
+            WHERE kind <> 'extraction'
+              AND name NOT IN ('PROBAST', 'QUADAS-2')
+            """
         )
     )
     assert result.scalar() == 0
