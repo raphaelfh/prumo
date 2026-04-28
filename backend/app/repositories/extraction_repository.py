@@ -4,8 +4,8 @@ Extraction Repository.
 Extraction domain persistence layer.
 """
 
-from uuid import UUID
 from time import perf_counter
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

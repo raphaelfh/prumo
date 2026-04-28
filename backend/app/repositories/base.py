@@ -38,8 +38,8 @@ Relacionamento with UnitOfWork:
 - Se excecao ocorrer, UnitOfWork faz rollback automatico
 """
 
-from typing import Any, Generic, TypeVar
 from time import perf_counter
+from typing import Any, Generic, TypeVar
 from uuid import UUID
 
 from sqlalchemy import func, select

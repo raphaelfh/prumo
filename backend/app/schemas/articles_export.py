@@ -6,7 +6,7 @@ Pydantic request/response for exportacao de articles (CSV, RIS, RDF).
 
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 # =================== REQUEST ===================
 

@@ -23,9 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
     ],
 )
 async def test_008_table_dropped(db_session: AsyncSession, table: str) -> None:
-    result = await db_session.execute(
-        text(f"SELECT to_regclass('public.{table}') AS reg")
-    )
+    result = await db_session.execute(text(f"SELECT to_regclass('public.{table}') AS reg"))
     assert result.scalar() is None
 
 
@@ -46,9 +44,7 @@ async def test_008_table_dropped(db_session: AsyncSession, table: str) -> None:
 )
 async def test_008_enum_dropped(db_session: AsyncSession, enum_name: str) -> None:
     result = await db_session.execute(
-        text(
-            "SELECT 1 FROM pg_type WHERE typname = :name AND typtype = 'e'"
-        ),
+        text("SELECT 1 FROM pg_type WHERE typname = :name AND typtype = 'e'"),
         {"name": enum_name},
     )
     assert result.scalar() is None

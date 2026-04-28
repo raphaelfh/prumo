@@ -34,9 +34,7 @@ async def auth_as_profile(
     db_session: AsyncSession,
 ) -> AsyncGenerator[UUID, None]:
     """Override get_current_user so JWT sub is a real profile UUID."""
-    raw = (
-        await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))
-    ).scalar()
+    raw = (await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
     if raw is None:
         pytest.skip("No profile rows available in test database")
     profile_id = UUID(str(raw))
@@ -56,16 +54,10 @@ async def auth_as_profile(
 async def _pick_fixtures(db: AsyncSession) -> tuple[str, str, str, str, str] | None:
     """Pick (project_id, article_id, template_id, instance_id, field_id) where
     instance + field both belong to the same template/entity_type chain."""
-    project_id = (
-        await db.execute(text("SELECT id FROM public.projects LIMIT 1"))
-    ).scalar()
-    article_id = (
-        await db.execute(text("SELECT id FROM public.articles LIMIT 1"))
-    ).scalar()
+    project_id = (await db.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
+    article_id = (await db.execute(text("SELECT id FROM public.articles LIMIT 1"))).scalar()
     template_id = (
-        await db.execute(
-            text("SELECT id FROM public.project_extraction_templates LIMIT 1")
-        )
+        await db.execute(text("SELECT id FROM public.project_extraction_templates LIMIT 1"))
     ).scalar()
     if not (project_id and article_id and template_id):
         return None
@@ -230,9 +222,7 @@ async def test_invalid_stage_transition_returns_400(
     run_id = create_res.json()["data"]["id"]
 
     # pending → review (not allowed; must go pending → proposal first)
-    bad = await db_client.post(
-        f"/api/v1/runs/{run_id}/advance", json={"target_stage": "review"}
-    )
+    bad = await db_client.post(f"/api/v1/runs/{run_id}/advance", json={"target_stage": "review"})
     assert bad.status_code == 400
 
 

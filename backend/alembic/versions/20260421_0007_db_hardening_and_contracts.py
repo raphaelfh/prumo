@@ -254,9 +254,7 @@ def upgrade() -> None:
     op.execute(
         "ALTER FUNCTION public.find_user_id_by_email(text) SET search_path = public, pg_temp;"
     )
-    op.execute(
-        "ALTER FUNCTION public.get_project_members(uuid) SET search_path = public, pg_temp;"
-    )
+    op.execute("ALTER FUNCTION public.get_project_members(uuid) SET search_path = public, pg_temp;")
     op.execute(
         "ALTER FUNCTION public.clone_global_instrument_to_project(uuid, uuid, uuid, text) "
         "SET search_path = public, pg_temp;"
@@ -343,9 +341,15 @@ def upgrade() -> None:
             );
         """
     )
-    op.execute('DROP POLICY IF EXISTS "Users can insert project items" ON public.project_assessment_items;')
-    op.execute('DROP POLICY IF EXISTS "Users can update project items" ON public.project_assessment_items;')
-    op.execute('DROP POLICY IF EXISTS "Users can delete project items" ON public.project_assessment_items;')
+    op.execute(
+        'DROP POLICY IF EXISTS "Users can insert project items" ON public.project_assessment_items;'
+    )
+    op.execute(
+        'DROP POLICY IF EXISTS "Users can update project items" ON public.project_assessment_items;'
+    )
+    op.execute(
+        'DROP POLICY IF EXISTS "Users can delete project items" ON public.project_assessment_items;'
+    )
     op.execute(
         """
         CREATE POLICY "Managers can insert project items"
@@ -407,9 +411,15 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute('DROP POLICY IF EXISTS "Managers can delete project items" ON public.project_assessment_items;')
-    op.execute('DROP POLICY IF EXISTS "Managers can update project items" ON public.project_assessment_items;')
-    op.execute('DROP POLICY IF EXISTS "Managers can insert project items" ON public.project_assessment_items;')
+    op.execute(
+        'DROP POLICY IF EXISTS "Managers can delete project items" ON public.project_assessment_items;'
+    )
+    op.execute(
+        'DROP POLICY IF EXISTS "Managers can update project items" ON public.project_assessment_items;'
+    )
+    op.execute(
+        'DROP POLICY IF EXISTS "Managers can insert project items" ON public.project_assessment_items;'
+    )
     op.execute(
         """
         CREATE POLICY "Users can insert project items"
@@ -529,10 +539,18 @@ def downgrade() -> None:
         """
     )
 
-    op.execute("ALTER TABLE public.ai_suggestions DROP CONSTRAINT IF EXISTS ck_ai_suggestions_assessment_item_xor;")
-    op.execute("ALTER TABLE public.ai_suggestions DROP CONSTRAINT IF EXISTS ck_ai_suggestions_assessment_refs;")
-    op.execute("ALTER TABLE public.ai_suggestions DROP CONSTRAINT IF EXISTS ck_ai_suggestions_extraction_refs;")
-    op.execute("ALTER TABLE public.ai_suggestions DROP CONSTRAINT IF EXISTS ck_ai_suggestions_run_xor;")
+    op.execute(
+        "ALTER TABLE public.ai_suggestions DROP CONSTRAINT IF EXISTS ck_ai_suggestions_assessment_item_xor;"
+    )
+    op.execute(
+        "ALTER TABLE public.ai_suggestions DROP CONSTRAINT IF EXISTS ck_ai_suggestions_assessment_refs;"
+    )
+    op.execute(
+        "ALTER TABLE public.ai_suggestions DROP CONSTRAINT IF EXISTS ck_ai_suggestions_extraction_refs;"
+    )
+    op.execute(
+        "ALTER TABLE public.ai_suggestions DROP CONSTRAINT IF EXISTS ck_ai_suggestions_run_xor;"
+    )
     op.execute(
         "ALTER TABLE public.extraction_entity_types DROP CONSTRAINT IF EXISTS ck_extraction_entity_types_template_xor;"
     )

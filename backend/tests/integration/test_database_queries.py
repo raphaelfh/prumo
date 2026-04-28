@@ -137,4 +137,3 @@ class TestComplexQueries:
         )
         rows = result.fetchall()
         assert isinstance(rows, list)
-

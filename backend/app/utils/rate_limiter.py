@@ -27,9 +27,7 @@ def _principal_key(request: Request) -> str:
     remote IP so the limiter still throttles abusive callers.
     """
 
-    auth_header = request.headers.get("authorization") or request.headers.get(
-        "Authorization"
-    )
+    auth_header = request.headers.get("authorization") or request.headers.get("Authorization")
     if auth_header and auth_header.lower().startswith("bearer "):
         token = auth_header.split(" ", 1)[1].strip()
         if token:

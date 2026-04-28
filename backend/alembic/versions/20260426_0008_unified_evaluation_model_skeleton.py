@@ -242,18 +242,24 @@ def upgrade() -> None:
         """
     )
 
-    op.execute("CREATE INDEX IF NOT EXISTS ix_evaluation_schemas_project_id ON public.evaluation_schemas(project_id);")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_evaluation_schemas_project_id ON public.evaluation_schemas(project_id);"
+    )
     op.execute(
         "CREATE INDEX IF NOT EXISTS ix_evaluation_schema_versions_schema_id ON public.evaluation_schema_versions(schema_id);"
     )
     op.execute(
         "CREATE INDEX IF NOT EXISTS ix_evaluation_items_schema_version_id ON public.evaluation_items(schema_version_id);"
     )
-    op.execute("CREATE INDEX IF NOT EXISTS ix_evaluation_runs_project_id ON public.evaluation_runs(project_id);")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_evaluation_runs_project_id ON public.evaluation_runs(project_id);"
+    )
     op.execute(
         "CREATE INDEX IF NOT EXISTS ix_evaluation_runs_schema_version_id ON public.evaluation_runs(schema_version_id);"
     )
-    op.execute("CREATE INDEX IF NOT EXISTS ix_evaluation_run_targets_run_id ON public.evaluation_run_targets(run_id);")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_evaluation_run_targets_run_id ON public.evaluation_run_targets(run_id);"
+    )
     op.execute(
         "CREATE INDEX IF NOT EXISTS ix_evaluation_run_targets_target_id ON public.evaluation_run_targets(target_id);"
     )
@@ -281,8 +287,12 @@ def upgrade() -> None:
         ON public.published_states(project_id, target_id, item_id, schema_version_id);
         """
     )
-    op.execute("CREATE INDEX IF NOT EXISTS ix_reviewer_states_project_id ON public.reviewer_states(project_id);")
-    op.execute("CREATE INDEX IF NOT EXISTS ix_evidence_records_project_id ON public.evidence_records(project_id);")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_reviewer_states_project_id ON public.reviewer_states(project_id);"
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_evidence_records_project_id ON public.evidence_records(project_id);"
+    )
 
     op.execute(
         """
@@ -571,7 +581,9 @@ def downgrade() -> None:
     ):
         op.execute(f"DROP POLICY IF EXISTS {policy} ON public.{table_name};")
 
-    op.execute("DROP TRIGGER IF EXISTS trg_enforce_consensus_override_justification ON public.consensus_decision_records;")
+    op.execute(
+        "DROP TRIGGER IF EXISTS trg_enforce_consensus_override_justification ON public.consensus_decision_records;"
+    )
     op.execute("DROP FUNCTION IF EXISTS public.enforce_consensus_override_justification();")
 
     for table_name in (

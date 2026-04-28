@@ -125,4 +125,3 @@ def upgrade() -> None:
 def downgrade() -> None:
     """This migration is destructive and intentionally not reversible."""
     raise RuntimeError("Downgrade is not supported for 20260426_0009_drop_legacy_assessment_stack")
-

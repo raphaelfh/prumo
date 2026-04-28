@@ -147,6 +147,7 @@ class TestDatabaseSchema:
         for col in expected_columns:
             assert col in columns, f"Column {col} not found in articles"
 
+
 @pytest.mark.asyncio
 class TestDatabaseRLS:
     """Tests to verify Row Level Security."""
