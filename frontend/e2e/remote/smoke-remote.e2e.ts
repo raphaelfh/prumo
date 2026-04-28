@@ -38,12 +38,18 @@ test.describe("Remote smoke", () => {
     const extractionBody = await parseEnvelope<{ extractionRunId: string }>(extractionResponse);
     expect(extractionBody.ok).toBeTruthy();
 
-    const queueResponse = await request.get(`${env.apiUrl}/api/v1/review-queue`, {
-      headers: authHeaders(token, traceId),
-    });
-    expect(queueResponse.ok()).toBeTruthy();
-    const queueBody = await parseEnvelope<{ items: unknown[] }>(queueResponse);
-    expect(queueBody.ok).toBeTruthy();
-    expect(Array.isArray(queueBody.data.items)).toBeTruthy();
+    // /api/v1/review-queue was 008-only and was deleted along with the
+    // evaluation_* endpoints. The new HITL flow exposes per-Run state via
+    // /api/v1/runs/{id}; smoke can re-introduce a queue check once a
+    // Run-aggregation endpoint exists. For now, just confirm the new
+    // route returns the expected 404 envelope for a known-bad id.
+    const probeResponse = await request.get(
+      `${env.apiUrl}/api/v1/runs/00000000-0000-0000-0000-000000000000`,
+      { headers: authHeaders(token, traceId) },
+    );
+    expect([404, 422]).toContain(probeResponse.status());
+    const probeBody = await parseEnvelope<unknown>(probeResponse);
+    expect(probeBody.ok).toBe(false);
+    expect(probeBody.trace_id).toBeTruthy();
   });
 });
