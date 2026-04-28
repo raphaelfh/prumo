@@ -2,9 +2,10 @@
  * Quality Assessment full-screen page (PROBAST / QUADAS-2 / future tools).
  *
  * Flow:
- * 1. Open (or resume) a session via `POST /api/v1/qa-assessments` — clones
- *    the global QA template into the project, ensures one instance per
- *    domain for the article, and parks a Run in the PROPOSAL stage.
+ * 1. Open (or resume) a session via `POST /api/v1/hitl/sessions` with
+ *    `kind=quality_assessment` — clones the global QA template into the
+ *    project, ensures one instance per domain for the article, and parks
+ *    a Run in the PROPOSAL stage.
  * 2. Render the cloned template tree (entity_types + fields use the cloned
  *    ids, so proposal writes coordinate-cohere with the Run's version).
  * 3. Each field change becomes a `human` proposal on the Run; reloading

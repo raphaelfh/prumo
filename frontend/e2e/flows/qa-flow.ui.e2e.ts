@@ -3,7 +3,7 @@
  *
  * Drives the full HITL pipeline through the UI for a single PROBAST/QUADAS-2
  * domain field:
- *   1. Open `POST /api/v1/qa-assessments` (clones template + creates instances
+ *   1. Open `POST /api/v1/hitl/sessions` with kind=quality_assessment (clones template + creates instances
  *      + parks Run in PROPOSAL).
  *   2. Visit /projects/{pid}/articles/{aid}/quality-assessment/{globalTemplateId}.
  *   3. Verify the form rendered and the Publish button is wired.
@@ -50,11 +50,12 @@ test.describe("Quality Assessment HITL flow", () => {
     // 1. Open or resume the session via API. Idempotent on (project,
     //    article, global_template) — first call creates, second reuses.
     const sessionPayload = {
+      kind: "quality_assessment",
       project_id: env.projectId,
       article_id: env.articleId,
       global_template_id: qaTemplateId,
     };
-    const first = await request.post(`${env.apiUrl}/api/v1/qa-assessments`, {
+    const first = await request.post(`${env.apiUrl}/api/v1/hitl/sessions`, {
       headers: authHeaders(token, traceId),
       data: sessionPayload,
       timeout: 30000,
@@ -67,7 +68,7 @@ test.describe("Quality Assessment HITL flow", () => {
     expect(Object.keys(firstBody.data.instances_by_entity_type).length).toBeGreaterThan(0);
     const runId = firstBody.data.run_id;
 
-    const second = await request.post(`${env.apiUrl}/api/v1/qa-assessments`, {
+    const second = await request.post(`${env.apiUrl}/api/v1/hitl/sessions`, {
       headers: authHeaders(token, traceId),
       data: sessionPayload,
       timeout: 30000,
@@ -107,9 +108,10 @@ test.describe("Quality Assessment HITL flow", () => {
     const traceId = createTraceId("e2e-qa-publish");
 
     // Set up a fresh session (or resume).
-    const sessionRes = await request.post(`${env.apiUrl}/api/v1/qa-assessments`, {
+    const sessionRes = await request.post(`${env.apiUrl}/api/v1/hitl/sessions`, {
       headers: authHeaders(token, traceId),
       data: {
+        kind: "quality_assessment",
         project_id: env.projectId,
         article_id: env.articleId,
         global_template_id: qaTemplateId,

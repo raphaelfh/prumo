@@ -98,9 +98,10 @@ vi.mock("@prumo/pdf-viewer", () => ({
 // coupled to the order of fetches.
 vi.mock("@/integrations/api", () => ({
   apiClient: vi.fn(async (url: string) => {
-    if (url === "/api/v1/qa-assessments") {
+    if (url === "/api/v1/hitl/sessions") {
       return {
         run_id: "run-1",
+        kind: "quality_assessment",
         project_template_id: "tpl-1",
         instances_by_entity_type: { "et-1": "inst-1" },
       };

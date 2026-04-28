@@ -30,7 +30,7 @@ interface OpenSessionResponse {
 
 interface RunDetailResponse {
   run: { id: string; stage: string; status: string };
-  reviewer_decisions: Array<{
+  decisions: Array<{
     id: string;
     reviewer_id: string;
     instance_id: string;
@@ -80,10 +80,11 @@ test.describe("HITL multi-reviewer consensus", () => {
 
     // 1. Open the QA session as User A.
     const sessionRes = await request.post(
-      `${env.apiUrl}/api/v1/qa-assessments`,
+      `${env.apiUrl}/api/v1/hitl/sessions`,
       {
         headers: authHeaders(userAToken, traceId),
         data: {
+          kind: "quality_assessment",
           project_id: env.projectId,
           article_id: env.articleId,
           global_template_id: qaTemplateId,
@@ -171,7 +172,7 @@ test.describe("HITL multi-reviewer consensus", () => {
     );
     const detail = (await parseEnvelope<RunDetailResponse>(detailRes)).data;
     expect(detail.run.stage).toBe("consensus");
-    const decisionsForCoord = detail.reviewer_decisions.filter(
+    const decisionsForCoord = detail.decisions.filter(
       (d) =>
         d.instance_id === firstInstanceId && d.field_id === field.id,
     );

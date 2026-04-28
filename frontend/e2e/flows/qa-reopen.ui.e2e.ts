@@ -77,9 +77,10 @@ test.describe("HITL reopen flow (Option C)", () => {
     const traceId = createTraceId("e2e-qa-reopen");
 
     // 1. Open / resume the QA session.
-    const sessionRes = await request.post(`${env.apiUrl}/api/v1/qa-assessments`, {
+    const sessionRes = await request.post(`${env.apiUrl}/api/v1/hitl/sessions`, {
       headers: authHeaders(token, traceId),
       data: {
+        kind: "quality_assessment",
         project_id: env.projectId,
         article_id: env.articleId,
         global_template_id: qaTemplateId,

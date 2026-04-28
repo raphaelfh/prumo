@@ -1,6 +1,6 @@
 /**
  * Hook that opens (or resumes) a Quality-Assessment session via
- * POST `/api/v1/qa-assessments`.
+ * POST `/api/v1/hitl/sessions` with `kind=quality_assessment`.
  *
  * Returns the Run id, the cloned project_template_id, and the
  * (entity_type_id → instance_id) map needed to record proposals.
@@ -56,9 +56,10 @@ export function useQAAssessmentSession({
     setLoading(true);
     setError(null);
     try {
-      const data = await apiClient<OpenResponse>("/api/v1/qa-assessments", {
+      const data = await apiClient<OpenResponse>("/api/v1/hitl/sessions", {
         method: "POST",
         body: {
+          kind: "quality_assessment",
           project_id: projectId,
           article_id: articleId,
           global_template_id: globalTemplateId,
