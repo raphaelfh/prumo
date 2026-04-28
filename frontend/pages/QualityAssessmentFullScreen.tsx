@@ -1,27 +1,48 @@
 /**
  * Quality Assessment full-screen page (PROBAST / QUADAS-2 / future tools).
  *
- * Mounts the shared `AssessmentShell` (PDF panel + form panel + header)
- * with the PDF panel collapsed by default. The form panel renders one
- * `QASectionAccordion` per domain (entity_type) of the chosen QA template,
- * reusing the extraction `FieldInput` for signaling questions and a
- * domain-judgment summary card (Risk of Bias + Applicability concerns).
+ * Flow:
+ * 1. Open (or resume) a session via `POST /api/v1/qa-assessments` — clones
+ *    the global QA template into the project, ensures one instance per
+ *    domain for the article, and parks a Run in the PROPOSAL stage.
+ * 2. Render the cloned template tree (entity_types + fields use the cloned
+ *    ids, so proposal writes coordinate-cohere with the Run's version).
+ * 3. Each field change becomes a `human` proposal on the Run; reloading
+ *    the page rehydrates from the latest proposal per (instance, field).
  *
- * Local-only state for now; wiring to the HITL backend (Run / proposal /
- * decision / consensus) is a follow-up — this page is the inspector view.
+ * Final publish (advance review → consensus → finalize) is wired to the
+ * "Publish assessment" button, which posts a manual_override consensus per
+ * field to materialize PublishedState rows.
  */
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { toast } from "sonner";
 
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Loader2 } from "lucide-react";
 
 import { AssessmentShell } from "@/components/assessment/AssessmentShell";
 import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
 import { PDFViewer } from "@/components/PDFViewer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useQATemplate } from "@/hooks/qa/useQATemplate";
+import { useProjectQATemplate } from "@/hooks/qa/useProjectQATemplate";
+import { useQAAssessmentSession } from "@/hooks/qa/useQAAssessmentSession";
+import {
+  useAdvanceRun,
+  useCreateConsensus,
+  useCreateProposal,
+  useRun,
+} from "@/hooks/runs";
+
+interface FieldKey {
+  instanceId: string;
+  fieldId: string;
+}
+
+function keyOf(k: FieldKey): string {
+  return `${k.instanceId}::${k.fieldId}`;
+}
 
 export default function QualityAssessmentFullScreen() {
   const { projectId, articleId, templateId } = useParams<{
@@ -31,18 +52,139 @@ export default function QualityAssessmentFullScreen() {
   }>();
   const navigate = useNavigate();
 
-  const { template, domains, loading, error } = useQATemplate({
-    templateId,
-    enabled: !!templateId,
+  const {
+    session,
+    loading: sessionLoading,
+    error: sessionError,
+  } = useQAAssessmentSession({
+    projectId,
+    articleId,
+    globalTemplateId: templateId,
   });
 
-  // Local-only values store keyed by field_id. Persistence to the HITL
-  // stack (proposal/decision) lands in a follow-up; this page is the
-  // structured inspector view.
+  const {
+    template,
+    domains,
+    loading: templateLoading,
+    error: templateError,
+  } = useProjectQATemplate({
+    projectTemplateId: session?.projectTemplateId,
+    enabled: !!session,
+  });
+
+  const { data: runDetail, refetch: refetchRun } = useRun(session?.runId ?? "", {
+    enabled: !!session?.runId,
+  });
+
+  const proposalMutation = useCreateProposal(session?.runId ?? "");
+  const advanceMutation = useAdvanceRun(session?.runId ?? "");
+  const consensusMutation = useCreateConsensus(session?.runId ?? "");
+
+  // Local input state for the form. Hydrated from the latest proposal per
+  // (instance, field) once the Run detail loads.
   const [values, setValues] = useState<Record<string, unknown>>({});
-  const handleValueChange = (fieldId: string, value: unknown) => {
-    setValues((prev) => ({ ...prev, [fieldId]: value }));
-  };
+
+  useEffect(() => {
+    if (!runDetail) return;
+    const latestByCoord = new Map<string, unknown>();
+    // Proposals are returned newest-first by the API; iterate so the LAST
+    // write wins per coord regardless of order.
+    for (const p of runDetail.proposals) {
+      const k = keyOf({ instanceId: p.instance_id, fieldId: p.field_id });
+      const value =
+        p.proposed_value &&
+        typeof p.proposed_value === "object" &&
+        "value" in p.proposed_value
+          ? (p.proposed_value.value as unknown)
+          : (p.proposed_value as unknown);
+      latestByCoord.set(k, value);
+    }
+    setValues((prev) => {
+      const next: Record<string, unknown> = { ...prev };
+      for (const [k, v] of latestByCoord) {
+        if (!(k in next)) next[k] = v;
+      }
+      return next;
+    });
+  }, [runDetail]);
+
+  const handleValueChange = useCallback(
+    (instanceId: string, fieldId: string, value: unknown) => {
+      const k = keyOf({ instanceId, fieldId });
+      setValues((prev) => ({ ...prev, [k]: value }));
+      if (!session) return;
+      proposalMutation.mutate(
+        {
+          instance_id: instanceId,
+          field_id: fieldId,
+          source: "human",
+          source_user_id: undefined,
+          proposed_value: { value: value ?? null },
+        },
+        {
+          onError: (err) => {
+            toast.error(`Failed to record proposal: ${err.message}`);
+          },
+        },
+      );
+    },
+    [session, proposalMutation],
+  );
+
+  const finalized = runDetail?.run.stage === "finalized";
+
+  const [publishing, setPublishing] = useState(false);
+  const handlePublish = useCallback(async () => {
+    if (!session || !runDetail) return;
+    setPublishing(true);
+    try {
+      const stage = runDetail.run.stage;
+      if (stage === "proposal") {
+        await advanceMutation.mutateAsync({ target_stage: "review" });
+      }
+      const stageAfterReview =
+        stage === "proposal" || stage === "review" ? "review" : stage;
+      if (stageAfterReview === "review") {
+        await advanceMutation.mutateAsync({ target_stage: "consensus" });
+      }
+
+      // Manual-override consensus per filled (instance, field) — writes the
+      // value directly to PublishedState without requiring a per-field
+      // ReviewerDecision row.
+      const filled = Object.entries(values).filter(
+        ([, v]) => v !== undefined && v !== null && v !== "",
+      );
+      for (const [k, v] of filled) {
+        const [instanceId, fieldId] = k.split("::");
+        await consensusMutation.mutateAsync({
+          instance_id: instanceId,
+          field_id: fieldId,
+          mode: "manual_override",
+          value: { value: v },
+          rationale: "Published from Quality-Assessment form",
+        });
+      }
+
+      await advanceMutation.mutateAsync({ target_stage: "finalized" });
+      await refetchRun();
+      toast.success("Assessment published.");
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to publish assessment",
+      );
+    } finally {
+      setPublishing(false);
+    }
+  }, [
+    session,
+    runDetail,
+    advanceMutation,
+    consensusMutation,
+    values,
+    refetchRun,
+  ]);
+
+  const sortedDomains = useMemo(() => domains, [domains]);
 
   if (!projectId || !articleId || !templateId) {
     return (
@@ -51,6 +193,9 @@ export default function QualityAssessmentFullScreen() {
       </div>
     );
   }
+
+  const loading = sessionLoading || templateLoading;
+  const error = sessionError ?? templateError;
 
   const header = (
     <div className="flex items-center justify-between border-b bg-background px-4 py-3">
@@ -78,11 +223,27 @@ export default function QualityAssessmentFullScreen() {
           {template?.name ?? (loading ? "Loading…" : "—")}
         </h1>
         {template ? (
-          <span className="text-xs text-muted-foreground">
-            v{template.version}
-          </span>
+          <span className="text-xs text-muted-foreground">v{template.version}</span>
+        ) : null}
+        {finalized ? (
+          <Badge
+            variant="outline"
+            className="border-emerald-300 bg-emerald-50 text-emerald-800"
+            data-testid="qa-finalized-badge"
+          >
+            <CheckCircle2 className="mr-1 h-3 w-3" />
+            Published
+          </Badge>
         ) : null}
       </div>
+      <Button
+        size="sm"
+        onClick={() => void handlePublish()}
+        disabled={publishing || finalized || !session}
+        data-testid="qa-publish-button"
+      >
+        {publishing ? "Publishing…" : finalized ? "Published" : "Publish assessment"}
+      </Button>
     </div>
   );
 
@@ -108,7 +269,7 @@ export default function QualityAssessmentFullScreen() {
         </div>
       ) : null}
 
-      {!loading && !error && template ? (
+      {!loading && !error && template && session ? (
         <>
           {template.description ? (
             <p className="text-sm text-muted-foreground">
@@ -116,23 +277,35 @@ export default function QualityAssessmentFullScreen() {
             </p>
           ) : null}
 
-          {domains.length === 0 ? (
+          {sortedDomains.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               This template has no domains defined.
             </p>
           ) : (
             <div data-testid="qa-domains">
-              {domains.map((domain, idx) => (
-                <QASectionAccordion
-                  key={domain.entityType.id}
-                  domain={domain}
-                  values={values}
-                  onValueChange={handleValueChange}
-                  projectId={projectId}
-                  articleId={articleId}
-                  defaultOpen={idx === 0}
-                />
-              ))}
+              {sortedDomains.map((domain, idx) => {
+                const instanceId =
+                  session.instancesByEntityType[domain.entityType.id];
+                if (!instanceId) return null;
+                const valuesForDomain: Record<string, unknown> = {};
+                for (const f of domain.fields) {
+                  const k = keyOf({ instanceId, fieldId: f.id });
+                  if (k in values) valuesForDomain[f.id] = values[k];
+                }
+                return (
+                  <QASectionAccordion
+                    key={domain.entityType.id}
+                    domain={domain}
+                    values={valuesForDomain}
+                    onValueChange={(fieldId, value) =>
+                      handleValueChange(instanceId, fieldId, value)
+                    }
+                    projectId={projectId}
+                    articleId={articleId}
+                    defaultOpen={idx === 0}
+                  />
+                );
+              })}
             </div>
           )}
         </>

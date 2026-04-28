@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -18,8 +19,8 @@ const PARTICIPANTS_DOMAIN = {
   name: "participants",
   label: "Participants",
   description: "PROBAST domain 1",
-  template_id: "tpl-1",
-  project_template_id: null,
+  template_id: null,
+  project_template_id: "tpl-1",
   parent_entity_type_id: null,
   cardinality: "one",
   sort_order: 1,
@@ -68,7 +69,7 @@ vi.mock("@/integrations/supabase/client", () => {
   return {
     supabase: {
       from: (table: string) => {
-        if (table === "extraction_templates_global") {
+        if (table === "project_extraction_templates") {
           return makeQuery(PROBAST_TEMPLATE);
         }
         if (table === "extraction_entity_types") {
@@ -89,22 +90,65 @@ vi.mock("@/components/PDFViewer", () => ({
   PDFViewer: () => <div data-testid="qa-pdf-viewer-stub">PDF</div>,
 }));
 
+// apiClient gets called from the QA hooks; map by URL so the test isn't
+// coupled to the order of fetches.
+vi.mock("@/integrations/api", () => ({
+  apiClient: vi.fn(async (url: string) => {
+    if (url === "/api/v1/qa-assessments") {
+      return {
+        run_id: "run-1",
+        project_template_id: "tpl-1",
+        instances_by_entity_type: { "et-1": "inst-1" },
+      };
+    }
+    if (url === "/api/v1/runs/run-1") {
+      return {
+        run: {
+          id: "run-1",
+          project_id: "p1",
+          article_id: "a1",
+          template_id: "tpl-1",
+          kind: "quality_assessment",
+          version_id: "v-1",
+          stage: "proposal",
+          status: "running",
+          hitl_config_snapshot: {},
+          parameters: {},
+          results: {},
+          created_at: new Date().toISOString(),
+          created_by: "u-1",
+        },
+        proposals: [],
+        decisions: [],
+        consensus_decisions: [],
+        published_states: [],
+      };
+    }
+    return {};
+  }),
+}));
+
 function renderPage(path = "/projects/p1/articles/a1/quality-assessment/tpl-1") {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   return render(
-    <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route
-          path="/projects/:projectId/articles/:articleId/quality-assessment/:templateId"
-          element={<QualityAssessmentFullScreen />}
-        />
-      </Routes>
-    </MemoryRouter>,
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route
+            path="/projects/:projectId/articles/:articleId/quality-assessment/:templateId"
+            element={<QualityAssessmentFullScreen />}
+          />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
 describe("QualityAssessmentFullScreen", () => {
   beforeEach(() => {
-    // No-op; supabase is mocked at module scope.
+    // No-op; supabase + apiClient are mocked at module scope.
   });
 
   afterEach(() => {
