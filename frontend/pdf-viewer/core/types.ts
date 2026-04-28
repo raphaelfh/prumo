@@ -1,3 +1,43 @@
-// Reserved for Plan 2 — Headless Core types (PDFSource, PDFEngine, ViewerState, Citation, ...).
-// This file exists so the module is importable and the build passes during Phase 0.
-export const PDF_VIEWER_MODULE_VERSION = '0.0.0-phase0' as const;
+/**
+ * Re-export of all type modules in the core/ directory.
+ *
+ * Convention: domain types live in their own files
+ * (coordinates.ts, source.ts, engine.ts, citation.ts, state.ts).
+ * This barrel is provided for consumers that prefer a single import.
+ */
+
+export type {PDFPoint, PDFRect, PDFTextRange} from './coordinates';
+
+export type {
+  PDFSource,
+  PDFUrlSource,
+  PDFDataSource,
+  PDFLazySource,
+} from './source';
+
+export type {
+  PDFEngine,
+  PDFDocumentHandle,
+  PDFPageHandle,
+  PageRotation,
+  LoadOptions,
+  RenderOptions,
+  RenderResult,
+  PDFMetadata,
+  OutlineNode,
+  TextContent,
+  TextItem,
+} from './engine';
+
+export type {
+  Citation,
+  CitationId,
+  CitationAnchor,
+  TextCitationAnchor,
+  RegionCitationAnchor,
+  HybridCitationAnchor,
+  CitationMetadata,
+  CitationStyle,
+} from './citation';
+
+export type {LoadStatus, ViewerState, ViewerActions} from './state';
