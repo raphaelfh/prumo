@@ -149,7 +149,7 @@ export class AISuggestionService {
       const statesRes = await supabase
         .from('extraction_reviewer_states')
         .select(
-          'instance_id, field_id, current_decision_id, reviewer_decision:current_decision_id(decision)',
+          'instance_id, field_id, current_decision_id, reviewer_decision:extraction_reviewer_decisions!fk_extraction_reviewer_states_decision_run_match(decision)',
         )
         .in('instance_id', instanceIds)
         .eq('reviewer_id', user.id);

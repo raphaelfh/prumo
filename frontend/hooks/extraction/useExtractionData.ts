@@ -220,6 +220,7 @@ export function useExtractionData({
         .select('*')
         .eq('project_id', projectId)
         .eq('is_active', true)
+        .eq('kind', 'extraction')
         .single();
 
       if (templateError) throw templateError;

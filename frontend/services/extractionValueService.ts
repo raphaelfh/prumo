@@ -158,7 +158,7 @@ export const ExtractionValueService = {
       .from('extraction_reviewer_states')
       .select(
         `run_id, reviewer_id, instance_id, field_id, current_decision_id,
-         reviewer_decision:current_decision_id (
+         reviewer_decision:extraction_reviewer_decisions!fk_extraction_reviewer_states_decision_run_match (
            decision, value, created_at
          )`,
       )
@@ -196,7 +196,7 @@ export const ExtractionValueService = {
       .from('extraction_reviewer_states')
       .select(
         `run_id, reviewer_id, instance_id, field_id, current_decision_id,
-         reviewer_decision:current_decision_id (
+         reviewer_decision:extraction_reviewer_decisions!fk_extraction_reviewer_states_decision_run_match (
            decision, value, created_at
          ),
          reviewer:reviewer_id (
