@@ -20,8 +20,8 @@ O seed data inclui:
 
 > Os templates QA são seedados como `kind=quality_assessment` em
 > `extraction_templates_global`; quando o frontend abre uma assessment via
-> `POST /api/v1/qa-assessments`, o backend clona para
-> `project_extraction_templates` (idempotente). Veja
+> `POST /api/v1/hitl/sessions` com `kind=quality_assessment`, o backend
+> clona para `project_extraction_templates` (idempotente). Veja
 > [`docs/architecture/extraction-hitl-architecture.md`](architecture/extraction-hitl-architecture.md)
 > para o fluxo completo.
 

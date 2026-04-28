@@ -54,7 +54,21 @@ docs/                     # architecture/, superpowers/, planos/, ...
 
 ## Recent Changes
 
-- **2026-04-28** (later): Squashed 18 migrations into a single
+- **2026-04-28** (latest): HITL surface unification round 2.
+  - DB invariants: migration 0004 deferred trigger forbids a project
+    template without an active version; 0005 replaces the simple FK on
+    `extraction_reviewer_states.current_decision_id` with a composite
+    `(run_id, current_decision_id)` FK so a reviewer state can never
+    point at a decision in a different run.
+  - One endpoint, both kinds: `POST /api/v1/hitl/sessions` accepting
+    `kind=extraction|quality_assessment` replaces `/api/v1/qa-assessments`
+    and `/api/v1/projects/:id/qa-templates`. Cloning is internal to the
+    session open for QA; extraction requires a `project_template_id`.
+  - Service renames: `qa_template_clone_service` → `template_clone_service`
+    (kind-parametrized), `qa_assessment_session_service` →
+    `hitl_session_service`. Same applies to the schema, endpoint, and
+    integration test files.
+- **2026-04-28** (earlier): Squashed 18 migrations into a single
   `0001_baseline_v1` baseline. Dropped `ai_suggestions` (migration
   archived under that baseline) and `extracted_values` (migration 0002
   on top of the baseline). The extraction UI now reads/writes through
@@ -66,8 +80,8 @@ docs/                     # architecture/, superpowers/, planos/, ...
   0017 dropped `extraction_evidence.target_type/target_id`; 0018 added the
   `is_project_reviewer` SECURITY DEFINER helper and relaxed workflow-table
   RLS so reviewers (not just managers) can write. Quality-Assessment
-  values now persist through `/api/v1/qa-assessments` → ProposalRecord →
-  manual_override consensus → PublishedState.
+  values flow through ProposalRecord → manual_override consensus →
+  PublishedState (today via `/api/v1/hitl/sessions`).
 - **2026-04-27**: Extraction-centric HITL unification. Replaced the 008
   parallel evaluation skeleton with a single stack discriminated by
   `kind` (`extraction` | `quality_assessment`). Migrations 0010 → 0016

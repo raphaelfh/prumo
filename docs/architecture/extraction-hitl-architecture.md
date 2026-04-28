@@ -145,11 +145,17 @@ QUADAS-2 are seeded as `extraction_templates_global` rows with
 - **Overall** = a special domain (`cardinality='one'`) with
   `overall_risk_of_bias` + `overall_applicability` summary fields.
 
-The QA frontend opens an assessment session via
-`POST /api/v1/qa-assessments` (project_id, article_id, global_template_id):
-the backend clones the global template into the project, ensures one
-instance per domain for the article, and parks a Run in `proposal`. Every
-field change becomes a `human` ProposalRecord; "Publish assessment"
+Both flows open a session through the unified
+`POST /api/v1/hitl/sessions` endpoint:
+
+- `kind=quality_assessment` with `global_template_id` → the backend
+  clones the global PROBAST/QUADAS-2 template into the project
+  (idempotent), ensures one instance per top-level domain for the
+  article, and parks a Run in `proposal`.
+- `kind=extraction` with `project_template_id` → no clone, just opens
+  or resumes a Run on the existing project template.
+
+Every field change becomes a `human` ProposalRecord; "Publish assessment"
 advances `proposal → review → consensus`, posts a `manual_override`
 consensus per filled field (which materializes PublishedState rows), and
 advances to `finalized`.
@@ -261,10 +267,14 @@ publish, AI), keep it in the page-specific component.
     (the per-user value store now flows through here).
   - `app/services/extraction_consensus_service.py` — consensus resolution
     + PublishedState materialization (with optimistic concurrency).
-  - `app/services/qa_template_clone_service.py` — global → project clone
-    (idempotent on `(project_id, global_template_id)`).
-  - `app/services/qa_assessment_session_service.py` — one-shot QA setup
-    (clone + instances + Run + advance to PROPOSAL).
+  - `app/services/template_clone_service.py` — kind-parametrized
+    global → project clone (idempotent on
+    `(project_id, global_template_id)`). Validates the global template's
+    `kind` matches what the caller asked for.
+  - `app/services/hitl_session_service.py` — one-shot HITL setup for
+    both kinds: clones (QA only) + seeds top-level instances + opens
+    or resumes a Run + advances to PROPOSAL. Surface for
+    `POST /api/v1/hitl/sessions`.
 - **Frontend services:**
   - `frontend/services/extractionValueService.ts` — single entry point
     for run resolution + per-user value reads/writes.

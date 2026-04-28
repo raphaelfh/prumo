@@ -135,8 +135,9 @@
   - QA agora reusa o stack de extraction via `kind=quality_assessment`.
   - PROBAST + QUADAS-2 seedados como global templates.
   - `QualityAssessmentFullScreen` persiste valores via
-    `/api/v1/qa-assessments` → ProposalRecord → manual_override consensus
-    → PublishedState. Botão "Publish assessment" finaliza o Run.
+    `/api/v1/hitl/sessions` (kind=quality_assessment) → ProposalRecord →
+    manual_override consensus → PublishedState. Botão "Publish assessment"
+    finaliza o Run.
 
 ---
 

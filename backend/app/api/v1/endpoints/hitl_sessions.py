@@ -1,9 +1,7 @@
 """Open or resume a HITL session for both extraction and quality-assessment.
 
-The single ``POST /api/v1/hitl/sessions`` endpoint replaces the kind-specific
-clone + open dance the UI used to do (``POST /qa-assessments`` for QA, raw
-template lookup + ``POST /runs`` for extraction). Both shapes share one
-service and one response envelope.
+A single ``POST /api/v1/hitl/sessions`` endpoint, kind-discriminated, with
+one service and one response envelope.
 """
 
 from uuid import UUID
