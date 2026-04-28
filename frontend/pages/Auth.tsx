@@ -297,6 +297,7 @@ function LoginForm({
 // ─── RegisterForm ─────────────────────────────────────────────────────────────
 
 function RegisterForm({onSwitchToLogin}: { onSwitchToLogin: () => void }) {
+    const navigate = useNavigate();
     const [form, setForm] = useState({
         fullName: "",
         email: "",
@@ -325,7 +326,7 @@ function RegisterForm({onSwitchToLogin}: { onSwitchToLogin: () => void }) {
 
     setLoading(true);
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
           email: form.email,
           password: form.password,
         options: {
@@ -334,7 +335,18 @@ function RegisterForm({onSwitchToLogin}: { onSwitchToLogin: () => void }) {
         },
       });
       if (error) throw error;
+      // Supabase returns a session when email confirmations are disabled
+      // (the local CLI default). In that case the user is already
+      // authenticated; navigate to the dashboard instead of parking
+      // them on a "check your email" screen for an email that will
+      // never arrive. When confirmations are required (production
+      // default), `data.session` is null and we keep the original UX.
+      if (data.session) {
+        toast.success(t("auth", "loginSuccess"));
+        navigate("/");
+      } else {
         setEmailSent(true);
+      }
     } catch (err: any) {
         setError(mapAuthError(err.message || t("auth", "errorCreateAccount")));
     } finally {
