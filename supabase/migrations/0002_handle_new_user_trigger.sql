@@ -37,6 +37,10 @@ ON FUNCTION public.handle_new_user() IS
 'Trigger function that automatically creates a profile when a user is created in auth.users';
 
 -- =================== TRIGGER: on_auth_user_created ===================
+-- DROP-then-CREATE keeps the migration idempotent across re-runs (e.g. when
+-- Supabase boots from a persisted Docker volume that already has the trigger).
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 
 CREATE TRIGGER on_auth_user_created
     AFTER INSERT
