@@ -20,6 +20,7 @@ import { expect, test } from "@playwright/test";
 import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { loginViaUi, resolveAuthToken } from "../_fixtures/auth";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
+import { adminSelect } from "../_fixtures/supabase-admin";
 
 interface OpenSessionResponse {
   run_id: string;
@@ -93,29 +94,22 @@ test.describe("HITL multi-reviewer consensus", () => {
     expect(sessionRes.ok()).toBeTruthy();
     const session = (await parseEnvelope<OpenSessionResponse>(sessionRes)).data;
 
-    // 2. Resolve a (instance, field) coordinate for the divergent decisions.
-    const tmplRes = await request.get(
-      `${env.apiUrl}/api/v1/projects/${env.projectId}/extraction-templates/${session.project_template_id}`,
-      { headers: authHeaders(userAToken, traceId), timeout: 15000 },
-    );
-    expect(tmplRes.ok()).toBeTruthy();
-    const tmplBody = (await parseEnvelope<{
-      entity_types: Array<{
-        id: string;
-        fields: Array<{ id: string; name: string; field_type: string }>;
-      }>;
-    }>(tmplRes)).data;
+    // 2. Resolve a (instance, field) coordinate for the divergent
+    //    decisions. We use the admin client to fetch one field for the
+    //    first entity_type — the run detail endpoint doesn't include the
+    //    template tree.
     const [firstEntityTypeId, firstInstanceId] = Object.entries(
       session.instances_by_entity_type,
     )[0];
-    const entityType = tmplBody.entity_types.find(
-      (et) => et.id === firstEntityTypeId,
+    const fields = await adminSelect<{ id: string; name: string }>(
+      "extraction_fields",
+      `select=id,name&entity_type_id=eq.${firstEntityTypeId}&limit=1`,
     );
     test.skip(
-      !entityType || entityType.fields.length === 0,
+      fields.length === 0,
       "QA template has no fields for the first entity_type",
     );
-    const field = entityType!.fields[0];
+    const field = fields[0];
 
     // 3. Advance run to review (decisions only accepted in review).
     await request.post(

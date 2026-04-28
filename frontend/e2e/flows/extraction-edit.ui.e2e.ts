@@ -16,10 +16,19 @@ import { expect, test } from "@playwright/test";
 import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { loginViaUi, resolveAuthToken } from "../_fixtures/auth";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
+import { adminSelect } from "../_fixtures/supabase-admin";
 
 interface RunDetailResponse {
   run: { id: string; stage: string; status: string; template_id: string };
   proposals: Array<{ id: string; instance_id: string; field_id: string }>;
+  decisions: Array<{
+    id: string;
+    instance_id: string;
+    field_id: string;
+    decision: string;
+    value: { value: unknown } | null;
+    reviewer_id: string;
+  }>;
 }
 
 test.describe("Extraction edit + autosave persists through HITL stack", () => {
@@ -41,18 +50,20 @@ test.describe("Extraction edit + autosave persists through HITL stack", () => {
     const token = await resolveAuthToken(page);
     const traceId = createTraceId("e2e-extraction-edit");
 
-    // Find the latest extraction Run for this article+template that's
-    // still editable (stage in proposal/review/consensus).
-    const runsRes = await request.get(
-      `${env.apiUrl}/api/v1/runs?article_id=${env.articleId}&template_id=${env.templateId}`,
-      { headers: authHeaders(token, traceId), timeout: 15000, failOnStatusCode: false },
+    // Resolve the active extraction Run via Supabase admin REST. There
+    // is no /api/v1/runs listing endpoint — the frontend resolves the
+    // active run via the same query (latest non-terminal stage).
+    const runsBefore = await adminSelect<{ id: string; stage: string }>(
+      "extraction_runs",
+      `select=id,stage&article_id=eq.${env.articleId}&template_id=eq.${env.templateId}` +
+        `&stage=in.(pending,proposal,review,consensus)&order=created_at.desc&limit=1`,
     );
     test.skip(
-      !runsRes.ok(),
-      "Listing endpoint not available — needs an existing run for this article+template",
+      runsBefore.length === 0,
+      "No active extraction run for this article+template — run AI extraction first",
     );
+    const runIdBefore = runsBefore[0].id;
 
-    // Fall back: the page itself should resolve the active run on render.
     await page.goto(
       `${env.frontendUrl}/projects/${env.projectId}/extraction/${env.articleId}`,
     );
@@ -91,27 +102,22 @@ test.describe("Extraction edit + autosave persists through HITL stack", () => {
       await page.waitForTimeout(4000);
     }
 
-    // Reload and confirm the page still shows the edit by inspecting the
-    // active run's reviewer_decisions via API.
+    // Reload and confirm the autosave reached the API: the run detail
+    // should now have at least one ReviewerDecision authored by the
+    // current user with `decision='edit'`.
     await page.reload();
     await expect(page.locator("body")).toBeVisible();
 
-    // Resolve the active run via API (the page just did the same).
-    const runsAfter = await request.get(
-      `${env.apiUrl}/api/v1/runs?article_id=${env.articleId}&template_id=${env.templateId}`,
-      { headers: authHeaders(token, traceId), timeout: 15000, failOnStatusCode: false },
+    const detailRes = await request.get(
+      `${env.apiUrl}/api/v1/runs/${runIdBefore}`,
+      { headers: authHeaders(token, traceId), timeout: 15000 },
     );
-    if (!runsAfter.ok()) return; // Listing endpoint variant — skip silently.
-    const runsBody = await parseEnvelope<{ runs: Array<{ id: string }> }>(runsAfter);
-    const runId = runsBody.data?.runs?.[0]?.id;
-    if (!runId) return;
-
-    const detailRes = await request.get(`${env.apiUrl}/api/v1/runs/${runId}`, {
-      headers: authHeaders(token, traceId),
-      timeout: 15000,
-    });
     const detail = await parseEnvelope<RunDetailResponse>(detailRes);
     expect(detail.ok).toBeTruthy();
     expect(detail.data.run.stage).toMatch(/review|consensus|finalized/);
+    const editDecisions = detail.data.decisions.filter(
+      (d) => d.decision === "edit",
+    );
+    expect(editDecisions.length).toBeGreaterThan(0);
   });
 });

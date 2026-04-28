@@ -22,6 +22,7 @@ import { expect, test } from "@playwright/test";
 import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { loginViaUi, resolveAuthToken } from "../_fixtures/auth";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
+import { adminSelect } from "../_fixtures/supabase-admin";
 
 interface OpenSessionResponse {
   run_id: string;
@@ -124,24 +125,19 @@ test.describe("HITL reopen flow (Option C)", () => {
     expect(firstEntityTypeId).toBeTruthy();
     expect(firstInstanceId).toBeTruthy();
 
-    // Find a field for that entity_type via the template detail.
-    const tmplRes = await request.get(
-      `${env.apiUrl}/api/v1/projects/${env.projectId}/extraction-templates/${session.project_template_id}`,
-      { headers: authHeaders(token, traceId), timeout: 15000 },
+    // Find a field for that entity_type via Supabase REST. The
+    // /api/v1/runs/{id} detail doesn't include the template tree, so we
+    // use the admin client (already used by other fixtures) to read a
+    // single field for the entity_type.
+    const fields = await adminSelect<{ id: string; name: string }>(
+      "extraction_fields",
+      `select=id,name&entity_type_id=eq.${firstEntityTypeId}&limit=1`,
     );
-    expect(tmplRes.ok()).toBeTruthy();
-    const tmplBody = (await parseEnvelope<{
-      entity_types: Array<{
-        id: string;
-        fields: Array<{ id: string; name: string; field_type: string }>;
-      }>;
-    }>(tmplRes)).data;
-    const firstEntityType = tmplBody.entity_types.find(
-      (et) => et.id === firstEntityTypeId,
+    test.skip(
+      fields.length === 0,
+      "QA template has no fields for the first entity_type",
     );
-    test.skip(!firstEntityType || firstEntityType.fields.length === 0,
-      "QA template has no fields for the first entity_type");
-    const firstField = firstEntityType!.fields[0];
+    const firstField = fields[0];
 
     // Publish a value via manual_override.
     const consensusRes = await request.post(
