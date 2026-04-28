@@ -30,6 +30,7 @@ supabase/functions/.env.*
 # Test files (PDFs and large test data)
 *.pdf
 !docs/**/*.pdf
+!frontend/pdf-viewer/__fixtures__/*.pdf
 supabase/functions/*/tests/*.pdf
 
 # Workspace files

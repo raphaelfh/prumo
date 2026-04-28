@@ -60,6 +60,7 @@ export interface RenderOptions {
   canvas: HTMLCanvasElement | OffscreenCanvas;
   scale: number;
   rotation?: PageRotation;
+  signal?: AbortSignal;
 }
 
 export interface RenderResult {
@@ -67,8 +68,6 @@ export interface RenderResult {
   width: number;
   /** Rendered pixel height. */
   height: number;
-  /** Cancel an in-flight render. Safe to call after completion. */
-  cancel(): void;
 }
 
 export interface PDFMetadata {
