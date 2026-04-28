@@ -19,7 +19,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 
-import { ArrowLeft, CheckCircle2, Loader2, RotateCcw } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 
 import { AssessmentShell } from "@/components/assessment/AssessmentShell";
 import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
@@ -38,6 +38,10 @@ import {
   useRunReviewers,
 } from "@/hooks/runs";
 import { ReviewerProgressBadge } from "@/components/runs/ReviewerProgressBadge";
+import {
+  HITLReopenButton,
+  HITLStatusBadges,
+} from "@/components/runs/HITLStatusBadges";
 import { ConsensusPanel } from "@/components/runs/ConsensusPanel";
 
 interface FieldKey {
@@ -321,27 +325,11 @@ export default function QualityAssessmentFullScreen() {
         {template ? (
           <span className="text-xs text-muted-foreground">v{template.version}</span>
         ) : null}
-        {finalized ? (
-          <Badge
-            variant="outline"
-            className="border-emerald-300 bg-emerald-50 text-emerald-800"
-            data-testid="qa-finalized-badge"
-          >
-            <CheckCircle2 className="mr-1 h-3 w-3" />
-            Published
-          </Badge>
-        ) : null}
-        {parentRunId ? (
-          <Badge
-            variant="outline"
-            className="border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-200"
-            data-testid="qa-revision-badge"
-            title={`Derived from run ${parentRunId}`}
-          >
-            <RotateCcw className="mr-1 h-3 w-3" />
-            Revision
-          </Badge>
-        ) : null}
+        <HITLStatusBadges
+          kind="qa"
+          finalized={finalized}
+          parentRunId={parentRunId}
+        />
         {runDetail ? (
           <ReviewerProgressBadge
             reviewerCount={reviewerSummary.reviewers.length}
@@ -351,18 +339,13 @@ export default function QualityAssessmentFullScreen() {
         ) : null}
       </div>
       <div className="flex items-center gap-2">
-        {finalized ? (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => void handleReopen()}
-            disabled={reopening || !session}
-            data-testid="qa-reopen-button"
-          >
-            <RotateCcw className="mr-1 h-3 w-3" />
-            {reopening ? "Reopening…" : "Reopen for revision"}
-          </Button>
-        ) : null}
+        <HITLReopenButton
+          kind="qa"
+          visible={finalized}
+          onClick={() => void handleReopen()}
+          disabled={!session}
+          reopening={reopening}
+        />
         <Button
           size="sm"
           onClick={() => void handlePublish()}

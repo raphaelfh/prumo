@@ -24,8 +24,11 @@ import {extractionLogger} from '@/lib/extraction/observability';
 import {errorTracker} from '@/services/errorTracking';
 import {ResizablePanel, ResizablePanelGroup} from '@/components/ui/resizable';
 import {Button} from '@/components/ui/button';
-import {Badge} from '@/components/ui/badge';
-import {CheckCircle2, Loader2, RotateCcw} from 'lucide-react';
+import {Loader2} from 'lucide-react';
+import {
+  HITLReopenButton,
+  HITLStatusBadges,
+} from '@/components/runs/HITLStatusBadges';
 
 // Hooks
 import {useExtractionData} from '@/hooks/extraction/useExtractionData';
@@ -36,7 +39,16 @@ import {useExtractionAutoSave} from '@/hooks/extraction/useExtractionAutoSave';
 import {useOtherExtractions} from '@/hooks/extraction/colaboracao/useOtherExtractions';
 import {useAISuggestions} from '@/hooks/extraction/ai/useAISuggestions';
 import {useComparisonPermissions} from '@/hooks/shared/useComparisonPermissions';
-import {useReopenRun, useRun} from '@/hooks/runs';
+import {
+  useAdvanceRun,
+  useCreateConsensus,
+  useReopenRun,
+  useReviewerSummary,
+  useRun,
+  useRunReviewers,
+} from '@/hooks/runs';
+import {ConsensusPanel} from '@/components/runs/ConsensusPanel';
+import {ReviewerProgressBadge} from '@/components/runs/ReviewerProgressBadge';
 
 // Components
 import {ExtractionHeader} from '@/components/extraction/ExtractionHeader';
@@ -137,16 +149,102 @@ export default function ExtractionFullScreen() {
 
   // Detail fetch on the active run — drives the "Revision" badge when
   // `parameters.parent_run_id` is present (i.e. this run was reopened
-  // from a finalized predecessor).
-  const { data: runDetail } = useRun(activeRunId ?? null, {
-    enabled: !!activeRunId,
-  });
+  // from a finalized predecessor) and powers the reviewer-summary +
+  // ConsensusPanel surface below.
+  const { data: runDetail, refetch: refetchRun } = useRun(
+    activeRunId ?? null,
+    { enabled: !!activeRunId },
+  );
   const parentRunId =
     runDetail?.run.parameters &&
     typeof runDetail.run.parameters === 'object' &&
     'parent_run_id' in runDetail.run.parameters
       ? String(runDetail.run.parameters.parent_run_id)
       : null;
+
+  // Multi-reviewer state: count, divergence, profiles.
+  const reviewerSummary = useReviewerSummary(runDetail);
+  const reviewerProfiles = useRunReviewers(activeRunId ?? null, {
+    enabled: !!activeRunId,
+  });
+
+  // Mutations needed for consensus resolution + finalize.
+  const advanceMutation = useAdvanceRun(activeRunId ?? '');
+  const consensusMutation = useCreateConsensus(activeRunId ?? '');
+
+  const inConsensusStage = runDetail?.run.stage === 'consensus';
+
+  // {instance::field} → "Section · Field" label map for ConsensusPanel.
+  // Built from the loaded entity_types + their child fields. The field
+  // join lives in useExtractionData; for now we use the instance label
+  // alone (entityType.label) plus the field label fetched off the run
+  // detail's proposals/decisions when available.
+  const fieldLabelByCoord = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const inst of instances) {
+      const et = entityTypes.find((e) => e.id === inst.entity_type_id);
+      const sectionLabel = et?.label ?? et?.name ?? 'Section';
+      // Decisions + proposals carry the field id but not the label;
+      // fall back to the field id when nothing else is known. The
+      // ConsensusPanel still renders correctly — just shows the id.
+      const seenFields = new Set<string>();
+      for (const d of runDetail?.decisions ?? []) {
+        if (d.instance_id !== inst.id || seenFields.has(d.field_id)) continue;
+        seenFields.add(d.field_id);
+        map[`${inst.id}::${d.field_id}`] = `${sectionLabel} · ${d.field_id.slice(0, 8)}…`;
+      }
+    }
+    return map;
+  }, [instances, entityTypes, runDetail?.decisions]);
+
+  const handleSelectExisting = useCallback(
+    async (params: {
+      instanceId: string;
+      fieldId: string;
+      decisionId: string;
+    }) => {
+      await consensusMutation.mutateAsync({
+        instance_id: params.instanceId,
+        field_id: params.fieldId,
+        mode: 'select_existing',
+        selected_decision_id: params.decisionId,
+      });
+      await refetchRun();
+    },
+    [consensusMutation, refetchRun],
+  );
+
+  const handleManualOverride = useCallback(
+    async (params: {
+      instanceId: string;
+      fieldId: string;
+      value: unknown;
+      rationale: string;
+    }) => {
+      await consensusMutation.mutateAsync({
+        instance_id: params.instanceId,
+        field_id: params.fieldId,
+        mode: 'manual_override',
+        value: { value: params.value },
+        rationale: params.rationale,
+      });
+      await refetchRun();
+    },
+    [consensusMutation, refetchRun],
+  );
+
+  const handleFinalizeFromConsensus = useCallback(async () => {
+    if (!activeRunId) return;
+    await advanceMutation.mutateAsync({ target_stage: 'finalized' });
+    await Promise.all([refetchRun(), refreshValues(), refreshFinalizedRun()]);
+    toast.success('Extraction finalized.');
+  }, [
+    activeRunId,
+    advanceMutation,
+    refetchRun,
+    refreshValues,
+    refreshFinalizedRun,
+  ]);
 
   const handleReopen = useCallback(async () => {
     if (!finalizedRun?.id) return;
@@ -892,47 +990,52 @@ export default function ExtractionFullScreen() {
         </div>
       ) : null}
 
-      {/* HITL banner: revision indicator + reopen affordance */}
-      {(parentRunId || (!activeRunId && finalizedRun)) ? (
+      {/* HITL banner: revision indicator + reopen affordance + reviewer
+          progress. Same primitives the QA page uses — see HITLStatusBadges. */}
+      {(parentRunId || (!activeRunId && finalizedRun) || runDetail) ? (
         <div
           className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/40 px-4 py-2 text-xs"
           data-testid="extraction-hitl-banner"
         >
           <div className="flex items-center gap-2">
-            {parentRunId ? (
-              <Badge
-                variant="outline"
-                className="border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-200"
-                data-testid="extraction-revision-badge"
-                title={`Derived from run ${parentRunId}`}
-              >
-                <RotateCcw className="mr-1 h-3 w-3" />
-                Revision
-              </Badge>
-            ) : null}
-            {!activeRunId && finalizedRun ? (
-              <Badge
-                variant="outline"
-                className="border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
-                data-testid="extraction-finalized-badge"
-              >
-                <CheckCircle2 className="mr-1 h-3 w-3" />
-                Published
-              </Badge>
+            <HITLStatusBadges
+              kind="extraction"
+              finalized={!activeRunId && !!finalizedRun}
+              parentRunId={parentRunId}
+            />
+            {runDetail ? (
+              <ReviewerProgressBadge
+                reviewerCount={reviewerSummary.reviewers.length}
+                requiredReviewerCount={reviewerSummary.requiredReviewerCount}
+                divergentCount={reviewerSummary.divergentCoords.size}
+              />
             ) : null}
           </div>
-          {!activeRunId && finalizedRun ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void handleReopen()}
-              disabled={reopening}
-              data-testid="extraction-reopen-button"
-            >
-              <RotateCcw className="mr-1 h-3 w-3" />
-              {reopening ? 'Reopening…' : 'Reopen for revision'}
-            </Button>
-          ) : null}
+          <HITLReopenButton
+            kind="extraction"
+            visible={!activeRunId && !!finalizedRun}
+            onClick={() => void handleReopen()}
+            reopening={reopening}
+          />
+        </div>
+      ) : null}
+
+      {/* Consensus stage takes over the form area: reviewers diverged
+          and need to resolve. Same component the QA page uses. */}
+      {inConsensusStage && runDetail ? (
+        <div className="border-b bg-muted/20 px-4 py-3" data-testid="extraction-consensus-area">
+          <ConsensusPanel
+            runDetail={runDetail}
+            summary={reviewerSummary}
+            fieldLabelByCoord={fieldLabelByCoord}
+            reviewerLabelById={reviewerProfiles.labelById}
+            avatarById={reviewerProfiles.avatarById}
+            onSelectExisting={handleSelectExisting}
+            onManualOverride={handleManualOverride}
+            onFinalize={handleFinalizeFromConsensus}
+            isResolving={consensusMutation.isPending}
+            isFinalizing={advanceMutation.isPending}
+          />
         </div>
       ) : null}
 
