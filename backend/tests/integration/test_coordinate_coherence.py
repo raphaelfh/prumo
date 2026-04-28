@@ -16,19 +16,24 @@ from app.services.run_lifecycle_service import RunLifecycleService
 async def _coherent_triplet(db: AsyncSession):
     project_id = (await db.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
     article_id = (await db.execute(text("SELECT id FROM public.articles LIMIT 1"))).scalar()
-    template_id = (await db.execute(text("SELECT id FROM public.project_extraction_templates LIMIT 1"))).scalar()
+    template_id = (
+        await db.execute(text("SELECT id FROM public.project_extraction_templates LIMIT 1"))
+    ).scalar()
     profile_id = (await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
     if not all((project_id, article_id, template_id, profile_id)):
         return None
     # Pick instance and field that match the same template.
-    row = await db.execute(text("""
+    row = await db.execute(
+        text("""
         SELECT i.id, f.id
         FROM public.extraction_instances i
         JOIN public.extraction_entity_types et ON et.id = i.entity_type_id
         JOIN public.extraction_fields f ON f.entity_type_id = et.id
         WHERE i.template_id = :tid
         LIMIT 1
-    """), {"tid": template_id})
+    """),
+        {"tid": template_id},
+    )
     pair = row.first()
     if pair is None:
         return None
@@ -51,7 +56,9 @@ async def test_coherent_triplet_passes(db_session: AsyncSession) -> None:
         pytest.skip("Need fixtures.")
     run_id, instance_id, field_id = fx
     # Should not raise
-    await assert_coords_coherent(db_session, run_id=run_id, instance_id=instance_id, field_id=field_id)
+    await assert_coords_coherent(
+        db_session, run_id=run_id, instance_id=instance_id, field_id=field_id
+    )
     await db_session.rollback()
 
 
@@ -88,13 +95,16 @@ async def test_field_from_different_entity_type_raises(db_session: AsyncSession)
         pytest.skip("Need fixtures.")
     run_id, instance_id, _ = fx
     # Pick a field whose entity_type differs from the instance's
-    other_field_row = await db_session.execute(text("""
+    other_field_row = await db_session.execute(
+        text("""
         SELECT f.id FROM public.extraction_fields f
         WHERE f.entity_type_id <> (
             SELECT entity_type_id FROM public.extraction_instances WHERE id = :iid
         )
         LIMIT 1
-    """), {"iid": instance_id})
+    """),
+        {"iid": instance_id},
+    )
     other_field_id = other_field_row.scalar()
     if other_field_id is None:
         pytest.skip("Need >=2 entity_types with fields.")

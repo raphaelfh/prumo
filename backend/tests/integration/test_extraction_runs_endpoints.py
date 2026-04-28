@@ -38,20 +38,12 @@ async def _resolve_fixtures(
 ) -> tuple[UUID, UUID, UUID, UUID, UUID, UUID] | None:
     """Resolve (project, article, template, profile, instance, field) IDs from the
     test database, picking instance + field that share the same template/entity_type."""
-    project_id = (
-        await db.execute(text("SELECT id FROM public.projects LIMIT 1"))
-    ).scalar()
-    article_id = (
-        await db.execute(text("SELECT id FROM public.articles LIMIT 1"))
-    ).scalar()
+    project_id = (await db.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
+    article_id = (await db.execute(text("SELECT id FROM public.articles LIMIT 1"))).scalar()
     template_id = (
-        await db.execute(
-            text("SELECT id FROM public.project_extraction_templates LIMIT 1")
-        )
+        await db.execute(text("SELECT id FROM public.project_extraction_templates LIMIT 1"))
     ).scalar()
-    profile_id = (
-        await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))
-    ).scalar()
+    profile_id = (await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
     if not all((project_id, article_id, template_id, profile_id)):
         return None
 
@@ -639,9 +631,7 @@ async def test_create_decision_accept_returns_201(
     db_session: AsyncSession,
     auth_as_profile: UUID,
 ) -> None:
-    run_id, instance_id, field_id, proposal_id = await _setup_review_run(
-        db_client, db_session
-    )
+    run_id, instance_id, field_id, proposal_id = await _setup_review_run(db_client, db_session)
 
     response = await db_client.post(
         f"{API_PREFIX}/{run_id}/decisions",
@@ -667,9 +657,7 @@ async def test_create_decision_invalid_enum_returns_422(
     db_session: AsyncSession,
     auth_as_profile: UUID,  # noqa: ARG001
 ) -> None:
-    run_id, instance_id, field_id, _ = await _setup_review_run(
-        db_client, db_session
-    )
+    run_id, instance_id, field_id, _ = await _setup_review_run(db_client, db_session)
 
     response = await db_client.post(
         f"{API_PREFIX}/{run_id}/decisions",
@@ -688,9 +676,7 @@ async def test_create_decision_accept_without_proposal_id_returns_400(
     db_session: AsyncSession,
     auth_as_profile: UUID,  # noqa: ARG001
 ) -> None:
-    run_id, instance_id, field_id, _ = await _setup_review_run(
-        db_client, db_session
-    )
+    run_id, instance_id, field_id, _ = await _setup_review_run(db_client, db_session)
 
     response = await db_client.post(
         f"{API_PREFIX}/{run_id}/decisions",
@@ -713,9 +699,7 @@ async def test_create_decision_edit_without_value_returns_400(
     db_session: AsyncSession,
     auth_as_profile: UUID,  # noqa: ARG001
 ) -> None:
-    run_id, instance_id, field_id, _ = await _setup_review_run(
-        db_client, db_session
-    )
+    run_id, instance_id, field_id, _ = await _setup_review_run(db_client, db_session)
 
     response = await db_client.post(
         f"{API_PREFIX}/{run_id}/decisions",
@@ -769,9 +753,7 @@ async def _setup_consensus_run(
 ) -> tuple[UUID, UUID, UUID, UUID]:
     """Create a run, advance through proposal/review/consensus, and return
     (run_id, instance_id, field_id, decision_id)."""
-    run_id, instance_id, field_id, proposal_id = await _setup_review_run(
-        db_client, db_session
-    )
+    run_id, instance_id, field_id, proposal_id = await _setup_review_run(db_client, db_session)
     decision_resp = await db_client.post(
         f"{API_PREFIX}/{run_id}/decisions",
         json={
@@ -793,9 +775,7 @@ async def test_create_consensus_select_existing_returns_201(
     db_session: AsyncSession,
     auth_as_profile: UUID,  # noqa: ARG001
 ) -> None:
-    run_id, instance_id, field_id, decision_id = await _setup_consensus_run(
-        db_client, db_session
-    )
+    run_id, instance_id, field_id, decision_id = await _setup_consensus_run(db_client, db_session)
 
     response = await db_client.post(
         f"{API_PREFIX}/{run_id}/consensus",
@@ -821,9 +801,7 @@ async def test_create_consensus_invalid_mode_returns_422(
     db_session: AsyncSession,
     auth_as_profile: UUID,  # noqa: ARG001
 ) -> None:
-    run_id, instance_id, field_id, _ = await _setup_consensus_run(
-        db_client, db_session
-    )
+    run_id, instance_id, field_id, _ = await _setup_consensus_run(db_client, db_session)
 
     response = await db_client.post(
         f"{API_PREFIX}/{run_id}/consensus",
@@ -842,9 +820,7 @@ async def test_create_consensus_select_existing_without_decision_returns_400(
     db_session: AsyncSession,
     auth_as_profile: UUID,  # noqa: ARG001
 ) -> None:
-    run_id, instance_id, field_id, _ = await _setup_consensus_run(
-        db_client, db_session
-    )
+    run_id, instance_id, field_id, _ = await _setup_consensus_run(db_client, db_session)
 
     response = await db_client.post(
         f"{API_PREFIX}/{run_id}/consensus",
@@ -864,9 +840,7 @@ async def test_create_consensus_manual_override_without_value_returns_400(
     db_session: AsyncSession,
     auth_as_profile: UUID,  # noqa: ARG001
 ) -> None:
-    run_id, instance_id, field_id, _ = await _setup_consensus_run(
-        db_client, db_session
-    )
+    run_id, instance_id, field_id, _ = await _setup_consensus_run(db_client, db_session)
 
     response = await db_client.post(
         f"{API_PREFIX}/{run_id}/consensus",
