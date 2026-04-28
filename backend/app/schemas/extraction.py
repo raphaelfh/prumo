@@ -5,7 +5,7 @@ Schemas Pydantic for extraction de data de articles cientificos.
 """
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -311,3 +311,118 @@ class ReviewSuggestionRequest(BaseModel):
     modified_value: Any | None = Field(default=None, alias="modifiedValue")
 
     model_config = ConfigDict(populate_by_name=True)
+
+
+# =================== CITATION ANCHOR (extraction_evidence.position v1) ===================
+#
+# Wire format for ``extraction_evidence.position`` JSONB. Mirrors
+# ``frontend/pdf-viewer/core/citation.ts`` and ``coordinates.ts`` field-for-
+# field, including camelCase JSON keys, so the viewer can read citation
+# rows from the API and render them without translation.
+#
+# Spec: ``docs/superpowers/specs/2026-04-28-pdf-viewer-database-requirements.md``
+# (sections 2 + 3).
+
+
+class PDFRect(BaseModel):
+    """Bounding box in PDF user space (origin bottom-left, points).
+
+    Mirrors ``frontend/pdf-viewer/core/coordinates.ts:14-19``.
+    """
+
+    x: float
+    y: float
+    width: float
+    height: float
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class PDFTextRange(BaseModel):
+    """A range of characters within a single page's text content.
+
+    ``charStart`` / ``charEnd`` are offsets into the page's concatenated
+    text — same offsets emitted by the engine's ``getTextContent()``.
+    Mirrors ``frontend/pdf-viewer/core/coordinates.ts:26-30``.
+    """
+
+    page: int = Field(..., ge=1, description="1-indexed page number")
+    char_start: int = Field(..., alias="charStart", ge=0)
+    char_end: int = Field(..., alias="charEnd", ge=0)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    @model_validator(mode="after")
+    def _char_range_valid(self) -> "PDFTextRange":
+        if self.char_end < self.char_start:
+            raise ValueError("charEnd must be >= charStart")
+        return self
+
+
+class TextCitationAnchor(BaseModel):
+    """Char-range only — most robust to re-OCR / PDF re-encoding."""
+
+    kind: Literal["text"]
+    range: PDFTextRange
+    quote: str | None = Field(
+        default=None,
+        description="Optional canonical text used for highlight matching",
+    )
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class RegionCitationAnchor(BaseModel):
+    """Bbox only — works for figures, tables, image regions."""
+
+    kind: Literal["region"]
+    page: int = Field(..., ge=1, description="1-indexed page the rect is on")
+    rect: PDFRect
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class HybridCitationAnchor(BaseModel):
+    """Both range and bbox + canonical quote — recommended for AI citations."""
+
+    kind: Literal["hybrid"]
+    range: PDFTextRange
+    rect: PDFRect
+    quote: str
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+CitationAnchor = Annotated[
+    TextCitationAnchor | RegionCitationAnchor | HybridCitationAnchor,
+    Field(discriminator="kind"),
+]
+
+
+class PositionV1(BaseModel):
+    """v1 wire format for ``extraction_evidence.position`` JSONB.
+
+    Discriminated on ``anchor.kind``; service-layer writers must populate
+    ``extraction_evidence.text_content`` and ``page_number`` to match the
+    anchor (see spec §2).
+    """
+
+    version: Literal[1]
+    anchor: CitationAnchor
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+def parse_position(
+    raw: dict[str, Any] | None,
+) -> PositionV1 | None:
+    """Validate a ``extraction_evidence.position`` JSONB payload.
+
+    Accepts ``None`` (legacy rows with no position attached) or a dict in
+    the v1 shape. Anything in between raises ``pydantic.ValidationError``
+    so callers can surface a clear contract violation.
+    """
+
+    if raw is None:
+        return None
+    return PositionV1.model_validate(raw)

@@ -235,6 +235,12 @@ class ArticleFile(BaseModel):
         "Article",
         back_populates="files",
     )
+    text_blocks: Mapped[list["ArticleTextBlock"]] = relationship(
+        "ArticleTextBlock",
+        back_populates="article_file",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
     # Indices definidos via __table_args__
     __table_args__ = (
@@ -245,3 +251,155 @@ class ArticleFile(BaseModel):
 
     def __repr__(self) -> str:
         return f"<ArticleFile {self.storage_key}>"
+
+
+class ArticleTextBlock(BaseModel):
+    """Per-page indexed text block for an ``ArticleFile``.
+
+    Populated by the article-ingestion pipeline (OpenDataLoader-PDF or
+    equivalent) and consumed by the AI extraction service to produce
+    grounded citations whose char offsets map back to bounding boxes the
+    PDF viewer can highlight.
+
+    The shape mirrors the runtime ``PDFRect`` and ``PDFTextRange`` types
+    in ``frontend/pdf-viewer/core/`` field-for-field. See
+    ``docs/superpowers/specs/2026-04-28-pdf-viewer-database-requirements.md``.
+    """
+
+    __tablename__ = "article_text_blocks"
+
+    article_file_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.article_files.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # 1-indexed page within the source PDF.
+    page_number: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Order within the page (0-indexed).
+    block_index: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Offsets within the page's concatenated text (char_end is exclusive).
+    char_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    char_end: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # PDF user space, points: {x, y, width, height}.
+    bbox: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+    # Closed vocabulary: paragraph | heading | list_item | table_cell
+    # | figure_caption | header | footer (CHECK constraint at the DB level).
+    block_type: Mapped[str] = mapped_column(Text, nullable=False)
+
+    article_file: Mapped["ArticleFile"] = relationship(
+        "ArticleFile",
+        back_populates="text_blocks",
+    )
+
+    __table_args__ = ({"schema": "public"},)
+
+    def __repr__(self) -> str:
+        return (
+            f"<ArticleTextBlock "
+            f"article_file={self.article_file_id} "
+            f"p{self.page_number}#{self.block_index}>"
+        )
+
+
+# Legacy user-markup tables. These exist in the schema since
+# `0001_baseline_v1` but had no ORM models — Plan 7 will eventually
+# consolidate them into a single W3C-shaped `pdf_annotations` table.
+# In the interim we expose them via SQLAlchemy so server-side code can
+# query/write them through the same session as everything else.
+
+
+class ArticleHighlight(BaseModel):
+    """User-created text highlight on a PDF page."""
+
+    __tablename__ = "article_highlights"
+
+    article_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.articles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    article_file_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.article_files.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    user_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.profiles.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    position: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    highlighted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    color: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    __table_args__ = ({"schema": "public"},)
+
+
+class ArticleBox(BaseModel):
+    """User-drawn rectangular region on a PDF page."""
+
+    __tablename__ = "article_boxes"
+
+    article_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.articles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    article_file_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.article_files.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    user_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.profiles.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    position: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    label: Mapped[str | None] = mapped_column(String, nullable=True)
+    color: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    __table_args__ = ({"schema": "public"},)
+
+
+class ArticleAnnotation(BaseModel):
+    """User-authored note anchored to a PDF page or region."""
+
+    __tablename__ = "article_annotations"
+
+    article_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.articles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    article_file_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.article_files.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    user_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("public.profiles.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    position: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = ({"schema": "public"},)
