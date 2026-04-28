@@ -1,4 +1,4 @@
-"""Clone a global Quality-Assessment template into a project."""
+"""Clone a global extraction or quality-assessment template into a project."""
 
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
@@ -16,12 +16,12 @@ from app.models.extraction import (
 from app.models.extraction_versioning import ExtractionTemplateVersion
 
 
-class QaTemplateNotFoundError(Exception):
-    """The supplied global template id does not exist or is not QA."""
+class TemplateNotFoundError(Exception):
+    """The supplied global template id does not exist or has the wrong kind."""
 
 
-class QaTemplateClone:
-    """Result envelope returned by ``QaTemplateCloneService.clone``."""
+class TemplateClone:
+    """Result envelope returned by ``TemplateCloneService.clone``."""
 
     def __init__(
         self,
@@ -39,12 +39,13 @@ class QaTemplateClone:
         self.created = created
 
 
-class QaTemplateCloneService:
-    """Clone a Quality-Assessment template (PROBAST/QUADAS-2/...) into a project.
+class TemplateCloneService:
+    """Clone a global template (CHARMS / PROBAST / QUADAS-2 / ...) into a project.
 
-    Idempotent on ``(project_id, global_template_id)``: a second call returns
-    the existing clone instead of creating duplicates. Wraps everything in a
-    single flush so partial failures don't leave half-cloned state.
+    Kind-agnostic: pass ``kind`` to require a specific lineage at the global
+    level. Idempotent on ``(project_id, global_template_id)``: a second call
+    returns the existing clone instead of creating duplicates. Wraps the work
+    in a single flush so partial failures don't leave half-cloned state.
     """
 
     def __init__(self, db: AsyncSession) -> None:
@@ -56,14 +57,14 @@ class QaTemplateCloneService:
         project_id: UUID,
         global_template_id: UUID,
         user_id: UUID,
-    ) -> QaTemplateClone:
+        kind: TemplateKind,
+    ) -> TemplateClone:
         global_tpl = await self.db.get(ExtractionTemplateGlobal, global_template_id)
         if global_tpl is None:
-            raise QaTemplateNotFoundError(f"Global template {global_template_id} not found")
-        if global_tpl.kind != TemplateKind.QUALITY_ASSESSMENT.value:
-            raise QaTemplateNotFoundError(
-                f"Template {global_template_id} is not a quality-assessment template "
-                f"(kind={global_tpl.kind})"
+            raise TemplateNotFoundError(f"Global template {global_template_id} not found")
+        if global_tpl.kind != kind.value:
+            raise TemplateNotFoundError(
+                f"Template {global_template_id} has kind={global_tpl.kind}, expected {kind.value}"
             )
 
         existing = await self._find_existing_clone(project_id, global_template_id)
@@ -82,7 +83,7 @@ class QaTemplateCloneService:
                 f"Active-version invariant violated for project_extraction_template "
                 f"{existing.id}; the DB trigger should have prevented this."
             )
-            return QaTemplateClone(
+            return TemplateClone(
                 project_template_id=existing.id,
                 version_id=version.id,
                 entity_type_count=entity_types,
@@ -166,7 +167,7 @@ class QaTemplateCloneService:
         self.db.add(version)
         await self.db.flush()
 
-        return QaTemplateClone(
+        return TemplateClone(
             project_template_id=project_tpl.id,
             version_id=version.id,
             entity_type_count=len(global_entity_types),

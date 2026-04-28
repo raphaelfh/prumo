@@ -9,8 +9,8 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     articles_export,
     extraction_runs,
+    hitl_sessions,
     model_extraction,
-    qa_templates,
     section_extraction,
     user_api_keys,
     zotero_import,
@@ -56,13 +56,7 @@ api_router.include_router(
 )
 
 api_router.include_router(
-    qa_templates.router,
-    prefix="/projects",
-    tags=["qa-templates"],
-)
-
-api_router.include_router(
-    qa_templates.qa_router,
-    prefix="",
-    tags=["qa-assessments"],
+    hitl_sessions.router,
+    prefix="/hitl",
+    tags=["hitl-sessions"],
 )

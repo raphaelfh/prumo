@@ -64,7 +64,7 @@ async def test_existing_templates_backfilled_to_extraction_kind(
     db_session: AsyncSession,
 ) -> None:
     # Project-level templates pre-date `kind`; the migration backfilled the
-    # legacy rows to 'extraction'. QA clones (qa_template_clone_service) now
+    # legacy rows to 'extraction'. QA clones (template_clone_service) now
     # legitimately produce 'quality_assessment' rows, so check the backfill
     # by ensuring legacy rows (no global_template_id pointing at a QA template)
     # are 'extraction'.
