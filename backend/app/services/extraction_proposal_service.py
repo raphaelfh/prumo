@@ -41,9 +41,30 @@ class ExtractionProposalService:
         run = await self.db.get(ExtractionRun, run_id)
         if run is None:
             raise InvalidProposalError(f"Run {run_id} not found")
-        if run.stage != ExtractionRunStage.PROPOSAL.value:
+
+        source_value = source.value if isinstance(source, ExtractionProposalSource) else source
+        # Stage gate is source-specific:
+        #
+        # * ``ai`` proposals only make sense in PROPOSAL — once the run
+        #   has advanced past it the AI phase is conceptually closed.
+        # * ``human`` / ``system`` proposals can be appended in PROPOSAL
+        #   *or* REVIEW. The Quality-Assessment flow treats every field
+        #   change as a ``human`` proposal, and an interrupted publish
+        #   (``proposal -> review`` advance succeeds, downstream consensus
+        #   call fails) leaves the run parked at REVIEW. Without this,
+        #   the user can no longer type into the form.
+        allowed_stages: set[str]
+        if source_value == "ai":
+            allowed_stages = {ExtractionRunStage.PROPOSAL.value}
+        else:
+            allowed_stages = {
+                ExtractionRunStage.PROPOSAL.value,
+                ExtractionRunStage.REVIEW.value,
+            }
+        if run.stage not in allowed_stages:
             raise InvalidProposalError(
-                f"Cannot record proposal: run stage is {run.stage}, not 'proposal'"
+                f"Cannot record proposal: run stage is {run.stage}, "
+                f"not in {sorted(allowed_stages)}"
             )
 
         await assert_coords_coherent(
@@ -53,7 +74,6 @@ class ExtractionProposalService:
             field_id=field_id,
         )
 
-        source_value = source.value if isinstance(source, ExtractionProposalSource) else source
         if source_value == "human" and source_user_id is None:
             raise InvalidProposalError("source='human' requires source_user_id")
 

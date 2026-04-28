@@ -131,6 +131,39 @@ async def test_record_proposal_blocked_outside_proposal_stage(
 
 
 @pytest.mark.asyncio
+async def test_record_human_proposal_accepted_at_review_stage(
+    db_session: AsyncSession,
+) -> None:
+    """Quality-Assessment / human flows must keep working when the run has
+    already advanced to REVIEW (e.g. after an interrupted publish that
+    succeeded the ``proposal -> review`` step but failed downstream).
+    Only AI proposals are gated to PROPOSAL; human/system are allowed at
+    PROPOSAL or REVIEW."""
+    fx = await _setup_run_with_instance_field(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    run_id, instance_id, field_id, profile_id = fx
+    lifecycle = RunLifecycleService(db_session)
+    await lifecycle.advance_stage(
+        run_id=run_id,
+        target_stage=ExtractionRunStage.REVIEW,
+        user_id=profile_id,
+    )
+    service = ExtractionProposalService(db_session)
+    record = await service.record_proposal(
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.HUMAN,
+        proposed_value={"value": "Y"},
+        source_user_id=profile_id,
+    )
+    assert record.id is not None
+    assert record.source == "human"
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
 async def test_record_proposal_rejects_incoherent_coordinates(
     db_session: AsyncSession,
 ) -> None:
