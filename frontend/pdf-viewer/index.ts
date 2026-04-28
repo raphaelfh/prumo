@@ -1,1 +1,1 @@
-export { PDF_VIEWER_MODULE_VERSION } from './core';
+export * from './core';
