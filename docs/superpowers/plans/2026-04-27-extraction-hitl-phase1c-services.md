@@ -2119,5 +2119,9 @@ Expected: full suite passes; ruff clean. If formatter wants to change anything, 
 - Endpoints under `/v1/runs/...`. → Plan 1C-2.
 - Refactor `model_extraction_service` and `section_extraction_service` to use `ProposalService`. → Plan 1C-2.
 - Drop 008 endpoints. → Plan 1C-2 or 1D.
-- Coordinate-coherence DB-level enforcement (instance.template = run.template). → Forward-looking, possibly Plan 1D.
+- **Coordinate-coherence validation (both service-level and DB-level)**. The lead summary mentioned service-level enforcement, but writers (`record_proposal`, `record_decision`, `record_consensus`) ship without coherence checks (no validation that `instance_id` belongs to the run's template-version, or that `field_id` belongs to `instance_id`'s entity_type). → **Plan 1C-2 endpoint layer must add this** as a shared helper before endpoints go live; otherwise a malformed payload could persist a bogus row.
 - Dual-writes to legacy `ai_suggestions` / `extracted_values` during transition. → Plan 1D / synthetic Run migration.
+- `kind` parameter on `RunLifecycleService.create_run` (currently hardcoded `"extraction"`). → Plan 1C-2 or Phase 2 — needed before QA template Runs.
+- Append-only DB-level enforcement (CHECK / RLS revoke UPDATE) on proposal/decision/consensus tables. → Follow-up; service layer is the only guard today.
+- `get_by_id` repository methods on proposal/decision repos (consensus value-resolution currently does load-all-and-filter). → Plan 1C-2 cleanup during endpoint wiring.
+- Optimistic-concurrency test for **two consecutive consensus calls** producing version=2 (current test only covers version=1 + stale-version conflict). → Plan 1C-2 coverage addition.
