@@ -53,21 +53,6 @@ POSTGRESQL_ENUM_VALUES: dict[str, list[str]] = {
     "extraction_run_status": ["pending", "running", "completed", "failed"],
     "suggestion_status": ["pending", "accepted", "rejected"],
     "extraction_instance_status": ["pending", "in_progress", "completed", "reviewed", "archived"],
-    # Unified evaluation enums
-    "evaluation_schema_version_status": ["draft", "published", "archived"],
-    "evaluation_item_type": ["text", "number", "boolean", "date", "choice_single", "choice_multi"],
-    "evaluation_run_status": ["pending", "active", "completed", "failed", "cancelled"],
-    "evaluation_run_stage": ["proposal", "review", "consensus", "finalized"],
-    "evaluation_proposal_source_type": ["ai", "human", "system"],
-    "reviewer_decision_type": ["accept", "reject", "edit"],
-    "consensus_decision_mode": ["select_existing", "manual_override"],
-    "published_state_status": ["published", "superseded"],
-    "evidence_entity_type": [
-        "proposal",
-        "reviewer_decision",
-        "consensus_decision",
-        "published_state",
-    ],
     # Extraction versioning + HITL config enums
     "hitl_config_scope_kind": ["project", "template"],
     "consensus_rule": ["unanimous", "majority", "arbitrator"],

@@ -20,32 +20,6 @@ from app.models.article_author import (
     ArticleSyncRun,
 )
 from app.models.base import Base, BaseModel, TimestampMixin, UUIDMixin
-from app.models.evaluation_decision import (
-    ConsensusDecisionMode,
-    ConsensusDecisionRecord,
-    EvidenceEntityType,
-    EvidenceRecord,
-    PublishedState,
-    PublishedStateStatus,
-    ReviewerDecisionRecord,
-    ReviewerDecisionType,
-    ReviewerState,
-)
-from app.models.evaluation_run import (
-    EvaluationProposalSourceType,
-    EvaluationRun,
-    EvaluationRunStage,
-    EvaluationRunStatus,
-    EvaluationRunTarget,
-    ProposalRecord,
-)
-from app.models.evaluation_schema import (
-    EvaluationItem,
-    EvaluationItemType,
-    EvaluationSchema,
-    EvaluationSchemaVersion,
-    EvaluationSchemaVersionStatus,
-)
 from app.models.extraction import (
     AISuggestion,
     ExtractedValue,
@@ -186,25 +160,4 @@ __all__ = [
     # User API Keys
     "UserAPIKey",
     "SUPPORTED_PROVIDERS",
-    # Unified evaluation
-    "EvaluationSchema",
-    "EvaluationSchemaVersion",
-    "EvaluationSchemaVersionStatus",
-    "EvaluationItem",
-    "EvaluationItemType",
-    "EvaluationRun",
-    "EvaluationRunStatus",
-    "EvaluationRunStage",
-    "EvaluationRunTarget",
-    "EvaluationProposalSourceType",
-    "ProposalRecord",
-    "ReviewerDecisionRecord",
-    "ReviewerDecisionType",
-    "ReviewerState",
-    "ConsensusDecisionRecord",
-    "ConsensusDecisionMode",
-    "PublishedState",
-    "PublishedStateStatus",
-    "EvidenceRecord",
-    "EvidenceEntityType",
 ]
