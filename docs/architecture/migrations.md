@@ -83,10 +83,15 @@ every line, rewrite the docstring, split into one-change-per-file.
 
 ## When to squash
 
-The current trail is **18 migrations totalling ~5,800 LOC**, including
-612 LOC of `0008_unified_evaluation_model_skeleton` that `0016_drop_008_stack`
-fully reverts. A fresh dev DB executes ~5,800 LOC to land at a schema
-that ~2,000 LOC could produce in one shot.
+> **2026-04-28 squash already happened.** The original 18 migrations
+> (now in `backend/alembic/versions/archive/`) were squashed into a
+> single baseline `0001_baseline_v1.py` + `baseline_v1.sql`. New work
+> stacks on top.
+
+The trigger then was: 18 migrations totalling ~5,800 LOC, including 612
+LOC of `0008_unified_evaluation_model_skeleton` that `0016_drop_008_stack`
+fully reverted. A fresh dev DB had to execute ~5,800 LOC to land at a
+schema that ~2,000 LOC of squash baseline produces in one shot.
 
 **Squash rule of thumb:** when the project ships a stable release (v1.0,
 v2.0, …) and the in-flight refactors have settled, replace the
@@ -100,18 +105,61 @@ the architecture doc.
   prepared to `alembic stamp` carefully.
 - For "cleanup" alone — every squash invalidates someone's local dev DB.
 
-**Squash recipe** (when the time is right):
+**Squash recipe** (the 2026-04-28 squash followed this exactly — keep
+this as the template for the next squash):
 
-1. Pick the new baseline revision id (e.g. `0001_v1_initial`).
-2. Capture the current schema: `pg_dump --schema-only --no-owner` from
-   a clean DB at HEAD, then translate into Alembic ops.
-3. Drop old `versions/*.py`. Keep them in a `versions/archive/` folder
-   if you want git-friendly history without confusing Alembic — or just
-   rely on `git log`.
-4. On dev DBs already at the old HEAD: `uv run alembic stamp <new_id>`
-   to mark the new baseline as applied without re-running it. On prod:
-   same.
-5. New migrations stack on top of the new baseline.
+1. Pick a baseline id. Convention: `0001_baseline_v<N>` where N is the
+   schema generation (we used `0001_baseline_v1`).
+2. Capture current schema:
+   ```bash
+   supabase db dump --local --schema=public --file=/tmp/dump.sql
+   ```
+3. Strip the noise:
+   ```bash
+   awk '
+   /^SET / { next }
+   /^SELECT pg_catalog\.set_config/ { next }
+   /^ALTER (TABLE|TYPE|FUNCTION|SCHEMA) .* OWNER TO/ { next }
+   /^CREATE TABLE IF NOT EXISTS "public"\."alembic_version"/,/^);/ { next }
+   /^ALTER TABLE ONLY "public"\."alembic_version"/,/PRIMARY KEY \("version_num"\);/ { next }
+   /^GRANT ALL ON TABLE "public"\."alembic_version"/ { next }
+   { print }
+   ' /tmp/dump.sql > backend/alembic/versions/baseline_v<N>.sql
+   ```
+4. Create the Python wrapper (`0001_baseline_v<N>.py`) that reads + executes
+   the `.sql` file. Pattern:
+   ```python
+   from pathlib import Path
+   from alembic import op
+   revision = "0001_baseline_v<N>"
+   down_revision = None
+
+   _SQL = Path(__file__).parent / "baseline_v<N>.sql"
+
+   def upgrade() -> None:
+       op.execute(_SQL.read_text(encoding="utf-8"))
+
+   def downgrade() -> None:
+       op.execute("DROP SCHEMA IF EXISTS public CASCADE;")
+       op.execute("CREATE SCHEMA public;")
+   ```
+5. Move all old migrations: `git mv backend/alembic/versions/*.py
+   backend/alembic/versions/archive/` (Alembic ignores subdirectories
+   under `versions/`).
+6. Stamp existing DBs at the new baseline:
+   ```bash
+   uv run alembic stamp --purge 0001_baseline_v<N>
+   ```
+   The `--purge` flag clears any stale revision row that points at an
+   archived id. Verify with `uv run alembic current`.
+7. Run the full test suite. If tests pass, the schema is functionally
+   identical to what the migration trail produced.
+
+**Note on `alembic check`:** after a squash, `alembic check` may report
+`modify_type` diffs for `String()` vs `TEXT()` and similar SQLAlchemy
+naming-convention noise. Those are pre-existing model/DB quirks
+unmasked by the squash, not real differences. Trust the test suite,
+not `alembic check`, for "is the schema right?".
 
 ## Tests
 
@@ -176,9 +224,27 @@ the canonical patterns.
 - When in doubt, write the migration's downgrade first. If you can't
   write a downgrade, you don't fully understand the upgrade.
 
+## Recommended next steps (not yet adopted)
+
+These would further cut friction for AI-assisted dev. Each is a small,
+isolated improvement:
+
+- **Squawk in CI** — Postgres migration linter; flags
+  `ADD COLUMN NOT NULL` without default, drops on populated tables, FKs
+  without indexes, and other dangerous patterns. Two-line GitHub
+  Actions step on top of `make db-fresh`. https://github.com/sbdchd/squawk
+- **Atlas (evaluation only)** — `atlasgo.io` does declarative
+  schema-as-code with Postgres + SQLAlchemy integration. Agent edits a
+  single source-of-truth file; Atlas computes the migration. Worth
+  evaluating in a sandbox before v2.0 — adoption cost ~1 sprint, payoff
+  is highest in refactor-heavy AI dev cycles.
+- **Supabase Branching** — ephemeral DB per PR for migration safety.
+  Solo dev makes this premature; consider when team grows.
+
 ## Reference
 
-- Alembic head: `uv run alembic current` (currently `20260428_0018`)
+- Alembic head: `uv run alembic current` (currently `0001_baseline_v1`)
 - Migration history: `make db-history`
+- Archived migrations (pre-squash): `backend/alembic/versions/archive/`
 - Architecture: `docs/architecture/extraction-hitl-architecture.md`
 - AI assistant guide: `.claude/CLAUDE.md` §3 (golden rule)
