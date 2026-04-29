@@ -42,9 +42,7 @@ def _to_read(snapshot: dict) -> HitlConfigRead:
         scope_id=UUID(scope_id) if scope_id else None,
         reviewer_count=snapshot["reviewer_count"],
         consensus_rule=snapshot["consensus_rule"],
-        arbitrator_id=(
-            UUID(snapshot["arbitrator_id"]) if snapshot.get("arbitrator_id") else None
-        ),
+        arbitrator_id=(UUID(snapshot["arbitrator_id"]) if snapshot.get("arbitrator_id") else None),
         inherited=bool(snapshot.get("inherited", False)),
     )
 

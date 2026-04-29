@@ -323,15 +323,10 @@ class SectionExtractionService(LoggerMixin):
         if run is None:
             raise ValueError(f"Run {run_id} not found")
         if run.stage != ExtractionRunStage.PROPOSAL.value:
-            raise ValueError(
-                f"Run {run_id} stage is {run.stage}; AI extraction requires "
-                "PROPOSAL"
-            )
+            raise ValueError(f"Run {run_id} stage is {run.stage}; AI extraction requires PROPOSAL")
 
         template = await self.db.get(ProjectExtractionTemplate, run.template_id)
-        framework: str | None = (
-            template.framework if template is not None else None
-        )
+        framework: str | None = template.framework if template is not None else None
         kind = run.kind
 
         await self._runs.start_run(run.id)

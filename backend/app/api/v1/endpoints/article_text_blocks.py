@@ -74,15 +74,19 @@ async def list_article_text_blocks(
         )
 
     rows = (
-        await db.execute(
-            select(ArticleTextBlock)
-            .where(ArticleTextBlock.article_file_id == article_file_id)
-            .order_by(
-                ArticleTextBlock.page_number.asc(),
-                ArticleTextBlock.block_index.asc(),
+        (
+            await db.execute(
+                select(ArticleTextBlock)
+                .where(ArticleTextBlock.article_file_id == article_file_id)
+                .order_by(
+                    ArticleTextBlock.page_number.asc(),
+                    ArticleTextBlock.block_index.asc(),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     blocks = [
         {

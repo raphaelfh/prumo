@@ -83,19 +83,12 @@ _DELETE_POLICY = """
 
 
 def _drop_all() -> None:
+    op.execute('DROP POLICY IF EXISTS "Members can view article files" ON storage.objects;')
     op.execute(
-        'DROP POLICY IF EXISTS "Members can view article files" ON storage.objects;'
+        'DROP POLICY IF EXISTS "Authenticated users can upload article files" ON storage.objects;'
     )
-    op.execute(
-        'DROP POLICY IF EXISTS "Authenticated users can upload article files" '
-        "ON storage.objects;"
-    )
-    op.execute(
-        'DROP POLICY IF EXISTS "Members can update article files" ON storage.objects;'
-    )
-    op.execute(
-        'DROP POLICY IF EXISTS "Members can delete article files" ON storage.objects;'
-    )
+    op.execute('DROP POLICY IF EXISTS "Members can update article files" ON storage.objects;')
+    op.execute('DROP POLICY IF EXISTS "Members can delete article files" ON storage.objects;')
 
 
 def upgrade() -> None:

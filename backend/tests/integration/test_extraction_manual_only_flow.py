@@ -54,12 +54,8 @@ async def _coords(
     instance_id, field_id) for an extraction-kind template that has at
     least one matching instance + field. Tests skip when the dev DB is
     not seeded."""
-    project_id = (
-        await db.execute(text("SELECT id FROM public.projects LIMIT 1"))
-    ).scalar()
-    article_id = (
-        await db.execute(text("SELECT id FROM public.articles LIMIT 1"))
-    ).scalar()
+    project_id = (await db.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
+    article_id = (await db.execute(text("SELECT id FROM public.articles LIMIT 1"))).scalar()
     template_id = (
         await db.execute(
             text(
@@ -68,9 +64,7 @@ async def _coords(
             )
         )
     ).scalar()
-    profile_id = (
-        await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))
-    ).scalar()
+    profile_id = (await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
     if not all((project_id, article_id, template_id, profile_id)):
         return None
     pair = (
@@ -249,15 +243,18 @@ async def test_human_proposal_blocks_ai_skip_flag(db_session: AsyncSession) -> N
     assert latest.proposed_value == {"value": "user-typed-this-first"}
 
     ai_count = (
-        await db_session.execute(
-            select(ExtractionProposalRecord)
-            .where(
-                ExtractionProposalRecord.run_id == session.run_id,
-                ExtractionProposalRecord.instance_id == instance_id,
-                ExtractionProposalRecord.field_id == field_id,
-                ExtractionProposalRecord.source == ExtractionProposalSource.AI.value,
+        (
+            await db_session.execute(
+                select(ExtractionProposalRecord).where(
+                    ExtractionProposalRecord.run_id == session.run_id,
+                    ExtractionProposalRecord.instance_id == instance_id,
+                    ExtractionProposalRecord.field_id == field_id,
+                    ExtractionProposalRecord.source == ExtractionProposalSource.AI.value,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert ai_count == []
     await db_session.rollback()

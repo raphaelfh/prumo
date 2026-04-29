@@ -64,13 +64,10 @@ _INDEX_FILE_PAGE_BLOCK = (
 )
 
 _INDEX_FILE_ID = (
-    "CREATE INDEX idx_article_text_blocks_file_id "
-    "ON public.article_text_blocks (article_file_id);"
+    "CREATE INDEX idx_article_text_blocks_file_id ON public.article_text_blocks (article_file_id);"
 )
 
-_RLS_ENABLE = (
-    "ALTER TABLE public.article_text_blocks ENABLE ROW LEVEL SECURITY;"
-)
+_RLS_ENABLE = "ALTER TABLE public.article_text_blocks ENABLE ROW LEVEL SECURITY;"
 
 _RLS_SELECT = """
 CREATE POLICY "Members can view article text blocks"

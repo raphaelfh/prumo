@@ -541,9 +541,9 @@ class TestExtractForRun:
         test can focus on a single behaviour."""
         from app.services.openai_service import OpenAIResponse, OpenAIUsage
 
-        service.db.get = AsyncMock(side_effect=lambda model_cls, _id: (
-            run if "Run" in model_cls.__name__ else template
-        ))
+        service.db.get = AsyncMock(
+            side_effect=lambda model_cls, _id: run if "Run" in model_cls.__name__ else template
+        )
 
         # PDF + entity-type fetches
         service._article_files.get_latest_pdf = AsyncMock(
@@ -569,9 +569,9 @@ class TestExtractForRun:
         service.db.execute = AsyncMock(return_value=execute_result)
 
         # Existing instance per entity_type
-        service._instances.get_by_article = AsyncMock(return_value=[
-            MagicMock(id=uuid4(), parent_instance_id=None)
-        ])
+        service._instances.get_by_article = AsyncMock(
+            return_value=[MagicMock(id=uuid4(), parent_instance_id=None)]
+        )
 
         # Run lifecycle / repo
         service._runs.start_run = AsyncMock()
@@ -589,9 +589,7 @@ class TestExtractForRun:
         )
 
         # Proposal writes
-        service._proposals.record_proposal = AsyncMock(
-            return_value=MagicMock(id=uuid4())
-        )
+        service._proposals.record_proposal = AsyncMock(return_value=MagicMock(id=uuid4()))
 
     @pytest.mark.asyncio
     async def test_extract_for_run_does_not_advance_when_disabled(
@@ -615,9 +613,7 @@ class TestExtractForRun:
         service._lifecycle.advance_stage.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_extract_for_run_advances_when_enabled(
-        self, service, qa_run, qa_template
-    ):
+    async def test_extract_for_run_advances_when_enabled(self, service, qa_run, qa_template):
         from app.models.extraction import ExtractionRunStage
 
         et = MagicMock()
@@ -639,9 +635,7 @@ class TestExtractForRun:
         assert ExtractionRunStage.REVIEW in target_stages
 
     @pytest.mark.asyncio
-    async def test_extract_for_run_rejects_non_proposal_stage(
-        self, service, qa_run, qa_template
-    ):
+    async def test_extract_for_run_rejects_non_proposal_stage(self, service, qa_run, qa_template):
         from app.models.extraction import ExtractionRunStage
 
         qa_run.stage = ExtractionRunStage.REVIEW.value
@@ -651,9 +645,7 @@ class TestExtractForRun:
             await service.extract_for_run(run_id=qa_run.id)
 
     @pytest.mark.asyncio
-    async def test_extract_for_run_fails_when_run_not_found(
-        self, service, qa_run, qa_template
-    ):
+    async def test_extract_for_run_fails_when_run_not_found(self, service, qa_run, qa_template):
         # Wire the pipeline normally, then override db.get to return None for
         # the Run lookup so the early "Run {id} not found" guard fires.
         self._wire_minimal_qa_pipeline(service, qa_run, qa_template, [])
@@ -815,9 +807,7 @@ class TestExtractOneEntityTypeForRun:
         service._instances.get_by_article = AsyncMock(
             return_value=[MagicMock(id=uuid4(), parent_instance_id=None)]
         )
-        service._fields_with_recent_human_proposal = AsyncMock(
-            return_value={f1.id, f2.id}
-        )
+        service._fields_with_recent_human_proposal = AsyncMock(return_value={f1.id, f2.id})
         # If filter logic is wrong the LLM gets called — fail loudly.
         service.openai_service.chat_completion_full = AsyncMock(
             side_effect=AssertionError("LLM must NOT be called when all fields are human")
@@ -861,9 +851,7 @@ class TestExtractOneEntityTypeForRun:
         # Even if there *would* be human-edited fields, the probe must not run
         # when skip_fields_with_human_proposals=False.
         service._fields_with_recent_human_proposal = AsyncMock(
-            side_effect=AssertionError(
-                "human-proposal probe must not run when skip flag is False"
-            )
+            side_effect=AssertionError("human-proposal probe must not run when skip flag is False")
         )
         service.openai_service.chat_completion_full = AsyncMock(
             return_value=OpenAIResponse(

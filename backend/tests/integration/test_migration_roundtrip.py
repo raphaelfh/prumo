@@ -126,28 +126,18 @@ async def test_alembic_history_chain_is_continuous() -> None:
     for path in sorted(versions_dir.glob("[0-9]*.py")):
         text_content = path.read_text()
         rev_line = next(
-            (
-                ln
-                for ln in text_content.splitlines()
-                if ln.strip().startswith("revision = ")
-            ),
+            (ln for ln in text_content.splitlines() if ln.strip().startswith("revision = ")),
             None,
         )
         down_line = next(
-            (
-                ln
-                for ln in text_content.splitlines()
-                if ln.strip().startswith("down_revision = ")
-            ),
+            (ln for ln in text_content.splitlines() if ln.strip().startswith("down_revision = ")),
             None,
         )
         assert rev_line is not None, f"{path.name}: missing 'revision = ...'"
         assert down_line is not None, f"{path.name}: missing 'down_revision = ...'"
         rev = rev_line.split("=", 1)[1].strip().strip('"').strip("'")
         down_raw = down_line.split("=", 1)[1].strip()
-        down: str | None = (
-            None if down_raw == "None" else down_raw.strip('"').strip("'")
-        )
+        down: str | None = None if down_raw == "None" else down_raw.strip('"').strip("'")
         revisions.append((rev, down))
 
     assert revisions, "No migration files discovered."
@@ -162,6 +152,4 @@ async def test_alembic_history_chain_is_continuous() -> None:
         )
     # No two files may declare the same revision id.
     rev_ids = [r for r, _ in revisions]
-    assert len(rev_ids) == len(set(rev_ids)), (
-        f"Duplicate revision id detected: {rev_ids}"
-    )
+    assert len(rev_ids) == len(set(rev_ids)), f"Duplicate revision id detected: {rev_ids}"

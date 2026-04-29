@@ -29,9 +29,7 @@ class HitlConfigPayload(BaseModel):
     @model_validator(mode="after")
     def _arbitrator_required_when_rule_is_arbitrator(self) -> "HitlConfigPayload":
         if self.consensus_rule == "arbitrator" and self.arbitrator_id is None:
-            raise ValueError(
-                "arbitrator_id is required when consensus_rule is 'arbitrator'"
-            )
+            raise ValueError("arbitrator_id is required when consensus_rule is 'arbitrator'")
         return self
 
 

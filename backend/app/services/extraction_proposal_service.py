@@ -63,8 +63,7 @@ class ExtractionProposalService:
             }
         if run.stage not in allowed_stages:
             raise InvalidProposalError(
-                f"Cannot record proposal: run stage is {run.stage}, "
-                f"not in {sorted(allowed_stages)}"
+                f"Cannot record proposal: run stage is {run.stage}, not in {sorted(allowed_stages)}"
             )
 
         await assert_coords_coherent(

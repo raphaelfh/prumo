@@ -82,7 +82,5 @@ def downgrade() -> None:
     awaitable_runner = raw_connection.await_
 
     awaitable_runner(
-        asyncpg_connection.execute(
-            "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;"
-        )
+        asyncpg_connection.execute("DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;")
     )

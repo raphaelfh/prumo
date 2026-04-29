@@ -88,9 +88,7 @@ class HitlConfigService:
     # ------------------------------------------------------------------
     async def get_for_project(self, project_id: UUID) -> dict[str, Any]:
         """Return the project-scoped config, falling back to system default."""
-        project_config = await self._repo.get_by_scope(
-            HitlConfigScopeKind.PROJECT, project_id
-        )
+        project_config = await self._repo.get_by_scope(HitlConfigScopeKind.PROJECT, project_id)
         if project_config is not None:
             snap = self._to_snapshot(project_config)
             snap["inherited"] = False
@@ -119,9 +117,7 @@ class HitlConfigService:
             return snap
 
         # Fall back to the project default (or system default).
-        project_config = await self._repo.get_by_scope(
-            HitlConfigScopeKind.PROJECT, project_id
-        )
+        project_config = await self._repo.get_by_scope(HitlConfigScopeKind.PROJECT, project_id)
         if project_config is not None:
             snap = self._to_snapshot(project_config)
             snap["inherited"] = True
@@ -182,9 +178,7 @@ class HitlConfigService:
         self, project_id: UUID, project_template_id: UUID
     ) -> dict[str, Any]:
         await self._ensure_template_in_project(project_id, project_template_id)
-        await self._repo.delete_by_scope(
-            HitlConfigScopeKind.TEMPLATE, project_template_id
-        )
+        await self._repo.delete_by_scope(HitlConfigScopeKind.TEMPLATE, project_template_id)
         return await self.get_for_template(project_id, project_template_id)
 
     # ------------------------------------------------------------------
@@ -207,9 +201,7 @@ class HitlConfigService:
         )
         row = result.first()
         if row is None:
-            raise ProjectTemplateNotFoundError(
-                f"Project template {project_template_id} not found"
-            )
+            raise ProjectTemplateNotFoundError(f"Project template {project_template_id} not found")
         if row[0] != project_id:
             raise TemplateProjectMismatchError(
                 "Project template does not belong to the requested project"
@@ -242,7 +234,5 @@ class HitlConfigService:
             "scope_id": str(config.scope_id),
             "reviewer_count": config.reviewer_count,
             "consensus_rule": config.consensus_rule,
-            "arbitrator_id": (
-                str(config.arbitrator_id) if config.arbitrator_id else None
-            ),
+            "arbitrator_id": (str(config.arbitrator_id) if config.arbitrator_id else None),
         }

@@ -271,9 +271,7 @@ async def test_get_template_config_inherits_from_project(
         json={"reviewer_count": 2, "consensus_rule": "majority"},
     )
 
-    res = await db_client.get(
-        f"/api/v1/projects/{project_id}/templates/{template_id}/hitl-config"
-    )
+    res = await db_client.get(f"/api/v1/projects/{project_id}/templates/{template_id}/hitl-config")
     assert res.status_code == 200, res.text
     data = res.json()["data"]
     assert data["scope_kind"] == "project"
@@ -326,9 +324,7 @@ async def test_template_endpoint_404_when_template_missing(
 ) -> None:
     project_id, _, _ = manager_project
     bogus = uuid4()
-    res = await db_client.get(
-        f"/api/v1/projects/{project_id}/templates/{bogus}/hitl-config"
-    )
+    res = await db_client.get(f"/api/v1/projects/{project_id}/templates/{bogus}/hitl-config")
     assert res.status_code == 404, res.text
 
 

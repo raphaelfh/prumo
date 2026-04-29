@@ -80,12 +80,16 @@ async def list_article_citations(
         )
 
     rows = (
-        await db.execute(
-            select(ExtractionEvidence)
-            .where(ExtractionEvidence.article_id == article_id)
-            .order_by(ExtractionEvidence.created_at.asc())
+        (
+            await db.execute(
+                select(ExtractionEvidence)
+                .where(ExtractionEvidence.article_id == article_id)
+                .order_by(ExtractionEvidence.created_at.asc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     citations: list[dict[str, Any]] = []
     for row in rows:

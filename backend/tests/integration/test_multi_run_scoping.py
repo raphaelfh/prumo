@@ -49,12 +49,8 @@ async def _coords(
     """Resolve (project_id, article_id, template_id, profile_id, instance_id, field_id)
     for an extraction-kind template that has at least one matching instance and field.
     Returns None if the dev DB hasn't been seeded — caller should ``pytest.skip``."""
-    project_id = (
-        await db.execute(text("SELECT id FROM public.projects LIMIT 1"))
-    ).scalar()
-    article_id = (
-        await db.execute(text("SELECT id FROM public.articles LIMIT 1"))
-    ).scalar()
+    project_id = (await db.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
+    article_id = (await db.execute(text("SELECT id FROM public.articles LIMIT 1"))).scalar()
     template_id = (
         await db.execute(
             text(
@@ -63,9 +59,7 @@ async def _coords(
             )
         )
     ).scalar()
-    profile_id = (
-        await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))
-    ).scalar()
+    profile_id = (await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
     if not all((project_id, article_id, template_id, profile_id)):
         return None
     pair = (
