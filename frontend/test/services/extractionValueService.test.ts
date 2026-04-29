@@ -14,27 +14,71 @@ vi.mock('@/integrations/api', () => ({
 import { supabase } from '@/integrations/supabase/client';
 import { apiClient } from '@/integrations/api';
 
+interface ChainCalls {
+  table?: string;
+  selects: string[];
+  eqs: Array<[string, unknown]>;
+  ins: Array<[string, unknown[]]>;
+  neqs: Array<[string, unknown]>;
+  orders: Array<[string, { ascending?: boolean } | undefined]>;
+  limits: number[];
+  maybeSingleCalled: boolean;
+}
+
 type AnyChain = Record<string, unknown> & {
   data: unknown;
   error: { message: string } | null;
+  __calls: ChainCalls;
 };
 
 /**
- * Builds a chainable mock that supports `.select().eq().in().order().neq().limit().maybeSingle()`
- * and resolves to `{ data, error }` either via `.maybeSingle()` or by being awaited
- * directly (Supabase query builders are thenables).
+ * Builds a chainable Supabase query mock that *records* every fluent
+ * method call so tests can assert on the filters/ordering applied —
+ * essential for catching kind/template/stage scoping regressions, the
+ * source of the recent "decision posted to wrong run" bug.
  */
 function chain(payload: { data: unknown; error?: { message: string } | null }): AnyChain {
   const result = { data: payload.data, error: payload.error ?? null };
+  const calls: ChainCalls = {
+    selects: [],
+    eqs: [],
+    ins: [],
+    neqs: [],
+    orders: [],
+    limits: [],
+    maybeSingleCalled: false,
+  };
   const c: AnyChain = {
     ...result,
-    select: vi.fn(() => c),
-    eq: vi.fn(() => c),
-    in: vi.fn(() => c),
-    order: vi.fn(() => c),
-    neq: vi.fn(() => c),
-    limit: vi.fn(() => c),
-    maybeSingle: vi.fn(() => Promise.resolve(result)),
+    __calls: calls,
+    select: vi.fn((cols?: string) => {
+      if (cols) calls.selects.push(cols);
+      return c;
+    }),
+    eq: vi.fn((col: string, val: unknown) => {
+      calls.eqs.push([col, val]);
+      return c;
+    }),
+    in: vi.fn((col: string, vals: unknown[]) => {
+      calls.ins.push([col, vals]);
+      return c;
+    }),
+    neq: vi.fn((col: string, val: unknown) => {
+      calls.neqs.push([col, val]);
+      return c;
+    }),
+    order: vi.fn((col: string, opts?: { ascending?: boolean }) => {
+      calls.orders.push([col, opts]);
+      return c;
+    }),
+    limit: vi.fn((n: number) => {
+      calls.limits.push(n);
+      return c;
+    }),
+    maybeSingle: vi.fn(() => {
+      calls.maybeSingleCalled = true;
+      return Promise.resolve(result);
+    }),
     then: (cb: (r: typeof result) => unknown) => Promise.resolve(cb(result)),
   };
   return c;
@@ -72,6 +116,47 @@ describe('ExtractionValueService.findActiveRun', () => {
     });
   });
 
+  it("scopes the query to kind='extraction' so QA runs cannot leak in", async () => {
+    const c = chain({ data: null });
+    (supabase.from as any).mockReturnValueOnce(c);
+    await ExtractionValueService.findActiveRun('article-1', 'tpl-1');
+    expect(c.__calls.eqs).toContainEqual(['kind', 'extraction']);
+  });
+
+  it('restricts stages to pending/proposal/review/consensus', async () => {
+    const c = chain({ data: null });
+    (supabase.from as any).mockReturnValueOnce(c);
+    await ExtractionValueService.findActiveRun('article-1', null);
+    const stageFilter = c.__calls.ins.find(([col]) => col === 'stage');
+    expect(stageFilter).toBeDefined();
+    expect(new Set(stageFilter![1])).toEqual(
+      new Set(['pending', 'proposal', 'review', 'consensus']),
+    );
+  });
+
+  it('orders by created_at DESC and picks one row — the latest run wins', async () => {
+    const c = chain({ data: null });
+    (supabase.from as any).mockReturnValueOnce(c);
+    await ExtractionValueService.findActiveRun('article-1', null);
+    expect(c.__calls.orders).toContainEqual(['created_at', { ascending: false }]);
+    expect(c.__calls.limits).toContain(1);
+    expect(c.__calls.maybeSingleCalled).toBe(true);
+  });
+
+  it('applies template_id filter when provided', async () => {
+    const c = chain({ data: null });
+    (supabase.from as any).mockReturnValueOnce(c);
+    await ExtractionValueService.findActiveRun('article-1', 'tpl-7');
+    expect(c.__calls.eqs).toContainEqual(['template_id', 'tpl-7']);
+  });
+
+  it('does NOT apply template_id filter when null', async () => {
+    const c = chain({ data: null });
+    (supabase.from as any).mockReturnValueOnce(c);
+    await ExtractionValueService.findActiveRun('article-1', null);
+    expect(c.__calls.eqs.find(([col]) => col === 'template_id')).toBeUndefined();
+  });
+
   it('throws APIError when Supabase reports an error', async () => {
     (supabase.from as any).mockReturnValueOnce(
       chain({ data: null, error: { message: 'boom' } }),
@@ -79,6 +164,68 @@ describe('ExtractionValueService.findActiveRun', () => {
     await expect(
       ExtractionValueService.findActiveRun('article-1', null),
     ).rejects.toThrow(/boom/);
+  });
+});
+
+describe('ExtractionValueService.findLatestFinalizedRun', () => {
+  it("scopes the query to kind='extraction' and stage='finalized'", async () => {
+    const c = chain({ data: null });
+    (supabase.from as any).mockReturnValueOnce(c);
+    await ExtractionValueService.findLatestFinalizedRun('article-1', 'tpl-1');
+    expect(c.__calls.eqs).toContainEqual(['kind', 'extraction']);
+    expect(c.__calls.eqs).toContainEqual(['stage', 'finalized']);
+    expect(c.__calls.eqs).toContainEqual(['template_id', 'tpl-1']);
+    expect(c.__calls.orders).toContainEqual(['created_at', { ascending: false }]);
+    expect(c.__calls.limits).toContain(1);
+  });
+
+  it('returns the row when one exists', async () => {
+    (supabase.from as any).mockReturnValueOnce(
+      chain({
+        data: {
+          id: 'run-final',
+          stage: 'finalized',
+          status: 'completed',
+          template_id: 'tpl-1',
+          created_at: '2026-04-28T10:00:00Z',
+        },
+      }),
+    );
+    const result = await ExtractionValueService.findLatestFinalizedRun(
+      'article-1',
+      'tpl-1',
+    );
+    expect(result).toEqual({
+      id: 'run-final',
+      stage: 'finalized',
+      status: 'completed',
+      template_id: 'tpl-1',
+    });
+  });
+
+  it('returns null when no finalized run exists', async () => {
+    (supabase.from as any).mockReturnValueOnce(chain({ data: null }));
+    const result = await ExtractionValueService.findLatestFinalizedRun(
+      'article-1',
+      null,
+    );
+    expect(result).toBeNull();
+  });
+
+  it('throws APIError when Supabase reports an error', async () => {
+    (supabase.from as any).mockReturnValueOnce(
+      chain({ data: null, error: { message: 'fnz fail' } }),
+    );
+    await expect(
+      ExtractionValueService.findLatestFinalizedRun('article-1', null),
+    ).rejects.toThrow(/fnz fail/);
+  });
+
+  it('does NOT apply template_id filter when null', async () => {
+    const c = chain({ data: null });
+    (supabase.from as any).mockReturnValueOnce(c);
+    await ExtractionValueService.findLatestFinalizedRun('article-1', null);
+    expect(c.__calls.eqs.find(([col]) => col === 'template_id')).toBeUndefined();
   });
 });
 
@@ -143,6 +290,50 @@ describe('ExtractionValueService.loadValuesForUser', () => {
     const rows = await ExtractionValueService.loadValuesForUser('run-1', 'user-1');
     expect(rows[0].value).toEqual({ value: 'nested', unit: 'mg' });
   });
+
+  it('keeps reject decisions in the returned rows (consumer filters them)', async () => {
+    // The service is the source of truth for decision history; the
+    // ``useExtractedValues`` consumer is responsible for skipping rejects
+    // when populating the form. Don't filter at the service layer.
+    (supabase.from as any).mockReturnValueOnce(
+      chain({
+        data: [
+          {
+            run_id: 'run-1',
+            reviewer_id: 'user-1',
+            instance_id: 'inst-1',
+            field_id: 'field-1',
+            current_decision_id: 'dec-1',
+            reviewer_decision: {
+              decision: 'reject',
+              value: null,
+              created_at: '2026-04-28T10:00:00Z',
+            },
+          },
+        ],
+      }),
+    );
+    const rows = await ExtractionValueService.loadValuesForUser('run-1', 'user-1');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].decision).toBe('reject');
+  });
+
+  it("scopes the query to (run_id, reviewer_id)", async () => {
+    const c = chain({ data: [] });
+    (supabase.from as any).mockReturnValueOnce(c);
+    await ExtractionValueService.loadValuesForUser('run-1', 'user-1');
+    expect(c.__calls.eqs).toContainEqual(['run_id', 'run-1']);
+    expect(c.__calls.eqs).toContainEqual(['reviewer_id', 'user-1']);
+  });
+
+  it('throws APIError when Supabase reports an error', async () => {
+    (supabase.from as any).mockReturnValueOnce(
+      chain({ data: null, error: { message: 'states down' } }),
+    );
+    await expect(
+      ExtractionValueService.loadValuesForUser('run-1', 'user-1'),
+    ).rejects.toThrow(/states down/);
+  });
 });
 
 describe('ExtractionValueService.loadValuesForOthers', () => {
@@ -200,6 +391,42 @@ describe('ExtractionValueService.loadValuesForOthers', () => {
     // Latest timestamp wins
     expect(result[0].latestDecidedAt).toBe('2026-04-28T11:00:00Z');
   });
+
+  it("scopes the query to run_id and excludes the caller via neq('reviewer_id', currentReviewerId)", async () => {
+    const c = chain({ data: [] });
+    (supabase.from as any).mockReturnValueOnce(c);
+    await ExtractionValueService.loadValuesForOthers('run-1', 'user-self');
+    expect(c.__calls.eqs).toContainEqual(['run_id', 'run-1']);
+    expect(c.__calls.neqs).toContainEqual(['reviewer_id', 'user-self']);
+  });
+
+  it('falls back to "User" when the reviewer profile is missing', async () => {
+    (supabase.from as any).mockReturnValueOnce(
+      chain({
+        data: [
+          {
+            run_id: 'run-1',
+            reviewer_id: 'user-x',
+            instance_id: 'inst-1',
+            field_id: 'field-1',
+            current_decision_id: 'dec-x',
+            reviewer_decision: {
+              decision: 'edit',
+              value: { value: 'V' },
+              created_at: '2026-04-28T10:00:00Z',
+            },
+            reviewer: null,
+          },
+        ],
+      }),
+    );
+    const result = await ExtractionValueService.loadValuesForOthers(
+      'run-1',
+      'user-self',
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].reviewerName).toBe('User');
+  });
 });
 
 describe('ExtractionValueService write paths', () => {
@@ -252,5 +479,24 @@ describe('ExtractionValueService write paths', () => {
         decision: 'reject',
       },
     });
+  });
+
+  it('writes always target the runId passed in (no implicit findActiveRun)', async () => {
+    // Regression cover for the bug where an upstream layer was
+    // re-resolving the active run via findActiveRun and silently
+    // posting to a stale PENDING run. The service must not consult
+    // ``findActiveRun`` — it must use what the caller hands it.
+    (apiClient as any).mockClear();
+    await ExtractionValueService.saveValue('explicit-run', 'inst-1', 'field-1', 1);
+    await ExtractionValueService.acceptProposal(
+      'explicit-run',
+      'inst-1',
+      'field-1',
+      'p-1',
+    );
+    await ExtractionValueService.rejectValue('explicit-run', 'inst-1', 'field-1');
+    for (const call of (apiClient as any).mock.calls) {
+      expect(call[0]).toBe('/api/v1/runs/explicit-run/decisions');
+    }
   });
 });

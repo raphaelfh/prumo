@@ -104,6 +104,64 @@ async def test_alembic_head_is_expected_revision() -> None:
     out = _run_alembic("current")
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0005_hitl_invariants" in out, (
-        f"Expected head revision '0005_hitl_invariants', got:\n{out}"
+    assert "0006_article_text_blocks" in out, (
+        f"Expected head revision '0006_article_text_blocks', got:\n{out}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_alembic_history_chain_is_continuous() -> None:
+    """Defence-in-depth on top of the explicit head pin: every migration
+    file under ``alembic/versions/`` must form a single linear chain from
+    ``0001_baseline_v1`` up to head, with each ``down_revision`` matching
+    the previous file's ``revision``. Catches:
+
+    - Orphan migrations (missing ``down_revision``).
+    - Branch points (two files claiming the same parent).
+    - Drift between filename ordering and the chain (e.g. someone
+      reorders files but forgets to update ``down_revision``).
+    """
+    versions_dir = _BACKEND_DIR / "alembic" / "versions"
+    revisions: list[tuple[str, str | None]] = []
+    for path in sorted(versions_dir.glob("[0-9]*.py")):
+        text_content = path.read_text()
+        rev_line = next(
+            (
+                ln
+                for ln in text_content.splitlines()
+                if ln.strip().startswith("revision = ")
+            ),
+            None,
+        )
+        down_line = next(
+            (
+                ln
+                for ln in text_content.splitlines()
+                if ln.strip().startswith("down_revision = ")
+            ),
+            None,
+        )
+        assert rev_line is not None, f"{path.name}: missing 'revision = ...'"
+        assert down_line is not None, f"{path.name}: missing 'down_revision = ...'"
+        rev = rev_line.split("=", 1)[1].strip().strip('"').strip("'")
+        down_raw = down_line.split("=", 1)[1].strip()
+        down: str | None = (
+            None if down_raw == "None" else down_raw.strip('"').strip("'")
+        )
+        revisions.append((rev, down))
+
+    assert revisions, "No migration files discovered."
+    # First migration must have no parent.
+    assert revisions[0][1] is None, (
+        f"First migration {revisions[0][0]} has down_revision {revisions[0][1]}, expected None."
+    )
+    # Each subsequent migration must point at its predecessor.
+    for (rev, down), (prev_rev, _) in zip(revisions[1:], revisions[:-1], strict=True):
+        assert down == prev_rev, (
+            f"Migration {rev} points at {down}, but the previous file declared revision {prev_rev}."
+        )
+    # No two files may declare the same revision id.
+    rev_ids = [r for r, _ in revisions]
+    assert len(rev_ids) == len(set(rev_ids)), (
+        f"Duplicate revision id detected: {rev_ids}"
     )

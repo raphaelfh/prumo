@@ -649,3 +649,239 @@ class TestExtractForRun:
 
         with pytest.raises(ValueError, match="PROPOSAL"):
             await service.extract_for_run(run_id=qa_run.id)
+
+    @pytest.mark.asyncio
+    async def test_extract_for_run_fails_when_run_not_found(
+        self, service, qa_run, qa_template
+    ):
+        # Wire the pipeline normally, then override db.get to return None for
+        # the Run lookup so the early "Run {id} not found" guard fires.
+        self._wire_minimal_qa_pipeline(service, qa_run, qa_template, [])
+        service.db.get = AsyncMock(return_value=None)
+
+        with pytest.raises(ValueError, match="not found"):
+            await service.extract_for_run(run_id=qa_run.id)
+
+
+class TestFieldsWithRecentHumanProposal:
+    """Re-run safety: only fields whose newest proposal on this Run is
+    ``source='human'`` get filtered out. AI-newest fields stay eligible."""
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_set_for_empty_field_ids(self, service):
+        result = await service._fields_with_recent_human_proposal(
+            run_id=uuid4(),
+            instance_id=uuid4(),
+            field_ids=[],
+        )
+        assert result == set()
+        # Should short-circuit before hitting the DB.
+        assert getattr(service.db, "execute", None) is None or not (
+            isinstance(service.db.execute, AsyncMock) and service.db.execute.await_count
+        )
+
+    @pytest.mark.asyncio
+    async def test_picks_only_fields_whose_newest_proposal_is_human(self, service):
+        from app.models.extraction_workflow import ExtractionProposalSource
+
+        f_human_only = uuid4()
+        f_ai_then_human = uuid4()
+        f_human_then_ai = uuid4()
+        f_ai_only = uuid4()
+
+        # Order matters: the service iterates by ``(field_id, created_at desc)``
+        # so the first row per field_id wins. Reproduce that ordering here.
+        rows_in_order = [
+            (f_human_only, ExtractionProposalSource.HUMAN.value),
+            (f_ai_then_human, ExtractionProposalSource.HUMAN.value),  # newest
+            (f_ai_then_human, ExtractionProposalSource.AI.value),
+            (f_human_then_ai, ExtractionProposalSource.AI.value),  # newest
+            (f_human_then_ai, ExtractionProposalSource.HUMAN.value),
+            (f_ai_only, ExtractionProposalSource.AI.value),
+        ]
+        execute_result = MagicMock()
+        execute_result.all.return_value = rows_in_order
+        service.db.execute = AsyncMock(return_value=execute_result)
+
+        result = await service._fields_with_recent_human_proposal(
+            run_id=uuid4(),
+            instance_id=uuid4(),
+            field_ids=[f_human_only, f_ai_then_human, f_human_then_ai, f_ai_only],
+        )
+
+        assert result == {f_human_only, f_ai_then_human}
+
+    @pytest.mark.asyncio
+    async def test_fields_without_proposals_are_not_in_result(self, service):
+        f_no_proposal = uuid4()
+        execute_result = MagicMock()
+        execute_result.all.return_value = []
+        service.db.execute = AsyncMock(return_value=execute_result)
+
+        result = await service._fields_with_recent_human_proposal(
+            run_id=uuid4(),
+            instance_id=uuid4(),
+            field_ids=[f_no_proposal],
+        )
+
+        assert result == set()
+
+
+class TestExtractOneEntityTypeForRun:
+    """Field-restoration invariant: after we filter ``full_entity_type.fields``
+    to skip human-edited ones, we must restore the original list in a finally
+    block so callers that reuse the cached entity_type don't see a mutated
+    tree (would otherwise corrupt subsequent extractions in the same Run)."""
+
+    @pytest.fixture
+    def run(self):
+        from app.models.extraction import ExtractionRunStage
+
+        run = MagicMock()
+        run.id = uuid4()
+        run.project_id = uuid4()
+        run.article_id = uuid4()
+        run.template_id = uuid4()
+        run.stage = ExtractionRunStage.PROPOSAL.value
+        run.kind = "extraction"
+        return run
+
+    @pytest.mark.asyncio
+    async def test_restores_field_list_after_filtering(self, service, run):
+        from app.services.openai_service import OpenAIResponse, OpenAIUsage
+
+        f_keep = MagicMock()
+        f_keep.id = uuid4()
+        f_keep.name = "kept"
+        f_skip = MagicMock()
+        f_skip.id = uuid4()
+        f_skip.name = "skipped_due_to_human"
+
+        full_et = MagicMock()
+        full_et.id = uuid4()
+        full_et.name = "Section"
+        full_et.description = "desc"
+        full_et.fields = [f_keep, f_skip]
+        original_fields_ref = full_et.fields
+
+        service._entity_types.get_with_fields = AsyncMock(return_value=full_et)
+        service._instances.get_by_article = AsyncMock(
+            return_value=[MagicMock(id=uuid4(), parent_instance_id=None)]
+        )
+
+        # Mark f_skip as human-edited so the filter excludes it.
+        async def fake_human_probe(*, run_id, instance_id, field_ids):  # noqa: ARG001
+            return {f_skip.id}
+
+        service._fields_with_recent_human_proposal = AsyncMock(side_effect=fake_human_probe)
+
+        # LLM + suggestion writes
+        service.openai_service.chat_completion_full = AsyncMock(
+            return_value=OpenAIResponse(
+                content=json.dumps({}),
+                usage=OpenAIUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+                model="gpt-4o-mini",
+            )
+        )
+        service._create_suggestions = AsyncMock(return_value=0)
+
+        et_summary = MagicMock()
+        et_summary.id = full_et.id
+        et_summary.name = full_et.name
+
+        await service._extract_one_entity_type_for_run(
+            run=run,
+            entity_type=et_summary,
+            pdf_text="text",
+            framework=None,
+            kind="extraction",
+            skip_fields_with_human_proposals=True,
+            model="gpt-4o-mini",
+        )
+
+        # Original fields list must be put back before returning.
+        assert full_et.fields == [f_keep, f_skip]
+        assert full_et.fields == original_fields_ref
+
+    @pytest.mark.asyncio
+    async def test_skips_entity_when_every_field_is_human_edited(self, service, run):
+        f1 = MagicMock(id=uuid4(), name="a")
+        f2 = MagicMock(id=uuid4(), name="b")
+        full_et = MagicMock()
+        full_et.id = uuid4()
+        full_et.fields = [f1, f2]
+
+        service._entity_types.get_with_fields = AsyncMock(return_value=full_et)
+        service._instances.get_by_article = AsyncMock(
+            return_value=[MagicMock(id=uuid4(), parent_instance_id=None)]
+        )
+        service._fields_with_recent_human_proposal = AsyncMock(
+            return_value={f1.id, f2.id}
+        )
+        # If filter logic is wrong the LLM gets called — fail loudly.
+        service.openai_service.chat_completion_full = AsyncMock(
+            side_effect=AssertionError("LLM must NOT be called when all fields are human")
+        )
+        service._create_suggestions = AsyncMock(return_value=0)
+
+        result = await service._extract_one_entity_type_for_run(
+            run=run,
+            entity_type=MagicMock(id=full_et.id, name="x"),
+            pdf_text="text",
+            framework=None,
+            kind="extraction",
+            skip_fields_with_human_proposals=True,
+            model="gpt-4o-mini",
+        )
+
+        assert result == {"suggestions_created": 0, "tokens_total": 0, "skipped": True}
+        service.openai_service.chat_completion_full.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_filter_when_skip_flag_is_false(self, service, run):
+        from app.services.openai_service import OpenAIResponse, OpenAIUsage
+
+        # ``MagicMock(name='a')`` sets the *mock's* name, not the .name attribute.
+        # Set it explicitly so json.dumps inside _build_extraction_schema works.
+        f1 = MagicMock(id=uuid4())
+        f1.name = "a"
+        f1.field_type = "string"
+        f1.description = ""
+        f1.is_required = False
+        full_et = MagicMock()
+        full_et.id = uuid4()
+        full_et.name = "Section"
+        full_et.description = ""
+        full_et.fields = [f1]
+
+        service._entity_types.get_with_fields = AsyncMock(return_value=full_et)
+        service._instances.get_by_article = AsyncMock(
+            return_value=[MagicMock(id=uuid4(), parent_instance_id=None)]
+        )
+        # Even if there *would* be human-edited fields, the probe must not run
+        # when skip_fields_with_human_proposals=False.
+        service._fields_with_recent_human_proposal = AsyncMock(
+            side_effect=AssertionError(
+                "human-proposal probe must not run when skip flag is False"
+            )
+        )
+        service.openai_service.chat_completion_full = AsyncMock(
+            return_value=OpenAIResponse(
+                content=json.dumps({}),
+                usage=OpenAIUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+                model="gpt-4o-mini",
+            )
+        )
+        service._create_suggestions = AsyncMock(return_value=0)
+
+        await service._extract_one_entity_type_for_run(
+            run=run,
+            entity_type=MagicMock(id=full_et.id, name="x"),
+            pdf_text="text",
+            framework=None,
+            kind="extraction",
+            skip_fields_with_human_proposals=False,
+            model="gpt-4o-mini",
+        )
+
+        service._fields_with_recent_human_proposal.assert_not_called()

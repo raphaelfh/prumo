@@ -153,6 +153,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
           value: suggestion.value,
           confidence: suggestion.confidence,
           reviewerId: user.id,
+          runId,
         });
       }
 
@@ -194,7 +195,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
         return next;
       });
     }
-  }, [suggestions, projectId, articleId, acceptStrategy, onSuggestionAccepted]);
+  }, [suggestions, projectId, articleId, runId, acceptStrategy, onSuggestionAccepted]);
 
   const rejectSuggestion = useCallback(async (instanceId: string, fieldId: string) => {
     const key = getSuggestionKey(instanceId, fieldId);
@@ -225,6 +226,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
           fieldId,
           projectId,
           articleId,
+          runId,
         });
       }
 
@@ -265,7 +267,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
         return next;
       });
     }
-  }, [suggestions, projectId, articleId, acceptStrategy, onSuggestionRejected]);
+  }, [suggestions, projectId, articleId, runId, acceptStrategy, onSuggestionRejected]);
 
   const batchAccept = useCallback(async (threshold = 0.8) => {
     try {

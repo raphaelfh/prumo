@@ -33,6 +33,7 @@ import {
 // Hooks
 import {useExtractionData} from '@/hooks/extraction/useExtractionData';
 import {useExtractedValues} from '@/hooks/extraction/useExtractedValues';
+import {useExtractionSession} from '@/hooks/extraction/useExtractionSession';
 import {useFinalizedExtractionRun} from '@/hooks/extraction/useFinalizedExtractionRun';
 import {useExtractionProgress} from '@/hooks/extraction/useExtractionProgress';
 import {useExtractionAutoSave} from '@/hooks/extraction/useExtractionAutoSave';
@@ -116,25 +117,45 @@ export default function ExtractionFullScreen() {
     fieldsCount: number;
   } | null>(null);
 
-    // Hook to manage extracted values
+  // Open / resume the HITL session for this (article × project_template).
+  // Mirrors the QA flow: the backend ensures an extraction Run exists,
+  // seeds top-level instances if missing, and parks it in PROPOSAL so
+  // the autosave (which writes `human` proposals) can fire immediately.
+  const sessionResult = useExtractionSession({
+    projectId,
+    articleId,
+    projectTemplateId: template?.id,
+    enabled: !!projectId && !!articleId && !!template?.id,
+  });
+  const activeRunId = sessionResult.session?.runId ?? null;
+
+  // Detail fetch on the active run — drives the "Revision" badge when
+  // `parameters.parent_run_id` is present, the stage-aware read path of
+  // useExtractedValues, and the reviewer-summary + ConsensusPanel below.
+  const { data: runDetail, refetch: refetchRun } = useRun(
+    activeRunId ?? null,
+    { enabled: !!activeRunId },
+  );
+  const stage = runDetail?.run.stage ?? null;
+  const proposals = runDetail?.proposals;
+  const isFinalized = stage === 'finalized';
+
+  // Hook to manage extracted values — read path branches on stage.
   const {
     values,
     updateValue,
     loading: valuesLoading,
     initialized: valuesInitialized,
-    save: saveValues,
     refresh: refreshValues,
-    runId: activeRunId
   } = useExtractedValues({
-    articleId: articleId || '',
-    projectId: projectId || '',
-    templateId: template?.id,
-    enabled: !!articleId && !!projectId
+    runId: activeRunId,
+    stage,
+    proposals,
+    enabled: !!activeRunId,
   });
 
-  // Reopen wiring: when no active run is in flight (because the previous
-  // run was finalized), surface the latest finalized run so the user can
-  // re-open it. The reopen mutation creates a new REVIEW-stage run with
+  // Reopen wiring: when the active run is finalized, surface the reopen
+  // affordance. The reopen mutation creates a new REVIEW-stage run with
   // proposals seeded from the published values.
   const {
     finalizedRun,
@@ -142,19 +163,10 @@ export default function ExtractionFullScreen() {
   } = useFinalizedExtractionRun({
     articleId: articleId || '',
     projectTemplateId: template?.id ?? null,
-    enabled: !!articleId && !!template?.id && !activeRunId,
+    enabled: !!articleId && !!template?.id && (!activeRunId || isFinalized),
   });
   const reopenMutation = useReopenRun();
   const [reopening, setReopening] = useState(false);
-
-  // Detail fetch on the active run — drives the "Revision" badge when
-  // `parameters.parent_run_id` is present (i.e. this run was reopened
-  // from a finalized predecessor) and powers the reviewer-summary +
-  // ConsensusPanel surface below.
-  const { data: runDetail, refetch: refetchRun } = useRun(
-    activeRunId ?? null,
-    { enabled: !!activeRunId },
-  );
   const parentRunId =
     runDetail?.run.parameters &&
     typeof runDetail.run.parameters === 'object' &&
@@ -275,14 +287,28 @@ export default function ExtractionFullScreen() {
   // extraction completes. See usePreserveScroll for the rAF dance.
   const preserveScroll = usePreserveScroll(SCROLL_CONTAINERS_TO_PRESERVE);
 
-    // Auto-save hook (only enable after values initialized)
-  const { isSaving, lastSaved } = useExtractionAutoSave({
-    articleId: articleId || '',
-    projectId: projectId || '',
-    templateId: template?.id,
+    // Auto-save hook — writes `human` proposals on the active run; no-op
+    // until the session is open and the run is in a writable stage.
+  const { isSaving, lastSaved, saveNow } = useExtractionAutoSave({
+    runId: activeRunId,
     values,
-    enabled: !!articleId && !!projectId && !loading && valuesInitialized
+    enabled: !!activeRunId && !loading && valuesInitialized && !isFinalized,
   });
+
+  // "Submit for review" — flush pending edits and advance the run from
+  // PROPOSAL to REVIEW so other reviewers can pick up. Mirrors QA's
+  // ``handlePublish`` shape but stops at REVIEW because Data Extraction
+  // expects multi-reviewer accept/reject before consensus + finalize.
+  // Declared after `useExtractionAutoSave` so the closure picks up the
+  // already-initialized `saveNow` (avoids the temporal-dead-zone crash
+  // on first render).
+  const handleSubmitForReview = useCallback(async () => {
+    if (!activeRunId) return;
+    await saveNow();
+    await advanceMutation.mutateAsync({ target_stage: 'review' });
+    await Promise.all([refetchRun(), refreshValues()]);
+    toast.success('Submitted for review.');
+  }, [activeRunId, saveNow, advanceMutation, refetchRun, refreshValues]);
 
     // Permissions hook (controls comparison access)
   const permissions = useComparisonPermissions(
@@ -328,7 +354,17 @@ export default function ExtractionFullScreen() {
   } = useAISuggestions({
     articleId: articleId || '',
     projectId: projectId || '',
-    enabled: !!articleId && !!projectId,
+    runId: activeRunId ?? undefined,
+    // Wait for the session to resolve a run before issuing the
+    // suggestion query — otherwise the first render fires a global
+    // (no runId) lookup that immediately gets superseded by the
+    // run-scoped one. Pure waste; same UX outcome.
+    enabled: !!articleId && !!projectId && !!activeRunId,
+    // The run lives in PROPOSAL while the user edits, so a
+    // ReviewerDecision write would be rejected (decisions only land on
+    // REVIEW). Bubble accept/reject to the form pipeline instead — the
+    // autosave records each as a fresh `human` proposal.
+    acceptStrategy: 'human-proposal',
     onSuggestionAccepted: handleAISuggestionAccepted,
     onSuggestionRejected: handleAISuggestionRejected
   });
@@ -693,7 +729,7 @@ export default function ExtractionFullScreen() {
       });
 
       try {
-        await saveValues();
+        await saveNow();
         logger.info('handleFinalize', 'Valores salvos com sucesso');
       } catch (saveError: any) {
         logger.error('handleFinalize', 'Erro ao salvar valores pendentes', saveError as Error, {
@@ -956,10 +992,12 @@ export default function ExtractionFullScreen() {
         isSaving={isSaving}
         lastSaved={lastSaved}
         isComplete={isComplete}
-        onFinalize={handleFinalize}
+        onFinalize={stage === 'proposal' ? handleSubmitForReview : handleFinalize}
+        finalizeLabel={stage === 'proposal' ? 'Submit for review' : undefined}
         submitting={submitting}
         templateId={template?.id}
         templateName={template?.name}
+        runId={activeRunId}
         onExtractionComplete={handleExtractionComplete}
         aiSuggestions={aiSuggestions}
         onAISuggestionsClick={() => {

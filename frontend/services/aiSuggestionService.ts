@@ -251,6 +251,13 @@ export class AISuggestionService {
    * Accept an AI proposal: post a ReviewerDecision with
    * `decision='accept_proposal'`. The proposal id (which is now the
    * `suggestionId`) is the `proposal_record_id`.
+   *
+   * Callers should pass ``runId`` — the run the surface is editing.
+   * Without it the service falls back to the latest non-terminal
+   * extraction-kind run on the article, which can resolve to a stale
+   * PENDING/PROPOSAL run when the article carries multiple runs (batch
+   * extraction, reopens, contract-test pollution) and silently 400 on
+   * the decisions endpoint.
    */
   static async acceptSuggestion(params: {
     suggestionId: string;
@@ -261,16 +268,17 @@ export class AISuggestionService {
     value: unknown;
     confidence: number;
     reviewerId: string;
+    runId?: string;
   }): Promise<void> {
-    const { suggestionId, articleId, instanceId, fieldId } = params;
-    const run = await ExtractionValueService.findActiveRun(articleId, null);
-    if (!run) {
+    const { suggestionId, articleId, instanceId, fieldId, runId } = params;
+    const targetRunId = runId ?? (await this.resolveActiveRunId(articleId));
+    if (!targetRunId) {
       throw new APIError(
         'No active extraction run for this article — cannot accept proposal.',
       );
     }
     await ExtractionValueService.acceptProposal(
-      run.id,
+      targetRunId,
       instanceId,
       fieldId,
       suggestionId,
@@ -281,6 +289,8 @@ export class AISuggestionService {
    * Reject an AI proposal: post a ReviewerDecision with
    * `decision='reject'`. The historical proposal stays in
    * `extraction_proposal_records` for audit.
+   *
+   * Same ``runId`` plumbing rationale as ``acceptSuggestion``.
    */
   static async rejectSuggestion(params: {
     suggestionId: string;
@@ -290,12 +300,20 @@ export class AISuggestionService {
     fieldId?: string;
     projectId?: string;
     articleId?: string;
+    runId?: string;
   }): Promise<void> {
-    const { instanceId, fieldId, articleId } = params;
+    const { instanceId, fieldId, articleId, runId } = params;
     if (!instanceId || !fieldId || !articleId) return;
+    const targetRunId = runId ?? (await this.resolveActiveRunId(articleId));
+    if (!targetRunId) return;
+    await ExtractionValueService.rejectValue(targetRunId, instanceId, fieldId);
+  }
+
+  private static async resolveActiveRunId(
+    articleId: string,
+  ): Promise<string | null> {
     const run = await ExtractionValueService.findActiveRun(articleId, null);
-    if (!run) return;
-    await ExtractionValueService.rejectValue(run.id, instanceId, fieldId);
+    return run?.id ?? null;
   }
 
   static async getArticleInstanceIds(articleId: string): Promise<string[]> {
