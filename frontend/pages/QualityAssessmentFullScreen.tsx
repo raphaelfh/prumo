@@ -27,6 +27,7 @@ import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
 import { PrumoPdfViewer, articleFileSource } from "@prumo/pdf-viewer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { supabase } from "@/integrations/supabase/client";
 import { useProjectQATemplate } from "@/hooks/qa/useProjectQATemplate";
 import { useQAAssessmentSession } from "@/hooks/qa/useQAAssessmentSession";
 import {
@@ -62,6 +63,57 @@ export default function QualityAssessmentFullScreen() {
   }>();
   const navigate = useNavigate();
 
+  // The ``:templateId`` URL segment may point at either a project-level
+  // ``project_extraction_templates`` row (when the user landed here from
+  // the QA articles table — that table already operates on a project
+  // clone) or a global ``extraction_templates_global`` row (when the
+  // user opened QA from the data-extraction header menu, which lists
+  // the global pool). Resolve once before opening the session so we can
+  // route the id to the correct request field.
+  const [resolvedTemplate, setResolvedTemplate] = useState<
+    | { kind: "project"; id: string }
+    | { kind: "global"; id: string }
+    | { kind: "missing" }
+    | null
+  >(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!templateId) {
+      setResolvedTemplate(null);
+      return;
+    }
+    setResolvedTemplate(null);
+    void (async () => {
+      const { data: projectRow } = await supabase
+        .from("project_extraction_templates")
+        .select("id")
+        .eq("id", templateId)
+        .eq("kind", "quality_assessment")
+        .maybeSingle();
+      if (cancelled) return;
+      if (projectRow?.id) {
+        setResolvedTemplate({ kind: "project", id: projectRow.id });
+        return;
+      }
+      const { data: globalRow } = await supabase
+        .from("extraction_templates_global")
+        .select("id")
+        .eq("id", templateId)
+        .eq("kind", "quality_assessment")
+        .maybeSingle();
+      if (cancelled) return;
+      if (globalRow?.id) {
+        setResolvedTemplate({ kind: "global", id: globalRow.id });
+      } else {
+        setResolvedTemplate({ kind: "missing" });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [templateId]);
+
   const {
     session,
     loading: sessionLoading,
@@ -70,7 +122,12 @@ export default function QualityAssessmentFullScreen() {
   } = useQAAssessmentSession({
     projectId,
     articleId,
-    globalTemplateId: templateId,
+    globalTemplateId:
+      resolvedTemplate?.kind === "global" ? resolvedTemplate.id : undefined,
+    projectTemplateId:
+      resolvedTemplate?.kind === "project" ? resolvedTemplate.id : undefined,
+    enabled: resolvedTemplate?.kind === "global"
+      || resolvedTemplate?.kind === "project",
   });
 
   const {
@@ -295,8 +352,12 @@ export default function QualityAssessmentFullScreen() {
     );
   }
 
-  const loading = sessionLoading || templateLoading;
-  const error = sessionError ?? templateError;
+  const loading =
+    resolvedTemplate === null || sessionLoading || templateLoading;
+  const error =
+    resolvedTemplate?.kind === "missing"
+      ? `Quality-Assessment template ${templateId} not found. The link may be stale — pick a template from the list and try again.`
+      : (sessionError ?? templateError);
 
   const header = (
     <div className="flex items-center justify-between border-b bg-background px-4 py-3">

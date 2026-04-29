@@ -9,6 +9,7 @@ import {extraction} from './extraction';
 import {qa} from './qa';
 import {articles} from './articles';
 import {project} from './project';
+import {consensus} from './consensus';
 import {user} from './user';
 import {navigation} from './navigation';
 import {layout} from './layout';
@@ -25,6 +26,7 @@ export {
     qa,
     articles,
     project,
+    consensus,
     user,
     navigation,
     layout,
@@ -42,6 +44,7 @@ const copy = {
     qa,
     articles,
     project,
+    consensus,
     user,
     navigation,
     layout,

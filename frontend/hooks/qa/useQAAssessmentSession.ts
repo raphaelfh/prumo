@@ -8,6 +8,11 @@
  * The returned `refetch` triggers a fresh open call. Used after
  * `useReopenRun` so the page can pick up the newly-created
  * non-terminal run without a hard navigate / reload.
+ *
+ * Accepts either ``globalTemplateId`` (e.g. open-from-header-menu,
+ * triggers a clone-on-first-call) or ``projectTemplateId`` (e.g.
+ * open-from-the-articles-table where the project clone already exists).
+ * Pass exactly one — the backend rejects both.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -23,7 +28,8 @@ export interface QAAssessmentSession {
 interface UseQAAssessmentSessionProps {
   projectId: string | undefined;
   articleId: string | undefined;
-  globalTemplateId: string | undefined;
+  globalTemplateId?: string | undefined;
+  projectTemplateId?: string | undefined;
   enabled?: boolean;
 }
 
@@ -44,6 +50,7 @@ export function useQAAssessmentSession({
   projectId,
   articleId,
   globalTemplateId,
+  projectTemplateId,
   enabled = true,
 }: UseQAAssessmentSessionProps): UseQAAssessmentSessionResult {
   const [session, setSession] = useState<QAAssessmentSession | null>(null);
@@ -52,7 +59,8 @@ export function useQAAssessmentSession({
   const cancelledRef = useRef(false);
 
   const open = useCallback(async () => {
-    if (!enabled || !projectId || !articleId || !globalTemplateId) return;
+    if (!enabled || !projectId || !articleId) return;
+    if (!globalTemplateId && !projectTemplateId) return;
     setLoading(true);
     setError(null);
     try {
@@ -62,7 +70,9 @@ export function useQAAssessmentSession({
           kind: "quality_assessment",
           project_id: projectId,
           article_id: articleId,
-          global_template_id: globalTemplateId,
+          ...(projectTemplateId
+            ? { project_template_id: projectTemplateId }
+            : { global_template_id: globalTemplateId }),
         },
       });
       if (!cancelledRef.current) {
@@ -81,7 +91,7 @@ export function useQAAssessmentSession({
     } finally {
       if (!cancelledRef.current) setLoading(false);
     }
-  }, [enabled, projectId, articleId, globalTemplateId]);
+  }, [enabled, projectId, articleId, globalTemplateId, projectTemplateId]);
 
   useEffect(() => {
     cancelledRef.current = false;

@@ -47,3 +47,36 @@ async def require_project_scope(
             detail="Project access denied",
         )
     return user_sub
+
+
+async def require_project_manager(
+    project_id: UUID,
+    db: DbSession,
+    user_sub: UUID = Depends(get_current_user_sub),
+) -> UUID:
+    """Ensure current user is a manager of the requested project.
+
+    Used by endpoints that change project-wide configuration (HITL config,
+    template enablement, member management). Reviewer or viewer roles are
+    rejected here even though they may be able to read the config.
+    """
+    result = await db.execute(
+        text(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM public.project_members pm
+                WHERE pm.project_id = :project_id
+                  AND pm.user_id = :user_id
+                  AND pm.role = 'manager'
+            ) AS allowed
+            """
+        ),
+        {"project_id": str(project_id), "user_id": str(user_sub)},
+    )
+    if not bool(result.scalar_one()):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager role required",
+        )
+    return user_sub
