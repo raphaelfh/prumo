@@ -33,7 +33,13 @@ function ExtractionPDFPanelComponent({
 
   return (
     <>
-      <ResizablePanel defaultSize={50} minSize={30} maxSize={70}>
+      <ResizablePanel
+        id="extraction-pdf"
+        order={1}
+        defaultSize={50}
+        minSize={30}
+        maxSize={70}
+      >
         <PrumoPdfViewer source={source} className="h-full" />
       </ResizablePanel>
       <ResizableHandle withHandle />

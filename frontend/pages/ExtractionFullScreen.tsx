@@ -1050,7 +1050,12 @@ export default function ExtractionFullScreen() {
           />
 
             {/* Extraction form - Extracted to isolated component */}
-          <ResizablePanel defaultSize={showPDF ? 50 : 100} minSize={30}>
+          <ResizablePanel
+            id="extraction-form"
+            order={2}
+            defaultSize={showPDF ? 50 : 100}
+            minSize={30}
+          >
             <ExtractionFormPanel
               viewMode={viewMode}
               showPDF={showPDF}

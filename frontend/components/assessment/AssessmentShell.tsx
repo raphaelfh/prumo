@@ -40,6 +40,8 @@ export function AssessmentShell({
           {pdf.isOpen ? (
             <>
               <ResizablePanel
+                id="assessment-pdf"
+                order={1}
                 defaultSize={50}
                 minSize={30}
                 data-testid="assessment-shell-pdf"
@@ -50,6 +52,8 @@ export function AssessmentShell({
             </>
           ) : null}
           <ResizablePanel
+            id="assessment-form"
+            order={2}
             defaultSize={pdf.isOpen ? 50 : 100}
             minSize={30}
             data-testid="assessment-shell-form"
