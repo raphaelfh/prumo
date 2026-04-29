@@ -2,7 +2,7 @@ import {createStore, type StoreApi} from 'zustand';
 import type {Citation, CitationId} from './citation';
 import type {PDFDocumentHandle, PageRotation} from './engine';
 import type {PDFSource} from './source';
-import type {LoadStatus, SearchState, ViewerActions, ViewerState} from './state';
+import type {LoadStatus, SearchState, ViewerActions, ViewerMode, ViewerState} from './state';
 
 type ViewerData = Omit<ViewerState, 'actions'>;
 
@@ -23,6 +23,7 @@ const initialData: ViewerData = {
   currentPage: 1,
   scale: 1,
   rotation: 0,
+  mode: 'canvas',
   citations: new Map<CitationId, Citation>(),
   activeCitationId: null,
   search: initialSearch,
@@ -82,6 +83,10 @@ export function createViewerStore(
 
       setRotation(rotation: PageRotation) {
         set({rotation});
+      },
+
+      setMode(mode: ViewerMode) {
+        set({mode});
       },
 
       addCitation(citation: Citation) {

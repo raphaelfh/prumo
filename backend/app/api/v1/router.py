@@ -7,9 +7,11 @@ Agrega todas as rotas da API v1.
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
+    article_text_blocks,
     articles_export,
     citations,
     extraction_runs,
+    hitl_configs,
     hitl_sessions,
     model_extraction,
     project_templates,
@@ -70,7 +72,19 @@ api_router.include_router(
 )
 
 api_router.include_router(
+    hitl_configs.router,
+    prefix="/projects",
+    tags=["hitl-configs"],
+)
+
+api_router.include_router(
     citations.router,
     prefix="/articles",
     tags=["citations"],
+)
+
+api_router.include_router(
+    article_text_blocks.router,
+    prefix="/article-files",
+    tags=["article-text-blocks"],
 )

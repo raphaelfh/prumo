@@ -65,7 +65,7 @@ import {t} from '@/lib/copy';
 const SCROLL_CONTAINERS_TO_PRESERVE = [
   // Form panel — actual scroll happens on radix' inner viewport node.
   '[data-scroll-container="extraction-form"] [data-radix-scroll-area-viewport]',
-  // PDFViewerCore container.
+  // PDF viewer scroll container (Viewer.Body).
   '[data-scroll-container="true"]',
 ];
 

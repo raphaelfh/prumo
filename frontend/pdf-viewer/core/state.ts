@@ -40,6 +40,9 @@ export interface SearchState {
  * the `actions` namespace so consumers can subscribe to actions with
  * a stable reference (selector returns the same object across renders).
  */
+/** Display mode — see `setMode` for semantics. */
+export type ViewerMode = 'canvas' | 'reader';
+
 export interface ViewerState {
   // Document
   source: PDFSource | null;
@@ -56,6 +59,12 @@ export interface ViewerState {
   /** Render scale. 1.0 = 100%. */
   scale: number;
   rotation: PageRotation;
+  /**
+   * Display mode. `canvas` (default) renders pages via the engine; `reader`
+   * renders structured text blocks (typography-first, screen-reader friendly,
+   * driven by `article_text_blocks` data fetched outside the viewer).
+   */
+  mode: ViewerMode;
 
   // Citations
   citations: ReadonlyMap<CitationId, Citation>;
@@ -80,6 +89,7 @@ export interface ViewerActions {
   // Rendering
   setScale(scale: number): void;
   setRotation(rotation: PageRotation): void;
+  setMode(mode: ViewerMode): void;
 
   // Citations
   addCitation(citation: Citation): void;

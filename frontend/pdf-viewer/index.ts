@@ -2,8 +2,14 @@
 export * from './core';
 
 // Compound primitives
-export {Viewer, CanvasLayer, TextLayer} from './primitives';
-export type {RootProps, CanvasLayerProps, TextLayerProps} from './primitives';
+export {Viewer, CanvasLayer, TextLayer, Reader} from './primitives';
+export type {
+  RootProps,
+  CanvasLayerProps,
+  TextLayerProps,
+  ReaderProps,
+  ReaderTextBlock,
+} from './primitives';
 
 // UI shell components
 export {

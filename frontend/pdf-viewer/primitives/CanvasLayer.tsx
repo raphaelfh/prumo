@@ -41,6 +41,7 @@ export function CanvasLayer({pageNumber, className}: CanvasLayerProps) {
     <canvas
       ref={canvasRef}
       className={className}
+      role="img"
       aria-label={`PDF page ${pageNumber}`}
     />
   );

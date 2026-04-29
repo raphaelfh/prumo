@@ -13,6 +13,13 @@
   border-radius: 4px;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .field-just-updated {
+    animation: none;
+    background-color: transparent;
+  }
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

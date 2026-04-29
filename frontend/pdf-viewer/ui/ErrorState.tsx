@@ -8,8 +8,11 @@ export interface ErrorStateProps {
 
 export function ErrorState({error, onRetry}: ErrorStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-3 px-4 text-center">
-      <AlertCircle className="h-8 w-8 text-destructive" />
+    <div
+      role="alert"
+      className="flex flex-col items-center justify-center h-full gap-3 px-4 text-center"
+    >
+      <AlertCircle className="h-8 w-8 text-destructive" aria-hidden="true" />
       <div>
         <p className="font-medium">Failed to load PDF</p>
         <p className="text-sm text-muted-foreground mt-1">{error.message}</p>
