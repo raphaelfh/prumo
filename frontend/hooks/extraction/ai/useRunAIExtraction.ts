@@ -52,11 +52,6 @@ export interface UseRunAIExtractionReturn {
   error: string | null;
 }
 
-interface ApiEnvelope<T> {
-  success: boolean;
-  data: T;
-}
-
 export function useRunAIExtraction(options?: {
   onSuccess?: (result: ExtractForRunResponseBody) => Promise<void> | void;
 }): UseRunAIExtractionReturn {
@@ -68,7 +63,10 @@ export function useRunAIExtraction(options?: {
       setLoading(true);
       setError(null);
       try {
-        const envelope = await apiClient<ApiEnvelope<ExtractForRunResponseBody>>(
+        // ``apiClient`` already unwraps the ``ApiResponse`` envelope and
+        // hands back the inner data shape — so we type the call as
+        // ``ExtractForRunResponseBody`` directly.
+        const result = await apiClient<ExtractForRunResponseBody>(
           "/api/v1/extraction/sections",
           {
             method: "POST",
@@ -84,14 +82,16 @@ export function useRunAIExtraction(options?: {
             },
           },
         );
-        const result = envelope.data;
         if (options?.onSuccess) {
           await options.onSuccess(result);
         }
+        const created = result?.totalSuggestionsCreated ?? 0;
+        const successful = result?.successfulSections ?? 0;
+        const total = result?.totalSections ?? 0;
         toast.success(
           t("extraction", "fullAICompleteSuccessTitle"),
           {
-            description: `${result.totalSuggestionsCreated} suggestions created across ${result.successfulSections}/${result.totalSections} sections.`,
+            description: `${created} suggestions created across ${successful}/${total} sections.`,
           },
         );
         return result;
