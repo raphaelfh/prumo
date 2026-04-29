@@ -203,12 +203,47 @@ export interface ModelExtractionResponse {
 // =================== HOOK PROPS ===================
 
 /**
+ * How "accept this AI suggestion" is persisted on the backend.
+ *
+ * - ``reviewer-decision`` (default, used by Data Extraction): the hook
+ *   calls ``/runs/{id}/decisions`` with ``decision='accept_proposal'``.
+ *   Requires the run to be in REVIEW stage.
+ * - ``human-proposal`` (used by Quality Assessment): the hook does NOT
+ *   write a decision. It just bubbles ``onSuggestionAccepted`` so the
+ *   page records a fresh ``human`` proposal via its own flow. QA stays
+ *   in PROPOSAL until the user clicks Publish.
+ */
+export type AISuggestionAcceptStrategy =
+  | 'reviewer-decision'
+  | 'human-proposal';
+
+/**
  * Props for the useAISuggestions hook
  */
 export interface UseAISuggestionsProps {
   articleId: string;
   projectId: string;
   enabled?: boolean;
+  /**
+   * Scope suggestions to a specific Run. When omitted the hook falls
+   * back to the article-wide instance lookup it has historically used
+   * (Data Extraction). QA passes the active session run so a stray
+   * extraction run on the same article doesn't leak in.
+   */
+  runId?: string;
+  /**
+   * Pre-resolved instance ids. When provided, the hook skips the
+   * Supabase lookup that would otherwise pull every instance for the
+   * article. QA already has these from the HITL session response.
+   */
+  instanceIds?: string[];
+  /**
+   * Default ``'reviewer-decision'``. Set to ``'human-proposal'`` to
+   * have accept/reject only update local state and rely on the
+   * consumer's ``onSuggestion*`` callbacks to persist the value via the
+   * caller's own proposal pipeline.
+   */
+  acceptStrategy?: AISuggestionAcceptStrategy;
   onSuggestionAccepted?: (instanceId: string, fieldId: string, value: any) => void;
   onSuggestionRejected?: (instanceId: string, fieldId: string) => void;
 }

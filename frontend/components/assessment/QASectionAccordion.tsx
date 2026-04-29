@@ -27,6 +27,11 @@ import {
   type ReviewerAvatarEntry,
 } from "@/components/runs/ReviewerAvatarStack";
 import type { QADomain } from "@/hooks/qa/useQATemplate";
+import {
+  getSuggestionKey,
+  type AISuggestion,
+  type AISuggestionHistoryItem,
+} from "@/types/ai-extraction";
 
 interface QASectionAccordionProps {
   domain: QADomain;
@@ -35,6 +40,31 @@ interface QASectionAccordionProps {
   projectId: string;
   articleId: string;
   defaultOpen?: boolean;
+  /**
+   * Real instance id for this domain. Required for AI suggestions to
+   * resolve correctly (the suggestion key uses the run's instance id,
+   * not the synthetic ``entityType.id`` the accordion falls back to
+   * when running standalone). The QA page resolves this from
+   * ``session.instancesByEntityType``.
+   */
+  instanceId?: string;
+  /**
+   * AI suggestions keyed by ``${instanceId}_${fieldId}``. When a key
+   * matches a rendered field, ``FieldInput`` shows the suggestion badge
+   * + popover. The accordion does not own the suggestions state — the
+   * page passes it down already shaped.
+   */
+  aiSuggestions?: Record<string, AISuggestion>;
+  onAcceptAI?: (instanceId: string, fieldId: string) => Promise<void> | void;
+  onRejectAI?: (instanceId: string, fieldId: string) => Promise<void> | void;
+  getSuggestionsHistory?: (
+    instanceId: string,
+    fieldId: string,
+  ) => Promise<AISuggestionHistoryItem[]>;
+  isAIActionLoading?: (
+    instanceId: string,
+    fieldId: string,
+  ) => "accept" | "reject" | null;
   /**
    * Display profiles + activity per (instance, field) within this
    * domain. When provided, the accordion header surfaces a stacked
@@ -65,16 +95,21 @@ export function QASectionAccordion({
   articleId,
   defaultOpen = false,
   reviewerActivity,
+  instanceId: instanceIdProp,
+  aiSuggestions,
+  onAcceptAI,
+  onRejectAI,
+  getSuggestionsHistory,
+  isAIActionLoading,
 }: QASectionAccordionProps) {
   const { entityType, fields } = domain;
   const signaling = fields.filter((f) => !SUMMARY_FIELD_NAMES.has(f.name));
   const summary = fields.filter((f) => SUMMARY_FIELD_NAMES.has(f.name));
 
-  // The synthetic id when running QA standalone is just the entity_type
-  // id; when the QA page is wired to a real run the parent passes the
-  // run instance id via reviewerActivity. The visual stack uses that
-  // — but FieldInput's cache key still keys off entityType.id.
-  const instanceId = entityType.id;
+  // Prefer the real run instance id passed from the QA page so AI
+  // suggestions resolve under the correct key. Standalone usage (no
+  // session yet) falls back to the synthetic entity_type id.
+  const instanceId = instanceIdProp ?? entityType.id;
   const sectionLabel = entityType.label || entityType.name;
   const itemValue = `qa-domain-${entityType.id}`;
 
@@ -161,6 +196,8 @@ export function QASectionAccordion({
             <div className="space-y-1 divide-y">
               {signaling.map((field) => {
                 const stack = fieldStack(field.id);
+                const aiKey = getSuggestionKey(instanceId, field.id);
+                const aiSuggestion = aiSuggestions?.[aiKey];
                 return (
                   <div
                     key={field.id}
@@ -174,6 +211,23 @@ export function QASectionAccordion({
                       onChange={(v) => onValueChange(field.id, v)}
                       projectId={projectId}
                       articleId={articleId}
+                      aiSuggestion={aiSuggestion}
+                      onAcceptAI={
+                        onAcceptAI
+                          ? () => onAcceptAI(instanceId, field.id)
+                          : undefined
+                      }
+                      onRejectAI={
+                        onRejectAI
+                          ? () => onRejectAI(instanceId, field.id)
+                          : undefined
+                      }
+                      getSuggestionsHistory={getSuggestionsHistory}
+                      isActionLoading={
+                        isAIActionLoading
+                          ? () => isAIActionLoading(instanceId, field.id)
+                          : undefined
+                      }
                     />
                     {stack.length > 0 ? (
                       <div className="mt-1 flex justify-end">
@@ -201,6 +255,8 @@ export function QASectionAccordion({
               <div className="space-y-1 divide-y">
                 {summary.map((field) => {
                   const stack = fieldStack(field.id);
+                  const aiKey = getSuggestionKey(instanceId, field.id);
+                  const aiSuggestion = aiSuggestions?.[aiKey];
                   return (
                     <div key={field.id} className="pt-1">
                       <FieldInput
@@ -210,6 +266,23 @@ export function QASectionAccordion({
                         onChange={(v) => onValueChange(field.id, v)}
                         projectId={projectId}
                         articleId={articleId}
+                        aiSuggestion={aiSuggestion}
+                        onAcceptAI={
+                          onAcceptAI
+                            ? () => onAcceptAI(instanceId, field.id)
+                            : undefined
+                        }
+                        onRejectAI={
+                          onRejectAI
+                            ? () => onRejectAI(instanceId, field.id)
+                            : undefined
+                        }
+                        getSuggestionsHistory={getSuggestionsHistory}
+                        isActionLoading={
+                          isAIActionLoading
+                            ? () => isAIActionLoading(instanceId, field.id)
+                            : undefined
+                        }
                       />
                       {stack.length > 0 ? (
                         <div className="mt-1 flex justify-end">

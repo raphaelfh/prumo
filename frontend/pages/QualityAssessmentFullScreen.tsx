@@ -20,7 +20,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
 
 import { AssessmentShell } from "@/components/assessment/AssessmentShell";
 import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
@@ -30,6 +30,8 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useProjectQATemplate } from "@/hooks/qa/useProjectQATemplate";
 import { useQAAssessmentSession } from "@/hooks/qa/useQAAssessmentSession";
+import { useAISuggestions } from "@/hooks/extraction/ai/useAISuggestions";
+import { useRunAIExtraction } from "@/hooks/extraction/ai/useRunAIExtraction";
 import {
   useAdvanceRun,
   useCreateConsensus,
@@ -45,6 +47,7 @@ import {
   HITLStatusBadges,
 } from "@/components/runs/HITLStatusBadges";
 import { ConsensusPanel } from "@/components/runs/ConsensusPanel";
+import { HeaderAIActions } from "@/components/hitl/HeaderAIActions";
 
 interface FieldKey {
   instanceId: string;
@@ -203,6 +206,50 @@ export default function QualityAssessmentFullScreen() {
     },
     [session, proposalMutation],
   );
+
+  // AI suggestions wiring — kind-agnostic hooks reused from Data
+  // Extraction. Two key adaptations for QA:
+  //  - ``runId`` scopes the suggestion query so a parallel extraction
+  //    run on the same article doesn't leak in.
+  //  - ``acceptStrategy: 'human-proposal'`` keeps the run in PROPOSAL
+  //    (no ReviewerDecision write). Accept just bubbles the value to
+  //    ``handleValueChange``, which records a fresh ``human`` proposal
+  //    via the existing form pipeline.
+  const sessionInstanceIds = useMemo(
+    () => Object.values(session?.instancesByEntityType ?? {}),
+    [session],
+  );
+
+  const {
+    suggestions: aiSuggestions,
+    acceptSuggestion: acceptAISuggestion,
+    rejectSuggestion: rejectAISuggestion,
+    getSuggestionsHistory: getAISuggestionsHistory,
+    isActionLoading: isAIActionLoading,
+    refresh: refreshAISuggestions,
+  } = useAISuggestions({
+    articleId: articleId ?? "",
+    projectId: projectId ?? "",
+    runId: session?.runId,
+    instanceIds: sessionInstanceIds,
+    acceptStrategy: "human-proposal",
+    enabled: !!session,
+    onSuggestionAccepted: (instanceId, fieldId, value) => {
+      handleValueChange(instanceId, fieldId, value);
+    },
+    onSuggestionRejected: (instanceId, fieldId) => {
+      // Clear the field locally — does not need a backend write because
+      // QA hides AI suggestions from the form on reject.
+      handleValueChange(instanceId, fieldId, null);
+    },
+  });
+
+  const { extractForRun, loading: extractingAI } = useRunAIExtraction({
+    onSuccess: async () => {
+      await refetchRun();
+      await refreshAISuggestions();
+    },
+  });
 
   const finalized = runDetail?.run.stage === "finalized";
   const parentRunId =
@@ -399,6 +446,7 @@ export default function QualityAssessmentFullScreen() {
             divergentCount={reviewerSummary.divergentCoords.size}
           />
         ) : null}
+        <HeaderAIActions suggestions={aiSuggestions} compact />
       </div>
       <div className="flex items-center gap-2">
         <HITLReopenButton
@@ -408,6 +456,26 @@ export default function QualityAssessmentFullScreen() {
           disabled={!session}
           reopening={reopening}
         />
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            if (!session || !projectId || !articleId) return;
+            void extractForRun({
+              projectId,
+              articleId,
+              templateId: session.projectTemplateId,
+              runId: session.runId,
+              skipFieldsWithHumanProposals: true,
+              autoAdvanceToReview: false,
+            });
+          }}
+          disabled={!session || finalized || extractingAI}
+          data-testid="qa-extract-ai-button"
+        >
+          <Sparkles className="mr-1 h-4 w-4" />
+          {extractingAI ? "Extracting…" : "Extract with AI"}
+        </Button>
         <Button
           size="sm"
           onClick={() => void handlePublish()}
@@ -500,6 +568,12 @@ export default function QualityAssessmentFullScreen() {
                       avatarById: reviewerProfiles.avatarById,
                       instanceId,
                     }}
+                    instanceId={instanceId}
+                    aiSuggestions={aiSuggestions}
+                    onAcceptAI={acceptAISuggestion}
+                    onRejectAI={rejectAISuggestion}
+                    getSuggestionsHistory={getAISuggestionsHistory}
+                    isAIActionLoading={isAIActionLoading}
                   />
                 );
               })}

@@ -88,7 +88,44 @@ async def extract_section(
             openai_api_key=user_openai_key,
         )
 
-        if payload.extract_all_sections:
+        if payload.run_id is not None:
+            # Pre-opened run path. Used by Quality-Assessment (the HITL
+            # session service opens the Run + parks it at PROPOSAL, then
+            # the UI fires this endpoint to fill the fields).
+            qa_result = await service.extract_for_run(
+                run_id=payload.run_id,
+                skip_fields_with_human_proposals=payload.skip_fields_with_human_proposals,
+                auto_advance_to_review=payload.auto_advance_to_review,
+                model=payload.model or "gpt-4o-mini",
+            )
+
+            db_commit_start = perf_counter()
+            await db.commit()
+            db_commit_duration_ms = (perf_counter() - db_commit_start) * 1000
+
+            logger.info(
+                "extract_for_run_success",
+                trace_id=trace_id,
+                run_id=qa_result.extraction_run_id,
+                total_sections=qa_result.total_sections,
+                successful=qa_result.successful_sections,
+                failed=qa_result.failed_sections,
+                tokens_total=qa_result.total_tokens_used,
+                db_commit_duration_ms=db_commit_duration_ms,
+                endpoint_duration_ms=(perf_counter() - endpoint_start) * 1000,
+            )
+
+            response_data = BatchSectionResult(
+                extraction_run_id=qa_result.extraction_run_id,
+                total_sections=qa_result.total_sections,
+                successful_sections=qa_result.successful_sections,
+                failed_sections=qa_result.failed_sections,
+                total_suggestions_created=qa_result.total_suggestions_created,
+                total_tokens_used=qa_result.total_tokens_used,
+                duration_ms=qa_result.duration_ms,
+                sections=qa_result.sections,
+            ).model_dump(by_alias=True)
+        elif payload.extract_all_sections:
             # Extracao em batch de todas as sections
             result = await service.extract_all_sections(
                 project_id=payload.project_id,

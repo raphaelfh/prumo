@@ -76,11 +76,36 @@ class SectionExtractionRequest(BaseModel):
         description="Modelo OpenAI a usar",
     )
 
+    # Reuse an existing run instead of creating a new one. Used by the
+    # Quality-Assessment surface, which opens a Run via the HITL session
+    # service and then fires AI extraction against that same Run (so the
+    # session-scoped Run isn't shadowed by a new one).
+    run_id: UUID | None = Field(default=None, alias="runId")
+
+    # When False, the service skips the proposal -> review auto-advance
+    # at the end. QA needs this off because its publish flow walks the
+    # run from PROPOSAL all the way to FINALIZED in one click; an early
+    # advance would land the run at REVIEW prematurely and break that.
+    auto_advance_to_review: bool = Field(default=True, alias="autoAdvanceToReview")
+
+    # When True, fields whose latest proposal on this Run is `human` are
+    # excluded from the LLM call. Lets users re-run AI without losing
+    # values they already typed/edited manually.
+    skip_fields_with_human_proposals: bool = Field(
+        default=False,
+        alias="skipFieldsWithHumanProposals",
+    )
+
     model_config = ConfigDict(populate_by_name=True)
 
     @model_validator(mode="after")
     def validate_extraction_mode(self) -> "SectionExtractionRequest":
         """Valida que os fields corretos estao presentes for cada modo."""
+        # QA / pre-opened-run mode: caller passes ``run_id`` and the
+        # service iterates every top-level entity_type of that run's
+        # template. No parent_instance_id / entity_type_id required.
+        if self.run_id is not None:
+            return self
         if self.extract_all_sections:
             if not self.parent_instance_id:
                 raise ValueError("parentInstanceId is required when extractAllSections is true")

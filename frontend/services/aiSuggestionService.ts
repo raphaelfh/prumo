@@ -99,12 +99,13 @@ export class AISuggestionService {
   static async loadSuggestions(
     _articleId: string,
     instanceIds: string[],
+    runId?: string,
   ): Promise<LoadSuggestionsResult> {
     if (instanceIds.length === 0) {
       return { suggestions: {}, count: 0 };
     }
 
-    const proposalsRes = await supabase
+    let proposalsQuery = supabase
       .from('extraction_proposal_records')
       .select(
         'id, run_id, instance_id, field_id, source, proposed_value, confidence_score, rationale, created_at',
@@ -112,6 +113,13 @@ export class AISuggestionService {
       .in('instance_id', instanceIds)
       .eq('source', 'ai')
       .order('created_at', { ascending: false });
+    // Scope to a specific Run when one is provided so a Quality-Assessment
+    // run on the same article never bleeds AI proposals into the Data
+    // Extraction surface (or vice versa).
+    if (runId) {
+      proposalsQuery = proposalsQuery.eq('run_id', runId);
+    }
+    const proposalsRes = await proposalsQuery;
     if (proposalsRes.error) {
       throw new APIError(
         `Failed to load proposals: ${proposalsRes.error.message}`,
@@ -146,13 +154,17 @@ export class AISuggestionService {
     const acceptedKeys = new Set<string>();
     const rejectedKeys = new Set<string>();
     if (user) {
-      const statesRes = await supabase
+      let statesQuery = supabase
         .from('extraction_reviewer_states')
         .select(
           'instance_id, field_id, current_decision_id, reviewer_decision:extraction_reviewer_decisions!fk_extraction_reviewer_states_decision_run_match(decision)',
         )
         .in('instance_id', instanceIds)
         .eq('reviewer_id', user.id);
+      if (runId) {
+        statesQuery = statesQuery.eq('run_id', runId);
+      }
+      const statesRes = await statesQuery;
       if (!statesRes.error) {
         for (const state of (statesRes.data ?? []) as ReviewerStateKeyRow[]) {
           const decision = decisionFromState(state);

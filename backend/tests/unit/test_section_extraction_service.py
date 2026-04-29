@@ -433,3 +433,219 @@ class TestSectionExtractionFullFlow:
         assert target_stages.index(ExtractionRunStage.REVIEW) > target_stages.index(
             ExtractionRunStage.PROPOSAL
         )
+
+
+class TestExtractWithLLMPrompt:
+    """The system + user prompt must change with the run kind so the LLM
+    grades QA studies instead of trying to extract structured data."""
+
+    @pytest.mark.asyncio
+    async def test_extraction_kind_uses_extraction_prompt(self, service):
+        from app.services.openai_service import OpenAIResponse, OpenAIUsage
+
+        captured_messages: list[dict[str, str]] = []
+
+        async def fake_chat(messages, **kwargs):  # noqa: ARG001
+            captured_messages.extend(messages)
+            return OpenAIResponse(
+                content=json.dumps({}),
+                usage=OpenAIUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+                model="gpt-4o-mini",
+            )
+
+        service.openai_service.chat_completion_full = AsyncMock(side_effect=fake_chat)
+
+        entity_type = MagicMock()
+        entity_type.name = "Participants"
+        entity_type.description = "Population"
+
+        await service._extract_with_llm(
+            pdf_text="text",
+            entity_type=entity_type,
+            schema={"type": "object", "properties": {}},
+            model="gpt-4o-mini",
+            kind="extraction",
+            framework=None,
+        )
+
+        system_prompt = captured_messages[0]["content"]
+        user_prompt = captured_messages[1]["content"]
+        assert "extracting structured data" in system_prompt
+        assert "Section: Participants" in user_prompt
+        assert "PROBAST" not in system_prompt
+        assert "PROBAST" not in user_prompt
+
+    @pytest.mark.asyncio
+    async def test_quality_assessment_kind_uses_assessment_prompt(self, service):
+        from app.services.openai_service import OpenAIResponse, OpenAIUsage
+
+        captured_messages: list[dict[str, str]] = []
+
+        async def fake_chat(messages, **kwargs):  # noqa: ARG001
+            captured_messages.extend(messages)
+            return OpenAIResponse(
+                content=json.dumps({}),
+                usage=OpenAIUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+                model="gpt-4o-mini",
+            )
+
+        service.openai_service.chat_completion_full = AsyncMock(side_effect=fake_chat)
+
+        entity_type = MagicMock()
+        entity_type.name = "Predictors"
+        entity_type.description = "Domain 2"
+
+        await service._extract_with_llm(
+            pdf_text="text",
+            entity_type=entity_type,
+            schema={"type": "object", "properties": {}},
+            model="gpt-4o-mini",
+            kind="quality_assessment",
+            framework="PROBAST",
+        )
+
+        system_prompt = captured_messages[0]["content"]
+        user_prompt = captured_messages[1]["content"]
+        assert "PROBAST" in system_prompt
+        assert "methodologist" in system_prompt
+        assert "Domain: Predictors" in user_prompt
+        assert "extracting structured data" not in system_prompt
+
+
+class TestExtractForRun:
+    """Tests for the QA / pre-opened-run extraction path that reuses an
+    existing Run instead of creating a new one."""
+
+    @pytest.fixture
+    def qa_run(self):
+        run = MagicMock()
+        run.id = uuid4()
+        run.project_id = uuid4()
+        run.article_id = uuid4()
+        run.template_id = uuid4()
+        from app.models.extraction import ExtractionRunStage
+
+        run.stage = ExtractionRunStage.PROPOSAL.value
+        run.kind = "quality_assessment"
+        return run
+
+    @pytest.fixture
+    def qa_template(self):
+        tpl = MagicMock()
+        tpl.framework = "PROBAST"
+        tpl.kind = "quality_assessment"
+        return tpl
+
+    def _wire_minimal_qa_pipeline(self, service, run, template, top_level_entity_types):
+        """Stub out the bits of the service that the QA path touches so each
+        test can focus on a single behaviour."""
+        from app.services.openai_service import OpenAIResponse, OpenAIUsage
+
+        service.db.get = AsyncMock(side_effect=lambda model_cls, _id: (
+            run if "Run" in model_cls.__name__ else template
+        ))
+
+        # PDF + entity-type fetches
+        service._article_files.get_latest_pdf = AsyncMock(
+            return_value=MagicMock(storage_key="x.pdf")
+        )
+        service.storage.download = AsyncMock(return_value=b"%PDF")
+        service.pdf_processor.extract_text = AsyncMock(return_value="article text")
+
+        async def fake_get_with_fields(et_id):
+            for et in top_level_entity_types:
+                if et.id == et_id:
+                    return et
+            return None
+
+        service._entity_types.get_with_fields = AsyncMock(side_effect=fake_get_with_fields)
+
+        # The top-level lookup goes through self.db.execute(select(...))
+        scalars = MagicMock()
+        scalars.all.return_value = top_level_entity_types
+        execute_result = MagicMock()
+        execute_result.scalars.return_value = scalars
+        execute_result.all.return_value = []  # for the human-proposal probe
+        service.db.execute = AsyncMock(return_value=execute_result)
+
+        # Existing instance per entity_type
+        service._instances.get_by_article = AsyncMock(return_value=[
+            MagicMock(id=uuid4(), parent_instance_id=None)
+        ])
+
+        # Run lifecycle / repo
+        service._runs.start_run = AsyncMock()
+        service._runs.complete_run = AsyncMock()
+        service._runs.fail_run = AsyncMock()
+        service._lifecycle.advance_stage = AsyncMock()
+
+        # LLM
+        service.openai_service.chat_completion_full = AsyncMock(
+            return_value=OpenAIResponse(
+                content=json.dumps({}),
+                usage=OpenAIUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
+                model="gpt-4o-mini",
+            )
+        )
+
+        # Proposal writes
+        service._proposals.record_proposal = AsyncMock(
+            return_value=MagicMock(id=uuid4())
+        )
+
+    @pytest.mark.asyncio
+    async def test_extract_for_run_does_not_advance_when_disabled(
+        self, service, qa_run, qa_template
+    ):
+        """QA passes auto_advance_to_review=False so its publish flow can
+        drive the run from PROPOSAL → REVIEW → CONSENSUS → FINALIZED in
+        one click."""
+        et = MagicMock()
+        et.id = uuid4()
+        et.name = "Participants"
+        et.fields = []
+        et.parent_entity_type_id = None
+        self._wire_minimal_qa_pipeline(service, qa_run, qa_template, [et])
+
+        await service.extract_for_run(
+            run_id=qa_run.id,
+            auto_advance_to_review=False,
+        )
+
+        service._lifecycle.advance_stage.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_extract_for_run_advances_when_enabled(
+        self, service, qa_run, qa_template
+    ):
+        from app.models.extraction import ExtractionRunStage
+
+        et = MagicMock()
+        et.id = uuid4()
+        et.name = "Participants"
+        et.fields = []
+        et.parent_entity_type_id = None
+        self._wire_minimal_qa_pipeline(service, qa_run, qa_template, [et])
+
+        await service.extract_for_run(
+            run_id=qa_run.id,
+            auto_advance_to_review=True,
+        )
+
+        target_stages = [
+            call.kwargs.get("target_stage")
+            for call in service._lifecycle.advance_stage.await_args_list
+        ]
+        assert ExtractionRunStage.REVIEW in target_stages
+
+    @pytest.mark.asyncio
+    async def test_extract_for_run_rejects_non_proposal_stage(
+        self, service, qa_run, qa_template
+    ):
+        from app.models.extraction import ExtractionRunStage
+
+        qa_run.stage = ExtractionRunStage.REVIEW.value
+        self._wire_minimal_qa_pipeline(service, qa_run, qa_template, [])
+
+        with pytest.raises(ValueError, match="PROPOSAL"):
+            await service.extract_for_run(run_id=qa_run.id)
