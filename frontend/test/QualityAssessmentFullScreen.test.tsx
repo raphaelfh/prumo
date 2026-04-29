@@ -211,4 +211,43 @@ describe("QualityAssessmentFullScreen", () => {
     renderPage();
     expect(screen.getByTestId("qa-form-panel")).toBeInTheDocument();
   });
+
+  it("renders Extract with AI button once the QA session is open", async () => {
+    renderPage();
+    const button = await screen.findByTestId("qa-extract-ai-button");
+    expect(button).toBeInTheDocument();
+    expect(button).toHaveTextContent(/Extract with AI/i);
+    // The button stays enabled while the session is open and the run is
+    // not finalized — guards against accidentally disabling it (it's the
+    // only entry point to the AI prefill flow).
+    await waitFor(() => expect(button).not.toBeDisabled());
+  });
+
+  it("Extract with AI click posts to /api/v1/extraction/sections with the session run id", async () => {
+    const { apiClient } = (await import(
+      "@/integrations/api"
+    )) as unknown as { apiClient: ReturnType<typeof vi.fn> };
+    apiClient.mockClear();
+
+    renderPage();
+    const button = await screen.findByTestId("qa-extract-ai-button");
+    await waitFor(() => expect(button).not.toBeDisabled());
+    button.click();
+
+    await waitFor(() => {
+      const sectionCalls = apiClient.mock.calls.filter(
+        (call) => call[0] === "/api/v1/extraction/sections",
+      );
+      expect(sectionCalls.length).toBeGreaterThan(0);
+      const lastBody = sectionCalls[sectionCalls.length - 1][1]?.body ?? {};
+      expect(lastBody.runId).toBe("run-1");
+      expect(lastBody.projectId).toBe("p1");
+      expect(lastBody.articleId).toBe("a1");
+      expect(lastBody.templateId).toBe("tpl-1");
+      // QA must NOT auto-advance to REVIEW — the publish flow does that.
+      expect(lastBody.autoAdvanceToReview).toBe(false);
+      // Re-running AI should preserve user-entered values by default.
+      expect(lastBody.skipFieldsWithHumanProposals).toBe(true);
+    });
+  });
 });
