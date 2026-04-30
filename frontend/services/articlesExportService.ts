@@ -22,24 +22,24 @@ export interface StartExportSyncResult {
 
 export interface StartExportAsyncResult {
     kind: "async";
-    jobId: string;
+    job_id: string;
 }
 
 export type StartExportResult = StartExportSyncResult | StartExportAsyncResult;
 
 export interface ExportStatusResponse {
-    jobId: string;
+    job_id: string;
     status: "pending" | "running" | "completed" | "failed" | "cancelled";
     progress?: { current: number; total: number; stage: string };
-    downloadUrl?: string;
-    expiresAt?: string;
-    skippedFiles?: Array<{ articleId: string; storageKey: string; reason: string }>;
+    download_url?: string;
+    expires_at?: string;
+    skipped_files?: Array<{ article_id: string; storage_key: string; reason: string }>;
     error?: string;
 }
 
 /**
  * Start export: POST /api/v1/articles-export.
- * Returns sync result (blob + filename) on 200, async result (jobId) on 202.
+ * Returns sync result (blob + filename) on 200, async result (job_id) on 202.
  */
 export async function startExport(
     projectId: string,
@@ -62,10 +62,10 @@ export async function startExport(
             Authorization: `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
-            projectId,
-            articleIds,
+            project_id: projectId,
+            article_ids: articleIds,
             formats,
-            fileScope,
+            file_scope: fileScope,
         }),
     });
 
@@ -92,11 +92,11 @@ export async function startExport(
     if (res.status === 202) {
         const data = await res.json();
         const payload = data?.data ?? data;
-        const jobId = payload?.jobId ?? payload?.job_id;
+        const jobId = payload?.job_id;
         if (typeof jobId !== "string") {
-            throw new Error("Invalid 202 response: missing jobId");
+            throw new Error("Invalid 202 response: missing job_id");
         }
-        return {kind: "async", jobId};
+        return {kind: "async", job_id: jobId};
     }
 
     const errBody = await res.json().catch(() => ({}));

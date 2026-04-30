@@ -51,10 +51,12 @@ echo "Scanning ${VERSIONS_PATH} for DDL operations on auth.* or storage.* schema
 # Step 1: Find lines that contain DDL verbs AND auth./storage. on the same line.
 # Using -E (extended regex) for portability across GNU and BSD grep.
 # Case-insensitive via -i.
+# Skip archive/ — those files are kept for history and are not applied.
 # ---------------------------------------------------------------------------
 RAW_MATCHES=$(grep -rniE \
   "(CREATE|DROP|ALTER|GRANT|REVOKE).*(auth|storage)\." \
   --include="*.py" \
+  --exclude-dir="archive" \
   "${VERSIONS_PATH}" 2>/dev/null || true)
 
 if [[ -z "${RAW_MATCHES}" ]]; then
@@ -63,11 +65,13 @@ if [[ -z "${RAW_MATCHES}" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Step 2: Exclude known-safe patterns (FKs, auth function calls, SELECT refs).
+# Step 2: Exclude known-safe patterns (FKs, auth function calls, SELECT refs,
+# RLS POLICIES on storage.objects that consult public tables — see
+# 0003_storage_object_policies.py for why those must live in Alembic).
 # Each exclusion pattern removes lines that are definitely not DDL violations.
 # ---------------------------------------------------------------------------
 VIOLATIONS=$(echo "${RAW_MATCHES}" | grep -vE \
-  "(REFERENCES (auth|storage)\.|auth\.uid\(\)|auth\.role\(\)|FROM (auth|storage)\.|JOIN (auth|storage)\.|# .*(auth|storage)\.)" \
+  "(REFERENCES (auth|storage)\.|auth\.uid\(\)|auth\.role\(\)|FROM (auth|storage)\.|JOIN (auth|storage)\.|# .*(auth|storage)\.|POLICY [^ ]+ ON storage\.objects|POLICY .* ON storage\.objects)" \
   || true)
 
 if [[ -z "${VIOLATIONS}" ]]; then

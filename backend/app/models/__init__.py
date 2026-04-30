@@ -19,25 +19,8 @@ from app.models.article_author import (
     ArticleSyncEvent,
     ArticleSyncRun,
 )
-from app.models.assessment import (
-    AIAssessment,
-    AIAssessmentConfig,
-    AIAssessmentPrompt,
-    AIAssessmentRun,
-    AssessmentEvidence,
-    AssessmentInstance,
-    AssessmentInstrument,
-    AssessmentItem,
-    AssessmentResponse,
-    AssessmentSource,
-    AssessmentStatus,
-    ProjectAssessmentInstrument,
-    ProjectAssessmentItem,
-)
 from app.models.base import Base, BaseModel, TimestampMixin, UUIDMixin
 from app.models.extraction import (
-    AISuggestion,
-    ExtractedValue,
     ExtractionCardinality,
     ExtractionEntityType,
     ExtractionEvidence,
@@ -48,10 +31,25 @@ from app.models.extraction import (
     ExtractionRun,
     ExtractionRunStage,
     ExtractionRunStatus,
-    ExtractionSource,
     ExtractionTemplateGlobal,
     ProjectExtractionTemplate,
-    SuggestionStatus,
+)
+from app.models.extraction_versioning import (
+    ConsensusRule,
+    ExtractionHitlConfig,
+    ExtractionTemplateVersion,
+    HitlConfigScopeKind,
+    TemplateKind,
+)
+from app.models.extraction_workflow import (
+    ExtractionConsensusDecision,
+    ExtractionConsensusMode,
+    ExtractionProposalRecord,
+    ExtractionProposalSource,
+    ExtractionPublishedState,
+    ExtractionReviewerDecision,
+    ExtractionReviewerDecisionType,
+    ExtractionReviewerState,
 )
 from app.models.integration import ZoteroIntegration
 from app.models.project import Project, ProjectMember, ProjectMemberRole, ReviewType
@@ -127,31 +125,28 @@ __all__ = [
     "ExtractionEntityType",
     "ExtractionField",
     "ExtractionInstance",
-    "ExtractedValue",
     "ExtractionEvidence",
     "ExtractionRun",
-    "AISuggestion",
     "ExtractionFramework",
     "ExtractionFieldType",
     "ExtractionCardinality",
-    "ExtractionSource",
     "ExtractionRunStage",
     "ExtractionRunStatus",
-    "SuggestionStatus",
-    # Assessment (new structure)
-    "AssessmentInstrument",
-    "AssessmentItem",
-    "AssessmentInstance",
-    "AssessmentResponse",
-    "AssessmentEvidence",
-    "AssessmentSource",
-    "AssessmentStatus",
-    "AIAssessmentConfig",
-    "AIAssessmentPrompt",
-    "AIAssessmentRun",
-    "AIAssessment",
-    "ProjectAssessmentInstrument",
-    "ProjectAssessmentItem",
+    # Extraction versioning
+    "ConsensusRule",
+    "ExtractionHitlConfig",
+    "ExtractionTemplateVersion",
+    "HitlConfigScopeKind",
+    "TemplateKind",
+    # Extraction workflow
+    "ExtractionConsensusDecision",
+    "ExtractionConsensusMode",
+    "ExtractionProposalRecord",
+    "ExtractionProposalSource",
+    "ExtractionPublishedState",
+    "ExtractionReviewerDecision",
+    "ExtractionReviewerDecisionType",
+    "ExtractionReviewerState",
     # Integration
     "ZoteroIntegration",
     # User API Keys

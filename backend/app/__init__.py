@@ -1,1 +1,1 @@
-"""Review Hub Backend - FastAPI application package."""
+"""Prumo Backend - FastAPI application package."""

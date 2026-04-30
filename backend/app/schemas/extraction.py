@@ -5,7 +5,7 @@ Schemas Pydantic for extraction de data de articles cientificos.
 """
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -76,11 +76,36 @@ class SectionExtractionRequest(BaseModel):
         description="Modelo OpenAI a usar",
     )
 
+    # Reuse an existing run instead of creating a new one. Used by the
+    # Quality-Assessment surface, which opens a Run via the HITL session
+    # service and then fires AI extraction against that same Run (so the
+    # session-scoped Run isn't shadowed by a new one).
+    run_id: UUID | None = Field(default=None, alias="runId")
+
+    # When False, the service skips the proposal -> review auto-advance
+    # at the end. QA needs this off because its publish flow walks the
+    # run from PROPOSAL all the way to FINALIZED in one click; an early
+    # advance would land the run at REVIEW prematurely and break that.
+    auto_advance_to_review: bool = Field(default=True, alias="autoAdvanceToReview")
+
+    # When True, fields whose latest proposal on this Run is `human` are
+    # excluded from the LLM call. Lets users re-run AI without losing
+    # values they already typed/edited manually.
+    skip_fields_with_human_proposals: bool = Field(
+        default=False,
+        alias="skipFieldsWithHumanProposals",
+    )
+
     model_config = ConfigDict(populate_by_name=True)
 
     @model_validator(mode="after")
     def validate_extraction_mode(self) -> "SectionExtractionRequest":
         """Valida que os fields corretos estao presentes for cada modo."""
+        # QA / pre-opened-run mode: caller passes ``run_id`` and the
+        # service iterates every top-level entity_type of that run's
+        # template. No parent_instance_id / entity_type_id required.
+        if self.run_id is not None:
+            return self
         if self.extract_all_sections:
             if not self.parent_instance_id:
                 raise ValueError("parentInstanceId is required when extractAllSections is true")
@@ -264,7 +289,6 @@ class SaveValueRequest(BaseModel):
     source: Literal["human", "ai", "rule"] = "human"
     unit: str | None = None
     evidence: list[EvidencePassage] = []
-    ai_suggestion_id: UUID | None = Field(default=None, alias="aiSuggestionId")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -312,3 +336,118 @@ class ReviewSuggestionRequest(BaseModel):
     modified_value: Any | None = Field(default=None, alias="modifiedValue")
 
     model_config = ConfigDict(populate_by_name=True)
+
+
+# =================== CITATION ANCHOR (extraction_evidence.position v1) ===================
+#
+# Wire format for ``extraction_evidence.position`` JSONB. Mirrors
+# ``frontend/pdf-viewer/core/citation.ts`` and ``coordinates.ts`` field-for-
+# field, including camelCase JSON keys, so the viewer can read citation
+# rows from the API and render them without translation.
+#
+# Spec: ``docs/superpowers/specs/2026-04-28-pdf-viewer-database-requirements.md``
+# (sections 2 + 3).
+
+
+class PDFRect(BaseModel):
+    """Bounding box in PDF user space (origin bottom-left, points).
+
+    Mirrors ``frontend/pdf-viewer/core/coordinates.ts:14-19``.
+    """
+
+    x: float
+    y: float
+    width: float
+    height: float
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class PDFTextRange(BaseModel):
+    """A range of characters within a single page's text content.
+
+    ``charStart`` / ``charEnd`` are offsets into the page's concatenated
+    text — same offsets emitted by the engine's ``getTextContent()``.
+    Mirrors ``frontend/pdf-viewer/core/coordinates.ts:26-30``.
+    """
+
+    page: int = Field(..., ge=1, description="1-indexed page number")
+    char_start: int = Field(..., alias="charStart", ge=0)
+    char_end: int = Field(..., alias="charEnd", ge=0)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    @model_validator(mode="after")
+    def _char_range_valid(self) -> "PDFTextRange":
+        if self.char_end < self.char_start:
+            raise ValueError("charEnd must be >= charStart")
+        return self
+
+
+class TextCitationAnchor(BaseModel):
+    """Char-range only — most robust to re-OCR / PDF re-encoding."""
+
+    kind: Literal["text"]
+    range: PDFTextRange
+    quote: str | None = Field(
+        default=None,
+        description="Optional canonical text used for highlight matching",
+    )
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class RegionCitationAnchor(BaseModel):
+    """Bbox only — works for figures, tables, image regions."""
+
+    kind: Literal["region"]
+    page: int = Field(..., ge=1, description="1-indexed page the rect is on")
+    rect: PDFRect
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class HybridCitationAnchor(BaseModel):
+    """Both range and bbox + canonical quote — recommended for AI citations."""
+
+    kind: Literal["hybrid"]
+    range: PDFTextRange
+    rect: PDFRect
+    quote: str
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+CitationAnchor = Annotated[
+    TextCitationAnchor | RegionCitationAnchor | HybridCitationAnchor,
+    Field(discriminator="kind"),
+]
+
+
+class PositionV1(BaseModel):
+    """v1 wire format for ``extraction_evidence.position`` JSONB.
+
+    Discriminated on ``anchor.kind``; service-layer writers must populate
+    ``extraction_evidence.text_content`` and ``page_number`` to match the
+    anchor (see spec §2).
+    """
+
+    version: Literal[1]
+    anchor: CitationAnchor
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+def parse_position(
+    raw: dict[str, Any] | None,
+) -> PositionV1 | None:
+    """Validate a ``extraction_evidence.position`` JSONB payload.
+
+    Accepts ``None`` (legacy rows with no position attached) or a dict in
+    the v1 shape. Anything in between raises ``pydantic.ValidationError``
+    so callers can surface a clear contract violation.
+    """
+
+    if raw is None:
+        return None
+    return PositionV1.model_validate(raw)

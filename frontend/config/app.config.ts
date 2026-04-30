@@ -1,4 +1,3 @@
-import {LARGE_PDF_THRESHOLD, PDF_OPTIONS, PERFORMANCE_CONFIG} from '@/lib/pdf-config';
 import {SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL} from '@/config/supabase-env';
 
 /**
@@ -9,18 +8,11 @@ import {SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL} from '@/config/supabase-env';
 export const APP_CONFIG = {
     // Application settings
   app: {
-    name: 'Review Hub',
+    name: 'Prumo',
     version: '1.0.0',
     environment: import.meta.env.MODE,
     isDevelopment: import.meta.env.DEV,
     isProduction: import.meta.env.PROD,
-  },
-
-    // PDF settings
-  pdf: {
-    options: PDF_OPTIONS,
-    performance: PERFORMANCE_CONFIG,
-    largeThreshold: LARGE_PDF_THRESHOLD,
   },
 
     // AI settings

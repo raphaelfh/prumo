@@ -1,74 +1,45 @@
 /**
- * Centralized TypeScript types for AI Extraction
+ * Centralized TypeScript types for AI Extraction (post-HITL).
  *
- * This file consolidates all types related to AI extraction,
- * focusing on the section-extraction pipeline (granular extraction per section).
- *
- * SINGLE SOURCE OF TRUTH: All AI extraction types must be defined here.
- *
- * ARCHITECTURE:
- * - Raw types: Data exactly as from the DB (AISuggestionRaw, ExtractionRunRaw)
- * - Processed types: Values normalized for frontend use (AISuggestion, ExtractionRun)
- * - Utilities: Functions to convert between raw and processed (normalizeAISuggestion, etc.)
- *
- * @example
- * ```typescript
- * const suggestion: AISuggestion = { ... };
- * const normalized = normalizeAISuggestion(rawSuggestionFromDB);
- * ```
+ * The legacy `ai_suggestions` and `extraction_runs` raw shapes are gone:
+ * data flows through `aiSuggestionService` (reads `extraction_proposal_records`)
+ * and the run hooks under `frontend/hooks/runs/`. The remaining types here
+ * are the *presentation* layer the extraction UI renders.
  */
 
 // =================== ENUMS ===================
 
 export type SuggestionStatus = 'pending' | 'accepted' | 'rejected';
 export type ExtractionRunStatus = 'pending' | 'running' | 'completed' | 'failed';
-export type ExtractionRunStage = 'data_suggest' | 'parsing' | 'validation' | 'consensus';
+export type ExtractionRunStage =
+  | 'pending'
+  | 'proposal'
+  | 'review'
+  | 'consensus'
+  | 'finalized'
+  | 'cancelled';
 
 /**
  * Supported models for AI extraction
  */
 export type SupportedAIModel = 'gpt-4o-mini' | 'gpt-4o' | 'gpt-5';
 
-// =================== AI SUGGESTIONS ===================
+// =================== AI SUGGESTIONS (presentation shape) ===================
 
 /**
- * AI suggestion as returned from the database (raw)
- * Matches the ai_suggestions table structure
- */
-export interface AISuggestionRaw {
-  id: string;
-  run_id: string;
-  instance_id: string | null;
-  field_id: string;
-  suggested_value: {
-    value: any;
-  } | any; // Can be {value: X} or direct depending on context
-  confidence_score: number | null;
-  reasoning: string | null;
-  status: SuggestionStatus;
-  reviewed_by: string | null;
-  reviewed_at: string | null;
-  created_at: string;
-  metadata?: {
-    evidence?: {
-      text: string;
-      page_number?: number | null;
-    };
-  } | null;
-}
-
-/**
- * AI suggestion processed for frontend use
- * Normalized and formatted values for easy use in components
+ * Presentation shape an extraction-UI consumer renders. There's no longer
+ * a backing `ai_suggestions` table — the equivalent rows live in
+ * `extraction_proposal_records` (filtered by `source='ai'`) and are
+ * mapped into this shape by `aiSuggestionService`.
  */
 export interface AISuggestion {
   id: string;
   runId: string;
   value: any; // Extracted and normalized value (not the {value: X} object)
-  confidence: number; // Normalized confidence_score (0-1), default 0 if null
-  reasoning: string; // Normalized reasoning (empty string if null)
+  confidence: number; // 0-1, default 0 when missing
+  reasoning: string; // empty string when null
   status: SuggestionStatus;
-  timestamp: Date; // created_at converted to Date
+  timestamp: Date; // proposal created_at parsed
   evidence?: {
     text: string;
     pageNumber?: number | null;
@@ -76,66 +47,9 @@ export interface AISuggestion {
 }
 
 /**
- * Suggestion history item
- * Type alias for AISuggestion for compatibility
+ * Alias for the `getHistory` consumer — same shape, different intent.
  */
 export type AISuggestionHistoryItem = AISuggestion;
-
-// =================== EXTRACTION RUNS ===================
-
-/**
- * Extraction run as returned from DB (raw)
- * Matches extraction_runs table structure
- */
-export interface ExtractionRunRaw {
-  id: string;
-  project_id: string;
-  article_id: string;
-  template_id: string;
-  stage: ExtractionRunStage;
-  status: ExtractionRunStatus;
-  parameters: {
-    model?: SupportedAIModel;
-    entityTypeId?: string;
-    [key: string]: any;
-  };
-  results: {
-    suggestions_created?: number;
-    tokens_used?: number;
-    pdf_pages?: number;
-    duration?: number;
-    error_message?: string;
-    [key: string]: any;
-  };
-  error_message: string | null;
-  started_at: string | null;
-  completed_at: string | null;
-  created_by: string;
-  created_at: string;
-}
-
-/**
- * Processed extraction run for frontend use
- */
-export interface ExtractionRun {
-  id: string;
-  projectId: string;
-  articleId: string;
-  templateId: string;
-  stage: ExtractionRunStage;
-  status: ExtractionRunStatus;
-  metadata: {
-    suggestionsCreated?: number;
-    tokensTotal?: number;  // Backend usa tokensTotal
-    tokensUsed?: number;   // Legado/fallback
-    pdfPages?: number;
-    duration?: number;
-    errorMessage?: string;
-  } | null;
-  startedAt: string | null;
-  completedAt: string | null;
-  createdAt: string;
-}
 
 // =================== REQUESTS E RESPONSES ===================
 
@@ -289,12 +203,47 @@ export interface ModelExtractionResponse {
 // =================== HOOK PROPS ===================
 
 /**
+ * How "accept this AI suggestion" is persisted on the backend.
+ *
+ * - ``reviewer-decision`` (default, used by Data Extraction): the hook
+ *   calls ``/runs/{id}/decisions`` with ``decision='accept_proposal'``.
+ *   Requires the run to be in REVIEW stage.
+ * - ``human-proposal`` (used by Quality Assessment): the hook does NOT
+ *   write a decision. It just bubbles ``onSuggestionAccepted`` so the
+ *   page records a fresh ``human`` proposal via its own flow. QA stays
+ *   in PROPOSAL until the user clicks Publish.
+ */
+export type AISuggestionAcceptStrategy =
+  | 'reviewer-decision'
+  | 'human-proposal';
+
+/**
  * Props for the useAISuggestions hook
  */
 export interface UseAISuggestionsProps {
   articleId: string;
   projectId: string;
   enabled?: boolean;
+  /**
+   * Scope suggestions to a specific Run. When omitted the hook falls
+   * back to the article-wide instance lookup it has historically used
+   * (Data Extraction). QA passes the active session run so a stray
+   * extraction run on the same article doesn't leak in.
+   */
+  runId?: string;
+  /**
+   * Pre-resolved instance ids. When provided, the hook skips the
+   * Supabase lookup that would otherwise pull every instance for the
+   * article. QA already has these from the HITL session response.
+   */
+  instanceIds?: string[];
+  /**
+   * Default ``'reviewer-decision'``. Set to ``'human-proposal'`` to
+   * have accept/reject only update local state and rely on the
+   * consumer's ``onSuggestion*`` callbacks to persist the value via the
+   * caller's own proposal pipeline.
+   */
+  acceptStrategy?: AISuggestionAcceptStrategy;
   onSuggestionAccepted?: (instanceId: string, fieldId: string, value: any) => void;
   onSuggestionRejected?: (instanceId: string, fieldId: string) => void;
 }
@@ -319,25 +268,6 @@ export interface LoadSuggestionsResult {
   count: number;
 }
 
-/**
- * Props for the useExtractionRuns hook
- */
-export interface UseExtractionRunsProps {
-  articleId: string;
-  templateId: string;
-  enabled?: boolean;
-}
-
-/**
- * Return type of useExtractionRuns hook
- */
-export interface UseExtractionRunsReturn {
-  runs: ExtractionRun[];
-  loading: boolean;
-  error: string | null;
-  refresh: () => Promise<void>;
-}
-
 // =================== COMPONENT PROPS ===================
 
 /**
@@ -356,74 +286,9 @@ export interface AISuggestionDisplayProps {
 // =================== UTILITIES ===================
 
 /**
- * Unique key to identify a suggestion in the map
+ * Unique key to identify a suggestion in the map.
  */
 export function getSuggestionKey(instanceId: string, fieldId: string): string {
   return `${instanceId}_${fieldId}`;
-}
-
-/**
- * Parse suggested_value from DB to normalized value
- * Handles formats: {value: X} or direct value
- */
-export function parseSuggestedValue(rawValue: any): any {
-  if (rawValue === null || rawValue === undefined) {
-    return '';
-  }
-
-  // If object with 'value' property, extract it
-  if (typeof rawValue === 'object' && 'value' in rawValue) {
-    return rawValue.value ?? '';
-  }
-
-  // Otherwise return the value as-is
-  return rawValue;
-}
-
-/**
- * Normalize a raw suggestion from DB to processed format
- */
-export function normalizeAISuggestion(raw: AISuggestionRaw): AISuggestion {
-  return {
-    id: raw.id,
-    runId: raw.run_id,
-    value: parseSuggestedValue(raw.suggested_value),
-    confidence: raw.confidence_score ?? 0,
-    reasoning: raw.reasoning ?? '',
-    status: raw.status,
-    timestamp: new Date(raw.created_at),
-    evidence: raw.metadata?.evidence
-      ? {
-          text: raw.metadata.evidence.text,
-          pageNumber: raw.metadata.evidence.page_number ?? null,
-        }
-      : undefined,
-  };
-}
-
-/**
- * Normalize a raw run from DB to processed format
- */
-export function normalizeExtractionRun(raw: ExtractionRunRaw): ExtractionRun {
-  return {
-    id: raw.id,
-    projectId: raw.project_id,
-    articleId: raw.article_id,
-    templateId: raw.template_id,
-    stage: raw.stage,
-    status: raw.status,
-    metadata: raw.results
-      ? {
-          suggestionsCreated: raw.results.suggestions_created,
-          tokensUsed: raw.results.tokens_used,
-          pdfPages: raw.results.pdf_pages,
-          duration: raw.results.duration,
-          errorMessage: raw.results.error_message,
-        }
-      : null,
-    startedAt: raw.started_at,
-    completedAt: raw.completed_at,
-    createdAt: raw.created_at,
-  };
 }
 

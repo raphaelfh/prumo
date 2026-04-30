@@ -76,11 +76,6 @@ class ProjectCreate(BaseModel):
         "other",
     ] = Field(default="interventional", alias="reviewType")
 
-    assessment_scope: Literal["article", "extraction_instance"] = Field(
-        default="article",
-        alias="assessmentScope",
-    )
-
     picots_config_ai_review: PICOTSConfig | None = Field(
         default=None,
         alias="picotsConfigAiReview",
@@ -123,21 +118,6 @@ class ProjectUpdate(BaseModel):
         | None
     ) = Field(default=None, alias="reviewType")
 
-    assessment_scope: Literal["article", "extraction_instance"] | None = Field(
-        default=None,
-        alias="assessmentScope",
-    )
-
-    assessment_entity_type_id: UUID | None = Field(
-        default=None,
-        alias="assessmentEntityTypeId",
-    )
-
-    risk_of_bias_instrument_id: UUID | None = Field(
-        default=None,
-        alias="riskOfBiasInstrumentId",
-    )
-
     picots_config_ai_review: PICOTSConfig | None = Field(
         default=None,
         alias="picotsConfigAiReview",
@@ -168,17 +148,6 @@ class ProjectResponse(BaseModel):
     study_design: dict[str, Any] = Field(default={}, alias="studyDesign")
 
     review_type: str = Field(default="interventional", alias="reviewType")
-    assessment_scope: str = Field(default="article", alias="assessmentScope")
-
-    assessment_entity_type_id: UUID | None = Field(
-        default=None,
-        alias="assessmentEntityTypeId",
-    )
-    risk_of_bias_instrument_id: UUID | None = Field(
-        default=None,
-        alias="riskOfBiasInstrumentId",
-    )
-
     picots_config_ai_review: PICOTSConfig | None = Field(
         default=None,
         alias="picotsConfigAiReview",

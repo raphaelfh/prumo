@@ -1,6 +1,5 @@
 /**
- * Shared AI suggestion components
- * Reused between extraction and assessment
+ * Shared AI suggestion components used by extraction flows.
  */
 
 export { AISuggestionActions } from './AISuggestionActions';

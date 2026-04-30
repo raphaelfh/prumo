@@ -2,8 +2,6 @@
  * Centralized exports for extraction hooks
  */
 
-export { useExtractionTemplates } from './useExtractionTemplates';
-export { useExtractionInstances } from './useExtractionInstances';
 export { useExtractedValues } from './useExtractedValues';
 export { useExtractionSetup } from './useExtractionSetup';
 export { useFieldManagement } from './useFieldManagement';

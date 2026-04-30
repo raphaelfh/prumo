@@ -1,15 +1,14 @@
 """
 Section Extraction Endpoint.
 
-Migrado de: supabase/functions/section-extraction/index.ts
-
 Endpoint for extraction de sections especificas de templates.
 Suporta extraction individual or em batch de todas as sections.
 """
 
-import uuid
+from time import perf_counter
 
 from fastapi import APIRouter, HTTPException, Request, status
+from sqlalchemy.exc import IntegrityError
 
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
 from app.core.factories import create_storage_adapter
@@ -58,7 +57,8 @@ async def extract_section(
     Returns:
         ApiResponse with resultado da extraction.
     """
-    trace_id = str(uuid.uuid4())
+    trace_id = getattr(request.state, "trace_id", None) or "missing-trace-id"
+    endpoint_start = perf_counter()
 
     logger.info(
         "section_extraction_request",
@@ -88,7 +88,44 @@ async def extract_section(
             openai_api_key=user_openai_key,
         )
 
-        if payload.extract_all_sections:
+        if payload.run_id is not None:
+            # Pre-opened run path. Used by Quality-Assessment (the HITL
+            # session service opens the Run + parks it at PROPOSAL, then
+            # the UI fires this endpoint to fill the fields).
+            qa_result = await service.extract_for_run(
+                run_id=payload.run_id,
+                skip_fields_with_human_proposals=payload.skip_fields_with_human_proposals,
+                auto_advance_to_review=payload.auto_advance_to_review,
+                model=payload.model or "gpt-4o-mini",
+            )
+
+            db_commit_start = perf_counter()
+            await db.commit()
+            db_commit_duration_ms = (perf_counter() - db_commit_start) * 1000
+
+            logger.info(
+                "extract_for_run_success",
+                trace_id=trace_id,
+                run_id=qa_result.extraction_run_id,
+                total_sections=qa_result.total_sections,
+                successful=qa_result.successful_sections,
+                failed=qa_result.failed_sections,
+                tokens_total=qa_result.total_tokens_used,
+                db_commit_duration_ms=db_commit_duration_ms,
+                endpoint_duration_ms=(perf_counter() - endpoint_start) * 1000,
+            )
+
+            response_data = BatchSectionResult(
+                extraction_run_id=qa_result.extraction_run_id,
+                total_sections=qa_result.total_sections,
+                successful_sections=qa_result.successful_sections,
+                failed_sections=qa_result.failed_sections,
+                total_suggestions_created=qa_result.total_suggestions_created,
+                total_tokens_used=qa_result.total_tokens_used,
+                duration_ms=qa_result.duration_ms,
+                sections=qa_result.sections,
+            ).model_dump(by_alias=True)
+        elif payload.extract_all_sections:
             # Extracao em batch de todas as sections
             result = await service.extract_all_sections(
                 project_id=payload.project_id,
@@ -100,8 +137,9 @@ async def extract_section(
                 model=payload.model or "gpt-4o-mini",
             )
 
-            # Commit explicito for persistir instances and suggestions criadas
+            db_commit_start = perf_counter()
             await db.commit()
+            db_commit_duration_ms = (perf_counter() - db_commit_start) * 1000
 
             logger.info(
                 "batch_section_extraction_success",
@@ -111,6 +149,8 @@ async def extract_section(
                 successful=result.successful_sections,
                 failed=result.failed_sections,
                 tokens_total=result.total_tokens_used,
+                db_commit_duration_ms=db_commit_duration_ms,
+                endpoint_duration_ms=(perf_counter() - endpoint_start) * 1000,
             )
 
             # Formatar resposta in the formato camelCase for o frontend
@@ -135,8 +175,9 @@ async def extract_section(
                 model=payload.model or "gpt-4o-mini",
             )
 
-            # Commit explicito for persistir instances and suggestions criadas
+            db_commit_start = perf_counter()
             await db.commit()
+            db_commit_duration_ms = (perf_counter() - db_commit_start) * 1000
 
             logger.info(
                 "section_extraction_success",
@@ -144,6 +185,8 @@ async def extract_section(
                 run_id=result.extraction_run_id,
                 suggestions_created=result.suggestions_created,
                 tokens_total=result.tokens_total,
+                db_commit_duration_ms=db_commit_duration_ms,
+                endpoint_duration_ms=(perf_counter() - endpoint_start) * 1000,
             )
 
             # Formatar resposta in the formato camelCase for o frontend
@@ -160,33 +203,57 @@ async def extract_section(
         return ApiResponse(ok=True, data=response_data, trace_id=trace_id)
 
     except ValueError as e:
+        rollback_start = perf_counter()
         await db.rollback()
+        rollback_duration_ms = (perf_counter() - rollback_start) * 1000
         logger.warning(
             "section_extraction_validation_error",
             trace_id=trace_id,
             error=str(e),
+            rollback_duration_ms=rollback_duration_ms,
         )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         ) from e
-    except FileNotFoundError as e:
+    except IntegrityError as e:
+        rollback_start = perf_counter()
         await db.rollback()
+        rollback_duration_ms = (perf_counter() - rollback_start) * 1000
+        logger.warning(
+            "section_extraction_integrity_error",
+            trace_id=trace_id,
+            error=str(e),
+            rollback_duration_ms=rollback_duration_ms,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Referenced project, article, template or entity_type does not exist.",
+        ) from e
+    except FileNotFoundError as e:
+        rollback_start = perf_counter()
+        await db.rollback()
+        rollback_duration_ms = (perf_counter() - rollback_start) * 1000
         logger.warning(
             "section_extraction_pdf_not_found",
             trace_id=trace_id,
             error=str(e),
+            rollback_duration_ms=rollback_duration_ms,
         )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="PDF not found. Upload a PDF first.",
         ) from e
     except Exception as e:
+        rollback_start = perf_counter()
         await db.rollback()
+        rollback_duration_ms = (perf_counter() - rollback_start) * 1000
         logger.error(
             "section_extraction_error",
             trace_id=trace_id,
             error=str(e),
+            rollback_duration_ms=rollback_duration_ms,
+            endpoint_duration_ms=(perf_counter() - endpoint_start) * 1000,
             exc_info=True,
         )
         raise HTTPException(

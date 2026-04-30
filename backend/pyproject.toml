@@ -1,7 +1,7 @@
 [project]
 name = "review-hub-backend"
 version = "0.1.0"
-description = "Backend FastAPI para Review Hub - Plataforma de Revisão Sistemática"
+description = "Backend FastAPI para Prumo - Plataforma de Revisão Sistemática"
 readme = "README.md"
 license = { text = "AGPL-3.0" }
 requires-python = ">=3.11"
@@ -123,6 +123,10 @@ ignore_missing_imports = true
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+markers = [
+    "e2e: end-to-end tests against live stack",
+    "performance: performance-sensitive or long-running tests",
+]
 
 
 [tool.coverage.run]
@@ -131,4 +135,9 @@ addopts = "-v --tb=short"
 omit = [
     "app/schemas/read_models/*",
     "app/worker/*",
+]
+
+[dependency-groups]
+dev = [
+    "pytest-asyncio>=1.3.0",
 ]

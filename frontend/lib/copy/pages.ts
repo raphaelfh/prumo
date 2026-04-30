@@ -25,7 +25,6 @@ export const pages = {
     projectViewLoading: 'Loading project...',
     projectViewProjectNotFound: 'Project not found',
     projectViewTabExtractionDesc: 'Extract structured data using standard templates',
-    projectViewTabAssessmentDesc: 'Assess methodological quality of articles',
     projectViewImportArticles: 'Import',
     projectViewFromZotero: 'From Zotero',
     projectViewFromRisFile: 'From RIS file',
@@ -59,15 +58,6 @@ export const pages = {
     extractionScreenErrorRelatedData: 'Error: Related data not found. Reload the page and try again',
     extractionScreenNoInstanceUpdated: 'No instance was updated. Check permissions and try again',
     extractionScreenErrorFinalizeUnknown: 'Unknown error while finalizing extraction',
-    // AssessmentFullScreen
-    assessmentScreenCompleteRequired: 'Complete all required questions before finalizing',
-    assessmentScreenSubmitSuccess: 'Assessment completed successfully!',
-    assessmentScreenErrorFinalize: 'Error finalizing assessment',
-    assessmentScreenErrorLoad: 'Error loading data',
-    assessmentScreenBackToProject: 'Back to project',
-    assessmentScreenNoInstrument: 'No instrument configured',
-    assessmentScreenFinalizing: 'Finalizing...',
-    assessmentScreenCompleteAssessment: 'Complete Assessment',
 } as const;
 
 export type PagesCopy = typeof pages;

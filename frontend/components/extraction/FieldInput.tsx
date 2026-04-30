@@ -38,6 +38,7 @@ import {AISuggestionHistoryPopover} from './ai/AISuggestionHistoryPopover';
 import {getRelatedUnits} from '@/lib/unitConversions';
 import {extractUnit, extractValue, isEmptyValue, isValidNumber,} from '@/lib/ai-extraction/valueParser';
 import {isSuggestionPending} from '@/lib/ai-extraction/suggestionUtils';
+import {useJustUpdatedValue} from '@/hooks/extraction/useJustUpdatedValue';
 import {t} from '@/lib/copy';
 
 // =================== INTERFACES ===================
@@ -64,6 +65,10 @@ interface FieldInputProps {
 export function FieldInput(props: FieldInputProps) {
   const { field, instanceId, value, onChange, disabled, otherExtractions, aiSuggestion, onAcceptAI, onRejectAI, getSuggestionsHistory, isActionLoading, viewMode } = props;
   const [validationError, setValidationError] = useState<string | null>(null);
+  // Briefly highlights this field when its value was just updated (e.g. by an
+  // AI extraction refresh) so the user sees what changed without having to
+  // hunt the page for newly-populated cells.
+  const justUpdated = useJustUpdatedValue(`${instanceId}_${field.id}`);
 
     // Fixed comfortable spacing
   const containerPadding = 'py-4';
@@ -377,7 +382,14 @@ export function FieldInput(props: FieldInputProps) {
 
   return (
       <div
-          className={cn("grid grid-cols-[30%_1fr] items-start border-b border-border/40 last:border-b-0", gap, containerPadding)}>
+          data-just-updated={justUpdated || undefined}
+          className={cn(
+            "grid grid-cols-[30%_1fr] items-start border-b border-border/40 last:border-b-0 transition-colors",
+            justUpdated && "field-just-updated",
+            gap,
+            containerPadding
+          )}>
+
       {/* Coluna esquerda: Label + Description */}
       <div className="space-y-1 pt-2">
         <Label className="text-sm font-medium flex items-center gap-2">

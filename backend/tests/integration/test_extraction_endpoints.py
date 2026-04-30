@@ -65,7 +65,7 @@ class TestSectionExtractionEndpoints:
             mock_service = mock_service_class.return_value
             mock_service.extract_section = AsyncMock(
                 return_value=SectionExtractionResult(
-                    run_id=str(uuid4()),
+                    extraction_run_id=str(uuid4()),
                     entity_type_id=str(uuid4()),
                     suggestions_created=5,
                     tokens_prompt=100,
@@ -75,6 +75,7 @@ class TestSectionExtractionEndpoints:
                 )
             )
 
+            trace_id = "test-section-trace-id"
             response = await client.post(
                 "/api/v1/extraction/sections",
                 json={
@@ -83,11 +84,15 @@ class TestSectionExtractionEndpoints:
                     "templateId": str(uuid4()),
                     "entityTypeId": str(uuid4()),
                 },
+                headers={"X-Trace-Id": trace_id},
             )
 
             assert response.status_code == 200
             data = response.json()
             assert data.get("ok") is True
+            assert data.get("trace_id") == trace_id
+            assert response.headers.get("X-Trace-Id") == trace_id
+            assert mock_service_class.call_args.kwargs["trace_id"] == trace_id
 
     @pytest.mark.asyncio
     async def test_section_extraction_batch_valid_request(
@@ -103,7 +108,7 @@ class TestSectionExtractionEndpoints:
             mock_service = mock_service_class.return_value
             mock_service.extract_all_sections = AsyncMock(
                 return_value=BatchExtractionResult(
-                    run_id=str(uuid4()),
+                    extraction_run_id=str(uuid4()),
                     total_sections=10,
                     successful_sections=8,
                     failed_sections=2,
@@ -114,6 +119,7 @@ class TestSectionExtractionEndpoints:
                 )
             )
 
+            trace_id = "test-batch-trace-id"
             response = await client.post(
                 "/api/v1/extraction/sections",
                 json={
@@ -123,11 +129,14 @@ class TestSectionExtractionEndpoints:
                     "extractAllSections": True,
                     "parentInstanceId": str(uuid4()),
                 },
+                headers={"X-Trace-Id": trace_id},
             )
 
             assert response.status_code == 200
             data = response.json()
             assert data.get("ok") is True
+            assert data.get("trace_id") == trace_id
+            assert mock_service_class.call_args.kwargs["trace_id"] == trace_id
 
 
 class TestModelExtractionEndpoints:
@@ -161,7 +170,7 @@ class TestModelExtractionEndpoints:
             mock_service = mock_service_class.return_value
             mock_service.extract = AsyncMock(
                 return_value=ModelExtractionResult(
-                    run_id=str(uuid4()),
+                    extraction_run_id=str(uuid4()),
                     models_created=[],
                     total_models=0,
                     child_instances_created=0,
@@ -172,6 +181,7 @@ class TestModelExtractionEndpoints:
                 )
             )
 
+            trace_id = "test-model-trace-id"
             response = await client.post(
                 "/api/v1/extraction/models",
                 json={
@@ -179,8 +189,12 @@ class TestModelExtractionEndpoints:
                     "articleId": str(uuid4()),
                     "templateId": str(uuid4()),
                 },
+                headers={"X-Trace-Id": trace_id},
             )
 
             assert response.status_code == 200
             data = response.json()
             assert data.get("ok") is True
+            assert data.get("trace_id") == trace_id
+            assert response.headers.get("X-Trace-Id") == trace_id
+            assert mock_service_class.call_args.kwargs["trace_id"] == trace_id

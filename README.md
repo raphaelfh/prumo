@@ -1,4 +1,4 @@
-# Review Hub
+# Prumo
 
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue.svg)
@@ -35,7 +35,7 @@ O projeto inclui um Makefile completo para facilitar o desenvolvimento:
 
 ```sh
 # 1. Clone o repositório
-git clone https://github.com/raphaelfh/review-hub-fastapi.git
+git clone https://github.com/raphaelfh/prumo.git
 cd review-hub
 
 # 2. Execute o setup completo (primeira vez)
@@ -72,8 +72,8 @@ Se preferir iniciar os serviços manualmente:
 
 ```sh
 # 1. Clone o repositório
-git clone https://github.com/raphaelfh/review-hub-fastapi.git
-cd review-ai-hub
+git clone https://github.com/raphaelfh/prumo.git
+cd prumo
 
 # 2. Instale as dependências do frontend
 npm install
@@ -180,7 +180,7 @@ Este projeto é construído com:
 ## 📦 Estrutura do Projeto
 
 ```
-review-ai-hub/
+prumo/
 ├── frontend/               # Código fonte do frontend
 │   ├── components/         # Componentes React
 │   ├── hooks/              # Custom hooks

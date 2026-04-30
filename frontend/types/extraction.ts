@@ -15,9 +15,6 @@ export type ExtractionFramework = 'CHARMS' | 'PICOS' | 'CUSTOM';
 export type ExtractionFieldType = 'text' | 'number' | 'date' | 'select' | 'multiselect' | 'boolean';
 export type ExtractionCardinality = 'one' | 'many';
 export type ExtractionSource = 'human' | 'ai' | 'rule';
-export type ExtractionRunStage = 'data_suggest' | 'parsing' | 'validation' | 'consensus';
-export type ExtractionRunStatus = 'pending' | 'running' | 'completed' | 'failed';
-export type SuggestionStatus = 'pending' | 'accepted' | 'rejected';
 
 /**
  * Extraction value type by field type
@@ -129,7 +126,15 @@ export interface ExtractionInstance {
   updated_at: string;
 }
 
-export interface ExtractedValue {
+/**
+ * Presentation shape used by the extraction UI to render the user's
+ * current value for a `(instance, field)`. It originally mapped 1:1 to
+ * the dropped `extracted_values` table; today's reads come from the
+ * HITL stack via `ExtractionValueService`. Fields that no longer have a
+ * persistent store (`source`, `is_consensus`, `confidence_score`) are
+ * derived for display only.
+ */
+export interface ExtractionValueDisplay {
   id: string;
   project_id: string;
   article_id: string;
@@ -152,8 +157,10 @@ export interface ExtractionEvidence {
   id: string;
   project_id: string;
   article_id: string;
-  target_type: 'value' | 'instance';
-  target_id: string;
+  run_id: string;
+  proposal_record_id: string | null;
+  reviewer_decision_id: string | null;
+  consensus_decision_id: string | null;
   article_file_id: string | null;
   page_number: number | null;
   position: any;
@@ -164,21 +171,9 @@ export interface ExtractionEvidence {
 
 // =================== IA E EXECUÇÕES ===================
 
-/**
- * @deprecated Use ExtractionRunRaw from '@/types/ai-extraction' for DB data
- * Use ExtractionRun from '@/types/ai-extraction' for processed data
- *
- * Kept only for backward compatibility with legacy code.
- */
-export type { ExtractionRunRaw as ExtractionRun } from '@/types/ai-extraction';
-
-/**
- * @deprecated Use AISuggestionRaw from '@/types/ai-extraction' for DB data
- * Use AISuggestion from '@/types/ai-extraction' for processed data
- *
- * Kept only for backward compatibility with legacy code.
- */
-export type { AISuggestionRaw as AISuggestion } from '@/types/ai-extraction';
+// Presentation shape for AI proposals; sourced from `extraction_proposal_records`
+// via `aiSuggestionService` (no underlying ai_suggestions table).
+export type { AISuggestion } from '@/types/ai-extraction';
 
 // Re-export related types for convenience
 export type { SuggestionStatus, ExtractionRunStatus, ExtractionRunStage } from '@/types/ai-extraction';
@@ -197,25 +192,13 @@ export interface ExtractionInstanceInsert {
   created_by: string;
 }
 
-export interface ExtractedValueInsert {
-  project_id: string;
-  article_id: string;
-  instance_id: string;
-  field_id: string;
-  value: any;
-  unit?: string | null;
-  source: ExtractionSource;
-  confidence_score?: number;
-  evidence?: any[];
-  reviewer_id?: string;
-  is_consensus?: boolean;
-}
-
 export interface ExtractionEvidenceInsert {
   project_id: string;
   article_id: string;
-  target_type: 'value' | 'instance';
-  target_id: string;
+  run_id: string;
+  proposal_record_id?: string | null;
+  reviewer_decision_id?: string | null;
+  consensus_decision_id?: string | null;
   article_file_id?: string;
   page_number?: number;
   position?: any;
@@ -233,7 +216,7 @@ export interface ExtractionFormData {
 
 export interface ExtractionFormState {
   instances: ExtractionInstance[];
-  values: ExtractedValue[];
+  values: ExtractionValueDisplay[];
   evidence: ExtractionEvidence[];
   suggestions: AISuggestion[];
   loading: boolean;
@@ -255,12 +238,12 @@ export interface ExtractionEntityDisplay {
   entityType: ExtractionEntityType;
   fields: ExtractionField[];
   instances: ExtractionInstance[];
-  values: ExtractedValue[];
+  values: ExtractionValueDisplay[];
 }
 
 export interface ExtractionFieldDisplay {
   field: ExtractionField;
-  value: ExtractedValue | null;
+  value: ExtractionValueDisplay | null;
   suggestions: AISuggestion[];
   evidence: ExtractionEvidence[];
 }
@@ -270,7 +253,7 @@ export interface ExtractionFieldDisplay {
 export interface ExtractionExportData {
   template: ProjectExtractionTemplate;
   instances: ExtractionInstance[];
-  values: ExtractedValue[];
+  values: ExtractionValueDisplay[];
   evidence: ExtractionEvidence[];
   metadata: {
     exported_at: string;

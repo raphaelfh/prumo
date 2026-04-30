@@ -5,8 +5,6 @@ import {Button} from "@/components/ui/button";
 import {Badge} from "@/components/ui/badge";
 import {Checkbox} from "@/components/ui/checkbox";
 import {
-    ChevronDown,
-    ChevronUp,
     FileText,
     MoreHorizontal,
     Plus,
@@ -42,14 +40,17 @@ import type {FilterFieldConfig, FilterValues} from "@/components/shared/list";
 import {
     ActiveFilterChips,
     buildActiveFiltersList,
+    DataTableWrapper,
     EmptyListState,
     FilterButtonWithPopover,
     ListCount,
     ListDisplaySortPopover,
     ListFilterPanel,
     ListRowCard,
+    SortIconHeader,
     ListToolbarSearch,
     ResponsiveList,
+    useResizableTableColumns,
 } from "@/components/shared/list";
 import {useIsNarrow} from '@/hooks/use-mobile';
 import {ArticleFileUploadDialogNew} from "./ArticleFileUploadDialogNew";
@@ -335,64 +336,20 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
         }
         return {...DEFAULT_COLUMN_WIDTHS};
     });
-    const [resizingColumn, setResizingColumn] = useState<string | null>(null);
-    const [resizeStartX, setResizeStartX] = useState(0);
-    const [resizeStartWidth, setResizeStartWidth] = useState(0);
-    const columnWidthsRef = useRef(columnWidths);
-    columnWidthsRef.current = columnWidths;
-    /** Refs updated each mousemove so delta is always relative to last frame; avoids splitter jumping to opposite side on drag (reflow/scroll). */
-    const lastXRef = useRef(0);
-    const lastWidthRef = useRef(0);
-
-    useEffect(() => {
-        if (resizingColumn === null) return;
-        const minW = 80;
-        const maxW = 600;
-        lastXRef.current = resizeStartX;
-        lastWidthRef.current = resizeStartWidth;
-        const onMove = (e: MouseEvent) => {
-            const delta = e.clientX - lastXRef.current;
-            const newWidth = Math.min(maxW, Math.max(minW, lastWidthRef.current + delta));
-            lastXRef.current = e.clientX;
-            lastWidthRef.current = newWidth;
-            setColumnWidths(prev => ({...prev, [resizingColumn]: newWidth}));
-        };
-        const onUp = () => {
-            try {
-                localStorage.setItem(COLUMN_WIDTHS_KEY, JSON.stringify(columnWidthsRef.current));
-            } catch (_) {
-                // Ignore localStorage errors
-            }
-            setResizingColumn(null);
-        };
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
-        return () => {
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
-        };
-    }, [resizingColumn, resizeStartX, resizeStartWidth]);
-
-    useEffect(() => {
-        if (resizingColumn) {
-            document.body.style.cursor = 'col-resize';
-            document.body.style.userSelect = 'none';
-        } else {
-            document.body.style.cursor = '';
-            document.body.style.userSelect = '';
-        }
-        return () => {
-            document.body.style.cursor = '';
-            document.body.style.userSelect = '';
-        };
-    }, [resizingColumn]);
-
-    const startResize = (columnId: string, clientX: number) => {
-        const initialWidth = columnWidths[columnId] ?? DEFAULT_COLUMN_WIDTHS[columnId];
-        setResizingColumn(columnId);
-        setResizeStartX(clientX);
-        setResizeStartWidth(initialWidth);
-    };
+    const renderedResizableColumns = useMemo(
+        () =>
+            TABLE_COLUMNS
+                .filter((col) => col.visibleKey == null || visibleColumns[col.visibleKey] === true)
+                .map((col) => col.id),
+        [visibleColumns]
+    );
+    const {registerHeaderRef, startResize} = useResizableTableColumns({
+        columnWidths,
+        setColumnWidths,
+        defaultColumnWidths: DEFAULT_COLUMN_WIDTHS,
+        orderedColumns: renderedResizableColumns,
+        storageKey: COLUMN_WIDTHS_KEY,
+    });
 
     /** Single source of truth for column widths (header and body). */
     const getColumnStyle = (columnId: string): CSSProperties => {
@@ -871,7 +828,8 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
     ) : null;
 
     const tableContent = (
-            <Table className="table-fixed w-full">
+            <DataTableWrapper className="overflow-hidden rounded-md border border-border/40">
+            <Table className="table-fixed w-max min-w-full">
                       <TableHeader className="bg-transparent">
                           <TableRow className="hover:bg-transparent border-b border-border/40 h-8">
                               <TableHead className="w-[40px] min-w-[40px] px-2 py-1.5 text-left align-middle">
@@ -888,27 +846,26 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
                               ).map((col) => (
                                   <TableHead
                                       key={col.id}
+                                      ref={(el) => registerHeaderRef(col.id, el)}
                                       className={`relative h-8 text-xs font-medium text-muted-foreground group/head ${TABLE_CELL_CLASS} ${colVisibilityClass(col.breakpoint)}`}
                                       style={getColumnStyle(col.id)}
                                   >
-                                      <div className="flex items-center gap-1 pr-4 min-w-0">
-                                          {col.sortField != null ? (
-                                              <Button
-                                                  variant="ghost"
-                                                  size="sm"
-                                                  onClick={() => handleSort(col.sortField!)}
-                                                  className="h-auto p-0 min-w-0 text-[11px] font-medium text-muted-foreground uppercase tracking-wider hover:bg-transparent hover:text-foreground transition-colors"
-                                              >
+                                      {col.sortField != null ? (
+                                          <SortIconHeader
+                                              label={col.label}
+                                              direction={sortField === col.sortField ? sortDirection : null}
+                                              onSort={() => handleSort(col.sortField!)}
+                                              containerClassName="flex items-center gap-1 pr-4 min-w-0"
+                                              labelClassName="text-[11px] font-medium text-muted-foreground uppercase tracking-wider"
+                                              iconClassName={sortField === col.sortField ? 'h-3 w-3 text-foreground shrink-0' : 'h-3 w-3 text-muted-foreground opacity-50 shrink-0'}
+                                          />
+                                      ) : (
+                                          <div className="pr-4 min-w-0">
+                                              <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
                                                   {col.label}
-                                              </Button>
-                                          ) : (
-                                              <span
-                                                  className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{col.label}</span>
-                                          )}
-                                          {col.sortField != null && sortField === col.sortField && (sortDirection === 'asc' ?
-                                              <ChevronUp className="h-3 w-3 text-foreground shrink-0"/> :
-                                              <ChevronDown className="h-3 w-3 text-foreground shrink-0"/>)}
-                                      </div>
+                                              </span>
+                                          </div>
+                                      )}
                                       <div
                                           role="separator"
                                           aria-label={t('articles', 'listResizeColumn')}
@@ -1227,6 +1184,7 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
                           ))}
                       </TableBody>
                   </Table>
+            </DataTableWrapper>
     );
 
     const cardContent = (

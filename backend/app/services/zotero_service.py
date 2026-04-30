@@ -1,8 +1,6 @@
 """
 Zotero Service.
 
-Migrado de: supabase/functions/zotero-import/index.ts
-
 Manages integracao with Zotero API:
 - Secure credential storage
 - Requisicoes a API Zotero

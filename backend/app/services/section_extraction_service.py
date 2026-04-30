@@ -1,8 +1,6 @@
 """
 Section Extraction Service.
 
-Migrated from: supabase/functions/section-extraction/index.ts
-
 Service for extracting specific template sections.
 Implements:
 - Single-section extraction
@@ -12,31 +10,39 @@ Implements:
 """
 
 import json
-import time
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import LoggerMixin
 from app.infrastructure.storage import StorageAdapter
 from app.models.extraction import (
-    AISuggestion,
+    ExtractionEntityType,
+    ExtractionEvidence,
     ExtractionInstance,
     ExtractionInstanceStatus,
     ExtractionRun,
     ExtractionRunStage,
+    ProjectExtractionTemplate,
+)
+from app.models.extraction_workflow import (
+    ExtractionProposalRecord,
+    ExtractionProposalSource,
 )
 from app.repositories import (
-    AISuggestionRepository,
     ArticleFileRepository,
     ExtractionEntityTypeRepository,
     ExtractionInstanceRepository,
     ExtractionRunRepository,
 )
+from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.openai_service import OpenAIResponse, OpenAIService
 from app.services.pdf_processor import PDFProcessor
+from app.services.run_lifecycle_service import RunLifecycleService
 from app.utils.json_parser import parse_json_safe
 
 
@@ -105,8 +111,12 @@ class SectionExtractionService(LoggerMixin):
         self._article_files = ArticleFileRepository(db)
         self._entity_types = ExtractionEntityTypeRepository(db)
         self._instances = ExtractionInstanceRepository(db)
-        self._suggestions = AISuggestionRepository(db)
         self._runs = ExtractionRunRepository(db)
+        # Lifecycle service: owns Run creation + stage transitions and ensures
+        # version_id + hitl_config_snapshot are populated correctly.
+        self._lifecycle = RunLifecycleService(db)
+        # Proposal service: append-only writes to extraction_proposal_records.
+        self._proposals = ExtractionProposalService(db)
 
     async def extract_section(
         self,
@@ -131,20 +141,27 @@ class SectionExtractionService(LoggerMixin):
         Returns:
             SectionExtractionResult with extraction_run_id, suggestions, and tokens.
         """
-        start_time = time.time()
+        start_time = perf_counter()
+        phase_durations_ms: dict[str, float] = {}
 
-        # 1. Create extraction_run in database
-        run = await self._runs.create_run(
+        # 1. Create extraction_run via the unified lifecycle service so the
+        # NOT NULL columns (version_id, hitl_config_snapshot) and kind
+        # discriminator are populated. Then advance pending → proposal.
+        run = await self._lifecycle.create_run(
             project_id=project_id,
             article_id=article_id,
-            template_id=template_id,
-            stage=ExtractionRunStage.DATA_SUGGEST,
-            created_by=UUID(self.user_id),
+            project_template_id=template_id,
+            user_id=UUID(self.user_id),
             parameters={
                 "model": model,
                 "entity_type_id": str(entity_type_id),
                 "parent_instance_id": str(parent_instance_id) if parent_instance_id else None,
             },
+        )
+        run = await self._lifecycle.advance_stage(
+            run_id=run.id,
+            target_stage=ExtractionRunStage.PROPOSAL,
+            user_id=UUID(self.user_id),
         )
 
         # Mark as running
@@ -154,31 +171,43 @@ class SectionExtractionService(LoggerMixin):
             "section_extraction_start",
             trace_id=self.trace_id,
             run_id=str(run.id),
+            operation_id=str(run.id),
             entity_type_id=str(entity_type_id),
         )
 
         try:
             # 2. Fetch PDF
+            phase_start = perf_counter()
             pdf_data = await self._get_pdf(article_id)
+            phase_durations_ms["fetch_pdf"] = (perf_counter() - phase_start) * 1000
 
             # 3. Process text
+            phase_start = perf_counter()
             pdf_text = await self.pdf_processor.extract_text(pdf_data)
+            phase_durations_ms["extract_pdf_text"] = (perf_counter() - phase_start) * 1000
 
             # 4. Fetch entity type and fields
+            phase_start = perf_counter()
             entity_type = await self._get_entity_type(entity_type_id)
+            phase_durations_ms["fetch_entity_type"] = (perf_counter() - phase_start) * 1000
 
             # 5. Build extraction schema
+            phase_start = perf_counter()
             extraction_schema = self._build_extraction_schema(entity_type)
+            phase_durations_ms["build_schema"] = (perf_counter() - phase_start) * 1000
 
             # 6. Run LLM extraction (with token tracking)
+            phase_start = perf_counter()
             extracted_data, llm_response = await self._extract_with_llm(
                 pdf_text=pdf_text,
                 entity_type=entity_type,
                 schema=extraction_schema,
                 model=model,
             )
+            phase_durations_ms["extract_llm"] = (perf_counter() - phase_start) * 1000
 
             # 7. Create suggestions in database
+            phase_start = perf_counter()
             suggestions_created = await self._create_suggestions(
                 project_id=project_id,
                 article_id=article_id,
@@ -187,10 +216,22 @@ class SectionExtractionService(LoggerMixin):
                 extracted_data=extracted_data,
                 run=run,
             )
+            phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
 
-            duration = (time.time() - start_time) * 1000
+            # 7b. Advance proposal → review so the extraction UI can record
+            #     ReviewerDecisions (edit / accept_proposal) without an extra
+            #     UX gesture. Equivalent of "AI is done proposing; humans now
+            #     review and decide".
+            await self._lifecycle.advance_stage(
+                run_id=run.id,
+                target_stage=ExtractionRunStage.REVIEW,
+                user_id=UUID(self.user_id),
+            )
+
+            duration = (perf_counter() - start_time) * 1000
 
             # 8. Complete run with results
+            phase_start = perf_counter()
             await self._runs.complete_run(
                 run_id=run.id,
                 results={
@@ -200,16 +241,20 @@ class SectionExtractionService(LoggerMixin):
                     "tokens_total": llm_response.usage.total_tokens,
                     "duration_ms": duration,
                     "fields_extracted": len(extracted_data) if extracted_data else 0,
+                    "phase_durations_ms": phase_durations_ms,
                 },
             )
+            phase_durations_ms["complete_run"] = (perf_counter() - phase_start) * 1000
 
             self.logger.info(
                 "section_extraction_complete",
                 trace_id=self.trace_id,
                 run_id=str(run.id),
+                operation_id=str(run.id),
                 suggestions_created=suggestions_created,
                 tokens_total=llm_response.usage.total_tokens,
                 duration_ms=duration,
+                phase_durations_ms=phase_durations_ms,
             )
 
             return SectionExtractionResult(
@@ -229,9 +274,291 @@ class SectionExtractionService(LoggerMixin):
                 "section_extraction_failed",
                 trace_id=self.trace_id,
                 run_id=str(run.id),
+                operation_id=str(run.id),
+                error=str(e),
+                phase_durations_ms=phase_durations_ms,
+            )
+            raise
+
+    async def extract_for_run(
+        self,
+        *,
+        run_id: UUID,
+        skip_fields_with_human_proposals: bool = False,
+        auto_advance_to_review: bool = True,
+        model: str = "gpt-4o-mini",
+    ) -> BatchExtractionResult:
+        """
+        Run AI extraction over an *existing* Run, iterating top-level
+        entity_types of the Run's template.
+
+        Used by the Quality-Assessment surface (and any other consumer
+        that opens a Run via the HITL session service before asking the
+        LLM to fill it in). Reuses the same building blocks as
+        ``extract_section`` / ``_extract_section_with_memory``:
+        ``_get_pdf``, ``_build_extraction_schema``, ``_extract_with_llm``,
+        ``_create_suggestions``.
+
+        Stage rules:
+        - The Run must already be in PROPOSAL stage (the HITL session
+          service opens it there).
+        - When ``auto_advance_to_review`` is True the Run advances
+          PROPOSAL → REVIEW after success. QA passes False so the publish
+          flow can drive the lifecycle from PROPOSAL all the way to
+          FINALIZED in one click.
+
+        Re-run safety: when ``skip_fields_with_human_proposals`` is True,
+        every field whose latest proposal on this Run is already
+        ``source='human'`` is excluded from the LLM call so the user's
+        edits aren't silently buried under a new AI guess.
+
+        The system / user prompt is selected from ``run.kind`` +
+        ``template.framework`` so PROBAST / QUADAS-2 runs get an
+        assessment-style prompt while extraction runs keep the original
+        "extract from scientific article" prompt.
+        """
+        start_time = perf_counter()
+
+        run = await self.db.get(ExtractionRun, run_id)
+        if run is None:
+            raise ValueError(f"Run {run_id} not found")
+        if run.stage != ExtractionRunStage.PROPOSAL.value:
+            raise ValueError(f"Run {run_id} stage is {run.stage}; AI extraction requires PROPOSAL")
+
+        template = await self.db.get(ProjectExtractionTemplate, run.template_id)
+        framework: str | None = template.framework if template is not None else None
+        kind = run.kind
+
+        await self._runs.start_run(run.id)
+
+        section_results: list[dict[str, Any]] = []
+        total_suggestions = 0
+        total_tokens = 0
+        successful = 0
+        failed = 0
+
+        try:
+            pdf_data = await self._get_pdf(run.article_id)
+            pdf_text = await self.pdf_processor.extract_text(pdf_data)
+
+            top_level = await self._top_level_entity_types_for_template(run.template_id)
+
+            for entity_type in top_level:
+                try:
+                    result = await self._extract_one_entity_type_for_run(
+                        run=run,
+                        entity_type=entity_type,
+                        pdf_text=pdf_text,
+                        framework=framework,
+                        kind=kind,
+                        skip_fields_with_human_proposals=skip_fields_with_human_proposals,
+                        model=model,
+                    )
+                    successful += 1
+                    total_suggestions += result["suggestions_created"]
+                    total_tokens += result["tokens_total"]
+                    section_results.append(
+                        {
+                            "entity_type_id": str(entity_type.id),
+                            "entity_type_name": entity_type.name,
+                            "success": True,
+                            "suggestions_created": result["suggestions_created"],
+                            "tokens_used": result["tokens_total"],
+                            "skipped": result.get("skipped", False),
+                        }
+                    )
+                except Exception as e:
+                    failed += 1
+                    self.logger.error(
+                        "qa_extraction_entity_failed",
+                        trace_id=self.trace_id,
+                        run_id=str(run.id),
+                        entity_type_id=str(entity_type.id),
+                        error=str(e),
+                    )
+                    section_results.append(
+                        {
+                            "entity_type_id": str(entity_type.id),
+                            "entity_type_name": entity_type.name,
+                            "success": False,
+                            "error": str(e),
+                        }
+                    )
+
+            if auto_advance_to_review:
+                await self._lifecycle.advance_stage(
+                    run_id=run.id,
+                    target_stage=ExtractionRunStage.REVIEW,
+                    user_id=UUID(self.user_id),
+                )
+
+            duration_ms = (perf_counter() - start_time) * 1000
+
+            await self._runs.complete_run(
+                run_id=run.id,
+                results={
+                    "total_sections": len(top_level),
+                    "successful_sections": successful,
+                    "failed_sections": failed,
+                    "total_suggestions_created": total_suggestions,
+                    "total_tokens_used": total_tokens,
+                    "duration_ms": duration_ms,
+                    "kind": kind,
+                    "skip_fields_with_human_proposals": skip_fields_with_human_proposals,
+                    "auto_advance_to_review": auto_advance_to_review,
+                },
+            )
+
+            return BatchExtractionResult(
+                extraction_run_id=str(run.id),
+                total_sections=len(top_level),
+                successful_sections=successful,
+                failed_sections=failed,
+                total_suggestions_created=total_suggestions,
+                total_tokens_used=total_tokens,
+                duration_ms=duration_ms,
+                sections=section_results,
+            )
+        except Exception as e:
+            await self._runs.fail_run(run.id, str(e))
+            self.logger.error(
+                "qa_extraction_failed",
+                trace_id=self.trace_id,
+                run_id=str(run.id),
                 error=str(e),
             )
             raise
+
+    async def _extract_one_entity_type_for_run(
+        self,
+        *,
+        run: ExtractionRun,
+        entity_type: Any,
+        pdf_text: str,
+        framework: str | None,
+        kind: str,
+        skip_fields_with_human_proposals: bool,
+        model: str,
+    ) -> dict[str, Any]:
+        """Extract a single entity_type into an existing Run.
+
+        Distinct from ``_extract_section_with_memory`` because it does
+        NOT create a fresh Run — it appends ``source='ai'`` proposals
+        onto the Run that the caller already owns.
+        """
+        full_entity_type = await self._entity_types.get_with_fields(entity_type.id)
+        if full_entity_type is None:
+            return {"suggestions_created": 0, "tokens_total": 0, "skipped": True}
+
+        instance = await self._find_instance_for_entity_type(
+            article_id=run.article_id,
+            entity_type_id=entity_type.id,
+        )
+
+        original_fields = list(full_entity_type.fields or [])
+        if skip_fields_with_human_proposals and instance is not None and original_fields:
+            human_fields = await self._fields_with_recent_human_proposal(
+                run_id=run.id,
+                instance_id=instance.id,
+                field_ids=[f.id for f in original_fields],
+            )
+            filtered = [f for f in original_fields if f.id not in human_fields]
+            if not filtered:
+                return {"suggestions_created": 0, "tokens_total": 0, "skipped": True}
+            full_entity_type.fields = filtered  # type: ignore[attr-defined]
+
+        try:
+            schema = self._build_extraction_schema(full_entity_type)
+            extracted_data, llm_response = await self._extract_with_llm(
+                pdf_text=pdf_text,
+                entity_type=full_entity_type,
+                schema=schema,
+                model=model,
+                kind=kind,
+                framework=framework,
+            )
+            suggestions_created = await self._create_suggestions(
+                project_id=run.project_id,
+                article_id=run.article_id,
+                entity_type_id=entity_type.id,
+                parent_instance_id=None,
+                extracted_data=extracted_data,
+                run=run,
+            )
+            return {
+                "suggestions_created": suggestions_created,
+                "tokens_total": llm_response.usage.total_tokens,
+            }
+        finally:
+            # Restore the unfiltered field list so callers that rely on
+            # the cached entity_type don't see a mutated tree.
+            full_entity_type.fields = original_fields  # type: ignore[attr-defined]
+
+    async def _top_level_entity_types_for_template(
+        self,
+        template_id: UUID,
+    ) -> list[ExtractionEntityType]:
+        stmt = (
+            select(ExtractionEntityType)
+            .where(
+                ExtractionEntityType.project_template_id == template_id,
+                ExtractionEntityType.parent_entity_type_id.is_(None),
+            )
+            .order_by(ExtractionEntityType.sort_order)
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
+
+    async def _find_instance_for_entity_type(
+        self,
+        *,
+        article_id: UUID,
+        entity_type_id: UUID,
+    ) -> ExtractionInstance | None:
+        instances = await self._instances.get_by_article(article_id, entity_type_id)
+        if not instances:
+            return None
+        # QA / top-level extraction is 1:1 per (article, entity_type) — return
+        # the first match. ``_create_suggestions`` will auto-create one if it
+        # cannot find any.
+        return instances[0]
+
+    async def _fields_with_recent_human_proposal(
+        self,
+        *,
+        run_id: UUID,
+        instance_id: UUID,
+        field_ids: list[UUID],
+    ) -> set[UUID]:
+        """Return the subset of ``field_ids`` whose newest proposal on
+        this Run/instance is ``source='human'``. Used to skip fields the
+        user has already filled when re-running AI extraction."""
+        if not field_ids:
+            return set()
+        stmt = (
+            select(
+                ExtractionProposalRecord.field_id,
+                ExtractionProposalRecord.source,
+            )
+            .where(
+                ExtractionProposalRecord.run_id == run_id,
+                ExtractionProposalRecord.instance_id == instance_id,
+                ExtractionProposalRecord.field_id.in_(field_ids),
+            )
+            .order_by(
+                ExtractionProposalRecord.field_id,
+                ExtractionProposalRecord.created_at.desc(),
+            )
+        )
+        rows = (await self.db.execute(stmt)).all()
+        seen: set[UUID] = set()
+        human: set[UUID] = set()
+        for field_id, source in rows:
+            if field_id in seen:
+                continue
+            seen.add(field_id)
+            if source == ExtractionProposalSource.HUMAN.value:
+                human.add(field_id)
+        return human
 
     async def extract_all_sections(
         self,
@@ -263,21 +590,26 @@ class SectionExtractionService(LoggerMixin):
         Returns:
             BatchExtractionResult with extraction statistics.
         """
-        start_time = time.time()
+        start_time = perf_counter()
+        phase_durations_ms: dict[str, float] = {}
 
-        # Create primary run for batch extraction
-        run = await self._runs.create_run(
+        # Create primary run for batch extraction via lifecycle service.
+        run = await self._lifecycle.create_run(
             project_id=project_id,
             article_id=article_id,
-            template_id=template_id,
-            stage=ExtractionRunStage.DATA_SUGGEST,
-            created_by=UUID(self.user_id),
+            project_template_id=template_id,
+            user_id=UUID(self.user_id),
             parameters={
                 "model": model,
                 "batch_extraction": True,
                 "parent_instance_id": str(parent_instance_id),
                 "section_ids": [str(sid) for sid in section_ids] if section_ids else None,
             },
+        )
+        run = await self._lifecycle.advance_stage(
+            run_id=run.id,
+            target_stage=ExtractionRunStage.PROPOSAL,
+            user_id=UUID(self.user_id),
         )
 
         await self._runs.start_run(run.id)
@@ -286,6 +618,7 @@ class SectionExtractionService(LoggerMixin):
             "batch_extraction_start",
             trace_id=self.trace_id,
             run_id=str(run.id),
+            operation_id=str(run.id),
             parent_instance_id=str(parent_instance_id),
         )
 
@@ -297,15 +630,21 @@ class SectionExtractionService(LoggerMixin):
         try:
             # 1. Fetch/process PDF (once)
             if not pdf_text:
+                phase_start = perf_counter()
                 pdf_data = await self._get_pdf(article_id)
                 pdf_text = await self.pdf_processor.extract_text(pdf_data)
+                phase_durations_ms["fetch_and_extract_pdf_text"] = (
+                    perf_counter() - phase_start
+                ) * 1000
 
             # 2. Fetch child entity types
+            phase_start = perf_counter()
             child_types = await self._get_child_entity_types(
                 template_id=template_id,
                 parent_instance_id=parent_instance_id,
                 section_ids=section_ids,
             )
+            phase_durations_ms["fetch_child_entity_types"] = (perf_counter() - phase_start) * 1000
 
             total_sections = len(child_types)
             successful = 0
@@ -366,9 +705,18 @@ class SectionExtractionService(LoggerMixin):
                         }
                     )
 
-            duration = (time.time() - start_time) * 1000
+            # Advance the primary batch run proposal → review now that all
+            # AI proposals have been written across child sections.
+            await self._lifecycle.advance_stage(
+                run_id=run.id,
+                target_stage=ExtractionRunStage.REVIEW,
+                user_id=UUID(self.user_id),
+            )
+
+            duration = (perf_counter() - start_time) * 1000
 
             # 4. Complete primary run
+            phase_start = perf_counter()
             await self._runs.complete_run(
                 run_id=run.id,
                 results={
@@ -378,18 +726,22 @@ class SectionExtractionService(LoggerMixin):
                     "total_suggestions_created": total_suggestions,
                     "total_tokens_used": total_tokens,
                     "duration_ms": duration,
+                    "phase_durations_ms": phase_durations_ms,
                 },
             )
+            phase_durations_ms["complete_run"] = (perf_counter() - phase_start) * 1000
 
             self.logger.info(
                 "batch_extraction_complete",
                 trace_id=self.trace_id,
                 run_id=str(run.id),
+                operation_id=str(run.id),
                 total_sections=total_sections,
                 successful=successful,
                 failed=failed,
                 tokens_total=total_tokens,
                 duration_ms=duration,
+                phase_durations_ms=phase_durations_ms,
             )
 
             return BatchExtractionResult(
@@ -434,13 +786,15 @@ class SectionExtractionService(LoggerMixin):
         Returns:
             Dict with suggestions_created, tokens_total, and summary.
         """
-        # Create run for this specific section
-        run = await self._runs.create_run(
+        section_start = perf_counter()
+        section_phase_durations_ms: dict[str, float] = {}
+
+        # Create run for this specific section via lifecycle service.
+        run = await self._lifecycle.create_run(
             project_id=project_id,
             article_id=article_id,
-            template_id=template_id,
-            stage=ExtractionRunStage.DATA_SUGGEST,
-            created_by=UUID(self.user_id),
+            project_template_id=template_id,
+            user_id=UUID(self.user_id),
             parameters={
                 "model": model,
                 "entity_type_id": str(entity_type.id),
@@ -449,14 +803,22 @@ class SectionExtractionService(LoggerMixin):
                 "memory_context_size": len(memory_history),
             },
         )
+        run = await self._lifecycle.advance_stage(
+            run_id=run.id,
+            target_stage=ExtractionRunStage.PROPOSAL,
+            user_id=UUID(self.user_id),
+        )
 
         await self._runs.start_run(run.id)
 
         try:
             # Build schema
+            phase_start = perf_counter()
             extraction_schema = self._build_extraction_schema(entity_type)
+            section_phase_durations_ms["build_schema"] = (perf_counter() - phase_start) * 1000
 
             # Run extraction with memory context
+            phase_start = perf_counter()
             extracted_data, llm_response = await self._extract_with_llm(
                 pdf_text=pdf_text,
                 entity_type=entity_type,
@@ -464,8 +826,10 @@ class SectionExtractionService(LoggerMixin):
                 model=model,
                 memory_context=memory_history,
             )
+            section_phase_durations_ms["extract_llm"] = (perf_counter() - phase_start) * 1000
 
             # Create suggestions
+            phase_start = perf_counter()
             suggestions_created = await self._create_suggestions(
                 project_id=project_id,
                 article_id=article_id,
@@ -474,11 +838,20 @@ class SectionExtractionService(LoggerMixin):
                 extracted_data=extracted_data,
                 run=run,
             )
+            section_phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
 
             # Generate memory summary (max 200 chars)
             summary = self._generate_extraction_summary(entity_type, extracted_data)
 
+            # Advance proposal → review now that AI proposing is done.
+            await self._lifecycle.advance_stage(
+                run_id=run.id,
+                target_stage=ExtractionRunStage.REVIEW,
+                user_id=UUID(self.user_id),
+            )
+
             # Complete run
+            phase_start = perf_counter()
             await self._runs.complete_run(
                 run_id=run.id,
                 results={
@@ -487,13 +860,17 @@ class SectionExtractionService(LoggerMixin):
                     "tokens_completion": llm_response.usage.completion_tokens,
                     "tokens_total": llm_response.usage.total_tokens,
                     "summary": summary,
+                    "duration_ms": (perf_counter() - section_start) * 1000,
+                    "phase_durations_ms": section_phase_durations_ms,
                 },
             )
+            section_phase_durations_ms["complete_run"] = (perf_counter() - phase_start) * 1000
 
             return {
                 "suggestions_created": suggestions_created,
                 "tokens_total": llm_response.usage.total_tokens,
                 "summary": summary,
+                "phase_durations_ms": section_phase_durations_ms,
             }
 
         except Exception as e:
@@ -708,6 +1085,8 @@ class SectionExtractionService(LoggerMixin):
         schema: dict[str, Any],
         model: str,
         memory_context: list[dict[str, str]] | None = None,
+        kind: str = "extraction",
+        framework: str | None = None,
     ) -> tuple[dict[str, Any], OpenAIResponse]:
         """
         Run extraction using LLM with token tracking.
@@ -718,6 +1097,16 @@ class SectionExtractionService(LoggerMixin):
             schema: JSON schema for extraction.
             model: Modelo OpenAI.
             memory_context: Summarized memory context (optional).
+            kind: Run kind ('extraction' or 'quality_assessment'). Drives
+                the system + user prompt — extraction asks the LLM to
+                pull factual data from sections; quality_assessment asks
+                the LLM to grade the study against a bias-assessment
+                framework (PROBAST / QUADAS-2). The response shape stays
+                identical (one object per field with value / confidence /
+                reasoning / evidence), so downstream parsing is unchanged.
+            framework: When kind=='quality_assessment', the assessment
+                framework name (PROBAST / QUADAS-2) for the LLM to ground
+                its judgments in.
 
         Returns:
             Tuple with extracted data and OpenAI response with tokens.
@@ -739,7 +1128,53 @@ class SectionExtractionService(LoggerMixin):
 Use this context to maintain consistency and avoid contradictions with previously extracted data.
 """
 
-        prompt = f"""Extract the following information from the scientific article:
+        if kind == "quality_assessment":
+            framework_label = framework or "the assessment tool"
+            system_prompt = (
+                f"You are a clinical-evidence methodologist assessing a study using "
+                f"{framework_label}. For each signaling question or judgment field, "
+                f"choose strictly from the field's allowed values, justify your "
+                f"choice with a one or two-sentence reasoning, and include a short "
+                f"verbatim quote from the article as evidence whenever possible. "
+                f"Be conservative: when the article does not provide enough "
+                f"information to decide, prefer the value that captures uncertainty "
+                f"(e.g., 'No information' or 'Probably no') over guessing. Always "
+                f"respond with valid JSON."
+            )
+            prompt = f"""Assess the following domain of {framework_label} for the study below.
+
+Domain: {entity_name}
+Description: {entity_description}
+{memory_section}
+Article text:
+{pdf_text[:15000]}
+
+For EACH field in the schema below, return an object with:
+- "value": one of the field's allowed values
+- "confidence": number between 0 and 1 (1 = very confident in the judgment, 0 = no signal in the article)
+- "reasoning": 1-2 sentences justifying the judgment against the {framework_label} criterion
+- "evidence": optional object with "text" (short quoted passage supporting the judgment) and "page_number" (integer, if known)
+
+Schema:
+{json.dumps(schema, indent=2)}
+
+Example response format:
+{{
+  "field_name": {{
+    "value": "Probably yes",
+    "confidence": 0.7,
+    "reasoning": "Authors describe consecutive recruitment in a single tertiary centre.",
+    "evidence": {{ "text": "All eligible patients...", "page_number": 3 }}
+  }}
+}}
+"""
+        else:
+            system_prompt = (
+                "You are an expert at extracting structured data from scientific "
+                "articles. For each field, provide the value, your confidence level "
+                "(0-1), and brief reasoning. Always respond with valid JSON."
+            )
+            prompt = f"""Extract the following information from the scientific article:
 
 Section: {entity_name}
 Description: {entity_description}
@@ -770,10 +1205,7 @@ Example response format:
         # Use chat_completion_full to capture token usage
         response = await self.openai_service.chat_completion_full(
             messages=[
-                {
-                    "role": "system",
-                    "content": "You are an expert at extracting structured data from scientific articles. For each field, provide the value, your confidence level (0-1), and brief reasoning. Always respond with valid JSON.",
-                },
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt},
             ],
             model=model,
@@ -886,12 +1318,13 @@ Example response format:
                 entity_type_id=str(entity_type_id),
             )
 
-        # Create suggestions for each extracted field
+        # Record one ProposalRecord per extracted field. Evidence cited by
+        # the LLM is stored as a real extraction_evidence row linked to
+        # the proposal via proposal_record_id.
         for field_name, value in extracted_data.items():
             if value is None:
                 continue
 
-            # Resolve matching field_id
             field_id = field_map.get(field_name)
             if not field_id:
                 self.logger.warning(
@@ -902,64 +1335,58 @@ Example response format:
                 )
                 continue
 
-            # Extract confidence/reasoning/evidence when value is enriched object
-            confidence_score = None
-            reasoning = None
-            evidence_meta = None
+            confidence_score: float | None = None
+            reasoning: str | None = None
+            evidence_meta: dict | None = None
 
             if isinstance(value, dict):
-                # Enriched format: {"value": ..., "confidence": ..., "reasoning": ..., "evidence": ...}
                 confidence_score = value.get("confidence")
                 reasoning = value.get("reasoning")
                 raw_evidence = value.get("evidence")
                 if isinstance(raw_evidence, dict) and raw_evidence.get("text"):
                     evidence_meta = {
                         "text": str(raw_evidence["text"]).strip(),
-                        "page_number": raw_evidence.get("page_number")
-                        if raw_evidence.get("page_number") is not None
-                        else None,
+                        "page_number": raw_evidence.get("page_number"),
                     }
-
-                # suggested_value should contain only the actual value
-                if "value" in value:
-                    actual_value = value["value"]
-                    suggested_value = (
-                        {"value": actual_value}
-                        if not isinstance(actual_value, (dict, list))
-                        else actual_value
-                    )
-                else:
-                    # If "value" is missing, keep full dict
-                    suggested_value = value
-            elif isinstance(value, list):
-                suggested_value = value
+                inner_value = value.get("value", value)
             else:
-                suggested_value = {"value": value}
+                inner_value = value
 
-            metadata_: dict = {
-                "field_name": field_name,
-                "extraction_trace_id": self.trace_id,
-            }
-            if evidence_meta:
-                metadata_["evidence"] = evidence_meta
+            # JSONB column on proposed_value is dict-typed; always wrap so
+            # scalars/lists round-trip predictably and the frontend can read
+            # `proposed_value.value` uniformly.
+            proposed_value = {"value": inner_value}
 
-            suggestion = AISuggestion(
-                extraction_run_id=run.id,  # For extraction suggestions
-                assessment_run_id=None,  # Not used for extractions
+            proposal = await self._proposals.record_proposal(
+                run_id=run.id,
                 instance_id=instance.id,
                 field_id=field_id,
-                suggested_value=suggested_value,
+                source=ExtractionProposalSource.AI,
+                proposed_value=proposed_value,
                 confidence_score=confidence_score,
-                reasoning=reasoning,
-                status="pending",
-                metadata_=metadata_,
+                rationale=reasoning,
             )
 
-            await self._suggestions.create(suggestion)
+            if evidence_meta:
+                self.db.add(
+                    ExtractionEvidence(
+                        project_id=project_id,
+                        article_id=article_id,
+                        run_id=run.id,
+                        proposal_record_id=proposal.id,
+                        page_number=evidence_meta.get("page_number"),
+                        text_content=evidence_meta.get("text"),
+                        position={},
+                        created_by=UUID(self.user_id),
+                    )
+                )
+
             count += 1
 
+        await self.db.flush()
+
         self.logger.info(
-            "suggestions_created",
+            "proposals_recorded",
             trace_id=self.trace_id,
             count=count,
             instance_id=str(instance.id),

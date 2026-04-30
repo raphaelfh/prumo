@@ -39,12 +39,10 @@ class ArticleListReadModel(BaseModel):
 
     # Contagens (aggregations)
     files_count: int = 0
-    assessments_count: int = 0
     extractions_count: int = 0
 
     # Status computado
     has_pdf: bool = False
-    assessment_status: str | None = None  # pending, in_progress, completed
 
     # Timestamps
     created_at: datetime
@@ -57,7 +55,7 @@ class ArticleDetailReadModel(BaseModel):
     """
     Artigo with detalhes completos.
 
-    Inclui files, assessments and extractions.
+    Inclui files and extractions.
     """
 
     id: UUID
@@ -79,12 +77,6 @@ class ArticleDetailReadModel(BaseModel):
     # Arquivos (eager loaded)
     files: list[ArticleFileReadModel] = []
 
-    # Resumo de assessments
-    assessments_total: int = 0
-    assessments_completed: int = 0
-    assessments_pending: int = 0
-    ai_assessments_count: int = 0
-
     # Resumo de extractions
     extractions_total: int = 0
     extractions_completed: int = 0
@@ -92,7 +84,6 @@ class ArticleDetailReadModel(BaseModel):
 
     # Status computados
     has_pdf: bool = False
-    assessment_progress: float = 0.0  # 0-100%
     extraction_progress: float = 0.0  # 0-100%
     overall_status: str = "pending"  # pending, in_progress, completed
 
@@ -113,12 +104,11 @@ class ArticleDetailReadModel(BaseModel):
     @classmethod
     def compute_overall_status(
         cls,
-        assessment_progress: float,
         extraction_progress: float,
     ) -> str:
         """Computa status geral do article."""
-        if assessment_progress == 0 and extraction_progress == 0:
+        if extraction_progress == 0:
             return "pending"
-        if assessment_progress >= 100 and extraction_progress >= 100:
+        if extraction_progress >= 100:
             return "completed"
         return "in_progress"

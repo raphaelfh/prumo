@@ -1843,13 +1843,14 @@ export type Database = {
         Args: {
           p_description?: string
           p_name: string
-          p_review_title?: string
+          p_created_by?: string
+          p_review_type?: Database["public"]["Enums"]["review_type"]
         }
         Returns: string
       }
       find_user_id_by_email: {
         Args: {
-          search_email: string
+          p_email: string
         }
         Returns: string | null
       }
@@ -1891,10 +1892,12 @@ export type Database = {
         | "boolean"
       extraction_framework: "CHARMS" | "PICOS" | "CUSTOM"
       extraction_run_stage:
-        | "data_suggest"
-        | "parsing"
-        | "validation"
+        | "pending"
+        | "proposal"
+        | "review"
         | "consensus"
+        | "finalized"
+        | "cancelled"
       extraction_run_status: "pending" | "running" | "completed" | "failed"
       extraction_source: "human" | "ai" | "rule"
       file_role:
@@ -2056,10 +2059,12 @@ export const Constants = {
       ],
       extraction_framework: ["CHARMS", "PICOS", "CUSTOM"],
       extraction_run_stage: [
-        "data_suggest",
-        "parsing",
-        "validation",
+        "pending",
+        "proposal",
+        "review",
         "consensus",
+        "finalized",
+        "cancelled",
       ],
       extraction_run_status: ["pending", "running", "completed", "failed"],
       extraction_source: ["human", "ai", "rule"],

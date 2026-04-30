@@ -38,16 +38,19 @@ Relacionamento with UnitOfWork:
 - Se excecao ocorrer, UnitOfWork faz rollback automatico
 """
 
+from time import perf_counter
 from typing import Any, Generic, TypeVar
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.logging import get_logger
 from app.models.base import Base
 
 # Type var for modelo SQLAlchemy
 T = TypeVar("T", bound=Base)
+logger = get_logger(__name__)
 
 
 class BaseRepository(Generic[T]):
@@ -98,7 +101,17 @@ class BaseRepository(Generic[T]):
         if isinstance(id, str):
             id = UUID(id)
 
+        query_start = perf_counter()
         result = await self.db.execute(select(self.model).where(self.model.id == id))
+        query_duration_ms = (perf_counter() - query_start) * 1000
+        logger.debug(
+            "repository_get_by_id_db_latency",
+            repository=self.__class__.__name__,
+            model=self.model.__name__,
+            operation="get_by_id",
+            record_id=str(id),
+            db_duration_ms=query_duration_ms,
+        )
         return result.scalar_one_or_none()
 
     async def get_all(
@@ -140,9 +153,19 @@ class BaseRepository(Generic[T]):
                 # created.id is available after flush()
                 await uow.commit()  # Persiste in the banco
         """
+        query_start = perf_counter()
         self.db.add(obj)
         await self.db.flush()
         await self.db.refresh(obj)
+        query_duration_ms = (perf_counter() - query_start) * 1000
+        logger.info(
+            "repository_create_db_latency",
+            repository=self.__class__.__name__,
+            model=self.model.__name__,
+            operation="create",
+            record_id=str(getattr(obj, "id", "unknown")),
+            db_duration_ms=query_duration_ms,
+        )
         return obj
 
     async def create_from_dict(self, data: dict[str, Any]) -> T:
@@ -178,12 +201,22 @@ class BaseRepository(Generic[T]):
                 updated = await uow.articles.update(article, {"title": "Novo"})
                 await uow.commit()
         """
+        query_start = perf_counter()
         for key, value in data.items():
             if hasattr(obj, key):
                 setattr(obj, key, value)
 
         await self.db.flush()
         await self.db.refresh(obj)
+        query_duration_ms = (perf_counter() - query_start) * 1000
+        logger.info(
+            "repository_update_db_latency",
+            repository=self.__class__.__name__,
+            model=self.model.__name__,
+            operation="update",
+            record_id=str(getattr(obj, "id", "unknown")),
+            db_duration_ms=query_duration_ms,
+        )
         return obj
 
     async def delete(self, obj: T) -> None:
@@ -202,8 +235,18 @@ class BaseRepository(Generic[T]):
                 await uow.articles.delete(article)
                 await uow.commit()
         """
+        query_start = perf_counter()
         await self.db.delete(obj)
         await self.db.flush()
+        query_duration_ms = (perf_counter() - query_start) * 1000
+        logger.info(
+            "repository_delete_db_latency",
+            repository=self.__class__.__name__,
+            model=self.model.__name__,
+            operation="delete",
+            record_id=str(getattr(obj, "id", "unknown")),
+            db_duration_ms=query_duration_ms,
+        )
 
     async def delete_by_id(self, id: UUID | str) -> bool:
         """

@@ -18,7 +18,6 @@ from app.models.base import BaseModel, PostgreSQLEnumType
 
 if TYPE_CHECKING:
     from app.models.article import Article
-    from app.models.assessment import ProjectAssessmentInstrument
     from app.models.user import Profile
 
 
@@ -85,11 +84,6 @@ class Project(BaseModel):
     review_context: Mapped[str | None] = mapped_column(Text, nullable=True)
     search_strategy: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    risk_of_bias_instrument_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        nullable=True,
-    )
-
     # PICOTS configuration for predictive model reviews
     picots_config_ai_review: Mapped[dict | None] = mapped_column(
         JSONB,
@@ -110,18 +104,6 @@ class Project(BaseModel):
         nullable=True,
     )
 
-    assessment_scope: Mapped[str] = mapped_column(
-        String,
-        default="article",
-        nullable=True,
-    )
-
-    assessment_entity_type_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("public.extraction_entity_types.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-
     # Relationships
     created_by: Mapped["Profile"] = relationship(
         "Profile",
@@ -138,12 +120,6 @@ class Project(BaseModel):
         back_populates="project",
         cascade="all, delete-orphan",
     )
-    assessment_instruments: Mapped[list["ProjectAssessmentInstrument"]] = relationship(
-        "ProjectAssessmentInstrument",
-        back_populates="project",
-        cascade="all, delete-orphan",
-    )
-
     # Indices definidos via __table_args__
     __table_args__ = (
         # GIN indexes for JSONB fields (efficient search with @>, ?, etc.)

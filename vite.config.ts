@@ -15,7 +15,7 @@ export default defineConfig(({mode: _mode}) => ({
                 manualChunks(id) {
                     if (!id.includes("node_modules")) return undefined;
 
-                    if (id.includes("react-pdf") || id.includes("pdfjs-dist") || id.includes("@react-pdf-viewer")) {
+                    if (id.includes("pdfjs-dist")) {
                         return "pdf-vendor";
                     }
 
@@ -50,6 +50,7 @@ export default defineConfig(({mode: _mode}) => ({
         "@": path.resolve(__dirname, "./frontend"),
         // Resolve directory import to index so Vite/Rollup load the file (fixes ENOENT on Vercel)
         "@/lib/copy": path.resolve(__dirname, "./frontend/lib/copy/index.ts"),
+        "@prumo/pdf-viewer": path.resolve(__dirname, "./frontend/pdf-viewer/index.ts"),
     },
   },
 }));

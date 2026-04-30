@@ -1,22 +1,39 @@
 /**
- * Hook to manage extracted values
- * 
- * Responsabilidades:
- * - Load existing values from DB
- * - Gerenciar estado local de valores
- * - Fornecer função de update
- * - Fornecer função de save
- * 
- * @hook
+ * Hook to load a reviewer's per-field values for an extraction run.
+ *
+ * Two-mode read path, switched by the run's current stage:
+ *
+ *  * ``stage='proposal'`` — the run is being filled in (manual edits as
+ *    `human` proposals, AI proposals from extract_for_run). The form
+ *    hydrates from ``runDetail.proposals`` (newest-per-coord, any
+ *    source) so both human and AI proposals appear immediately. This
+ *    mirrors the QA flow (``QualityAssessmentFullScreen.tsx:163-185``).
+ *
+ *  * ``stage in {'review','consensus','finalized'}`` — proposals have
+ *    been "frozen" and reviewers are deciding. The form hydrates from
+ *    ``extraction_reviewer_states`` (current decision pointer per
+ *    coord, scoped to the active user) — the same path that has been
+ *    in use since the ``extracted_values`` removal.
+ *
+ *  * ``stage='pending'`` or no run — empty map; autosave is also a
+ *    no-op so the user's typing stays in local state until the page
+ *    opens a session and the run lands in PROPOSAL.
+ *
+ * Run resolution moved out of this hook: the page resolves it via
+ * ``useExtractionSession`` and passes ``runId`` + ``stage`` (+ proposals
+ * when in PROPOSAL) in. There is no ``save()`` method anymore — the
+ * autosave is the single writer.
  */
 
-import {useCallback, useEffect, useState} from 'react';
-import {supabase} from '@/integrations/supabase/client';
-import {extractValueForSave, extractValueFromDb} from '@/lib/validations/selectOther';
-import {toast} from 'sonner';
-import {t} from '@/lib/copy';
+import { useCallback, useEffect, useState } from 'react';
+import { toast } from 'sonner';
 
-// =================== INTERFACES ===================
+import { supabase } from '@/integrations/supabase/client';
+import { extractValueFromDb } from '@/lib/validations/selectOther';
+import { dispatchValueUpdates, shallowValueEqual } from '@/lib/extraction/valueUpdates';
+import { t } from '@/lib/copy';
+import { ExtractionValueService } from '@/services/extractionValueService';
+import type { ProposalRecordResponse } from '@/hooks/runs/types';
 
 export interface ExtractedValueData {
   id?: string;
@@ -25,206 +42,161 @@ export interface ExtractedValueData {
   value: any;
   source?: 'human' | 'ai' | 'rule';
   confidence?: number;
-  aiSuggestionId?: string;
 }
 
 interface UseExtractedValuesProps {
-  articleId: string;
-  projectId: string;
+  runId: string | null | undefined;
+  stage: string | null | undefined;
+  proposals?: ProposalRecordResponse[];
   enabled?: boolean;
 }
 
 interface UseExtractedValuesReturn {
-  values: Record<string, any>; // key: `${instanceId}_${fieldId}`
+  values: Record<string, any>;
   updateValue: (instanceId: string, fieldId: string, value: any) => void;
   loading: boolean;
-  initialized: boolean; // Flag para indicar se valores foram carregados
+  initialized: boolean;
   error: string | null;
-  save: () => Promise<void>;
   refresh: () => Promise<void>;
 }
 
-// =================== HOOK ===================
+const REVIEWER_STATE_STAGES = new Set(['review', 'consensus', 'finalized']);
 
-export function useExtractedValues(props: UseExtractedValuesProps): UseExtractedValuesReturn {
-  const { articleId, projectId, enabled = true } = props;
+function unwrapProposalValue(raw: unknown): unknown {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw === 'object' && raw !== null && 'value' in raw) {
+    return (raw as { value: unknown }).value ?? null;
+  }
+  return raw;
+}
+
+export function useExtractedValues(
+  props: UseExtractedValuesProps,
+): UseExtractedValuesReturn {
+  const { runId, stage, proposals, enabled = true } = props;
 
   const [values, setValues] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
   const [initialized, setInitialized] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-    // Load existing values
-  useEffect(() => {
-    if (!enabled || !articleId) return;
-    loadValues();
-  }, [articleId, enabled]);
+  const loadValues = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true);
+      setError(null);
 
-  const loadValues = async () => {
-    setLoading(true);
-    setError(null);
+      try {
+        if (!runId || !stage) {
+          setValues({});
+          setInitialized(true);
+          return;
+        }
 
-    try {
-        console.warn('Loading extracted values for article:', articleId);
+        if (stage === 'proposal') {
+          const valuesMap: Record<string, any> = {};
+          // ``proposals`` is sorted newest-first by the API; first hit per
+          // coord wins, regardless of source — mirrors QA's hydration.
+          for (const p of proposals ?? []) {
+            const key = `${p.instance_id}_${p.field_id}`;
+            if (key in valuesMap) continue;
+            const unwrapped = unwrapProposalValue(p.proposed_value);
+            const unit =
+              typeof p.proposed_value === 'object' &&
+              p.proposed_value !== null &&
+              'unit' in (p.proposed_value as Record<string, unknown>)
+                ? ((p.proposed_value as { unit: string | null }).unit ?? null)
+                : null;
+            valuesMap[key] = extractValueFromDb({ value: unwrapped, unit });
+          }
+          setValues((prev) => mergeValuesById(prev, valuesMap));
+          setInitialized(true);
+          return;
+        }
 
-        // Fetch existing values for current user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-          console.warn('User not authenticated');
+        if (REVIEWER_STATE_STAGES.has(stage)) {
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+          if (!user) {
+            setValues({});
+            return;
+          }
+
+          const rows = await ExtractionValueService.loadValuesForUser(
+            runId,
+            user.id,
+          );
+          const valuesMap: Record<string, any> = {};
+          for (const row of rows) {
+            if (row.decision === 'reject') continue;
+            const key = `${row.instanceId}_${row.fieldId}`;
+            const unit =
+              typeof row.value === 'object' &&
+              row.value !== null &&
+              'unit' in (row.value as Record<string, unknown>)
+                ? ((row.value as { unit: string | null }).unit ?? null)
+                : null;
+            valuesMap[key] = extractValueFromDb({ value: row.value, unit });
+          }
+          setValues((prev) => mergeValuesById(prev, valuesMap));
+          setInitialized(true);
+          return;
+        }
+
+        // PENDING / CANCELLED / unknown — no values to show.
         setValues({});
-        return;
-      }
-
-      const { data, error: queryError } = await supabase
-        .from('extracted_values' as any)
-        .select(`
-          id,
-          instance_id,
-          field_id,
-          value,
-          unit,
-          source,
-          confidence_score,
-          ai_suggestion_id,
-          created_at,
-          updated_at
-        `)
-        .eq('article_id', articleId)
-        .eq('reviewer_id', user.id);
-
-      if (queryError) throw queryError;
-
-      // Converter para formato { instanceId_fieldId: { value, unit } }
-      const valuesMap: Record<string, any> = {};
-
-      (data || []).forEach((item: any) => {
-        const key = `${item.instance_id}_${item.field_id}`;
-        
-        // Usar helper DRY para extrair valor do banco
-        valuesMap[key] = extractValueFromDb(item);
-      });
-
-      setValues(valuesMap);
-      setInitialized(true); // ✅ Marca como inicializado
-        console.warn(`✅ Carregados ${Object.keys(valuesMap).length} valores extraídos`);
-
-    } catch (err: any) {
-      console.error('❌ Erro ao carregar valores:', err);
+        setInitialized(true);
+      } catch (err: any) {
+        console.error('Erro ao carregar valores extraídos:', err);
         setError(err.message || t('extraction', 'errors_loadExtractedValues'));
         toast.error(t('extraction', 'errors_loadExtractedValues'));
-    } finally {
-      setLoading(false);
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [runId, stage, proposals],
+  );
+
+  useEffect(() => {
+    if (!enabled) return;
+    void loadValues();
+  }, [enabled, loadValues]);
+
+  function mergeValuesById(
+    prev: Record<string, any>,
+    next: Record<string, any>,
+  ): Record<string, any> {
+    let changed = false;
+    const updatedKeys: string[] = [];
+    const out = { ...prev };
+    for (const [key, value] of Object.entries(next)) {
+      const before = out[key];
+      const isDifferent = !shallowValueEqual(before, value);
+      if (isDifferent) {
+        out[key] = value;
+        changed = true;
+        if (before !== undefined) {
+          updatedKeys.push(key);
+        }
+      }
     }
-  };
+    if (updatedKeys.length > 0) {
+      requestAnimationFrame(() => dispatchValueUpdates(updatedKeys));
+    }
+    return changed ? out : prev;
+  }
 
   const updateValue = useCallback((instanceId: string, fieldId: string, value: any) => {
     const key = `${instanceId}_${fieldId}`;
-    setValues(prev => ({
+    setValues((prev) => ({
       ...prev,
-      [key]: value
+      [key]: value,
     }));
   }, []);
 
-  const save = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error(t('common', 'errors_userNotAuthenticated'));
-
-        // Prepare batch of upserts
-      const upserts = Object.entries(values).map(([key, valueData]) => {
-        const [instanceId, fieldId] = key.split('_');
-
-        // Usar helper DRY para extrair valor
-        const { value: actualValue, unit: unitValue, isOther } = extractValueForSave(valueData);
-
-        return {
-          project_id: projectId,
-          article_id: articleId,
-          instance_id: instanceId,
-          field_id: fieldId,
-          value: isOther ? actualValue : { value: actualValue }, // Preservar objeto "outro" ou wrap simples
-          unit: unitValue,
-          source: 'human' as const,
-          reviewer_id: user.id,
-          is_consensus: false
-        };
-      });
-
-      if (upserts.length === 0) {
-          console.warn('⚠️ Nenhum valor para salvar');
-        return;
-      }
-
-        // Check which values already exist (batch SELECT)
-      const { data: existingValues, error: selectError } = await supabase
-        .from('extracted_values' as any)
-        .select('id, instance_id, field_id, reviewer_id')
-        .eq('article_id', articleId)
-        .eq('reviewer_id', user.id)
-        .in('instance_id', [...new Set(upserts.map(u => u.instance_id))]);
-
-      if (selectError) throw selectError;
-
-      // Criar mapa de IDs existentes: key => id
-      const existingMap = new Map<string, string>();
-      (existingValues || []).forEach((ev: any) => {
-        const key = `${ev.instance_id}_${ev.field_id}_${ev.reviewer_id}`;
-        existingMap.set(key, ev.id);
-      });
-
-      // Separar em UPDATEs e INSERTs
-      const toUpdate: Array<{ id: string; data: any }> = [];
-      const toInsert: any[] = [];
-
-      upserts.forEach(upsert => {
-        const key = `${upsert.instance_id}_${upsert.field_id}_${upsert.reviewer_id}`;
-        const existingId = existingMap.get(key);
-        
-        if (existingId) {
-          toUpdate.push({ id: existingId, data: upsert });
-        } else {
-          toInsert.push(upsert);
-        }
-      });
-
-      // Executar UPDATEs em lote (se houver)
-      if (toUpdate.length > 0) {
-        const updatePromises = toUpdate.map(({ id, data }) =>
-          supabase
-            .from('extracted_values' as any)
-            .update(data)
-            .eq('id', id)
-        );
-        const updateResults = await Promise.all(updatePromises);
-        const updateErrors = updateResults.filter(r => r.error).map(r => r.error);
-        if (updateErrors.length > 0) {
-            throw new Error(
-                t('extraction', 'errors_autoSaveUpdateValues')
-                    .replace('{{n}}', String(updateErrors.length))
-                    .replace('{{message}}', updateErrors[0]?.message ?? '')
-            );
-        }
-      }
-
-      // Executar INSERTs em lote (se houver)
-      if (toInsert.length > 0) {
-        const { error: insertError } = await supabase
-          .from('extracted_values' as any)
-          .insert(toInsert);
-        if (insertError) throw insertError;
-      }
-
-        console.warn(`✅ Salvos ${upserts.length} valores`);
-
-    } catch (err: any) {
-      console.error('❌ Erro ao salvar valores:', err);
-      throw err;
-    }
-  };
-
   const refresh = useCallback(async () => {
-    await loadValues();
-  }, [articleId]);
+    await loadValues(true);
+  }, [loadValues]);
 
   return {
     values,
@@ -232,7 +204,6 @@ export function useExtractedValues(props: UseExtractedValuesProps): UseExtracted
     loading,
     initialized,
     error,
-    save,
-    refresh
+    refresh,
   };
 }

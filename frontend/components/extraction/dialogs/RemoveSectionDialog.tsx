@@ -130,16 +130,26 @@ export function RemoveSectionDialog({
         throw instancesError;
       }
 
-        // 4. Count extracted data (via extracted_values)
-      const { count: dataCount, error: dataError } = await supabase
-        .from('extracted_values')
-        .select('id', { count: 'exact', head: true })
-        .eq('instance_id', entityTypeId);
-
-      if (dataError) {
-        console.error('Erro ao contar dados:', dataError);
-          // Do not fail for this, just log
-          console.warn('Could not count extracted data');
+        // 4. Count extracted data — non-reject ReviewerDecisions tied to
+        //    instances of this entity_type. (Same warning trigger as the
+        //    legacy "extracted_values present" guard.)
+      const { data: typeInstances } = await supabase
+        .from('extraction_instances')
+        .select('id')
+        .eq('entity_type_id', entityTypeId);
+      const typeInstanceIds = (typeInstances || []).map((i) => i.id);
+      let dataCount = 0;
+      if (typeInstanceIds.length > 0) {
+        const { count, error: dataError } = await supabase
+          .from('extraction_reviewer_decisions')
+          .select('id', { count: 'exact', head: true })
+          .in('instance_id', typeInstanceIds)
+          .neq('decision', 'reject');
+        if (dataError) {
+          console.warn('Could not count reviewer decisions:', dataError);
+        } else {
+          dataCount = count ?? 0;
+        }
       }
 
       // 5. Gerar warnings

@@ -198,6 +198,8 @@ class OpenAIService(LoggerMixin):
                 trace_id=self.trace_id,
                 status=response.status_code,
                 error=error_text,
+                duration_ms=duration,
+                model=model,
             )
             raise ValueError(f"OpenAI error: {response.status_code} - {error_text}")
 
@@ -214,9 +216,11 @@ class OpenAIService(LoggerMixin):
             "openai_completion",
             trace_id=self.trace_id,
             model=model,
+            status_code=response.status_code,
             duration_ms=duration,
             prompt_tokens=usage.prompt_tokens,
             completion_tokens=usage.completion_tokens,
+            total_tokens=usage.total_tokens,
         )
 
         choice = result["choices"][0]

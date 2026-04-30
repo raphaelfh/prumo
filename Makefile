@@ -1,4 +1,4 @@
-.PHONY: help setup start stop restart status backend frontend supabase install install-backend install-frontend logs logs-backend logs-frontend clean reset-db health db-migrate db-migrate-remote db-rollback db-history db-current db-generate db-setup
+.PHONY: help setup start start-remote start-cloud _print-env-banner supabase-migrate verify-remote-db stop restart status backend frontend supabase install install-backend install-frontend logs logs-backend logs-frontend clean reset-db health db-migrate db-migrate-remote db-rollback db-history db-current db-generate db-setup db-seed db-fresh db-lint-migrations dev dev-remote e2e-local e2e-remote test-backend-e2e
 
 # Variáveis
 BACKEND_DIR := backend
@@ -6,6 +6,9 @@ FRONTEND_DIR := .
 SUPABASE_DIR := supabase
 BACKEND_PORT := 8000
 FRONTEND_PORT := 8080
+# Root Makefile may `include .env` and export DATABASE_URL for local Supabase; backend reads `backend/.env`.
+# Strip inherited DB URLs so Pydantic loads credentials from backend/.env only.
+BACKEND_DB_ENV_FILTER := env -u DATABASE_URL -u DIRECT_DATABASE_URL -u SUPABASE_DATABASE_URL
 
 # Carrega variáveis do .env (se existir) e exporta para os comandos do Make
 ifneq (,$(wildcard .env))
@@ -22,7 +25,7 @@ NC := \033[0m # No Color
 ##@ Comandos Principais
 
 help: ## Mostra esta mensagem de ajuda
-	@echo "$(GREEN)Review Hub - Comandos Disponíveis$(NC)"
+	@echo "$(GREEN)Prumo - Comandos Disponíveis$(NC)"
 	@echo ""
 	@awk 'BEGIN {FS = ":.*##"; printf "\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  $(YELLOW)%-20s$(NC) %s\n", $$1, $$2 } /^##@/ { printf "\n$(GREEN)%s$(NC)\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
@@ -30,15 +33,64 @@ setup: ## Configura o ambiente completo (primeira vez)
 	@echo "$(GREEN)🔧 Configurando ambiente de desenvolvimento...$(NC)"
 	@./scripts/setup.sh
 
-start: ## Inicia todos os serviços (Supabase, Backend, Frontend)
-	@echo "$(GREEN)🚀 Iniciando Review Hub...$(NC)"
+start: ## Inicia todos os serviços LOCAIS (Supabase Docker + Backend + Frontend)
+	@echo "$(GREEN)🚀 Iniciando Prumo (ambiente LOCAL)$(NC)"
+	@$(MAKE) _print-env-banner ENV_LABEL=LOCAL
 	@$(MAKE) supabase-start
 	@echo "$(YELLOW)⏳ Aguardando Supabase inicializar...$(NC)"
 	@sleep 5
+	@$(MAKE) supabase-migrate
 	@$(MAKE) backend-start
 	@$(MAKE) frontend-start
-	@echo "$(GREEN)✅ Todos os serviços iniciados!$(NC)"
+	@echo "$(GREEN)✅ Todos os serviços LOCAIS iniciados!$(NC)"
 	@$(MAKE) status
+
+start-cloud: start-remote ## Alias para start-remote (mais explícito)
+
+_print-env-banner:
+	@echo ""
+	@echo "$(YELLOW)╭──────────────────────────────────────────────╮$(NC)"
+	@echo "$(YELLOW)│$(NC) Ambiente: $(GREEN)$(ENV_LABEL)$(NC)"
+	@echo "$(YELLOW)│$(NC) backend/.env DATABASE_URL deve apontar para esse alvo"
+	@echo "$(YELLOW)╰──────────────────────────────────────────────╯$(NC)"
+	@echo ""
+
+supabase-migrate: ## Aplica migrations Supabase (auth/storage) no banco local
+	@echo "$(GREEN)📜 Aplicando migrations Supabase locais...$(NC)"
+	@if ( cd $(SUPABASE_DIR) && supabase db push --local >/dev/null 2>&1 ); then \
+		echo "  via supabase db push --local"; \
+	else \
+		echo "$(YELLOW)ℹ️  supabase db push --local indisponível; aplicando via psql.$(NC)"; \
+		for f in $$(ls -1 $(SUPABASE_DIR)/migrations/*.sql 2>/dev/null); do \
+			echo "  -> $$f"; \
+			docker exec -i supabase_db_supabase_local psql -U postgres -d postgres -v ON_ERROR_STOP=0 -q < "$$f" >/dev/null 2>&1 || true; \
+		done; \
+	fi
+	@echo "$(GREEN)✅ Migrations Supabase aplicadas$(NC)"
+
+start-remote: verify-remote-db ## Inicia ambiente com Supabase REMOTO (apenas Backend + Frontend)
+	@echo "$(RED)⚠️  ATENÇÃO: subindo backend contra Supabase REMOTO$(NC)"
+	@$(MAKE) _print-env-banner ENV_LABEL=REMOTE
+	@$(MAKE) backend-start
+	@$(MAKE) frontend-start
+	@echo "$(GREEN)✅ Backend e Frontend iniciados (Supabase REMOTO)$(NC)"
+	@$(MAKE) status
+
+verify-remote-db: ## Valida se DATABASE_URL aponta para host remoto antes do start-remote
+	@echo "$(YELLOW)🔎 Validando configuração de banco remoto...$(NC)"
+	@cd $(BACKEND_DIR) && $(BACKEND_DB_ENV_FILTER) uv run python -c "from app.core.config import settings; from urllib.parse import urlparse; import sys; raw=settings.DIRECT_DATABASE_URL or settings.DATABASE_URL.unicode_string(); p=urlparse(raw); host=(p.hostname or '').lower(); port=p.port; local_hosts={'127.0.0.1','localhost'}; is_local=host in local_hosts or (host=='' and port in (5432,54322)); has_placeholder=('<' in host) or ('>' in host) or ('project_ref' in host) or ('db.<project_ref>.supabase.co' in host); uses_ssl='sslmode=' in (p.query or '') or 'ssl=' in (p.query or ''); \
+print(f'  Host detectado: {host or \"(vazio)\"}:{port or \"(sem porta)\"}'); \
+print(f'  Usa DIRECT_DATABASE_URL: {bool(settings.DIRECT_DATABASE_URL)}'); \
+print(f'  SSL em query string: {uses_ssl}'); \
+print(f'  Host com placeholder: {has_placeholder}'); \
+sys.exit(1 if (is_local or has_placeholder) else 0)" || { \
+		echo "$(RED)❌ DATABASE_URL/DIRECT_DATABASE_URL está inválida para uso remoto.$(NC)"; \
+		echo "$(YELLOW)➡️  Configure URL remota válida no ambiente do backend (backend/.env ou variáveis exportadas).$(NC)"; \
+		echo "$(YELLOW)➡️  Não use placeholders literais como <project_ref> na URL.$(NC)"; \
+		echo "$(YELLOW)Exemplo (pooler Supabase): postgresql://...pooler.supabase.com:5432/postgres?sslmode=require$(NC)"; \
+		exit 1; \
+	}
+	@echo "$(GREEN)✅ Configuração remota validada$(NC)"
 
 stop: ## Para todos os serviços
 	@echo "$(RED)🛑 Parando todos os serviços...$(NC)"
@@ -56,9 +108,20 @@ status: ## Verifica o status de todos os serviços
 	@cd $(SUPABASE_DIR) && supabase status 2>/dev/null || echo "  ❌ Não está rodando"
 	@echo ""
 	@echo "$(YELLOW)Backend (FastAPI):$(NC)"
-	@curl -s http://localhost:$(BACKEND_PORT)/health > /dev/null 2>&1 && \
-		echo "  ✅ Rodando em http://localhost:$(BACKEND_PORT)" || \
-		echo "  ❌ Não está respondendo"
+	@healthy=0; attempts=10; elapsed=0; \
+	for i in $$(seq 1 $$attempts); do \
+		if curl -s "http://localhost:$(BACKEND_PORT)/health" > /dev/null 2>&1; then \
+			healthy=1; \
+			break; \
+		fi; \
+		sleep 1; \
+		elapsed=$$i; \
+	done; \
+	if [ $$healthy -eq 1 ]; then \
+		echo "  ✅ Rodando em http://localhost:$(BACKEND_PORT)"; \
+	else \
+		echo "  ❌ Não está respondendo"; \
+	fi
 	@echo ""
 	@echo "$(YELLOW)Frontend (React/Vite):$(NC)"
 	@curl -s -o /dev/null -w "  %{http_code}" http://localhost:$(FRONTEND_PORT) > /dev/null 2>&1 && \
@@ -71,7 +134,18 @@ status: ## Verifica o status de todos os serviços
 backend: backend-start ## Inicia apenas o backend
 backend-start: ## Inicia o backend FastAPI
 	@echo "$(GREEN)🔧 Iniciando Backend...$(NC)"
-	@cd $(BACKEND_DIR) && uv run uvicorn app.main:app --reload --port $(BACKEND_PORT) &
+	@if curl -s "http://localhost:$(BACKEND_PORT)/health" > /dev/null 2>&1; then \
+		echo "$(YELLOW)ℹ️  Backend já está saudável na porta $(BACKEND_PORT), não será reiniciado.$(NC)"; \
+		true; \
+	else \
+		stale_pids="$$(lsof -ti:$(BACKEND_PORT) 2>/dev/null || true)"; \
+		if [ -n "$$stale_pids" ]; then \
+			echo "$(YELLOW)🧹 Limpando processos órfãos na porta $(BACKEND_PORT): $$stale_pids$(NC)"; \
+			echo "$$stale_pids" | xargs kill -9 2>/dev/null || true; \
+			true; \
+		fi; \
+		(cd $(BACKEND_DIR) && $(BACKEND_DB_ENV_FILTER) uv run uvicorn app.main:app --reload --port $(BACKEND_PORT)) & \
+	fi
 
 backend-stop: ## Para o backend
 	@echo "$(YELLOW)🛑 Parando Backend...$(NC)"
@@ -80,7 +154,12 @@ backend-stop: ## Para o backend
 frontend: frontend-start ## Inicia apenas o frontend
 frontend-start: ## Inicia o frontend React/Vite
 	@echo "$(GREEN)🎨 Iniciando Frontend...$(NC)"
-	@cd $(FRONTEND_DIR) && npm run dev &
+	@if lsof -iTCP:$(FRONTEND_PORT) -sTCP:LISTEN -n -P > /dev/null 2>&1; then \
+		echo "$(YELLOW)ℹ️  Frontend já está rodando na porta $(FRONTEND_PORT), não será reiniciado.$(NC)"; \
+		true; \
+	else \
+		cd $(FRONTEND_DIR) && npm run dev & \
+	fi
 
 frontend-stop: ## Para o frontend
 	@echo "$(YELLOW)🛑 Parando Frontend...$(NC)"
@@ -179,6 +258,39 @@ db-setup: ## Setup completo do banco: supabase db reset + alembic upgrade head
 	@$(MAKE) db-migrate
 	@echo "$(GREEN)✅ Banco de dados pronto$(NC)"
 
+db-seed: ## Executa o seed (CHARMS + PROBAST + QUADAS-2 + outros dados base). Idempotente.
+	@echo "$(GREEN)🌱 Aplicando seed (templates globais + dados base)...$(NC)"
+	@cd $(BACKEND_DIR) && env -u DATABASE_URL -u SUPABASE_DATABASE_URL uv run python -m app.seed
+
+db-fresh: ## Reset + migrate + seed em um único comando (AI-friendly dev cycle)
+	@echo "$(GREEN)🌀 Banco zerado de ponta a ponta — reset + migrate + seed$(NC)"
+	@$(MAKE) db-setup
+	@$(MAKE) db-seed
+	@echo "$(GREEN)✅ Pronto. Schema em head, seed aplicado, dados base presentes.$(NC)"
+
+db-lint-migrations: ## Lint migrations with Squawk (catches NOT NULL without default, missing FK indexes, dangerous drops)
+	@if ! command -v squawk >/dev/null 2>&1; then \
+		echo "$(RED)❌ squawk not installed. Install: brew install squawk (or see https://github.com/sbdchd/squawk)$(NC)"; \
+		exit 1; \
+	fi
+	@echo "$(GREEN)🦆 Linting migrations with Squawk...$(NC)"
+	@MIGRATIONS=$$(find $(BACKEND_DIR)/alembic/versions -maxdepth 1 -name "*.sql" -o -name "*.py" 2>/dev/null | grep -v archive); \
+	if [ -z "$$MIGRATIONS" ]; then \
+		echo "$(YELLOW)No migrations found to lint.$(NC)"; \
+	else \
+		FAILED=0; \
+		for f in $$MIGRATIONS; do \
+			case "$$f" in \
+				*.sql) squawk "$$f" || FAILED=1 ;; \
+				*.py) \
+					python3 -c "import re,sys; t=open('$$f').read(); m=re.findall(r'op\.execute\(\s*[\"\\']{1,3}([^\"\\']*)[\"\\']{1,3}\s*\)', t, re.DOTALL); [print(s) for s in m]" \
+						| squawk --stdin-filepath="$$f" 2>/dev/null || true ;; \
+			esac; \
+		done; \
+		[ $$FAILED -eq 0 ] || (echo "$(RED)❌ Squawk reported issues$(NC)"; exit 1); \
+	fi
+	@echo "$(GREEN)✅ Migration lint clean$(NC)"
+
 db-migrate-remote: ## Aplica migrações Alembic no banco REMOTO (usa DATABASE_URL do root .env)
 	@echo "$(YELLOW)⚠️  Applying Alembic migrations to REMOTE database...$(NC)"
 	@if [ -z "$(DATABASE_URL)" ]; then echo "$(RED)❌ DATABASE_URL não definida no root .env$(NC)"; exit 1; fi
@@ -209,6 +321,8 @@ migrate-remote: ## Aplica migrations no Supabase REMOTO via DATABASE_URL (sem li
 
 dev: start ## Alias para start (inicia ambiente de desenvolvimento)
 
+dev-remote: start-remote ## Alias para start-remote (Supabase remoto)
+
 test-backend: ## Executa testes do backend
 	@echo "$(GREEN)🧪 Executando testes do Backend...$(NC)"
 	@cd $(BACKEND_DIR) && uv run pytest
@@ -216,6 +330,18 @@ test-backend: ## Executa testes do backend
 test-frontend: ## Executa testes do frontend
 	@echo "$(GREEN)🧪 Executando testes do Frontend...$(NC)"
 	@cd $(FRONTEND_DIR) && npm test
+
+test-backend-e2e: ## Executa testes e2e do backend (pytest -m e2e)
+	@echo "$(GREEN)🧪 Executando testes E2E do Backend...$(NC)"
+	@cd $(BACKEND_DIR) && uv run pytest -m e2e
+
+e2e-local: ## Roda suíte E2E local do frontend
+	@echo "$(GREEN)🧪 Executando E2E local (Playwright)...$(NC)"
+	@cd $(FRONTEND_DIR) && npm run test:e2e:local
+
+e2e-remote: ## Roda smoke E2E remoto do frontend
+	@echo "$(GREEN)🧪 Executando E2E remoto (Playwright)...$(NC)"
+	@cd $(FRONTEND_DIR) && npm run test:e2e:remote
 
 lint-backend: ## Executa linter do backend
 	@echo "$(GREEN)🔍 Executando linter do Backend...$(NC)"

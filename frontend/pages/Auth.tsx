@@ -35,6 +35,19 @@ const mapAuthError = (msg: string): string => {
     return key ? t("auth", AUTH_ERROR_KEYS[key]) : msg;
 };
 
+const getAuthRedirectBaseUrl = (): string => {
+    const configuredUrl = import.meta.env.VITE_SITE_URL?.trim();
+    if (!configuredUrl) {
+        return window.location.origin;
+    }
+
+    try {
+        return new URL(configuredUrl).origin;
+    } catch {
+        return window.location.origin;
+    }
+};
+
 // ─── Password helpers ─────────────────────────────────────────────────────────
 
 function validatePassword(password: string): string | null {
@@ -85,7 +98,7 @@ function LeftPanel() {
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15">
                     <BookOpen className="h-5 w-5 text-white"/>
                 </div>
-                <span className="text-lg font-bold text-white">Review Hub</span>
+                <span className="text-lg font-bold text-white">Prumo</span>
             </div>
 
             <div className="space-y-8">
@@ -117,7 +130,7 @@ function LeftPanel() {
             </div>
 
             <p className="text-xs text-indigo-300">
-                © {new Date().getFullYear()} Review Hub · {t("auth", "rightsReserved")}
+                © {new Date().getFullYear()} Prumo · {t("auth", "rightsReserved")}
             </p>
         </div>
     );
@@ -284,6 +297,7 @@ function LoginForm({
 // ─── RegisterForm ─────────────────────────────────────────────────────────────
 
 function RegisterForm({onSwitchToLogin}: { onSwitchToLogin: () => void }) {
+    const navigate = useNavigate();
     const [form, setForm] = useState({
         fullName: "",
         email: "",
@@ -294,6 +308,7 @@ function RegisterForm({onSwitchToLogin}: { onSwitchToLogin: () => void }) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [emailSent, setEmailSent] = useState(false);
+    const authRedirectBaseUrl = getAuthRedirectBaseUrl();
 
     const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -311,16 +326,27 @@ function RegisterForm({onSwitchToLogin}: { onSwitchToLogin: () => void }) {
 
     setLoading(true);
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
           email: form.email,
           password: form.password,
         options: {
             data: {full_name: form.fullName},
-          emailRedirectTo: `${window.location.origin}/`,
+          emailRedirectTo: `${authRedirectBaseUrl}/`,
         },
       });
       if (error) throw error;
+      // Supabase returns a session when email confirmations are disabled
+      // (the local CLI default). In that case the user is already
+      // authenticated; navigate to the dashboard instead of parking
+      // them on a "check your email" screen for an email that will
+      // never arrive. When confirmations are required (production
+      // default), `data.session` is null and we keep the original UX.
+      if (data.session) {
+        toast.success(t("auth", "loginSuccess"));
+        navigate("/");
+      } else {
         setEmailSent(true);
+      }
     } catch (err: any) {
         setError(mapAuthError(err.message || t("auth", "errorCreateAccount")));
     } finally {
@@ -466,6 +492,7 @@ function ForgotPasswordForm({onBack}: { onBack: () => void }) {
     const [loading, setLoading] = useState(false);
     const [sent, setSent] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const authRedirectBaseUrl = getAuthRedirectBaseUrl();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -473,7 +500,7 @@ function ForgotPasswordForm({onBack}: { onBack: () => void }) {
         setLoading(true);
         try {
             const {error} = await supabase.auth.resetPasswordForEmail(email, {
-                redirectTo: `${window.location.origin}/auth/reset-password`,
+                redirectTo: `${authRedirectBaseUrl}/auth/reset-password`,
             });
             if (error) throw error;
             setSent(true);
@@ -580,7 +607,7 @@ export default function Auth() {
                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary">
                         <BookOpen className="h-5 w-5 text-primary-foreground"/>
                     </div>
-                    <span className="text-lg font-bold">Review Hub</span>
+                    <span className="text-lg font-bold">Prumo</span>
                 </div>
 
                 <div className="w-full max-w-md">

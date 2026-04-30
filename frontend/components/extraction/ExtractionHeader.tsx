@@ -17,7 +17,7 @@ import {HeaderFinalizeButton} from './header/HeaderFinalizeButton';
 import {HeaderAIActions} from './header/HeaderAIActions';
 import {HeaderMoreMenu} from './header/HeaderMoreMenu';
 import type {AISuggestion} from '@/types/ai-extraction';
-import type {ExtractedValue, ExtractionInstance, ProjectExtractionTemplate} from '@/types/extraction';
+import type {ExtractionValueDisplay, ExtractionInstance, ProjectExtractionTemplate} from '@/types/extraction';
 
 // =================== INTERFACES ===================
 
@@ -59,11 +59,17 @@ interface ExtractionHeaderProps {
   lastSaved?: Date | null;
   isComplete: boolean;
   onFinalize: () => void;
+  /** Optional label override for the finalize button — set to
+   * "Submit for review" while the run is still in PROPOSAL. */
+  finalizeLabel?: string;
   submitting?: boolean;
 
     // AI Extraction (optional - kept for compatibility)
   templateId?: string;
   templateName?: string;
+  /** Active run id forwarded to HeaderMoreMenu so "Extract with AI"
+   * reuses the open run instead of creating a parallel one. */
+  runId?: string | null;
   onExtractionComplete?: (runId?: string) => void | Promise<void>;
 
     // AI suggestions (for Zone 4 badge)
@@ -73,7 +79,7 @@ interface ExtractionHeaderProps {
     // Data for export (Zone 4 - More menu)
   template?: ProjectExtractionTemplate | null;
   instances?: ExtractionInstance[];
-  values?: ExtractedValue[];
+  values?: ExtractionValueDisplay[];
 
     // Callback to refresh after extraction
   onRefreshInstances?: () => Promise<void>;
@@ -106,6 +112,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
     lastSaved = null,
     isComplete,
     onFinalize,
+    finalizeLabel,
     submitting = false,
     aiSuggestions = {},
     onAISuggestionsClick,
@@ -158,6 +165,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                   submitting={submitting}
                   variant="default"
                   size="sm"
+                  label={finalizeLabel}
                 />
               </div>
             </div>
@@ -191,6 +199,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                   compact={true}
                   articleId={currentArticleId}
                   templateId={template?.id}
+                  runId={props.runId}
                   onExtractionComplete={props.onRefreshInstances}
                   onExtractionStateChange={props.onExtractionStateChange}
                 />
@@ -259,6 +268,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                 compact={false}
                 articleId={currentArticleId}
                 templateId={template?.id}
+                runId={props.runId}
                 onExtractionComplete={props.onRefreshInstances}
                 onExtractionStateChange={props.onExtractionStateChange}
               />
@@ -272,6 +282,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                 submitting={submitting}
                 variant="default"
                 size="sm"
+                label={finalizeLabel}
               />
             </div>
           </div>

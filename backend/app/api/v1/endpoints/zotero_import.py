@@ -1,8 +1,6 @@
 """
 Zotero Import Endpoint.
 
-Migrado de: supabase/functions/zotero-import/index.ts
-
 Endpoints for integracao with Zotero:
 - Save credentials
 - Testar conexao

@@ -5,14 +5,18 @@ Manages persistence for execucoes de IA for extraction.
 """
 
 from datetime import UTC, datetime
+from time import perf_counter
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.logging import get_logger
 from app.models.extraction import ExtractionRun, ExtractionRunStage, ExtractionRunStatus
 from app.repositories.base import BaseRepository
+
+logger = get_logger(__name__)
 
 
 class ExtractionRunRepository(BaseRepository[ExtractionRun]):
@@ -41,7 +45,7 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
             project_id: project.
             article_id: article.
             template_id: template.
-            stage: Estagio da execucao (data_suggest, parsing, etc.).
+            stage: Estagio da execucao (pending, proposal, review, consensus, finalized, cancelled).
             created_by: user que criou.
             parameters: Parametros da execucao (modelo, etc.).
 
@@ -75,6 +79,7 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
         Returns:
             ExtractionRun atualizado or None.
         """
+        query_start = perf_counter()
         await self.db.execute(
             update(ExtractionRun)
             .where(ExtractionRun.id == run_id)
@@ -84,6 +89,12 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
             )
         )
         await self.db.flush()
+        query_duration_ms = (perf_counter() - query_start) * 1000
+        logger.info(
+            "extraction_run_start_db_latency",
+            run_id=str(run_id),
+            db_duration_ms=query_duration_ms,
+        )
         return await self.get_by_id(run_id)
 
     async def complete_run(
@@ -101,6 +112,7 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
         Returns:
             ExtractionRun atualizado or None.
         """
+        query_start = perf_counter()
         await self.db.execute(
             update(ExtractionRun)
             .where(ExtractionRun.id == run_id)
@@ -111,6 +123,12 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
             )
         )
         await self.db.flush()
+        query_duration_ms = (perf_counter() - query_start) * 1000
+        logger.info(
+            "extraction_run_complete_db_latency",
+            run_id=str(run_id),
+            db_duration_ms=query_duration_ms,
+        )
         return await self.get_by_id(run_id)
 
     async def fail_run(
@@ -128,6 +146,7 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
         Returns:
             ExtractionRun atualizado or None.
         """
+        query_start = perf_counter()
         await self.db.execute(
             update(ExtractionRun)
             .where(ExtractionRun.id == run_id)
@@ -138,6 +157,12 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
             )
         )
         await self.db.flush()
+        query_duration_ms = (perf_counter() - query_start) * 1000
+        logger.info(
+            "extraction_run_fail_db_latency",
+            run_id=str(run_id),
+            db_duration_ms=query_duration_ms,
+        )
         return await self.get_by_id(run_id)
 
     async def get_by_article(

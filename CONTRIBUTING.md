@@ -1,6 +1,6 @@
-# Contributing to Review AI Hub
+# Contributing to Prumo
 
-Thank you for your interest in contributing to Review AI Hub.
+Thank you for your interest in contributing to Prumo.
 This guide explains how to contribute effectively and consistently.
 
 ## Submitting issues
@@ -51,4 +51,4 @@ The app is available at:
 
 ## Code of conduct
 
-By participating, you agree to follow [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
+By participating, you agree to follow `[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)`.

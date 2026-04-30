@@ -5,7 +5,6 @@
 export {
   apiClient,
   zoteroClient,
-  aiAssessmentClient,
   sectionExtractionClient,
   modelExtractionClient,
   ApiError,
@@ -13,4 +12,3 @@ export {
   type ApiRequestOptions,
   type ZoteroAction,
 } from "./client";
-

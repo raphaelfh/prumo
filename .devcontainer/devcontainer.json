@@ -1,0 +1,33 @@
+{
+  "name": "prumo",
+  "build": { "dockerfile": "Dockerfile" },
+
+  // NET_ADMIN/NET_RAW are required by init-firewall.sh.
+  "runArgs": ["--cap-add=NET_ADMIN", "--cap-add=NET_RAW"],
+
+  "remoteUser": "node",
+  "workspaceFolder": "/workspace",
+
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "postStartCommand": "sudo /usr/local/bin/init-firewall.sh",
+
+  "forwardPorts": [8000, 8080, 5173],
+  "portsAttributes": {
+    "8000": { "label": "Backend (FastAPI)" },
+    "8080": { "label": "Frontend (Vite)" }
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "dbaeumer.vscode-eslint",
+        "bradlc.vscode-tailwindcss"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/workspace/backend/.venv/bin/python"
+      }
+    }
+  }
+}

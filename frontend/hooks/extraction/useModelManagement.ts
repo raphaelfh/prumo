@@ -20,6 +20,7 @@ import {useAuth} from '@/contexts/AuthContext';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 import {extractionInstanceService} from '@/services/extractionInstanceService';
+import {ExtractionValueService} from '@/services/extractionValueService';
 import type {Model} from '@/components/extraction/hierarchy/ModelSelector';
 
 // =================== INTERFACES ===================
@@ -261,7 +262,9 @@ export function useModelManagement({
         userId: user.id
       });
 
-      // 4. Se modellingMethod foi fornecido, salvar valor
+      // 4. If modellingMethod was provided, persist it as a ReviewerDecision
+      // on the active run. If no run exists yet (extraction hasn't run),
+      // skip silently — the user can fill it via the form afterwards.
       if (modellingMethod) {
         const { data: modellingMethodField } = await supabase
           .from('extraction_fields')
@@ -271,15 +274,26 @@ export function useModelManagement({
           .single();
 
         if (modellingMethodField) {
-          await supabase.from('extracted_values').insert({
-            project_id: projectId,
-            article_id: articleId,
-            instance_id: result.parent.id,
-            field_id: modellingMethodField.id,
-            value: { value: modellingMethod },
-            source: 'human',
-            reviewer_id: user.id
-          });
+          const run = await ExtractionValueService.findActiveRun(articleId, templateId);
+          if (run) {
+            try {
+              await ExtractionValueService.saveValue(
+                run.id,
+                result.parent.id,
+                modellingMethodField.id,
+                modellingMethod,
+              );
+            } catch (writeErr) {
+              console.warn(
+                'Could not persist modelling_method as ReviewerDecision; user can set it via the form.',
+                writeErr,
+              );
+            }
+          } else {
+            console.warn(
+              'No active extraction run; modellingMethod will be set via the form once extraction runs.',
+            );
+          }
         }
       }
 

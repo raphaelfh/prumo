@@ -30,6 +30,7 @@ supabase/functions/.env.*
 # Test files (PDFs and large test data)
 *.pdf
 !docs/**/*.pdf
+!frontend/pdf-viewer/__fixtures__/*.pdf
 supabase/functions/*/tests/*.pdf
 
 # Workspace files
@@ -94,6 +95,9 @@ coverage.xml
 *.cover
 .hypothesis/
 .pytest_cache/
+playwright-report/
+test-results/
+.playwright/
 
 # Translations
 *.mo
@@ -158,5 +162,5 @@ supabase/.branches/*
 **/.env.*
 !**/.env.example
 
-
 /.ai/mcp/mcp.json
+.playwright-mcp/

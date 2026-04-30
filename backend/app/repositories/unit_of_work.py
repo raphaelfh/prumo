@@ -79,16 +79,7 @@ from app.repositories.article_repository import (
     ArticleSyncEventRepository,
     ArticleSyncRunRepository,
 )
-from app.repositories.assessment_repository import (
-    AIAssessmentRepository,
-    AssessmentEvidenceRepository,
-    AssessmentInstanceRepository,
-    AssessmentInstrumentRepository,
-    AssessmentItemRepository,
-    AssessmentResponseRepository,
-)
 from app.repositories.extraction_repository import (
-    AISuggestionRepository,
     ExtractionEntityTypeRepository,
     ExtractionInstanceRepository,
     ExtractionTemplateRepository,
@@ -111,8 +102,6 @@ class UnitOfWork:
         article_files: Repository de files de articles
         projects: Repository de projects
         project_members: Repository de membros de projects
-        assessment_instances: Repository de assessment instances (nova estrutura)
-        assessment_responses: Repository de assessment responses (nova estrutura)
         ... (outros repositories)
 
     Example:
@@ -159,20 +148,11 @@ class UnitOfWork:
         self.projects = ProjectRepository(self.session)
         self.project_members = ProjectMemberRepository(self.session)
 
-        # Assessments (new structure)
-        self.assessment_instruments = AssessmentInstrumentRepository(self.session)
-        self.assessment_items = AssessmentItemRepository(self.session)
-        self.assessment_instances = AssessmentInstanceRepository(self.session)
-        self.assessment_responses = AssessmentResponseRepository(self.session)
-        self.assessment_evidence = AssessmentEvidenceRepository(self.session)
-        self.ai_assessments = AIAssessmentRepository(self.session)
-
         # Extractions
         self.extraction_templates = ExtractionTemplateRepository(self.session)
         self.global_templates = GlobalTemplateRepository(self.session)
         self.entity_types = ExtractionEntityTypeRepository(self.session)
         self.extraction_instances = ExtractionInstanceRepository(self.session)
-        self.ai_suggestions = AISuggestionRepository(self.session)
 
         # Integrations
         self.zotero_integrations = ZoteroIntegrationRepository(self.session)

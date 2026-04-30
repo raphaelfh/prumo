@@ -17,7 +17,7 @@ export interface SearchResult {
   id: string;
   title: string;
   description?: string;
-  type: 'project' | 'article' | 'assessment';
+  type: 'project' | 'article';
   href: string;
   icon: LucideIcon;
   metadata?: Record<string, any>;

@@ -11,8 +11,10 @@ import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/compo
 import {Button} from '@/components/ui/button';
 import {Skeleton} from '@/components/ui/skeleton';
 import {AlertCircle, CheckCircle, Download, FileText, PlusCircle, Settings} from 'lucide-react';
-import {ProjectExtractionTemplate} from '@/types/extraction';
-import {useExtractionTemplates} from '@/hooks/extraction/useExtractionTemplates';
+import {
+    type ProjectTemplate,
+    useHITLProjectTemplates,
+} from '@/hooks/hitl/useHITLProjectTemplates';
 import {useProjectMemberRole} from '@/hooks/useProjectMemberRole';
 import {ArticleExtractionTable} from './ArticleExtractionTable';
 import {ConfigureTemplateFirst} from './config/ConfigureTemplateFirst';
@@ -37,7 +39,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     ? tabFromUrl 
     : 'extraction';
   
-  const [activeTemplate, setActiveTemplate] = useState<ProjectExtractionTemplate | null>(null);
+  const [activeTemplate, setActiveTemplate] = useState<ProjectTemplate | null>(null);
   const [activeTab, setActiveTab] = useState<'extraction' | 'dashboard' | 'configuration'>(initialTab);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showCreateCustomDialog, setShowCreateCustomDialog] = useState(false);
@@ -50,13 +52,13 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   });
 
     // Hook to manage templates
-  const { 
+  const {
     templates,
       globalTemplates,
-    loading: templatesLoading, 
+    loading: templatesLoading,
     error: templatesError,
-    refreshTemplates
-  } = useExtractionTemplates({ projectId });
+    refresh: refreshTemplates,
+  } = useHITLProjectTemplates({ projectId, kind: 'extraction' });
 
     // Pre-select template when opening import dialog from config list
     const [importInitialTemplateId, setImportInitialTemplateId] = useState<string | null>(null);
@@ -148,37 +150,52 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     if (!activeTemplate || !user) return;
 
     try {
-        // Fetch instances and values in parallel (reduces total time)
-        const [instancesResult, valuesResult] = await Promise.all([
+        // Fetch instances + reviewer_states (current decision per item)
+        // for the active user, both filtered by template, in parallel.
+        const [instancesResult, statesResult] = await Promise.all([
             supabase
                 .from("extraction_instances" as any)
                 .select("article_id")
                 .eq("project_id", projectId)
                 .eq("template_id", activeTemplate.id),
             supabase
-                .from("extracted_values" as any)
+                .from("extraction_reviewer_states" as any)
                 .select(`
-            instance_id,
-            extraction_instances!inner(article_id, template_id)
+            current_decision_id,
+            reviewer_decision:extraction_reviewer_decisions!fk_extraction_reviewer_states_decision_run_match(decision),
+            extraction_instances!inner(article_id, template_id, project_id)
           `)
+                .eq("reviewer_id", user.id)
                 .eq("extraction_instances.project_id", projectId)
-                .eq("extraction_instances.template_id", activeTemplate.id)
-                .eq("reviewer_id", user.id),
+                .eq("extraction_instances.template_id", activeTemplate.id),
         ]);
 
         const {data: instances, error: instancesError} = instancesResult;
-        const {data: extractedValues, error: valuesError} = valuesResult;
+        const {data: states, error: statesError} = statesResult;
 
         if (instancesError) throw instancesError;
-      if (valuesError) throw valuesError;
+      if (statesError) throw statesError;
 
         // Compute statistics
       const totalArticles = articles.length;
       const articlesWithInstances = new Set(instances?.map((i: any) => i.article_id) || []);
       const extractionsStarted = articlesWithInstances.size;
 
-        // Count articles with extraction complete (at least one instance with values)
-      const articlesWithValues = new Set(extractedValues?.map((v: any) => v.extraction_instances?.article_id).filter(Boolean) || []);
+        // Count articles where the user has at least one non-reject
+        // decision; that's the post-HITL definition of "extraction made
+        // progress for this article".
+      const articlesWithValues = new Set(
+        (states ?? [])
+          .filter((s: any) => {
+            if (!s.current_decision_id) return false;
+            const dec = Array.isArray(s.reviewer_decision)
+              ? s.reviewer_decision[0]
+              : s.reviewer_decision;
+            return dec && dec.decision !== "reject";
+          })
+          .map((s: any) => s.extraction_instances?.article_id)
+          .filter(Boolean),
+      );
       const extractionsCompleted = articlesWithValues.size;
       
       const progressPercentage = totalArticles > 0 
@@ -509,7 +526,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
           handleTabChange('configuration');
             // Select the newly imported template
           if (templateId && updatedTemplates.length > 0) {
-            const newTemplate = updatedTemplates.find((t: ProjectExtractionTemplate) => t.id === templateId);
+            const newTemplate = updatedTemplates.find((t: ProjectTemplate) => t.id === templateId);
             if (newTemplate) {
               setActiveTemplate(newTemplate);
             } else {
@@ -535,7 +552,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
           handleTabChange('configuration');
             // Select the newly created template
           if (templateId && updatedTemplates.length > 0) {
-            const newTemplate = updatedTemplates.find((t: ProjectExtractionTemplate) => t.id === templateId);
+            const newTemplate = updatedTemplates.find((t: ProjectTemplate) => t.id === templateId);
             if (newTemplate) {
               setActiveTemplate(newTemplate);
             } else {

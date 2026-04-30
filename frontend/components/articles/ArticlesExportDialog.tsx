@@ -110,7 +110,7 @@ export function ArticlesExportDialog({
                 toast.success(t("articles", "exportSuccess"));
                 onOpenChange(false);
             } else {
-                const job = createArticlesExportJob(projectId, result.jobId, {
+                const job = createArticlesExportJob(projectId, result.job_id, {
                     articleCount,
                     fileScope,
                     formats,

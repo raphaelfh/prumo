@@ -65,44 +65,6 @@ class TestArticlesQueries:
 
 
 @pytest.mark.asyncio
-class TestAssessmentQueries:
-    """Testes de queries nas tabelas de assessment."""
-
-    async def test_count_assessment_instruments(self, db_session: AsyncSession) -> None:
-        """Conta instrumentos de avaliação."""
-        result = await db_session.execute(text("SELECT COUNT(*) FROM assessment_instruments"))
-        row = result.fetchone()
-        assert row is not None
-        assert row[0] >= 0
-
-    async def test_count_assessment_items(self, db_session: AsyncSession) -> None:
-        """Conta itens de avaliação."""
-        result = await db_session.execute(text("SELECT COUNT(*) FROM assessment_items"))
-        row = result.fetchone()
-        assert row is not None
-        assert row[0] >= 0
-
-    async def test_instruments_with_items_count(self, db_session: AsyncSession) -> None:
-        """Query de instrumentos com contagem de itens."""
-        result = await db_session.execute(
-            text("""
-                SELECT 
-                    ai.id, 
-                    ai.name, 
-                    ai.tool_type,
-                    COUNT(ait.id) as item_count
-                FROM assessment_instruments ai
-                LEFT JOIN assessment_items ait ON ai.id = ait.instrument_id
-                GROUP BY ai.id, ai.name, ai.tool_type
-                ORDER BY ai.name
-                LIMIT 10
-            """)
-        )
-        rows = result.fetchall()
-        assert isinstance(rows, list)
-
-
-@pytest.mark.asyncio
 class TestExtractionQueries:
     """Testes de queries nas tabelas de extração."""
 
@@ -171,26 +133,6 @@ class TestComplexQueries:
                 GROUP BY p.id, p.name, p.review_type
                 ORDER BY p.created_at DESC
                 LIMIT 5
-            """)
-        )
-        rows = result.fetchall()
-        assert isinstance(rows, list)
-
-    async def test_article_assessment_status(self, db_session: AsyncSession) -> None:
-        """Query de status de avaliação por artigo."""
-        result = await db_session.execute(
-            text("""
-                SELECT 
-                    a.id,
-                    a.title,
-                    COUNT(DISTINCT ass.id) as assessment_count,
-                    COUNT(DISTINCT ai.id) as ai_assessment_count
-                FROM articles a
-                LEFT JOIN assessments ass ON a.id = ass.article_id
-                LEFT JOIN ai_assessments ai ON a.id = ai.article_id
-                GROUP BY a.id, a.title
-                ORDER BY a.created_at DESC
-                LIMIT 10
             """)
         )
         rows = result.fetchall()

@@ -8,7 +8,7 @@ import {useLocation, useNavigate} from 'react-router-dom';
 import {supabase} from '@/integrations/supabase/client';
 import {useAuth} from '@/contexts/AuthContext';
 import {t} from '@/lib/copy';
-import {BarChart3, File, FileText, Folder, LogIn, Settings} from 'lucide-react';
+import {File, FileText, Folder, LogIn, Settings} from 'lucide-react';
 import type {BreadcrumbItem, NotificationItem, SearchResult, UserProfile} from '@/types/navigation';
 
 export const useNavigation = () => {
@@ -45,10 +45,6 @@ export const useNavigation = () => {
             case 'projects':
                 // Do not add "Projects" to breadcrumbs, skip to next
               shouldSkip = true;
-              break;
-            case 'assessment':
-                label = 'Assessment';
-              icon = BarChart3;
               break;
             case 'articles':
                 label = 'Articles';
@@ -185,15 +181,6 @@ export const useNotifications = () => {
         // For now, simulate notifications
         // In production, fetch from database
       const mockNotifications: NotificationItem[] = [
-        {
-          id: '1',
-            title: t('navigation', 'notifNewAssessmentTitle'),
-            message: t('navigation', 'notifNewAssessmentMessage'),
-          type: 'info',
-          timestamp: new Date(),
-          isRead: false,
-          actionUrl: '/projects/123/assessment',
-        },
         {
           id: '2',
             title: t('navigation', 'notifProjectCompletedTitle'),

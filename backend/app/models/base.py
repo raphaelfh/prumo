@@ -41,14 +41,23 @@ POSTGRESQL_ENUM_VALUES: dict[str, list[str]] = {
     "extraction_framework": ["CHARMS", "PICOS", "CUSTOM"],
     "extraction_field_type": ["text", "number", "date", "select", "multiselect", "boolean"],
     "extraction_cardinality": ["one", "many"],
-    "extraction_source": ["human", "ai", "rule"],
-    "extraction_run_stage": ["data_suggest", "parsing", "validation", "consensus"],
+    "extraction_run_stage": [
+        "pending",
+        "proposal",
+        "review",
+        "consensus",
+        "finalized",
+        "cancelled",
+    ],
     "extraction_run_status": ["pending", "running", "completed", "failed"],
-    "suggestion_status": ["pending", "accepted", "rejected"],
     "extraction_instance_status": ["pending", "in_progress", "completed", "reviewed", "archived"],
-    # Assessment enums
-    "assessment_status": ["in_progress", "submitted", "locked", "archived"],
-    "assessment_source": ["human", "ai", "consensus"],
+    # Extraction versioning + HITL config enums
+    "hitl_config_scope_kind": ["project", "template"],
+    "consensus_rule": ["unanimous", "majority", "arbitrator"],
+    "template_kind": ["extraction", "quality_assessment"],
+    "extraction_proposal_source": ["ai", "human", "system"],
+    "extraction_reviewer_decision": ["accept_proposal", "reject", "edit"],
+    "extraction_consensus_mode": ["select_existing", "manual_override"],
 }
 
 

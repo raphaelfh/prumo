@@ -1,8 +1,6 @@
 """
 Model Extraction Service.
 
-Migrated from: supabase/functions/model-extraction/index.ts
-
 Service for automatic extraction of article prediction models.
 Implements:
 - Model identification via LLM
@@ -11,8 +9,8 @@ Implements:
 - Repository Pattern with SQLAlchemy
 """
 
-import time
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Any
 from uuid import UUID
 
@@ -35,6 +33,7 @@ from app.repositories import (
 )
 from app.services.openai_service import OpenAIService
 from app.services.pdf_processor import PDFProcessor
+from app.services.run_lifecycle_service import RunLifecycleService
 from app.utils.json_parser import extract_models_from_response
 
 
@@ -93,6 +92,9 @@ class ModelExtractionService(LoggerMixin):
         self._entity_types = ExtractionEntityTypeRepository(db)
         self._instances = ExtractionInstanceRepository(db)
         self._runs = ExtractionRunRepository(db)
+        # Lifecycle service: owns Run creation + stage transitions and ensures
+        # version_id + hitl_config_snapshot are populated correctly.
+        self._lifecycle = RunLifecycleService(db)
 
     async def extract(
         self,
@@ -113,19 +115,26 @@ class ModelExtractionService(LoggerMixin):
         Returns:
             ModelExtractionResult with extraction_run_id, models and tokens.
         """
-        start_time = time.time()
+        start_time = perf_counter()
+        phase_durations_ms: dict[str, float] = {}
 
-        # 1. Create extraction_run in DB
-        run = await self._runs.create_run(
+        # 1. Create extraction_run via the unified lifecycle service so the new
+        # NOT NULL columns (version_id, hitl_config_snapshot) and the kind
+        # discriminator are populated correctly. Then advance pending → proposal.
+        run = await self._lifecycle.create_run(
             project_id=project_id,
             article_id=article_id,
-            template_id=template_id,
-            stage=ExtractionRunStage.DATA_SUGGEST,
-            created_by=UUID(self.user_id),
+            project_template_id=template_id,
+            user_id=UUID(self.user_id),
             parameters={
                 "model": model,
                 "extraction_type": "model_identification",
             },
+        )
+        run = await self._lifecycle.advance_stage(
+            run_id=run.id,
+            target_stage=ExtractionRunStage.PROPOSAL,
+            user_id=UUID(self.user_id),
         )
 
         await self._runs.start_run(run.id)
@@ -135,22 +144,32 @@ class ModelExtractionService(LoggerMixin):
             trace_id=self.trace_id,
             run_id=str(run.id),
             article_id=str(article_id),
+            operation_id=str(run.id),
         )
 
         try:
             # 2. Fetch PDF
+            phase_start = perf_counter()
             pdf_data = await self._get_pdf(article_id)
+            phase_durations_ms["fetch_pdf"] = (perf_counter() - phase_start) * 1000
 
             # 3. Processar texto do PDF
+            phase_start = perf_counter()
             pdf_text = await self.pdf_processor.extract_text(pdf_data)
+            phase_durations_ms["extract_pdf_text"] = (perf_counter() - phase_start) * 1000
 
             # 4. Fetch template and entity types
+            phase_start = perf_counter()
             template = await self._get_template(template_id)
+            phase_durations_ms["fetch_template"] = (perf_counter() - phase_start) * 1000
 
             # 5. Identificar modelos usando LLM (com tracking de tokens)
+            phase_start = perf_counter()
             models, llm_response = await self._identify_models(pdf_text, template, model)
+            phase_durations_ms["identify_models_llm"] = (perf_counter() - phase_start) * 1000
 
             # 6. Create instances in DB (model + children)
+            phase_start = perf_counter()
             created_models, total_children = await self._create_model_instances(
                 project_id=project_id,
                 article_id=article_id,
@@ -158,10 +177,20 @@ class ModelExtractionService(LoggerMixin):
                 models=models,
                 run=run,
             )
+            phase_durations_ms["create_model_instances"] = (perf_counter() - phase_start) * 1000
 
-            duration = (time.time() - start_time) * 1000
+            # Advance proposal → review so the form UI can write
+            # ReviewerDecisions on top of the instances we just created.
+            await self._lifecycle.advance_stage(
+                run_id=run.id,
+                target_stage=ExtractionRunStage.REVIEW,
+                user_id=UUID(self.user_id),
+            )
+
+            duration = (perf_counter() - start_time) * 1000
 
             # 7. Completar run with resultados
+            phase_start = perf_counter()
             await self._runs.complete_run(
                 run_id=run.id,
                 results={
@@ -172,17 +201,21 @@ class ModelExtractionService(LoggerMixin):
                     "tokens_completion": llm_response.usage.completion_tokens,
                     "tokens_total": llm_response.usage.total_tokens,
                     "duration_ms": duration,
+                    "phase_durations_ms": phase_durations_ms,
                 },
             )
+            phase_durations_ms["complete_run"] = (perf_counter() - phase_start) * 1000
 
             self.logger.info(
                 "model_extraction_complete",
                 trace_id=self.trace_id,
                 run_id=str(run.id),
+                operation_id=str(run.id),
                 models_count=len(created_models),
                 children_count=total_children,
                 tokens_total=llm_response.usage.total_tokens,
                 duration_ms=duration,
+                phase_durations_ms=phase_durations_ms,
             )
 
             # Formatar modelos criados in the formato esperado pelo frontend (camelCase)
@@ -212,7 +245,9 @@ class ModelExtractionService(LoggerMixin):
                 "model_extraction_failed",
                 trace_id=self.trace_id,
                 run_id=str(run.id),
+                operation_id=str(run.id),
                 error=str(e),
+                phase_durations_ms=phase_durations_ms,
             )
             raise
 

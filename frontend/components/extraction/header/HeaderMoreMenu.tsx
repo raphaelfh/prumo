@@ -4,6 +4,7 @@
  */
 
 import {useEffect, useState} from 'react';
+import {useNavigate} from 'react-router-dom';
 import {Button} from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -11,14 +12,19 @@ import {
     DropdownMenuItem,
     DropdownMenuLabel,
     DropdownMenuSeparator,
+    DropdownMenuSub,
+    DropdownMenuSubContent,
+    DropdownMenuSubTrigger,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,} from '@/components/ui/dialog';
 import {Tooltip, TooltipContent, TooltipTrigger,} from '@/components/ui/tooltip';
-import {Download, ExternalLink, HelpCircle, Keyboard, MoreHorizontal, Sparkles} from 'lucide-react';
+import {Download, ExternalLink, HelpCircle, Keyboard, MoreHorizontal, ShieldAlert, Sparkles} from 'lucide-react';
 import {ExtractionExport} from '@/components/extraction/ExtractionExport';
 import {useFullAIExtraction} from '@/hooks/extraction/useFullAIExtraction';
-import type {ExtractedValue, ExtractionInstance, ProjectExtractionTemplate} from '@/types/extraction';
+import {useRunAIExtraction} from '@/hooks/extraction/ai/useRunAIExtraction';
+import {useHITLProjectTemplates} from '@/hooks/hitl/useHITLProjectTemplates';
+import type {ExtractionValueDisplay, ExtractionInstance, ProjectExtractionTemplate} from '@/types/extraction';
 import {t} from '@/lib/copy';
 
 interface HeaderMoreMenuProps {
@@ -29,13 +35,20 @@ interface HeaderMoreMenuProps {
   /** Instâncias para export */
   instances?: ExtractionInstance[];
     /** Extracted values for export */
-  values?: ExtractedValue[];
+  values?: ExtractionValueDisplay[];
   /** Modo compacto (apenas ícone) */
   compact?: boolean;
   /** Article ID para extração IA */
   articleId?: string;
   /** Template ID para extração IA */
   templateId?: string;
+  /**
+   * Active extraction run id. When provided, "Extract with AI" reuses
+   * this run via ``extract_for_run`` (preserving any human proposals
+   * the user already typed). When absent, falls back to the legacy
+   * multi-step orchestration that creates a fresh run.
+   */
+  runId?: string | null;
   /** Callback após extração completa */
   onExtractionComplete?: () => Promise<void>;
     /** Callback to expose extraction state (to render progress in parent) */
@@ -50,20 +63,41 @@ export function HeaderMoreMenu({
                                    compact: _compact = false,
   articleId,
   templateId,
+  runId,
   onExtractionComplete,
   onExtractionStateChange,
 }: HeaderMoreMenuProps) {
   const [exportOpen, setExportOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
-    // Hook for full AI extraction
-  const { extractFullAI, loading: extractingAI, progress: extractionProgress } = useFullAIExtraction({
+  const navigate = useNavigate();
+  const { globalTemplates: qaTemplates, loading: qaTemplatesLoading } =
+    useHITLProjectTemplates({ projectId, kind: 'quality_assessment' });
+
+    // Hook for full AI extraction (legacy path: creates a fresh run).
+    // Used when no active run is available — e.g., bulk operations from
+    // the articles table.
+  const { extractFullAI, loading: extractingFullAI, progress: extractionProgress } = useFullAIExtraction({
     onSuccess: async () => {
       if (onExtractionComplete) {
         await onExtractionComplete();
       }
     },
   });
+
+  // Run-scoped AI extraction (preferred when ``runId`` is available):
+  // calls ``extract_for_run`` against the existing run with
+  // ``skipFieldsWithHumanProposals=true`` so manual edits aren't buried
+  // by a fresh AI guess.
+  const { extractForRun, loading: extractingForRun } = useRunAIExtraction({
+    onSuccess: async () => {
+      if (onExtractionComplete) {
+        await onExtractionComplete();
+      }
+    },
+  });
+
+  const extractingAI = extractingFullAI || extractingForRun;
 
   // Expor estado para parent (para renderizar progresso fora do menu)
   useEffect(() => {
@@ -103,11 +137,23 @@ export function HeaderMoreMenu({
     }
 
     try {
-      await extractFullAI({
-        projectId,
-        articleId,
-        templateId,
-      });
+      if (runId) {
+        // Active run available — reuse it. ``extract_for_run`` keeps
+        // any ``human`` proposals the user has typed while filling
+        // unfilled coords with AI guesses.
+        await extractForRun({
+          projectId,
+          articleId,
+          templateId,
+          runId,
+        });
+      } else {
+        await extractFullAI({
+          projectId,
+          articleId,
+          templateId,
+        });
+      }
     } catch (error) {
       // Erro já tratado pelo hook com toast
         console.error('[HeaderMoreMenu] Full AI extraction error:', error);
@@ -143,13 +189,46 @@ export function HeaderMoreMenu({
               {t('extraction', 'moreActions')}
           </DropdownMenuLabel>
           {articleId && templateId && (
-            <DropdownMenuItem 
+            <DropdownMenuItem
               onClick={handleFullAIExtraction}
               disabled={extractingAI}
             >
               <Sparkles className="mr-2 h-4 w-4" />
                 {extractingAI ? t('extraction', 'moreExtractingAI') : t('extraction', 'moreExtractAI')}
             </DropdownMenuItem>
+          )}
+          {articleId && qaTemplates.length > 0 && (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger data-testid="header-qa-trigger">
+                <ShieldAlert className="mr-2 h-4 w-4" />
+                {t('extraction', 'moreOpenQA')}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-56">
+                {qaTemplatesLoading ? (
+                  <DropdownMenuItem disabled>
+                    {t('common', 'loading')}
+                  </DropdownMenuItem>
+                ) : (
+                  qaTemplates.map((tpl) => (
+                    <DropdownMenuItem
+                      key={tpl.id}
+                      onClick={() =>
+                        navigate(
+                          `/projects/${projectId}/articles/${articleId}/quality-assessment/${tpl.id}`,
+                        )
+                      }
+                      data-testid={`header-qa-template-${tpl.name}`}
+                    >
+                      <ShieldAlert className="mr-2 h-4 w-4 text-amber-600" />
+                      <span>{tpl.name}</span>
+                      <span className="ml-auto text-[10px] text-muted-foreground">
+                        v{tpl.version}
+                      </span>
+                    </DropdownMenuItem>
+                  ))
+                )}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
           )}
           <DropdownMenuItem onClick={handleExport}>
             <Download className="mr-2 h-4 w-4" />

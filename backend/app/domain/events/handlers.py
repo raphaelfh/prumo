@@ -5,11 +5,6 @@ Handlers to process domain events.
 
 import structlog
 
-from app.domain.events.assessment_events import (
-    ArticleAssessed,
-    AssessmentApproved,
-    AssessmentRejected,
-)
 from app.domain.events.base import event_bus
 from app.domain.events.extraction_events import (
     ExtractionCompleted,
@@ -18,72 +13,6 @@ from app.domain.events.extraction_events import (
 )
 
 logger = structlog.get_logger()
-
-
-# =================== ASSESSMENT HANDLERS ===================
-
-
-@event_bus.subscribe(ArticleAssessed)
-async def on_article_assessed(event: ArticleAssessed) -> None:
-    """
-    Handler when an article is assessed.
-    Actions:
-    - Structured log
-    - Update metrics (future)
-    - Notify user (future)
-    """
-    logger.info(
-        "handler_article_assessed",
-        article_id=str(event.article_id),
-        assessment_id=str(event.assessment_id),
-        selected_level=event.selected_level,
-        confidence=event.confidence_score,
-    )
-
-    # TODO: Update AI usage metrics
-    # TODO: Send notification if confidence < threshold
-
-
-@event_bus.subscribe(AssessmentApproved)
-async def on_assessment_approved(event: AssessmentApproved) -> None:
-    """
-    Handler when an assessment is approved.
-    Actions:
-    - Update article status
-    - Update project progress
-    - Audit log
-    """
-    logger.info(
-        "handler_assessment_approved",
-        assessment_id=str(event.assessment_id),
-        article_id=str(event.article_id),
-        reviewer_id=str(event.reviewer_id),
-        modifications_made=event.modifications_made,
-    )
-
-    # TODO: Update assessed article counters
-    # TODO: Check if project is complete
-
-
-@event_bus.subscribe(AssessmentRejected)
-async def on_assessment_rejected(event: AssessmentRejected) -> None:
-    """
-    Handler when an assessment is rejected.
-    Actions:
-    - Log for AI quality analysis
-    - Collect feedback
-    - Re-schedule manual assessment
-    """
-    logger.warning(
-        "handler_assessment_rejected",
-        assessment_id=str(event.assessment_id),
-        article_id=str(event.article_id),
-        reason=event.rejection_reason,
-    )
-
-    # TODO: Collect rejections for quality analysis
-    # TODO: Trigger re-assessment if needed
-
 
 # =================== EXTRACTION HANDLERS ===================
 
@@ -158,4 +87,4 @@ def register_handlers() -> None:
     """
     # Decorators already register automatically, but this function
     # ensures the module was imported
-    logger.info("event_handlers_registered", handler_count=6)
+    logger.info("event_handlers_registered", handler_count=3)

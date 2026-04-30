@@ -2,7 +2,7 @@
  * Full-screen data extraction interface
  *
  * Main page where the user extracts data from a specific article.
- * Similar to AssessmentFullScreen, with PDF viewer beside extraction form.
+ * Uses full-screen layout with PDF viewer beside extraction form.
  *
  * Features:
  * - PDF viewer with toggle
@@ -25,15 +25,31 @@ import {errorTracker} from '@/services/errorTracking';
 import {ResizablePanel, ResizablePanelGroup} from '@/components/ui/resizable';
 import {Button} from '@/components/ui/button';
 import {Loader2} from 'lucide-react';
+import {
+  HITLReopenButton,
+  HITLStatusBadges,
+} from '@/components/runs/HITLStatusBadges';
 
 // Hooks
 import {useExtractionData} from '@/hooks/extraction/useExtractionData';
 import {useExtractedValues} from '@/hooks/extraction/useExtractedValues';
+import {useExtractionSession} from '@/hooks/extraction/useExtractionSession';
+import {useFinalizedExtractionRun} from '@/hooks/extraction/useFinalizedExtractionRun';
 import {useExtractionProgress} from '@/hooks/extraction/useExtractionProgress';
 import {useExtractionAutoSave} from '@/hooks/extraction/useExtractionAutoSave';
 import {useOtherExtractions} from '@/hooks/extraction/colaboracao/useOtherExtractions';
 import {useAISuggestions} from '@/hooks/extraction/ai/useAISuggestions';
 import {useComparisonPermissions} from '@/hooks/shared/useComparisonPermissions';
+import {
+  useAdvanceRun,
+  useCreateConsensus,
+  useReopenRun,
+  useReviewerSummary,
+  useRun,
+  useRunReviewers,
+} from '@/hooks/runs';
+import {ConsensusPanel} from '@/components/runs/ConsensusPanel';
+import {ReviewerProgressBadge} from '@/components/runs/ReviewerProgressBadge';
 
 // Components
 import {ExtractionHeader} from '@/components/extraction/ExtractionHeader';
@@ -44,7 +60,15 @@ import {FullAIExtractionProgress} from '@/components/extraction/FullAIExtraction
 
 // Hooks adicionais
 import {useModelManagement} from '@/hooks/extraction/useModelManagement';
+import {usePreserveScroll} from '@/hooks/usePreserveScroll';
 import {t} from '@/lib/copy';
+
+const SCROLL_CONTAINERS_TO_PRESERVE = [
+  // Form panel — actual scroll happens on radix' inner viewport node.
+  '[data-scroll-container="extraction-form"] [data-radix-scroll-area-viewport]',
+  // PDF viewer scroll container (Viewer.Body).
+  '[data-scroll-container="true"]',
+];
 
 // =================== COMPONENT ===================
 
@@ -74,7 +98,7 @@ export default function ExtractionFullScreen() {
   const [currentUserId, setCurrentUserId] = useState<string>('');
 
   // UI state
-  const [showPDF, setShowPDF] = useState(true);
+  const [showPDF, setShowPDF] = useState(false);
   const [viewMode, setViewMode] = useState<'extract' | 'compare'>('extract');
 
     // AI extraction progress state
@@ -93,31 +117,198 @@ export default function ExtractionFullScreen() {
     fieldsCount: number;
   } | null>(null);
 
-    // Hook to manage extracted values
+  // Open / resume the HITL session for this (article × project_template).
+  // Mirrors the QA flow: the backend ensures an extraction Run exists,
+  // seeds top-level instances if missing, and parks it in PROPOSAL so
+  // the autosave (which writes `human` proposals) can fire immediately.
+  const sessionResult = useExtractionSession({
+    projectId,
+    articleId,
+    projectTemplateId: template?.id,
+    enabled: !!projectId && !!articleId && !!template?.id,
+  });
+  const activeRunId = sessionResult.session?.runId ?? null;
+
+  // Detail fetch on the active run — drives the "Revision" badge when
+  // `parameters.parent_run_id` is present, the stage-aware read path of
+  // useExtractedValues, and the reviewer-summary + ConsensusPanel below.
+  const { data: runDetail, refetch: refetchRun } = useRun(
+    activeRunId ?? null,
+    { enabled: !!activeRunId },
+  );
+  const stage = runDetail?.run.stage ?? null;
+  const proposals = runDetail?.proposals;
+  const isFinalized = stage === 'finalized';
+
+  // Hook to manage extracted values — read path branches on stage.
   const {
     values,
     updateValue,
     loading: valuesLoading,
     initialized: valuesInitialized,
-    save: saveValues,
-    refresh: refreshValues
+    refresh: refreshValues,
   } = useExtractedValues({
-    articleId: articleId || '',
-    projectId: projectId || '',
-    enabled: !!articleId && !!projectId
+    runId: activeRunId,
+    stage,
+    proposals,
+    enabled: !!activeRunId,
   });
+
+  // Reopen wiring: when the active run is finalized, surface the reopen
+  // affordance. The reopen mutation creates a new REVIEW-stage run with
+  // proposals seeded from the published values.
+  const {
+    finalizedRun,
+    refresh: refreshFinalizedRun,
+  } = useFinalizedExtractionRun({
+    articleId: articleId || '',
+    projectTemplateId: template?.id ?? null,
+    enabled: !!articleId && !!template?.id && (!activeRunId || isFinalized),
+  });
+  const reopenMutation = useReopenRun();
+  const [reopening, setReopening] = useState(false);
+  const parentRunId =
+    runDetail?.run.parameters &&
+    typeof runDetail.run.parameters === 'object' &&
+    'parent_run_id' in runDetail.run.parameters
+      ? String(runDetail.run.parameters.parent_run_id)
+      : null;
+
+  // Multi-reviewer state: count, divergence, profiles.
+  const reviewerSummary = useReviewerSummary(runDetail);
+  const reviewerProfiles = useRunReviewers(activeRunId ?? null, {
+    enabled: !!activeRunId,
+  });
+
+  // Mutations needed for consensus resolution + finalize.
+  const advanceMutation = useAdvanceRun(activeRunId ?? '');
+  const consensusMutation = useCreateConsensus(activeRunId ?? '');
+
+  const inConsensusStage = runDetail?.run.stage === 'consensus';
+
+  // {instance::field} → "Section · Field" label map for ConsensusPanel.
+  // Built from the loaded entity_types + their child fields. The field
+  // join lives in useExtractionData; for now we use the instance label
+  // alone (entityType.label) plus the field label fetched off the run
+  // detail's proposals/decisions when available.
+  const fieldLabelByCoord = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const inst of instances) {
+      const et = entityTypes.find((e) => e.id === inst.entity_type_id);
+      const sectionLabel = et?.label ?? et?.name ?? 'Section';
+      // Decisions + proposals carry the field id but not the label;
+      // fall back to the field id when nothing else is known. The
+      // ConsensusPanel still renders correctly — just shows the id.
+      const seenFields = new Set<string>();
+      for (const d of runDetail?.decisions ?? []) {
+        if (d.instance_id !== inst.id || seenFields.has(d.field_id)) continue;
+        seenFields.add(d.field_id);
+        map[`${inst.id}::${d.field_id}`] = `${sectionLabel} · ${d.field_id.slice(0, 8)}…`;
+      }
+    }
+    return map;
+  }, [instances, entityTypes, runDetail?.decisions]);
+
+  const handleSelectExisting = useCallback(
+    async (params: {
+      instanceId: string;
+      fieldId: string;
+      decisionId: string;
+    }) => {
+      await consensusMutation.mutateAsync({
+        instance_id: params.instanceId,
+        field_id: params.fieldId,
+        mode: 'select_existing',
+        selected_decision_id: params.decisionId,
+      });
+      await refetchRun();
+    },
+    [consensusMutation, refetchRun],
+  );
+
+  const handleManualOverride = useCallback(
+    async (params: {
+      instanceId: string;
+      fieldId: string;
+      value: unknown;
+      rationale: string;
+    }) => {
+      await consensusMutation.mutateAsync({
+        instance_id: params.instanceId,
+        field_id: params.fieldId,
+        mode: 'manual_override',
+        value: { value: params.value },
+        rationale: params.rationale,
+      });
+      await refetchRun();
+    },
+    [consensusMutation, refetchRun],
+  );
+
+  const handleFinalizeFromConsensus = useCallback(async () => {
+    if (!activeRunId) return;
+    await advanceMutation.mutateAsync({ target_stage: 'finalized' });
+    await Promise.all([refetchRun(), refreshValues(), refreshFinalizedRun()]);
+    toast.success('Extraction finalized.');
+  }, [
+    activeRunId,
+    advanceMutation,
+    refetchRun,
+    refreshValues,
+    refreshFinalizedRun,
+  ]);
+
+  const handleReopen = useCallback(async () => {
+    if (!finalizedRun?.id) return;
+    setReopening(true);
+    try {
+      await reopenMutation.mutateAsync(finalizedRun.id);
+      // The reopen endpoint creates a fresh REVIEW-stage run linked via
+      // parameters.parent_run_id. Refreshing the active-run resolver
+      // (refreshValues) plus the finalized-run lookup picks up the new
+      // run on the next render. We also clear the local Reopen banner.
+      await Promise.all([refreshValues(), refreshFinalizedRun()]);
+      toast.success('Extraction reopened for revision.');
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to reopen extraction',
+      );
+    } finally {
+      setReopening(false);
+    }
+  }, [finalizedRun?.id, reopenMutation, refreshValues, refreshFinalizedRun]);
 
   // Hook para calcular progresso
-  const { completedFields, totalFields, completionPercentage, isComplete } = 
+  const { completedFields, totalFields, completionPercentage, isComplete } =
     useExtractionProgress(values, entityTypes);
 
-    // Auto-save hook (only enable after values initialized)
-  const { isSaving, lastSaved } = useExtractionAutoSave({
-    articleId: articleId || '',
-    projectId: projectId || '',
+  // Captures the scroll position of the form + PDF panels around async
+  // refreshes so the user does not get bounced back to the top after an AI
+  // extraction completes. See usePreserveScroll for the rAF dance.
+  const preserveScroll = usePreserveScroll(SCROLL_CONTAINERS_TO_PRESERVE);
+
+    // Auto-save hook — writes `human` proposals on the active run; no-op
+    // until the session is open and the run is in a writable stage.
+  const { isSaving, lastSaved, saveNow } = useExtractionAutoSave({
+    runId: activeRunId,
     values,
-    enabled: !!articleId && !!projectId && !loading && valuesInitialized
+    enabled: !!activeRunId && !loading && valuesInitialized && !isFinalized,
   });
+
+  // "Submit for review" — flush pending edits and advance the run from
+  // PROPOSAL to REVIEW so other reviewers can pick up. Mirrors QA's
+  // ``handlePublish`` shape but stops at REVIEW because Data Extraction
+  // expects multi-reviewer accept/reject before consensus + finalize.
+  // Declared after `useExtractionAutoSave` so the closure picks up the
+  // already-initialized `saveNow` (avoids the temporal-dead-zone crash
+  // on first render).
+  const handleSubmitForReview = useCallback(async () => {
+    if (!activeRunId) return;
+    await saveNow();
+    await advanceMutation.mutateAsync({ target_stage: 'review' });
+    await Promise.all([refetchRun(), refreshValues()]);
+    toast.success('Submitted for review.');
+  }, [activeRunId, saveNow, advanceMutation, refetchRun, refreshValues]);
 
     // Permissions hook (controls comparison access)
   const permissions = useComparisonPermissions(
@@ -129,6 +320,7 @@ export default function ExtractionFullScreen() {
   const { otherExtractions } = useOtherExtractions({
     articleId: articleId || '',
     projectId: projectId || '',
+    templateId: template?.id,
     currentUserId,
     enabled: permissions.canSeeOthers && !!currentUserId
   });
@@ -162,7 +354,17 @@ export default function ExtractionFullScreen() {
   } = useAISuggestions({
     articleId: articleId || '',
     projectId: projectId || '',
-    enabled: !!articleId && !!projectId,
+    runId: activeRunId ?? undefined,
+    // Wait for the session to resolve a run before issuing the
+    // suggestion query — otherwise the first render fires a global
+    // (no runId) lookup that immediately gets superseded by the
+    // run-scoped one. Pure waste; same UX outcome.
+    enabled: !!articleId && !!projectId && !!activeRunId,
+    // The run lives in PROPOSAL while the user edits, so a
+    // ReviewerDecision write would be rejected (decisions only land on
+    // REVIEW). Bubble accept/reject to the form pipeline instead — the
+    // autosave records each as a fresh `human` proposal.
+    acceptStrategy: 'human-proposal',
     onSuggestionAccepted: handleAISuggestionAccepted,
     onSuggestionRejected: handleAISuggestionRejected
   });
@@ -267,18 +469,12 @@ export default function ExtractionFullScreen() {
   };
 
   const handleConfirmAddModel = async (modelName: string, modellingMethod: string) => {
-      console.warn('Starting model creation:', modelName);
     const result = await createModel(modelName, modellingMethod);
-    
     if (result) {
-        console.warn('Model created successfully:', result.model);
       setShowAddModelDialog(false);
-
-        // Reload instances only (child instances will be included)
-        // Do not call refreshModels() - hook already updates local state
-      await refreshInstances();
-
-        console.warn('State updated, fields should appear immediately');
+      // Reload instances (child instances will be included).
+      // refreshModels() is NOT called — the createModel hook already updated local state.
+      await preserveScroll(refreshInstances);
     }
   };
 
@@ -533,7 +729,7 @@ export default function ExtractionFullScreen() {
       });
 
       try {
-        await saveValues();
+        await saveNow();
         logger.info('handleFinalize', 'Valores salvos com sucesso');
       } catch (saveError: any) {
         logger.error('handleFinalize', 'Erro ao salvar valores pendentes', saveError as Error, {
@@ -721,90 +917,55 @@ export default function ExtractionFullScreen() {
    *
    * IMPORTANT: This function must not block - runs in background.
    */
-  const handleExtractionComplete = (runId?: string) => {
-      console.warn('✅ Extraction completed', runId ? `runId: ${runId}` : '');
-
-      // Run refresh in background (do not block)
-      // Hook loading should be reset regardless of this callback
+  const handleExtractionComplete = (_runId?: string) => {
+      // Run refresh in background (do not block).
+      // Wrapped in preserveScroll so the form + PDF panels keep their scroll
+      // position even though the underlying state updates trigger a re-render.
     (async () => {
       try {
-          // IMPORTANT: Reload instances first (backend may have created new ones for cardinality="many")
-          // Wait long enough for backend to finish creating instances
-          // and that Supabase synced changes to the DB
         await new Promise(resolve => setTimeout(resolve, 1500));
 
-          // 1. Reload instances (backend may have created new ones for cardinality="many")
-        if (template) {
-            console.warn('Reloading instances after extraction...');
-          try {
-            await refreshInstances();
-              console.warn('Instances reloaded successfully');
-          } catch (err) {
+        await preserveScroll(async () => {
+          if (template) {
+            try {
+              await refreshInstances();
+            } catch (err) {
               console.error('Error reloading instances (non-critical):', err);
-              // Do not block flow - instances will be reloaded on next refresh
+            }
           }
-        }
+          await refreshValues();
+        });
 
-          // Immediate refresh of extracted values
-        await refreshValues();
-
-          // IMPORTANT: Wait longer before fetching suggestions
-          // Ensures newly reloaded instances are available when we fetch suggestions
+          // Wait briefly before suggestion polling so newly created
+          // instances are queryable.
         await new Promise(resolve => setTimeout(resolve, 500));
 
-          // Optimized polling: use refresh result directly instead of React state
-          // Removes async state dependency and makes polling more reliable
+          // Polling for AI suggestions. Each attempt is wrapped in
+          // preserveScroll so suggestion-driven re-renders also keep the
+          // user's place. We use the direct result (not React state) to
+          // decide when to stop, which avoids racing the next render.
         let attempts = 0;
-          const maxAttempts = 5; // 5 attempts = ~5 seconds total
-        const pollDelay = 1000; // 1 segundo entre tentativas
+        const maxAttempts = 5;
+        const pollDelay = 1000;
 
-          // First attempt (after delays above)
-          console.warn('Reloading AI suggestions...');
-        let result = await refreshAISuggestions();
-
-          // Check for suggestions using direct result (not React state)
+        let result = await preserveScroll(refreshAISuggestions);
         let foundSuggestions = result.count > 0;
-        
-        if (foundSuggestions) {
-            console.warn(`${result.count} suggestion(s) found immediately`);
-          return;
-        }
+        if (foundSuggestions) return;
 
-          // Continue polling if we did not find suggestions
         while (!foundSuggestions && attempts < maxAttempts) {
           attempts++;
-
-            console.warn(`Attempt ${attempts + 1}/${maxAttempts + 1}: Reloading suggestions...`);
-
-            // Wait before reload (give backend time to create suggestions)
           await new Promise(resolve => setTimeout(resolve, pollDelay));
-
-            // Reload suggestions and get result directly
-          result = await refreshAISuggestions();
-
-            // Check using direct result (more reliable than React state)
+          result = await preserveScroll(refreshAISuggestions);
           foundSuggestions = result.count > 0;
-          
-          if (foundSuggestions) {
-              console.warn(`${result.count} suggestion(s) found after ${attempts + 1} attempt(s)`);
-            return;
-          }
+          if (foundSuggestions) return;
         }
 
-          // If we got here without finding suggestions
-        if (!foundSuggestions) {
-            console.warn('No suggestions found after multiple attempts');
-            console.warn('   Possible reasons:');
-            console.warn('   - Suggestions were not created (fields already filled, etc)');
-            console.warn('   - Suggestions were created but not yet available in the database');
-            console.warn('   - There is an issue loading suggestions');
-        }
       } catch (error) {
           console.error('Error reloading suggestions:', error);
           // Do not show error toast - suggestions may not have been created
           // (already handled by extraction hook)
       }
-    })(); // IIFE - executar imediatamente sem bloquear
+    })();
   };
 
   return (
@@ -831,10 +992,12 @@ export default function ExtractionFullScreen() {
         isSaving={isSaving}
         lastSaved={lastSaved}
         isComplete={isComplete}
-        onFinalize={handleFinalize}
+        onFinalize={stage === 'proposal' ? handleSubmitForReview : handleFinalize}
+        finalizeLabel={stage === 'proposal' ? 'Submit for review' : undefined}
         submitting={submitting}
         templateId={template?.id}
         templateName={template?.name}
+        runId={activeRunId}
         onExtractionComplete={handleExtractionComplete}
         aiSuggestions={aiSuggestions}
         onAISuggestionsClick={() => {
@@ -865,6 +1028,55 @@ export default function ExtractionFullScreen() {
         </div>
       ) : null}
 
+      {/* HITL banner: revision indicator + reopen affordance + reviewer
+          progress. Same primitives the QA page uses — see HITLStatusBadges. */}
+      {(parentRunId || (!activeRunId && finalizedRun) || runDetail) ? (
+        <div
+          className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/40 px-4 py-2 text-xs"
+          data-testid="extraction-hitl-banner"
+        >
+          <div className="flex items-center gap-2">
+            <HITLStatusBadges
+              kind="extraction"
+              finalized={!activeRunId && !!finalizedRun}
+              parentRunId={parentRunId}
+            />
+            {runDetail ? (
+              <ReviewerProgressBadge
+                reviewerCount={reviewerSummary.reviewers.length}
+                requiredReviewerCount={reviewerSummary.requiredReviewerCount}
+                divergentCount={reviewerSummary.divergentCoords.size}
+              />
+            ) : null}
+          </div>
+          <HITLReopenButton
+            kind="extraction"
+            visible={!activeRunId && !!finalizedRun}
+            onClick={() => void handleReopen()}
+            reopening={reopening}
+          />
+        </div>
+      ) : null}
+
+      {/* Consensus stage takes over the form area: reviewers diverged
+          and need to resolve. Same component the QA page uses. */}
+      {inConsensusStage && runDetail ? (
+        <div className="border-b bg-muted/20 px-4 py-3" data-testid="extraction-consensus-area">
+          <ConsensusPanel
+            runDetail={runDetail}
+            summary={reviewerSummary}
+            fieldLabelByCoord={fieldLabelByCoord}
+            reviewerLabelById={reviewerProfiles.labelById}
+            avatarById={reviewerProfiles.avatarById}
+            onSelectExisting={handleSelectExisting}
+            onManualOverride={handleManualOverride}
+            onFinalize={handleFinalizeFromConsensus}
+            isResolving={consensusMutation.isPending}
+            isFinalizing={advanceMutation.isPending}
+          />
+        </div>
+      ) : null}
+
       {/* Main content */}
       <div className="flex-1 overflow-hidden">
         <ResizablePanelGroup direction="horizontal">
@@ -876,7 +1088,12 @@ export default function ExtractionFullScreen() {
           />
 
             {/* Extraction form - Extracted to isolated component */}
-          <ResizablePanel defaultSize={showPDF ? 50 : 100} minSize={30}>
+          <ResizablePanel
+            id="extraction-form"
+            order={2}
+            defaultSize={showPDF ? 50 : 100}
+            minSize={30}
+          >
             <ExtractionFormPanel
               viewMode={viewMode}
               showPDF={showPDF}

@@ -1,4 +1,4 @@
-# Docker Compose para desenvolvimento do Review Hub
+# Docker Compose para desenvolvimento do Prumo
 # 
 # Uso:
 #   docker compose up -d        # Inicia todos os serviços

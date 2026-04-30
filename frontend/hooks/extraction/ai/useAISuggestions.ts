@@ -32,22 +32,39 @@ import {AuthenticationError, getErrorMessage,} from '@/lib/ai-extraction/errors'
 export type { AISuggestion, AISuggestionHistoryItem } from '@/types/ai-extraction';
 
 export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestionsReturn {
-  const { articleId, projectId, enabled = true, onSuggestionAccepted, onSuggestionRejected } = props;
+  const {
+    articleId,
+    projectId,
+    enabled = true,
+    runId,
+    instanceIds: providedInstanceIds,
+    acceptStrategy = 'reviewer-decision',
+    onSuggestionAccepted,
+    onSuggestionRejected,
+  } = props;
 
   const [suggestions, setSuggestions] = useState<Record<string, AISuggestion>>({});
   const [loading, setLoading] = useState(false);
     // Loading state per suggestion for immediate visual feedback
   const [actionLoading, setActionLoading] = useState<Record<string, 'accept' | 'reject' | null>>({});
 
+  // Stable cache of pre-resolved instance ids — `useCallback` deps capture
+  // it without re-running on every parent render.
+  const providedInstanceKey = providedInstanceIds?.join('|') ?? null;
+
     // Declare loadSuggestions BEFORE useEffect to avoid init error
   const loadSuggestions = useCallback(async (): Promise<LoadSuggestionsResult> => {
     setLoading(true);
 
     try {
-        console.warn('Loading AI suggestions...', {articleId});
+        console.warn('Loading AI suggestions...', {articleId, runId});
 
-        // Fetch instances for this article
-      const instanceIds = await AISuggestionService.getArticleInstanceIds(articleId);
+        // Prefer caller-provided instance ids when available (QA gets these
+        // straight from the HITL session response). Fall back to the
+        // article-wide lookup that Data Extraction has always used.
+      const instanceIds = providedInstanceIds && providedInstanceIds.length > 0
+        ? providedInstanceIds
+        : await AISuggestionService.getArticleInstanceIds(articleId);
 
       if (instanceIds.length === 0) {
           console.warn('No instances found when loading suggestions');
@@ -62,7 +79,11 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
       });
 
         // Load suggestions using the service
-      const result = await AISuggestionService.loadSuggestions(articleId, instanceIds);
+      const result = await AISuggestionService.loadSuggestions(
+        articleId,
+        instanceIds,
+        runId,
+      );
 
         // CRITICAL: setSuggestions updates state asynchronously
         // Use updater function so previous state is considered
@@ -93,7 +114,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     } finally {
       setLoading(false);
     }
-  }, [articleId]);
+  }, [articleId, runId, providedInstanceKey]);
 
     // useEffect AFTER loadSuggestions declaration
   useEffect(() => {
@@ -110,21 +131,31 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     setActionLoading(prev => ({ ...prev, [key]: 'accept' }));
 
     try {
+      if (acceptStrategy === 'human-proposal') {
+        // Quality-Assessment path: the run lives in PROPOSAL until
+        // Publish, so a ReviewerDecision (which requires REVIEW) would
+        // be rejected by the backend. Instead, just bubble the value
+        // up via ``onSuggestionAccepted`` — the consumer records it as
+        // a ``human`` proposal through its existing form pipeline.
+      } else {
         // Get user more efficiently (cache if possible)
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new AuthenticationError();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new AuthenticationError();
 
-        // Accept suggestion using the service
-      await AISuggestionService.acceptSuggestion({
-        suggestionId: suggestion.id,
-        projectId,
-        articleId,
-        instanceId,
-        fieldId,
-        value: suggestion.value,
-        confidence: suggestion.confidence,
-        reviewerId: user.id,
-      });
+        // Accept suggestion using the service (writes ReviewerDecision
+        // with decision='accept_proposal' on a REVIEW-stage run).
+        await AISuggestionService.acceptSuggestion({
+          suggestionId: suggestion.id,
+          projectId,
+          articleId,
+          instanceId,
+          fieldId,
+          value: suggestion.value,
+          confidence: suggestion.confidence,
+          reviewerId: user.id,
+          runId,
+        });
+      }
 
         // Update status in local state to 'accepted' (do not remove!)
         // IMPORTANT: Create new object to ensure re-render
@@ -164,7 +195,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
         return next;
       });
     }
-  }, [suggestions, projectId, articleId, onSuggestionAccepted]);
+  }, [suggestions, projectId, articleId, runId, acceptStrategy, onSuggestionAccepted]);
 
   const rejectSuggestion = useCallback(async (instanceId: string, fieldId: string) => {
     const key = getSuggestionKey(instanceId, fieldId);
@@ -175,23 +206,29 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     setActionLoading(prev => ({ ...prev, [key]: 'reject' }));
 
     try {
-      // Obter user de forma mais eficiente
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new AuthenticationError();
+      if (acceptStrategy === 'human-proposal') {
+        // QA path: same logic as accept — no ReviewerDecision write.
+        // Local state flip + onSuggestionRejected callback are enough.
+      } else {
+        // Obter user de forma mais eficiente
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new AuthenticationError();
 
-        // Check if was accepted before (need to remove extracted_value)
-      const wasAccepted = suggestion.status === 'accepted';
+          // Check if was accepted before (need to remove extracted_value)
+        const wasAccepted = suggestion.status === 'accepted';
 
-        // Reject suggestion using the service
-      await AISuggestionService.rejectSuggestion({
-        suggestionId: suggestion.id,
-        reviewerId: user.id,
-          wasAccepted, // Pass flag to remove extracted_value if needed
-        instanceId,
-        fieldId,
-        projectId,
-        articleId,
-      });
+          // Reject suggestion using the service
+        await AISuggestionService.rejectSuggestion({
+          suggestionId: suggestion.id,
+          reviewerId: user.id,
+            wasAccepted, // Pass flag to remove extracted_value if needed
+          instanceId,
+          fieldId,
+          projectId,
+          articleId,
+          runId,
+        });
+      }
 
         // Update status in local state to 'rejected' (do not remove!)
         // IMPORTANT: Create new object to ensure re-render e mostrar indicador visual
@@ -230,7 +267,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
         return next;
       });
     }
-  }, [suggestions, projectId, articleId, onSuggestionRejected]);
+  }, [suggestions, projectId, articleId, runId, acceptStrategy, onSuggestionRejected]);
 
   const batchAccept = useCallback(async (threshold = 0.8) => {
     try {

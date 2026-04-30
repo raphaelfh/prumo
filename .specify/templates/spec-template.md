@@ -100,6 +100,19 @@
 - **[Entity 1]**: [What it represents, key attributes without implementation]
 - **[Entity 2]**: [What it represents, relationships to other entities]
 
+### Assumptions & Dependencies *(mandatory)*
+
+<!--
+  ACTION REQUIRED:
+  - List key assumptions and external dependencies needed for delivery.
+  - For database-impacting features in this project, explicitly state:
+    1) application schema changes follow backend SQLAlchemy + Alembic migration ownership
+    2) a database consistency verification step is required before release
+-->
+
+- [Assumption or dependency 1]
+- [Assumption or dependency 2]
+
 ## Success Criteria *(mandatory)*
 
 <!--

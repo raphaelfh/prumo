@@ -7,18 +7,28 @@ import {lazy, Suspense} from "react";
 import {AuthProvider} from "./contexts/AuthContext";
 import {ProjectProvider} from "./contexts/ProjectContext";
 import {SidebarProvider} from "./contexts/SidebarContext";
+import {ThemeProvider} from "./contexts/ThemeContext";
 import {ProtectedRoute} from "./components/ProtectedRoute";
 import {ErrorBoundary} from "./components/ErrorBoundary";
 import {ProjectLayout} from "./components/layout/AppLayout";
 import {Loader2} from "lucide-react";
 import {t} from "@/lib/copy";
+import React from "react";
+import {useGlobalShortcuts} from "./hooks/useGlobalShortcuts";
+
+const GlobalShortcuts: React.FC<{children: React.ReactNode}> = ({children}) => {
+  useGlobalShortcuts();
+  return <>{children}</>;
+};
 
 // Lazy loading of routes for code splitting
 const Auth = lazy(() => import("./pages/Auth"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const ProjectView = lazy(() => import("./pages/ProjectView"));
-const AssessmentFullScreen = lazy(() => import("./pages/AssessmentFullScreen"));
 const ExtractionFullScreen = lazy(() => import("./pages/ExtractionFullScreen"));
+const QualityAssessmentFullScreen = lazy(
+  () => import("./pages/QualityAssessmentFullScreen"),
+);
 const AddArticle = lazy(() => import("./pages/AddArticle"));
 const EditArticle = lazy(() => import("./pages/EditArticle"));
 const UserSettings = lazy(() => import("./pages/UserSettings"));
@@ -48,6 +58,7 @@ const App = () => {
   return (
       <ErrorBoundary context={t('common', 'errorContextApp')}>
       <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
         <TooltipProvider>
           <Toaster />
           <Sonner />
@@ -60,6 +71,7 @@ const App = () => {
                 <ErrorBoundary context={t('common', 'errorContextAuth')}>
                 <AuthProvider>
                   <Suspense fallback={<PageLoader />}>
+                    <GlobalShortcuts>
                     <Routes>
                   <Route path="/auth" element={<Auth />} />
                         <Route path="/auth/reset-password" element={<ResetPassword/>}/>
@@ -90,21 +102,21 @@ const App = () => {
                     }
                   />
                   <Route
-                    path="/projects/:projectId/assessment/:articleId/:instrumentId"
-                    element={
-                      <ProtectedRoute>
-                          <ErrorBoundary context={t('common', 'errorContextAssessment')}>
-                          <AssessmentFullScreen />
-                        </ErrorBoundary>
-                      </ProtectedRoute>
-                    }
-                  />
-                  <Route
                     path="/projects/:projectId/extraction/:articleId"
                     element={
                       <ProtectedRoute>
                           <ErrorBoundary context={t('common', 'errorContextExtraction')}>
                           <ExtractionFullScreen />
+                        </ErrorBoundary>
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/projects/:projectId/articles/:articleId/quality-assessment/:templateId"
+                    element={
+                      <ProtectedRoute>
+                        <ErrorBoundary context="quality-assessment">
+                          <QualityAssessmentFullScreen />
                         </ErrorBoundary>
                       </ProtectedRoute>
                     }
@@ -146,11 +158,13 @@ const App = () => {
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />
                     </Routes>
+                    </GlobalShortcuts>
                   </Suspense>
               </AuthProvider>
             </ErrorBoundary>
           </BrowserRouter>
         </TooltipProvider>
+        </ThemeProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   );

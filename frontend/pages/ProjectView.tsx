@@ -8,14 +8,15 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {Plus, ChevronDown, Upload, FileText, Download} from "lucide-react";
+import {Plus, ChevronDown, Upload, FileText, Download, FileBarChart, LayoutDashboard, ListChecks} from "lucide-react";
+import {ComingSoonPanel} from "@/components/layout/ComingSoonPanel";
 import {toast} from "sonner";
 import {ArticlesList, type ArticlesListHandle} from "@/components/articles/ArticlesList";
 import {ArticleForm} from "@/components/articles/ArticleForm";
 import {Sheet, SheetContent} from "@/components/ui/sheet";
 import {ProjectSettings} from "@/components/project/ProjectSettings";
-import {AssessmentInterface} from "@/components/assessment/AssessmentInterface";
 import {ExtractionInterface} from "@/components/extraction/ExtractionInterface";
+import {QualityAssessmentInterface} from "@/components/quality/QualityAssessmentInterface";
 import {ZoteroImportDialog} from "@/components/articles/ZoteroImportDialog";
 import {RISImportDialog} from "@/components/articles/RISImportDialog";
 import {useProject} from "@/contexts/ProjectContext";
@@ -79,7 +80,7 @@ type ProjectArticle = Article;
 
 const TAB_DESCRIPTIONS: Record<string, string> = {
     extraction: 'Extract structured data using standard templates',
-    assessment: 'Assess methodological quality of articles',
+    quality: 'Assess article quality with PROBAST, QUADAS-2, and other risk-of-bias tools',
 };
 
 export default function ProjectView() {
@@ -90,7 +91,9 @@ export default function ProjectView() {
     // Use context for project state and navigation
   const { project, setProject: setContextProject, activeTab } = useProject();
 
-    const {isManager} = useProjectMemberRole(activeTab === 'extraction' ? projectId || '' : '');
+    const {isManager} = useProjectMemberRole(
+        activeTab === 'extraction' || activeTab === 'quality' ? projectId || '' : '',
+    );
     const extractionTab = searchParams.get('extractionTab') as 'extraction' | 'dashboard' | 'configuration' | null;
     const currentExtractionTab = (extractionTab && ['extraction', 'dashboard', 'configuration'].includes(extractionTab))
         ? extractionTab
@@ -99,6 +102,21 @@ export default function ProjectView() {
     const setExtractionTab = (tab: 'extraction' | 'dashboard' | 'configuration') => {
         const next = new URLSearchParams(searchParams);
         next.set('extractionTab', tab);
+        setSearchParams(next, {replace: true});
+    };
+
+    const qaTab = searchParams.get('qaTab') as
+        | 'assessment'
+        | 'dashboard'
+        | 'configuration'
+        | null;
+    const currentQaTab = (qaTab && ['assessment', 'dashboard', 'configuration'].includes(qaTab))
+        ? qaTab
+        : 'assessment';
+
+    const setQaTab = (tab: 'assessment' | 'dashboard' | 'configuration') => {
+        const next = new URLSearchParams(searchParams);
+        next.set('qaTab', tab);
         setSearchParams(next, {replace: true});
     };
 
@@ -202,7 +220,7 @@ export default function ProjectView() {
         .from("projects")
         .select(`
           id, name, description, review_title, review_type,
-          settings, assessment_scope, assessment_entity_type_id,
+          settings,
           condition_studied,
           created_at, updated_at
         `)
@@ -277,11 +295,20 @@ export default function ProjectView() {
       case 'extraction':
         return <ExtractionInterface projectId={projectId || ''} />;
 
-      case 'assessment':
-        return <AssessmentInterface projectId={projectId || ''} />;
+      case 'quality':
+        return <QualityAssessmentInterface projectId={projectId || ''} />;
 
       case 'settings':
         return <ProjectSettings projectId={projectId || ''} />;
+
+      case 'overview':
+        return <ComingSoonPanel title={t('layout', 'navOverview')} icon={LayoutDashboard} />;
+
+      case 'screening':
+        return <ComingSoonPanel title={t('layout', 'navScreening')} icon={ListChecks} />;
+
+      case 'prisma':
+        return <ComingSoonPanel title={t('layout', 'navPrismaReport')} icon={FileBarChart} />;
 
       default:
         return null;
@@ -295,11 +322,15 @@ export default function ProjectView() {
         (articleEditorMode === 'add' ||
             (articleEditorMode === 'edit' && Boolean(editorArticleIdFromUrl)));
 
+    // Tabs that render a full-bleed placeholder/page without the articles-style action bar.
+    const FULL_BLEED_TABS = new Set(['settings', 'overview', 'screening', 'prisma']);
+    const isFullBleed = FULL_BLEED_TABS.has(activeTab);
+
   return (
       <div className="h-full bg-background flex flex-col">
 
           {/* Sticky action bar — stack on narrow (flex-col md:flex-row), single row from md */}
-        {activeTab !== 'settings' && (
+        {!isFullBleed && (
             <div
                 className="flex-shrink-0 min-h-12 md:h-12 flex flex-col md:flex-row md:items-center md:justify-between items-stretch gap-2 md:gap-0 py-3 md:py-0 border-b border-border/40 bg-background/80 backdrop-blur-sm px-6 lg:px-10">
           <span className="text-[13px] text-muted-foreground/70 w-full min-w-0 md:flex-1 md:truncate">
@@ -328,6 +359,34 @@ export default function ProjectView() {
                                 onClick={() => setExtractionTab(value)}
                                 aria-selected={currentExtractionTab === value}
                                 role="tab"
+                            >
+                                {label}
+                            </Button>
+                        ))}
+                    </div>
+                )}
+                {activeTab === 'quality' && (
+                    <div className="flex items-center gap-0.5 w-full md:w-auto flex-shrink-0" role="tablist"
+                         aria-label="Quality assessment views">
+                        {[
+                            {value: 'assessment' as const, label: t('qa', 'tabAssessment')},
+                            {value: 'dashboard' as const, label: t('qa', 'tabDashboard')},
+                            ...(isManager ? [{
+                                value: 'configuration' as const,
+                                label: t('qa', 'tabConfiguration')
+                            }] : []),
+                        ].map(({value, label}) => (
+                            <Button
+                                key={value}
+                                variant="ghost"
+                                size="sm"
+                                className={`h-8 px-3 text-[13px] font-medium rounded-md transition-colors duration-75 ${
+                                    currentQaTab === value ? 'bg-muted/50 text-foreground' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                                }`}
+                                onClick={() => setQaTab(value)}
+                                aria-selected={currentQaTab === value}
+                                role="tab"
+                                data-testid={`hitl-quality_assessment-tab-${value}`}
                             >
                                 {label}
                             </Button>
@@ -402,7 +461,7 @@ export default function ProjectView() {
             </div>
         )}
 
-      {activeTab === 'settings' ? (
+      {isFullBleed ? (
           <div className="flex-1 overflow-y-auto">{renderContent()}</div>
       ) : (
           <div className="flex-1 overflow-y-auto px-6 py-4 lg:px-10">

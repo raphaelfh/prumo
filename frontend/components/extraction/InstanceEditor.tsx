@@ -10,18 +10,18 @@ import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
 import {AlertCircle, CheckCircle, Edit, FileText, Plus, Trash2} from 'lucide-react';
 import {t} from '@/lib/copy';
-import {ExtractedValue, ExtractionInstance, ProjectExtractionTemplate} from '@/types/extraction';
+import {ExtractionValueDisplay, ExtractionInstance, ProjectExtractionTemplate} from '@/types/extraction';
 
 interface InstanceEditorProps {
     projectId?: string; // Kept for compatibility, not used currently
   template: ProjectExtractionTemplate | null;
   instances: ExtractionInstance[];
-  values: ExtractedValue[];
+  values: ExtractionValueDisplay[];
   onInstanceCreate: (entityTypeId: string, label: string, parentInstanceId?: string) => Promise<ExtractionInstance | null>;
   onInstanceUpdate: (instanceId: string, updates: Partial<ExtractionInstance>) => Promise<ExtractionInstance | null>;
   onInstanceDelete: (instanceId: string) => Promise<boolean>;
-  onValueSave: (instanceId: string, fieldId: string, value: any, source?: any, confidenceScore?: number, evidenceData?: any[]) => Promise<ExtractedValue | null>;
-  onValueUpdate: (valueId: string, updates: Partial<ExtractedValue>) => Promise<ExtractedValue | null>;
+  onValueSave: (instanceId: string, fieldId: string, value: any, source?: any, confidenceScore?: number, evidenceData?: any[]) => Promise<ExtractionValueDisplay | null>;
+  onValueUpdate: (valueId: string, updates: Partial<ExtractionValueDisplay>) => Promise<ExtractionValueDisplay | null>;
   onValueDelete: (valueId: string) => Promise<boolean>;
   loading: boolean;
 }

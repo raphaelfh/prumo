@@ -5,8 +5,14 @@ import {t} from '@/lib/copy';
 import {isOtherObject, OTHER_OPTION_VALUE} from '@/lib/validations/selectOther';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue,} from '@/components/ui/select';
 
+// Options can come from the backend either as raw strings or as
+// {value, label} objects. Normalising both shapes here avoids "Objects are not
+// valid as a React child" crashes when an upstream caller forwards the raw
+// allowed_values without mapping.
+type SelectOption = string | { value: string; label?: string };
+
 interface SelectWithOtherProps {
-  options: string[];
+  options: SelectOption[];
   value: string | { selected: 'other'; other_text: string } | null;
   onChange: (val: string | { selected: 'other'; other_text: string } | null) => void;
   allowOther?: boolean;
@@ -15,6 +21,15 @@ interface SelectWithOtherProps {
   disabled?: boolean;
   placeholder?: string;
   className?: string;
+}
+
+function normalizeOption(opt: SelectOption): { value: string; label: string } {
+  if (typeof opt === 'string') {
+    return { value: opt, label: opt };
+  }
+  const value = String(opt.value);
+  const label = opt.label != null ? String(opt.label) : value;
+  return { value, label };
 }
 
 export function SelectWithOther(props: SelectWithOtherProps) {
@@ -79,9 +94,14 @@ export function SelectWithOther(props: SelectWithOtherProps) {
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>
-          {options.map((opt) => (
-            <SelectItem key={opt} value={opt}>{opt}</SelectItem>
-          ))}
+          {options.map((opt) => {
+            const { value: optValue, label: optLabel } = normalizeOption(opt);
+            return (
+              <SelectItem key={optValue} value={optValue}>
+                {optLabel}
+              </SelectItem>
+            );
+          })}
             {allowOther &&
                 <SelectItem value={OTHER_OPTION_VALUE}>{otherLabel || t('common', 'otherSpecify')}</SelectItem>}
         </SelectContent>

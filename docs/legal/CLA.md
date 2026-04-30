@@ -2,7 +2,7 @@
 
 ## Acordo de Licença de Contribuidor
 
-Ao contribuir para o projeto **Review AI Hub**, você concorda em conceder os seguintes direitos e declarações:
+Ao contribuir para o projeto **Prumo**, você concorda em conceder os seguintes direitos e declarações:
 
 ### 1. Concessão de Licença
 
@@ -86,7 +86,7 @@ Não. Você mantém todos os direitos autorais sobre sua contribuição. O CLA a
 
 ### Posso usar minha própria contribuição em outros projetos?
 
-Sim. Como você mantém os direitos autorais, você pode usar sua contribuição em outros projetos, desde que respeite a licença AGPL-3.0 para o código do Review Hub.
+Sim. Como você mantém os direitos autorais, você pode usar sua contribuição em outros projetos, desde que respeite a licença AGPL-3.0 para o código do Prumo.
 
 ### E se eu não quiser assinar o CLA?
 

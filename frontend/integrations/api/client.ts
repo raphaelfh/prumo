@@ -15,6 +15,13 @@ import {t} from "@/lib/copy";
 const API_BASE_URL =
   import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 
+function createTraceId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `trace-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+}
+
 /**
  * Standard API response (compatible with backend format).
  */
@@ -64,7 +71,7 @@ export class ApiError extends Error {
 /**
  * Client for FastAPI requests.
  *
- * @param endpoint - Endpoint path (e.g. "/api/v1/assessment/ai")
+ * @param endpoint - Endpoint path (e.g. "/api/v1/extraction/models")
  * @param options - Request options
  * @returns Promise with typed response
  * @throws ApiError if the request fails
@@ -72,8 +79,8 @@ export class ApiError extends Error {
  * @example
  * ```typescript
  * // POST request
- * const result = await apiClient<AssessmentResult>(
- *   '/api/v1/assessment/ai',
+ * const result = await apiClient<ExtractionResult>(
+ *   '/api/v1/extraction/models',
  *   {
  *     method: 'POST',
  *     body: { projectId: '...', articleId: '...' },
@@ -99,6 +106,7 @@ export async function apiClient<T>(
   // Preparar headers
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    "X-Trace-Id": createTraceId(),
     ...Object.fromEntries(
       Object.entries(customHeaders).map(([k, v]) => [k, String(v)])
     ),
@@ -231,19 +239,6 @@ export async function zoteroClient<T>(
 }
 
 /**
- * Client for AI Assessment endpoints.
- */
-export async function aiAssessmentClient<T>(
-  body: Record<string, unknown>
-): Promise<T> {
-  return apiClient<T>("/api/v1/assessment/ai", {
-    method: "POST",
-    body,
-      timeout: 120000, // 2 minutes for AI operations
-  });
-}
-
-/**
  * Client for section extraction endpoints.
  */
 export async function sectionExtractionClient<T>(
@@ -268,4 +263,5 @@ export async function modelExtractionClient<T>(
     timeout: 120000,
   });
 }
+
 

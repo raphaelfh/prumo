@@ -2,15 +2,52 @@
 Standalone script to seed the database with initial data.
 
 This script is idempotent and can be run multiple times without creating
-duplicate data. It seeds the following:
-
-  1. PROBAST – global assessment instrument for prediction model studies
-     (20 items across 4 domains: participants, predictors, outcome, analysis)
-  2. CHARMS 2.0 – global extraction template for prediction model data
-     (14 entity types, ~82 extraction fields)
+duplicate data. It seeds CHARMS 2.0 global extraction template data.
 
 Run from the project root:
     python -m backend.app.seed
+
+Storage approach for canonical templates (CHARMS, PROBAST, TRIPOD, ...)
+======================================================================
+
+Canonical templates live in three normalized tables:
+
+* ``extraction_templates_global`` — one row per published checklist
+  (framework + version + free-form ``schema`` JSONB for visualization
+  hints).
+* ``extraction_entity_types`` — one row per domain/section. Hierarchy is
+  expressed via ``parent_entity_type_id`` (so e.g. CHARMS makes
+  ``prediction_models`` the parent of all 13 study/model sub-sections).
+  ``cardinality`` (``one`` vs ``many``) drives whether the UI treats the
+  section as a single editable form or a list-of-instances.
+* ``extraction_fields`` — one row per variable (text/number/boolean/date/
+  select/multiselect) with ``allowed_values`` / ``allowed_units`` /
+  ``validation_schema`` / ``llm_description`` so the UI and the LLM both
+  know how to handle each field.
+
+Why normalized + ``schema`` JSONB instead of a single document blob:
+
+1. **Queryability** — RLS, search, ad-hoc reports, and indexes all need
+   real columns. We frequently filter ``extraction_fields`` by
+   ``field_type`` or join ``extraction_instances`` to ``entity_types``;
+   doing that against a JSONB blob requires GIN indexes per access path
+   and is much harder to migrate.
+2. **Per-project overrides** — every project that adopts CHARMS clones
+   the global rows into ``project_extraction_templates`` +
+   ``extraction_entity_types`` (with ``project_template_id`` set). That
+   lets one project add fields, mark items required, or drop sections
+   without forking the canonical checklist.
+3. **Versionable seed code** — this file is the single source of truth.
+   New checklists ship as a new ``seed_<framework>`` function with fixed
+   UUIDs, and CI replays the seed against a fresh database to catch
+   drift. The free-form ``schema`` JSONB on ``extraction_templates_global``
+   is reserved for visualization hints (column widths, default expanded
+   sections, custom icons) that don't need their own columns.
+
+Adding a new checklist (e.g., PROBAST or TRIPOD-AI) means: pick fixed
+UUIDs (so deterministic across environments), build the entity_types +
+fields tree here, expose a ``seed_<name>`` function, and call it from
+``main()`` next to ``seed_charms``.
 """
 
 import asyncio
@@ -19,19 +56,34 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import AsyncSessionLocal
-from app.models.assessment import AssessmentInstrument, AssessmentItem
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionField,
     ExtractionTemplateGlobal,
 )
+from app.models.extraction_versioning import TemplateKind
 
 # ---------------------------------------------------------------------------
 # Fixed UUIDs — never change; enable deterministic, repeatable deployments
 # ---------------------------------------------------------------------------
 
-_PROBAST_ID = UUID("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
 _CHARMS_TEMPLATE_ID = UUID("000c0000-0000-0000-0000-000000000001")
+
+# PROBAST — quality_assessment template
+_PROBAST_TEMPLATE_ID = UUID("00b00000-0000-0000-0000-000000000001")
+_PROBAST_ET_PARTICIPANTS = UUID("00b00001-0000-0000-0000-000000000000")
+_PROBAST_ET_PREDICTORS = UUID("00b00002-0000-0000-0000-000000000000")
+_PROBAST_ET_OUTCOME = UUID("00b00003-0000-0000-0000-000000000000")
+_PROBAST_ET_ANALYSIS = UUID("00b00004-0000-0000-0000-000000000000")
+_PROBAST_ET_OVERALL = UUID("00b00005-0000-0000-0000-000000000000")
+
+# QUADAS-2 — quality_assessment template
+_QUADAS2_TEMPLATE_ID = UUID("00d00000-0000-0000-0000-000000000001")
+_QUADAS2_ET_PATIENT_SELECTION = UUID("00d00001-0000-0000-0000-000000000000")
+_QUADAS2_ET_INDEX_TEST = UUID("00d00002-0000-0000-0000-000000000000")
+_QUADAS2_ET_REFERENCE_STANDARD = UUID("00d00003-0000-0000-0000-000000000000")
+_QUADAS2_ET_FLOW_TIMING = UUID("00d00004-0000-0000-0000-000000000000")
+_QUADAS2_ET_OVERALL = UUID("00d00005-0000-0000-0000-000000000000")
 
 _ET_PREDICTION_MODELS = UUID("000c0001-0000-0000-0000-000000000000")
 _ET_SOURCE_OF_DATA = UUID("000c0002-0000-0000-0000-000000000000")
@@ -48,149 +100,21 @@ _ET_MODEL_RESULTS = UUID("000c000c-0000-0000-0000-000000000000")
 _ET_MODEL_INTERP = UUID("000c000d-0000-0000-0000-000000000000")
 _ET_MODEL_OBS = UUID("000c000e-0000-0000-0000-000000000000")
 
-# Standard response level lists
-_PROBAST_LEVELS = ["yes", "probably yes", "probably no", "no", "no information"]
 _YES_NO_UNCLEAR = ["Yes", "No", "Unclear", "No information"]
 _YES_NO_NI = ["Yes", "No", "No information"]
 _YES_NO_NOTEVAL_NI = ["Yes", "No", "Not evaluated", "No information"]
 _YES_NO_NOTAPP_NI = ["Yes", "No", "Not applicable", "No information"]
 
+# PROBAST signaling-question answer set (Y / Probably Yes / Probably No / N / No
+# Information / Not Applicable)
+_PROBAST_SIGNALING = ["Y", "PY", "PN", "N", "NI", "NA"]
+# PROBAST domain judgment set
+_PROBAST_JUDGMENT = ["Low", "High", "Unclear"]
 
-# ---------------------------------------------------------------------------
-# PROBAST
-# ---------------------------------------------------------------------------
-
-
-async def seed_probast(session: AsyncSession) -> None:
-    """Seeds the PROBAST instrument and its 20 items."""
-    print("Seeding PROBAST instrument...")
-
-    instrument = await session.get(AssessmentInstrument, _PROBAST_ID)
-    if instrument:
-        print("  PROBAST already exists — skipping.")
-        return
-
-    instrument = AssessmentInstrument(
-        id=_PROBAST_ID,
-        name="PROBAST",
-        tool_type="PROBAST",
-        version="1.0.0",
-        mode="human",
-        target_mode="per_model",
-        is_active=True,
-        aggregation_rules={"domains": ["participants", "predictors", "outcome", "analysis"]},
-        schema_={},
-    )
-    session.add(instrument)
-
-    items_data = [
-        # (domain, code, question, sort_order)
-        (
-            "participants",
-            "1.1",
-            "Were appropriate data sources used, e.g. cohort, RCT or nested case-control study data?",
-            0,
-        ),
-        (
-            "participants",
-            "1.2",
-            "Were all inclusions and exclusions of participants appropriate?",
-            1,
-        ),
-        (
-            "predictors",
-            "2.1",
-            "Were predictors defined and assessed in a similar way for all participants?",
-            2,
-        ),
-        (
-            "predictors",
-            "2.2",
-            "Were predictor assessments made without knowledge of outcome data?",
-            3,
-        ),
-        (
-            "predictors",
-            "2.3",
-            "Are all predictors available at the time the model is intended to be used?",
-            4,
-        ),
-        ("outcome", "3.1", "Was the outcome determined appropriately?", 5),
-        ("outcome", "3.2", "Was a prespecified or standard outcome definition used?", 6),
-        ("outcome", "3.3", "Were predictors excluded from the outcome definition?", 7),
-        (
-            "outcome",
-            "3.4",
-            "Was the outcome defined and determined in a similar way for all participants?",
-            8,
-        ),
-        (
-            "outcome",
-            "3.5",
-            "Was the outcome determined without knowledge of predictor information?",
-            9,
-        ),
-        (
-            "outcome",
-            "3.6",
-            "Was the time interval between predictor assessment and outcome determination appropriate?",
-            10,
-        ),
-        ("analysis", "4.1", "Were there a reasonable number of participants with the outcome?", 11),
-        (
-            "analysis",
-            "4.2",
-            "Were continuous and categorical predictors handled appropriately?",
-            12,
-        ),
-        ("analysis", "4.3", "Were all enrolled participants included in the analysis?", 13),
-        ("analysis", "4.4", "Were participants with missing data handled appropriately?", 14),
-        (
-            "analysis",
-            "4.5",
-            "Was selection of predictors based on univariable analysis avoided?",
-            15,
-        ),
-        (
-            "analysis",
-            "4.6",
-            "Were complexities in the data (e.g. censoring, competing risks, sampling) accounted for appropriately?",
-            16,
-        ),
-        (
-            "analysis",
-            "4.7",
-            "Were relevant model performance measures evaluated appropriately?",
-            17,
-        ),
-        (
-            "analysis",
-            "4.8",
-            "Were model overfitting and optimism in model performance accounted for?",
-            18,
-        ),
-        (
-            "analysis",
-            "4.9",
-            "Do predictors and their assigned weights in the final model correspond to the results from the reported multivariable analysis?",
-            19,
-        ),
-    ]
-
-    for domain, code, question, sort in items_data:
-        instrument.items.append(
-            AssessmentItem(
-                instrument_id=_PROBAST_ID,
-                domain=domain,
-                item_code=code,
-                question=question,
-                sort_order=sort,
-                required=True,
-                allowed_levels=_PROBAST_LEVELS,
-            )
-        )
-
-    print(f"  Created PROBAST with {len(items_data)} items.")
+# QUADAS-2 signaling-question answer set
+_QUADAS2_SIGNALING = ["Y", "N", "Unclear"]
+# QUADAS-2 domain judgment set (same vocabulary as PROBAST)
+_QUADAS2_JUDGMENT = ["Low", "High", "Unclear"]
 
 
 # ---------------------------------------------------------------------------
@@ -1283,6 +1207,650 @@ async def seed_charms(session: AsyncSession) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Quality Assessment templates — shared helpers
+# ---------------------------------------------------------------------------
+
+
+def _qa_field(
+    eid: UUID,
+    name: str,
+    label: str,
+    desc: str,
+    ftype: str,
+    sort: int,
+    *,
+    required: bool = True,
+    allowed: list[str] | None = None,
+    llm: str | None = None,
+) -> ExtractionField:
+    """Build an ExtractionField for a quality-assessment template."""
+    return ExtractionField(
+        entity_type_id=eid,
+        name=name,
+        label=label,
+        description=desc,
+        field_type=ftype,
+        sort_order=sort,
+        is_required=required,
+        allowed_values=allowed,
+        llm_description=llm,
+    )
+
+
+def _signaling(
+    eid: UUID,
+    name: str,
+    question: str,
+    sort: int,
+    allowed: list[str],
+) -> ExtractionField:
+    """Build a signaling-question ExtractionField (select with fixed answer set)."""
+    return _qa_field(
+        eid,
+        name,
+        question,
+        question,
+        "select",
+        sort,
+        allowed=allowed,
+        llm=f"Answer the signaling question: {question}",
+    )
+
+
+def _domain_judgment(
+    eid: UUID,
+    sort: int,
+    *,
+    include_applicability: bool = True,
+    judgment_values: list[str],
+) -> list[ExtractionField]:
+    """Build the per-domain judgment fields (risk_of_bias and applicability)."""
+    fields = [
+        _qa_field(
+            eid,
+            "risk_of_bias",
+            "Risk of bias",
+            "Risk of bias (judgment for this domain)",
+            "select",
+            sort,
+            allowed=judgment_values,
+            llm="Provide the overall risk-of-bias judgment for this domain.",
+        ),
+    ]
+    if include_applicability:
+        fields.append(
+            _qa_field(
+                eid,
+                "applicability_concerns",
+                "Applicability concerns",
+                "Concerns regarding applicability",
+                "select",
+                sort + 1,
+                allowed=judgment_values,
+                llm="Provide the applicability-concerns judgment for this domain.",
+            )
+        )
+    return fields
+
+
+# ---------------------------------------------------------------------------
+# PROBAST
+# ---------------------------------------------------------------------------
+
+
+async def seed_probast(session: AsyncSession) -> None:
+    """Seeds the PROBAST quality-assessment template (5 domains, 22 fields)."""
+    print("Seeding PROBAST template...")
+
+    template = await session.get(ExtractionTemplateGlobal, _PROBAST_TEMPLATE_ID)
+    if template:
+        print("  PROBAST already exists — skipping.")
+        return
+
+    # ---- Template ----
+    session.add(
+        ExtractionTemplateGlobal(
+            id=_PROBAST_TEMPLATE_ID,
+            name="PROBAST",
+            description="Prediction model Risk Of Bias ASsessment Tool (Wolff et al., 2019)",
+            framework="CUSTOM",
+            version="1.0.0",
+            kind=TemplateKind.QUALITY_ASSESSMENT.value,
+        )
+    )
+
+    # ---- Entity types (5 domains, all single-instance) ----
+    entity_types = [
+        ExtractionEntityType(
+            id=_PROBAST_ET_PARTICIPANTS,
+            template_id=_PROBAST_TEMPLATE_ID,
+            name="participants",
+            label="Participants",
+            description="PROBAST domain 1 — appraisal of participant selection.",
+            cardinality="one",
+            sort_order=1,
+            is_required=False,
+        ),
+        ExtractionEntityType(
+            id=_PROBAST_ET_PREDICTORS,
+            template_id=_PROBAST_TEMPLATE_ID,
+            name="predictors",
+            label="Predictors",
+            description="PROBAST domain 2 — appraisal of candidate predictors.",
+            cardinality="one",
+            sort_order=2,
+            is_required=False,
+        ),
+        ExtractionEntityType(
+            id=_PROBAST_ET_OUTCOME,
+            template_id=_PROBAST_TEMPLATE_ID,
+            name="outcome",
+            label="Outcome",
+            description="PROBAST domain 3 — appraisal of outcome definition and measurement.",
+            cardinality="one",
+            sort_order=3,
+            is_required=False,
+        ),
+        ExtractionEntityType(
+            id=_PROBAST_ET_ANALYSIS,
+            template_id=_PROBAST_TEMPLATE_ID,
+            name="analysis",
+            label="Analysis",
+            description="PROBAST domain 4 — appraisal of statistical analysis.",
+            cardinality="one",
+            sort_order=4,
+            is_required=False,
+        ),
+        ExtractionEntityType(
+            id=_PROBAST_ET_OVERALL,
+            template_id=_PROBAST_TEMPLATE_ID,
+            name="overall",
+            label="Overall",
+            description="Overall PROBAST judgment across all domains.",
+            cardinality="one",
+            sort_order=5,
+            is_required=False,
+        ),
+    ]
+    for et in entity_types:
+        session.add(et)
+
+    # ---- Fields ----
+    fields: list[ExtractionField] = []
+
+    # Domain 1 — Participants (2 signaling + risk + applicability)
+    fields.extend(
+        [
+            _signaling(
+                _PROBAST_ET_PARTICIPANTS,
+                "q1_1_appropriate_data_sources",
+                "Were appropriate data sources used (e.g. cohort, RCT or nested case-control studies)?",
+                0,
+                _PROBAST_SIGNALING,
+            ),
+            _signaling(
+                _PROBAST_ET_PARTICIPANTS,
+                "q1_2_inclusions_exclusions",
+                "Were all inclusions and exclusions of participants appropriate?",
+                1,
+                _PROBAST_SIGNALING,
+            ),
+        ]
+    )
+    fields.extend(
+        _domain_judgment(
+            _PROBAST_ET_PARTICIPANTS,
+            sort=2,
+            judgment_values=_PROBAST_JUDGMENT,
+        )
+    )
+
+    # Domain 2 — Predictors (3 signaling + risk + applicability)
+    fields.extend(
+        [
+            _signaling(
+                _PROBAST_ET_PREDICTORS,
+                "q2_1_predictors_consistent",
+                "Were predictors defined and assessed in a similar way for all participants?",
+                0,
+                _PROBAST_SIGNALING,
+            ),
+            _signaling(
+                _PROBAST_ET_PREDICTORS,
+                "q2_2_blinded_outcome",
+                "Were predictor assessments made without knowledge of outcome data?",
+                1,
+                _PROBAST_SIGNALING,
+            ),
+            _signaling(
+                _PROBAST_ET_PREDICTORS,
+                "q2_3_available_at_time",
+                "Are all predictors available at the time the model is intended to be used?",
+                2,
+                _PROBAST_SIGNALING,
+            ),
+        ]
+    )
+    fields.extend(
+        _domain_judgment(
+            _PROBAST_ET_PREDICTORS,
+            sort=3,
+            judgment_values=_PROBAST_JUDGMENT,
+        )
+    )
+
+    # Domain 3 — Outcome (6 signaling + risk + applicability)
+    fields.extend(
+        [
+            _signaling(
+                _PROBAST_ET_OUTCOME,
+                "q3_1_outcome_appropriate",
+                "Was the outcome determined appropriately?",
+                0,
+                _PROBAST_SIGNALING,
+            ),
+            _signaling(
+                _PROBAST_ET_OUTCOME,
+                "q3_2_predefined_or_standard",
+                "Was a pre-specified or standard outcome definition used?",
+                1,
+                _PROBAST_SIGNALING,
+            ),
+            _signaling(
+                _PROBAST_ET_OUTCOME,
+                "q3_3_excluded_predictors",
+                "Were predictors excluded from the outcome definition?",
+                2,
+                _PROBAST_SIGNALING,
+            ),
+            _signaling(
+                _PROBAST_ET_OUTCOME,
+                "q3_4_consistent",
+                "Was the outcome defined and determined in a similar way for all participants?",
+                3,
+                _PROBAST_SIGNALING,
+            ),
+            _signaling(
+                _PROBAST_ET_OUTCOME,
+                "q3_5_blinded_predictors",
+                "Was the outcome determined without knowledge of predictor information?",
+                4,
+                _PROBAST_SIGNALING,
+            ),
+            _signaling(
+                _PROBAST_ET_OUTCOME,
+                "q3_6_appropriate_interval",
+                "Was the time interval between predictor assessment and outcome determination appropriate?",
+                5,
+                _PROBAST_SIGNALING,
+            ),
+        ]
+    )
+    fields.extend(
+        _domain_judgment(
+            _PROBAST_ET_OUTCOME,
+            sort=6,
+            judgment_values=_PROBAST_JUDGMENT,
+        )
+    )
+
+    # Domain 4 — Analysis (9 signaling + risk only, no applicability)
+    fields.extend(
+        [
+            _signaling(
+                _PROBAST_ET_ANALYSIS,
+                "q4_1_reasonable_sample",
+                "Were there a reasonable number of participants with the outcome?",
+                0,
+                _PROBAST_SIGNALING,
+            ),
+            _signaling(
+                _PROBAST_ET_ANALYSIS,
+                "q4_2_continuous_handled",
+                "Were continuous and categorical predictors handled appropriately?",
+                1,
+                _PROBAST_SIGNALING,
+            ),
+            _signaling(
+                _PROBAST_ET_ANALYSIS,
+                "q4_3_all_enrolled_included",
+                "Were all enrolled participants included in the analysis?",
+                2,
+                _PROBAST_SIGNALING,
+            ),
+            _signaling(
+                _PROBAST_ET_ANALYSIS,
+                "q4_4_missing_data_handled",
+                "Were participants with missing data handled appropriately?",
+                3,
+                _PROBAST_SIGNALING,
+            ),
+            _signaling(
+                _PROBAST_ET_ANALYSIS,
+                "q4_5_univariable_avoidance",
+                "Was selection of predictors based on univariable analysis avoided?",
+                4,
+                _PROBAST_SIGNALING,
+            ),
+            _signaling(
+                _PROBAST_ET_ANALYSIS,
+                "q4_6_complexities_accounted",
+                "Were complexities in the data (e.g. censoring, competing risks) accounted for appropriately?",
+                5,
+                _PROBAST_SIGNALING,
+            ),
+            _signaling(
+                _PROBAST_ET_ANALYSIS,
+                "q4_7_relevant_perf_measures",
+                "Were relevant model performance measures evaluated appropriately?",
+                6,
+                _PROBAST_SIGNALING,
+            ),
+            _signaling(
+                _PROBAST_ET_ANALYSIS,
+                "q4_8_overfitting_optimism",
+                "Were model overfitting and optimism in performance accounted for?",
+                7,
+                _PROBAST_SIGNALING,
+            ),
+            _signaling(
+                _PROBAST_ET_ANALYSIS,
+                "q4_9_predictors_corresponded",
+                "Do predictors and their assigned weights in the final model correspond to the results from the reported multivariable analysis?",
+                8,
+                _PROBAST_SIGNALING,
+            ),
+        ]
+    )
+    fields.extend(
+        _domain_judgment(
+            _PROBAST_ET_ANALYSIS,
+            sort=9,
+            include_applicability=False,
+            judgment_values=_PROBAST_JUDGMENT,
+        )
+    )
+
+    # Overall judgment (no signaling questions)
+    fields.extend(
+        [
+            _qa_field(
+                _PROBAST_ET_OVERALL,
+                "overall_risk_of_bias",
+                "Overall risk of bias",
+                "Overall judgment of risk of bias",
+                "select",
+                0,
+                allowed=_PROBAST_JUDGMENT,
+                llm="Provide the overall risk-of-bias judgment across all PROBAST domains.",
+            ),
+            _qa_field(
+                _PROBAST_ET_OVERALL,
+                "overall_applicability",
+                "Overall applicability",
+                "Overall judgment of applicability",
+                "select",
+                1,
+                allowed=_PROBAST_JUDGMENT,
+                llm="Provide the overall applicability judgment across all PROBAST domains.",
+            ),
+        ]
+    )
+
+    for field in fields:
+        session.add(field)
+
+    print(f"  Created PROBAST with 5 entity types and {len(fields)} fields.")
+
+
+# ---------------------------------------------------------------------------
+# QUADAS-2
+# ---------------------------------------------------------------------------
+
+
+async def seed_quadas2(session: AsyncSession) -> None:
+    """Seeds the QUADAS-2 quality-assessment template (5 domains, 18 fields)."""
+    print("Seeding QUADAS-2 template...")
+
+    template = await session.get(ExtractionTemplateGlobal, _QUADAS2_TEMPLATE_ID)
+    if template:
+        print("  QUADAS-2 already exists — skipping.")
+        return
+
+    # ---- Template ----
+    session.add(
+        ExtractionTemplateGlobal(
+            id=_QUADAS2_TEMPLATE_ID,
+            name="QUADAS-2",
+            description="QUality Assessment of Diagnostic Accuracy Studies, version 2 (Whiting et al., 2011)",
+            framework="CUSTOM",
+            version="1.0.0",
+            kind=TemplateKind.QUALITY_ASSESSMENT.value,
+        )
+    )
+
+    # ---- Entity types (5 domains, all single-instance) ----
+    entity_types = [
+        ExtractionEntityType(
+            id=_QUADAS2_ET_PATIENT_SELECTION,
+            template_id=_QUADAS2_TEMPLATE_ID,
+            name="patient_selection",
+            label="Patient Selection",
+            description="QUADAS-2 domain 1 — appraisal of patient selection.",
+            cardinality="one",
+            sort_order=1,
+            is_required=False,
+        ),
+        ExtractionEntityType(
+            id=_QUADAS2_ET_INDEX_TEST,
+            template_id=_QUADAS2_TEMPLATE_ID,
+            name="index_test",
+            label="Index Test",
+            description="QUADAS-2 domain 2 — appraisal of index test.",
+            cardinality="one",
+            sort_order=2,
+            is_required=False,
+        ),
+        ExtractionEntityType(
+            id=_QUADAS2_ET_REFERENCE_STANDARD,
+            template_id=_QUADAS2_TEMPLATE_ID,
+            name="reference_standard",
+            label="Reference Standard",
+            description="QUADAS-2 domain 3 — appraisal of reference standard.",
+            cardinality="one",
+            sort_order=3,
+            is_required=False,
+        ),
+        ExtractionEntityType(
+            id=_QUADAS2_ET_FLOW_TIMING,
+            template_id=_QUADAS2_TEMPLATE_ID,
+            name="flow_and_timing",
+            label="Flow and Timing",
+            description="QUADAS-2 domain 4 — appraisal of patient flow and timing.",
+            cardinality="one",
+            sort_order=4,
+            is_required=False,
+        ),
+        ExtractionEntityType(
+            id=_QUADAS2_ET_OVERALL,
+            template_id=_QUADAS2_TEMPLATE_ID,
+            name="overall",
+            label="Overall",
+            description="Overall QUADAS-2 judgment across all domains.",
+            cardinality="one",
+            sort_order=5,
+            is_required=False,
+        ),
+    ]
+    for et in entity_types:
+        session.add(et)
+
+    # ---- Fields ----
+    fields: list[ExtractionField] = []
+
+    # Domain 1 — Patient Selection (3 signaling + risk + applicability)
+    fields.extend(
+        [
+            _signaling(
+                _QUADAS2_ET_PATIENT_SELECTION,
+                "q1_1_consecutive_or_random",
+                "Was a consecutive or random sample of patients enrolled?",
+                0,
+                _QUADAS2_SIGNALING,
+            ),
+            _signaling(
+                _QUADAS2_ET_PATIENT_SELECTION,
+                "q1_2_avoided_case_control",
+                "Was a case-control design avoided?",
+                1,
+                _QUADAS2_SIGNALING,
+            ),
+            _signaling(
+                _QUADAS2_ET_PATIENT_SELECTION,
+                "q1_3_avoided_inappropriate_exclusions",
+                "Did the study avoid inappropriate exclusions?",
+                2,
+                _QUADAS2_SIGNALING,
+            ),
+        ]
+    )
+    fields.extend(
+        _domain_judgment(
+            _QUADAS2_ET_PATIENT_SELECTION,
+            sort=3,
+            judgment_values=_QUADAS2_JUDGMENT,
+        )
+    )
+
+    # Domain 2 — Index Test (2 signaling + risk + applicability)
+    fields.extend(
+        [
+            _signaling(
+                _QUADAS2_ET_INDEX_TEST,
+                "q2_1_blinded_to_reference",
+                "Were the index test results interpreted without knowledge of the reference standard?",
+                0,
+                _QUADAS2_SIGNALING,
+            ),
+            _signaling(
+                _QUADAS2_ET_INDEX_TEST,
+                "q2_2_threshold_prespecified",
+                "If a threshold was used, was it pre-specified?",
+                1,
+                _QUADAS2_SIGNALING,
+            ),
+        ]
+    )
+    fields.extend(
+        _domain_judgment(
+            _QUADAS2_ET_INDEX_TEST,
+            sort=2,
+            judgment_values=_QUADAS2_JUDGMENT,
+        )
+    )
+
+    # Domain 3 — Reference Standard (2 signaling + risk + applicability)
+    fields.extend(
+        [
+            _signaling(
+                _QUADAS2_ET_REFERENCE_STANDARD,
+                "q3_1_likely_correct_classify",
+                "Is the reference standard likely to correctly classify the target condition?",
+                0,
+                _QUADAS2_SIGNALING,
+            ),
+            _signaling(
+                _QUADAS2_ET_REFERENCE_STANDARD,
+                "q3_2_blinded_to_index",
+                "Were the reference standard results interpreted without knowledge of the index test?",
+                1,
+                _QUADAS2_SIGNALING,
+            ),
+        ]
+    )
+    fields.extend(
+        _domain_judgment(
+            _QUADAS2_ET_REFERENCE_STANDARD,
+            sort=2,
+            judgment_values=_QUADAS2_JUDGMENT,
+        )
+    )
+
+    # Domain 4 — Flow and Timing (4 signaling + risk only, no applicability)
+    fields.extend(
+        [
+            _signaling(
+                _QUADAS2_ET_FLOW_TIMING,
+                "q4_1_appropriate_interval",
+                "Was there an appropriate interval between the index test and reference standard?",
+                0,
+                _QUADAS2_SIGNALING,
+            ),
+            _signaling(
+                _QUADAS2_ET_FLOW_TIMING,
+                "q4_2_all_received_reference",
+                "Did all patients receive a reference standard?",
+                1,
+                _QUADAS2_SIGNALING,
+            ),
+            _signaling(
+                _QUADAS2_ET_FLOW_TIMING,
+                "q4_3_same_reference",
+                "Did all patients receive the same reference standard?",
+                2,
+                _QUADAS2_SIGNALING,
+            ),
+            _signaling(
+                _QUADAS2_ET_FLOW_TIMING,
+                "q4_4_all_included_analysis",
+                "Were all patients included in the analysis?",
+                3,
+                _QUADAS2_SIGNALING,
+            ),
+        ]
+    )
+    fields.extend(
+        _domain_judgment(
+            _QUADAS2_ET_FLOW_TIMING,
+            sort=4,
+            include_applicability=False,
+            judgment_values=_QUADAS2_JUDGMENT,
+        )
+    )
+
+    # Overall judgment (no signaling questions)
+    fields.extend(
+        [
+            _qa_field(
+                _QUADAS2_ET_OVERALL,
+                "overall_risk_of_bias",
+                "Overall risk of bias",
+                "Overall judgment of risk of bias",
+                "select",
+                0,
+                allowed=_QUADAS2_JUDGMENT,
+                llm="Provide the overall risk-of-bias judgment across all QUADAS-2 domains.",
+            ),
+            _qa_field(
+                _QUADAS2_ET_OVERALL,
+                "overall_applicability",
+                "Overall applicability",
+                "Overall judgment of applicability concerns",
+                "select",
+                1,
+                allowed=_QUADAS2_JUDGMENT,
+                llm="Provide the overall applicability judgment across all QUADAS-2 domains.",
+            ),
+        ]
+    )
+
+    for field in fields:
+        session.add(field)
+
+    print(f"  Created QUADAS-2 with 5 entity types and {len(fields)} fields.")
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -1291,8 +1859,9 @@ async def main() -> None:
     print("Starting database seeding process...")
     async with AsyncSessionLocal() as session:
         try:
-            await seed_probast(session)
             await seed_charms(session)
+            await seed_probast(session)
+            await seed_quadas2(session)
             await session.commit()
             print("Seeding completed successfully.")
         except Exception as e:

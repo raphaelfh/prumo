@@ -17,9 +17,9 @@ celery_app = Celery(
     broker=REDIS_URL,
     backend=REDIS_URL,
     include=[
-        "app.worker.tasks.assessment_tasks",
         "app.worker.tasks.extraction_tasks",
         "app.worker.tasks.import_tasks",
+        "app.worker.tasks.export_tasks",
     ],
 )
 
@@ -46,7 +46,6 @@ celery_app.conf.update(
     worker_prefetch_multiplier=2,
     # Task routes (filas separadas por tipo)
     task_routes={
-        "app.worker.tasks.assessment_tasks.*": {"queue": "assessments"},
         "app.worker.tasks.extraction_tasks.*": {"queue": "extractions"},
         "app.worker.tasks.import_tasks.*": {"queue": "imports"},
     },

@@ -53,6 +53,7 @@ export default defineConfig({
   resolve: {
     alias: {
         '@': path.resolve(__dirname, './frontend'),
+        '@prumo/pdf-viewer': path.resolve(__dirname, './frontend/pdf-viewer/index.ts'),
     },
   },
 });

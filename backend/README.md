@@ -1,6 +1,6 @@
-# Review Hub Backend
+# Prumo Backend
 
-Backend FastAPI para Review Hub - Plataforma de Revisão Sistemática.
+Backend FastAPI para Prumo - Plataforma de Revisão Sistemática.
 
 ## Stack
 
@@ -83,46 +83,28 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres_test \
   bash scripts/apply_supabase_migrations.sh
 ```
 
-## Architecture: Supabase-First
+## Architecture: Alembic + Supabase
 
-Este projeto usa uma arquitetura **Supabase-First**:
+Este projeto usa arquitetura híbrida:
 
-### Schema Management
-- **Source of Truth**: Supabase migrations (`supabase/migrations/*.sql`)
-- **Schema Changes**: Use `supabase db diff` e `supabase db push`
-- **No Alembic**: Migrations são gerenciadas pelo Supabase CLI
+- **Alembic** como trilha principal de migrations do backend (`backend/alembic/versions`)
+- **Supabase SQL migrations** para recursos de plataforma (`supabase/migrations`)
+- **SQLAlchemy async** para acesso transacional no backend
+- **Supabase JS SDK** no frontend para fluxos diretos e autenticação
 
-### Data Access Patterns
-| Layer | Tool | Use Case |
-|-------|------|----------|
-| Frontend | Supabase JS SDK | CRUD simples, real-time, autenticação |
-| Backend | SQLAlchemy (async) | Queries complexas, ML pipelines, computação pesada |
+### Schema management recomendado
 
-### Workflow para Mudanças no Schema
+1. Alterar models/contratos no backend.
+2. Gerar/aplicar migration Alembic para schema `public`.
+3. Manter migrations de `supabase/migrations` para recursos específicos (por exemplo, `storage` e triggers em `auth`).
+4. Validar boundaries de migration antes do merge (`scripts/validate_migration_boundaries.sh`).
 
-```bash
-# 1. Fazer mudança no Supabase Dashboard ou escrever migration SQL
-supabase db diff -f add_new_feature
+### Observabilidade de extração (E2E + DB)
 
-# 2. Revisar migration gerada
-cat supabase/migrations/[timestamp]_add_new_feature.sql
-
-# 3. Aplicar localmente
-supabase db push
-
-# 4. Atualizar SQLAlchemy models manualmente
-# Editar backend/app/models/*.py para refletir mudanças
-
-# 5. Deploy para produção
-supabase db push --linked
-```
-
-### Por que Supabase-First?
-
-- **Frontend Velocity**: React acessa diretamente via Supabase SDK (RLS nativo)
-- **Backend Focus**: FastAPI dedicado a ML/compute (PyTorch, LLMs), não CRUD
-- **Database Branching**: Supabase oferece branching estilo git (2026 feature)
-- **Type Safety**: SQLAlchemy models servem como type hints, não como schema source
+- Endpoints e serviços de extração emitem logs estruturados com `trace_id`, `run_id` e `duration_ms`.
+- Repositórios de extração emitem latência de operações de banco (`db_duration_ms`).
+- Para baseline completo (browser + API + banco remoto), execute a suíte Playwright em `frontend/e2e`.
+- Guia completo: `docs/extraction-e2e-observability.md`.
 
 ## Docker
 

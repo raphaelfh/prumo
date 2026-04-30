@@ -4,7 +4,7 @@
  */
 
 import {useState} from 'react';
-import {FileText, Info, Save, Settings as SettingsIcon, Users} from 'lucide-react';
+import {FileText, Info, Save, Settings as SettingsIcon, ShieldCheck, Users} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {cn} from '@/lib/utils';
 import {PageHeader} from '@/components/patterns/PageHeader';
@@ -14,9 +14,10 @@ import {BasicInfoSection} from './settings/BasicInfoSection';
 import {ReviewDetailsSection} from './settings/ReviewDetailsSection';
 import {TeamMembersSection} from './settings/TeamMembersSection';
 import {AdvancedSettingsSection} from './settings/AdvancedSettingsSection';
+import {ReviewConsensusSection} from './settings/ReviewConsensusSection';
 import {t} from '@/lib/copy';
 
-export type TabId = 'basic' | 'review' | 'team' | 'advanced';
+export type TabId = 'basic' | 'review' | 'team' | 'consensus' | 'advanced';
 
 interface TabConfig {
   id: TabId;
@@ -29,6 +30,12 @@ const TABS: TabConfig[] = [
     {id: 'basic', label: t('project', 'tabBasic'), icon: Info, description: t('project', 'tabBasicDesc')},
     {id: 'review', label: t('project', 'tabReview'), icon: FileText, description: t('project', 'tabReviewDesc')},
     {id: 'team', label: t('project', 'tabTeam'), icon: Users, description: t('project', 'tabTeamDesc')},
+    {
+        id: 'consensus',
+        label: t('consensus', 'tabConsensus'),
+        icon: ShieldCheck,
+        description: t('consensus', 'tabConsensusDesc'),
+    },
     {
         id: 'advanced',
         label: t('project', 'tabAdvanced'),
@@ -111,6 +118,7 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
                     <ReviewDetailsSection project={project} onChange={updateProject}/>
                 )}
                 {activeTab === 'team' && <TeamMembersSection projectId={projectId}/>}
+                {activeTab === 'consensus' && <ReviewConsensusSection projectId={projectId}/>}
                 {activeTab === 'advanced' && (
                     <AdvancedSettingsSection
                         project={project}

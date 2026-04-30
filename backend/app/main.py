@@ -23,7 +23,7 @@ from sqlalchemy import create_engine, text
 
 from app.api.v1.router import api_router
 from app.core.config import settings
-from app.core.deps import AsyncSessionLocal
+from app.core.deps import AsyncSessionLocal, get_supabase_client
 from app.core.error_handler import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import register_middlewares
@@ -65,7 +65,7 @@ def check_pending_migrations() -> None:
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     Manages application lifecycle.
 
@@ -82,17 +82,37 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     )
 
     # Warm-up: avoid first request paying JWKS and DB pool latency
+    app.state.jwks_ready = False
+    app.state.db_ready = False
+    app.state.storage_ready = False
+    app.state.storage_error = None
+
     try:
         await get_jwks()
+        app.state.jwks_ready = True
         logger.debug("jwks_warm_ok")
     except Exception as e:
         logger.warning("jwks_warm_skipped", error=str(e))
     try:
         async with AsyncSessionLocal() as session:
             await session.execute(text("SELECT 1"))
+        app.state.db_ready = True
         logger.debug("db_pool_warm_ok")
     except Exception as e:
         logger.warning("db_pool_warm_skipped", error=str(e))
+    try:
+        supabase = get_supabase_client()
+        # Validate that storage bucket is reachable at startup.
+        supabase.storage.from_("articles").list("", {"limit": 1})
+        app.state.storage_ready = True
+        logger.debug("storage_bucket_warm_ok", bucket="articles")
+    except Exception as e:
+        app.state.storage_error = str(e)
+        logger.warning(
+            "storage_bucket_warm_skipped",
+            bucket="articles",
+            error=str(e),
+        )
 
     yield
 
@@ -109,7 +129,7 @@ def create_app() -> FastAPI:
     """
     app = FastAPI(
         title=settings.PROJECT_NAME,
-        description="Backend API for Review Hub - Systematic Review Platform",
+        description="Backend API for Prumo - Systematic Review Platform",
         version="0.1.0",
         openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
         docs_url=f"{settings.API_V1_PREFIX}/docs",
@@ -141,9 +161,18 @@ def create_app() -> FastAPI:
     app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 
     @app.get("/health", tags=["Health"])
-    async def health_check() -> dict[str, str]:
+    async def health_check() -> dict[str, object]:
         """Health check endpoint."""
-        return {"status": "healthy", "version": "0.1.0"}
+        return {
+            "status": "healthy",
+            "version": "0.1.0",
+            "checks": {
+                "jwks_ready": bool(getattr(app.state, "jwks_ready", False)),
+                "db_ready": bool(getattr(app.state, "db_ready", False)),
+                "storage_ready": bool(getattr(app.state, "storage_ready", False)),
+                "storage_error": getattr(app.state, "storage_error", None),
+            },
+        }
 
     @app.get("/", tags=["Root"])
     async def root() -> dict[str, str]:

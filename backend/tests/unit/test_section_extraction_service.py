@@ -47,9 +47,10 @@ def service(mock_db, mock_storage):
             "app.services.section_extraction_service.ExtractionInstanceRepository"
         ) as mock_instance_repo,
         patch(
-            "app.services.section_extraction_service.AISuggestionRepository"
-        ) as mock_suggestion_repo,
+            "app.services.section_extraction_service.ExtractionProposalService"
+        ) as mock_proposal_cls,
         patch("app.services.section_extraction_service.ExtractionRunRepository") as mock_run_repo,
+        patch("app.services.section_extraction_service.RunLifecycleService") as mock_lifecycle_cls,
     ):
         mock_pdf_instance = MagicMock()
         mock_pdf.return_value = mock_pdf_instance
@@ -67,11 +68,20 @@ def service(mock_db, mock_storage):
         mock_instance_repo_instance = MagicMock()
         mock_instance_repo.return_value = mock_instance_repo_instance
 
-        mock_suggestion_repo_instance = MagicMock()
-        mock_suggestion_repo.return_value = mock_suggestion_repo_instance
+        mock_proposal_instance = MagicMock()
+        mock_proposal_instance.record_proposal = AsyncMock()
+        mock_proposal_cls.return_value = mock_proposal_instance
 
         mock_run_repo_instance = MagicMock()
         mock_run_repo.return_value = mock_run_repo_instance
+
+        # New service uses RunLifecycleService for run creation; mock it so
+        # tests can override `mock_lifecycle.create_run.return_value` for
+        # test-specific runs without spinning up the lifecycle dep chain.
+        mock_lifecycle_instance = MagicMock()
+        mock_lifecycle_instance.create_run = AsyncMock()
+        mock_lifecycle_instance.advance_stage = AsyncMock()
+        mock_lifecycle_cls.return_value = mock_lifecycle_instance
 
         svc = SectionExtractionService(
             db=mock_db,
@@ -84,8 +94,9 @@ def service(mock_db, mock_storage):
         svc._article_files = mock_article_repo_instance
         svc._entity_types = mock_entity_repo_instance
         svc._instances = mock_instance_repo_instance
-        svc._suggestions = mock_suggestion_repo_instance
+        svc._proposals = mock_proposal_instance
         svc._runs = mock_run_repo_instance
+        svc._lifecycle = mock_lifecycle_instance
 
         return svc
 
@@ -356,13 +367,17 @@ class TestSectionExtractionFullFlow:
         # Mock run creation
         mock_run = MagicMock()
         mock_run.id = run_id
-        service._runs.create_run = AsyncMock(return_value=mock_run)
+        # Run creation now flows through the lifecycle service
+        service._lifecycle.create_run = AsyncMock(return_value=mock_run)
+        service._lifecycle.advance_stage = AsyncMock(return_value=mock_run)
         service._runs.start_run = AsyncMock()
         service._runs.complete_run = AsyncMock()
         service._runs.fail_run = AsyncMock()
 
-        # Mock suggestions
-        service._suggestions.create = AsyncMock(return_value=MagicMock())
+        # Mock proposal recording (returns a record-shaped object with .id)
+        mock_proposal = MagicMock()
+        mock_proposal.id = uuid4()
+        service._proposals.record_proposal = AsyncMock(return_value=mock_proposal)
 
         # Mock instances (for _create_suggestions)
         service._instances.get_by_article = AsyncMock(return_value=[])
@@ -384,21 +399,14 @@ class TestSectionExtractionFullFlow:
         )
         service.openai_service.chat_completion_full = AsyncMock(return_value=mock_openai_response)
 
-        # Mock SQLAlchemy model classes to avoid mapper issues
-        with (
-            patch(
-                "app.services.section_extraction_service.ExtractionInstance"
-            ) as mock_instance_class,
-            patch("app.services.section_extraction_service.AISuggestion") as mock_suggestion_class,
-        ):
+        # Mock SQLAlchemy model class to avoid mapper issues
+        with patch(
+            "app.services.section_extraction_service.ExtractionInstance"
+        ) as mock_instance_class:
             mock_created_instance = MagicMock()
             mock_created_instance.id = uuid4()
             mock_instance_class.return_value = mock_created_instance
             service._instances.create = AsyncMock(return_value=mock_created_instance)
-
-            mock_suggestion = MagicMock()
-            mock_suggestion.id = uuid4()
-            mock_suggestion_class.return_value = mock_suggestion
 
             result = await service.extract_section(
                 project_id=project_id,
@@ -410,3 +418,458 @@ class TestSectionExtractionFullFlow:
         assert result.extraction_run_id is not None
         assert result.entity_type_id == str(entity_type_id)
         assert result.tokens_total == 150
+        service._proposals.record_proposal.assert_awaited()
+
+        # The run lifecycle gets two distinct stage advances: pending → proposal
+        # before the LLM call, and proposal → review after recording proposals
+        # so the form can immediately accept ReviewerDecisions.
+        from app.models.extraction import ExtractionRunStage
+
+        advance_calls = service._lifecycle.advance_stage.await_args_list
+        target_stages = [call.kwargs.get("target_stage") for call in advance_calls]
+        assert ExtractionRunStage.PROPOSAL in target_stages
+        assert ExtractionRunStage.REVIEW in target_stages
+        # And REVIEW comes after PROPOSAL.
+        assert target_stages.index(ExtractionRunStage.REVIEW) > target_stages.index(
+            ExtractionRunStage.PROPOSAL
+        )
+
+
+class TestExtractWithLLMPrompt:
+    """The system + user prompt must change with the run kind so the LLM
+    grades QA studies instead of trying to extract structured data."""
+
+    @pytest.mark.asyncio
+    async def test_extraction_kind_uses_extraction_prompt(self, service):
+        from app.services.openai_service import OpenAIResponse, OpenAIUsage
+
+        captured_messages: list[dict[str, str]] = []
+
+        async def fake_chat(messages, **kwargs):  # noqa: ARG001
+            captured_messages.extend(messages)
+            return OpenAIResponse(
+                content=json.dumps({}),
+                usage=OpenAIUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+                model="gpt-4o-mini",
+            )
+
+        service.openai_service.chat_completion_full = AsyncMock(side_effect=fake_chat)
+
+        entity_type = MagicMock()
+        entity_type.name = "Participants"
+        entity_type.description = "Population"
+
+        await service._extract_with_llm(
+            pdf_text="text",
+            entity_type=entity_type,
+            schema={"type": "object", "properties": {}},
+            model="gpt-4o-mini",
+            kind="extraction",
+            framework=None,
+        )
+
+        system_prompt = captured_messages[0]["content"]
+        user_prompt = captured_messages[1]["content"]
+        assert "extracting structured data" in system_prompt
+        assert "Section: Participants" in user_prompt
+        assert "PROBAST" not in system_prompt
+        assert "PROBAST" not in user_prompt
+
+    @pytest.mark.asyncio
+    async def test_quality_assessment_kind_uses_assessment_prompt(self, service):
+        from app.services.openai_service import OpenAIResponse, OpenAIUsage
+
+        captured_messages: list[dict[str, str]] = []
+
+        async def fake_chat(messages, **kwargs):  # noqa: ARG001
+            captured_messages.extend(messages)
+            return OpenAIResponse(
+                content=json.dumps({}),
+                usage=OpenAIUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+                model="gpt-4o-mini",
+            )
+
+        service.openai_service.chat_completion_full = AsyncMock(side_effect=fake_chat)
+
+        entity_type = MagicMock()
+        entity_type.name = "Predictors"
+        entity_type.description = "Domain 2"
+
+        await service._extract_with_llm(
+            pdf_text="text",
+            entity_type=entity_type,
+            schema={"type": "object", "properties": {}},
+            model="gpt-4o-mini",
+            kind="quality_assessment",
+            framework="PROBAST",
+        )
+
+        system_prompt = captured_messages[0]["content"]
+        user_prompt = captured_messages[1]["content"]
+        assert "PROBAST" in system_prompt
+        assert "methodologist" in system_prompt
+        assert "Domain: Predictors" in user_prompt
+        assert "extracting structured data" not in system_prompt
+
+
+class TestExtractForRun:
+    """Tests for the QA / pre-opened-run extraction path that reuses an
+    existing Run instead of creating a new one."""
+
+    @pytest.fixture
+    def qa_run(self):
+        run = MagicMock()
+        run.id = uuid4()
+        run.project_id = uuid4()
+        run.article_id = uuid4()
+        run.template_id = uuid4()
+        from app.models.extraction import ExtractionRunStage
+
+        run.stage = ExtractionRunStage.PROPOSAL.value
+        run.kind = "quality_assessment"
+        return run
+
+    @pytest.fixture
+    def qa_template(self):
+        tpl = MagicMock()
+        tpl.framework = "PROBAST"
+        tpl.kind = "quality_assessment"
+        return tpl
+
+    def _wire_minimal_qa_pipeline(self, service, run, template, top_level_entity_types):
+        """Stub out the bits of the service that the QA path touches so each
+        test can focus on a single behaviour."""
+        from app.services.openai_service import OpenAIResponse, OpenAIUsage
+
+        service.db.get = AsyncMock(
+            side_effect=lambda model_cls, _id: run if "Run" in model_cls.__name__ else template
+        )
+
+        # PDF + entity-type fetches
+        service._article_files.get_latest_pdf = AsyncMock(
+            return_value=MagicMock(storage_key="x.pdf")
+        )
+        service.storage.download = AsyncMock(return_value=b"%PDF")
+        service.pdf_processor.extract_text = AsyncMock(return_value="article text")
+
+        async def fake_get_with_fields(et_id):
+            for et in top_level_entity_types:
+                if et.id == et_id:
+                    return et
+            return None
+
+        service._entity_types.get_with_fields = AsyncMock(side_effect=fake_get_with_fields)
+
+        # The top-level lookup goes through self.db.execute(select(...))
+        scalars = MagicMock()
+        scalars.all.return_value = top_level_entity_types
+        execute_result = MagicMock()
+        execute_result.scalars.return_value = scalars
+        execute_result.all.return_value = []  # for the human-proposal probe
+        service.db.execute = AsyncMock(return_value=execute_result)
+
+        # Existing instance per entity_type
+        service._instances.get_by_article = AsyncMock(
+            return_value=[MagicMock(id=uuid4(), parent_instance_id=None)]
+        )
+
+        # Run lifecycle / repo
+        service._runs.start_run = AsyncMock()
+        service._runs.complete_run = AsyncMock()
+        service._runs.fail_run = AsyncMock()
+        service._lifecycle.advance_stage = AsyncMock()
+
+        # LLM
+        service.openai_service.chat_completion_full = AsyncMock(
+            return_value=OpenAIResponse(
+                content=json.dumps({}),
+                usage=OpenAIUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
+                model="gpt-4o-mini",
+            )
+        )
+
+        # Proposal writes
+        service._proposals.record_proposal = AsyncMock(return_value=MagicMock(id=uuid4()))
+
+    @pytest.mark.asyncio
+    async def test_extract_for_run_does_not_advance_when_disabled(
+        self, service, qa_run, qa_template
+    ):
+        """QA passes auto_advance_to_review=False so its publish flow can
+        drive the run from PROPOSAL → REVIEW → CONSENSUS → FINALIZED in
+        one click."""
+        et = MagicMock()
+        et.id = uuid4()
+        et.name = "Participants"
+        et.fields = []
+        et.parent_entity_type_id = None
+        self._wire_minimal_qa_pipeline(service, qa_run, qa_template, [et])
+
+        await service.extract_for_run(
+            run_id=qa_run.id,
+            auto_advance_to_review=False,
+        )
+
+        service._lifecycle.advance_stage.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_extract_for_run_advances_when_enabled(self, service, qa_run, qa_template):
+        from app.models.extraction import ExtractionRunStage
+
+        et = MagicMock()
+        et.id = uuid4()
+        et.name = "Participants"
+        et.fields = []
+        et.parent_entity_type_id = None
+        self._wire_minimal_qa_pipeline(service, qa_run, qa_template, [et])
+
+        await service.extract_for_run(
+            run_id=qa_run.id,
+            auto_advance_to_review=True,
+        )
+
+        target_stages = [
+            call.kwargs.get("target_stage")
+            for call in service._lifecycle.advance_stage.await_args_list
+        ]
+        assert ExtractionRunStage.REVIEW in target_stages
+
+    @pytest.mark.asyncio
+    async def test_extract_for_run_rejects_non_proposal_stage(self, service, qa_run, qa_template):
+        from app.models.extraction import ExtractionRunStage
+
+        qa_run.stage = ExtractionRunStage.REVIEW.value
+        self._wire_minimal_qa_pipeline(service, qa_run, qa_template, [])
+
+        with pytest.raises(ValueError, match="PROPOSAL"):
+            await service.extract_for_run(run_id=qa_run.id)
+
+    @pytest.mark.asyncio
+    async def test_extract_for_run_fails_when_run_not_found(self, service, qa_run, qa_template):
+        # Wire the pipeline normally, then override db.get to return None for
+        # the Run lookup so the early "Run {id} not found" guard fires.
+        self._wire_minimal_qa_pipeline(service, qa_run, qa_template, [])
+        service.db.get = AsyncMock(return_value=None)
+
+        with pytest.raises(ValueError, match="not found"):
+            await service.extract_for_run(run_id=qa_run.id)
+
+
+class TestFieldsWithRecentHumanProposal:
+    """Re-run safety: only fields whose newest proposal on this Run is
+    ``source='human'`` get filtered out. AI-newest fields stay eligible."""
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_set_for_empty_field_ids(self, service):
+        result = await service._fields_with_recent_human_proposal(
+            run_id=uuid4(),
+            instance_id=uuid4(),
+            field_ids=[],
+        )
+        assert result == set()
+        # Should short-circuit before hitting the DB.
+        assert getattr(service.db, "execute", None) is None or not (
+            isinstance(service.db.execute, AsyncMock) and service.db.execute.await_count
+        )
+
+    @pytest.mark.asyncio
+    async def test_picks_only_fields_whose_newest_proposal_is_human(self, service):
+        from app.models.extraction_workflow import ExtractionProposalSource
+
+        f_human_only = uuid4()
+        f_ai_then_human = uuid4()
+        f_human_then_ai = uuid4()
+        f_ai_only = uuid4()
+
+        # Order matters: the service iterates by ``(field_id, created_at desc)``
+        # so the first row per field_id wins. Reproduce that ordering here.
+        rows_in_order = [
+            (f_human_only, ExtractionProposalSource.HUMAN.value),
+            (f_ai_then_human, ExtractionProposalSource.HUMAN.value),  # newest
+            (f_ai_then_human, ExtractionProposalSource.AI.value),
+            (f_human_then_ai, ExtractionProposalSource.AI.value),  # newest
+            (f_human_then_ai, ExtractionProposalSource.HUMAN.value),
+            (f_ai_only, ExtractionProposalSource.AI.value),
+        ]
+        execute_result = MagicMock()
+        execute_result.all.return_value = rows_in_order
+        service.db.execute = AsyncMock(return_value=execute_result)
+
+        result = await service._fields_with_recent_human_proposal(
+            run_id=uuid4(),
+            instance_id=uuid4(),
+            field_ids=[f_human_only, f_ai_then_human, f_human_then_ai, f_ai_only],
+        )
+
+        assert result == {f_human_only, f_ai_then_human}
+
+    @pytest.mark.asyncio
+    async def test_fields_without_proposals_are_not_in_result(self, service):
+        f_no_proposal = uuid4()
+        execute_result = MagicMock()
+        execute_result.all.return_value = []
+        service.db.execute = AsyncMock(return_value=execute_result)
+
+        result = await service._fields_with_recent_human_proposal(
+            run_id=uuid4(),
+            instance_id=uuid4(),
+            field_ids=[f_no_proposal],
+        )
+
+        assert result == set()
+
+
+class TestExtractOneEntityTypeForRun:
+    """Field-restoration invariant: after we filter ``full_entity_type.fields``
+    to skip human-edited ones, we must restore the original list in a finally
+    block so callers that reuse the cached entity_type don't see a mutated
+    tree (would otherwise corrupt subsequent extractions in the same Run)."""
+
+    @pytest.fixture
+    def run(self):
+        from app.models.extraction import ExtractionRunStage
+
+        run = MagicMock()
+        run.id = uuid4()
+        run.project_id = uuid4()
+        run.article_id = uuid4()
+        run.template_id = uuid4()
+        run.stage = ExtractionRunStage.PROPOSAL.value
+        run.kind = "extraction"
+        return run
+
+    @pytest.mark.asyncio
+    async def test_restores_field_list_after_filtering(self, service, run):
+        from app.services.openai_service import OpenAIResponse, OpenAIUsage
+
+        f_keep = MagicMock()
+        f_keep.id = uuid4()
+        f_keep.name = "kept"
+        f_skip = MagicMock()
+        f_skip.id = uuid4()
+        f_skip.name = "skipped_due_to_human"
+
+        full_et = MagicMock()
+        full_et.id = uuid4()
+        full_et.name = "Section"
+        full_et.description = "desc"
+        full_et.fields = [f_keep, f_skip]
+        original_fields_ref = full_et.fields
+
+        service._entity_types.get_with_fields = AsyncMock(return_value=full_et)
+        service._instances.get_by_article = AsyncMock(
+            return_value=[MagicMock(id=uuid4(), parent_instance_id=None)]
+        )
+
+        # Mark f_skip as human-edited so the filter excludes it.
+        async def fake_human_probe(*, run_id, instance_id, field_ids):  # noqa: ARG001
+            return {f_skip.id}
+
+        service._fields_with_recent_human_proposal = AsyncMock(side_effect=fake_human_probe)
+
+        # LLM + suggestion writes
+        service.openai_service.chat_completion_full = AsyncMock(
+            return_value=OpenAIResponse(
+                content=json.dumps({}),
+                usage=OpenAIUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+                model="gpt-4o-mini",
+            )
+        )
+        service._create_suggestions = AsyncMock(return_value=0)
+
+        et_summary = MagicMock()
+        et_summary.id = full_et.id
+        et_summary.name = full_et.name
+
+        await service._extract_one_entity_type_for_run(
+            run=run,
+            entity_type=et_summary,
+            pdf_text="text",
+            framework=None,
+            kind="extraction",
+            skip_fields_with_human_proposals=True,
+            model="gpt-4o-mini",
+        )
+
+        # Original fields list must be put back before returning.
+        assert full_et.fields == [f_keep, f_skip]
+        assert full_et.fields == original_fields_ref
+
+    @pytest.mark.asyncio
+    async def test_skips_entity_when_every_field_is_human_edited(self, service, run):
+        f1 = MagicMock(id=uuid4(), name="a")
+        f2 = MagicMock(id=uuid4(), name="b")
+        full_et = MagicMock()
+        full_et.id = uuid4()
+        full_et.fields = [f1, f2]
+
+        service._entity_types.get_with_fields = AsyncMock(return_value=full_et)
+        service._instances.get_by_article = AsyncMock(
+            return_value=[MagicMock(id=uuid4(), parent_instance_id=None)]
+        )
+        service._fields_with_recent_human_proposal = AsyncMock(return_value={f1.id, f2.id})
+        # If filter logic is wrong the LLM gets called — fail loudly.
+        service.openai_service.chat_completion_full = AsyncMock(
+            side_effect=AssertionError("LLM must NOT be called when all fields are human")
+        )
+        service._create_suggestions = AsyncMock(return_value=0)
+
+        result = await service._extract_one_entity_type_for_run(
+            run=run,
+            entity_type=MagicMock(id=full_et.id, name="x"),
+            pdf_text="text",
+            framework=None,
+            kind="extraction",
+            skip_fields_with_human_proposals=True,
+            model="gpt-4o-mini",
+        )
+
+        assert result == {"suggestions_created": 0, "tokens_total": 0, "skipped": True}
+        service.openai_service.chat_completion_full.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_filter_when_skip_flag_is_false(self, service, run):
+        from app.services.openai_service import OpenAIResponse, OpenAIUsage
+
+        # ``MagicMock(name='a')`` sets the *mock's* name, not the .name attribute.
+        # Set it explicitly so json.dumps inside _build_extraction_schema works.
+        f1 = MagicMock(id=uuid4())
+        f1.name = "a"
+        f1.field_type = "string"
+        f1.description = ""
+        f1.is_required = False
+        full_et = MagicMock()
+        full_et.id = uuid4()
+        full_et.name = "Section"
+        full_et.description = ""
+        full_et.fields = [f1]
+
+        service._entity_types.get_with_fields = AsyncMock(return_value=full_et)
+        service._instances.get_by_article = AsyncMock(
+            return_value=[MagicMock(id=uuid4(), parent_instance_id=None)]
+        )
+        # Even if there *would* be human-edited fields, the probe must not run
+        # when skip_fields_with_human_proposals=False.
+        service._fields_with_recent_human_proposal = AsyncMock(
+            side_effect=AssertionError("human-proposal probe must not run when skip flag is False")
+        )
+        service.openai_service.chat_completion_full = AsyncMock(
+            return_value=OpenAIResponse(
+                content=json.dumps({}),
+                usage=OpenAIUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+                model="gpt-4o-mini",
+            )
+        )
+        service._create_suggestions = AsyncMock(return_value=0)
+
+        await service._extract_one_entity_type_for_run(
+            run=run,
+            entity_type=MagicMock(id=full_et.id, name="x"),
+            pdf_text="text",
+            framework=None,
+            kind="extraction",
+            skip_fields_with_human_proposals=False,
+            model="gpt-4o-mini",
+        )
+
+        service._fields_with_recent_human_proposal.assert_not_called()

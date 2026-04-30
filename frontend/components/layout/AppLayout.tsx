@@ -10,6 +10,8 @@ import {ProjectSidebar} from './ProjectSidebar';
 import {MobileSidebar} from './MobileSidebar';
 import {useProject} from '@/contexts/ProjectContext';
 import {useSidebar} from '@/contexts/SidebarContext';
+import {useNavigationShortcuts} from '@/hooks/useNavigationShortcuts';
+import type {SidebarTabId} from './sidebarConfig';
 import {cn} from '@/lib/utils';
 
 interface AppLayoutProps {
@@ -32,37 +34,42 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children, className }) => 
 };
 
 // Layout with Sidebar for specific pages
-export const ProjectLayout: React.FC<AppLayoutProps> = ({ children, className }) => {
-  const { project, activeTab, changeTab } = useProject();
-    const {sidebarCollapsed, toggleSidebar: _toggleSidebar, mobileOpen, setMobileOpen} = useSidebar();
+export const ProjectLayout: React.FC<AppLayoutProps> = ({children, className}) => {
+  const {project, activeTab, changeTab} = useProject();
+  const {toggleSidebar, mobileOpen, setMobileOpen} = useSidebar();
+  const [switcherOpen, setSwitcherOpen] = React.useState(false);
+
+  const handleNavigate = React.useCallback((tab: SidebarTabId) => changeTab(tab), [changeTab]);
+
+  useNavigationShortcuts({
+    enabled: true,
+    onNavigate: handleNavigate,
+    onToggleSidebar: toggleSidebar,
+    onOpenProjectSwitcher: () => setSwitcherOpen(true),
+  });
 
   return (
-    <div className={cn("h-screen flex flex-col overflow-hidden bg-background", className)}>
-      {/* Topbar Fixo */}
+    <div className={cn('h-screen flex flex-col overflow-hidden bg-background', className)}>
       <div className="flex-shrink-0">
         <Topbar />
       </div>
 
-        {/* Mobile Sidebar (Sheet) */}
-        <MobileSidebar
-            open={mobileOpen}
-            onOpenChange={setMobileOpen}
-            activeTab={activeTab}
-            onTabChange={changeTab}
-            projectName={project?.name}
-        />
+      <MobileSidebar
+        open={mobileOpen}
+        onOpenChange={setMobileOpen}
+        activeTab={activeTab}
+        onTabChange={changeTab}
+        projectName={project?.name}
+      />
 
-        {/* Main container: Sidebar + Content */}
       <div className="flex flex-1 overflow-hidden">
-          {/* Sidebar Fixo - Desktop */}
         <ProjectSidebar
-          isCollapsed={sidebarCollapsed}
           activeTab={activeTab}
           onTabChange={changeTab}
           projectName={project?.name}
+          switcherOpen={switcherOpen}
+          onSwitcherOpenChange={setSwitcherOpen}
         />
-
-          {/* Main content with its own scroll */}
         <main className="flex-1 overflow-y-auto">
           {children || <Outlet />}
         </main>

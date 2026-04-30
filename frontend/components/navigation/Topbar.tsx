@@ -4,7 +4,7 @@
  */
 
 import React, {useContext, useState} from 'react';
-import {Menu, PanelLeft} from 'lucide-react';
+import {Menu, PanelLeftClose, PanelLeftOpen} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {cn} from '@/lib/utils';
 import {useUserProfile} from '@/hooks/useNavigation';
@@ -84,16 +84,31 @@ export const Topbar: React.FC<TopbarProps> = ({
                           <Menu className="h-4 w-4 text-muted-foreground"/>
                       </Button>
                   )}
-                  {/* Sidebar Toggle - Desktop only */}
+                  {/* Sidebar Toggle - Desktop only. Two icons crossfade purely on opacity. */}
           {sidebarContext && isProjectPage && (
             <Button
               variant="ghost"
               size="icon"
               onClick={sidebarContext.toggleSidebar}
-              aria-label={sidebarContext.sidebarCollapsed ? t('navigation', 'ariaExpandSidebar') : t('navigation', 'ariaCollapseSidebar')}
-              className="hidden lg:flex flex-shrink-0 h-8 w-8 hover:bg-muted/50 transition-colors duration-75"
+              aria-label={t('layout', 'sidebarToggleAriaLabel')}
+              aria-pressed={!sidebarContext.sidebarCollapsed}
+              aria-keyshortcuts="Meta+B"
+              className="hidden lg:flex flex-shrink-0 h-8 w-8 hover:bg-muted/50 transition-colors duration-75 relative"
             >
-                <PanelLeft className="h-4 w-4 text-muted-foreground"/>
+              <span className="relative h-4 w-4 block">
+                <PanelLeftClose
+                  className={cn(
+                    'absolute inset-0 h-4 w-4 text-muted-foreground transition-opacity duration-150 ease-out motion-reduce:duration-0',
+                    sidebarContext.sidebarCollapsed ? 'opacity-0' : 'opacity-100',
+                  )}
+                />
+                <PanelLeftOpen
+                  className={cn(
+                    'absolute inset-0 h-4 w-4 text-muted-foreground transition-opacity duration-150 ease-out motion-reduce:duration-0',
+                    sidebarContext.sidebarCollapsed ? 'opacity-100' : 'opacity-0',
+                  )}
+                />
+              </span>
             </Button>
           )}
 
