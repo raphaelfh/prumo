@@ -10,6 +10,7 @@
  */
 
 import {supabase} from '@/integrations/supabase/client';
+import {apiClient} from '@/integrations/api/client';
 import {t} from '@/lib/copy';
 
 // =================== INTERFACES ===================
@@ -22,6 +23,14 @@ export interface ImportResult {
     entityTypesAdded: number;
     fieldsAdded: number;
   };
+}
+
+interface CloneTemplateResponse {
+  project_template_id: string;
+  version_id: string;
+  entity_type_count: number;
+  field_count: number;
+  created: boolean;
 }
 
 // =================== FUNÇÃO PRINCIPAL: IMPORTAR TEMPLATE ===================
@@ -60,222 +69,21 @@ export async function importGlobalTemplate(
 
       console.warn(`  ✅ Template: ${globalTemplate.name} v${globalTemplate.version}`);
 
-      // 2. Fetch existing active template (if any)
-    const { data: existingTemplates } = await supabase
-      .from('project_extraction_templates')
-      .select('id, name')
-      .eq('project_id', projectId)
-      .eq('is_active', true)
-      .limit(1);
-
-    let projectTemplate;
-    let entityTypesExisting: any[] = [];
-    let fieldsExisting: any[] = [];
-    let isMerge = false;
-
-    if (existingTemplates && existingTemplates.length > 0) {
-        // MERGE: Use existing template
-      projectTemplate = existingTemplates[0];
-      isMerge = true;
-        console.warn(`  🔄 Merging into existing template: ${projectTemplate.name}`);
-
-        // Fetch existing entity types
-      const { data: existingEntityTypes, error: etError } = await supabase
-        .from('extraction_entity_types')
-        .select('id, name, label')
-        .eq('project_template_id', projectTemplate.id);
-
-      if (etError) throw etError;
-      entityTypesExisting = existingEntityTypes || [];
-
-        // Fetch existing fields (need all to compare later)
-      if (entityTypesExisting.length > 0) {
-        const { data: existingFields, error: fieldsError } = await supabase
-          .from('extraction_fields')
-          .select('id, name, entity_type_id')
-          .in('entity_type_id', entityTypesExisting.map(et => et.id));
-
-        if (fieldsError) throw fieldsError;
-        fieldsExisting = existingFields || [];
-      }
-
-        console.warn(`  📊 Existing template: ${entityTypesExisting.length} entity types, ${fieldsExisting.length} fields`);
-    } else {
-        // Create new template
-      const { data: newTemplate, error: projectTemplateError } = await supabase
-        .from('project_extraction_templates')
-        .insert({
-          project_id: projectId,
-          global_template_id: globalTemplateId,
-          name: globalTemplate.name,
-          description: globalTemplate.description,
-          framework: globalTemplate.framework,
-          version: globalTemplate.version,
-          schema: globalTemplate.schema,
-          is_active: true,
-          created_by: user.id
-        })
-        .select()
-        .single();
-
-      if (projectTemplateError) throw projectTemplateError;
-      projectTemplate = newTemplate;
-        console.warn(`  ✅ Novo template criado: ${projectTemplate.id}`);
-    }
-
-      // 4. Fetch entity_types from global template
-    const { data: globalEntityTypes, error: entityTypesError } = await supabase
-      .from('extraction_entity_types')
-      .select('*')
-      .eq('template_id', globalTemplateId)
-      .is('project_template_id', null)
-      .order('sort_order');
-
-    if (entityTypesError) throw entityTypesError;
-    if (!globalEntityTypes || globalEntityTypes.length === 0) {
-        throw new Error(t('extraction', 'errors_templateHasNoEntityTypes'));
-    }
-
-      console.warn(`  ✅ Entity types encontrados: ${globalEntityTypes.length}`);
-
-      // 5. MERGE: Add only entity types that do not exist (2 passes to preserve hierarchy)
-    const entityTypeMapping: Record<string, string> = {};
-    const existingEntityTypesByName = new Map(
-      entityTypesExisting.map(et => [et.name, et.id])
+    const serverCloneResult = await apiClient<CloneTemplateResponse>(
+      `/api/v1/projects/${projectId}/templates/clone`,
+      {
+        method: 'POST',
+        body: { global_template_id: globalTemplateId, kind: 'extraction' },
+      },
     );
-
-    let entityTypesAdded = 0;
-    let entityTypesSkipped = 0;
-
-      console.warn(`  🔄 Merging entity types (pass 1/2)...`);
-    for (const globalEntity of globalEntityTypes) {
-        // Check if already exists by name
-      const existingId = existingEntityTypesByName.get(globalEntity.name);
-      
-      if (existingId) {
-          // Already exists, use it
-        entityTypeMapping[globalEntity.id] = existingId;
-        entityTypesSkipped++;
-          console.warn(`    ⏭️  Entity type "${globalEntity.name}" already exists, keeping existing`);
-      } else {
-          // Does not exist, add
-        const { data: newEntity, error: insertError } = await supabase
-          .from('extraction_entity_types')
-          .insert({
-            project_template_id: projectTemplate.id,
-            name: globalEntity.name,
-            label: globalEntity.label,
-            description: globalEntity.description,
-            cardinality: globalEntity.cardinality,
-            sort_order: globalEntity.sort_order,
-            is_required: globalEntity.is_required
-              // parent_entity_type_id: null for now
-          })
-          .select()
-          .single();
-
-        if (insertError) throw insertError;
-
-        entityTypeMapping[globalEntity.id] = newEntity.id;
-        entityTypesAdded++;
-          console.warn(`    ✅ Entity type "${globalEntity.name}" added`);
-      }
-    }
-
-      console.warn(`  📊 Entity types: ${entityTypesAdded} added, ${entityTypesSkipped} kept`);
-
-      console.warn('  🔄 Updating parent references (pass 2/2)...');
-    for (const globalEntity of globalEntityTypes) {
-      if (globalEntity.parent_entity_type_id) {
-        const newEntityId = entityTypeMapping[globalEntity.id];
-        const newParentId = entityTypeMapping[globalEntity.parent_entity_type_id];
-        
-        if (newEntityId && newParentId) {
-          const { error: updateError } = await supabase
-            .from('extraction_entity_types')
-            .update({ parent_entity_type_id: newParentId })
-            .eq('id', newEntityId);
-
-          if (updateError) throw updateError;
-        }
-      }
-    }
-
-      // 6. MERGE: Add only fields that do not exist
-      console.warn('  🔄 Merging fields...');
-    
-    const { data: globalFields, error: fieldsError } = await supabase
-      .from('extraction_fields')
-      .select('*')
-      .in('entity_type_id', Object.keys(entityTypeMapping))
-      .order('sort_order');
-
-    if (fieldsError) throw fieldsError;
-
-      console.warn(`  ✅ Global template fields: ${(globalFields || []).length}`);
-
-      // Create map of existing fields by (entity_type_id, name)
-    const existingFieldsByKey = new Map(
-      fieldsExisting.map(f => [`${f.entity_type_id}:${f.name}`, f.id])
-    );
-
-    let fieldsAdded = 0;
-    let fieldsSkipped = 0;
-
-    for (const globalField of globalFields || []) {
-      const newEntityTypeId = entityTypeMapping[globalField.entity_type_id];
-      if (!newEntityTypeId) continue;
-
-        // Check if field already exists in this entity type
-      const fieldKey = `${newEntityTypeId}:${globalField.name}`;
-      const existingFieldId = existingFieldsByKey.get(fieldKey);
-
-      if (existingFieldId) {
-          // Already exists, skip
-        fieldsSkipped++;
-          console.warn(`    ⏭️  Field "${globalField.name}" already exists in ${globalField.entity_type_id}, keeping existing`);
-      } else {
-          // Does not exist, add
-        const { error: insertFieldError } = await supabase
-          .from('extraction_fields')
-          .insert({
-            entity_type_id: newEntityTypeId,
-            name: globalField.name,
-            label: globalField.label,
-            description: globalField.description,
-            field_type: globalField.field_type,
-            is_required: globalField.is_required,
-            validation_schema: globalField.validation_schema,
-            allowed_values: globalField.allowed_values,
-            unit: globalField.unit,
-            sort_order: globalField.sort_order,
-            allowed_units: globalField.allowed_units,
-            llm_description: globalField.llm_description,
-            allow_other: globalField.allow_other ?? false,
-            other_label: globalField.other_label ?? 'Outro (especificar)',
-            other_placeholder: globalField.other_placeholder
-          });
-
-        if (insertFieldError) {
-          console.error(`    ❌ Erro ao adicionar field "${globalField.name}":`, insertFieldError);
-          throw insertFieldError;
-        }
-
-        fieldsAdded++;
-          console.warn(`    ✅ Field "${globalField.name}" adicionado`);
-      }
-    }
-
-      console.warn(`  📊 Fields: ${fieldsAdded} adicionados, ${fieldsSkipped} mantidos`);
-      console.warn(`✅✅✅ IMPORT ${isMerge ? 'MERGE' : 'COMPLETE'}! ✅✅✅`);
 
     return {
       success: true,
-      templateId: projectTemplate.id,
+      templateId: serverCloneResult.project_template_id,
       details: {
-        entityTypesAdded: entityTypesAdded,
-        fieldsAdded: fieldsAdded
-      }
+        entityTypesAdded: serverCloneResult.entity_type_count,
+        fieldsAdded: serverCloneResult.field_count,
+      },
     };
   } catch (err: any) {
     console.error('❌ ERRO NO IMPORT:', err);

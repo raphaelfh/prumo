@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import (
@@ -72,6 +72,21 @@ class TemplateCloneService:
             entity_types = await self._count_entity_types(existing.id)
             fields = await self._count_fields(existing.id)
             version = await self._active_version(existing.id)
+            # Heal legacy/partial clones: if the template row exists but has no
+            # structure, repopulate from the global template before returning.
+            if entity_types == 0 or fields == 0:
+                global_entity_types = await self._global_entity_types(global_template_id)
+                await self._rebuild_template_structure(
+                    project_template_id=existing.id,
+                    global_entity_types=global_entity_types,
+                )
+                await self._upsert_active_version(
+                    project_template_id=existing.id,
+                    user_id=user_id,
+                )
+                entity_types = await self._count_entity_types(existing.id)
+                fields = await self._count_fields(existing.id)
+                version = await self._active_version(existing.id)
             # The deferred constraint trigger
             # ``project_extraction_templates_active_version`` (migration
             # 0004) makes a template-without-active-version state
@@ -175,6 +190,87 @@ class TemplateCloneService:
             created=True,
         )
 
+    async def _rebuild_template_structure(
+        self,
+        *,
+        project_template_id: UUID,
+        global_entity_types: list[ExtractionEntityType],
+    ) -> int:
+        """Populate a project template from global rows when clone is empty."""
+        entity_type_id_map: dict[UUID, UUID] = {}
+        for et in global_entity_types:
+            new_id = uuid4()
+            entity_type_id_map[et.id] = new_id
+            self.db.add(
+                ExtractionEntityType(
+                    id=new_id,
+                    project_template_id=project_template_id,
+                    template_id=None,
+                    name=et.name,
+                    label=et.label,
+                    description=et.description,
+                    parent_entity_type_id=(
+                        entity_type_id_map[et.parent_entity_type_id]
+                        if et.parent_entity_type_id is not None
+                        else None
+                    ),
+                    cardinality=et.cardinality,
+                    sort_order=et.sort_order,
+                    is_required=et.is_required,
+                )
+            )
+        await self.db.flush()
+
+        field_count = 0
+        for et in global_entity_types:
+            for f in await self._global_fields(et.id):
+                self.db.add(
+                    ExtractionField(
+                        entity_type_id=entity_type_id_map[et.id],
+                        name=f.name,
+                        label=f.label,
+                        description=f.description,
+                        field_type=f.field_type,
+                        is_required=f.is_required,
+                        validation_schema=f.validation_schema,
+                        allowed_values=f.allowed_values,
+                        unit=f.unit,
+                        allowed_units=f.allowed_units,
+                        llm_description=f.llm_description,
+                        sort_order=f.sort_order,
+                        allow_other=f.allow_other,
+                        other_label=f.other_label,
+                        other_placeholder=f.other_placeholder,
+                    )
+                )
+                field_count += 1
+        await self.db.flush()
+        return field_count
+
+    async def _upsert_active_version(self, *, project_template_id: UUID, user_id: UUID) -> None:
+        """Ensure exactly one active version exists and points to current snapshot."""
+        snapshot = await self._snapshot(project_template_id)
+        current_active = await self._active_version(project_template_id)
+        if current_active is None:
+            self.db.add(
+                ExtractionTemplateVersion(
+                    project_template_id=project_template_id,
+                    version=1,
+                    schema_=snapshot,
+                    published_at=datetime.now(UTC),
+                    published_by=user_id,
+                    is_active=True,
+                )
+            )
+            await self.db.flush()
+            return
+
+        current_active.schema_ = snapshot
+        current_active.published_at = datetime.now(UTC)
+        current_active.published_by = user_id
+        current_active.is_active = True
+        await self.db.flush()
+
     async def _find_existing_clone(
         self,
         project_id: UUID,
@@ -203,21 +299,24 @@ class TemplateCloneService:
         return list((await self.db.execute(stmt)).scalars().all())
 
     async def _count_entity_types(self, project_template_id: UUID) -> int:
-        stmt = select(ExtractionEntityType).where(
+        stmt = select(func.count()).select_from(ExtractionEntityType).where(
             ExtractionEntityType.project_template_id == project_template_id
         )
-        return len((await self.db.execute(stmt)).scalars().all())
+        result = await self.db.execute(stmt)
+        return int(result.scalar_one())
 
     async def _count_fields(self, project_template_id: UUID) -> int:
         stmt = (
-            select(ExtractionField)
+            select(func.count())
+            .select_from(ExtractionField)
             .join(
                 ExtractionEntityType,
                 ExtractionEntityType.id == ExtractionField.entity_type_id,
             )
             .where(ExtractionEntityType.project_template_id == project_template_id)
         )
-        return len((await self.db.execute(stmt)).scalars().all())
+        result = await self.db.execute(stmt)
+        return int(result.scalar_one())
 
     async def _active_version(self, project_template_id: UUID) -> ExtractionTemplateVersion | None:
         stmt = select(ExtractionTemplateVersion).where(
