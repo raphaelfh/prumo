@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import (
@@ -69,14 +69,13 @@ class TemplateCloneService:
 
         existing = await self._find_existing_clone(project_id, global_template_id)
         if existing is not None:
-            entity_types = await self._count_entity_types(existing.id)
-            fields = await self._count_fields(existing.id)
+            entity_types, fields = await self._project_template_structure_counts(existing.id)
             version = await self._active_version(existing.id)
             # Heal legacy/partial clones: if the template row exists but has no
             # structure, repopulate from the global template before returning.
             if entity_types == 0 or fields == 0:
                 global_entity_types = await self._global_entity_types(global_template_id)
-                await self._rebuild_template_structure(
+                field_count = await self._insert_project_structure_from_global(
                     project_template_id=existing.id,
                     global_entity_types=global_entity_types,
                 )
@@ -84,8 +83,8 @@ class TemplateCloneService:
                     project_template_id=existing.id,
                     user_id=user_id,
                 )
-                entity_types = await self._count_entity_types(existing.id)
-                fields = await self._count_fields(existing.id)
+                entity_types = len(global_entity_types)
+                fields = field_count
                 version = await self._active_version(existing.id)
             # The deferred constraint trigger
             # ``project_extraction_templates_active_version`` (migration
@@ -121,55 +120,11 @@ class TemplateCloneService:
         self.db.add(project_tpl)
         await self.db.flush()
 
-        entity_type_id_map: dict[UUID, UUID] = {}
         global_entity_types = await self._global_entity_types(global_template_id)
-        for et in global_entity_types:
-            new_id = uuid4()
-            entity_type_id_map[et.id] = new_id
-            self.db.add(
-                ExtractionEntityType(
-                    id=new_id,
-                    project_template_id=project_tpl.id,
-                    template_id=None,
-                    name=et.name,
-                    label=et.label,
-                    description=et.description,
-                    parent_entity_type_id=(
-                        entity_type_id_map[et.parent_entity_type_id]
-                        if et.parent_entity_type_id is not None
-                        else None
-                    ),
-                    cardinality=et.cardinality,
-                    sort_order=et.sort_order,
-                    is_required=et.is_required,
-                )
-            )
-        await self.db.flush()
-
-        field_count = 0
-        for et in global_entity_types:
-            for f in await self._global_fields(et.id):
-                self.db.add(
-                    ExtractionField(
-                        entity_type_id=entity_type_id_map[et.id],
-                        name=f.name,
-                        label=f.label,
-                        description=f.description,
-                        field_type=f.field_type,
-                        is_required=f.is_required,
-                        validation_schema=f.validation_schema,
-                        allowed_values=f.allowed_values,
-                        unit=f.unit,
-                        allowed_units=f.allowed_units,
-                        llm_description=f.llm_description,
-                        sort_order=f.sort_order,
-                        allow_other=f.allow_other,
-                        other_label=f.other_label,
-                        other_placeholder=f.other_placeholder,
-                    )
-                )
-                field_count += 1
-        await self.db.flush()
+        field_count = await self._insert_project_structure_from_global(
+            project_template_id=project_tpl.id,
+            global_entity_types=global_entity_types,
+        )
 
         version = ExtractionTemplateVersion(
             project_template_id=project_tpl.id,
@@ -190,13 +145,13 @@ class TemplateCloneService:
             created=True,
         )
 
-    async def _rebuild_template_structure(
+    async def _insert_project_structure_from_global(
         self,
         *,
         project_template_id: UUID,
         global_entity_types: list[ExtractionEntityType],
     ) -> int:
-        """Populate a project template from global rows when clone is empty."""
+        """Copy global entity types and fields into a project template (one field read batch)."""
         entity_type_id_map: dict[UUID, UUID] = {}
         for et in global_entity_types:
             new_id = uuid4()
@@ -221,9 +176,12 @@ class TemplateCloneService:
             )
         await self.db.flush()
 
+        fields_by_entity = await self._global_fields_by_entity_types(
+            list(entity_type_id_map.keys()),
+        )
         field_count = 0
         for et in global_entity_types:
-            for f in await self._global_fields(et.id):
+            for f in fields_by_entity.get(et.id, ()):
                 self.db.add(
                     ExtractionField(
                         entity_type_id=entity_type_id_map[et.id],
@@ -290,33 +248,52 @@ class TemplateCloneService:
         )
         return list((await self.db.execute(stmt)).scalars().all())
 
-    async def _global_fields(self, entity_type_id: UUID) -> list[ExtractionField]:
+    async def _global_fields_by_entity_types(
+        self,
+        global_entity_type_ids: list[UUID],
+    ) -> dict[UUID, list[ExtractionField]]:
+        """Load all global fields for the given entity types in one round trip (no N+1)."""
+        if not global_entity_type_ids:
+            return {}
         stmt = (
             select(ExtractionField)
-            .where(ExtractionField.entity_type_id == entity_type_id)
-            .order_by(ExtractionField.sort_order)
+            .where(ExtractionField.entity_type_id.in_(global_entity_type_ids))
+            .order_by(ExtractionField.entity_type_id, ExtractionField.sort_order)
         )
-        return list((await self.db.execute(stmt)).scalars().all())
+        rows = list((await self.db.execute(stmt)).scalars().all())
+        buckets: dict[UUID, list[ExtractionField]] = {eid: [] for eid in global_entity_type_ids}
+        for f in rows:
+            buckets[f.entity_type_id].append(f)
+        return buckets
 
-    async def _count_entity_types(self, project_template_id: UUID) -> int:
-        stmt = select(func.count()).select_from(ExtractionEntityType).where(
-            ExtractionEntityType.project_template_id == project_template_id
-        )
-        result = await self.db.execute(stmt)
-        return int(result.scalar_one())
-
-    async def _count_fields(self, project_template_id: UUID) -> int:
-        stmt = (
-            select(func.count())
-            .select_from(ExtractionField)
-            .join(
-                ExtractionEntityType,
-                ExtractionEntityType.id == ExtractionField.entity_type_id,
+    async def _project_template_structure_counts(
+        self,
+        project_template_id: UUID,
+    ) -> tuple[int, int]:
+        """Entity-type and field counts for a project template in a single DB round trip."""
+        row = (
+            await self.db.execute(
+                text(
+                    """
+                    SELECT
+                        (
+                            SELECT COUNT(*)::bigint
+                            FROM public.extraction_entity_types et
+                            WHERE et.project_template_id = CAST(:tid AS uuid)
+                        ) AS entity_type_count,
+                        (
+                            SELECT COUNT(*)::bigint
+                            FROM public.extraction_fields f
+                            INNER JOIN public.extraction_entity_types et
+                                ON et.id = f.entity_type_id
+                            WHERE et.project_template_id = CAST(:tid AS uuid)
+                        ) AS field_count
+                    """
+                ),
+                {"tid": str(project_template_id)},
             )
-            .where(ExtractionEntityType.project_template_id == project_template_id)
-        )
-        result = await self.db.execute(stmt)
-        return int(result.scalar_one())
+        ).one()
+        return int(row[0]), int(row[1])
 
     async def _active_version(self, project_template_id: UUID) -> ExtractionTemplateVersion | None:
         stmt = select(ExtractionTemplateVersion).where(
