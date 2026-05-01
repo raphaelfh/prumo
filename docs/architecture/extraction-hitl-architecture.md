@@ -127,6 +127,18 @@ ExtractionTemplateGlobal (kind = extraction | quality_assessment)
                    └─ ExtractionEvidence       (polymorphic FK → proposal/decision/consensus)
 ```
 
+### 4.1 Project template import (extraction catalogue)
+
+The extraction **Import template** dialog reads `extraction_templates_global` through the Supabase client (RLS). **Do not** insert `project_extraction_templates` from the frontend: a deferred trigger requires every project template to have an **active** `extraction_template_versions` row at commit time, so creation stays in the API layer.
+
+| Step | What happens |
+|------|----------------|
+| **UI** | Calls `POST /api/v1/projects/{project_id}/templates/clone` with `global_template_id` and `kind=extraction` (JWT via `apiClient`). The UI may still load the global row first to validate that the id exists in the catalogue. |
+| **Service** | `TemplateCloneService.clone` is **idempotent** on `(project_id, global_template_id)`: first call creates the project row, `extraction_entity_types`, `extraction_fields`, and exactly one active version; later calls return the existing clone and current counts. |
+| **Heal** | If a clone row exists but has zero entity types or fields (partial/legacy data), the service rebuilds structure from the global template and updates the active version snapshot. |
+
+Configuration flows for QA tools may call the same clone endpoint before sessions; session lifecycle for QA vs extraction is in §5.
+
 ## 5. Quality-Assessment specifics
 
 QA reuses every primitive — there are no QA-specific tables. PROBAST and

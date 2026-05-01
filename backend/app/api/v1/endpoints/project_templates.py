@@ -1,17 +1,16 @@
 """Project-scoped template management endpoints.
 
-Two thin endpoints over ``project_extraction_templates`` rows:
+* ``POST /api/v1/projects/{project_id}/templates/clone`` — clone a global
+  template (CHARMS, PROBAST, QUADAS-2, …) into the project. Idempotent on
+  ``(project_id, global_template_id)``. Creates entity types, fields, and
+  an active ``extraction_template_versions`` row in one transaction; may
+  rebuild an empty legacy clone. Used by the extraction import dialog and
+  by configuration flows that enable QA tools.
+* ``PATCH /api/v1/projects/{project_id}/templates/{template_id}`` — toggle
+  ``is_active`` (e.g. disable a QA tool in Configuration).
 
-* ``POST /api/v1/projects/{project_id}/templates/clone`` — enable a global
-  template (PROBAST, QUADAS-2, ...) for the project. Idempotent on
-  ``(project_id, global_template_id)``.
-* ``PATCH /api/v1/projects/{project_id}/templates/{template_id}`` — flip
-  the ``is_active`` flag. The Configuration UI uses this to disable a QA
-  tool the user no longer wants to run.
-
-Both are distinct from ``POST /api/v1/hitl/sessions``, which is per-article.
-The Configuration tab needs to manage the project-level "which tools are
-enabled" list before any session is opened.
+These are project-scoped. ``POST /api/v1/hitl/sessions`` is per-article run
+lifecycle and is separate.
 """
 
 from uuid import UUID

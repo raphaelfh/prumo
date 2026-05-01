@@ -1,14 +1,9 @@
 /**
- * Dialog to import global template into the project
- * 
- * Features:
- * - Lists available global templates
- * - Preview of template sections and fields
- * - Import with visual feedback
- * - Validation before import
- * - Loading states apropriados
- * 
- * @component
+ * Import a global extraction template into the current project.
+ *
+ * Lists catalogue entries, lets the user pick one, then calls
+ * `importGlobalTemplate` (backend clone endpoint). Shows loading and toast
+ * feedback.
  */
 
 import {useEffect, useState} from 'react';
@@ -77,7 +72,7 @@ export function ImportTemplateDialog({
     setImporting(true);
 
     try {
-        console.warn('📥 Importando template:', selectedTemplate.name);
+        console.warn('[ImportTemplateDialog] import:', selectedTemplate.name);
 
       const result = await importGlobalTemplate(projectId, selectedTemplate.id);
 
@@ -92,7 +87,7 @@ export function ImportTemplateDialog({
       }
 
     } catch (error: any) {
-      console.error('Erro ao importar template:', error);
+      console.error('[ImportTemplateDialog] import failed', error);
         toast.error(`${t('extraction', 'importErrorImport')}: ${error.message}`);
     } finally {
       setImporting(false);

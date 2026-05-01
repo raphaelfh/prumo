@@ -1,6 +1,6 @@
 # prumo Development Guidelines
 
-Last updated: 2026-04-28
+Last updated: 2026-04-30
 
 ## Active Technologies
 
@@ -54,6 +54,11 @@ docs/                     # architecture/, superpowers/, planos/, ...
 
 ## Recent Changes
 
+- **2026-04-30**: Extraction **template import** uses
+  `POST /api/v1/projects/{id}/templates/clone` only (no direct browser
+  inserts into `project_extraction_templates`). `TemplateCloneService`
+  remains idempotent; it can **heal** empty clones. See §4.1 in
+  `docs/architecture/extraction-hitl-architecture.md`.
 - **2026-04-28** (latest): HITL surface unification round 2.
   - DB invariants: migration 0004 deferred trigger forbids a project
     template without an active version; 0005 replaces the simple FK on

@@ -1,10 +1,10 @@
 /**
- * Template import service - clean version
+ * Global → project template import and related helpers.
  *
- * Simplified and refactored to:
- * - Work only with entity_types (no template instances)
- * - Always preserve hierarchy
- * - Clean, production-ready code
+ * Import is **server-authoritative**: the browser must not insert
+ * `project_extraction_templates` directly (DB invariant: active version required).
+ *
+ * Flow: validate the global row exists (Supabase read), then call the clone API.
  *
  * @module services/templateImportService
  */
@@ -13,7 +13,7 @@ import {supabase} from '@/integrations/supabase/client';
 import {apiClient} from '@/integrations/api/client';
 import {t} from '@/lib/copy';
 
-// =================== INTERFACES ===================
+// --- Types ---
 
 export interface ImportResult {
   success: boolean;
@@ -33,17 +33,14 @@ interface CloneTemplateResponse {
   created: boolean;
 }
 
-// =================== FUNÇÃO PRINCIPAL: IMPORTAR TEMPLATE ===================
-
 /**
- * Imports global template into the project
+ * Import a global extraction template into a project (idempotent on the server).
  *
- * Flow with MERGE (preserves existing fields):
- * 1. Check if active template already exists
- * 2. If exists, MERGE into existing template (add only what does not exist)
- * 3. If not, create new template
- * 4. Preserve hierarchy (parent_entity_type_id)
- * 5. Add only entity types and fields that do not exist (compare by name)
+ * 1. Require an authenticated Supabase user (for API JWT).
+ * 2. Load `extraction_templates_global` so we fail fast if the id is missing.
+ * 3. `POST /api/v1/projects/{projectId}/templates/clone` with `kind: extraction`.
+ *
+ * Returns counts from the server (totals for the clone after the call, not a delta).
  */
 export async function importGlobalTemplate(
   projectId: string,
@@ -51,13 +48,10 @@ export async function importGlobalTemplate(
 ): Promise<ImportResult> {
   try {
     const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error(t('common', 'errors_userNotAuthenticated'));
+    if (!user) throw new Error(t('common', 'errors_userNotAuthenticated'));
 
-      console.warn('🚀 Importing global template (with MERGE)...');
-      console.warn('  Project:', projectId);
-      console.warn('  Template:', globalTemplateId);
+    console.warn('[templateImport] project', projectId, 'global', globalTemplateId);
 
-      // 1. Fetch global template
     const { data: globalTemplate, error: templateError } = await supabase
       .from('extraction_templates_global')
       .select('*')
@@ -65,9 +59,9 @@ export async function importGlobalTemplate(
       .single();
 
     if (templateError) throw templateError;
-      if (!globalTemplate) throw new Error(t('common', 'errors_templateNotFound'));
+    if (!globalTemplate) throw new Error(t('common', 'errors_templateNotFound'));
 
-      console.warn(`  ✅ Template: ${globalTemplate.name} v${globalTemplate.version}`);
+    console.warn(`[templateImport] catalogue: ${globalTemplate.name} v${globalTemplate.version}`);
 
     const serverCloneResult = await apiClient<CloneTemplateResponse>(
       `/api/v1/projects/${projectId}/templates/clone`,
@@ -86,23 +80,19 @@ export async function importGlobalTemplate(
       },
     };
   } catch (err: any) {
-    console.error('❌ ERRO NO IMPORT:', err);
+    console.error('[templateImport] failed', err);
     return {
       success: false,
-        error: err.message || t('common', 'errors_unknownError')
+      error: err.message || t('common', 'errors_unknownError'),
     };
   }
 }
 
-// =================== FUNÇÃO HELPER: CRIAR INSTÂNCIAS INICIAIS ===================
-
 /**
- * Creates initial extraction_instances for entity_types 'one'
+ * Create one `extraction_instances` row per root entity type with `cardinality='one'`.
  *
- * For each entity_type with cardinality='one', creates one instance
- * linked to the article. This facilitates field filling.
- *
- * Entity_types 'many' do not create instances automatically.
+ * Skips types under a parent (`parent_entity_type_id` set). Ignores duplicate
+ * inserts so the call is safe to retry.
  */
 export async function createInitialInstances(
   projectId: string,
@@ -111,19 +101,17 @@ export async function createInitialInstances(
   userId: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-      console.warn('Creating initial instances...');
+    console.warn('[templateImport] createInitialInstances for template', templateId);
 
-      // Fetch entity_types from template
     const { data: entityTypes, error: etError } = await supabase
       .from('extraction_entity_types')
       .select('id, name, label, cardinality, parent_entity_type_id')
       .eq('project_template_id', templateId)
       .eq('cardinality', 'one')
-        .is('parent_entity_type_id', null); // Only ROOT with cardinality='one'
+      .is('parent_entity_type_id', null);
 
     if (etError) throw etError;
 
-      // Create instance for each entity_type 'one'
     for (const et of entityTypes || []) {
       const { error: insertError } = await supabase
         .from('extraction_instances')
@@ -135,25 +123,21 @@ export async function createInitialInstances(
           parent_instance_id: null,
           label: et.label,
           sort_order: 0,
-          created_by: userId
+          created_by: userId,
         });
 
-        // Ignore duplicate errors (instance already exists)
       if (insertError && !insertError.message.includes('duplicate')) {
         throw insertError;
       }
     }
 
-      console.warn(`  ✅ Initial instances created`);
-
+    console.warn('[templateImport] initial instances done');
     return { success: true };
   } catch (err: any) {
-      console.error('Error creating instances:', err);
+    console.error('[templateImport] createInitialInstances error', err);
     return {
       success: false,
-      error: err.message
+      error: err.message,
     };
   }
 }
-
-
