@@ -177,6 +177,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
               <Button
                 variant="ghost"
                 size="sm"
+                data-testid="template-config-open-import"
                 onClick={() => setShowImportDialog(true)}
                 className="text-muted-foreground hover:text-foreground"
               >
@@ -352,8 +353,9 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
                   Import a global template or create custom sections
               </p>
                 <div className="flex flex-wrap gap-2 justify-center">
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
+                  data-testid="template-config-open-import"
                   onClick={() => setShowImportDialog(true)}
                 >
                   <Download className="h-4 w-4 mr-2" />

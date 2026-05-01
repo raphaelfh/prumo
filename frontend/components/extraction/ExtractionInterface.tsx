@@ -409,6 +409,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
                                                     <Button
                                                         size="sm"
                                                         className="opacity-90 group-hover:opacity-100"
+                                                        data-testid={`extraction-import-global-${gt.id}`}
                                                         aria-label={`${t('extraction', 'configImportThisTemplate')} ${gt.name}`}
                                                         onClick={() => {
                                                             setImportInitialTemplateId(gt.id);

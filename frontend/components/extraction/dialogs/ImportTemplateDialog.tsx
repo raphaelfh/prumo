@@ -103,7 +103,10 @@ export function ImportTemplateDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+      <DialogContent
+        className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto"
+        data-testid="import-template-dialog"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Download className="h-5 w-5" />
@@ -202,7 +205,9 @@ export function ImportTemplateDialog({
           >
               {t('common', 'cancel')}
           </Button>
-          <Button 
+          <Button
+            type="button"
+            data-testid="import-template-submit"
             onClick={handleImport}
             disabled={!selectedTemplateId || importing || loadingTemplates}
           >
