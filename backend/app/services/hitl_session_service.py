@@ -178,6 +178,7 @@ class HITLSessionService:
         existing_rows = list((await self.db.execute(existing_stmt)).scalars().all())
         by_entity: dict[UUID, UUID] = {row.entity_type_id: row.id for row in existing_rows}
 
+        pending_instances: list[tuple[UUID, ExtractionInstance]] = []
         for et in entity_types:
             # Many-cardinality entity types add instances dynamically through the
             # extraction UI; the session only seeds the singletons (top-level,
@@ -198,9 +199,13 @@ class HITLSessionService:
                 created_by=user_id,
                 status=ExtractionInstanceStatus.PENDING.value,
             )
-            self.db.add(inst)
+            pending_instances.append((et.id, inst))
+
+        if pending_instances:
+            self.db.add_all([inst for _, inst in pending_instances])
             await self.db.flush()
-            by_entity[et.id] = inst.id
+            for entity_type_id, instance in pending_instances:
+                by_entity[entity_type_id] = instance.id
 
         return by_entity
 

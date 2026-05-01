@@ -16,11 +16,11 @@
 
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {supabase} from '@/integrations/supabase/client';
+import {createManualModelHierarchy} from '@/integrations/api';
 import {useAuth} from '@/contexts/AuthContext';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 import {extractionInstanceService} from '@/services/extractionInstanceService';
-import {ExtractionValueService} from '@/services/extractionValueService';
 import type {Model} from '@/components/extraction/hierarchy/ModelSelector';
 
 // =================== INTERFACES ===================
@@ -35,7 +35,12 @@ interface UseModelManagementProps {
 
 interface CreateModelResult {
   model: Model;
-  childInstances: any[];
+  childInstances: Array<{
+    id: string;
+    entityTypeId: string;
+    parentInstanceId: string;
+    label: string;
+  }>;
 }
 
 interface UseModelManagementReturn {
@@ -80,11 +85,11 @@ export function useModelManagement({
     // Declared BEFORE loadModels because loadModels depends on it
   const getModelProgress = useCallback(async (instanceId: string): Promise<Model['progress']> => {
     try {
-        // Use optimized SQL function (1 query)
+      // Use optimized SQL function and filter target model.
       const { data, error } = await supabase
         .rpc('calculate_model_progress', {
+          p_project_id: projectId,
           p_article_id: articleId,
-          p_model_id: instanceId
         });
 
       if (error) {
@@ -96,18 +101,21 @@ export function useModelManagement({
         return { completed: 0, total: 0, percentage: 0 };
       }
 
-      const result = data[0];
+      const result = data.find((row) => row.extraction_instance_id === instanceId);
+      if (!result) {
+        return { completed: 0, total: 0, percentage: 0 };
+      }
       return {
-        completed: result.completed_fields || 0,
+        completed: result.filled_fields || 0,
         total: result.total_fields || 0,
-        percentage: result.percentage || 0
+        percentage: Number(result.completion_percentage || 0)
       };
 
     } catch (err) {
         console.error('Error calculating model progress:', err);
       return { completed: 0, total: 0, percentage: 0 };
     }
-  }, [articleId]);
+  }, [articleId, projectId]);
 
     // Load existing models
   const loadModels = useCallback(async () => {
@@ -183,40 +191,6 @@ export function useModelManagement({
     // Ensures ref is available when useEffect tries to use it
   loadModelsRef.current = loadModels;
 
-    // Function to generate unique name
-    const _generateUniqueModelName = useCallback(async (
-    baseName: string,
-    maxAttempts: number = 10
-  ): Promise<string> => {
-    let uniqueName = baseName;
-    let attempt = 1;
-
-    while (attempt <= maxAttempts) {
-        // Check if name already exists in DB
-      const { data: existingInstance, error: checkError } = await supabase
-        .from('extraction_instances')
-        .select('id')
-        .eq('article_id', articleId)
-        .eq('entity_type_id', modelParentEntityTypeId!)
-        .eq('label', uniqueName)
-        .limit(1);
-
-      if (checkError) throw checkError;
-
-        // If not exists, return the name
-      if (!existingInstance || existingInstance.length === 0) {
-        return uniqueName;
-      }
-
-        // If exists, try with numeric suffix
-      attempt++;
-      uniqueName = `${baseName} (${attempt})`;
-    }
-
-    // Se esgotou as tentativas, usar timestamp
-    return `${baseName} (${Date.now()})`;
-  }, [articleId, modelParentEntityTypeId]);
-
     // Create new model (using service - simplified)
   const createModel = useCallback(async (
     modelName: string,
@@ -229,93 +203,38 @@ export function useModelManagement({
 
     try {
         console.warn('🆕 Creating new model:', modelName);
-
-        // 1. Fetch parent entity type
-      const { data: parentEntityType, error: etError } = await supabase
-        .from('extraction_entity_types')
-        .select('*')
-        .eq('id', modelParentEntityTypeId)
-        .single();
-
-      if (etError || !parentEntityType) {
-          throw new Error(t('extraction', 'modelEntityTypeNotFound'));
-      }
-
-        // 2. Fetch child entity types
-      const { data: childEntityTypes, error: childTypesError } = await supabase
-        .from('extraction_entity_types')
-        .select('*')
-        .eq('parent_entity_type_id', modelParentEntityTypeId)
-        .order('sort_order');
-
-      if (childTypesError) throw childTypesError;
-
-        // 3. Delegate hierarchy creation to service
-      const result = await extractionInstanceService.createHierarchy({
-        projectId,
-        articleId,
-        templateId,
-        parentEntityType,
-        childEntityTypes: childEntityTypes || [],
-        label: modelName.trim(),
-        metadata: {},
-        userId: user.id
+      const result = await createManualModelHierarchy({
+        project_id: projectId,
+        article_id: articleId,
+        template_id: templateId,
+        model_name: modelName.trim(),
+        modelling_method: modellingMethod || null,
       });
 
-      // 4. If modellingMethod was provided, persist it as a ReviewerDecision
-      // on the active run. If no run exists yet (extraction hasn't run),
-      // skip silently — the user can fill it via the form afterwards.
-      if (modellingMethod) {
-        const { data: modellingMethodField } = await supabase
-          .from('extraction_fields')
-          .select('id')
-          .eq('entity_type_id', modelParentEntityTypeId)
-          .eq('name', 'modelling_method')
-          .single();
-
-        if (modellingMethodField) {
-          const run = await ExtractionValueService.findActiveRun(articleId, templateId);
-          if (run) {
-            try {
-              await ExtractionValueService.saveValue(
-                run.id,
-                result.parent.id,
-                modellingMethodField.id,
-                modellingMethod,
-              );
-            } catch (writeErr) {
-              console.warn(
-                'Could not persist modelling_method as ReviewerDecision; user can set it via the form.',
-                writeErr,
-              );
-            }
-          } else {
-            console.warn(
-              'No active extraction run; modellingMethod will be set via the form once extraction runs.',
-            );
-          }
-        }
-      }
-
-        // 5. Create Model object
+      // 4. Create Model object
       const newModel: Model = {
-        instanceId: result.parent.id,
-        modelName: result.parent.label,
+        instanceId: result.model_id,
+        modelName: result.model_label,
         progress: { completed: 0, total: 0, percentage: 0 }
       };
 
-        // 6. Update state
+      // 5. Update state
       setModels(prev => [...prev, newModel]);
       setActiveModelId(newModel.instanceId);
 
-        toast.success(t('extraction', 'modelCreatedSuccess').replace('{{label}}', result.parent.label));
+      toast.success(t('extraction', 'modelCreatedSuccess').replace('{{label}}', result.model_label));
 
-        console.warn(`✅ Hierarquia criada: 1 parent + ${result.children.length} children`);
+      console.warn(`✅ Hierarchy created: 1 parent + ${result.child_instances.length} children`);
 
-        // Return model AND created child instances
+      // Return model and created child instances.
       return {
         model: newModel,
-        childInstances: result.children
+        childInstances: result.child_instances.map((child) => ({
+          id: child.id,
+          entityTypeId: child.entity_type_id,
+          parentInstanceId: child.parent_instance_id,
+          label: child.label,
+        })),
       };
 
     } catch (err: any) {
