@@ -1,13 +1,23 @@
+# Render Blueprint (Infrastructure as Code).
+# After pushing: Dashboard → Blueprints → connect this repo; use Render's flow to
+# attach or migrate your existing web service so settings sync from this file.
+# https://docs.render.com/docs/infrastructure-as-code
+
 services:
   - type: web
-    name: review-hub-backend
+    # Must match the Render service name when adopting Blueprint on an existing instance.
+    name: prumo
     runtime: python
     rootDir: backend
+    branch: main
+    region: virginia
+    plan: free
     buildCommand: pip install -e .
     # Gunicorn default worker timeout is 30s; template clone + DB round-trips to
     # Supabase often exceed that in production. Keep this >= frontend clone timeout.
     startCommand: alembic upgrade head && gunicorn -k uvicorn.workers.UvicornWorker -w 1 -t 120 -b 0.0.0.0:$PORT app.main:app
-    envVars: &backend_env
+    healthCheckPath: /health
+    envVars:
       - key: DATABASE_URL
         sync: false
       - key: DIRECT_DATABASE_URL
@@ -20,8 +30,9 @@ services:
         sync: false
       - key: OPENAI_API_KEY
         sync: false
+      # Set in the dashboard (do not rotate via generateValue when migrating an existing service).
       - key: ENCRYPTION_KEY
-        generateValue: true
+        sync: false
       - key: DEBUG
         value: false
       - key: PYTHON_VERSION
