@@ -16,6 +16,10 @@ import type {
 
 import type { QADomain, QATemplate } from "./useQATemplate";
 
+type EntityTypeWithFields = ExtractionEntityType & {
+  extraction_fields?: ExtractionField[];
+};
+
 interface UseProjectQATemplateProps {
   projectTemplateId: string | undefined;
   enabled?: boolean;
@@ -60,31 +64,18 @@ export function useProjectQATemplate({
 
         const etRes = await supabase
           .from("extraction_entity_types")
-          .select("*")
+          .select("*, extraction_fields(*)")
           .eq("project_template_id", projectTemplateId)
           .order("sort_order", { ascending: true });
         if (etRes.error) throw etRes.error;
 
-        const entityIds = (etRes.data ?? []).map((e) => e.id);
-        const fieldsRes = entityIds.length
-          ? await supabase
-              .from("extraction_fields")
-              .select("*")
-              .in("entity_type_id", entityIds)
-              .order("sort_order", { ascending: true })
-          : { data: [], error: null };
-        if (fieldsRes.error) throw fieldsRes.error;
-
-        const fieldsByEntity = new Map<string, ExtractionField[]>();
-        for (const f of fieldsRes.data ?? []) {
-          const list = fieldsByEntity.get(f.entity_type_id) ?? [];
-          list.push(f as ExtractionField);
-          fieldsByEntity.set(f.entity_type_id, list);
-        }
-
-        const grouped: QADomain[] = (etRes.data ?? []).map((et) => ({
+        const entities = (etRes.data as EntityTypeWithFields[] | null) ?? [];
+        const grouped: QADomain[] = entities.map((et) => ({
+          // Keep deterministic field order for stable rendering.
+          // Related fields are loaded in the same query.
           entityType: et as ExtractionEntityType,
-          fields: fieldsByEntity.get(et.id) ?? [],
+          fields: ([...(et.extraction_fields ?? [])]
+            .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))) as ExtractionField[],
         }));
 
         if (!cancelled) {

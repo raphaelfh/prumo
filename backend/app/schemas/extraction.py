@@ -147,6 +147,40 @@ class BatchSectionResult(BaseModel):
 # =================== MODEL EXTRACTION SCHEMAS ===================
 
 
+class CreateModelHierarchyRequest(BaseModel):
+    """Request to create one prediction-model hierarchy for an article."""
+
+    project_id: UUID = Field(..., alias="projectId")
+    article_id: UUID = Field(..., alias="articleId")
+    template_id: UUID = Field(..., alias="templateId")
+    model_name: str = Field(..., alias="modelName")
+    modelling_method: str | None = Field(default=None, alias="modellingMethod")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ModelHierarchyChildResponse(BaseModel):
+    """Child instance created under the parent model instance."""
+
+    id: UUID
+    entity_type_id: UUID = Field(..., alias="entityTypeId")
+    parent_instance_id: UUID = Field(..., alias="parentInstanceId")
+    label: str
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class CreateModelHierarchyResponse(BaseModel):
+    """Response for one-shot hierarchy creation."""
+
+    model_id: UUID = Field(..., alias="modelId")
+    model_label: str = Field(..., alias="modelLabel")
+    child_instances: list[ModelHierarchyChildResponse] = Field(alias="childInstances")
+    proposal_run_id: UUID | None = Field(default=None, alias="proposalRunId")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class ModelExtractionRequest(BaseModel):
     """Request for extraction de modelos de predicao."""
 

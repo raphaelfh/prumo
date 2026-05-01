@@ -88,26 +88,31 @@ export default function QualityAssessmentFullScreen() {
     }
     setResolvedTemplate(null);
     void (async () => {
-      const { data: projectRow } = await supabase
-        .from("project_extraction_templates")
-        .select("id")
-        .eq("id", templateId)
-        .eq("kind", "quality_assessment")
-        .maybeSingle();
+      const [projectRes, globalRes] = await Promise.all([
+        supabase
+          .from("project_extraction_templates")
+          .select("id")
+          .eq("id", templateId)
+          .eq("kind", "quality_assessment")
+          .maybeSingle(),
+        supabase
+          .from("extraction_templates_global")
+          .select("id")
+          .eq("id", templateId)
+          .eq("kind", "quality_assessment")
+          .maybeSingle(),
+      ]);
       if (cancelled) return;
-      if (projectRow?.id) {
-        setResolvedTemplate({ kind: "project", id: projectRow.id });
+      if (projectRes.error && globalRes.error) {
+        setResolvedTemplate({ kind: "missing" });
         return;
       }
-      const { data: globalRow } = await supabase
-        .from("extraction_templates_global")
-        .select("id")
-        .eq("id", templateId)
-        .eq("kind", "quality_assessment")
-        .maybeSingle();
-      if (cancelled) return;
-      if (globalRow?.id) {
-        setResolvedTemplate({ kind: "global", id: globalRow.id });
+      if (projectRes.data?.id) {
+        setResolvedTemplate({ kind: "project", id: projectRes.data.id });
+        return;
+      }
+      if (globalRes.data?.id) {
+        setResolvedTemplate({ kind: "global", id: globalRes.data.id });
       } else {
         setResolvedTemplate({ kind: "missing" });
       }

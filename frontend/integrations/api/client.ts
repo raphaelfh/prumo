@@ -264,4 +264,35 @@ export async function modelExtractionClient<T>(
   });
 }
 
+export interface ManualModelHierarchyRequest {
+  project_id: string;
+  article_id: string;
+  template_id: string;
+  model_name: string;
+  modelling_method?: string | null;
+}
+
+export interface ManualModelHierarchyChild {
+  id: string;
+  entity_type_id: string;
+  parent_instance_id: string;
+  label: string;
+}
+
+export interface ManualModelHierarchyResponse {
+  model_id: string;
+  model_label: string;
+  child_instances: ManualModelHierarchyChild[];
+  proposal_run_id?: string | null;
+}
+
+export async function createManualModelHierarchy(
+  body: ManualModelHierarchyRequest
+): Promise<ManualModelHierarchyResponse> {
+  return apiClient<ManualModelHierarchyResponse>("/api/v1/extraction/models/manual", {
+    method: "POST",
+    body,
+  });
+}
+
 

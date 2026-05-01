@@ -198,3 +198,64 @@ class TestModelExtractionEndpoints:
             assert data.get("trace_id") == trace_id
             assert response.headers.get("X-Trace-Id") == trace_id
             assert mock_service_class.call_args.kwargs["trace_id"] == trace_id
+
+
+class TestManualModelHierarchyEndpoints:
+    """Integration tests for one-shot manual model hierarchy creation."""
+
+    @pytest.mark.asyncio
+    async def test_manual_model_hierarchy_validation(
+        self,
+        client: AsyncClient,
+    ) -> None:
+        response = await client.post(
+            "/api/v1/extraction/models/manual",
+            json={},
+        )
+        assert response.status_code in (400, 422)
+
+    @pytest.mark.asyncio
+    async def test_manual_model_hierarchy_success(
+        self,
+        client: AsyncClient,
+    ) -> None:
+        from app.services.model_hierarchy_service import (
+            ModelHierarchyChild,
+            ModelHierarchyResult,
+        )
+
+        with patch("app.api.v1.endpoints.model_extraction.ModelHierarchyService") as svc_cls:
+            svc = svc_cls.return_value
+            svc.create_model_hierarchy = AsyncMock(
+                return_value=ModelHierarchyResult(
+                    model_id=uuid4(),
+                    model_label="Cox Model",
+                    child_instances=[
+                        ModelHierarchyChild(
+                            id=uuid4(),
+                            entity_type_id=uuid4(),
+                            parent_instance_id=uuid4(),
+                            label="Cox Model - Population 1",
+                        )
+                    ],
+                    proposal_run_id=None,
+                )
+            )
+
+            response = await client.post(
+                "/api/v1/extraction/models/manual",
+                json={
+                    "projectId": str(uuid4()),
+                    "articleId": str(uuid4()),
+                    "templateId": str(uuid4()),
+                    "modelName": "Cox Model",
+                    "modellingMethod": "logistic regression",
+                },
+            )
+
+            assert response.status_code == 201
+            payload = response.json()
+            assert payload["ok"] is True
+            assert payload["data"]["modelLabel"] == "Cox Model"
+            assert len(payload["data"]["childInstances"]) == 1
+            svc.create_model_hierarchy.assert_awaited_once()
