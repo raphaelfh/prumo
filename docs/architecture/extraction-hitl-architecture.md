@@ -139,6 +139,8 @@ The extraction **Import template** dialog reads `extraction_templates_global` th
 
 Configuration flows for QA tools may call the same clone endpoint before sessions; session lifecycle for QA vs extraction is in §5.
 
+**Production timeouts** — The SPA (e.g. on Vercel) calls the API host directly (`VITE_API_URL`). Slow clones are usually capped by **Gunicorn’s worker timeout** (defaults to **30s** if not raised): the master kills the worker while SQLAlchemy is still working, and the browser sees a timeout or connection reset. Set Gunicorn `-t` to at least the clone request budget (this repo uses **120s** in `render.yaml`); the import client uses the same **120s** `fetch` budget.
+
 ## 5. Quality-Assessment specifics
 
 QA reuses every primitive — there are no QA-specific tables. PROBAST and

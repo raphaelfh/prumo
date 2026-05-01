@@ -4,7 +4,9 @@ services:
     runtime: python
     rootDir: backend
     buildCommand: pip install -e .
-    startCommand: alembic upgrade head && gunicorn -k uvicorn.workers.UvicornWorker -w 1 -b 0.0.0.0:$PORT app.main:app
+    # Gunicorn default worker timeout is 30s; template clone + DB round-trips to
+    # Supabase often exceed that in production. Keep this >= frontend clone timeout.
+    startCommand: alembic upgrade head && gunicorn -k uvicorn.workers.UvicornWorker -w 1 -t 120 -b 0.0.0.0:$PORT app.main:app
     envVars: &backend_env
       - key: DATABASE_URL
         sync: false

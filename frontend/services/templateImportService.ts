@@ -68,6 +68,9 @@ export async function importGlobalTemplate(
       {
         method: 'POST',
         body: { global_template_id: globalTemplateId, kind: 'extraction' },
+        // Clone can run long over WAN + pooler (heal path, many flushes). Align
+        // with Gunicorn `-t` on Render (see render.yaml).
+        timeout: 120_000,
       },
     );
 
