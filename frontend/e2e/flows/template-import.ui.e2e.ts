@@ -6,6 +6,10 @@ import { loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
 /** Fixed catalogue id for CHARMS (matches `app/seed.py`). */
 const CHARMS_GLOBAL_TEMPLATE_ID = "000c0000-0000-0000-0000-000000000001";
 
+/**
+ * Requires E2E_USER_* and E2E_PROJECT_ID. The user must be a **manager** on
+ * that project so the Configuration tab and import controls are available.
+ */
 test.describe("Extraction template import (global → project)", () => {
   test("imports CHARMS from configuration and shows success", async ({ page }) => {
     test.setTimeout(120_000);
