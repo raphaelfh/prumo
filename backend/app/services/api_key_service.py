@@ -209,26 +209,6 @@ class APIKeyService(LoggerMixin):
 
         return None
 
-    async def get_decrypted_key(
-        self,
-        key_id: UUID | str,
-    ) -> str | None:
-        """
-        Get decrypted API key by ID.
-
-        Args:
-            key_id: API key ID.
-
-        Returns:
-            Decrypted API key or None.
-        """
-        key = await self._repo.get_by_id_and_user(key_id, self.user_id)
-
-        if key and key.encrypted_api_key:
-            return self._decrypt(key.encrypted_api_key)
-
-        return None
-
     def _get_global_key(self, provider: str) -> str | None:
         """
         Return provider global API key from settings.
@@ -360,13 +340,15 @@ class APIKeyService(LoggerMixin):
         """
         try:
             if provider == "openai":
-                return await self._validate_openai(api_key)
+                return await self._validate_bearer_models_get(
+                    "https://api.openai.com/v1/models", api_key
+                )
             elif provider == "anthropic":
                 return await self._validate_anthropic(api_key)
             elif provider == "gemini":
                 return await self._validate_gemini(api_key)
             elif provider == "grok":
-                return await self._validate_grok(api_key)
+                return await self._validate_bearer_models_get("https://api.x.ai/v1/models", api_key)
             else:
                 return {"status": "pending", "message": "Provider validation is not implemented"}
         except Exception as e:
@@ -377,11 +359,11 @@ class APIKeyService(LoggerMixin):
             )
             return {"status": "pending", "message": f"Validation error: {str(e)}"}
 
-    async def _validate_openai(self, api_key: str) -> dict[str, Any]:
-        """Validate OpenAI API key by listing models."""
+    async def _validate_bearer_models_get(self, url: str, api_key: str) -> dict[str, Any]:
+        """Validate an API key via GET /models with Bearer authorization."""
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                "https://api.openai.com/v1/models",
+                url,
                 headers={"Authorization": f"Bearer {api_key}"},
                 timeout=10.0,
             )
@@ -389,7 +371,7 @@ class APIKeyService(LoggerMixin):
             if response.status_code == 200:
                 return {"status": "valid", "message": "Valid API key"}
             elif response.status_code == 401:
-                return {"status": "invalid", "message": "Invalid or expired API key"}
+                return {"status": "invalid", "message": "Invalid API key"}
             elif response.status_code == 429:
                 return {"status": "valid", "message": "Valid API key (rate limited)"}
             else:
@@ -436,24 +418,6 @@ class APIKeyService(LoggerMixin):
             if response.status_code == 200:
                 return {"status": "valid", "message": "Valid API key"}
             elif response.status_code in (400, 401, 403):
-                return {"status": "invalid", "message": "Invalid API key"}
-            elif response.status_code == 429:
-                return {"status": "valid", "message": "Valid API key (rate limited)"}
-            else:
-                return {"status": "invalid", "message": f"Error: {response.status_code}"}
-
-    async def _validate_grok(self, api_key: str) -> dict[str, Any]:
-        """Validate Grok (xAI) API key."""
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                "https://api.x.ai/v1/models",
-                headers={"Authorization": f"Bearer {api_key}"},
-                timeout=10.0,
-            )
-
-            if response.status_code == 200:
-                return {"status": "valid", "message": "Valid API key"}
-            elif response.status_code == 401:
                 return {"status": "invalid", "message": "Invalid API key"}
             elif response.status_code == 429:
                 return {"status": "valid", "message": "Valid API key (rate limited)"}
