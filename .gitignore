@@ -50,6 +50,9 @@ review-hub.code-workspace
 *.sw?
 .cursor/
 
+# Local Superpowers plugin runtime state (brainstorm sessions, etc.)
+.superpowers/
+
 # Python virtual environments
 .venv
 venv/
