@@ -6,21 +6,94 @@ Identifica and cria instances de modelos with its hierarquias completas.
 """
 
 from time import perf_counter
-
-from fastapi import APIRouter, HTTPException, Request, status
+from uuid import UUID
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
 
+from app.api.deps.security import get_current_user_sub
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
 from app.core.factories import create_storage_adapter
 from app.core.logging import get_logger
 from app.schemas.common import ApiResponse
-from app.schemas.extraction import ModelExtractionRequest, ModelExtractionResult
+from app.schemas.extraction import (
+    CreateModelHierarchyRequest,
+    CreateModelHierarchyResponse,
+    ModelExtractionRequest,
+    ModelExtractionResult,
+    ModelHierarchyChildResponse,
+)
 from app.services.api_key_service import APIKeyService
+from app.services.model_hierarchy_service import ModelHierarchyService
 from app.services.model_extraction_service import ModelExtractionService
 from app.utils.rate_limiter import limiter
 
 router = APIRouter()
 logger = get_logger(__name__)
+
+
+@router.post(
+    "/manual",
+    response_model=ApiResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create one prediction model hierarchy",
+    description="Creates the parent prediction model and required singleton children in one transaction.",
+)
+@limiter.limit("60/minute")
+async def create_manual_model_hierarchy(
+    request: Request,  # noqa: ARG001
+    payload: CreateModelHierarchyRequest,
+    db: DbSession,
+    current_user_sub: UUID = Depends(get_current_user_sub),
+) -> ApiResponse:
+    trace_id = getattr(request.state, "trace_id", None) or "missing-trace-id"
+    service = ModelHierarchyService(db)
+
+    try:
+        result = await service.create_model_hierarchy(
+            project_id=payload.project_id,
+            article_id=payload.article_id,
+            template_id=payload.template_id,
+            user_id=current_user_sub,
+            model_name=payload.model_name,
+            modelling_method=payload.modelling_method,
+        )
+        await db.commit()
+        return ApiResponse.success(
+            CreateModelHierarchyResponse(
+                model_id=result.model_id,
+                model_label=result.model_label,
+                child_instances=[
+                    ModelHierarchyChildResponse(
+                        id=child.id,
+                        entity_type_id=child.entity_type_id,
+                        parent_instance_id=child.parent_instance_id,
+                        label=child.label,
+                    )
+                    for child in result.child_instances
+                ],
+                proposal_run_id=result.proposal_run_id,
+            ),
+            trace_id=trace_id,
+        )
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        await db.rollback()
+        logger.error(
+            "manual_model_hierarchy_error",
+            trace_id=trace_id,
+            user_id=str(current_user_sub),
+            project_id=str(payload.project_id),
+            article_id=str(payload.article_id),
+            template_id=str(payload.template_id),
+            error=str(exc),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create model hierarchy",
+        ) from exc
 
 
 @router.post(
