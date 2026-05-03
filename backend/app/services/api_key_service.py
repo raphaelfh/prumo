@@ -3,9 +3,15 @@ API Key Service.
 
 Manages provider API keys encrypted with Fernet.
 Follows the same encryption pattern used by ZoteroService.
+
+Provider key validation is registry-driven: each entry in
+``PROVIDER_VALIDATORS`` describes how to call a provider's API to test
+a key. Adding a provider = appending one entry, no new method.
 """
 
 import base64
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
@@ -18,6 +24,129 @@ from app.core.logging import LoggerMixin
 from app.core.security import derive_encryption_key
 from app.models.user_api_key import SUPPORTED_PROVIDERS, UserAPIKey
 from app.repositories.user_api_key_repository import UserAPIKeyRepository
+
+# =============================================================================
+# Provider validation registry
+# =============================================================================
+#
+# Each provider declares how to test its keys via a small dataclass.
+# `_call_provider_validator` runs the call and classifies the response.
+#
+# Adding a provider:
+#   1. Add an entry to PROVIDER_VALIDATORS keyed by the provider name
+#      (the same name stored in user_api_keys.provider).
+#   2. If the provider needs custom headers or a JSON body, supply
+#      `headers_factory` / `json_body`.
+#   3. If non-401 status codes also signal "invalid", list them in
+#      `invalid_status_codes`.
+#   4. If the API key goes in the URL (e.g. Gemini), pass a callable
+#      for `url` instead of a string.
+# =============================================================================
+
+
+def _bearer_auth(api_key: str) -> dict[str, str]:
+    """Standard `Authorization: Bearer <key>` header."""
+    return {"Authorization": f"Bearer {api_key}"}
+
+
+def _anthropic_headers(api_key: str) -> dict[str, str]:
+    """Anthropic uses `x-api-key` plus a required version header."""
+    return {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
+    }
+
+
+def _gemini_url(api_key: str) -> str:
+    """Gemini accepts the key as a query-string parameter."""
+    return f"https://generativelanguage.googleapis.com/v1/models?key={api_key}"
+
+
+@dataclass(frozen=True)
+class ProviderValidator:
+    """Declarative description of how to validate a provider's API key.
+
+    Attributes:
+        url: Either a static URL string, or a callable that builds the URL
+            from the API key (used when the key lives in the query string).
+        method: HTTP verb. Defaults to GET.
+        headers_factory: Callable that builds request headers from the key.
+            None means no custom headers.
+        json_body: JSON body for POST requests. None for GET.
+        invalid_status_codes: HTTP status codes that mean "the key is bad"
+            (rather than "the API is unreachable" or rate-limited). 401 is
+            assumed for every provider; list any extras here.
+    """
+
+    url: str | Callable[[str], str]
+    method: str = "GET"
+    headers_factory: Callable[[str], dict[str, str]] | None = None
+    json_body: dict[str, Any] | None = None
+    invalid_status_codes: tuple[int, ...] = field(default_factory=lambda: (401,))
+
+
+PROVIDER_VALIDATORS: dict[str, ProviderValidator] = {
+    "openai": ProviderValidator(
+        url="https://api.openai.com/v1/models",
+        headers_factory=_bearer_auth,
+    ),
+    "anthropic": ProviderValidator(
+        url="https://api.anthropic.com/v1/messages",
+        method="POST",
+        headers_factory=_anthropic_headers,
+        json_body={
+            "model": "claude-3-haiku-20240307",
+            "max_tokens": 1,
+            "messages": [{"role": "user", "content": "hi"}],
+        },
+        invalid_status_codes=(401, 403),
+    ),
+    "gemini": ProviderValidator(
+        url=_gemini_url,
+        invalid_status_codes=(400, 401, 403),
+    ),
+    "grok": ProviderValidator(
+        url="https://api.x.ai/v1/models",
+        headers_factory=_bearer_auth,
+    ),
+}
+
+
+async def _call_provider_validator(
+    config: ProviderValidator,
+    api_key: str,
+    *,
+    timeout_seconds: float = 10.0,
+) -> dict[str, Any]:
+    """Run the HTTP call described by `config` and classify the response.
+
+    Returns a dict with keys ``status`` (``valid`` | ``invalid`` | ``pending``)
+    and ``message``. The classification is uniform across providers:
+
+    - 200 → valid
+    - 429 → valid (rate-limited but auth worked)
+    - any code in ``config.invalid_status_codes`` → invalid
+    - anything else → invalid (with the status code in the message)
+    """
+    url = config.url(api_key) if callable(config.url) else config.url
+    headers = config.headers_factory(api_key) if config.headers_factory else None
+
+    async with httpx.AsyncClient() as client:
+        if config.method == "POST":
+            response = await client.post(
+                url, headers=headers, json=config.json_body, timeout=timeout_seconds
+            )
+        else:
+            response = await client.get(url, headers=headers, timeout=timeout_seconds)
+
+    if response.status_code == 200:
+        return {"status": "valid", "message": "Valid API key"}
+    if response.status_code == 429:
+        return {"status": "valid", "message": "Valid API key (rate limited)"}
+    if response.status_code in config.invalid_status_codes:
+        return {"status": "invalid", "message": "Invalid or expired API key"}
+    return {"status": "invalid", "message": f"Error: {response.status_code}"}
 
 
 class APIKeyService(LoggerMixin):
@@ -209,26 +338,6 @@ class APIKeyService(LoggerMixin):
 
         return None
 
-    async def get_decrypted_key(
-        self,
-        key_id: UUID | str,
-    ) -> str | None:
-        """
-        Get decrypted API key by ID.
-
-        Args:
-            key_id: API key ID.
-
-        Returns:
-            Decrypted API key or None.
-        """
-        key = await self._repo.get_by_id_and_user(key_id, self.user_id)
-
-        if key and key.encrypted_api_key:
-            return self._decrypt(key.encrypted_api_key)
-
-        return None
-
     def _get_global_key(self, provider: str) -> str | None:
         """
         Return provider global API key from settings.
@@ -348,27 +457,18 @@ class APIKeyService(LoggerMixin):
         provider: str,
         api_key: str,
     ) -> dict[str, Any]:
-        """
-        Validate API key using a lightweight provider API call.
+        """Validate an API key by dispatching through ``PROVIDER_VALIDATORS``.
 
-        Args:
-            provider: Provider.
-            api_key: API key.
-
-        Returns:
-            Dict with status ('valid', 'invalid', 'pending') and message.
+        Returns a ``{"status": "valid" | "invalid" | "pending", "message": ...}``
+        dict. ``pending`` covers unsupported providers and unexpected errors;
+        ``valid``/``invalid`` only come from a successful HTTP exchange.
         """
+        config = PROVIDER_VALIDATORS.get(provider)
+        if config is None:
+            return {"status": "pending", "message": "Provider validation is not implemented"}
+
         try:
-            if provider == "openai":
-                return await self._validate_openai(api_key)
-            elif provider == "anthropic":
-                return await self._validate_anthropic(api_key)
-            elif provider == "gemini":
-                return await self._validate_gemini(api_key)
-            elif provider == "grok":
-                return await self._validate_grok(api_key)
-            else:
-                return {"status": "pending", "message": "Provider validation is not implemented"}
+            return await _call_provider_validator(config, api_key)
         except Exception as e:
             self.logger.error(
                 "api_key_validation_error",
@@ -376,86 +476,3 @@ class APIKeyService(LoggerMixin):
                 error=str(e),
             )
             return {"status": "pending", "message": f"Validation error: {str(e)}"}
-
-    async def _validate_openai(self, api_key: str) -> dict[str, Any]:
-        """Validate OpenAI API key by listing models."""
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                "https://api.openai.com/v1/models",
-                headers={"Authorization": f"Bearer {api_key}"},
-                timeout=10.0,
-            )
-
-            if response.status_code == 200:
-                return {"status": "valid", "message": "Valid API key"}
-            elif response.status_code == 401:
-                return {"status": "invalid", "message": "Invalid or expired API key"}
-            elif response.status_code == 429:
-                return {"status": "valid", "message": "Valid API key (rate limited)"}
-            else:
-                return {"status": "invalid", "message": f"Error: {response.status_code}"}
-
-    async def _validate_anthropic(self, api_key: str) -> dict[str, Any]:
-        """Validate Anthropic API key."""
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": api_key,
-                    "anthropic-version": "2023-06-01",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": "claude-3-haiku-20240307",
-                    "max_tokens": 1,
-                    "messages": [{"role": "user", "content": "hi"}],
-                },
-                timeout=10.0,
-            )
-
-            if response.status_code == 200:
-                return {"status": "valid", "message": "Valid API key"}
-            elif response.status_code in (401, 403):
-                return {"status": "invalid", "message": "Invalid API key"}
-            elif response.status_code == 429:
-                return {"status": "valid", "message": "Valid API key (rate limited)"}
-            else:
-                error_data = response.json() if response.text else {}
-                if "authentication" in str(error_data).lower():
-                    return {"status": "invalid", "message": "Invalid API key"}
-                return {"status": "valid", "message": "API key is likely valid"}
-
-    async def _validate_gemini(self, api_key: str) -> dict[str, Any]:
-        """Validate Google Gemini API key."""
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"https://generativelanguage.googleapis.com/v1/models?key={api_key}",
-                timeout=10.0,
-            )
-
-            if response.status_code == 200:
-                return {"status": "valid", "message": "Valid API key"}
-            elif response.status_code in (400, 401, 403):
-                return {"status": "invalid", "message": "Invalid API key"}
-            elif response.status_code == 429:
-                return {"status": "valid", "message": "Valid API key (rate limited)"}
-            else:
-                return {"status": "invalid", "message": f"Error: {response.status_code}"}
-
-    async def _validate_grok(self, api_key: str) -> dict[str, Any]:
-        """Validate Grok (xAI) API key."""
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                "https://api.x.ai/v1/models",
-                headers={"Authorization": f"Bearer {api_key}"},
-                timeout=10.0,
-            )
-
-            if response.status_code == 200:
-                return {"status": "valid", "message": "Valid API key"}
-            elif response.status_code == 401:
-                return {"status": "invalid", "message": "Invalid API key"}
-            elif response.status_code == 429:
-                return {"status": "valid", "message": "Valid API key (rate limited)"}
-            else:
-                return {"status": "invalid", "message": f"Error: {response.status_code}"}
