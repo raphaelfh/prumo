@@ -154,9 +154,7 @@ async def test_clone_extraction_charms_response_matches_global_catalog_counts(
         pytest.skip("Need an article + project")
     article_id, project_id = article
 
-    await _wipe_charms_clone(
-        db_session, project_id=project_id, article_id=article_id
-    )
+    await _wipe_charms_clone(db_session, project_id=project_id, article_id=article_id)
 
     url = f"/api/v1/projects/{project_id}/templates/clone"
     payload = {"global_template_id": str(CHARMS_GLOBAL_ID), "kind": "extraction"}
@@ -194,9 +192,7 @@ async def test_clone_extraction_charms_is_idempotent(
         pytest.skip("Need an article + project")
     article_id, project_id = article
 
-    await _wipe_charms_clone(
-        db_session, project_id=project_id, article_id=article_id
-    )
+    await _wipe_charms_clone(db_session, project_id=project_id, article_id=article_id)
 
     url = f"/api/v1/projects/{project_id}/templates/clone"
     payload = {"global_template_id": str(CHARMS_GLOBAL_ID), "kind": "extraction"}
