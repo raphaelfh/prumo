@@ -41,7 +41,7 @@ This is **Phase 0 of 7**. Each subsequent phase gets its own plan, written when 
   - Run a single test: `cd backend && pytest tests/integration/test_screening_repositories.py::TestX::test_y -xvs`
 - **Migrations:**
   - Apply Alembic: `cd backend && alembic upgrade head`
-  - Apply Supabase: `make supabase-up` (or `supabase db push` if running outside Make)
+  - Apply Supabase: `make supabase-migrate` (the actual Make target). To start the local Supabase database first: `make supabase-start`.
   - Roll back one Alembic step: `cd backend && alembic downgrade -1`
 - **Repository pattern:** Use `flush()` not `commit()`. Commit happens in services via `UnitOfWork` or in tests directly.
 - **Conventional Commits, frequent.** Commit after every passing test or coherent unit of work.
@@ -155,14 +155,14 @@ Note: `screening_run_kind` includes the AI/AL kinds even though Phase 0 won't us
 - [ ] **Step 2: Apply locally**
 
 ```bash
-make supabase-up
+make supabase-migrate
 ```
 
 Expected: migration applies without error. Verify in psql:
 ```bash
 psql "$DATABASE_URL" -c "\dT screening_*"
 ```
-Expected: shows 8 enum types (the 7 new + the existing `screening_*` if any — there should be none yet so 8 if you count the prefix matching nothing else).
+Expected: shows the 7 new enum types (`screening_phase`, `screening_decision`, `screening_status`, `screening_consensus_rule`, `screening_outcome_source`, `screening_arbitration_mode`, `screening_run_kind`) plus `screening_run_status`. So 8 rows total (7 enums starting with `screening_` + the run_status one).
 
 - [ ] **Step 3: Commit**
 
