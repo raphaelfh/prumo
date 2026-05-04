@@ -4,7 +4,6 @@ PDF Processor Service.
 Processamento avancado de files PDF:
 - Extracao de texto por pagina
 - Chunking inteligente
-- Deteccao de sections
 - Cache de texto extraido
 """
 
@@ -12,7 +11,6 @@ import hashlib
 import io
 import re
 from dataclasses import dataclass
-from typing import Any
 
 from pypdf import PdfReader
 
@@ -59,27 +57,6 @@ class PDFProcessor(LoggerMixin):
 
     Extrai texto, metadata and faz chunking inteligente.
     """
-
-    # Padroes for deteccao de sections
-    SECTION_PATTERNS = [
-        r"^(?:abstract|summary)\s*$",
-        r"^(?:\d+\.?\s*)?introduction",
-        r"^(?:\d+\.?\s*)?background",
-        r"^(?:\d+\.?\s*)?methods?",
-        r"^(?:\d+\.?\s*)?materials?\s+(?:and|&)\s+methods?",
-        r"^(?:\d+\.?\s*)?results?",
-        r"^(?:\d+\.?\s*)?discussion",
-        r"^(?:\d+\.?\s*)?conclusion",
-        r"^(?:\d+\.?\s*)?references?",
-        r"^(?:\d+\.?\s*)?bibliography",
-        r"^(?:\d+\.?\s*)?appendix",
-        r"^(?:\d+\.?\s*)?supplementary",
-    ]
-
-    def __init__(self):
-        self._compiled_patterns = [
-            re.compile(p, re.IGNORECASE | re.MULTILINE) for p in self.SECTION_PATTERNS
-        ]
 
     async def extract_text(self, pdf_data: bytes) -> str:
         """
@@ -249,83 +226,6 @@ class PDFProcessor(LoggerMixin):
             )
             return PDFMetadata(pages=0, md5_hash="")
 
-    async def detect_sections(self, text: str) -> list[dict[str, Any]]:
-        """
-        Detecta sections in the texto do PDF.
-
-        Args:
-            text: Texto do PDF.
-
-        Returns:
-            List de sections detectadas with posicao.
-        """
-        sections = []
-        lines = text.split("\n")
-
-        for i, line in enumerate(lines):
-            line_clean = line.strip()
-            if not line_clean or len(line_clean) > 100:
-                continue
-
-            for pattern in self._compiled_patterns:
-                if pattern.match(line_clean):
-                    sections.append(
-                        {
-                            "name": line_clean,
-                            "line_number": i + 1,
-                            "char_position": text.find(line),
-                        }
-                    )
-                    break
-
-        self.logger.info(
-            "sections_detected",
-            count=len(sections),
-        )
-
-        return sections
-
-    async def extract_section_text(
-        self,
-        text: str,
-        section_name: str,
-        next_section_name: str | None = None,
-    ) -> str:
-        """
-        Extrai texto de uma section especifica.
-
-        Args:
-            text: Texto completo do PDF.
-            section_name: Nome da section a extrair.
-            next_section_name: Nome da proxima section (para delimitar).
-
-        Returns:
-            Texto da section.
-        """
-        # Encontrar inicio da section
-        pattern = re.compile(
-            rf"^.*{re.escape(section_name)}.*$",
-            re.IGNORECASE | re.MULTILINE,
-        )
-        match = pattern.search(text)
-
-        if not match:
-            return ""
-
-        start_pos = match.end()
-
-        # Encontrar fim da section
-        if next_section_name:
-            end_pattern = re.compile(
-                rf"^.*{re.escape(next_section_name)}.*$",
-                re.IGNORECASE | re.MULTILINE,
-            )
-            end_match = end_pattern.search(text[start_pos:])
-            if end_match:
-                return text[start_pos : start_pos + end_match.start()].strip()
-
-        return text[start_pos:].strip()
-
     def _clean_text(self, text: str) -> str:
         """
         Limpa texto extraido do PDF.
@@ -344,17 +244,3 @@ class PDFProcessor(LoggerMixin):
         text = re.sub(r"\n{3,}", "\n\n", text)
 
         return text.strip()
-
-    def estimate_tokens(self, text: str) -> int:
-        """
-        Estima numero de tokens for um texto.
-
-        Usa aproximacao de ~4 caracteres por token for ingles.
-
-        Args:
-            text: Texto for estimar.
-
-        Returns:
-            Numero estimado de tokens.
-        """
-        return len(text) // 4

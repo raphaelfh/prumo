@@ -109,15 +109,6 @@ class TestPDFProcessor:
         with pytest.raises(ValueError, match="Failed to extract"):
             await pdf_processor.extract_text(invalid_pdf)
 
-    def test_estimate_tokens(self, pdf_processor: PDFProcessor) -> None:
-        """Test estimativa de tokens."""
-        text = "Hello world! " * 100  # ~1300 caracteres
-
-        tokens = pdf_processor.estimate_tokens(text)
-
-        # Aproximadamente 4 caracteres por token
-        assert 200 < tokens < 500
-
     def test_clean_text(self, pdf_processor: PDFProcessor) -> None:
         """Test limpeza de texto."""
         dirty_text = "Hello\x00World\n\n\n\nTest"
@@ -126,65 +117,3 @@ class TestPDFProcessor:
 
         assert "\x00" not in clean
         assert "\n\n\n\n" not in clean
-
-
-class TestSectionDetection:
-    """Testes para detecção de seções."""
-
-    @pytest.mark.asyncio
-    async def test_detect_sections_finds_common_sections(
-        self,
-        pdf_processor: PDFProcessor,
-    ) -> None:
-        """Test que detecta seções comuns de artigos científicos."""
-        text = """
-        Abstract
-        This is the abstract.
-        
-        Introduction
-        This is the introduction.
-        
-        Methods
-        This describes the methods.
-        
-        Results
-        These are the results.
-        
-        Discussion
-        This is the discussion.
-        
-        Conclusion
-        This is the conclusion.
-        
-        References
-        1. Reference one.
-        """
-
-        sections = await pdf_processor.detect_sections(text)
-
-        assert len(sections) >= 5
-        section_names = [s["name"].lower() for s in sections]
-
-        assert any("abstract" in n for n in section_names)
-        assert any("introduction" in n for n in section_names)
-        assert any("method" in n for n in section_names)
-
-    @pytest.mark.asyncio
-    async def test_extract_section_text(
-        self,
-        pdf_processor: PDFProcessor,
-    ) -> None:
-        """Test extração de texto de uma seção."""
-        text = """
-        Introduction
-        This is the introduction content.
-        It has multiple lines.
-        
-        Methods
-        This is the methods section.
-        """
-
-        intro_text = await pdf_processor.extract_section_text(text, "Introduction", "Methods")
-
-        assert "introduction content" in intro_text.lower()
-        assert "methods section" not in intro_text.lower()
