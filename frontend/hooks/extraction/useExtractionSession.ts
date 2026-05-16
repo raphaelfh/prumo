@@ -16,6 +16,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { apiClient } from "@/integrations/api";
 
+// Monotonically-increasing generation token. Each effect-driven call to
+// `open()` reads the next value and only commits state when it still
+// matches `generationRef.current`. A shared `cancelledRef` toggle can't
+// solve this: React runs cleanup *then* the new effect body
+// synchronously, so the cancelled=true flag is reset to false before any
+// pending in-flight Promise observes it (#23).
+
 export interface ExtractionSession {
   runId: string;
   projectTemplateId: string;
@@ -52,10 +59,11 @@ export function useExtractionSession({
   const [session, setSession] = useState<ExtractionSession | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const cancelledRef = useRef(false);
+  const generationRef = useRef(0);
 
   const open = useCallback(async () => {
     if (!enabled || !projectId || !articleId || !projectTemplateId) return;
+    const myGeneration = ++generationRef.current;
     setLoading(true);
     setError(null);
     try {
@@ -68,31 +76,36 @@ export function useExtractionSession({
           project_template_id: projectTemplateId,
         },
       });
-      if (!cancelledRef.current) {
-        setSession({
-          runId: data.run_id,
-          projectTemplateId: data.project_template_id,
-          instancesByEntityType: data.instances_by_entity_type,
-        });
-      }
+      // Only the most-recent open() may commit. If a new effect fired
+      // while we were in flight (article navigation, prop change), this
+      // generation is stale and the response belongs to a previous
+      // article — discarding it prevents autosave from routing
+      // proposals to the wrong run (#23).
+      if (myGeneration !== generationRef.current) return;
+      setSession({
+        runId: data.run_id,
+        projectTemplateId: data.project_template_id,
+        instancesByEntityType: data.instances_by_entity_type,
+      });
     } catch (err) {
-      if (!cancelledRef.current) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Failed to open extraction session",
-        );
-      }
+      if (myGeneration !== generationRef.current) return;
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to open extraction session",
+      );
     } finally {
-      if (!cancelledRef.current) setLoading(false);
+      if (myGeneration === generationRef.current) setLoading(false);
     }
   }, [enabled, projectId, articleId, projectTemplateId]);
 
   useEffect(() => {
-    cancelledRef.current = false;
     void open();
     return () => {
-      cancelledRef.current = true;
+      // Bump the generation so any in-flight open() resolves into a
+      // no-op when this effect tears down (component unmount or
+      // dependency change).
+      generationRef.current += 1;
     };
   }, [open]);
 

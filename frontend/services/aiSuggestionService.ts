@@ -148,9 +148,17 @@ export class AISuggestionService {
     // Derive accepted/rejected status from the current user's
     // reviewer_state for each (instance, field). We deliberately ignore
     // other users' decisions — each user sees their own status.
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    // Surface auth errors (#49) and reviewer_states query errors (#73)
+    // instead of silently rendering every suggestion as 'pending'.
+    const userRes = await supabase.auth.getUser();
+    if (userRes.error) {
+      throw new APIError(
+        `Failed to load user: ${userRes.error.message}`,
+        undefined,
+        { error: userRes.error },
+      );
+    }
+    const user = userRes.data.user;
     const acceptedKeys = new Set<string>();
     const rejectedKeys = new Set<string>();
     if (user) {
@@ -165,16 +173,21 @@ export class AISuggestionService {
         statesQuery = statesQuery.eq('run_id', runId);
       }
       const statesRes = await statesQuery;
-      if (!statesRes.error) {
-        for (const state of (statesRes.data ?? []) as ReviewerStateKeyRow[]) {
-          const decision = decisionFromState(state);
-          if (!decision) continue;
-          const key = getSuggestionKey(state.instance_id, state.field_id);
-          if (decision === 'reject') {
-            rejectedKeys.add(key);
-          } else {
-            acceptedKeys.add(key);
-          }
+      if (statesRes.error) {
+        throw new APIError(
+          `Failed to load reviewer states: ${statesRes.error.message}`,
+          undefined,
+          { error: statesRes.error },
+        );
+      }
+      for (const state of (statesRes.data ?? []) as ReviewerStateKeyRow[]) {
+        const decision = decisionFromState(state);
+        if (!decision) continue;
+        const key = getSuggestionKey(state.instance_id, state.field_id);
+        if (decision === 'reject') {
+          rejectedKeys.add(key);
+        } else {
+          acceptedKeys.add(key);
         }
       }
     }

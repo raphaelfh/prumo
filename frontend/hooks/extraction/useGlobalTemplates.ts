@@ -62,28 +62,39 @@ export function useGlobalTemplates(): UseGlobalTemplatesReturn {
         return;
       }
 
-      // Para cada template, contar entity types
-      const templatesWithCounts = await Promise.all(
-        templatesData.map(async (template) => {
-          const { count } = await supabase
-            .from('extraction_entity_types')
-            .select('id', { count: 'exact', head: true })
-            .eq('template_id', template.id);
-
-          return {
-            id: template.id,
-            name: template.name,
-            framework: template.framework as 'CHARMS' | 'PICOS' | 'CUSTOM',
-            description: template.description,
-            version: template.version,
-            is_global: template.is_global,
-            schema: template.schema,
-            created_at: template.created_at,
-            updated_at: template.updated_at,
-            entityTypesCount: count || 0
-          };
-        })
-      );
+      // Fetch entity-type counts in a single query instead of
+      // firing one Supabase request per template (#75 N+1). Counting
+      // is done client-side over the returned `template_id` column —
+      // PostgREST grouping isn't broadly portable, but the row set
+      // is tiny (one row per template entity type) and a single
+      // round-trip is far cheaper than N round-trips. Errors must
+      // also be surfaced so a permission denial does not silently
+      // render "0 sections" for every template.
+      const templateIds = templatesData.map((t) => t.id);
+      const { data: entityTypeRows, error: countError } = await supabase
+        .from('extraction_entity_types')
+        .select('template_id')
+        .in('template_id', templateIds);
+      if (countError) {
+        throw countError;
+      }
+      const countByTemplateId = new Map<string, number>();
+      for (const row of entityTypeRows ?? []) {
+        const tid = (row as { template_id: string }).template_id;
+        countByTemplateId.set(tid, (countByTemplateId.get(tid) ?? 0) + 1);
+      }
+      const templatesWithCounts = templatesData.map((template) => ({
+        id: template.id,
+        name: template.name,
+        framework: template.framework as 'CHARMS' | 'PICOS' | 'CUSTOM',
+        description: template.description,
+        version: template.version,
+        is_global: template.is_global,
+        schema: template.schema,
+        created_at: template.created_at,
+        updated_at: template.updated_at,
+        entityTypesCount: countByTemplateId.get(template.id) ?? 0,
+      }));
 
         console.warn(`✅ ${templatesWithCounts.length} templates globais encontrados`);
       setTemplates(templatesWithCounts);

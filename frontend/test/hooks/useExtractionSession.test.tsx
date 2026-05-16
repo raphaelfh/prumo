@@ -125,4 +125,52 @@ describe('useExtractionSession', () => {
     await result.current.refetch();
     expect(apiClientMock).toHaveBeenCalledTimes(2);
   });
+
+  it('discards a stale in-flight response when the article changes mid-fetch (#23)', async () => {
+    // Article A's open() will hang until we release it. Article B fires
+    // straight away and resolves with its own response. Without the
+    // generation guard, A's later-resolving response would overwrite
+    // B's session and route subsequent autosave to A's run.
+    let releaseA!: (v: typeof OPEN_RESPONSE) => void;
+    apiClientMock
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            releaseA = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({
+        ...OPEN_RESPONSE,
+        run_id: 'run-B',
+        project_template_id: 'tpl-B',
+      });
+
+    const { result, rerender } = renderHook(
+      ({ articleId, projectTemplateId }) =>
+        useExtractionSession({
+          projectId: 'proj-1',
+          articleId,
+          projectTemplateId,
+        }),
+      {
+        initialProps: { articleId: 'art-A', projectTemplateId: 'tpl-A' },
+      },
+    );
+
+    // Switch to article B while A is still pending.
+    rerender({ articleId: 'art-B', projectTemplateId: 'tpl-B' });
+
+    // Now release A's response — it should be silently discarded.
+    releaseA({
+      ...OPEN_RESPONSE,
+      run_id: 'run-A',
+      project_template_id: 'tpl-A',
+    });
+
+    await waitFor(() => expect(result.current.session?.runId).toBe('run-B'));
+    // Allow a microtask flush so A's stale handler has a chance to run.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(result.current.session?.runId).toBe('run-B');
+    expect(result.current.session?.projectTemplateId).toBe('tpl-B');
+  });
 });

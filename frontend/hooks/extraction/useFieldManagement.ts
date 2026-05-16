@@ -475,12 +475,24 @@ export function useFieldManagement({
           .eq('id', id)
       );
 
-      await Promise.all(updates);
+      // Supabase query builders resolve (never reject) on SQL/RLS
+      // errors — the error lives on the resolved object's `.error`
+      // field. ``Promise.all`` just throws away that array, so we must
+      // inspect every result to detect a partial failure (#56).
+      const results = await Promise.all(updates);
+      const failed = results
+        .map((r) => (r as { error: { message: string } | null }).error)
+        .filter((e): e is { message: string } => Boolean(e));
+      if (failed.length > 0) {
+        throw new Error(
+          `Failed to update sort_order for ${failed.length} field(s): ${failed[0].message}`,
+        );
+      }
 
         // Reload fields to ensure correct order
       await loadFields();
         toast.success(t('extraction', 'fieldsReorderSuccess'));
-      
+
       return true;
     } catch (err: any) {
         console.error('Error reordering fields:', err);

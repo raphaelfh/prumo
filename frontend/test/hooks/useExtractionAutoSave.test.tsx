@@ -130,7 +130,7 @@ describe('useExtractionAutoSave (proposals path)', () => {
     expect(apiClientMock).not.toHaveBeenCalled();
   });
 
-  it('skips empty / null / undefined values', async () => {
+  it('skips only undefined values; null and empty-string are persisted as deliberate clears (#25)', async () => {
     apiClientMock.mockResolvedValue(PROPOSAL_RESPONSE);
 
     const { result } = renderHook(() =>
@@ -148,14 +148,118 @@ describe('useExtractionAutoSave (proposals path)', () => {
     await act(async () => {
       await result.current.saveNow();
     });
-    expect(apiClientMock).toHaveBeenCalledTimes(1);
-    expect(apiClientMock).toHaveBeenCalledWith(
-      '/api/v1/runs/run-1/proposals',
-      expect.objectContaining({
-        body: expect.objectContaining({
-          field_id: 'field-real',
-        }),
+    // undef skipped → empty, null, real are written (3 calls).
+    expect(apiClientMock).toHaveBeenCalledTimes(3);
+    const fieldIds = apiClientMock.mock.calls.map(
+      (c) => (c[1] as any).body.field_id,
+    );
+    expect(fieldIds).toEqual(
+      expect.arrayContaining(['field-empty', 'field-null', 'field-real']),
+    );
+    expect(fieldIds).not.toContain('field-undef');
+    // Cleared fields go out as { value: null }.
+    const clearCall = apiClientMock.mock.calls.find(
+      (c) => (c[1] as any).body.field_id === 'field-empty',
+    );
+    expect((clearCall![1] as any).body.proposed_value).toEqual({ value: null });
+  });
+
+  it('saveNow is a no-op when enabled=false even with a valid runId (#51)', async () => {
+    const { result } = renderHook(() =>
+      useExtractionAutoSave({
+        runId: 'run-1',
+        values: { 'inst-1_field-1': 'hello' },
+        enabled: false,
       }),
     );
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+    expect(apiClientMock).not.toHaveBeenCalled();
+  });
+
+  it('concurrent saveNow invocations do not double-write (#13/#47 mutex)', async () => {
+    // Make every apiClient call hang until we resolve it manually.
+    let releaseFirstBatch!: () => void;
+    const block = new Promise<void>((resolve) => {
+      releaseFirstBatch = resolve;
+    });
+    apiClientMock.mockImplementation(async () => {
+      await block;
+      return PROPOSAL_RESPONSE;
+    });
+
+    const { result } = renderHook(() =>
+      useExtractionAutoSave({
+        runId: 'run-1',
+        values: { 'inst-1_field-1': 'hello' },
+      }),
+    );
+
+    // Fire two concurrent saves without awaiting the first.
+    let first: Promise<void>;
+    let second: Promise<void>;
+    await act(async () => {
+      first = result.current.saveNow();
+      second = result.current.saveNow();
+      releaseFirstBatch();
+      await Promise.all([first, second]);
+    });
+
+    // Without the mutex both calls would hit the SELECT/diff in parallel
+    // and POST twice. With the guard the second is a silent no-op.
+    expect(apiClientMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces partial Promise.all failures and persists successful writes (#74)', async () => {
+    // First call resolves, second rejects, third resolves — without the
+    // ``allSettled`` rewrite the catch block would fire mid-flight and
+    // leave ``lastSavedByKey`` inconsistent.
+    apiClientMock
+      .mockResolvedValueOnce(PROPOSAL_RESPONSE)
+      .mockRejectedValueOnce(new Error('network drop'))
+      .mockResolvedValueOnce(PROPOSAL_RESPONSE);
+
+    const { result, rerender } = renderHook(
+      ({ values }) =>
+        useExtractionAutoSave({
+          runId: 'run-1',
+          values,
+        }),
+      {
+        initialProps: {
+          values: {
+            'inst-1_a': '1',
+            'inst-1_b': '2',
+            'inst-1_c': '3',
+          } as Record<string, unknown>,
+        },
+      },
+    );
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+
+    expect(apiClientMock).toHaveBeenCalledTimes(3);
+    expect(result.current.error).not.toBeNull();
+
+    // Re-running saveNow without changing values should retry only the
+    // one that failed (a and c are already in lastSavedByKey).
+    apiClientMock.mockClear();
+    apiClientMock.mockResolvedValueOnce(PROPOSAL_RESPONSE);
+    rerender({
+      values: {
+        'inst-1_a': '1',
+        'inst-1_b': '2',
+        'inst-1_c': '3',
+      },
+    });
+    await act(async () => {
+      await result.current.saveNow();
+    });
+    expect(apiClientMock).toHaveBeenCalledTimes(1);
+    expect((apiClientMock.mock.calls[0][1] as any).body.field_id).toBe('b');
   });
 });

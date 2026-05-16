@@ -29,33 +29,67 @@ export function useExtractionProgress(
   values: Record<string, any>,
   entityTypes: EntityTypeWithFields[]
 ): UseExtractionProgressReturn {
-  
+
   return useMemo(() => {
-      // Collect all required fields
-    const requiredFields: Array<{ fieldId: string; instanceIds: string[] }> = [];
+    // Fix #55: count (instance × field) pairs, not unique field defs.
+    // The previous implementation marked a required field "done" the
+    // moment a single instance was filled, so cardinality='many'
+    // entities (e.g. multiple prediction models) reported 100 %
+    // completion while later instances were still empty.
+    //
+    // Key format is `${instanceId}_${fieldId}`. We derive the set of
+    // instances per entity type by scanning the value keys and
+    // matching their fieldId against the entity type's required-field
+    // ids. An entity type with no observed instances contributes one
+    // "phantom" instance to the denominator so the entity is still
+    // represented in the progress total.
+    const fieldToEntityType = new Map<string, string>();
+    const requiredFieldIdsByEntityType = new Map<string, Set<string>>();
+    for (const et of entityTypes) {
+      const required = new Set<string>();
+      for (const field of et.fields) {
+        fieldToEntityType.set(field.id, et.id);
+        if (field.is_required) required.add(field.id);
+      }
+      requiredFieldIdsByEntityType.set(et.id, required);
+    }
 
-    entityTypes.forEach(entityType => {
-      entityType.fields
-        .filter(field => field.is_required)
-        .forEach(field => {
-          requiredFields.push({
-            fieldId: field.id,
-              instanceIds: [] // Will be filled with real instances
-          });
-        });
-    });
+    const instancesByEntityType = new Map<string, Set<string>>();
+    for (const key of Object.keys(values)) {
+      const sep = key.indexOf('_');
+      if (sep < 0) continue;
+      const instanceId = key.slice(0, sep);
+      const fieldId = key.slice(sep + 1);
+      const etId = fieldToEntityType.get(fieldId);
+      if (!etId) continue;
+      let set = instancesByEntityType.get(etId);
+      if (!set) {
+        set = new Set();
+        instancesByEntityType.set(etId, set);
+      }
+      set.add(instanceId);
+    }
 
-    const totalRequired = requiredFields.length;
+    let totalRequired = 0;
+    for (const et of entityTypes) {
+      const reqCount = requiredFieldIdsByEntityType.get(et.id)?.size ?? 0;
+      if (reqCount === 0) continue;
+      const instanceCount = instancesByEntityType.get(et.id)?.size ?? 1;
+      totalRequired += reqCount * instanceCount;
+    }
 
-    // Contar campos preenchidos
-    const completedRequired = requiredFields.filter(({ fieldId }) => {
-        // Check if at least one instance has a value for this field
-      const hasValue = Object.keys(values).some(key => {
-        const [, fId] = key.split('_');
-        return fId === fieldId && values[key] !== null && values[key] !== undefined && values[key] !== '';
-      });
-      return hasValue;
-    }).length;
+    let completedRequired = 0;
+    for (const [key, value] of Object.entries(values)) {
+      if (value === null || value === undefined || value === '') continue;
+      const sep = key.indexOf('_');
+      if (sep < 0) continue;
+      const fieldId = key.slice(sep + 1);
+      const etId = fieldToEntityType.get(fieldId);
+      if (!etId) continue;
+      if (requiredFieldIdsByEntityType.get(etId)?.has(fieldId)) {
+        completedRequired += 1;
+      }
+    }
 
     const percentage = totalRequired > 0
       ? Math.round((completedRequired / totalRequired) * 100)
@@ -65,7 +99,7 @@ export function useExtractionProgress(
       completedFields: completedRequired,
       totalFields: totalRequired,
       completionPercentage: percentage,
-      isComplete: percentage === 100
+      isComplete: totalRequired > 0 && completedRequired >= totalRequired,
     };
   }, [values, entityTypes]);
 }

@@ -281,7 +281,11 @@ export class ExtractionInstanceService {
       }
 
       attempt++;
-      uniqueLabel = attempt === 2 ? `${label} (2)` : label.replace(/\(\d+\)$/, `(${attempt})`);
+      // Strip any trailing "(n)" from the original label, then append the new
+      // attempt number unconditionally. This produces a clean sequence
+      // ("Study (2)", "Study (3)", ...) regardless of whether the caller
+      // supplied a label that already ends with a suffix.
+      uniqueLabel = `${label.replace(/\s*\(\d+\)$/, '')} (${attempt})`;
     }
 
       // Fallback with timestamp

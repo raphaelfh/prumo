@@ -400,6 +400,22 @@ describe('ExtractionValueService.loadValuesForOthers', () => {
     expect(c.__calls.neqs).toContainEqual(['reviewer_id', 'user-self']);
   });
 
+  it('selects reviewer via the FK-named embed on profiles (#50)', async () => {
+    const c = chain({ data: [] });
+    (supabase.from as any).mockReturnValueOnce(c);
+    await ExtractionValueService.loadValuesForOthers('run-1', 'user-self');
+    const reviewerSelect = c.__calls.selects.find((s) =>
+      s.includes('reviewer:'),
+    );
+    expect(reviewerSelect).toBeDefined();
+    // Must embed on the ``profiles`` table via the FK alias, NOT on the
+    // ``reviewer_id`` column (which is not a relation and would 400).
+    expect(reviewerSelect).toMatch(
+      /reviewer:profiles!extraction_reviewer_states_reviewer_id_fkey/,
+    );
+    expect(reviewerSelect).not.toMatch(/reviewer:reviewer_id\s*\(/);
+  });
+
   it('falls back to "User" when the reviewer profile is missing', async () => {
     (supabase.from as any).mockReturnValueOnce(
       chain({

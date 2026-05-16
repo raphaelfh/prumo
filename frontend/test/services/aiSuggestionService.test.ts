@@ -376,6 +376,53 @@ describe('AISuggestionService.loadSuggestions', () => {
       AISuggestionService.loadSuggestions('art-1', ['inst-1']),
     ).rejects.toThrow(/proposals down/);
   });
+
+  it('throws when getUser reports an auth error (#49)', async () => {
+    const proposalsChain = chain({ data: [] });
+    (supabase.from as any).mockReturnValueOnce(proposalsChain);
+    (supabase.auth.getUser as any).mockResolvedValueOnce({
+      data: { user: null },
+      error: { message: 'token expired' },
+    });
+
+    await expect(
+      AISuggestionService.loadSuggestions('art-1', ['inst-1']),
+    ).rejects.toThrow(/token expired/);
+  });
+
+  it('throws when the reviewer_states query fails (#73)', async () => {
+    const proposalsChain = chain({
+      data: [
+        {
+          id: 'p-1',
+          run_id: 'run-A',
+          instance_id: 'inst-1',
+          field_id: 'f-1',
+          source: 'ai',
+          proposed_value: { value: 'V' },
+          confidence_score: 0.9,
+          rationale: null,
+          created_at: '2026-04-28T10:00:00Z',
+        },
+      ],
+    });
+    const evidenceChain = chain({ data: [] });
+    const statesChain = chain({
+      data: null,
+      error: { message: 'states down' },
+    });
+    (supabase.from as any)
+      .mockReturnValueOnce(proposalsChain)
+      .mockReturnValueOnce(evidenceChain)
+      .mockReturnValueOnce(statesChain);
+    (supabase.auth.getUser as any).mockResolvedValueOnce({
+      data: { user: { id: 'user-1' } },
+    });
+
+    await expect(
+      AISuggestionService.loadSuggestions('art-1', ['inst-1']),
+    ).rejects.toThrow(/states down/);
+  });
 });
 
 describe('AISuggestionService.getHistory', () => {

@@ -9,12 +9,15 @@
  *
  * Features:
  * - Auto chunking (2-3 sections per chunk)
- * - PDF cache (process once, reuse text)
  * - Real-time progress
  * - Error handling (skip failed sections)
  */
 
 import {useCallback, useState} from "react";
+// Note: a PDF-text cache used to be planned here (process once, reuse across
+// chunks), but it was never wired — the setter sat unused. Removed for now;
+// reintroduce only with a proper setter call inside `extractAllSections`.
+
 import {toast} from "sonner";
 import {t} from "@/lib/copy";
 import type {BatchSectionExtractionRequest} from "@/types/ai-extraction";
@@ -75,7 +78,6 @@ export function useBatchSectionExtractionChunked(options?: {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<ExtractionProgress | null>(null);
-    const [pdfTextCache, _setPdfTextCache] = useState<string | null>(null);
 
   const chunkSize = options?.chunkSize || 2;
 
@@ -111,7 +113,10 @@ export function useBatchSectionExtractionChunked(options?: {
           sections,
           baseRequest: request,
           chunkSize,
-          pdfText: pdfTextCache || undefined,
+          // pdfText is intentionally omitted — the backend extracts text
+          // per chunk. A real cache would require populating + storing the
+          // text before chunking; see issue #12.
+          pdfText: undefined,
           onProgress: (progress) => {
             setProgress(progress);
             options?.onProgress?.(progress);
@@ -210,7 +215,7 @@ export function useBatchSectionExtractionChunked(options?: {
         setLoading(false);
       }
     },
-    [options, chunkSize, pdfTextCache],
+    [options, chunkSize],
   );
 
   return { extractAllSections, loading, error, progress };

@@ -72,11 +72,22 @@ export function useExtractionSetup() {
         return { success: true, instancesCreated: 0, error: message };
       }
 
-        // 2. Fetch project template entity types to create instances
+        // 2. Fetch project template entity types to create instances.
+        //    Only auto-create root-level, cardinality='one' instances:
+        //    - cardinality='many' types must be added explicitly by the
+        //      reviewer (e.g. "add another Prediction Model").
+        //    - child types require a `parent_instance_id` we cannot
+        //      synthesize here, and inserting them with parent=NULL
+        //      violates a DB constraint and aborts the whole batch.
+        //    This matches the canonical implementations in
+        //    `templateImportService.ts` and `extractionInstanceService.ts`
+        //    (#24).
       const { data: entityTypes, error: entityTypesError } = await supabase
         .from('extraction_entity_types')
         .select('*')
         .eq('project_template_id', templateId)
+        .eq('cardinality', 'one')
+        .is('parent_entity_type_id', null)
         .order('sort_order', { ascending: true });
 
       if (entityTypesError) {

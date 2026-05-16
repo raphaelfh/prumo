@@ -200,6 +200,13 @@ export const ExtractionValueService = {
     runId: string,
     currentReviewerId: string,
   ): Promise<OtherUserDecisions[]> {
+    // PostgREST embed syntax: ``alias:target_table!fk_name(...)``.
+    // The previous ``reviewer:reviewer_id(...)`` form was invalid —
+    // PostgREST treats the token before ``(`` as a relation name and
+    // there is no ``reviewer_id`` relation, so the whole query 400'd
+    // and the comparison panel never rendered other-reviewer values
+    // (#50). The FK ``extraction_reviewer_states_reviewer_id_fkey``
+    // links to ``public.profiles(id)``.
     const { data, error } = await supabase
       .from('extraction_reviewer_states')
       .select(
@@ -207,7 +214,7 @@ export const ExtractionValueService = {
          reviewer_decision:extraction_reviewer_decisions!fk_extraction_reviewer_states_decision_run_match (
            decision, value, created_at
          ),
-         reviewer:reviewer_id (
+         reviewer:profiles!extraction_reviewer_states_reviewer_id_fkey (
            id, full_name, avatar_url
          )`,
       )
