@@ -191,6 +191,90 @@ async def test_record_decision_rejects_incoherent_coordinates(
 
 
 @pytest.mark.asyncio
+async def test_accept_proposal_rejects_cross_coordinate_proposal(
+    db_session: AsyncSession,
+) -> None:
+    """Issue #46: accept_proposal must reject proposals from a different (run, instance, field)."""
+    fx = await _setup_review_run(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    run_id, instance_id, field_id, profile_id, _, _ = fx
+
+    # Build a second proposal targeting a DIFFERENT (instance, field) in the same run.
+    other_row = await db_session.execute(
+        text(
+            """
+            SELECT i.id, f.id
+            FROM public.extraction_instances i
+            JOIN public.extraction_entity_types et ON et.id = i.entity_type_id
+            JOIN public.extraction_fields f ON f.entity_type_id = et.id
+            WHERE (i.id <> :iid OR f.id <> :fid)
+              AND i.template_id = (
+                  SELECT template_id FROM public.extraction_instances WHERE id = :iid
+              )
+            LIMIT 1
+            """
+        ),
+        {"iid": instance_id, "fid": field_id},
+    )
+    other = other_row.first()
+    if other is None:
+        pytest.skip("Need a second coordinate in the same template.")
+    other_instance_id, other_field_id = other
+
+    # The setup left the run in REVIEW; record_proposal requires PROPOSAL.
+    # Insert the cross-coord proposal directly via the model to bypass stage checks.
+    from app.models.extraction_workflow import ExtractionProposalRecord
+
+    cross_proposal = ExtractionProposalRecord(
+        run_id=run_id,
+        instance_id=other_instance_id,
+        field_id=other_field_id,
+        source=ExtractionProposalSource.AI.value,
+        proposed_value={"v": "from other field"},
+    )
+    db_session.add(cross_proposal)
+    await db_session.flush()
+
+    service = ExtractionReviewService(db_session)
+    with pytest.raises(InvalidDecisionError, match="does not belong"):
+        await service.record_decision(
+            run_id=run_id,
+            instance_id=instance_id,
+            field_id=field_id,
+            reviewer_id=profile_id,
+            decision=ExtractionReviewerDecisionType.ACCEPT_PROPOSAL,
+            proposal_record_id=cross_proposal.id,
+        )
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_accept_proposal_rejects_unknown_proposal_id(
+    db_session: AsyncSession,
+) -> None:
+    """Issue #46: accept_proposal must reject an unknown proposal_record_id."""
+    import uuid as _uuid
+
+    fx = await _setup_review_run(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    run_id, instance_id, field_id, profile_id, _, _ = fx
+
+    service = ExtractionReviewService(db_session)
+    with pytest.raises(InvalidDecisionError, match="does not belong"):
+        await service.record_decision(
+            run_id=run_id,
+            instance_id=instance_id,
+            field_id=field_id,
+            reviewer_id=profile_id,
+            decision=ExtractionReviewerDecisionType.ACCEPT_PROPOSAL,
+            proposal_record_id=_uuid.uuid4(),
+        )
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
 async def test_second_decision_replaces_reviewer_state(
     db_session: AsyncSession,
 ) -> None:

@@ -5,6 +5,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import (
@@ -126,7 +127,14 @@ class RunLifecycleService:
         target = (
             target_stage.value if isinstance(target_stage, ExtractionRunStage) else target_stage
         )
-        run = await self.db.get(ExtractionRun, run_id)
+        # Lock the row for the duration of the transaction so two concurrent
+        # callers cannot both pass the precondition check and silently
+        # overwrite each other's transition.
+        run = (
+            await self.db.execute(
+                select(ExtractionRun).where(ExtractionRun.id == run_id).with_for_update()
+            )
+        ).scalar_one_or_none()
         if run is None:
             raise ValueError(f"Run {run_id} not found")
         allowed = _ALLOWED_TRANSITIONS.get(run.stage, set())
@@ -160,13 +168,41 @@ class RunLifecycleService:
         accept ReviewerDecisions over the seeded proposals — same UX as
         post-AI-extraction.
         """
-        old_run = await self.db.get(ExtractionRun, run_id)
+        # Lock the parent run for the duration of the transaction so two
+        # concurrent reopen requests serialise. Inside the locked section
+        # we additionally check whether a child run already exists for this
+        # parent: if so, the previous caller already executed the reopen
+        # and we return its child idempotently instead of forking a second
+        # one. Without this guard, the FOR UPDATE only delays the second
+        # caller — once it wakes up, ``old_run.stage`` is still FINALIZED
+        # (the reopen does not mutate the parent), so it would happily
+        # create another child run.
+        old_run = (
+            await self.db.execute(
+                select(ExtractionRun).where(ExtractionRun.id == run_id).with_for_update()
+            )
+        ).scalar_one_or_none()
         if old_run is None:
             raise ValueError(f"Run {run_id} not found")
         if old_run.stage != ExtractionRunStage.FINALIZED.value:
             raise CannotReopenRunError(
                 f"Run {run_id} is in stage {old_run.stage}; only finalized runs can be reopened."
             )
+
+        existing_child = (
+            await self.db.execute(
+                select(ExtractionRun)
+                .where(
+                    ExtractionRun.template_id == old_run.template_id,
+                    ExtractionRun.article_id == old_run.article_id,
+                    ExtractionRun.parameters["parent_run_id"].astext == str(old_run.id),
+                )
+                .order_by(ExtractionRun.created_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if existing_child is not None:
+            return existing_child
 
         # 1. Resolve the active version (lazy-create if the template was
         #    born outside the backfill path).
@@ -302,15 +338,40 @@ class RunLifecycleService:
         )
         snapshot = snapshot_row.scalar_one()
 
-        version = ExtractionTemplateVersion(
-            project_template_id=project_template_id,
-            version=1,
-            schema_=snapshot,
-            published_at=datetime.now(UTC),
-            published_by=user_id,
-            is_active=True,
+        # Upsert v=1 idempotently. Three races to handle:
+        #
+        # 1. Two concurrent first-run requests (issue #54 / #69) — only one
+        #    INSERT can win the (project_template_id, version) unique
+        #    constraint; the loser must fall through to the SELECT below
+        #    and return the winner's row.
+        # 2. A v=1 row exists but ``is_active = false`` (issue #65) — the
+        #    plain INSERT collides with the same unique constraint; we
+        #    instead reactivate it so the caller has an active version to
+        #    attach to its new Run.
+        # 3. A v=1 row already exists and is active — the upsert leaves it
+        #    untouched and we just re-fetch it.
+        now = datetime.now(UTC)
+        upsert_stmt = (
+            pg_insert(ExtractionTemplateVersion)
+            .values(
+                project_template_id=project_template_id,
+                version=1,
+                schema_=snapshot,
+                published_at=now,
+                published_by=user_id,
+                is_active=True,
+            )
+            .on_conflict_do_update(
+                constraint="uq_extraction_template_versions_template_version",
+                set_={"is_active": True},
+            )
         )
-        self.db.add(version)
+        await self.db.execute(upsert_stmt)
         await self.db.flush()
-        await self.db.refresh(version)
+
+        version_stmt = select(ExtractionTemplateVersion).where(
+            ExtractionTemplateVersion.project_template_id == project_template_id,
+            ExtractionTemplateVersion.version == 1,
+        )
+        version = (await self.db.execute(version_stmt)).scalar_one()
         return version

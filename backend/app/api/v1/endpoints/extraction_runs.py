@@ -10,7 +10,7 @@ the ones that drive consensus + publish later.
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.api.deps.security import get_current_user_sub
 from app.core.deps import DbSession
@@ -80,6 +80,31 @@ def _trace(request: Request) -> str | None:
     return getattr(request.state, "trace_id", None)
 
 
+async def _ensure_project_member(db, project_id: UUID, user_sub: UUID) -> None:
+    """Enforce project-membership at the API layer.
+
+    The DB session runs as service-role (RLS bypassed); enforce membership
+    manually using the same SQL helper the RLS policies use.
+    """
+    is_member = (
+        await db.execute(
+            text("SELECT public.is_project_member(:pid, :uid) AS ok"),
+            {"pid": str(project_id), "uid": str(user_sub)},
+        )
+    ).scalar_one()
+    if not is_member:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project access denied")
+
+
+async def _load_run_and_check_member(db, run_id: UUID, user_sub: UUID) -> ExtractionRun:
+    """Load a Run by id, 404 when missing, 403 when caller is not a member."""
+    run = await db.get(ExtractionRun, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    await _ensure_project_member(db, run.project_id, user_sub)
+    return run
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_run(
     body: CreateRunRequest,
@@ -87,6 +112,7 @@ async def create_run(
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[RunSummaryResponse]:
+    await _ensure_project_member(db, body.project_id, current_user_sub)
     service = RunLifecycleService(db)
     trace_id = _trace(request)
     try:
@@ -127,11 +153,9 @@ async def get_run(
     run_id: UUID,
     request: Request,
     db: DbSession,
-    current_user_sub: UUID = Depends(get_current_user_sub),  # noqa: ARG001
+    current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[RunDetailResponse]:
-    run = await db.get(ExtractionRun, run_id)
-    if run is None:
-        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    run = await _load_run_and_check_member(db, run_id, current_user_sub)
     proposals = await ExtractionProposalRepository(db).list_by_run(run_id)
     decisions = await ExtractionReviewerDecisionRepository(db).list_by_run(run_id)
     consensus = await ExtractionConsensusDecisionRepository(db).list_by_run(run_id)
@@ -165,6 +189,7 @@ async def create_proposal(
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[ProposalRecordResponse]:
+    await _load_run_and_check_member(db, run_id, current_user_sub)
     service = ExtractionProposalService(db)
     trace_id = _trace(request)
     # source='human' requires a user attribution. Default to the
@@ -219,6 +244,7 @@ async def create_decision(
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[ReviewerDecisionResponse]:
+    await _load_run_and_check_member(db, run_id, current_user_sub)
     service = ExtractionReviewService(db)
     trace_id = _trace(request)
     try:
@@ -268,6 +294,7 @@ async def create_consensus(
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[ConsensusResultResponse]:
+    await _load_run_and_check_member(db, run_id, current_user_sub)
     service = ExtractionConsensusService(db)
     trace_id = _trace(request)
     try:
@@ -337,6 +364,7 @@ async def advance_run(
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[RunSummaryResponse]:
+    await _load_run_and_check_member(db, run_id, current_user_sub)
     service = RunLifecycleService(db)
     trace_id = _trace(request)
     try:
@@ -381,7 +409,7 @@ async def list_run_reviewers(
     run_id: UUID,
     request: Request,
     db: DbSession,
-    current_user_sub: UUID = Depends(get_current_user_sub),  # noqa: ARG001
+    current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[RunReviewersResponse]:
     """Display profiles for everyone who participated in the run.
 
@@ -394,9 +422,7 @@ async def list_run_reviewers(
     consensus panel and divergence indicators consume this to render
     real names / avatars instead of bare UUIDs.
     """
-    run = await db.get(ExtractionRun, run_id)
-    if run is None:
-        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    await _load_run_and_check_member(db, run_id, current_user_sub)
 
     user_ids: set[UUID] = set()
 
@@ -479,6 +505,7 @@ async def reopen_run(
     new Run lands in stage=REVIEW so the form picks up where the old
     one left off. Old Run is untouched (audit trail).
     """
+    await _load_run_and_check_member(db, run_id, current_user_sub)
     service = RunLifecycleService(db)
     trace_id = _trace(request)
     try:

@@ -240,7 +240,28 @@ class ModelExtractionService(LoggerMixin):
             )
 
         except Exception as e:
-            await self._runs.fail_run(run.id, str(e))
+            # Issue #21: any DB-level error during instance creation aborts
+            # the session — every subsequent statement on `self.db` will
+            # raise InFailedSQLTransactionError. Rollback once so the
+            # follow-up `fail_run()` runs on a clean session and the run is
+            # actually marked as failed in the DB (no more orphaned
+            # status='running' rows).
+            try:
+                await self.db.rollback()
+            except Exception:
+                self.logger.warning(
+                    "model_extraction_rollback_failed",
+                    trace_id=self.trace_id,
+                    run_id=str(run.id),
+                )
+            try:
+                await self._runs.fail_run(run.id, str(e))
+            except Exception:
+                self.logger.error(
+                    "model_extraction_mark_failed_error",
+                    trace_id=self.trace_id,
+                    run_id=str(run.id),
+                )
             self.logger.error(
                 "model_extraction_failed",
                 trace_id=self.trace_id,
@@ -443,25 +464,21 @@ If in the models are found, return: {{"models": []}}
                 status=ExtractionInstanceStatus.PENDING.value,
             )
 
-            try:
-                await self._instances.create(child_instance)
-                created_count += 1
+            # Issue #21: same reasoning as `_create_model_instances`. A failed
+            # `create()` aborts the underlying transaction; catching it here
+            # would only make every subsequent statement on the same session
+            # raise InFailedSQLTransactionError, including the lifecycle and
+            # fail_run calls in the outer handler. Let it bubble up.
+            await self._instances.create(child_instance)
+            created_count += 1
 
-                self.logger.debug(
-                    "child_instance_created",
-                    trace_id=self.trace_id,
-                    parent_id=parent_instance_id,
-                    child_id=str(child_instance.id),
-                    entity_type=child_et.name,
-                )
-            except Exception as e:
-                # Log but do not fail - child instances can be created later
-                self.logger.warning(
-                    "child_instance_creation_failed",
-                    trace_id=self.trace_id,
-                    error=str(e),
-                    entity_type=child_et.name,
-                )
+            self.logger.debug(
+                "child_instance_created",
+                trace_id=self.trace_id,
+                parent_id=parent_instance_id,
+                child_id=str(child_instance.id),
+                entity_type=child_et.name,
+            )
 
         return created_count
 
@@ -517,43 +534,40 @@ If in the models are found, return: {{"models": []}}
                 status=ExtractionInstanceStatus.PENDING.value,
             )
 
-            try:
-                saved_instance = await self._instances.create(model_instance)
-                created.append(saved_instance)
+            # Issue #21: do NOT catch-and-continue here. `create()` calls
+            # `session.flush()` and any DB error puts the asyncpg connection
+            # into a failed-transaction state — every subsequent SQL on the
+            # same session then raises InFailedSQLTransactionError. Letting
+            # the exception propagate gives the outer handler a chance to
+            # rollback() and then mark the run as failed on a clean session.
+            saved_instance = await self._instances.create(model_instance)
+            created.append(saved_instance)
 
-                self.logger.info(
-                    "model_instance_created",
-                    trace_id=self.trace_id,
-                    instance_id=str(saved_instance.id),
-                    label=model_instance.label,
-                )
+            self.logger.info(
+                "model_instance_created",
+                trace_id=self.trace_id,
+                instance_id=str(saved_instance.id),
+                label=model_instance.label,
+            )
 
-                # 2. Criar child instances for este modelo
-                children_count = await self._create_child_instances(
-                    parent_instance_id=str(saved_instance.id),
-                    parent_entity_type_id=entity_type_id,
-                    project_id=project_id,
-                    article_id=article_id,
-                    template_id=template_id,
-                    run_id=run.id,
-                )
+            # 2. Criar child instances for este modelo
+            children_count = await self._create_child_instances(
+                parent_instance_id=str(saved_instance.id),
+                parent_entity_type_id=entity_type_id,
+                project_id=project_id,
+                article_id=article_id,
+                template_id=template_id,
+                run_id=run.id,
+            )
 
-                total_children_created += children_count
+            total_children_created += children_count
 
-                self.logger.info(
-                    "model_hierarchy_created",
-                    trace_id=self.trace_id,
-                    model_id=str(saved_instance.id),
-                    children_created=children_count,
-                )
-
-            except Exception as e:
-                self.logger.error(
-                    "model_instance_creation_failed",
-                    trace_id=self.trace_id,
-                    error=str(e),
-                    model_name=model_data.get("model_name"),
-                )
+            self.logger.info(
+                "model_hierarchy_created",
+                trace_id=self.trace_id,
+                model_id=str(saved_instance.id),
+                children_created=children_count,
+            )
 
         self.logger.info(
             "all_hierarchies_created",

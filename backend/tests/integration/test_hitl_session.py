@@ -207,6 +207,17 @@ async def test_qa_session_is_idempotent_across_calls(
         pytest.skip("Need an article + a seeded QA template")
     article_id, project_id = article
 
+    # Clear any QA runs leaked into this coord by prior committed test
+    # runs so the first POST below truly creates a new Run (HTTP 201).
+    await db_session.execute(
+        text(
+            "DELETE FROM public.extraction_runs WHERE project_id = :pid "
+            "AND article_id = :aid AND kind = 'quality_assessment'"
+        ),
+        {"pid": str(project_id), "aid": str(article_id)},
+    )
+    await db_session.commit()
+
     payload = {
         "kind": "quality_assessment",
         "project_id": str(project_id),
@@ -216,7 +227,8 @@ async def test_qa_session_is_idempotent_across_calls(
     first = await db_client.post(_SESSION_URL, json=payload)
     assert first.status_code == 201
     second = await db_client.post(_SESSION_URL, json=payload)
-    assert second.status_code == 201
+    # Issue #32: resume returns 200, not 201 (no new Run was created).
+    assert second.status_code == 200
     assert (
         second.json()["data"]["project_template_id"] == first.json()["data"]["project_template_id"]
     )
@@ -260,7 +272,8 @@ async def test_qa_session_returns_finalized_run_instead_of_forking(
         assert adv.status_code == 200, adv.text
 
     second = await db_client.post(_SESSION_URL, json=payload)
-    assert second.status_code == 201
+    # Issue #32: surfacing a finalized run is a resume, not a creation.
+    assert second.status_code == 200
     assert second.json()["data"]["run_id"] == run_id
 
 
@@ -373,7 +386,9 @@ async def test_extraction_session_opens_run_for_existing_project_template(
             "project_template_id": str(template_id),
         },
     )
-    assert res.status_code == 201, res.text
+    # 201 on first open, 200 if a previous test left an in-flight Run
+    # behind for the same (article, project_template) tuple. Issue #32.
+    assert res.status_code in (200, 201), res.text
     body = res.json()["data"]
     assert body["kind"] == "extraction"
     assert body["project_template_id"] == str(template_id)

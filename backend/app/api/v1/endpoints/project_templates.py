@@ -18,7 +18,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 
-from app.api.deps.security import get_current_user_sub
+from app.api.deps.security import get_current_user_sub, require_project_manager
 from app.core.deps import DbSession
 from app.models.extraction import (
     ProjectExtractionTemplate,
@@ -89,7 +89,7 @@ async def update_project_template_active(
     body: UpdateTemplateActiveRequest,
     request: Request,
     db: DbSession,
-    current_user_sub: UUID = Depends(get_current_user_sub),  # noqa: ARG001
+    _user_sub: UUID = Depends(require_project_manager),
 ) -> ApiResponse[UpdateTemplateActiveResponse]:
     """Toggle ``is_active`` on a project template.
 

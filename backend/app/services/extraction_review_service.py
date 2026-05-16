@@ -10,6 +10,9 @@ from app.models.extraction_workflow import (
     ExtractionReviewerDecisionType,
     ExtractionReviewerState,
 )
+from app.repositories.extraction_proposal_repository import (
+    ExtractionProposalRepository,
+)
 from app.repositories.extraction_reviewer_decision_repository import (
     ExtractionReviewerDecisionRepository,
 )
@@ -61,8 +64,22 @@ class ExtractionReviewService:
         decision_value = (
             decision.value if isinstance(decision, ExtractionReviewerDecisionType) else decision
         )
-        if decision_value == "accept_proposal" and proposal_record_id is None:
-            raise InvalidDecisionError("decision='accept_proposal' requires proposal_record_id")
+        if decision_value == "accept_proposal":
+            if proposal_record_id is None:
+                raise InvalidDecisionError("decision='accept_proposal' requires proposal_record_id")
+            # The referenced proposal must target the same (run, instance, field)
+            # coordinate; otherwise consensus would publish a foreign field's value.
+            proposal = await ExtractionProposalRepository(self.db).get(proposal_record_id)
+            if (
+                proposal is None
+                or proposal.run_id != run_id
+                or proposal.instance_id != instance_id
+                or proposal.field_id != field_id
+            ):
+                raise InvalidDecisionError(
+                    f"proposal_record_id {proposal_record_id} does not belong to "
+                    f"(run={run_id}, instance={instance_id}, field={field_id})"
+                )
         if decision_value == "edit" and value is None:
             raise InvalidDecisionError("decision='edit' requires value")
 

@@ -20,6 +20,10 @@ class ExtractionProposalRepository:
         await self.db.refresh(record)
         return record
 
+    async def get(self, proposal_id: UUID) -> ExtractionProposalRecord | None:
+        stmt = select(ExtractionProposalRecord).where(ExtractionProposalRecord.id == proposal_id)
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
     async def list_by_item(
         self,
         run_id: UUID,

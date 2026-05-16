@@ -426,6 +426,80 @@ class TestFullExtractionFlow:
         assert result.total_models >= 0
 
     @pytest.mark.asyncio
+    async def test_create_model_instance_failure_rolls_back_and_fails_run(
+        self, service, mock_storage
+    ):
+        """Issue #21: a DB-level error during instance creation must trigger
+        rollback + fail_run on the outer handler, not be silently swallowed
+        (which previously left the run stuck in status='running').
+        """
+        project_id = uuid4()
+        article_id = uuid4()
+        template_id = uuid4()
+        run_id = uuid4()
+        entity_type_id = uuid4()
+
+        mock_storage.download = AsyncMock(return_value=b"%PDF test")
+        mock_file = MagicMock()
+        mock_file.storage_key = "test.pdf"
+        service._article_files.get_latest_pdf = AsyncMock(return_value=mock_file)
+
+        mock_entity_type = MagicMock()
+        mock_entity_type.name = "prediction_models"
+        mock_template = MagicMock()
+        mock_template.id = template_id
+        mock_template.name = "T"
+        mock_template.entity_types = [mock_entity_type]
+        service._templates.get_with_entity_types = AsyncMock(return_value=mock_template)
+
+        mock_entity = MagicMock()
+        mock_entity.id = entity_type_id
+        service._entity_types.get_by_name = AsyncMock(return_value=mock_entity)
+        service._entity_types.get_children = AsyncMock(return_value=[])
+
+        mock_run = MagicMock()
+        mock_run.id = run_id
+        service._lifecycle.create_run = AsyncMock(return_value=mock_run)
+        service._lifecycle.advance_stage = AsyncMock(return_value=mock_run)
+        service._runs.start_run = AsyncMock()
+        service._runs.complete_run = AsyncMock()
+        service._runs.fail_run = AsyncMock()
+
+        # Inject a DB-style failure on instance creation.
+        service._instances.create = AsyncMock(side_effect=RuntimeError("FK violation"))
+
+        # The async session rollback must be called once so the next
+        # `fail_run` runs on a clean transaction.
+        service.db.rollback = AsyncMock()
+
+        from app.services.openai_service import OpenAIResponse, OpenAIUsage
+
+        service.pdf_processor.extract_text = AsyncMock(return_value="text")
+        service.openai_service.chat_completion_full = AsyncMock(
+            return_value=OpenAIResponse(
+                content=json.dumps({"models": [{"model_name": "M"}]}),
+                usage=OpenAIUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+                model="gpt-4o-mini",
+            )
+        )
+
+        with (
+            patch("app.services.model_extraction_service.ExtractionInstance"),
+            pytest.raises(RuntimeError, match="FK violation"),
+        ):
+            await service.extract(
+                project_id=project_id,
+                article_id=article_id,
+                template_id=template_id,
+            )
+
+        service.db.rollback.assert_awaited_once()
+        service._runs.fail_run.assert_awaited_once()
+        called_run_id, called_msg = service._runs.fail_run.call_args.args
+        assert called_run_id == run_id
+        assert "FK violation" in called_msg
+
+    @pytest.mark.asyncio
     async def test_extract_no_models_found(self, service, mock_storage):
         """Test when no model is found."""
         project_id = uuid4()

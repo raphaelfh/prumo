@@ -9,6 +9,7 @@ from app.models.extraction_workflow import (
     ExtractionConsensusDecision,
     ExtractionConsensusMode,
     ExtractionPublishedState,
+    ExtractionReviewerDecisionType,
 )
 from app.repositories.extraction_consensus_decision_repository import (
     ExtractionConsensusDecisionRepository,
@@ -81,6 +82,19 @@ class ExtractionConsensusService:
                 raise InvalidConsensusError(
                     f"selected_decision_id {selected_decision_id} not in run {run_id}"
                 )
+            # Coordinate guard: selected decision must target the same (instance, field).
+            if selected.instance_id != instance_id or selected.field_id != field_id:
+                raise InvalidConsensusError(
+                    f"selected_decision_id {selected_decision_id} belongs to "
+                    f"(instance={selected.instance_id}, field={selected.field_id}), "
+                    f"not (instance={instance_id}, field={field_id})"
+                )
+            # Reject decisions carry no publishable value; require manual_override instead.
+            if selected.decision == ExtractionReviewerDecisionType.REJECT.value:
+                raise InvalidConsensusError(
+                    f"selected_decision_id {selected_decision_id} is a 'reject' decision "
+                    "and carries no publishable value; use mode='manual_override' instead."
+                )
             published_value = selected.value or {}
             # accept_proposal decisions don't carry a value column directly; in that
             # case we fall back to the proposal's value via the proposal_record_id.
@@ -95,8 +109,18 @@ class ExtractionConsensusService:
                     (p for p in proposals if p.id == selected.proposal_record_id),
                     None,
                 )
-                if proposal is not None:
-                    published_value = proposal.proposed_value
+                if proposal is None:
+                    raise InvalidConsensusError(
+                        f"Proposal {selected.proposal_record_id} referenced by "
+                        f"decision {selected_decision_id} not found in run {run_id}"
+                    )
+                published_value = proposal.proposed_value
+            # Final guard: never publish an empty value silently.
+            if not published_value:
+                raise InvalidConsensusError(
+                    f"selected_decision_id {selected_decision_id} resolved to an empty "
+                    "value; use mode='manual_override' to publish an explicit value."
+                )
         else:  # manual_override
             published_value = value or {}
 
@@ -131,6 +155,13 @@ class ExtractionConsensusService:
         published_by: UUID,
         expected_version: int,
     ) -> ExtractionPublishedState:
+        run = await self.db.get(ExtractionRun, run_id)
+        if run is None:
+            raise InvalidConsensusError(f"Run {run_id} not found")
+        if run.stage != ExtractionRunStage.CONSENSUS.value:
+            raise InvalidConsensusError(
+                f"Cannot publish: run stage is {run.stage!r}, not 'consensus'"
+            )
         rowcount = await self._published.update_with_optimistic_lock(
             run_id=run_id,
             instance_id=instance_id,
@@ -146,7 +177,10 @@ class ExtractionConsensusService:
         existing = await self._published.get(
             run_id=run_id, instance_id=instance_id, field_id=field_id
         )
-        assert existing is not None
+        if existing is None:
+            raise RuntimeError(
+                f"PublishedState vanished after update for {run_id}/{instance_id}/{field_id}"
+            )
         return existing
 
     async def _publish_internal(
@@ -158,16 +192,26 @@ class ExtractionConsensusService:
         value: dict,
         published_by: UUID,
     ) -> ExtractionPublishedState:
+        # Race-free first publish: INSERT ... ON CONFLICT DO NOTHING. If a row
+        # was inserted, we're done. If a concurrent caller already inserted,
+        # this returns None and we fall through to the optimistic-lock UPDATE.
+        inserted = await self._published.insert_first_if_absent(
+            run_id=run_id,
+            instance_id=instance_id,
+            field_id=field_id,
+            value=value,
+            published_by=published_by,
+        )
+        if inserted is not None:
+            return inserted
         existing = await self._published.get(
             run_id=run_id, instance_id=instance_id, field_id=field_id
         )
         if existing is None:
-            return await self._published.insert_first(
-                run_id=run_id,
-                instance_id=instance_id,
-                field_id=field_id,
-                value=value,
-                published_by=published_by,
+            # Should be impossible: ON CONFLICT means a row exists.
+            raise OptimisticConcurrencyError(
+                f"PublishedState insert conflicted but row not visible for "
+                f"{run_id}/{instance_id}/{field_id}"
             )
         rowcount = await self._published.update_with_optimistic_lock(
             run_id=run_id,
@@ -184,5 +228,8 @@ class ExtractionConsensusService:
         latest = await self._published.get(
             run_id=run_id, instance_id=instance_id, field_id=field_id
         )
-        assert latest is not None
+        if latest is None:
+            raise RuntimeError(
+                f"PublishedState vanished after update for {run_id}/{instance_id}/{field_id}"
+            )
         return latest

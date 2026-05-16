@@ -4,6 +4,7 @@ Articles Export Endpoint.
 Endpoints for exportacao de articles (CSV, RIS, RDF) with opcao de incluir files.
 """
 
+import contextlib
 import uuid
 from uuid import UUID
 
@@ -34,6 +35,12 @@ logger = get_logger(__name__)
 # Limite for executar export de metadata de forma sincrona (sem Celery)
 SYNC_METADATA_ONLY_MAX_ARTICLES = 50
 
+# Redis key prefix used to bind a Celery export job to its owning user.
+# The TTL matches Celery's ``result_expires`` (1 hour) so cancel checks
+# work for the whole result window.
+_EXPORT_OWNER_KEY_PREFIX = "export_job_owner:"
+_EXPORT_OWNER_TTL_SECONDS = 3600
+
 
 def _is_queue_available() -> bool:
     try:
@@ -45,6 +52,40 @@ def _is_queue_available() -> bool:
         return True
     except Exception:
         return False
+
+
+def _remember_export_owner(job_id: str, user_id: str) -> None:
+    """Best-effort record of ``job_id -> user_id`` for later cancel checks.
+
+    Errors are swallowed: the GET /status path already gates on
+    ``result.user_id`` for the SUCCESS state, and cancel falls back to a
+    conservative 404 when no owner record is available.
+    """
+    with contextlib.suppress(Exception):
+        Redis.from_url(
+            REDIS_URL,
+            socket_connect_timeout=0.5,
+            socket_timeout=0.5,
+        ).set(
+            f"{_EXPORT_OWNER_KEY_PREFIX}{job_id}",
+            user_id,
+            ex=_EXPORT_OWNER_TTL_SECONDS,
+        )
+
+
+def _lookup_export_owner(job_id: str) -> str | None:
+    raw: object = None
+    with contextlib.suppress(Exception):
+        raw = Redis.from_url(
+            REDIS_URL,
+            socket_connect_timeout=0.5,
+            socket_timeout=0.5,
+        ).get(f"{_EXPORT_OWNER_KEY_PREFIX}{job_id}")
+    if raw is None:
+        return None
+    if isinstance(raw, bytes):
+        return raw.decode("utf-8", errors="replace")
+    return str(raw)
 
 
 @router.post(
@@ -127,12 +168,20 @@ async def start_export(
         content, media_type, filename, skipped = await service.run_export(
             project_id, article_ids, formats, file_scope, job_id=None
         )
+        # Issue #30: surface skipped files via an `X-Skipped-Files` header so
+        # callers can detect partial exports instead of silently receiving an
+        # incomplete file. The async path already exposes this via the JSON
+        # status payload; mirror the signal here.
+        headers: dict[str, str] = {
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        }
+        if skipped:
+            headers["X-Skipped-Files"] = str(len(skipped))
+            headers["Access-Control-Expose-Headers"] = "X-Skipped-Files"
         return Response(
             content=content,
             media_type=media_type,
-            headers={
-                "Content-Disposition": f'attachment; filename="{filename}"',
-            },
+            headers=headers,
         )
 
     # Async: enfileirar task
@@ -162,6 +211,8 @@ async def start_export(
                 trace_id=trace_id,
             ).model_dump(),
         )
+    # Record the owner so cancel_export can later authorize the caller.
+    _remember_export_owner(task.id, user.sub)
     return JSONResponse(
         status_code=status.HTTP_202_ACCEPTED,
         content=ApiResponse.success(
@@ -190,13 +241,19 @@ async def get_export_status(
     trace_id = request.headers.get("x-trace-id") or str(uuid.uuid4())
 
     result = AsyncResult(job_id, app=celery_app)
-    if not result.backend:
+    state = result.state
+    # Issue #60: `result.backend` is always truthy when Celery has a result
+    # backend configured, so the previous guard was dead code and an unknown
+    # job_id would spin in "pending" indefinitely. Use the owner record
+    # (written at enqueue time with TTL = result_expires) as the authoritative
+    # existence signal: PENDING + no owner row = job was never enqueued or
+    # has fully expired.
+    if state == "PENDING" and _lookup_export_owner(job_id) is None:
         return ApiResponse.failure(
             code="NOT_FOUND",
             message="Job not found or expired.",
             trace_id=trace_id,
         )
-    state = result.state
     if state == "PENDING":
         return ApiResponse.success(
             data=ExportStatusResponse(
@@ -284,16 +341,40 @@ async def get_export_status(
 async def cancel_export(
     request: Request,
     job_id: str,
-    user: CurrentUser,  # noqa: ARG001
+    user: CurrentUser,
 ) -> ApiResponse[ExportCancelResponse]:
-    """Revoga o job de exportacao. Se ja concluido, no-op."""
+    """Revoga o job de exportacao. Se ja concluido, no-op.
+
+    Only the user that started the export may cancel it: ownership is
+    resolved from the Redis ``export_job_owner:<id>`` key written at start
+    time, with a fallback to the SUCCESS-state result payload (which also
+    carries ``user_id``). If neither source can confirm ownership the
+    request is rejected with 404 so an attacker cannot probe job ids.
+    """
     from celery.result import AsyncResult
 
     from app.worker.celery_app import celery_app
 
     trace_id = request.headers.get("x-trace-id") or str(uuid.uuid4())
 
+    owner = _lookup_export_owner(job_id)
     result = AsyncResult(job_id, app=celery_app)
+    if owner is None and result.state == "SUCCESS" and isinstance(result.result, dict):
+        owner = result.result.get("user_id")
+
+    if owner is None:
+        return ApiResponse.failure(
+            code="NOT_FOUND",
+            message="Job not found or expired.",
+            trace_id=trace_id,
+        )
+    if owner != user.sub:
+        return ApiResponse.failure(
+            code="FORBIDDEN",
+            message="Job does not belong to current user.",
+            trace_id=trace_id,
+        )
+
     if result.state in ("SUCCESS", "FAILURE", "REVOKED"):
         return ApiResponse.success(
             data=ExportCancelResponse(cancelled=False),

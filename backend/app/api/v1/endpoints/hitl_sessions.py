@@ -6,7 +6,8 @@ one service and one response envelope.
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from sqlalchemy import text
 
 from app.api.deps.security import get_current_user_sub
 from app.core.deps import DbSession
@@ -18,17 +19,22 @@ from app.services.hitl_session_service import (
     HITLSessionService,
     TemplateNotFoundError,
 )
+from app.services.run_lifecycle_service import InvalidStageTransitionError
 
 router = APIRouter()
 
 
 @router.post(
     "/sessions",
+    # Status code is overridden per-request via `response.status_code`:
+    # 201 when a brand-new Run is created, 200 when an existing Run is
+    # resumed (issue #32). The decorator value is the "create" default.
     status_code=status.HTTP_201_CREATED,
 )
 async def open_hitl_session(
     body: OpenHITLSessionRequest,
     request: Request,
+    response: Response,
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[OpenHITLSessionResponse]:
@@ -48,6 +54,19 @@ async def open_hitl_session(
     one. A finalized Run is returned read-only — the client should call the
     reopen endpoint to start a revision.
     """
+    # The DB session runs as service-role (RLS bypassed); enforce project
+    # membership manually using the same SQL helper the policies use.
+    is_member = (
+        await db.execute(
+            text("SELECT public.is_project_member(:pid, :uid) AS ok"),
+            {"pid": str(body.project_id), "uid": str(current_user_sub)},
+        )
+    ).scalar_one()
+    if not is_member:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Project access denied",
+        )
     service = HITLSessionService(db)
     try:
         session = await service.open_or_resume(
@@ -62,7 +81,16 @@ async def open_hitl_session(
         raise HTTPException(status_code=404, detail=str(e)) from e
     except HITLSessionInputError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    except InvalidStageTransitionError as e:
+        # Issue #67: a concurrent request (e.g. an admin cancelling the
+        # run) moved the Run out of PENDING between our SELECT and the
+        # internal advance to PROPOSAL. The caller should retry — return
+        # 409 Conflict instead of bubbling up an unhandled 500.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     await db.commit()
+    # Issue #32: a resumed Run is not a created resource; emit 200.
+    if not session.created:
+        response.status_code = status.HTTP_200_OK
     return ApiResponse.success(
         OpenHITLSessionResponse(
             run_id=session.run_id,

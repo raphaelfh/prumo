@@ -15,10 +15,11 @@ UI can immediately record proposals.
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import (
+    ExtractionCardinality,
     ExtractionEntityType,
     ExtractionInstance,
     ExtractionInstanceStatus,
@@ -32,6 +33,22 @@ from app.services.template_clone_service import (
     TemplateCloneService,
     TemplateNotFoundError,
 )
+
+
+def _advisory_key_pair(left: UUID, right: UUID) -> tuple[int, int]:
+    """Derive a stable signed-int32 pair from two UUIDs for
+    ``pg_advisory_xact_lock(int, int)``.
+
+    Both UUIDs contribute to both keys (high XOR low) so the pair is
+    unique per (left, right) combination and stable across processes.
+    Postgres treats the two arguments as signed int32, so we keep each
+    component inside the positive range with ``0x7FFFFFFF``.
+    """
+    a = left.int
+    b = right.int
+    key1 = ((a >> 64) ^ (b & 0xFFFFFFFFFFFFFFFF)) & 0x7FFFFFFF
+    key2 = ((a & 0xFFFFFFFFFFFFFFFF) ^ (b >> 64)) & 0x7FFFFFFF
+    return key1, key2
 
 
 class HITLSessionInputError(Exception):
@@ -48,11 +65,15 @@ class HITLSession:
         kind: TemplateKind,
         project_template_id: UUID,
         instances_by_entity_type: dict[str, str],
+        created: bool,
     ) -> None:
         self.run_id = run_id
         self.kind = kind
         self.project_template_id = project_template_id
         self.instances_by_entity_type = instances_by_entity_type
+        # Issue #32: distinguish a freshly created Run (HTTP 201) from a
+        # resumed one (HTTP 200) so the endpoint can return correct status.
+        self.created = created
 
 
 class HITLSessionService:
@@ -96,7 +117,7 @@ class HITLSessionService:
             user_id=user_id,
         )
 
-        run = await self._reuse_or_create_run(
+        run, created = await self._reuse_or_create_run(
             project_id=project_id,
             article_id=article_id,
             project_template_id=project_template_id,
@@ -111,6 +132,7 @@ class HITLSessionService:
             instances_by_entity_type={
                 str(et_id): str(inst_id) for et_id, inst_id in instances.items()
             },
+            created=created,
         )
 
     async def _resolve_project_template(
@@ -171,6 +193,17 @@ class HITLSessionService:
         entity_types: list[ExtractionEntityType],
         user_id: UUID,
     ) -> dict[UUID, UUID]:
+        # Issue #64: serialise concurrent open_or_resume calls for the same
+        # (article, template) pair so the SELECT-then-INSERT below cannot
+        # race and produce duplicate singleton instances. The lock is
+        # transaction-scoped, so it is released on commit / rollback and
+        # does not require explicit cleanup.
+        key1, key2 = _advisory_key_pair(article_id, project_template_id)
+        await self.db.execute(
+            text("SELECT pg_advisory_xact_lock(:k1, :k2)"),
+            {"k1": key1, "k2": key2},
+        )
+
         existing_stmt = select(ExtractionInstance).where(
             ExtractionInstance.article_id == article_id,
             ExtractionInstance.template_id == project_template_id,
@@ -185,6 +218,11 @@ class HITLSessionService:
             if et.id in by_entity:
                 continue
             if et.parent_entity_type_id is not None:
+                continue
+            # Issue #71: the parent-id guard only filters child entity types.
+            # Top-level entity types with cardinality=MANY must NOT receive
+            # a phantom singleton instance — the UI creates them on demand.
+            if et.cardinality != ExtractionCardinality.ONE.value:
                 continue
             inst = ExtractionInstance(
                 project_id=project_id,
@@ -212,7 +250,7 @@ class HITLSessionService:
         project_template_id: UUID,
         kind: TemplateKind,
         user_id: UUID,
-    ) -> ExtractionRun:
+    ) -> tuple[ExtractionRun, bool]:
         """Resolve the run to expose to the UI.
 
         Lookup order:
@@ -224,7 +262,22 @@ class HITLSessionService:
              published values. Reopen is an explicit action with its own
              endpoint that seeds the new run from the published state.
           3. No run at all → create a fresh one and advance to PROPOSAL.
+
+        Returns ``(run, created)`` where ``created`` is True only when a
+        brand-new Run row was inserted (path 3); both reuse paths return
+        ``False`` so the endpoint can emit 200 instead of 201.
         """
+        # Issue #70: serialise concurrent open_or_resume calls for the same
+        # (project, article, template) tuple so the active-run SELECT below
+        # cannot race with itself and produce two PROPOSAL runs. We reuse
+        # the article/template advisory key already taken in
+        # ``_ensure_instances`` to keep the critical section coherent.
+        key1, key2 = _advisory_key_pair(article_id, project_template_id)
+        await self.db.execute(
+            text("SELECT pg_advisory_xact_lock(:k1, :k2)"),
+            {"k1": key1, "k2": key2},
+        )
+
         active_stmt = (
             select(ExtractionRun)
             .where(
@@ -243,6 +296,7 @@ class HITLSessionService:
             .order_by(ExtractionRun.created_at.desc())
         )
         run = (await self.db.execute(active_stmt)).scalars().first()
+        created = False
 
         if run is None:
             finalized_stmt = (
@@ -265,6 +319,7 @@ class HITLSessionService:
                 user_id=user_id,
                 parameters={"opened_via": "hitl_session", "kind": kind.value},
             )
+            created = True
 
         if run.stage == ExtractionRunStage.PENDING.value:
             run = await self._lifecycle.advance_stage(
@@ -272,7 +327,7 @@ class HITLSessionService:
                 target_stage=ExtractionRunStage.PROPOSAL,
                 user_id=user_id,
             )
-        return run
+        return run, created
 
 
 # Re-export so callers that need to handle the not-found case can do so by

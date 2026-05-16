@@ -181,6 +181,18 @@ async def update_api_key(
     """
     service = APIKeyService(db=db, user_id=user.sub)
 
+    # Issue #31: refuse the inconsistent combination up front. `get_default`
+    # filters on `is_active = TRUE AND is_default = TRUE`, so a key that ends
+    # up `is_default=True, is_active=False` is invisible to the resolver but
+    # also blocks any future `set_default` (unset_default targets active
+    # rows). Treat this as a client error rather than silently producing a
+    # ghost default.
+    if request.is_default is True and request.is_active is False:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot set a key as default and inactive in the same request.",
+        )
+
     try:
         # Se esta marcando como default
         if request.is_default is True:
@@ -194,6 +206,16 @@ async def update_api_key(
         # Se esta desativando
         if request.is_active is False:
             success = await service.deactivate_key(key_id)
+            if not success:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="API key not found",
+                )
+
+        # Issue #29 / #63: persist key_name updates (the schema has always
+        # exposed `keyName`, but the handler used to discard it).
+        if request.key_name is not None:
+            success = await service.update_key_name(key_id, request.key_name)
             if not success:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
