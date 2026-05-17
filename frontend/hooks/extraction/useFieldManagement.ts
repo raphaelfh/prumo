@@ -209,10 +209,16 @@ export function useFieldManagement({
     try {
         // Validate data with Zod
       const validatedData = ExtractionFieldSchema.parse(fieldData);
+      // #region agent log
+      fetch('http://127.0.0.1:7419/ingest/727eb943-93f0-4ba8-8f6f-e0b3918194ee',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'34c1ec'},body:JSON.stringify({sessionId:'34c1ec',runId:'manual-field-add',hypothesisId:'H1-H3',location:'useFieldManagement.ts:addField:before-local-duplicate-check',message:'Preparing to add field',data:{entityTypeId,fieldName:validatedData.name,localFieldCount:fields.length,localFieldNames:fields.map((field)=>field.name)},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
 
         // Check if name already exists in this section
       const existingField = fields.find(f => f.name === validatedData.name);
       if (existingField) {
+          // #region agent log
+          fetch('http://127.0.0.1:7419/ingest/727eb943-93f0-4ba8-8f6f-e0b3918194ee',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'34c1ec'},body:JSON.stringify({sessionId:'34c1ec',runId:'manual-field-add',hypothesisId:'H1',location:'useFieldManagement.ts:addField:local-duplicate-detected',message:'Local duplicate blocked before DB insert',data:{entityTypeId,fieldName:validatedData.name,existingFieldId:existingField.id},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
           toast.error(t('extraction', 'errors_fieldExistsInSection').replace('{{name}}', validatedData.name));
         return null;
       }
@@ -246,6 +252,9 @@ export function useFieldManagement({
       if (error) throw error;
 
       const createdField = data as ExtractionField;
+      // #region agent log
+      fetch('http://127.0.0.1:7419/ingest/727eb943-93f0-4ba8-8f6f-e0b3918194ee',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'34c1ec'},body:JSON.stringify({sessionId:'34c1ec',runId:'manual-field-add',hypothesisId:'H2-H3',location:'useFieldManagement.ts:addField:insert-success',message:'Field inserted successfully',data:{entityTypeId,fieldId:createdField.id,fieldName:createdField.name,sortOrder:createdField.sort_order},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       setFields(prev => [...prev, createdField]);
         toast.success(t('extraction', 'fieldAddedSuccess').replace('{{label}}', createdField.label));
       
@@ -256,6 +265,9 @@ export function useFieldManagement({
         const firstError = err.errors[0];
           toast.error(t('extraction', 'errors_validationPrefix').replace('{{message}}', firstError.message));
       } else {
+          // #region agent log
+          fetch('http://127.0.0.1:7419/ingest/727eb943-93f0-4ba8-8f6f-e0b3918194ee',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'34c1ec'},body:JSON.stringify({sessionId:'34c1ec',runId:'manual-field-add',hypothesisId:'H2-H3',location:'useFieldManagement.ts:addField:insert-error',message:'Field insert failed',data:{entityTypeId,errorMessage:err?.message ?? 'unknown',errorCode:err?.code ?? null},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
           console.error('Error adding field:', err);
           toast.error(`${t('extraction', 'errors_addField')}: ${err.message}`);
       }
