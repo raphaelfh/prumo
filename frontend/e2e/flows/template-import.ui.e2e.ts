@@ -25,7 +25,7 @@ test.describe("Extraction template import (global → project)", () => {
     await loginViaUi(page);
 
     await page.goto(
-      `${env.frontendUrl}/projects/${env.projectId}?extractionTab=configuration`,
+      `${env.frontendUrl}/projects/${env.projectId}?tab=extraction&extractionTab=configuration`,
       { waitUntil: "domcontentloaded" },
     );
 

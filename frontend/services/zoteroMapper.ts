@@ -89,7 +89,7 @@ export function extractMonth(dateString: string | undefined): number | null {
  */
 export function mapZoteroItemToArticle(
   item: ZoteroItem,
-  projectId: string,
+  _projectId: string,
   collectionKey: string | null
 ): ArticleFromZotero {
   const data = item.data;
@@ -309,7 +309,7 @@ export function prioritizeMainPdf(attachments: any[]): any[] {
  * Determines the appropriate file_role for an attachment
  */
 export function determineFileRole(
-  attachment: any,
+  _attachment: any,
   index: number,
   hasMainFile: boolean
 ): 'MAIN' | 'SUPPLEMENT' {

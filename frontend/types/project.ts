@@ -7,7 +7,7 @@
  * Based on Supabase generated types for consistency.
  */
 
-import type {Database} from '@/integrations/supabase/types';
+import type {Database, Json} from '@/integrations/supabase/types';
 
 /** Review type (Supabase enum). */
 export type ReviewType = Database['public']['Enums']['review_type'];
@@ -122,20 +122,20 @@ export interface ProjectData extends Project {
 
 export interface ProjectSettings {
   blind_mode?: boolean;
-  [key: string]: unknown;
+  [key: string]: Json | undefined;
 }
 
 export interface EligibilityCriteria {
   inclusion?: string[];
   exclusion?: string[];
   notes?: string;
-  [key: string]: unknown;
+  [key: string]: Json | undefined;
 }
 
 export interface StudyDesign {
   types?: string[];
   notes?: string;
-  [key: string]: unknown;
+  [key: string]: Json | undefined;
 }
 
 export interface ProjectConfigData {

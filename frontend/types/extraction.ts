@@ -8,6 +8,7 @@
  */
 
 import {z} from 'zod';
+import type {AISuggestion} from './ai-extraction';
 
 // =================== ENUMS ===================
 

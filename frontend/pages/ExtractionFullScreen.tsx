@@ -264,10 +264,13 @@ export default function ExtractionFullScreen() {
     try {
       await reopenMutation.mutateAsync(finalizedRun.id);
       // The reopen endpoint creates a fresh REVIEW-stage run linked via
-      // parameters.parent_run_id. Refreshing the active-run resolver
-      // (refreshValues) plus the finalized-run lookup picks up the new
-      // run on the next render. We also clear the local Reopen banner.
-      await Promise.all([refreshValues(), refreshFinalizedRun()]);
+      // parameters.parent_run_id. We refetch the HITL session first so
+      // activeRunId points at the new child run; only then do the
+      // value / runDetail / finalized-run reads run against the new
+      // coordinate. Without the session refetch the banner stays stuck
+      // on the finalized run and the revision badge never appears.
+      await sessionResult.refetch();
+      await Promise.all([refreshValues(), refreshFinalizedRun(), refetchRun()]);
       toast.success('Extraction reopened for revision.');
     } catch (err) {
       toast.error(
@@ -276,7 +279,14 @@ export default function ExtractionFullScreen() {
     } finally {
       setReopening(false);
     }
-  }, [finalizedRun?.id, reopenMutation, refreshValues, refreshFinalizedRun]);
+  }, [
+    finalizedRun?.id,
+    reopenMutation,
+    sessionResult,
+    refreshValues,
+    refreshFinalizedRun,
+    refetchRun,
+  ]);
 
   // Hook para calcular progresso
   const { completedFields, totalFields, completionPercentage, isComplete } =
@@ -1038,7 +1048,7 @@ export default function ExtractionFullScreen() {
           <div className="flex items-center gap-2">
             <HITLStatusBadges
               kind="extraction"
-              finalized={!activeRunId && !!finalizedRun}
+              finalized={isFinalized || (!activeRunId && !!finalizedRun)}
               parentRunId={parentRunId}
             />
             {runDetail ? (
@@ -1051,7 +1061,7 @@ export default function ExtractionFullScreen() {
           </div>
           <HITLReopenButton
             kind="extraction"
-            visible={!activeRunId && !!finalizedRun}
+            visible={isFinalized || (!activeRunId && !!finalizedRun)}
             onClick={() => void handleReopen()}
             reopening={reopening}
           />
