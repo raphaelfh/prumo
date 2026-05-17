@@ -14,6 +14,9 @@ from app.models.extraction_workflow import (
 from app.repositories.extraction_consensus_decision_repository import (
     ExtractionConsensusDecisionRepository,
 )
+from app.repositories.extraction_proposal_repository import (
+    ExtractionProposalRepository,
+)
 from app.repositories.extraction_published_state_repository import (
     ExtractionPublishedStateRepository,
 )
@@ -99,17 +102,10 @@ class ExtractionConsensusService:
             # accept_proposal decisions don't carry a value column directly; in that
             # case we fall back to the proposal's value via the proposal_record_id.
             if not published_value and selected.proposal_record_id:
-                from app.repositories.extraction_proposal_repository import (
-                    ExtractionProposalRepository,
+                proposal = await ExtractionProposalRepository(self.db).get(
+                    selected.proposal_record_id
                 )
-
-                proposal_repo = ExtractionProposalRepository(self.db)
-                proposals = await proposal_repo.list_by_run(run_id)
-                proposal = next(
-                    (p for p in proposals if p.id == selected.proposal_record_id),
-                    None,
-                )
-                if proposal is None:
+                if proposal is None or proposal.run_id != run_id:
                     raise InvalidConsensusError(
                         f"Proposal {selected.proposal_record_id} referenced by "
                         f"decision {selected_decision_id} not found in run {run_id}"

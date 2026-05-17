@@ -10,9 +10,9 @@ the ones that drive consensus + publish later.
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select, text
+from sqlalchemy import select
 
-from app.api.deps.security import get_current_user_sub
+from app.api.deps.security import ensure_project_member, get_current_user_sub
 from app.core.deps import DbSession
 from app.core.logging import get_logger
 from app.models.extraction import ExtractionRun
@@ -80,28 +80,12 @@ def _trace(request: Request) -> str | None:
     return getattr(request.state, "trace_id", None)
 
 
-async def _ensure_project_member(db, project_id: UUID, user_sub: UUID) -> None:
-    """Enforce project-membership at the API layer.
-
-    The DB session runs as service-role (RLS bypassed); enforce membership
-    manually using the same SQL helper the RLS policies use.
-    """
-    is_member = (
-        await db.execute(
-            text("SELECT public.is_project_member(:pid, :uid) AS ok"),
-            {"pid": str(project_id), "uid": str(user_sub)},
-        )
-    ).scalar_one()
-    if not is_member:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Project access denied")
-
-
 async def _load_run_and_check_member(db, run_id: UUID, user_sub: UUID) -> ExtractionRun:
     """Load a Run by id, 404 when missing, 403 when caller is not a member."""
     run = await db.get(ExtractionRun, run_id)
     if run is None:
         raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
-    await _ensure_project_member(db, run.project_id, user_sub)
+    await ensure_project_member(db, run.project_id, user_sub)
     return run
 
 
@@ -112,7 +96,7 @@ async def create_run(
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[RunSummaryResponse]:
-    await _ensure_project_member(db, body.project_id, current_user_sub)
+    await ensure_project_member(db, body.project_id, current_user_sub)
     service = RunLifecycleService(db)
     trace_id = _trace(request)
     try:

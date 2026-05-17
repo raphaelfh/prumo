@@ -6,7 +6,6 @@
 
 import {useCallback} from 'react';
 import {supabase} from '@/integrations/supabase/client';
-import {t} from '@/lib/copy';
 import {ExtractionValueService} from '@/services/extractionValueService';
 
 export interface ExtractionProgress {
@@ -97,13 +96,12 @@ export function useExtractionProgressCalc(): UseExtractionProgressCalcReturn {
       const totalOptionalPairs = totalForFields(optionalFields);
 
       if (instanceIds.length === 0) {
-        const totalPairs = totalRequiredPairs + totalOptionalPairs;
         return {
           totalRequiredFields: totalRequiredPairs,
           completedRequiredFields: 0,
           totalOptionalFields: totalOptionalPairs,
           completedOptionalFields: 0,
-          progressPercentage: totalPairs > 0 ? 0 : 0,
+          progressPercentage: 0,
         };
       }
 
@@ -125,13 +123,12 @@ export function useExtractionProgressCalc(): UseExtractionProgressCalcReturn {
           templateId,
         ));
       if (!finalRun) {
-        const totalPairs = totalRequiredPairs + totalOptionalPairs;
         return {
           totalRequiredFields: totalRequiredPairs,
           completedRequiredFields: 0,
           totalOptionalFields: totalOptionalPairs,
           completedOptionalFields: 0,
-          progressPercentage: totalPairs > 0 ? 0 : 0,
+          progressPercentage: 0,
         };
       }
 
@@ -193,8 +190,7 @@ export function useExtractionProgressCalc(): UseExtractionProgressCalcReturn {
       };
 
     } catch (err: unknown) {
-        const _message = err instanceof Error ? err.message : t('extraction', 'errorCalculatingProgress');
-        console.error('Error calculating extraction progress:', err);
+      console.error('Error calculating extraction progress:', err);
       return null;
     }
   }, []);

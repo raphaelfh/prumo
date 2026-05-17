@@ -29,28 +29,6 @@ class ExtractionPublishedStateRepository:
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
-    async def insert_first(
-        self,
-        *,
-        run_id: UUID,
-        instance_id: UUID,
-        field_id: UUID,
-        value: dict,
-        published_by: UUID,
-    ) -> ExtractionPublishedState:
-        record = ExtractionPublishedState(
-            run_id=run_id,
-            instance_id=instance_id,
-            field_id=field_id,
-            value=value,
-            published_by=published_by,
-            version=1,
-        )
-        self.db.add(record)
-        await self.db.flush()
-        await self.db.refresh(record)
-        return record
-
     async def insert_first_if_absent(
         self,
         *,

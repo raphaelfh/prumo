@@ -35,20 +35,18 @@ from app.services.template_clone_service import (
 )
 
 
-def _advisory_key_pair(left: UUID, right: UUID) -> tuple[int, int]:
-    """Derive a stable signed-int32 pair from two UUIDs for
-    ``pg_advisory_xact_lock(int, int)``.
+async def _take_advisory_xact_lock(db: AsyncSession, left: UUID, right: UUID) -> None:
+    """Take a transaction-scoped advisory lock keyed by (left, right).
 
-    Both UUIDs contribute to both keys (high XOR low) so the pair is
-    unique per (left, right) combination and stable across processes.
-    Postgres treats the two arguments as signed int32, so we keep each
-    component inside the positive range with ``0x7FFFFFFF``.
+    Uses Postgres' built-in ``hashtextextended`` to derive a bigint
+    fingerprint from the UUID pair — Postgres treats the result as a
+    signed bigint, which is exactly what ``pg_advisory_xact_lock(bigint)``
+    wants. The lock is released automatically on commit/rollback.
     """
-    a = left.int
-    b = right.int
-    key1 = ((a >> 64) ^ (b & 0xFFFFFFFFFFFFFFFF)) & 0x7FFFFFFF
-    key2 = ((a & 0xFFFFFFFFFFFFFFFF) ^ (b >> 64)) & 0x7FFFFFFF
-    return key1, key2
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+        {"key": f"{left}:{right}"},
+    )
 
 
 class HITLSessionInputError(Exception):
@@ -197,12 +195,9 @@ class HITLSessionService:
         # (article, template) pair so the SELECT-then-INSERT below cannot
         # race and produce duplicate singleton instances. The lock is
         # transaction-scoped, so it is released on commit / rollback and
-        # does not require explicit cleanup.
-        key1, key2 = _advisory_key_pair(article_id, project_template_id)
-        await self.db.execute(
-            text("SELECT pg_advisory_xact_lock(:k1, :k2)"),
-            {"k1": key1, "k2": key2},
-        )
+        # does not require explicit cleanup. The same lock also protects
+        # the active-run lookup in ``_reuse_or_create_run`` (issue #70).
+        await _take_advisory_xact_lock(self.db, article_id, project_template_id)
 
         existing_stmt = select(ExtractionInstance).where(
             ExtractionInstance.article_id == article_id,
@@ -266,18 +261,12 @@ class HITLSessionService:
         Returns ``(run, created)`` where ``created`` is True only when a
         brand-new Run row was inserted (path 3); both reuse paths return
         ``False`` so the endpoint can emit 200 instead of 201.
-        """
-        # Issue #70: serialise concurrent open_or_resume calls for the same
-        # (project, article, template) tuple so the active-run SELECT below
-        # cannot race with itself and produce two PROPOSAL runs. We reuse
-        # the article/template advisory key already taken in
-        # ``_ensure_instances`` to keep the critical section coherent.
-        key1, key2 = _advisory_key_pair(article_id, project_template_id)
-        await self.db.execute(
-            text("SELECT pg_advisory_xact_lock(:k1, :k2)"),
-            {"k1": key1, "k2": key2},
-        )
 
+        Concurrency note (issue #70): callers always go through
+        ``open_or_resume`` so the (article, template) advisory lock taken
+        in ``_ensure_instances`` is already held for this transaction;
+        the active-run SELECT below cannot race with itself.
+        """
         active_stmt = (
             select(ExtractionRun)
             .where(

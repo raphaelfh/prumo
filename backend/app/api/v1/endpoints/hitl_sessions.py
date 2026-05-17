@@ -7,9 +7,8 @@ one service and one response envelope.
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy import text
 
-from app.api.deps.security import get_current_user_sub
+from app.api.deps.security import ensure_project_member, get_current_user_sub
 from app.core.deps import DbSession
 from app.models.extraction import TemplateKind
 from app.schemas.common import ApiResponse
@@ -54,19 +53,7 @@ async def open_hitl_session(
     one. A finalized Run is returned read-only — the client should call the
     reopen endpoint to start a revision.
     """
-    # The DB session runs as service-role (RLS bypassed); enforce project
-    # membership manually using the same SQL helper the policies use.
-    is_member = (
-        await db.execute(
-            text("SELECT public.is_project_member(:pid, :uid) AS ok"),
-            {"pid": str(body.project_id), "uid": str(current_user_sub)},
-        )
-    ).scalar_one()
-    if not is_member:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Project access denied",
-        )
+    await ensure_project_member(db, body.project_id, current_user_sub)
     service = HITLSessionService(db)
     try:
         session = await service.open_or_resume(
