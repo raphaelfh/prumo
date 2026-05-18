@@ -5,7 +5,7 @@ counts query, and API response parity with global catalogue row counts.
 """
 
 from collections.abc import AsyncGenerator
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
@@ -765,6 +765,122 @@ async def test_clone_qa_does_not_deactivate_other_qa_templates(
 
     assert first_tpl is not None and first_tpl.is_active is True
     assert second_tpl is not None and second_tpl.is_active is True
+
+
+@pytest.mark.asyncio
+async def test_clone_returns_existing_template_when_duplicate_clone_rows_exist(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    """Legacy duplicate clone rows must not crash idempotent clone lookup.
+
+    The real race is two first-time clone requests selecting no existing row
+    before either transaction commits. The service now serializes that path, but
+    production may already contain duplicate QA rows because QA templates are
+    allowed to coexist as active. Re-import must choose a deterministic row
+    instead of raising ``MultipleResultsFound``.
+    """
+    from app.seed import seed_probast
+
+    await seed_probast(db_session)
+    await db_session.commit()
+
+    article = await _pick_article(db_session)
+    if article is None:
+        pytest.skip("Need an article + project")
+    _, project_id = article
+    global_template_id = UUID("00b00000-0000-0000-0000-000000000001")
+
+    await db_session.execute(
+        text(
+            """
+            DELETE FROM public.extraction_runs
+            WHERE project_id = :pid
+              AND template_id IN (
+                SELECT id FROM public.project_extraction_templates
+                WHERE project_id = :pid AND global_template_id = :gid
+              )
+            """
+        ),
+        {"pid": str(project_id), "gid": str(global_template_id)},
+    )
+    await db_session.execute(
+        text(
+            """
+            DELETE FROM public.extraction_instances
+            WHERE project_id = :pid
+              AND template_id IN (
+                SELECT id FROM public.project_extraction_templates
+                WHERE project_id = :pid AND global_template_id = :gid
+              )
+            """
+        ),
+        {"pid": str(project_id), "gid": str(global_template_id)},
+    )
+    await db_session.execute(
+        text(
+            "DELETE FROM public.project_extraction_templates "
+            "WHERE project_id = :pid AND global_template_id = :gid"
+        ),
+        {"pid": str(project_id), "gid": str(global_template_id)},
+    )
+    await db_session.commit()
+
+    first_id = uuid4()
+    second_id = uuid4()
+    profile_id = (
+        await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))
+    ).scalar()
+    duplicate_templates = (
+        (first_id, "PROBAST duplicate A", "2026-01-01T00:00:00Z"),
+        (second_id, "PROBAST duplicate B", "2026-01-02T00:00:00Z"),
+    )
+    for template_id, name, created_at in duplicate_templates:
+        await db_session.execute(
+            text(
+                """
+                INSERT INTO public.project_extraction_templates
+                    (id, project_id, name, description, framework, version, kind, schema,
+                     is_active, created_by, global_template_id, created_at, updated_at)
+                VALUES (:id, :pid, :name, NULL, 'CUSTOM', '1.0',
+                        'quality_assessment', '{}'::jsonb, true, :uid, :gid,
+                        CAST(:created_at AS timestamptz), CAST(:created_at AS timestamptz))
+                """
+            ),
+            {
+                "id": str(template_id),
+                "pid": str(project_id),
+                "name": name,
+                "uid": str(profile_id),
+                "gid": str(global_template_id),
+                "created_at": created_at,
+            },
+        )
+        await db_session.execute(
+            text(
+                """
+                INSERT INTO public.extraction_template_versions
+                    (project_template_id, version, schema, published_at,
+                     published_by, is_active)
+                VALUES (:tid, 1, '{}'::jsonb, NOW(), :uid, true)
+                """
+            ),
+            {"tid": str(template_id), "uid": str(profile_id)},
+        )
+    await db_session.commit()
+
+    res = await db_client.post(
+        f"/api/v1/projects/{project_id}/templates/clone",
+        json={"global_template_id": str(global_template_id), "kind": "quality_assessment"},
+    )
+
+    assert res.status_code == 201, res.text
+    body = res.json()["data"]
+    assert body["created"] is False
+    assert body["project_template_id"] == str(first_id)
+    assert body["entity_type_count"] > 0
+    assert body["field_count"] > 0
 
 
 @pytest.mark.asyncio

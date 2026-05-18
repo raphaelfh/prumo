@@ -187,6 +187,10 @@ async def project_with_run(db_session: AsyncSession) -> AsyncGenerator[dict, Non
         },
     )
     await db_session.commit()
+    await db_session.execute(
+        text("SELECT set_config('request.jwt.claim.sub', :uid, false)"),
+        {"uid": str(user_id)},
+    )
 
     yield {
         "project_id": project_id,
@@ -419,6 +423,72 @@ async def test_reject_decision_does_not_count(
     assert completed == 0
 
 
+async def test_decisions_from_cancelled_run_do_not_count_for_new_run(
+    db_session: AsyncSession, project_with_run: dict
+) -> None:
+    """Spec: progress follows the current run for the article/template.
+
+    A cancelled run may leave reviewer_state rows behind for the same
+    instances. Opening a fresh run must not inherit those historical writes,
+    or the UI can show a model as complete before the current reviewers touch it.
+    """
+    await _record_decision(
+        db_session,
+        run_id=project_with_run["run_id"],
+        instance_id=project_with_run["parent_inst"],
+        field_id=project_with_run["parent_field"],
+        user_id=project_with_run["user_id"],
+        decision="edit",
+        value="stale",
+    )
+    new_run_id = uuid4()
+    await db_session.execute(
+        text(
+            """
+            UPDATE public.extraction_runs
+            SET stage = 'cancelled'::extraction_run_stage
+            WHERE id = :old_run
+            """
+        ),
+        {"old_run": str(project_with_run["run_id"])},
+    )
+    await db_session.execute(
+        text(
+            """
+            INSERT INTO public.extraction_runs
+                (id, project_id, article_id, template_id, version_id, kind,
+                 stage, status, parameters, results, hitl_config_snapshot,
+                 created_by)
+            VALUES (:rid, :proj, :art, :tid,
+                    (SELECT id FROM public.extraction_template_versions
+                     WHERE project_template_id = :tid AND is_active = true),
+                    'extraction',
+                    'review'::extraction_run_stage,
+                    'running'::extraction_run_status,
+                    '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, :uid)
+            """
+        ),
+        {
+            "rid": str(new_run_id),
+            "proj": str(project_with_run["project_id"]),
+            "art": str(project_with_run["article_id"]),
+            "tid": str(project_with_run["template_id"]),
+            "uid": str(project_with_run["user_id"]),
+        },
+    )
+    await db_session.commit()
+
+    completed, total, percentage = await _call_progress(
+        db_session,
+        article_id=project_with_run["article_id"],
+        model_id=project_with_run["parent_inst"],
+    )
+
+    assert completed == 0
+    assert total == 3
+    assert percentage == 0.0
+
+
 async def test_published_state_counts_when_value_present(
     db_session: AsyncSession, project_with_run: dict
 ) -> None:
@@ -526,6 +596,44 @@ async def test_unknown_model_id_returns_zero_over_zero(
         article_id=project_with_run["article_id"],
         model_id=UUID("00000000-0000-0000-0000-000000000000"),
     )
+    assert (completed, total, percentage) == (0, 0, 0.0)
+
+
+async def test_non_member_caller_cannot_read_progress_counts(
+    db_session: AsyncSession, project_with_run: dict
+) -> None:
+    """Security: SECURITY DEFINER must not bypass tenant membership checks."""
+    outsider_id = uuid4()
+    await db_session.execute(
+        text(
+            """
+            INSERT INTO public.profiles (id, email)
+            VALUES (:uid, 'outsider@example.test')
+            """
+        ),
+        {"uid": str(outsider_id)},
+    )
+    await _record_decision(
+        db_session,
+        run_id=project_with_run["run_id"],
+        instance_id=project_with_run["parent_inst"],
+        field_id=project_with_run["parent_field"],
+        user_id=project_with_run["user_id"],
+        decision="edit",
+        value="private",
+    )
+    await db_session.commit()
+    await db_session.execute(
+        text("SELECT set_config('request.jwt.claim.sub', :uid, false)"),
+        {"uid": str(outsider_id)},
+    )
+
+    completed, total, percentage = await _call_progress(
+        db_session,
+        article_id=project_with_run["article_id"],
+        model_id=project_with_run["parent_inst"],
+    )
+
     assert (completed, total, percentage) == (0, 0, 0.0)
 
 

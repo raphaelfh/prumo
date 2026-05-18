@@ -67,6 +67,8 @@ class TemplateCloneService:
                 f"Template {global_template_id} has kind={global_tpl.kind}, expected {kind.value}"
             )
 
+        await self._lock_clone_identity(project_id, global_template_id)
+
         existing = await self._find_existing_clone(project_id, global_template_id)
         if existing is not None:
             entity_types, fields = await self._project_template_structure_counts(existing.id)
@@ -206,6 +208,17 @@ class TemplateCloneService:
             stmt = stmt.where(ProjectExtractionTemplate.id != keep_active_id)
         await self.db.execute(stmt)
 
+    async def _lock_clone_identity(
+        self,
+        project_id: UUID,
+        global_template_id: UUID,
+    ) -> None:
+        """Serialize idempotent clone work for one project/global template pair."""
+        await self.db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(CAST(:key AS text), 0))"),
+            {"key": f"template_clone:{project_id}:{global_template_id}"},
+        )
+
     async def _insert_project_structure_from_global(
         self,
         *,
@@ -295,11 +308,19 @@ class TemplateCloneService:
         project_id: UUID,
         global_template_id: UUID,
     ) -> ProjectExtractionTemplate | None:
-        stmt = select(ProjectExtractionTemplate).where(
-            ProjectExtractionTemplate.project_id == project_id,
-            ProjectExtractionTemplate.global_template_id == global_template_id,
+        stmt = (
+            select(ProjectExtractionTemplate)
+            .where(
+                ProjectExtractionTemplate.project_id == project_id,
+                ProjectExtractionTemplate.global_template_id == global_template_id,
+            )
+            .order_by(
+                ProjectExtractionTemplate.created_at.asc(),
+                ProjectExtractionTemplate.id.asc(),
+            )
+            .limit(1)
         )
-        return (await self.db.execute(stmt)).scalar_one_or_none()
+        return (await self.db.execute(stmt)).scalars().first()
 
     async def _global_entity_types(self, global_template_id: UUID) -> list[ExtractionEntityType]:
         stmt = (
