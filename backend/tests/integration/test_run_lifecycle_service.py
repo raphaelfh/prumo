@@ -249,3 +249,59 @@ async def test_create_run_with_nonexistent_template_raises(db_session: AsyncSess
             user_id=profile_id,
         )
     await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_reopen_after_cancelled_child_creates_fresh_run(
+    db_session: AsyncSession,
+) -> None:
+    """Regression for: reopen_run returned a CANCELLED child instead of
+    creating a new revision when the previous child had been cancelled.
+
+    Trigger sequence:
+      1. Parent run A finalized (via direct SQL to bypass EmptyFinalizeError).
+      2. Reopen A → child run B (REVIEW).
+      3. Cancel B.
+      4. Reopen A again → must create child run C (REVIEW), not return B.
+    """
+    fx = await _fixtures(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    project_id, article_id, template_id, profile_id = fx
+
+    service = RunLifecycleService(db_session)
+
+    # Step 1: Create and force-finalize parent run A.
+    parent = await service.create_run(
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=template_id,
+        user_id=profile_id,
+    )
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_runs "
+            "SET stage = 'finalized', status = 'completed' WHERE id = :rid"
+        ),
+        {"rid": str(parent.id)},
+    )
+    await db_session.flush()
+
+    # Step 2: Reopen → child B in REVIEW.
+    child_b = await service.reopen_run(run_id=parent.id, user_id=profile_id)
+    assert child_b.stage == ExtractionRunStage.REVIEW.value
+    child_b_id = child_b.id
+
+    # Step 3: Cancel child B.
+    await service.advance_stage(
+        run_id=child_b_id,
+        target_stage=ExtractionRunStage.CANCELLED,
+        user_id=profile_id,
+    )
+
+    # Step 4: Reopen A again — must produce a NEW child C, not return B.
+    child_c = await service.reopen_run(run_id=parent.id, user_id=profile_id)
+    assert child_c.id != child_b_id, "reopen_run returned the cancelled child instead of a new run"
+    assert child_c.stage == ExtractionRunStage.REVIEW.value
+
+    await db_session.rollback()
