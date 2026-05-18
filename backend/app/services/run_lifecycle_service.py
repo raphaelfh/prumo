@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +16,7 @@ from app.models.extraction import (
 )
 from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.models.extraction_workflow import (
+    ExtractionConsensusDecision,
     ExtractionProposalRecord,
     ExtractionProposalSource,
     ExtractionPublishedState,
@@ -37,6 +38,15 @@ class TemplateNotFoundError(Exception):
 
 class CannotReopenRunError(Exception):
     """Raised when a Run cannot be reopened (e.g., not finalized)."""
+
+
+class EmptyFinalizeError(InvalidStageTransitionError):
+    """Raised when a Run cannot be finalized because it has no consensus
+    decisions. A FINALIZED Run is meant to represent "the canonical
+    PublishedState is set" — finalizing without any consensus decision
+    produces an empty-but-published Run, which is logically incoherent
+    and breaks downstream consumers that assume PublishedState rows exist.
+    """
 
 
 # Allowed transitions: from -> set of valid target stages
@@ -140,6 +150,25 @@ class RunLifecycleService:
         allowed = _ALLOWED_TRANSITIONS.get(run.stage, set())
         if target not in allowed:
             raise InvalidStageTransitionError(f"Cannot transition from {run.stage} to {target}")
+        if target == ExtractionRunStage.FINALIZED.value:
+            # Invariant: a FINALIZED run must carry at least one published
+            # value, which in turn requires at least one ConsensusDecision
+            # (manual_override or select_existing). Without this the UI
+            # shows a "Published" badge over a run that has nothing to
+            # display, and downstream consumers that join on
+            # ExtractionPublishedState return empty sets without warning.
+            consensus_count = (
+                await self.db.execute(
+                    select(func.count())
+                    .select_from(ExtractionConsensusDecision)
+                    .where(ExtractionConsensusDecision.run_id == run_id)
+                )
+            ).scalar_one()
+            if consensus_count == 0:
+                raise EmptyFinalizeError(
+                    f"Cannot finalize run {run_id}: no consensus decisions recorded. "
+                    "Resolve at least one field before finalizing."
+                )
         run.stage = target
         if target == ExtractionRunStage.CANCELLED.value:
             run.status = ExtractionRunStatus.FAILED.value

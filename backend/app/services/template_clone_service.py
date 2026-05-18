@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import (
@@ -97,6 +97,20 @@ class TemplateCloneService:
                 f"Active-version invariant violated for project_extraction_template "
                 f"{existing.id}; the DB trigger should have prevented this."
             )
+            # Re-importing a template re-activates it (user intent: "use
+            # this template now"). For extraction kind, also enforce the
+            # single-active invariant by deactivating siblings *before*
+            # touching ``existing.is_active`` — the partial unique index
+            # ``uq_one_active_extraction_template_per_project`` is checked
+            # eagerly on every flush, so we must clear the field first.
+            if kind == TemplateKind.EXTRACTION:
+                await self._deactivate_sibling_extraction_templates(
+                    project_id=project_id, keep_active_id=existing.id
+                )
+                await self.db.flush()
+            if not existing.is_active:
+                existing.is_active = True
+            await self.db.flush()
             return TemplateClone(
                 project_template_id=existing.id,
                 version_id=version.id,
@@ -104,6 +118,20 @@ class TemplateCloneService:
                 field_count=fields,
                 created=False,
             )
+
+        # Single-active invariant for extraction templates: deactivate every
+        # currently-active extraction template in the project *before*
+        # inserting the new one. The partial unique index
+        # ``uq_one_active_extraction_template_per_project`` is enforced on
+        # the same flush as the INSERT, so the cleanup must land first or
+        # the INSERT trips the index. QA templates coexist (PROBAST +
+        # QUADAS-2) and are not affected — kind discriminator on the index
+        # keeps QA out of scope.
+        if kind == TemplateKind.EXTRACTION:
+            await self._deactivate_sibling_extraction_templates(
+                project_id=project_id, keep_active_id=None
+            )
+            await self.db.flush()
 
         project_tpl = ProjectExtractionTemplate(
             project_id=project_id,
@@ -144,6 +172,39 @@ class TemplateCloneService:
             field_count=field_count,
             created=True,
         )
+
+    async def _deactivate_sibling_extraction_templates(
+        self,
+        *,
+        project_id: UUID,
+        keep_active_id: UUID | None,
+    ) -> None:
+        """Deactivate active extraction templates in the project.
+
+        ``keep_active_id`` is excluded from the update (idempotent re-import
+        of the same clone). Passing ``None`` deactivates every active
+        extraction template, e.g. just before inserting a brand-new one
+        whose id is not known yet.
+
+        Mirrors the constraint enforced on the manual deactivate path in
+        ``update_project_template_active``: the extraction workflow assumes
+        exactly one active template per project at any time. Clone must
+        therefore supersede the previous active template rather than create
+        ambiguity that would split the Configuration view from the
+        Extraction view.
+        """
+        stmt = (
+            update(ProjectExtractionTemplate)
+            .where(
+                ProjectExtractionTemplate.project_id == project_id,
+                ProjectExtractionTemplate.kind == TemplateKind.EXTRACTION.value,
+                ProjectExtractionTemplate.is_active.is_(True),
+            )
+            .values(is_active=False)
+        )
+        if keep_active_id is not None:
+            stmt = stmt.where(ProjectExtractionTemplate.id != keep_active_id)
+        await self.db.execute(stmt)
 
     async def _insert_project_structure_from_global(
         self,

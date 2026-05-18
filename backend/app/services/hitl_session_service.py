@@ -234,8 +234,101 @@ class HITLSessionService:
             self.db.add(inst)
             await self.db.flush()
             by_entity[et.id] = inst.id
+            existing_rows.append(inst)
+
+        await self._backfill_child_singletons(
+            project_id=project_id,
+            article_id=article_id,
+            project_template_id=project_template_id,
+            entity_types=entity_types,
+            user_id=user_id,
+            existing_rows=existing_rows,
+        )
 
         return by_entity
+
+    async def _backfill_child_singletons(
+        self,
+        *,
+        project_id: UUID,
+        article_id: UUID,
+        project_template_id: UUID,
+        entity_types: list[ExtractionEntityType],
+        user_id: UUID,
+        existing_rows: list[ExtractionInstance],
+    ) -> None:
+        """Materialise missing cardinality='one' child instances for
+        existing parent instances.
+
+        Maintains the invariant: for every parent instance, every
+        cardinality='one' child entity type has exactly one matching
+        instance under it. The original ``_ensure_instances`` only seeded
+        top-level singletons; it never touched children. That left a gap:
+
+        * A manager adds a new sub-section under ``prediction_models`` in
+          the Configuration tab (e.g. inserts a new ``extraction_entity_types``
+          row with ``parent_entity_type_id`` pointing at an existing
+          many-parent) AFTER models for the article were already created.
+        * Existing model instances would not have an instance of the new
+          sub-section, so the form rendered the fields but had no instance
+          to bind ``ReviewerDecision``/``PublishedState`` to — orphan UI.
+
+        Running this on every session open also covers the symmetric case
+        for cardinality='one' parents whose children were added later, and
+        is idempotent: it only inserts when the (parent_instance, child
+        entity_type) pair has no row yet. Same advisory lock as the
+        top-level seeding above guards against duplicates under
+        concurrent opens.
+        """
+        many_one_pairs: dict[UUID, list[ExtractionEntityType]] = {}
+        for et in entity_types:
+            if et.parent_entity_type_id is None:
+                continue
+            if et.cardinality != ExtractionCardinality.ONE.value:
+                continue
+            many_one_pairs.setdefault(et.parent_entity_type_id, []).append(et)
+
+        if not many_one_pairs:
+            return
+
+        existing_children: set[tuple[UUID, UUID]] = {
+            (row.parent_instance_id, row.entity_type_id)
+            for row in existing_rows
+            if row.parent_instance_id is not None
+        }
+
+        # Snapshot parent instances by entity_type so we can iterate the
+        # singleton invariant per (parent_instance, child_entity_type).
+        parent_instances_by_et: dict[UUID, list[ExtractionInstance]] = {}
+        for row in existing_rows:
+            if row.entity_type_id in many_one_pairs:
+                parent_instances_by_et.setdefault(row.entity_type_id, []).append(row)
+
+        inserted = False
+        for parent_et_id, child_ets in many_one_pairs.items():
+            for parent_inst in parent_instances_by_et.get(parent_et_id, []):
+                for child_et in child_ets:
+                    if (parent_inst.id, child_et.id) in existing_children:
+                        continue
+                    self.db.add(
+                        ExtractionInstance(
+                            project_id=project_id,
+                            article_id=article_id,
+                            template_id=project_template_id,
+                            entity_type_id=child_et.id,
+                            parent_instance_id=parent_inst.id,
+                            label=f"{parent_inst.label} - {child_et.label} 1",
+                            sort_order=child_et.sort_order,
+                            metadata_={"created_via": "hitl_session_backfill"},
+                            created_by=user_id,
+                            status=ExtractionInstanceStatus.PENDING.value,
+                        )
+                    )
+                    existing_children.add((parent_inst.id, child_et.id))
+                    inserted = True
+
+        if inserted:
+            await self.db.flush()
 
     async def _reuse_or_create_run(
         self,

@@ -62,9 +62,6 @@ export async function importGlobalTemplate(
     if (!globalTemplate) throw new Error(t('common', 'errors_templateNotFound'));
 
     console.warn(`[templateImport] catalogue: ${globalTemplate.name} v${globalTemplate.version}`);
-    // #region agent log
-    fetch('http://127.0.0.1:7419/ingest/727eb943-93f0-4ba8-8f6f-e0b3918194ee',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'34c1ec'},body:JSON.stringify({sessionId:'34c1ec',runId:'template-clone',hypothesisId:'H4-H5',location:'templateImportService.ts:importGlobalTemplate:before-clone',message:'Starting server-side template clone',data:{projectId,globalTemplateId,globalTemplateName:globalTemplate.name,globalTemplateVersion:globalTemplate.version},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
 
     const serverCloneResult = await apiClient<CloneTemplateResponse>(
       `/api/v1/projects/${projectId}/templates/clone`,
@@ -76,9 +73,6 @@ export async function importGlobalTemplate(
         timeout: 120_000,
       },
     );
-    // #region agent log
-    fetch('http://127.0.0.1:7419/ingest/727eb943-93f0-4ba8-8f6f-e0b3918194ee',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'34c1ec'},body:JSON.stringify({sessionId:'34c1ec',runId:'template-clone',hypothesisId:'H4',location:'templateImportService.ts:importGlobalTemplate:clone-response',message:'Clone API returned',data:{projectId,globalTemplateId,projectTemplateId:serverCloneResult.project_template_id,versionId:serverCloneResult.version_id,entityTypeCount:serverCloneResult.entity_type_count,fieldCount:serverCloneResult.field_count,created:serverCloneResult.created},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
 
     return {
       success: true,
@@ -89,9 +83,6 @@ export async function importGlobalTemplate(
       },
     };
   } catch (err: any) {
-    // #region agent log
-    fetch('http://127.0.0.1:7419/ingest/727eb943-93f0-4ba8-8f6f-e0b3918194ee',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'34c1ec'},body:JSON.stringify({sessionId:'34c1ec',runId:'template-clone',hypothesisId:'H4-H5',location:'templateImportService.ts:importGlobalTemplate:clone-error',message:'Clone flow failed',data:{projectId,globalTemplateId,errorMessage:err?.message ?? 'unknown',errorCode:err?.code ?? null},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     console.error('[templateImport] failed', err);
     return {
       success: false,

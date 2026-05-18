@@ -214,18 +214,22 @@ export function useExtractionData({
       if (projectError) throw projectError;
       setProject(projectData);
 
-      // 3. Load active extraction template. A project may carry multiple
-      // active extraction templates after a manual import, so we pick the
-      // original (oldest active) instead of failing with PGRST116 the way
-      // ``.single()`` would. Newly cloned templates remain accessible via
-      // the Configuration tab.
+      // 3. Load active extraction template. The backend enforces a single
+      // active extraction template per project (clone deactivates siblings,
+      // PATCH refuses to deactivate the last one). Order DESC so the
+      // selection matches ``ExtractionInterface``'s active picker (which
+      // also picks the newest active from a DESC-sorted list) — keeping
+      // Configuration and Extraction views on the same template. Defensive:
+      // if a legacy project still carries multiple actives (pre-fix data),
+      // both readers will agree on the newest, which is the one the user
+      // most recently imported and is therefore actively configuring.
       const { data: templateData, error: templateError } = await supabase
         .from('project_extraction_templates')
         .select('*')
         .eq('project_id', projectId)
         .eq('is_active', true)
         .eq('kind', 'extraction')
-        .order('created_at', { ascending: true })
+        .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 

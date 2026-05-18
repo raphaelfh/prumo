@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import ExtractionRunStage
 from app.services.run_lifecycle_service import (
+    EmptyFinalizeError,
     InvalidStageTransitionError,
     RunLifecycleService,
 )
@@ -180,6 +181,51 @@ async def test_create_run_derives_kind_from_template(db_session: AsyncSession) -
         user_id=profile_id,
     )
     assert run.kind == template_kind
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_cannot_finalize_run_without_consensus(
+    db_session: AsyncSession,
+) -> None:
+    """Regression: a Run can reach FINALIZED with 0 consensus decisions,
+    leaving an empty 'Published' run that the UI flags as complete while
+    no PublishedState rows exist.
+
+    The lifecycle service must block advance(target=FINALIZED) when no
+    ConsensusDecision was recorded — otherwise downstream consumers join
+    on an empty PublishedState set without warning.
+    """
+    fx = await _fixtures(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    project_id, article_id, template_id, profile_id = fx
+
+    service = RunLifecycleService(db_session)
+    run = await service.create_run(
+        project_id=project_id,
+        article_id=article_id,
+        project_template_id=template_id,
+        user_id=profile_id,
+    )
+    for target in (
+        ExtractionRunStage.PROPOSAL,
+        ExtractionRunStage.REVIEW,
+        ExtractionRunStage.CONSENSUS,
+    ):
+        await service.advance_stage(run_id=run.id, target_stage=target, user_id=profile_id)
+
+    with pytest.raises(EmptyFinalizeError):
+        await service.advance_stage(
+            run_id=run.id,
+            target_stage=ExtractionRunStage.FINALIZED,
+            user_id=profile_id,
+        )
+
+    # EmptyFinalizeError extends InvalidStageTransitionError so the existing
+    # endpoint handler returns 400 — verify the subclass relationship.
+    assert issubclass(EmptyFinalizeError, InvalidStageTransitionError)
+
     await db_session.rollback()
 
 

@@ -241,12 +241,48 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
           
           {props.activeModelId && (
             <div className="space-y-4 mt-4">
+              {/*
+                Render the parent prediction_models entity type itself when it
+                carries any fields. Without this the CHARMS defaults
+                (Model Name, Modelling Method) and any custom field a manager
+                adds to the parent in the Configuration tab are silently
+                dropped — they live on the parent instance, which the rest of
+                the form never iterates over.
+              */}
+              {props.modelParentEntityType &&
+                props.modelParentEntityType.fields.length > 0 && (
+                  <SectionAccordion
+                    key={props.modelParentEntityType.id}
+                    entityType={props.modelParentEntityType}
+                    instances={props.instances.filter(
+                      (i) => i.id === props.activeModelId,
+                    )}
+                    fields={props.modelParentEntityType.fields}
+                    values={props.values}
+                    onValueChange={props.updateValue}
+                    projectId={props.projectId}
+                    articleId={props.articleId}
+                    templateId={props.templateId}
+                    otherExtractions={props.otherExtractions}
+                    aiSuggestions={props.aiSuggestions}
+                    onAcceptAI={props.acceptSuggestion}
+                    onRejectAI={props.rejectSuggestion}
+                    getSuggestionsHistory={props.getSuggestionsHistory}
+                    isActionLoading={props.isActionLoading}
+                    onAddInstance={() =>
+                      props.handleAddInstance(props.modelParentEntityType!.id)
+                    }
+                    onRemoveInstance={props.handleRemoveInstance}
+                    viewMode="extract"
+                    onExtractionComplete={props.onExtractionComplete}
+                  />
+                )}
               {props.modelChildSections.map(entityType => {
                 const typeInstances = props.getInstancesForModel(
                   entityType.id,
                   props.activeModelId!
                 );
-                
+
                 return (
                   <SectionAccordion
                     key={entityType.id}

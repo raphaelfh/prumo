@@ -76,6 +76,25 @@ async def _pick_article(db: AsyncSession) -> tuple[UUID, UUID] | None:
     return UUID(str(raw[0])), UUID(str(raw[1]))
 
 
+async def _wipe_project_template_chain(
+    db: AsyncSession,
+    *,
+    project_id: UUID,
+    global_template_id: UUID,
+    article_id: UUID | None = None,
+) -> None:
+    """Drop runs + instances + project_extraction_templates rows tied to the
+    given global template id (and optionally scoped to one article) so a
+    subsequent clone/open exercises the create branch from a clean slate.
+    Kind-agnostic — reused by both QA and extraction tests."""
+    await _wipe_qa_state(
+        db,
+        project_id=project_id,
+        global_template_id=global_template_id,
+        article_id=article_id,
+    )
+
+
 async def _wipe_qa_state(
     db: AsyncSession,
     *,
@@ -265,11 +284,43 @@ async def test_qa_session_returns_finalized_run_instead_of_forking(
     }
     first = await db_client.post(_SESSION_URL, json=payload)
     assert first.status_code == 201
-    run_id = first.json()["data"]["run_id"]
+    first_data = first.json()["data"]
+    run_id = first_data["run_id"]
+    instances_by_et = first_data["instances_by_entity_type"]
+    # Pick any instance from the QA template; we just need one (instance, field)
+    # pair to write a consensus decision so the run can finalize.
+    et_id, instance_id = next(iter(instances_by_et.items()))
+    field_id = (
+        await db_session.execute(
+            text("SELECT id FROM public.extraction_fields WHERE entity_type_id = :et LIMIT 1"),
+            {"et": et_id},
+        )
+    ).scalar()
+    assert field_id is not None, "QA entity type has no fields"
 
-    for stage in ("review", "consensus", "finalized"):
+    for stage in ("review", "consensus"):
         adv = await db_client.post(f"/api/v1/runs/{run_id}/advance", json={"target_stage": stage})
         assert adv.status_code == 200, adv.text
+
+    # Satisfy the FINALIZED invariant: write at least one consensus decision
+    # (manual_override carries the value+rationale directly).
+    consensus_res = await db_client.post(
+        f"/api/v1/runs/{run_id}/consensus",
+        json={
+            "instance_id": str(instance_id),
+            "field_id": str(field_id),
+            "mode": "manual_override",
+            "value": {"value": "Y"},
+            "rationale": "test fixture",
+        },
+    )
+    assert consensus_res.status_code == 201, consensus_res.text
+
+    final_res = await db_client.post(
+        f"/api/v1/runs/{run_id}/advance",
+        json={"target_stage": "finalized"},
+    )
+    assert final_res.status_code == 200, final_res.text
 
     second = await db_client.post(_SESSION_URL, json=payload)
     # Issue #32: surfacing a finalized run is a resume, not a creation.
@@ -533,3 +584,252 @@ async def test_patch_template_active_returns_404_for_unknown_template(
         json={"is_active": False},
     )
     assert res.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_session_backfills_singleton_children_added_after_model_creation(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    """Late-added cardinality='one' children of an existing many-parent
+    instance must be materialised at session open.
+
+    Repro: Manager creates a CHARMS project, the user creates a model
+    instance (parent under the ``prediction_models`` many-parent), then the
+    Manager adds a new ``extraction_entity_types`` row under
+    ``prediction_models`` from the Configuration tab. Without backfill the
+    new sub-section renders fields with no instance to bind values to —
+    orphan UI. Re-opening the session must materialise the missing child.
+    """
+    from app.models.extraction import ExtractionCardinality, TemplateKind
+    from app.seed import seed_charms
+
+    await seed_charms(db_session)
+    await db_session.commit()
+
+    article = await _pick_article(db_session)
+    if article is None:
+        pytest.skip("Need an article + project")
+    article_id, project_id = article
+
+    # Clone CHARMS so this test owns the project template lifecycle.
+    charms_global_id = UUID("000c0000-0000-0000-0000-000000000001")
+    await _wipe_project_template_chain(
+        db_session,
+        project_id=project_id,
+        global_template_id=charms_global_id,
+    )
+    clone_res = await db_client.post(
+        f"/api/v1/projects/{project_id}/templates/clone",
+        json={"global_template_id": str(charms_global_id), "kind": "extraction"},
+    )
+    assert clone_res.status_code == 201, clone_res.text
+    project_template_id = UUID(clone_res.json()["data"]["project_template_id"])
+
+    # First session open: top-level singletons seeded; many-parent is empty.
+    first = await db_client.post(
+        _SESSION_URL,
+        json={
+            "kind": TemplateKind.EXTRACTION.value,
+            "project_id": str(project_id),
+            "article_id": str(article_id),
+            "project_template_id": str(project_template_id),
+        },
+    )
+    assert first.status_code in (200, 201), first.text
+
+    # Simulate the user creating a model: insert a parent instance under
+    # the prediction_models many-parent.
+    prediction_models_row = (
+        await db_session.execute(
+            text(
+                "SELECT id FROM public.extraction_entity_types "
+                "WHERE project_template_id = :ptid AND name = 'prediction_models'"
+            ),
+            {"ptid": str(project_template_id)},
+        )
+    ).scalar()
+    if prediction_models_row is None:
+        pytest.skip("CHARMS clone is missing prediction_models entity_type")
+    prediction_models_et_id = UUID(str(prediction_models_row))
+
+    model_instance_id = (
+        await db_session.execute(
+            text(
+                """
+                INSERT INTO public.extraction_instances
+                    (project_id, article_id, template_id, entity_type_id,
+                     parent_instance_id, label, sort_order, status, created_by)
+                VALUES (:pid, :aid, :tid, :etid, NULL, 'XGBoost', 0,
+                        'pending'::extraction_instance_status,
+                        (SELECT id FROM public.profiles LIMIT 1))
+                RETURNING id
+                """
+            ),
+            {
+                "pid": str(project_id),
+                "aid": str(article_id),
+                "tid": str(project_template_id),
+                "etid": str(prediction_models_et_id),
+            },
+        )
+    ).scalar()
+    assert model_instance_id is not None
+
+    # Manager adds a brand-new sub-section under prediction_models.
+    new_sub_section_id = (
+        await db_session.execute(
+            text(
+                """
+                INSERT INTO public.extraction_entity_types
+                    (project_template_id, name, label, description,
+                     parent_entity_type_id, cardinality, sort_order, is_required)
+                VALUES (:ptid, 'late_added_sub', 'Late Added Sub', NULL,
+                        :pet, :card, 99, false)
+                RETURNING id
+                """
+            ),
+            {
+                "ptid": str(project_template_id),
+                "pet": str(prediction_models_et_id),
+                "card": ExtractionCardinality.ONE.value,
+            },
+        )
+    ).scalar()
+    assert new_sub_section_id is not None
+    await db_session.commit()
+
+    # Re-open session: backfill must materialise the missing child.
+    second = await db_client.post(
+        _SESSION_URL,
+        json={
+            "kind": TemplateKind.EXTRACTION.value,
+            "project_id": str(project_id),
+            "article_id": str(article_id),
+            "project_template_id": str(project_template_id),
+        },
+    )
+    assert second.status_code in (200, 201), second.text
+
+    backfilled = (
+        await db_session.execute(
+            text(
+                """
+                SELECT COUNT(*) FROM public.extraction_instances
+                WHERE article_id = :aid
+                  AND entity_type_id = :etid
+                  AND parent_instance_id = :pid
+                """
+            ),
+            {
+                "aid": str(article_id),
+                "etid": str(new_sub_section_id),
+                "pid": str(model_instance_id),
+            },
+        )
+    ).scalar()
+    assert backfilled == 1, (
+        "Late-added singleton sub-section should be materialised exactly once "
+        "for the existing model instance after session re-open"
+    )
+
+
+@pytest.mark.asyncio
+async def test_session_backfill_is_idempotent(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    """Subsequent session opens must not duplicate the materialised
+    child instance. Same invariant as the singletons guard at the
+    top level: one instance per (parent_instance, child_entity_type)."""
+    from app.models.extraction import TemplateKind
+    from app.seed import seed_charms
+
+    await seed_charms(db_session)
+    await db_session.commit()
+
+    article = await _pick_article(db_session)
+    if article is None:
+        pytest.skip("Need an article + project")
+    article_id, project_id = article
+
+    charms_global_id = UUID("000c0000-0000-0000-0000-000000000001")
+    await _wipe_project_template_chain(
+        db_session,
+        project_id=project_id,
+        global_template_id=charms_global_id,
+    )
+    clone_res = await db_client.post(
+        f"/api/v1/projects/{project_id}/templates/clone",
+        json={"global_template_id": str(charms_global_id), "kind": "extraction"},
+    )
+    assert clone_res.status_code == 201, clone_res.text
+    project_template_id = UUID(clone_res.json()["data"]["project_template_id"])
+
+    prediction_models_row = (
+        await db_session.execute(
+            text(
+                "SELECT id FROM public.extraction_entity_types "
+                "WHERE project_template_id = :ptid AND name = 'prediction_models'"
+            ),
+            {"ptid": str(project_template_id)},
+        )
+    ).scalar()
+    if prediction_models_row is None:
+        pytest.skip("CHARMS clone is missing prediction_models entity_type")
+    prediction_models_et_id = UUID(str(prediction_models_row))
+
+    model_instance_id = (
+        await db_session.execute(
+            text(
+                """
+                INSERT INTO public.extraction_instances
+                    (project_id, article_id, template_id, entity_type_id,
+                     parent_instance_id, label, sort_order, status, created_by)
+                VALUES (:pid, :aid, :tid, :etid, NULL, 'XGBoost', 0,
+                        'pending'::extraction_instance_status,
+                        (SELECT id FROM public.profiles LIMIT 1))
+                RETURNING id
+                """
+            ),
+            {
+                "pid": str(project_id),
+                "aid": str(article_id),
+                "tid": str(project_template_id),
+                "etid": str(prediction_models_et_id),
+            },
+        )
+    ).scalar()
+    await db_session.commit()
+
+    payload = {
+        "kind": TemplateKind.EXTRACTION.value,
+        "project_id": str(project_id),
+        "article_id": str(article_id),
+        "project_template_id": str(project_template_id),
+    }
+    res1 = await db_client.post(_SESSION_URL, json=payload)
+    assert res1.status_code in (200, 201), res1.text
+    res2 = await db_client.post(_SESSION_URL, json=payload)
+    assert res2.status_code in (200, 201), res2.text
+
+    duplicates = (
+        await db_session.execute(
+            text(
+                """
+                SELECT entity_type_id, COUNT(*)
+                FROM public.extraction_instances
+                WHERE article_id = :aid
+                  AND parent_instance_id = :pid
+                GROUP BY entity_type_id
+                HAVING COUNT(*) > 1
+                """
+            ),
+            {"aid": str(article_id), "pid": str(model_instance_id)},
+        )
+    ).all()
+    assert duplicates == [], (
+        "Backfill must not duplicate child singletons under the same parent instance"
+    )

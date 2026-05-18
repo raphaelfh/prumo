@@ -251,9 +251,6 @@ export function useModelManagement({
       if (childTypesError) throw childTypesError;
 
         // 3. Delegate hierarchy creation to service
-      // #region agent log
-      fetch('http://127.0.0.1:7419/ingest/727eb943-93f0-4ba8-8f6f-e0b3918194ee',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'34c1ec'},body:JSON.stringify({sessionId:'34c1ec',runId:'model-instance-create',hypothesisId:'H5',location:'useModelManagement.ts:createModel:before-createHierarchy',message:'Creating model hierarchy instance',data:{projectId,articleId,templateId,modelParentEntityTypeId,modelName:modelName.trim(),childEntityTypeCount:(childEntityTypes || []).length},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       const result = await extractionInstanceService.createHierarchy({
         projectId,
         articleId,
@@ -310,9 +307,6 @@ export function useModelManagement({
         // 6. Update state
       setModels(prev => [...prev, newModel]);
       setActiveModelId(newModel.instanceId);
-      // #region agent log
-      fetch('http://127.0.0.1:7419/ingest/727eb943-93f0-4ba8-8f6f-e0b3918194ee',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'34c1ec'},body:JSON.stringify({sessionId:'34c1ec',runId:'model-instance-create',hypothesisId:'H5',location:'useModelManagement.ts:createModel:createHierarchy-success',message:'Model hierarchy instance created',data:{parentInstanceId:result.parent.id,parentLabel:result.parent.label,childrenCreated:result.children.length},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
 
         toast.success(t('extraction', 'modelCreatedSuccess').replace('{{label}}', result.parent.label));
 
@@ -325,9 +319,6 @@ export function useModelManagement({
       };
 
     } catch (err: any) {
-        // #region agent log
-        fetch('http://127.0.0.1:7419/ingest/727eb943-93f0-4ba8-8f6f-e0b3918194ee',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'34c1ec'},body:JSON.stringify({sessionId:'34c1ec',runId:'model-instance-create',hypothesisId:'H5',location:'useModelManagement.ts:createModel:createHierarchy-error',message:'Model hierarchy creation failed',data:{projectId,articleId,templateId,modelParentEntityTypeId,errorMessage:err?.message ?? 'unknown',errorCode:err?.code ?? null},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         console.error('Error creating model:', err);
         toast.error(`${t('extraction', 'errors_createModel')}: ${err.message}`);
       return null;
