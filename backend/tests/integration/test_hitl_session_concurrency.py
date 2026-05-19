@@ -93,33 +93,27 @@ async def _create_template_with_entity_types(
         ),
         {"id": str(version_id), "tid": str(template_id), "uid": str(profile_id)},
     )
+    # Synthetic fixtures are flat (no parents), so all rows are
+    # ``study_section`` per the role/parent CHECK introduced in 0016.
+    from typing import Literal as L
+    from typing import cast
+
+    from app.models.extraction import ExtractionEntityRole
+    from tests.factories import make_entity_type
+
     entity_ids: list[UUID] = []
     for idx, (name, cardinality) in enumerate(entity_specs):
-        et_id = uuid4()
-        # Synthetic fixtures are flat (no parents), so all rows are
-        # ``study_section`` per the role/parent CHECK introduced in 0016.
-        await db.execute(
-            text(
-                """
-                INSERT INTO public.extraction_entity_types
-                  (id, project_template_id, template_id, name, label,
-                   cardinality, role, sort_order, is_required, created_at,
-                   updated_at)
-                VALUES
-                  (:id, :tid, NULL, :name, :label, :card, 'study_section',
-                   :ord, false, NOW(), NOW())
-                """
-            ),
-            {
-                "id": str(et_id),
-                "tid": str(template_id),
-                "name": name,
-                "label": name.title(),
-                "card": cardinality,
-                "ord": idx,
-            },
+        et = make_entity_type(
+            project_template_id=template_id,
+            name=name,
+            label=name.title(),
+            cardinality=cast(L["one", "many"], cardinality),
+            role=ExtractionEntityRole.STUDY_SECTION,
+            sort_order=idx,
         )
-        entity_ids.append(et_id)
+        db.add(et)
+        await db.flush()
+        entity_ids.append(et.id)
     await db.commit()
     return template_id, entity_ids
 

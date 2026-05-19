@@ -86,23 +86,33 @@ async def project_with_run(db_session: AsyncSession) -> AsyncGenerator[dict, Non
         {"tid": str(ptid), "uid": str(user_id)},
     )
 
-    pred_et = uuid4()
-    child_et = uuid4()
-    await db_session.execute(
-        text(
-            """
-            INSERT INTO public.extraction_entity_types
-                (id, project_template_id, name, label, cardinality, role,
-                 sort_order, is_required, parent_entity_type_id)
-            VALUES
-                (:pet, :tid, 'prediction_models', 'Prediction Models',
-                 'many', 'model_container', 0, false, NULL),
-                (:cet, :tid, 'sub_section', 'Sub Section',
-                 'one', 'model_section', 1, false, :pet)
-            """
-        ),
-        {"pet": str(pred_et), "cet": str(child_et), "tid": str(ptid)},
+    from app.models.extraction import ExtractionEntityRole
+    from tests.factories import make_entity_type
+
+    container = make_entity_type(
+        project_template_id=ptid,
+        name="prediction_models",
+        label="Prediction Models",
+        cardinality="many",
+        role=ExtractionEntityRole.MODEL_CONTAINER,
+        sort_order=0,
     )
+    db_session.add(container)
+    await db_session.flush()
+    pred_et = container.id
+
+    child = make_entity_type(
+        project_template_id=ptid,
+        name="sub_section",
+        label="Sub Section",
+        cardinality="one",
+        role=ExtractionEntityRole.MODEL_SECTION,
+        parent_entity_type_id=pred_et,
+        sort_order=1,
+    )
+    db_session.add(child)
+    await db_session.flush()
+    child_et = child.id
     parent_field = uuid4()
     child_field_a = uuid4()
     child_field_b = uuid4()

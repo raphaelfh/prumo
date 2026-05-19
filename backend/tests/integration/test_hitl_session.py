@@ -680,26 +680,21 @@ async def test_session_backfills_singleton_children_added_after_model_creation(
     # Manager adds a brand-new sub-section under prediction_models. The
     # parent is the model container, so the child must be a model_section
     # (enforced by the trigger from migration 0016).
-    new_sub_section_id = (
-        await db_session.execute(
-            text(
-                """
-                INSERT INTO public.extraction_entity_types
-                    (project_template_id, name, label, description,
-                     parent_entity_type_id, cardinality, role, sort_order,
-                     is_required)
-                VALUES (:ptid, 'late_added_sub', 'Late Added Sub', NULL,
-                        :pet, :card, 'model_section', 99, false)
-                RETURNING id
-                """
-            ),
-            {
-                "ptid": str(project_template_id),
-                "pet": str(prediction_models_et_id),
-                "card": ExtractionCardinality.ONE.value,
-            },
-        )
-    ).scalar()
+    from app.models.extraction import ExtractionEntityRole
+    from tests.factories import make_entity_type
+
+    new_sub = make_entity_type(
+        project_template_id=project_template_id,
+        name="late_added_sub",
+        label="Late Added Sub",
+        cardinality=ExtractionCardinality.ONE.value,
+        role=ExtractionEntityRole.MODEL_SECTION,
+        parent_entity_type_id=prediction_models_et_id,
+        sort_order=99,
+    )
+    db_session.add(new_sub)
+    await db_session.flush()
+    new_sub_section_id = new_sub.id
     assert new_sub_section_id is not None
     await db_session.commit()
 

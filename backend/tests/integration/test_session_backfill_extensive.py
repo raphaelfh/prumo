@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
+from app.models.extraction import ExtractionEntityRole
 
 pytestmark = pytest.mark.asyncio
 
@@ -169,32 +170,29 @@ async def _add_child_entity_type(
     sort_order: int = 99,
 ) -> UUID:
     """Insert a synthetic child entity type under an existing model
-    container. ``role='model_section'`` is required by the trigger
-    introduced in migration ``0016_entity_role_column``.
+    container.
+
+    Thin wrapper over ``TemplateFactory.add_section`` so existing tests
+    keep their signature; new tests should use the factory directly.
+    Routes through the ORM so the CHECK + trigger from migration 0016
+    fire on misuse instead of producing inconsistent rows.
     """
-    raw = (
-        await db.execute(
-            text(
-                """
-                INSERT INTO public.extraction_entity_types
-                    (project_template_id, name, label, description,
-                     parent_entity_type_id, cardinality, role, sort_order,
-                     is_required)
-                VALUES (:ptid, :name, :name, NULL, :pet, :card,
-                        'model_section', :ord, false)
-                RETURNING id
-                """
-            ),
-            {
-                "ptid": str(project_template_id),
-                "name": name,
-                "pet": str(parent_et_id),
-                "card": cardinality,
-                "ord": sort_order,
-            },
-        )
-    ).scalar()
-    return UUID(str(raw))
+    from typing import Literal as L
+    from typing import cast
+
+    from tests.factories import make_entity_type
+
+    et = make_entity_type(
+        project_template_id=project_template_id,
+        name=name,
+        cardinality=cast(L["one", "many"], cardinality),
+        role=ExtractionEntityRole.MODEL_SECTION,
+        parent_entity_type_id=parent_et_id,
+        sort_order=sort_order,
+    )
+    db.add(et)
+    await db.flush()
+    return et.id
 
 
 # ============================================================================
