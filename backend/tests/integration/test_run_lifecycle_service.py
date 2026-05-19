@@ -286,6 +286,12 @@ async def test_reopen_after_cancelled_child_creates_fresh_run(
         {"rid": str(parent.id)},
     )
     await db_session.flush()
+    # The direct SQL UPDATE bypasses SQLAlchemy's identity map, so the
+    # ``parent`` Python object still has ``stage='pending'``. ``reopen_run``
+    # SELECTs the run by id and the session would return the cached row
+    # before re-querying — making the stage check fall through as PENDING.
+    # Refresh the parent so the next SELECT sees the FINALIZED stage.
+    await db_session.refresh(parent)
 
     # Step 2: Reopen → child B in REVIEW.
     child_b = await service.reopen_run(run_id=parent.id, user_id=profile_id)
