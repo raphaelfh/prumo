@@ -18,9 +18,7 @@
 import {memo} from 'react';
 import {ModelSection} from './ModelSection';
 import {SectionAccordion} from './SectionAccordion';
-import {useBatchAllModelsSectionsExtraction} from '@/hooks/extraction/useBatchAllModelsSectionsExtraction';
-import {useBatchSectionExtractionChunked} from '@/hooks/extraction/useBatchSectionExtractionChunked';
-import {useModelExtraction} from '@/hooks/extraction/useModelExtraction';
+import {useExtractionFormAIActions} from '@/hooks/extraction/useExtractionFormAIActions';
 import type {
   ExtractionEntityTypeWithFields,
   ExtractionInstance,
@@ -62,114 +60,16 @@ export interface ExtractionFormViewProps {
 }
 
 function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
-  // === AI: identify candidate models from the article ===
-  const {extractModels, loading: extractingModels} = useModelExtraction({
-    onSuccess: async (runId, modelsCreated) => {
-      console.warn('[ExtractionFormView] Models extracted:', {runId, modelsCreated});
-      try {
-        await props.onRefreshModels();
-        await props.onRefreshInstances();
-        if (props.models.length === 0 && modelsCreated > 0) {
-          setTimeout(async () => {
-            await props.onRefreshModels();
-          }, 500);
-        }
-      } catch (error) {
-        console.error('[ExtractionFormView] Error reloading after model extraction:', error);
-      }
-    },
+  const ai = useExtractionFormAIActions({
+    projectId: props.projectId,
+    articleId: props.articleId,
+    templateId: props.templateId,
+    activeModelId: props.activeModelId,
+    models: props.models,
+    onRefreshModels: props.onRefreshModels,
+    onRefreshInstances: props.onRefreshInstances,
+    onExtractionComplete: props.onExtractionComplete,
   });
-
-  const handleExtractModels = async () => {
-    try {
-      await extractModels({
-        projectId: props.projectId,
-        articleId: props.articleId,
-        templateId: props.templateId,
-      });
-    } catch (error) {
-      console.error('[ExtractionFormView] Error in model extraction:', error);
-    }
-  };
-
-  // === AI: extract every section of the active model ===
-  const {
-    extractAllSections,
-    loading: extractingAllSections,
-    progress: extractionProgress,
-  } = useBatchSectionExtractionChunked({
-    onSuccess: async (result) => {
-      console.warn('[ExtractionFormView] All sections extracted:', result);
-      try {
-        await props.onRefreshInstances();
-        if (props.onExtractionComplete) {
-          await props.onExtractionComplete();
-        }
-      } catch (error) {
-        console.error('[ExtractionFormView] Error reloading after all sections extraction:', error);
-      }
-    },
-  });
-
-  const handleExtractAllSections = async () => {
-    if (!props.activeModelId) {
-      console.warn('[ExtractionFormView] No active model to extract all sections');
-      return;
-    }
-    try {
-      await extractAllSections({
-        projectId: props.projectId,
-        articleId: props.articleId,
-        templateId: props.templateId,
-        parentInstanceId: props.activeModelId,
-        extractAllSections: true,
-      });
-    } catch (error) {
-      console.error('[ExtractionFormView] Error in extraction of all sections:', error);
-    }
-  };
-
-  // === AI: extract every section of every model ===
-  const {
-    extractAllSectionsForAllModels,
-    loading: extractingAllSectionsForAllModels,
-    progress: allModelsProgress,
-  } = useBatchAllModelsSectionsExtraction({
-    onSuccess: async (result) => {
-      console.warn('[ExtractionFormView] Sections from all models extracted:', result);
-      try {
-        await props.onRefreshInstances();
-        if (props.onExtractionComplete) {
-          await props.onExtractionComplete();
-        }
-      } catch (error) {
-        console.error(
-          '[ExtractionFormView] Error reloading after extraction of sections from all models:',
-          error,
-        );
-      }
-    },
-  });
-
-  const handleExtractAllSectionsForAllModels = async () => {
-    if (props.models.length === 0) {
-      console.warn('[ExtractionFormView] No model available to extract sections');
-      return;
-    }
-    try {
-      await extractAllSectionsForAllModels({
-        projectId: props.projectId,
-        articleId: props.articleId,
-        templateId: props.templateId,
-        models: props.models.map(m => ({
-          instanceId: m.instanceId,
-          modelName: m.modelName,
-        })),
-      });
-    } catch (error) {
-      console.error('[ExtractionFormView] Error in extraction of sections from all models:', error);
-    }
-  };
 
   return (
     <>
@@ -225,14 +125,14 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
           projectId={props.projectId}
           articleId={props.articleId}
           templateId={props.templateId}
-          onExtractModels={handleExtractModels}
-          extractingModels={extractingModels}
-          onExtractAllSections={handleExtractAllSections}
-          extractingAllSections={extractingAllSections}
-          extractionProgress={extractionProgress}
-          onExtractAllSectionsForAllModels={handleExtractAllSectionsForAllModels}
-          extractingAllSectionsForAllModels={extractingAllSectionsForAllModels}
-          allModelsProgress={allModelsProgress}
+          onExtractModels={ai.handleExtractModels}
+          extractingModels={ai.extractingModels}
+          onExtractAllSections={ai.handleExtractAllSections}
+          extractingAllSections={ai.extractingAllSections}
+          extractionProgress={ai.extractionProgress}
+          onExtractAllSectionsForAllModels={ai.handleExtractAllSectionsForAllModels}
+          extractingAllSectionsForAllModels={ai.extractingAllSectionsForAllModels}
+          allModelsProgress={ai.allModelsProgress}
           onExtractionComplete={props.onExtractionComplete}
         />
       )}
