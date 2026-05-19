@@ -286,7 +286,7 @@ class TestEntityTypeLookup:
     """Tests for entity type lookup."""
 
     @pytest.mark.asyncio
-    async def test_get_prediction_models_entity_type_id(self, service):
+    async def test_get_model_container_entity_type_id(self, service):
         """Test entity type lookup by structural role (was: by name)."""
         template_id = uuid4()
         entity_type_id = uuid4()
@@ -297,7 +297,7 @@ class TestEntityTypeLookup:
 
         service._entity_types.get_by_role = AsyncMock(return_value=mock_entity)
 
-        result = await service._get_prediction_models_entity_type_id(template_id)
+        result = await service._get_model_container_entity_type_id(template_id)
 
         # Returns str of entity_type_id
         assert result == str(entity_type_id)

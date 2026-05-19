@@ -184,43 +184,6 @@ class ExtractionEntityTypeRepository(BaseRepository[ExtractionEntityType]):
         )
         return result.scalar_one_or_none()
 
-    async def get_by_name(
-        self,
-        name: str,
-        template_id: UUID | str,
-        is_project_template: bool = True,
-    ) -> ExtractionEntityType | None:
-        """
-        Fetch entity type by name inside a template.
-
-        Args:
-            name: Entity type name.
-            template_id: Template ID.
-            is_project_template: Whether template is project-scoped.
-
-        Returns:
-            Entity type or None.
-        """
-        if isinstance(template_id, str):
-            template_id = UUID(template_id)
-
-        query = select(ExtractionEntityType).where(ExtractionEntityType.name == name)
-
-        if is_project_template:
-            query = query.where(ExtractionEntityType.project_template_id == template_id)
-        else:
-            query = query.where(ExtractionEntityType.template_id == template_id)
-
-        query_start = perf_counter()
-        result = await self.db.execute(query.limit(1))
-        logger.debug(
-            "repository_query_db_latency",
-            repository=self.__class__.__name__,
-            operation="get_by_name",
-            db_duration_ms=(perf_counter() - query_start) * 1000,
-        )
-        return result.scalar_one_or_none()
-
     async def get_by_role(
         self,
         role: str,
@@ -228,21 +191,21 @@ class ExtractionEntityTypeRepository(BaseRepository[ExtractionEntityType]):
         is_project_template: bool = True,
     ) -> ExtractionEntityType | None:
         """
-        Fetch a single entity type by structural role inside a template.
+        Fetch the single entity type for a given role within a template.
 
-        The schema enforces at most one row of ``role='model_container'``
-        per template, so this returns ``None`` or exactly one row — the
-        caller can rely on uniqueness without ``LIMIT 1`` defensive code
-        leaking through every callsite.
+        The partial unique index from migration 0016
+        (``uq_extraction_entity_types_one_container_per_*``) enforces at
+        most one ``model_container`` per template, so this returns at
+        most one row without needing a defensive ``LIMIT 1``. Returns
+        ``None`` when the template has no entity type with the given
+        role (e.g. QA templates have no ``model_container``).
 
         Args:
-            role: ``ExtractionEntityRole`` value (e.g. ``'model_container'``).
+            role: ``ExtractionEntityRole`` value (e.g.
+                ``'model_container'``).
             template_id: Template ID (global or project, per the flag).
             is_project_template: ``True`` for project clones (default);
                 ``False`` for the global catalogue.
-
-        Returns:
-            Entity type matching the role, or ``None`` if absent.
         """
         if isinstance(template_id, str):
             template_id = UUID(template_id)
@@ -254,7 +217,7 @@ class ExtractionEntityTypeRepository(BaseRepository[ExtractionEntityType]):
             query = query.where(ExtractionEntityType.template_id == template_id)
 
         query_start = perf_counter()
-        result = await self.db.execute(query.limit(1))
+        result = await self.db.execute(query)
         logger.debug(
             "repository_query_db_latency",
             repository=self.__class__.__name__,

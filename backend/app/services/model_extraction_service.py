@@ -384,7 +384,7 @@ If in the models are found, return: {{"models": []}}
 
         return models, response
 
-    async def _get_prediction_models_entity_type_id(
+    async def _get_model_container_entity_type_id(
         self,
         template_id: UUID,
     ) -> str | None:
@@ -509,7 +509,7 @@ If in the models are found, return: {{"models": []}}
             Tuple (list of created models, total children created).
         """
         # Fetch entity_type_id of the template's model container (role-keyed).
-        entity_type_id = await self._get_prediction_models_entity_type_id(template_id)
+        entity_type_id = await self._get_model_container_entity_type_id(template_id)
 
         if not entity_type_id:
             self.logger.warning(
