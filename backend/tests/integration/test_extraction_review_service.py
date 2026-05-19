@@ -311,3 +311,74 @@ async def test_second_decision_replaces_reviewer_state(
     assert state.current_decision_id == second.id
     assert state.current_decision_id != first.id
     await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_get_reviewer_state_returns_none_for_unknown_coordinates(
+    db_session: AsyncSession,
+) -> None:
+    """A coordinates tuple (run, reviewer, instance, field) with no recorded
+    decision must return None — not a partial ReviewerState, not a default."""
+    fx = await _setup_review_run(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    run_id, instance_id, field_id, profile_id, _proposal_id, _ = fx
+
+    service = ExtractionReviewService(db_session)
+    # Use a UUID that is not bound to any reviewer in the system.
+    unknown_reviewer = UUID("00000000-0000-0000-0000-000000000000")
+    state = await service.get_reviewer_state(
+        run_id=run_id,
+        reviewer_id=unknown_reviewer,
+        instance_id=instance_id,
+        field_id=field_id,
+    )
+    assert state is None, "expected None for coordinates without a recorded decision"
+
+    # The real reviewer also has no state YET (no record_decision called).
+    state2 = await service.get_reviewer_state(
+        run_id=run_id,
+        reviewer_id=profile_id,
+        instance_id=instance_id,
+        field_id=field_id,
+    )
+    assert state2 is None, "expected None before any record_decision call"
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_get_reviewer_state_returns_state_after_record_decision(
+    db_session: AsyncSession,
+) -> None:
+    """Explicit positive retrieval (companion to the None-case test).
+
+    The existing tests only exercise get_reviewer_state as a side effect of
+    record_decision; this test calls it directly and asserts the round-trip
+    matches the recorded decision id.
+    """
+    fx = await _setup_review_run(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    run_id, instance_id, field_id, profile_id, proposal_id, _ = fx
+    service = ExtractionReviewService(db_session)
+    decision = await service.record_decision(
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_id,
+        reviewer_id=profile_id,
+        decision=ExtractionReviewerDecisionType.ACCEPT_PROPOSAL,
+        proposal_record_id=proposal_id,
+    )
+    state = await service.get_reviewer_state(
+        run_id=run_id,
+        reviewer_id=profile_id,
+        instance_id=instance_id,
+        field_id=field_id,
+    )
+    assert state is not None
+    assert state.current_decision_id == decision.id
+    assert state.run_id == run_id
+    assert state.reviewer_id == profile_id
+    assert state.instance_id == instance_id
+    assert state.field_id == field_id
+    await db_session.rollback()
