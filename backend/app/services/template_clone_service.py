@@ -1,5 +1,6 @@
 """Clone a global extraction or quality-assessment template into a project."""
 
+from collections import deque
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -238,9 +239,9 @@ class TemplateCloneService:
             bucket.sort(key=lambda x: x.sort_order)
 
         ordered: list[ExtractionEntityType] = []
-        queue: list[ExtractionEntityType] = list(children_of.get(None, []))
+        queue: deque[ExtractionEntityType] = deque(children_of.get(None, []))
         while queue:
-            current = queue.pop(0)
+            current = queue.popleft()
             ordered.append(current)
             queue.extend(children_of.get(current.id, []))
 
