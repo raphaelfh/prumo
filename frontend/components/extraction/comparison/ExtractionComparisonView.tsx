@@ -19,7 +19,7 @@ import {BarChart, GitBranch, Info, Users} from 'lucide-react';
 import {type ComparisonColumn, ComparisonTable, type ComparisonUser} from '@/components/shared/comparison';
 import {t} from '@/lib/copy';
 import {ModelLevelComparison} from './ModelLevelComparison';
-import {partitionEntityTypes} from '@/lib/extraction/entityTypeRoles';
+import {useEntityTypePartition} from '@/lib/extraction/entityTypeRoles';
 import type {ExtractionEntityType, ExtractionField, ExtractionInstance} from '@/types/extraction';
 import type {OtherExtraction} from '@/hooks/extraction/colaboracao/useOtherExtractions';
 
@@ -53,7 +53,7 @@ export function ExtractionComparisonView(props: ExtractionComparisonViewProps) {
   const {
     studyLevel: studyLevelTypes,
     modelContainer: modelParentType,
-  } = useMemo(() => partitionEntityTypes(entityTypes), [entityTypes]);
+  } = useEntityTypePartition(entityTypes);
 
     // Prepare columns for study-level (flat fields)
   const studyColumns = useMemo<ComparisonColumn[]>(() => {

@@ -22,22 +22,17 @@ import {useBatchAllModelsSectionsExtraction} from '@/hooks/extraction/useBatchAl
 import {useBatchSectionExtractionChunked} from '@/hooks/extraction/useBatchSectionExtractionChunked';
 import {useModelExtraction} from '@/hooks/extraction/useModelExtraction';
 import type {
-  ExtractionEntityType,
-  ExtractionField,
+  ExtractionEntityTypeWithFields,
   ExtractionInstance,
   ExtractionValue,
 } from '@/types/extraction';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
 import type {OtherExtraction} from '@/hooks/extraction/colaboracao/useOtherExtractions';
 
-interface EntityTypeWithFields extends ExtractionEntityType {
-  fields: ExtractionField[];
-}
-
 export interface ExtractionFormViewProps {
-  studyLevelSections: EntityTypeWithFields[];
-  modelParentEntityType: EntityTypeWithFields | undefined;
-  modelChildSections: EntityTypeWithFields[];
+  studyLevelSections: ExtractionEntityTypeWithFields[];
+  modelParentEntityType: ExtractionEntityTypeWithFields | undefined;
+  modelChildSections: ExtractionEntityTypeWithFields[];
   instances: ExtractionInstance[];
   values: Record<string, ExtractionValue>;
   updateValue: (instanceId: string, fieldId: string, value: ExtractionValue) => void;

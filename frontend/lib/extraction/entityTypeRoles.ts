@@ -10,10 +10,9 @@
  * Touch this file (or its constant) — not the consumers — when the
  * convention changes.
  */
-import type {
-  ExtractionEntityRole,
-  ExtractionEntityType,
-} from '@/types/extraction';
+import {useMemo} from 'react';
+
+import type {ExtractionEntityRole} from '@/types/extraction';
 
 export const ENTITY_ROLE: Record<Uppercase<ExtractionEntityRole>, ExtractionEntityRole> = {
   STUDY_SECTION: 'study_section',
@@ -22,7 +21,7 @@ export const ENTITY_ROLE: Record<Uppercase<ExtractionEntityRole>, ExtractionEnti
 };
 
 /** True for root entity types rendered as top-level accordions. */
-export function isStudySection<T extends { role: ExtractionEntityRole }>(et: T): boolean {
+export function isStudySection<T extends {role: ExtractionEntityRole}>(et: T): boolean {
   return et.role === ENTITY_ROLE.STUDY_SECTION;
 }
 
@@ -31,16 +30,16 @@ export function isStudySection<T extends { role: ExtractionEntityRole }>(et: T):
  * Backed by a partial unique index on the database, so the array
  * ``filter(isModelContainer)`` is at most one element.
  */
-export function isModelContainer<T extends { role: ExtractionEntityRole }>(et: T): boolean {
+export function isModelContainer<T extends {role: ExtractionEntityRole}>(et: T): boolean {
   return et.role === ENTITY_ROLE.MODEL_CONTAINER;
 }
 
 /** True for entity types rendered inside the active model. */
-export function isModelSection<T extends { role: ExtractionEntityRole }>(et: T): boolean {
+export function isModelSection<T extends {role: ExtractionEntityRole}>(et: T): boolean {
   return et.role === ENTITY_ROLE.MODEL_SECTION;
 }
 
-export interface EntityTypePartition<T extends { role: ExtractionEntityRole; id: string }> {
+export interface EntityTypePartition<T extends {role: ExtractionEntityRole; id: string}> {
   /** Root sections shown above the model selector. */
   studyLevel: T[];
   /**
@@ -60,7 +59,7 @@ export interface EntityTypePartition<T extends { role: ExtractionEntityRole; id:
  * stable rendering order.
  */
 export function partitionEntityTypes<
-  T extends { role: ExtractionEntityRole; id: string },
+  T extends {role: ExtractionEntityRole; id: string},
 >(entityTypes: readonly T[]): EntityTypePartition<T> {
   const studyLevel: T[] = [];
   let modelContainer: T | undefined;
@@ -76,19 +75,24 @@ export function partitionEntityTypes<
     }
   }
 
-  return { studyLevel, modelContainer, modelChildren };
+  return {studyLevel, modelContainer, modelChildren};
+}
+
+/**
+ * Memoized partition for a loaded entity-type list.
+ *
+ * Consumers should prefer this hook over calling ``useMemo(() =>
+ * partitionEntityTypes(...))`` by hand — keeping the memoization next
+ * to the partition logic means the two evolve together.
+ */
+export function useEntityTypePartition<
+  T extends {role: ExtractionEntityRole; id: string},
+>(entityTypes: readonly T[]): EntityTypePartition<T> {
+  return useMemo(() => partitionEntityTypes(entityTypes), [entityTypes]);
 }
 
 /**
  * Re-export the concrete role value type so consumers don't have to
  * reach into ``@/types/extraction`` for it.
  */
-export type { ExtractionEntityRole } from '@/types/extraction';
-
-/**
- * Backed by ``ExtractionEntityType``. Exists so the helper is reusable
- * for views that work on lighter projections (e.g. comparison columns)
- * via the generic ``T extends {role, id}`` constraint above, while
- * ``ExtractionEntityType`` remains the canonical type.
- */
-export type _CompatExtractionEntityType = ExtractionEntityType;
+export type {ExtractionEntityRole} from '@/types/extraction';

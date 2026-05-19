@@ -102,6 +102,15 @@ export interface ExtractionEntityType {
   created_at: string;
 }
 
+/**
+ * Entity type joined with its fields list — the shape the form needs to
+ * render. Lives at the type layer instead of being redeclared in every
+ * consumer.
+ */
+export interface ExtractionEntityTypeWithFields extends ExtractionEntityType {
+  fields: ExtractionField[];
+}
+
 export interface ExtractionField {
   id: string;
   entity_type_id: string;

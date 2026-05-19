@@ -21,7 +21,7 @@ import {toast} from 'sonner';
 import {supabase} from '@/integrations/supabase/client';
 import {extractionInstanceService} from '@/services/extractionInstanceService';
 import {extractionLogger} from '@/lib/extraction/observability';
-import {partitionEntityTypes} from '@/lib/extraction/entityTypeRoles';
+import {useEntityTypePartition} from '@/lib/extraction/entityTypeRoles';
 import {errorTracker} from '@/services/errorTracking';
 import {ResizablePanel, ResizablePanelGroup} from '@/components/ui/resizable';
 import {Button} from '@/components/ui/button';
@@ -388,7 +388,7 @@ export default function ExtractionFullScreen() {
     studyLevel: studyLevelSections,
     modelContainer: modelParentEntityType,
     modelChildren: modelChildSections,
-  } = useMemo(() => partitionEntityTypes(entityTypes), [entityTypes]);
+  } = useEntityTypePartition(entityTypes);
 
   // Hook para gerenciamento de modelos
   const {

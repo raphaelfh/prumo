@@ -18,17 +18,12 @@ import {BatchExtractionProgress} from './BatchExtractionProgress';
 import {ModelSelector} from './hierarchy/ModelSelector';
 import {SectionAccordion} from './SectionAccordion';
 import type {
-  ExtractionEntityType,
-  ExtractionField,
+  ExtractionEntityTypeWithFields,
   ExtractionInstance,
   ExtractionValue,
 } from '@/types/extraction';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
 import type {OtherExtraction} from '@/hooks/extraction/colaboracao/useOtherExtractions';
-
-interface EntityTypeWithFields extends ExtractionEntityType {
-  fields: ExtractionField[];
-}
 
 interface BatchExtractionProgressData {
   current: number;
@@ -47,9 +42,9 @@ interface AllModelsProgressData {
 
 export interface ModelSectionProps {
   /** The model container entity type (cardinality='many'). */
-  modelContainer: EntityTypeWithFields;
+  modelContainer: ExtractionEntityTypeWithFields;
   /** Children of the model container, rendered inside the active model. */
-  modelChildren: EntityTypeWithFields[];
+  modelChildren: ExtractionEntityTypeWithFields[];
   /** Article-scoped instances loaded by the page. */
   instances: ExtractionInstance[];
   /** Currently active model instance id; null when nothing is selected. */

@@ -6,6 +6,7 @@
  * (e.g. swapping the column name, adding a fourth role) surfaces here
  * instead of in a downstream rendering bug.
  */
+import {renderHook} from '@testing-library/react';
 import {describe, expect, it} from 'vitest';
 import {
   ENTITY_ROLE,
@@ -13,6 +14,7 @@ import {
   isModelSection,
   isStudySection,
   partitionEntityTypes,
+  useEntityTypePartition,
 } from '@/lib/extraction/entityTypeRoles';
 
 type Row = {id: string; role: typeof ENTITY_ROLE[keyof typeof ENTITY_ROLE]};
@@ -110,5 +112,37 @@ describe('partitionEntityTypes', () => {
       row('container', ENTITY_ROLE.MODEL_CONTAINER),
     ]);
     expect(partition.modelChildren.map(r => r.id)).toEqual(['c', 'a', 'b']);
+  });
+});
+
+describe('useEntityTypePartition', () => {
+  it('returns the same partition object across renders when input is stable', () => {
+    const entityTypes: Row[] = [
+      row('study', ENTITY_ROLE.STUDY_SECTION),
+      row('container', ENTITY_ROLE.MODEL_CONTAINER),
+    ];
+    const {result, rerender} = renderHook(
+      ({ets}: {ets: Row[]}) => useEntityTypePartition(ets),
+      {initialProps: {ets: entityTypes}},
+    );
+    const first = result.current;
+    rerender({ets: entityTypes});
+    expect(result.current).toBe(first);
+  });
+
+  it('recomputes when the input array changes', () => {
+    const a: Row[] = [row('s', ENTITY_ROLE.STUDY_SECTION)];
+    const b: Row[] = [
+      row('s', ENTITY_ROLE.STUDY_SECTION),
+      row('c', ENTITY_ROLE.MODEL_CONTAINER),
+    ];
+    const {result, rerender} = renderHook(
+      ({ets}: {ets: Row[]}) => useEntityTypePartition(ets),
+      {initialProps: {ets: a}},
+    );
+    const first = result.current;
+    rerender({ets: b});
+    expect(result.current).not.toBe(first);
+    expect(result.current.modelContainer?.id).toBe('c');
   });
 });
