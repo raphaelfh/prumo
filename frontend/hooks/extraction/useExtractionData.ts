@@ -116,43 +116,6 @@ export function useExtractionData({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-    // Load or create instances (using service for auto-init)
-  const loadOrCreateInstances = useCallback(async (
-    templateId: string,
-    entityTypesList: EntityTypeWithFields[]
-  ) => {
-    if (!articleId || !projectId || !templateId) {
-      setInstances([]);
-      return;
-    }
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-          throw new Error(t('common', 'errors_userNotAuthenticated'));
-      }
-
-        // Delegate to service (auto-init)
-      const instances = await extractionInstanceService.initializeArticleInstances(
-        articleId,
-        projectId,
-        { id: templateId } as ProjectExtractionTemplate,
-        entityTypesList,
-        user.id
-      );
-
-      setInstances(instances.map(instance => ({
-        ...instance,
-        article_id: instance.article_id!,
-        metadata: instance.metadata as unknown,
-      })));
-    } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : t('extraction', 'errors_loadInstances');
-        console.error('Error loading/creating instances:', err);
-      toast.error(message);
-    }
-  }, [articleId, projectId]);
-
     // Load existing instances (without creating). Uses merge-by-id so a
     // refresh keeps existing React keys stable for instances that didn't
     // change — only added/updated entries trigger downstream re-renders. This
@@ -264,8 +227,12 @@ export function useExtractionData({
 
       setEntityTypes(typesWithFields);
 
-        // 5. Load or create instances (using service for auto-init)
-      await loadOrCreateInstances(templateData.id, typesWithFields);
+        // 5. Load instances already materialised by the backend
+        // ``hitl_session_service._ensure_instances`` on session open.
+        // ``ExtractionFullScreen`` re-triggers ``refreshInstances`` once
+        // the session ``activeRunId`` is available, so we don't have to
+        // race the session here.
+      await loadInstances(templateData.id);
 
         // 6. Load article list (for navigation)
       const { data: articlesData, error: articlesError } = await supabase
@@ -286,7 +253,7 @@ export function useExtractionData({
     } finally {
       setLoading(false);
     }
-  }, [projectId, articleId, enabled, loadOrCreateInstances]);
+  }, [projectId, articleId, enabled, loadInstances]);
 
     // Load initial data
   useEffect(() => {

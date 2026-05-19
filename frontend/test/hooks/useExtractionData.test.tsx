@@ -28,7 +28,10 @@ vi.mock('sonner', () => ({
 
 vi.mock('@/services/extractionInstanceService', () => ({
   extractionInstanceService: {
-    initializeArticleInstances: vi.fn(),
+    // ``initializeArticleInstances`` was removed in 2026-05-19. The
+    // backend's ``hitl_session_service._ensure_instances`` is the sole
+    // creator of singleton instances on session open; the hook only
+    // reads via ``getInstances``.
     getInstances: vi.fn(),
   },
 }));
@@ -108,7 +111,7 @@ describe('useExtractionData → active template picker', () => {
     const tpl = { id: 'tpl-2', kind: 'extraction', is_active: true };
     const { templateChain } = primeSupabaseQueries({ template: tpl });
 
-    (extractionInstanceService.initializeArticleInstances as any).mockResolvedValue([]);
+    (extractionInstanceService.getInstances as any).mockResolvedValue([]);
 
     const { result } = renderHook(() =>
       useExtractionData({ projectId: PROJECT_ID, articleId: ARTICLE_ID }),
@@ -121,7 +124,7 @@ describe('useExtractionData → active template picker', () => {
   it('filters templates by project_id, kind=extraction, is_active=true', async () => {
     const tpl = { id: 'tpl-z', kind: 'extraction', is_active: true };
     const { templateChain } = primeSupabaseQueries({ template: tpl });
-    (extractionInstanceService.initializeArticleInstances as any).mockResolvedValue([]);
+    (extractionInstanceService.getInstances as any).mockResolvedValue([]);
 
     const { result } = renderHook(() =>
       useExtractionData({ projectId: PROJECT_ID, articleId: ARTICLE_ID }),
@@ -161,7 +164,7 @@ describe('useExtractionData → active template picker', () => {
 });
 
 describe('useExtractionData → instance loading', () => {
-  it('delegates initial instance creation to extractionInstanceService', async () => {
+  it('reads existing instances on initial load (never writes — backend owns creation)', async () => {
     const tpl = { id: 'tpl-1', kind: 'extraction', is_active: true };
     const entityTypes = [
       { id: 'et-1', label: 'Section A', cardinality: 'one', fields: [] },
@@ -171,27 +174,29 @@ describe('useExtractionData → instance loading', () => {
     const seeded = [
       { id: 'inst-1', entity_type_id: 'et-1', article_id: ARTICLE_ID, label: 'A', metadata: {} },
     ];
-    (extractionInstanceService.initializeArticleInstances as any).mockResolvedValue(seeded);
+    (extractionInstanceService.getInstances as any).mockResolvedValue(seeded);
 
     const { result } = renderHook(() =>
       useExtractionData({ projectId: PROJECT_ID, articleId: ARTICLE_ID }),
     );
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    expect(extractionInstanceService.initializeArticleInstances).toHaveBeenCalledWith(
-      ARTICLE_ID,
-      PROJECT_ID,
-      expect.objectContaining({ id: 'tpl-1' }),
-      expect.any(Array),
-      'user-1',
-    );
+    // Regression guard: ``initializeArticleInstances`` was removed; the
+    // backend's hitl_session_service._ensure_instances is the sole writer.
+    expect(
+      (extractionInstanceService as Record<string, unknown>).initializeArticleInstances,
+    ).toBeUndefined();
+    expect(extractionInstanceService.getInstances).toHaveBeenCalledWith({
+      articleId: ARTICLE_ID,
+      templateId: 'tpl-1',
+    });
     expect(result.current.instances).toHaveLength(1);
   });
 
   it('refreshInstances calls extractionInstanceService.getInstances with the active template id', async () => {
     const tpl = { id: 'tpl-X', kind: 'extraction', is_active: true };
     primeSupabaseQueries({ template: tpl });
-    (extractionInstanceService.initializeArticleInstances as any).mockResolvedValue([]);
+    (extractionInstanceService.getInstances as any).mockResolvedValue([]);
     (extractionInstanceService.getInstances as any).mockResolvedValue([]);
 
     const { result } = renderHook(() =>
@@ -229,7 +234,9 @@ describe('useExtractionData → mergeInstancesById stable references', () => {
         metadata: {},
       },
     ];
-    (extractionInstanceService.initializeArticleInstances as any).mockResolvedValue(initial);
+    // Initial load + first refresh both go through getInstances now;
+    // the test queues two sequential return values.
+    (extractionInstanceService.getInstances as any).mockResolvedValueOnce(initial);
 
     const { result } = renderHook(() =>
       useExtractionData({ projectId: PROJECT_ID, articleId: ARTICLE_ID }),
@@ -263,7 +270,9 @@ describe('useExtractionData → mergeInstancesById stable references', () => {
         metadata: {},
       },
     ];
-    (extractionInstanceService.initializeArticleInstances as any).mockResolvedValue(initial);
+    // Initial load + first refresh both go through getInstances now;
+    // the test queues two sequential return values.
+    (extractionInstanceService.getInstances as any).mockResolvedValueOnce(initial);
 
     const { result } = renderHook(() =>
       useExtractionData({ projectId: PROJECT_ID, articleId: ARTICLE_ID }),
@@ -297,7 +306,9 @@ describe('useExtractionData → mergeInstancesById stable references', () => {
         metadata: {},
       },
     ];
-    (extractionInstanceService.initializeArticleInstances as any).mockResolvedValue(initial);
+    // Initial load + first refresh both go through getInstances now;
+    // the test queues two sequential return values.
+    (extractionInstanceService.getInstances as any).mockResolvedValueOnce(initial);
 
     const { result } = renderHook(() =>
       useExtractionData({ projectId: PROJECT_ID, articleId: ARTICLE_ID }),

@@ -19,7 +19,7 @@ import {
   queryBuilderSingle,
   SupabaseRepositoryError
 } from '@/lib/supabase/baseRepository';
-import type {ExtractionEntityType, ExtractionInstance, ProjectExtractionTemplate} from '@/types/extraction';
+import type {ExtractionEntityType, ExtractionInstance} from '@/types/extraction';
 
 // =================== INTERFACES ===================
 
@@ -494,65 +494,12 @@ export class ExtractionInstanceService {
     }
   }
 
-  /**
-   * Creates initial instances for an article (study-level only)
-   */
-  async initializeArticleInstances(
-    articleId: string,
-    projectId: string,
-    template: ProjectExtractionTemplate,
-    entityTypes: ExtractionEntityType[],
-    userId: string
-  ): Promise<ExtractionInstance[]> {
-    try {
-        // Fetch existing instances
-      const existingInstances = await this.getInstances({
-        articleId,
-        templateId: template.id
-      });
-
-      const existingEntityTypeIds = new Set(
-        existingInstances.map(i => i.entity_type_id)
-      );
-
-      const createdInstances: ExtractionInstance[] = [...existingInstances];
-
-        // Create missing instances only for:
-        // - Entity types with cardinality='one'
-      // - Entity types sem parent (study-level)
-      for (const entityType of entityTypes) {
-        if (existingEntityTypeIds.has(entityType.id)) {
-            continue; // Already exists
-        }
-
-          // Skip if has parent OR cardinality='many'
-        if (entityType.parent_entity_type_id || entityType.cardinality === 'many') {
-            console.warn(`Skipping auto-creation: ${entityType.name}`);
-          continue;
-        }
-
-        const result = await this.createInstance({
-          projectId,
-          articleId,
-          templateId: template.id,
-          entityTypeId: entityType.id,
-          entityType,
-          userId
-        });
-
-        if (result.wasCreated) {
-          createdInstances.push(result.instance);
-        }
-      }
-
-        console.warn(`Initialization: ${createdInstances.length} instance(s) total`);
-      return createdInstances;
-
-    } catch (error: any) {
-        console.error('Error initializing instances:', error);
-        throw new Error(`Failed to initialize: ${error.message}`);
-    }
-  }
+  // NOTE: ``initializeArticleInstances`` was removed (2026-05-19). The
+  // backend's ``hitl_session_service._ensure_instances`` is the sole
+  // creator of study-level + per-model child singletons on session open.
+  // The frontend now only reads via ``getInstances``; doubling the write
+  // path raced with the backend and broke the cardinality CHECK
+  // (``check_cardinality_one``) for projects where the backend won.
 }
 
 // =================== SINGLETON EXPORT ===================

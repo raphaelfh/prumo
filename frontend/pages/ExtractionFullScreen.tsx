@@ -130,6 +130,17 @@ export default function ExtractionFullScreen() {
   });
   const activeRunId = sessionResult.session?.runId ?? null;
 
+  // The backend's ``hitl_session_service._ensure_instances`` materialises
+  // study-level + per-model singletons on the first session open. The
+  // data hook initially reads what's there; once the session reports a
+  // runId, those new rows exist — refresh so the form binds to them
+  // instead of "no instances created" placeholders.
+  useEffect(() => {
+    if (activeRunId) {
+      void refreshInstances();
+    }
+  }, [activeRunId, refreshInstances]);
+
   // Detail fetch on the active run — drives the "Revision" badge when
   // `parameters.parent_run_id` is present, the stage-aware read path of
   // useExtractedValues, and the reviewer-summary + ConsensusPanel below.
