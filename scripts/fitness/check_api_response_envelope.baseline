@@ -1,0 +1,19 @@
+# Grandfathered endpoints that do not return ApiResponse[T].
+# Format: <repo-relative-file>:<function-name> (line-independent).
+# Empty line OK. # comments OK.
+#
+# A line here means "this endpoint pre-dates the envelope contract; do not
+# block PRs that touch it for envelope reasons. NEW endpoints must conform."
+# Each entry is a real architectural finding that will surface in the next
+# quality-loop sweep and become a backlog item.
+
+backend/app/api/v1/endpoints/articles_export.py:start_export
+backend/app/api/v1/endpoints/model_extraction.py:extract_models
+backend/app/api/v1/endpoints/section_extraction.py:extract_section
+backend/app/api/v1/endpoints/user_api_keys.py:list_api_keys
+backend/app/api/v1/endpoints/user_api_keys.py:create_api_key
+backend/app/api/v1/endpoints/user_api_keys.py:update_api_key
+backend/app/api/v1/endpoints/user_api_keys.py:list_providers
+backend/app/api/v1/endpoints/user_api_keys.py:delete_api_key
+backend/app/api/v1/endpoints/user_api_keys.py:validate_api_key
+backend/app/api/v1/endpoints/zotero_import.py:zotero_action

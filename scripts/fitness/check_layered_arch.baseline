@@ -1,0 +1,21 @@
+# Layered-architecture violations on the current tree, grandfathered.
+# Format: <repo-relative-file>:<full-import-module> (line-independent).
+# Empty line OK. # comments OK.
+#
+# Each entry is a real architectural finding (api layer reaching past services
+# directly into models or repositories). They become backlog items for the
+# quality-loop's first real sweep. New violations beyond this list fail the gate.
+
+backend/app/api/v1/endpoints/article_text_blocks.py:app.models.article
+backend/app/api/v1/endpoints/articles_export.py:app.repositories.unit_of_work
+backend/app/api/v1/endpoints/citations.py:app.models.article
+backend/app/api/v1/endpoints/citations.py:app.models.extraction
+backend/app/api/v1/endpoints/extraction_runs.py:app.models.extraction
+backend/app/api/v1/endpoints/extraction_runs.py:app.models.extraction_workflow
+backend/app/api/v1/endpoints/extraction_runs.py:app.models.user
+backend/app/api/v1/endpoints/extraction_runs.py:app.repositories.extraction_consensus_decision_repository
+backend/app/api/v1/endpoints/extraction_runs.py:app.repositories.extraction_proposal_repository
+backend/app/api/v1/endpoints/extraction_runs.py:app.repositories.extraction_reviewer_decision_repository
+backend/app/api/v1/endpoints/hitl_sessions.py:app.models.extraction
+backend/app/api/v1/endpoints/project_templates.py:app.models.extraction
+backend/app/api/v1/endpoints/zotero_import.py:app.repositories.unit_of_work

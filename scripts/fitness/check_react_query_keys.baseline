@@ -1,0 +1,13 @@
+# TanStack Query call sites that still use a literal `queryKey: [...]` array.
+# Each entry is a real architectural finding (pre-convention site).
+# Format: <repo-relative-file>:<line-number>. Empty/# lines OK.
+#
+# The convention introduced in 2026-05-19 (Phase 5a) requires routing every
+# queryKey through a factory in `frontend/lib/query-keys/`. This baseline
+# grandfathers pre-existing call sites so the gate does not retroactively
+# fail PRs unrelated to query-keys. NEW call sites must conform.
+
+frontend/hooks/extraction/useArticleTextBlocks.ts:41
+frontend/pages/Dashboard.tsx:24
+frontend/pages/Dashboard.tsx:66
+frontend/test/hooks-runs.test.tsx:333
