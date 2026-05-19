@@ -155,6 +155,7 @@ class TestModelExtractionTemplate:
         # Mock project template
         mock_entity_type = MagicMock()
         mock_entity_type.name = "prediction_models"
+        mock_entity_type.role = "model_container"
 
         mock_template = MagicMock()
         mock_template.id = template_id
@@ -240,6 +241,7 @@ class TestModelIdentification:
         # Mock entity type in template
         mock_entity_type = MagicMock()
         mock_entity_type.name = "prediction_models"
+        mock_entity_type.role = "model_container"
 
         template = MagicMock()
         template.entity_types = [mock_entity_type]
@@ -285,20 +287,24 @@ class TestEntityTypeLookup:
 
     @pytest.mark.asyncio
     async def test_get_prediction_models_entity_type_id(self, service):
-        """Test entity type lookup for prediction_models."""
+        """Test entity type lookup by structural role (was: by name)."""
         template_id = uuid4()
         entity_type_id = uuid4()
 
-        # Mock entity type for prediction_models
+        # Mock entity type for the template's model container.
         mock_entity = MagicMock()
         mock_entity.id = entity_type_id
 
-        service._entity_types.get_by_name = AsyncMock(return_value=mock_entity)
+        service._entity_types.get_by_role = AsyncMock(return_value=mock_entity)
 
         result = await service._get_prediction_models_entity_type_id(template_id)
 
         # Returns str of entity_type_id
         assert result == str(entity_type_id)
+        service._entity_types.get_by_role.assert_called()
+        # First call asks for project-scope (is_project_template=True).
+        first_call = service._entity_types.get_by_role.call_args_list[0]
+        assert first_call.args[0] == "model_container"
 
     @pytest.mark.asyncio
     async def test_get_child_entity_types(self, service):
@@ -352,6 +358,7 @@ class TestFullExtractionFlow:
         # Mock template with entity types
         mock_entity_type = MagicMock()
         mock_entity_type.name = "prediction_models"
+        mock_entity_type.role = "model_container"
 
         mock_template = MagicMock()
         mock_template.id = template_id
@@ -362,7 +369,7 @@ class TestFullExtractionFlow:
         # Mock entity type lookup
         mock_entity = MagicMock()
         mock_entity.id = entity_type_id
-        service._entity_types.get_by_name = AsyncMock(return_value=mock_entity)
+        service._entity_types.get_by_role = AsyncMock(return_value=mock_entity)
         service._entity_types.get_children = AsyncMock(return_value=[])
 
         # Mock run creation
@@ -446,6 +453,7 @@ class TestFullExtractionFlow:
 
         mock_entity_type = MagicMock()
         mock_entity_type.name = "prediction_models"
+        mock_entity_type.role = "model_container"
         mock_template = MagicMock()
         mock_template.id = template_id
         mock_template.name = "T"
@@ -454,7 +462,7 @@ class TestFullExtractionFlow:
 
         mock_entity = MagicMock()
         mock_entity.id = entity_type_id
-        service._entity_types.get_by_name = AsyncMock(return_value=mock_entity)
+        service._entity_types.get_by_role = AsyncMock(return_value=mock_entity)
         service._entity_types.get_children = AsyncMock(return_value=[])
 
         mock_run = MagicMock()
@@ -524,7 +532,7 @@ class TestFullExtractionFlow:
         service._templates.get_with_entity_types = AsyncMock(return_value=mock_template)
 
         # Mock entity type not found
-        service._entity_types.get_by_name = AsyncMock(return_value=None)
+        service._entity_types.get_by_role = AsyncMock(return_value=None)
 
         # Mock run creation
         mock_run = MagicMock()

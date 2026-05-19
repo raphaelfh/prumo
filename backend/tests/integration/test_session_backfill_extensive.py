@@ -168,14 +168,20 @@ async def _add_child_entity_type(
     cardinality: str = "one",
     sort_order: int = 99,
 ) -> UUID:
+    """Insert a synthetic child entity type under an existing model
+    container. ``role='model_section'`` is required by the trigger
+    introduced in migration ``0016_entity_role_column``.
+    """
     raw = (
         await db.execute(
             text(
                 """
                 INSERT INTO public.extraction_entity_types
                     (project_template_id, name, label, description,
-                     parent_entity_type_id, cardinality, sort_order, is_required)
-                VALUES (:ptid, :name, :name, NULL, :pet, :card, :ord, false)
+                     parent_entity_type_id, cardinality, role, sort_order,
+                     is_required)
+                VALUES (:ptid, :name, :name, NULL, :pet, :card,
+                        'model_section', :ord, false)
                 RETURNING id
                 """
             ),

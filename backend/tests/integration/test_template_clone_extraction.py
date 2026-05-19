@@ -635,8 +635,12 @@ async def test_clone_preserves_entity_type_hierarchy(
     auth_as_profile: UUID,  # noqa: ARG001
 ) -> None:
     """Spec: parent→child entity_type relationships are remapped to the
-    cloned ids — the cloned ``prediction_models`` becomes the parent of
-    every cloned sub-section."""
+    cloned ids. After the study-level vs per-model split (migration 0015),
+    ``prediction_models`` only parents the per-model sections (Model
+    Development, Final Predictors, Performance, Validation, Results,
+    Interpretation = 6 children); the study-level sections (Source of
+    Data, Participants, Outcome, Candidate Predictors, Sample Size,
+    Missing Data, Observations) sit at the root."""
     from app.seed import seed_charms
 
     await seed_charms(db_session)
@@ -654,11 +658,14 @@ async def test_clone_preserves_entity_type_hierarchy(
     )
     tpl_id = res.json()["data"]["project_template_id"]
 
+    # Look up the model container by structural role — the same way every
+    # service does post migration 0016. Regression guard against the
+    # legacy ``name='prediction_models'`` lookup creeping back.
     pred_id = (
         await db_session.execute(
             text(
                 "SELECT id FROM public.extraction_entity_types "
-                "WHERE project_template_id = :tid AND name = 'prediction_models'"
+                "WHERE project_template_id = :tid AND role = 'model_container'"
             ),
             {"tid": tpl_id},
         )
@@ -667,12 +674,38 @@ async def test_clone_preserves_entity_type_hierarchy(
         await db_session.execute(
             text(
                 "SELECT COUNT(*) FROM public.extraction_entity_types "
-                "WHERE parent_entity_type_id = :pet"
+                "WHERE parent_entity_type_id = :pet AND role = 'model_section'"
             ),
             {"pet": str(pred_id)},
         )
     ).scalar()
-    assert child_count >= 10  # CHARMS has 13 cardinality='one' children + 1 'many'
+    assert child_count == 6  # CHARMS per-model children after the 0015 split
+
+    # Study-level sections must carry role='study_section' and live at the
+    # root of the clone. Regression guard for the prior bug where
+    # everything was nested under the model selector.
+    study_level_names = sorted(
+        r[0]
+        for r in (
+            await db_session.execute(
+                text(
+                    "SELECT name FROM public.extraction_entity_types "
+                    "WHERE project_template_id = :tid "
+                    "AND role = 'study_section'"
+                ),
+                {"tid": tpl_id},
+            )
+        ).all()
+    )
+    assert study_level_names == [
+        "candidate_predictors",
+        "missing_data",
+        "model_observations",
+        "outcome_to_be_predicted",
+        "participants",
+        "sample_size",
+        "source_of_data",
+    ]
 
 
 @pytest.mark.asyncio
@@ -887,3 +920,199 @@ async def test_clone_heals_project_template_with_no_structure(
     ).scalar()
     assert et_after == expected_et
     assert f_after == expected_fields
+
+
+# ============================================================================
+# Schema invariants introduced by migration 0016_entity_role_column
+#
+# These tests pin the role column's constraints from the DB side. They
+# bypass the API to insert directly against the table so any regression in
+# the partial unique index, CHECK constraint, or trigger surfaces as a
+# test failure here rather than as a silent bug downstream.
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_clone_handles_unordered_sort_order(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    """``TemplateCloneService`` must topologically sort, not rely on
+    ``sort_order`` for parent/child ordering.
+
+    Reseeds CHARMS, then deliberately shuffles the global ``sort_order``
+    so each model_section comes BEFORE its parent model_container in the
+    DB's natural ORDER BY result. Pre-cleanup, the clone loop trusted
+    that order and crashed with ``KeyError`` on the children. Post fix,
+    the topological sort recovers the correct insertion order regardless
+    of the input.
+    """
+    from app.seed import seed_charms
+
+    await seed_charms(db_session)
+    await db_session.commit()
+
+    article = await _pick_article(db_session)
+    if article is None:
+        pytest.skip("Need an article + project")
+    _, project_id = article
+    await _wipe_charms_clone(db_session, project_id=project_id, article_id=None)
+
+    # Invert sort_order on the global rows: children get the lowest
+    # numbers, container in the middle, study-level last. ``ORDER BY
+    # sort_order`` will now hand the clone the children first.
+    await db_session.execute(
+        text(
+            """
+            UPDATE public.extraction_entity_types
+            SET sort_order = CASE role
+                WHEN 'model_section' THEN sort_order - 100
+                WHEN 'study_section' THEN sort_order + 100
+                ELSE sort_order
+            END
+            WHERE template_id = :tid
+            """
+        ),
+        {"tid": str(CHARMS_GLOBAL_ID)},
+    )
+    await db_session.commit()
+
+    res = await db_client.post(
+        f"/api/v1/projects/{project_id}/templates/clone",
+        json={"global_template_id": str(CHARMS_GLOBAL_ID), "kind": "extraction"},
+    )
+    assert res.status_code == 201, res.text
+    tpl_id = res.json()["data"]["project_template_id"]
+
+    # Every model_section in the clone must point at the project's
+    # model_container — not at a global id or a missing one.
+    bad_parents = (
+        await db_session.execute(
+            text(
+                """
+                SELECT COUNT(*) FROM public.extraction_entity_types child
+                LEFT JOIN public.extraction_entity_types parent
+                  ON parent.id = child.parent_entity_type_id
+                WHERE child.project_template_id = :tid
+                  AND child.role = 'model_section'
+                  AND (parent.id IS NULL OR parent.role <> 'model_container')
+                """
+            ),
+            {"tid": tpl_id},
+        )
+    ).scalar()
+    assert bad_parents == 0, "topological sort must place model_container before children"
+
+
+@pytest.mark.asyncio
+async def test_cannot_insert_two_model_containers_per_template(
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    """The partial unique index makes a second model_container per
+    template unrepresentable. Adding one must raise an IntegrityError."""
+    from sqlalchemy.exc import IntegrityError
+
+    article = await _pick_article(db_session)
+    if article is None:
+        pytest.skip("Need an article + project")
+    _, project_id = article
+
+    # Find any existing CHARMS clone (already has exactly one container).
+    clone_row = (
+        await db_session.execute(
+            text(
+                """
+                SELECT id FROM public.project_extraction_templates
+                WHERE project_id = :pid AND global_template_id = :gid
+                LIMIT 1
+                """
+            ),
+            {"pid": str(project_id), "gid": str(CHARMS_GLOBAL_ID)},
+        )
+    ).scalar()
+    if clone_row is None:
+        pytest.skip("Need an existing CHARMS clone; previous tests should create one")
+
+    with pytest.raises(IntegrityError):
+        await db_session.execute(
+            text(
+                """
+                INSERT INTO public.extraction_entity_types
+                    (project_template_id, name, label, cardinality, role,
+                     sort_order, is_required)
+                VALUES (:tid, 'second_container', 'Second Container',
+                        'many', 'model_container', 999, false)
+                """
+            ),
+            {"tid": str(clone_row)},
+        )
+        await db_session.flush()
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_model_section_without_container_parent_rejected(
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    """The deferred trigger rejects a model_section whose parent is not
+    a model_container — even if the row otherwise satisfies the CHECK
+    constraint (parent IS NOT NULL).
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    article = await _pick_article(db_session)
+    if article is None:
+        pytest.skip("Need an article + project")
+    _, project_id = article
+
+    clone_row = (
+        await db_session.execute(
+            text(
+                """
+                SELECT id FROM public.project_extraction_templates
+                WHERE project_id = :pid AND global_template_id = :gid
+                LIMIT 1
+                """
+            ),
+            {"pid": str(project_id), "gid": str(CHARMS_GLOBAL_ID)},
+        )
+    ).scalar()
+    if clone_row is None:
+        pytest.skip("Need an existing CHARMS clone; previous tests should create one")
+
+    # Use a study_section as the bogus parent — it's a real row in the
+    # same template but the wrong role for hosting a model_section.
+    bogus_parent = (
+        await db_session.execute(
+            text(
+                """
+                SELECT id FROM public.extraction_entity_types
+                WHERE project_template_id = :tid AND role = 'study_section'
+                LIMIT 1
+                """
+            ),
+            {"tid": str(clone_row)},
+        )
+    ).scalar()
+    assert bogus_parent is not None
+
+    with pytest.raises(IntegrityError):
+        await db_session.execute(
+            text(
+                """
+                INSERT INTO public.extraction_entity_types
+                    (project_template_id, name, label, cardinality, role,
+                     parent_entity_type_id, sort_order, is_required)
+                VALUES (:tid, 'orphan_section', 'Orphan Section',
+                        'one', 'model_section', :pet, 999, false)
+                """
+            ),
+            {"tid": str(clone_row), "pet": str(bogus_parent)},
+        )
+        # The trigger is DEFERRED — fires at COMMIT, so we have to flush
+        # to surface the violation in a test transaction.
+        await db_session.commit()
+    await db_session.rollback()

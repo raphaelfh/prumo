@@ -41,6 +41,7 @@ POSTGRESQL_ENUM_VALUES: dict[str, list[str]] = {
     "extraction_framework": ["CHARMS", "PICOS", "CUSTOM"],
     "extraction_field_type": ["text", "number", "date", "select", "multiselect", "boolean"],
     "extraction_cardinality": ["one", "many"],
+    "extraction_entity_role": ["study_section", "model_container", "model_section"],
     "extraction_run_stage": [
         "pending",
         "proposal",

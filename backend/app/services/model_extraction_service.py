@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import LoggerMixin
 from app.infrastructure.storage import StorageAdapter
 from app.models.extraction import (
+    ExtractionEntityRole,
     ExtractionInstance,
     ExtractionInstanceStatus,
     ExtractionRunStage,
@@ -319,23 +320,25 @@ class ModelExtractionService(LoggerMixin):
         Returns:
             Tuple of model list and OpenAI response.
         """
-        # Find entity type "prediction_models" or "model" in template
+        # Find the model container entity type by structural role —
+        # replaces the legacy ``name in ("prediction_models", "model", ...)``
+        # lookup that silently masked typos and template renames.
         entity_types = template.entity_types if hasattr(template, "entity_types") else []
         model_entity = next(
-            (
-                et
-                for et in entity_types
-                if et.name.lower() in ("prediction_models", "model", "models")
-            ),
+            (et for et in entity_types if et.role == ExtractionEntityRole.MODEL_CONTAINER.value),
             None,
         )
 
         if not model_entity:
             self.logger.warning(
-                "no_model_entity_type",
+                "no_model_container_entity_type",
                 trace_id=self.trace_id,
                 template_id=str(template.id),
-                available_entity_types=[et.name for et in entity_types] if entity_types else [],
+                available_entity_types=[
+                    {"name": et.name, "role": et.role} for et in entity_types
+                ]
+                if entity_types
+                else [],
             )
 
         # Prompt ajustado for retornar objeto JSON (required por response_format)
@@ -386,24 +389,29 @@ If in the models are found, return: {{"models": []}}
         template_id: UUID,
     ) -> str | None:
         """
-        Fetch entity_type_id for 'prediction_models' in template.
+        Fetch the entity_type_id of the template's model container.
+
+        Looks up by structural ``role='model_container'`` (the schema
+        guarantees at most one per template). Falls back to the global
+        catalogue if the project clone lookup misses, so callers can pass
+        either id flavour without branching.
 
         Returns:
-            entity_type_id or None if not found.
+            entity_type_id or None if the template has no model container.
         """
-        # Try first by project_template_id
-        entity_type = await self._entity_types.get_by_name(
-            "prediction_models", template_id, is_project_template=True
+        entity_type = await self._entity_types.get_by_role(
+            ExtractionEntityRole.MODEL_CONTAINER.value,
+            template_id,
+            is_project_template=True,
         )
-
         if entity_type:
             return str(entity_type.id)
 
-        # Try by template_id (global templates)
-        entity_type = await self._entity_types.get_by_name(
-            "prediction_models", template_id, is_project_template=False
+        entity_type = await self._entity_types.get_by_role(
+            ExtractionEntityRole.MODEL_CONTAINER.value,
+            template_id,
+            is_project_template=False,
         )
-
         if entity_type:
             return str(entity_type.id)
 
@@ -500,12 +508,12 @@ If in the models are found, return: {{"models": []}}
         Returns:
             Tuple (list of created models, total children created).
         """
-        # Fetch entity_type_id for 'prediction_models'
+        # Fetch entity_type_id of the template's model container (role-keyed).
         entity_type_id = await self._get_prediction_models_entity_type_id(template_id)
 
         if not entity_type_id:
             self.logger.warning(
-                "no_prediction_models_entity_type",
+                "no_model_container_entity_type",
                 trace_id=self.trace_id,
                 template_id=str(template_id),
             )

@@ -96,16 +96,18 @@ async def _create_template_with_entity_types(
     entity_ids: list[UUID] = []
     for idx, (name, cardinality) in enumerate(entity_specs):
         et_id = uuid4()
+        # Synthetic fixtures are flat (no parents), so all rows are
+        # ``study_section`` per the role/parent CHECK introduced in 0016.
         await db.execute(
             text(
                 """
                 INSERT INTO public.extraction_entity_types
                   (id, project_template_id, template_id, name, label,
-                   cardinality, sort_order, is_required, created_at,
+                   cardinality, role, sort_order, is_required, created_at,
                    updated_at)
                 VALUES
-                  (:id, :tid, NULL, :name, :label, :card, :ord, false,
-                   NOW(), NOW())
+                  (:id, :tid, NULL, :name, :label, :card, 'study_section',
+                   :ord, false, NOW(), NOW())
                 """
             ),
             {

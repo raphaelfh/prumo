@@ -92,13 +92,13 @@ async def project_with_run(db_session: AsyncSession) -> AsyncGenerator[dict, Non
         text(
             """
             INSERT INTO public.extraction_entity_types
-                (id, project_template_id, name, label, cardinality, sort_order,
-                 is_required, parent_entity_type_id)
+                (id, project_template_id, name, label, cardinality, role,
+                 sort_order, is_required, parent_entity_type_id)
             VALUES
                 (:pet, :tid, 'prediction_models', 'Prediction Models',
-                 'many', 0, false, NULL),
+                 'many', 'model_container', 0, false, NULL),
                 (:cet, :tid, 'sub_section', 'Sub Section',
-                 'one', 1, false, :pet)
+                 'one', 'model_section', 1, false, :pet)
             """
         ),
         {"pet": str(pred_et), "cet": str(child_et), "tid": str(ptid)},

@@ -57,6 +57,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import AsyncSessionLocal
 from app.models.extraction import (
+    ExtractionEntityRole,
     ExtractionEntityType,
     ExtractionField,
     ExtractionTemplateGlobal,
@@ -136,34 +137,39 @@ async def seed_charms(session: AsyncSession) -> None:
         ExtractionTemplateGlobal(
             id=_CHARMS_TEMPLATE_ID,
             name="CHARMS",
-            description="CHARMS Checklist for prediction model studies. All fields are specific per prediction model.",
+            description=(
+                "CHARMS checklist for prediction model studies. "
+                "Study-level sections (Source of Data, Participants, Outcome, "
+                "Candidate Predictors, Sample Size, Missing Data, Observations) "
+                "are filled once per article; per-model sections (Model "
+                "Development, Final Predictors, Performance, Validation, "
+                "Results, Interpretation) are filled once per prediction model "
+                "evaluated in the article — matching PROBAST/CHARMS methodology."
+            ),
             framework="CHARMS",
-            version="1.0.0",
+            version="1.1.0",
         )
     )
 
     # ---- Entity types (14) ----
+    #
+    # Sort order is just display order (the TemplateCloneService now
+    # topologically sorts before insertion, so children can come before
+    # parents in the seed if needed). ``role`` is the structural
+    # discriminant that downstream services and the frontend partition
+    # on.
     _et = [
-        ExtractionEntityType(
-            id=_ET_PREDICTION_MODELS,
-            template_id=_CHARMS_TEMPLATE_ID,
-            name="prediction_models",
-            label="Prediction Models",
-            description="Prediction models found in the article. Each model has its own sections and fields.",
-            parent_entity_type_id=None,
-            cardinality="many",
-            sort_order=0,
-            is_required=False,
-        ),
+        # === Study-level (root entity types) ===
         ExtractionEntityType(
             id=_ET_SOURCE_OF_DATA,
             template_id=_CHARMS_TEMPLATE_ID,
             name="source_of_data",
             label="Source of Data",
             description="Data source used in the study (CHARMS 1.1)",
-            parent_entity_type_id=_ET_PREDICTION_MODELS,
+            parent_entity_type_id=None,
             cardinality="one",
-            sort_order=1,
+            role=ExtractionEntityRole.STUDY_SECTION.value,
+            sort_order=0,
             is_required=False,
         ),
         ExtractionEntityType(
@@ -172,9 +178,10 @@ async def seed_charms(session: AsyncSession) -> None:
             name="participants",
             label="Participants",
             description="Participant information (CHARMS 2.1–2.8)",
-            parent_entity_type_id=_ET_PREDICTION_MODELS,
+            parent_entity_type_id=None,
             cardinality="one",
-            sort_order=2,
+            role=ExtractionEntityRole.STUDY_SECTION.value,
+            sort_order=1,
             is_required=False,
         ),
         ExtractionEntityType(
@@ -183,9 +190,10 @@ async def seed_charms(session: AsyncSession) -> None:
             name="outcome_to_be_predicted",
             label="Outcome to be Predicted",
             description="Outcome variable to be predicted (CHARMS 3.1–3.7)",
-            parent_entity_type_id=_ET_PREDICTION_MODELS,
+            parent_entity_type_id=None,
             cardinality="one",
-            sort_order=3,
+            role=ExtractionEntityRole.STUDY_SECTION.value,
+            sort_order=2,
             is_required=False,
         ),
         ExtractionEntityType(
@@ -194,9 +202,10 @@ async def seed_charms(session: AsyncSession) -> None:
             name="candidate_predictors",
             label="Candidate Predictors",
             description="Candidate predictors assessed (CHARMS 4.1–4.6)",
-            parent_entity_type_id=_ET_PREDICTION_MODELS,
+            parent_entity_type_id=None,
             cardinality="one",
-            sort_order=4,
+            role=ExtractionEntityRole.STUDY_SECTION.value,
+            sort_order=3,
             is_required=False,
         ),
         ExtractionEntityType(
@@ -205,9 +214,10 @@ async def seed_charms(session: AsyncSession) -> None:
             name="sample_size",
             label="Sample Size",
             description="Sample size and events (CHARMS 5.1–5.3)",
-            parent_entity_type_id=_ET_PREDICTION_MODELS,
+            parent_entity_type_id=None,
             cardinality="one",
-            sort_order=5,
+            role=ExtractionEntityRole.STUDY_SECTION.value,
+            sort_order=4,
             is_required=False,
         ),
         ExtractionEntityType(
@@ -216,11 +226,30 @@ async def seed_charms(session: AsyncSession) -> None:
             name="missing_data",
             label="Missing Data",
             description="Missing data and handling (CHARMS 6.1–6.2)",
-            parent_entity_type_id=_ET_PREDICTION_MODELS,
+            parent_entity_type_id=None,
             cardinality="one",
+            role=ExtractionEntityRole.STUDY_SECTION.value,
+            sort_order=5,
+            is_required=False,
+        ),
+        # === Model container (drives the ModelSelector UI) ===
+        ExtractionEntityType(
+            id=_ET_PREDICTION_MODELS,
+            template_id=_CHARMS_TEMPLATE_ID,
+            name="prediction_models",
+            label="Prediction Models",
+            description=(
+                "Prediction models evaluated in the article. Each model owns "
+                "its own development, predictors, performance, validation, "
+                "results, and interpretation sections."
+            ),
+            parent_entity_type_id=None,
+            cardinality="many",
+            role=ExtractionEntityRole.MODEL_CONTAINER.value,
             sort_order=6,
             is_required=False,
         ),
+        # === Per-model children (parent=prediction_models) ===
         ExtractionEntityType(
             id=_ET_MODEL_DEV,
             template_id=_CHARMS_TEMPLATE_ID,
@@ -229,6 +258,7 @@ async def seed_charms(session: AsyncSession) -> None:
             description="Prediction model development (CHARMS 7.1–7.4)",
             parent_entity_type_id=_ET_PREDICTION_MODELS,
             cardinality="one",
+            role=ExtractionEntityRole.MODEL_SECTION.value,
             sort_order=7,
             is_required=False,
         ),
@@ -240,6 +270,7 @@ async def seed_charms(session: AsyncSession) -> None:
             description="Final predictors included in the model (multiple allowed)",
             parent_entity_type_id=_ET_PREDICTION_MODELS,
             cardinality="many",
+            role=ExtractionEntityRole.MODEL_SECTION.value,
             sort_order=8,
             is_required=False,
         ),
@@ -251,6 +282,7 @@ async def seed_charms(session: AsyncSession) -> None:
             description="Model performance: calibration, discrimination, overall, clinical utility (CHARMS 8.1–8.4)",
             parent_entity_type_id=_ET_PREDICTION_MODELS,
             cardinality="one",
+            role=ExtractionEntityRole.MODEL_SECTION.value,
             sort_order=9,
             is_required=False,
         ),
@@ -262,6 +294,7 @@ async def seed_charms(session: AsyncSession) -> None:
             description="Model validation (CHARMS 9.1–9.2)",
             parent_entity_type_id=_ET_PREDICTION_MODELS,
             cardinality="one",
+            role=ExtractionEntityRole.MODEL_SECTION.value,
             sort_order=10,
             is_required=False,
         ),
@@ -273,6 +306,7 @@ async def seed_charms(session: AsyncSession) -> None:
             description="Final model results (CHARMS 10.1–10.4)",
             parent_entity_type_id=_ET_PREDICTION_MODELS,
             cardinality="one",
+            role=ExtractionEntityRole.MODEL_SECTION.value,
             sort_order=11,
             is_required=False,
         ),
@@ -284,17 +318,20 @@ async def seed_charms(session: AsyncSession) -> None:
             description="Interpretation of the presented model (CHARMS 11.1)",
             parent_entity_type_id=_ET_PREDICTION_MODELS,
             cardinality="one",
+            role=ExtractionEntityRole.MODEL_SECTION.value,
             sort_order=12,
             is_required=False,
         ),
+        # === Study-level closing notes ===
         ExtractionEntityType(
             id=_ET_MODEL_OBS,
             template_id=_CHARMS_TEMPLATE_ID,
             name="model_observations",
             label="Observations",
             description="Extraction process observations and additional information (CHARMS 12.1–12.2)",
-            parent_entity_type_id=_ET_PREDICTION_MODELS,
+            parent_entity_type_id=None,
             cardinality="one",
+            role=ExtractionEntityRole.STUDY_SECTION.value,
             sort_order=13,
             is_required=False,
         ),
@@ -1328,6 +1365,7 @@ async def seed_probast(session: AsyncSession) -> None:
             label="Participants",
             description="PROBAST domain 1 — appraisal of participant selection.",
             cardinality="one",
+            role=ExtractionEntityRole.STUDY_SECTION.value,
             sort_order=1,
             is_required=False,
         ),
@@ -1338,6 +1376,7 @@ async def seed_probast(session: AsyncSession) -> None:
             label="Predictors",
             description="PROBAST domain 2 — appraisal of candidate predictors.",
             cardinality="one",
+            role=ExtractionEntityRole.STUDY_SECTION.value,
             sort_order=2,
             is_required=False,
         ),
@@ -1348,6 +1387,7 @@ async def seed_probast(session: AsyncSession) -> None:
             label="Outcome",
             description="PROBAST domain 3 — appraisal of outcome definition and measurement.",
             cardinality="one",
+            role=ExtractionEntityRole.STUDY_SECTION.value,
             sort_order=3,
             is_required=False,
         ),
@@ -1358,6 +1398,7 @@ async def seed_probast(session: AsyncSession) -> None:
             label="Analysis",
             description="PROBAST domain 4 — appraisal of statistical analysis.",
             cardinality="one",
+            role=ExtractionEntityRole.STUDY_SECTION.value,
             sort_order=4,
             is_required=False,
         ),
@@ -1368,6 +1409,7 @@ async def seed_probast(session: AsyncSession) -> None:
             label="Overall",
             description="Overall PROBAST judgment across all domains.",
             cardinality="one",
+            role=ExtractionEntityRole.STUDY_SECTION.value,
             sort_order=5,
             is_required=False,
         ),
@@ -1638,6 +1680,7 @@ async def seed_quadas2(session: AsyncSession) -> None:
             label="Patient Selection",
             description="QUADAS-2 domain 1 — appraisal of patient selection.",
             cardinality="one",
+            role=ExtractionEntityRole.STUDY_SECTION.value,
             sort_order=1,
             is_required=False,
         ),
@@ -1648,6 +1691,7 @@ async def seed_quadas2(session: AsyncSession) -> None:
             label="Index Test",
             description="QUADAS-2 domain 2 — appraisal of index test.",
             cardinality="one",
+            role=ExtractionEntityRole.STUDY_SECTION.value,
             sort_order=2,
             is_required=False,
         ),
@@ -1658,6 +1702,7 @@ async def seed_quadas2(session: AsyncSession) -> None:
             label="Reference Standard",
             description="QUADAS-2 domain 3 — appraisal of reference standard.",
             cardinality="one",
+            role=ExtractionEntityRole.STUDY_SECTION.value,
             sort_order=3,
             is_required=False,
         ),
@@ -1668,6 +1713,7 @@ async def seed_quadas2(session: AsyncSession) -> None:
             label="Flow and Timing",
             description="QUADAS-2 domain 4 — appraisal of patient flow and timing.",
             cardinality="one",
+            role=ExtractionEntityRole.STUDY_SECTION.value,
             sort_order=4,
             is_required=False,
         ),
@@ -1678,6 +1724,7 @@ async def seed_quadas2(session: AsyncSession) -> None:
             label="Overall",
             description="Overall QUADAS-2 judgment across all domains.",
             cardinality="one",
+            role=ExtractionEntityRole.STUDY_SECTION.value,
             sort_order=5,
             is_required=False,
         ),

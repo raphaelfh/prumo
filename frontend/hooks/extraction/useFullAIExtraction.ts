@@ -25,6 +25,7 @@ import type {TopLevelSectionsProgress} from "./useTopLevelSectionsExtraction";
 import {useTopLevelSectionsExtraction} from "./useTopLevelSectionsExtraction";
 import {supabase} from "@/integrations/supabase/client";
 import {queryEntityTypesWithFallback} from "./helpers/queryEntityTypes";
+import {ENTITY_ROLE} from "@/lib/extraction/entityTypeRoles";
 
 /**
  * Full extraction progress
@@ -129,10 +130,12 @@ export function useFullAIExtraction(options?: {
   }, []);
 
   /**
-   * Fetches the model entity type ID (prediction_models)
+   * Fetches the model container entity type id by structural role.
    *
-   * @param templateId - Template ID
-   * @returns Model entity type ID
+   * The template has at most one ``model_container`` (enforced by a
+   * partial unique index), so this returns the single matching id or
+   * throws — failing fast is correct here: every caller assumes a
+   * template that owns prediction models.
    */
   const fetchModelParentEntityTypeId = useCallback(async (
     templateId: string
@@ -140,11 +143,11 @@ export function useFullAIExtraction(options?: {
     const results = await queryEntityTypesWithFallback<{ id: string }>({
       templateId,
       select: 'id',
-      filters: (query) => query.eq('name', 'prediction_models'),
+      filters: (query) => query.eq('role', ENTITY_ROLE.MODEL_CONTAINER),
     });
 
     if (results.length === 0) {
-      throw new Error('Model entity type (prediction_models) not found in template');
+      throw new Error('No model_container entity type in template');
     }
 
     return results[0].id;

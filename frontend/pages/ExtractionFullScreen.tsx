@@ -21,6 +21,7 @@ import {toast} from 'sonner';
 import {supabase} from '@/integrations/supabase/client';
 import {extractionInstanceService} from '@/services/extractionInstanceService';
 import {extractionLogger} from '@/lib/extraction/observability';
+import {partitionEntityTypes} from '@/lib/extraction/entityTypeRoles';
 import {errorTracker} from '@/services/errorTracking';
 import {ResizablePanel, ResizablePanelGroup} from '@/components/ui/resizable';
 import {Button} from '@/components/ui/button';
@@ -379,9 +380,16 @@ export default function ExtractionFullScreen() {
     onSuggestionRejected: handleAISuggestionRejected
   });
 
-  // Identificar model parent entity type
-  const modelParentEntityType = entityTypes.find(et => et.name === 'prediction_models');
-  
+  // Partition entity types into study-level + model container + per-model
+  // children by structural role. The partition function is the single
+  // source of truth — no more ``name === 'prediction_models'`` lookups
+  // sprinkled across the codebase.
+  const {
+    studyLevel: studyLevelSections,
+    modelContainer: modelParentEntityType,
+    modelChildren: modelChildSections,
+  } = useMemo(() => partitionEntityTypes(entityTypes), [entityTypes]);
+
   // Hook para gerenciamento de modelos
   const {
     models,
@@ -420,17 +428,6 @@ export default function ExtractionFullScreen() {
   }, [articleId, models, activeModelId, setActiveModelId]);
 
   // =================== MEMOIZAÇÕES PARA PERFORMANCE ===================
-
-  // ✅ Memoizar entity types filtrados (evita recalcular a cada render)
-  const studyLevelSections = useMemo(
-    () => entityTypes.filter(et => !et.parent_entity_type_id && et.name !== 'prediction_models'),
-    [entityTypes]
-  );
-
-  const modelChildSections = useMemo(
-    () => entityTypes.filter(et => et.parent_entity_type_id === modelParentEntityType?.id),
-    [entityTypes, modelParentEntityType]
-  );
 
     // Memoize instance filter function (avoids recreating it)
   const getInstancesForModel = useCallback((entityTypeId: string, modelId: string) => {

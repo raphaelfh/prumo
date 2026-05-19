@@ -19,6 +19,7 @@ import {BarChart, GitBranch, Info, Users} from 'lucide-react';
 import {type ComparisonColumn, ComparisonTable, type ComparisonUser} from '@/components/shared/comparison';
 import {t} from '@/lib/copy';
 import {ModelLevelComparison} from './ModelLevelComparison';
+import {partitionEntityTypes} from '@/lib/extraction/entityTypeRoles';
 import type {ExtractionEntityType, ExtractionField, ExtractionInstance} from '@/types/extraction';
 import type {OtherExtraction} from '@/hooks/extraction/colaboracao/useOtherExtractions';
 
@@ -47,16 +48,12 @@ export function ExtractionComparisonView(props: ExtractionComparisonViewProps) {
 
   const [activeLevel, setActiveLevel] = useState<'study' | 'models'>('study');
 
-    // Split entity types by hierarchy level
-  const studyLevelTypes = useMemo(() => 
-    entityTypes.filter(et => !et.parent_entity_type_id),
-    [entityTypes]
-  );
-
-  const modelParentType = useMemo(() => 
-    entityTypes.find(et => et.name === 'prediction_models'),
-    [entityTypes]
-  );
+    // Split entity types by structural role (same partitioning the form view
+    // uses, so the comparison view stays consistent with the form view).
+  const {
+    studyLevel: studyLevelTypes,
+    modelContainer: modelParentType,
+  } = useMemo(() => partitionEntityTypes(entityTypes), [entityTypes]);
 
     // Prepare columns for study-level (flat fields)
   const studyColumns = useMemo<ComparisonColumn[]>(() => {

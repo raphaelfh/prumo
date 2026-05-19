@@ -206,6 +206,52 @@ class TemplateCloneService:
             stmt = stmt.where(ProjectExtractionTemplate.id != keep_active_id)
         await self.db.execute(stmt)
 
+    @staticmethod
+    def _topologically_sorted(
+        entity_types: list[ExtractionEntityType],
+    ) -> list[ExtractionEntityType]:
+        """Return ``entity_types`` ordered so every parent precedes its children.
+
+        Kahn's algorithm; treats rows whose ``parent_entity_type_id`` falls
+        outside the supplied list as roots (defensive — the caller always
+        passes a complete template tree). Raises ``ValueError`` if a cycle
+        is detected, which would indicate a corrupt template (the model has
+        no cycle-prevention check; this surfaces it loudly instead of
+        looping or producing partial output).
+
+        Replaces the previous implicit assumption that the caller's
+        ``ORDER BY sort_order`` already happened to place parents first —
+        a fragile contract that forced the CHARMS seed to use globally
+        unique sort orders even where local-per-parent orders would have
+        read better.
+        """
+        ids_in_scope = {et.id for et in entity_types}
+        children_of: dict[UUID | None, list[ExtractionEntityType]] = {}
+        for et in entity_types:
+            effective_parent = (
+                et.parent_entity_type_id
+                if et.parent_entity_type_id in ids_in_scope
+                else None
+            )
+            children_of.setdefault(effective_parent, []).append(et)
+        for bucket in children_of.values():
+            bucket.sort(key=lambda x: x.sort_order)
+
+        ordered: list[ExtractionEntityType] = []
+        queue: list[ExtractionEntityType] = list(children_of.get(None, []))
+        while queue:
+            current = queue.pop(0)
+            ordered.append(current)
+            queue.extend(children_of.get(current.id, []))
+
+        if len(ordered) != len(entity_types):
+            missing = {et.id for et in entity_types} - {et.id for et in ordered}
+            raise ValueError(
+                f"Cycle or unreachable parent in template tree; "
+                f"could not order entity_types: {missing}"
+            )
+        return ordered
+
     async def _insert_project_structure_from_global(
         self,
         *,
@@ -213,8 +259,14 @@ class TemplateCloneService:
         global_entity_types: list[ExtractionEntityType],
     ) -> int:
         """Copy global entity types and fields into a project template (one field read batch)."""
+        # Topologically sort so every parent is inserted before its children.
+        # The caller loads rows ordered by ``sort_order`` (display order),
+        # which is *not* the same as topological order — this layer owns the
+        # invariant instead of depending on the seed to honour it.
+        ordered_entity_types = self._topologically_sorted(global_entity_types)
+
         entity_type_id_map: dict[UUID, UUID] = {}
-        for et in global_entity_types:
+        for et in ordered_entity_types:
             new_id = uuid4()
             entity_type_id_map[et.id] = new_id
             self.db.add(
@@ -231,6 +283,7 @@ class TemplateCloneService:
                         else None
                     ),
                     cardinality=et.cardinality,
+                    role=et.role,
                     sort_order=et.sort_order,
                     is_required=et.is_required,
                 )
@@ -379,6 +432,7 @@ class TemplateCloneService:
                                     'label', et.label,
                                     'parent_entity_type_id', et.parent_entity_type_id,
                                     'cardinality', et.cardinality,
+                                    'role', et.role,
                                     'sort_order', et.sort_order,
                                     'is_required', et.is_required,
                                     'fields', COALESCE(

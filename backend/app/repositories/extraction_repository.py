@@ -221,6 +221,48 @@ class ExtractionEntityTypeRepository(BaseRepository[ExtractionEntityType]):
         )
         return result.scalar_one_or_none()
 
+    async def get_by_role(
+        self,
+        role: str,
+        template_id: UUID | str,
+        is_project_template: bool = True,
+    ) -> ExtractionEntityType | None:
+        """
+        Fetch a single entity type by structural role inside a template.
+
+        The schema enforces at most one row of ``role='model_container'``
+        per template, so this returns ``None`` or exactly one row — the
+        caller can rely on uniqueness without ``LIMIT 1`` defensive code
+        leaking through every callsite.
+
+        Args:
+            role: ``ExtractionEntityRole`` value (e.g. ``'model_container'``).
+            template_id: Template ID (global or project, per the flag).
+            is_project_template: ``True`` for project clones (default);
+                ``False`` for the global catalogue.
+
+        Returns:
+            Entity type matching the role, or ``None`` if absent.
+        """
+        if isinstance(template_id, str):
+            template_id = UUID(template_id)
+
+        query = select(ExtractionEntityType).where(ExtractionEntityType.role == role)
+        if is_project_template:
+            query = query.where(ExtractionEntityType.project_template_id == template_id)
+        else:
+            query = query.where(ExtractionEntityType.template_id == template_id)
+
+        query_start = perf_counter()
+        result = await self.db.execute(query.limit(1))
+        logger.debug(
+            "repository_query_db_latency",
+            repository=self.__class__.__name__,
+            operation="get_by_role",
+            db_duration_ms=(perf_counter() - query_start) * 1000,
+        )
+        return result.scalar_one_or_none()
+
     async def get_children(
         self,
         parent_entity_type_id: UUID | str,
