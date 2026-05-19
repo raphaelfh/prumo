@@ -11,7 +11,13 @@ import type {ExtractionField} from '@/types/extraction';
 
 // =================== INTERFACES ===================
 
-interface EntityTypeWithFields {
+/**
+ * Minimal projection of an entity type needed for progress
+ * computation. Renamed from ``EntityTypeWithFields`` to avoid
+ * confusion with the canonical ``ExtractionEntityTypeWithFields``
+ * (which carries every entity-type column).
+ */
+interface ProgressEntityProjection {
   id: string;
   fields: ExtractionField[];
 }
@@ -27,7 +33,7 @@ export interface UseExtractionProgressReturn {
 
 export function useExtractionProgress(
   values: Record<string, any>,
-  entityTypes: EntityTypeWithFields[]
+  entityTypes: ProgressEntityProjection[]
 ): UseExtractionProgressReturn {
 
   return useMemo(() => {

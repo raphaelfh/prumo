@@ -17,16 +17,17 @@ import {extractionInstanceService} from '@/services/extractionInstanceService';
 import type {Article} from '@/types/article';
 import type {Project} from '@/types/project';
 import type {
-    ExtractionEntityType,
-    ExtractionField,
+    ExtractionEntityTypeWithFields,
     ExtractionInstance,
     ProjectExtractionTemplate
 } from '@/types/extraction';
 
-// Tipo auxiliar para entity types com fields
-export interface EntityTypeWithFields extends ExtractionEntityType {
-  fields: ExtractionField[];
-}
+/**
+ * Re-export the canonical type for callers that imported it from this
+ * module before consolidation. New callers should import directly from
+ * ``@/types/extraction``.
+ */
+export type EntityTypeWithFields = ExtractionEntityTypeWithFields;
 
 /**
  * Returns a new array only when something actually changed (added, removed,

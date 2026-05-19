@@ -162,9 +162,39 @@ Database guarantees post 0016:
    transaction.
 4. **`sort_order` is display order only** — `TemplateCloneService`
    topologically sorts before insertion (Kahn's algorithm with cycle
-   detection), so seeds and project clones can use any sort_order
-   numbering (local-per-parent or globally unique) without breaking the
-   clone. No more implicit "parents must sort before children" contract.
+   detection, O(N) via `collections.deque`), so seeds and project clones
+   can use any sort_order numbering (local-per-parent or globally unique)
+   without breaking the clone. No more implicit "parents must sort
+   before children" contract.
+
+5. **Snapshot consistency** — `extraction_template_versions.schema_` JSONB
+   snapshots include `role` for every entity_type. Migration `0017`
+   backfilled the role into pre-existing snapshots by joining with the
+   live entity_types (information-preserving: same data, new label),
+   so any future consumer that partitions a snapshot by role works on
+   every Run, not just runs created post-0016.
+
+### 4.2 LLM prompt module pattern
+
+Prompts that drive LLM calls live in `backend/app/services/llm/`, not
+inline inside services. Each prompt is a pure module exposing:
+
+- A `build(...)` static method that returns the prompt text (pure
+  function: no I/O, no globals, deterministic given inputs).
+- A `*_RESPONSE_SCHEMA` constant in JSON-schema shape for when
+  structured-output mode is enabled on the OpenAI call.
+- A `parse_*_from_response(...)` helper that normalizes the LLM JSON
+  into the service's expected shape.
+
+Example: `app/services/llm/model_identification_prompt.py` is consumed by
+`model_extraction_service._identify_models`. The prompt is field-name-
+agnostic — it asks the LLM for a neutral `name` per model and uses the
+template's container `label` for grounding, so managers can rename
+fields in the Configuration tab without breaking extraction.
+
+Unit tests in `tests/unit/test_model_identification_prompt.py` pin the
+prompt's neutrality (no internal field names appear in the text), the
+response schema, and the parser's backward-compat path.
 
 ### 4.2 Project template import (extraction catalogue)
 

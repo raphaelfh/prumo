@@ -1,6 +1,6 @@
 # prumo Development Guidelines
 
-Last updated: 2026-05-18
+Last updated: 2026-05-19
 
 ## Active Technologies
 
@@ -54,6 +54,25 @@ docs/                     # architecture/, superpowers/, planos/, ...
 
 ## Recent Changes
 
+- **2026-05-19**: **Final cleanup wave** following the role-column
+  migration (8 commits). Highlights: (a) migration `0017_backfill_role_in_snapshot`
+  patches pre-0016 snapshots so every `extraction_template_versions.schema_`
+  carries the role — no more divergence between live entity_types and
+  frozen snapshots; (b) `model_extraction_service` no longer hardcodes
+  `model_name`/`model_type`/`target_outcome` in the LLM prompt — the new
+  `app/services/llm/model_identification_prompt.py` module asks for a
+  neutral `name` (container label is sourced from template metadata),
+  so renaming fields in the Configuration tab doesn't break extraction;
+  (c) `seed.py` is now data-driven (`_EntitySpec` NamedTuple +
+  insertion helper — 300 lines saved); (d) `tests/factories/template_factory.py`
+  replaces raw-SQL `INSERT INTO extraction_entity_types` across 5 test
+  files (ORM-routed inserts exercise the role/parent CHECK + trigger);
+  (e) `useExtractionFormAIActions` hook groups the three AI extraction
+  hooks; (f) `EntityTypeWithFields` consolidated into
+  `ExtractionEntityTypeWithFields` shared type; (g) topological sort
+  uses `collections.deque` (O(1) popleft); (h) repository's
+  unused `get_by_name` removed, `get_by_role` no longer defensive
+  (uniqueness enforced by partial unique index from 0016).
 - **2026-05-18**: Promoted **entity type "role"** from convention to
   schema column. Migration `0016_entity_role_column` adds
   `extraction_entity_role` enum (`study_section` / `model_container` /
