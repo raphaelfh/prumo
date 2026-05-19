@@ -51,6 +51,7 @@ fields tree here, expose a ``seed_<name>`` function, and call it from
 """
 
 import asyncio
+from typing import NamedTuple
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -63,6 +64,48 @@ from app.models.extraction import (
     ExtractionTemplateGlobal,
 )
 from app.models.extraction_versioning import TemplateKind
+
+
+class _EntitySpec(NamedTuple):
+    """Declarative spec for an entity_type row.
+
+    Used by the per-template seed loops to keep CHARMS / PROBAST /
+    QUADAS-2 definitions terse and free of repetition (same pattern
+    the ``_f`` helper applies to fields).
+    """
+
+    id: UUID
+    name: str
+    label: str
+    description: str
+    parent_id: UUID | None
+    cardinality: str
+    role: ExtractionEntityRole
+    sort_order: int
+
+
+def _entity_type_from_spec(
+    spec: _EntitySpec,
+    *,
+    template_id: UUID,
+) -> ExtractionEntityType:
+    """Build an ``ExtractionEntityType`` ORM instance from a spec.
+
+    Sets ``is_required=False`` (seeded templates never mark items as
+    required — managers decide that per project clone).
+    """
+    return ExtractionEntityType(
+        id=spec.id,
+        template_id=template_id,
+        name=spec.name,
+        label=spec.label,
+        description=spec.description,
+        parent_entity_type_id=spec.parent_id,
+        cardinality=spec.cardinality,
+        role=spec.role.value,
+        sort_order=spec.sort_order,
+        is_required=False,
+    )
 
 # ---------------------------------------------------------------------------
 # Fixed UUIDs — never change; enable deterministic, repeatable deployments
@@ -153,191 +196,35 @@ async def seed_charms(session: AsyncSession) -> None:
 
     # ---- Entity types (14) ----
     #
-    # Sort order is just display order (the TemplateCloneService now
-    # topologically sorts before insertion, so children can come before
-    # parents in the seed if needed). ``role`` is the structural
-    # discriminant that downstream services and the frontend partition
-    # on.
-    _et = [
-        # === Study-level (root entity types) ===
-        ExtractionEntityType(
-            id=_ET_SOURCE_OF_DATA,
-            template_id=_CHARMS_TEMPLATE_ID,
-            name="source_of_data",
-            label="Source of Data",
-            description="Data source used in the study (CHARMS 1.1)",
-            parent_entity_type_id=None,
-            cardinality="one",
-            role=ExtractionEntityRole.STUDY_SECTION.value,
-            sort_order=0,
-            is_required=False,
-        ),
-        ExtractionEntityType(
-            id=_ET_PARTICIPANTS,
-            template_id=_CHARMS_TEMPLATE_ID,
-            name="participants",
-            label="Participants",
-            description="Participant information (CHARMS 2.1–2.8)",
-            parent_entity_type_id=None,
-            cardinality="one",
-            role=ExtractionEntityRole.STUDY_SECTION.value,
-            sort_order=1,
-            is_required=False,
-        ),
-        ExtractionEntityType(
-            id=_ET_OUTCOME,
-            template_id=_CHARMS_TEMPLATE_ID,
-            name="outcome_to_be_predicted",
-            label="Outcome to be Predicted",
-            description="Outcome variable to be predicted (CHARMS 3.1–3.7)",
-            parent_entity_type_id=None,
-            cardinality="one",
-            role=ExtractionEntityRole.STUDY_SECTION.value,
-            sort_order=2,
-            is_required=False,
-        ),
-        ExtractionEntityType(
-            id=_ET_CANDIDATE_PRED,
-            template_id=_CHARMS_TEMPLATE_ID,
-            name="candidate_predictors",
-            label="Candidate Predictors",
-            description="Candidate predictors assessed (CHARMS 4.1–4.6)",
-            parent_entity_type_id=None,
-            cardinality="one",
-            role=ExtractionEntityRole.STUDY_SECTION.value,
-            sort_order=3,
-            is_required=False,
-        ),
-        ExtractionEntityType(
-            id=_ET_SAMPLE_SIZE,
-            template_id=_CHARMS_TEMPLATE_ID,
-            name="sample_size",
-            label="Sample Size",
-            description="Sample size and events (CHARMS 5.1–5.3)",
-            parent_entity_type_id=None,
-            cardinality="one",
-            role=ExtractionEntityRole.STUDY_SECTION.value,
-            sort_order=4,
-            is_required=False,
-        ),
-        ExtractionEntityType(
-            id=_ET_MISSING_DATA,
-            template_id=_CHARMS_TEMPLATE_ID,
-            name="missing_data",
-            label="Missing Data",
-            description="Missing data and handling (CHARMS 6.1–6.2)",
-            parent_entity_type_id=None,
-            cardinality="one",
-            role=ExtractionEntityRole.STUDY_SECTION.value,
-            sort_order=5,
-            is_required=False,
-        ),
-        # === Model container (drives the ModelSelector UI) ===
-        ExtractionEntityType(
-            id=_ET_PREDICTION_MODELS,
-            template_id=_CHARMS_TEMPLATE_ID,
-            name="prediction_models",
-            label="Prediction Models",
-            description=(
-                "Prediction models evaluated in the article. Each model owns "
-                "its own development, predictors, performance, validation, "
-                "results, and interpretation sections."
-            ),
-            parent_entity_type_id=None,
-            cardinality="many",
-            role=ExtractionEntityRole.MODEL_CONTAINER.value,
-            sort_order=6,
-            is_required=False,
-        ),
-        # === Per-model children (parent=prediction_models) ===
-        ExtractionEntityType(
-            id=_ET_MODEL_DEV,
-            template_id=_CHARMS_TEMPLATE_ID,
-            name="model_development",
-            label="Model Development",
-            description="Prediction model development (CHARMS 7.1–7.4)",
-            parent_entity_type_id=_ET_PREDICTION_MODELS,
-            cardinality="one",
-            role=ExtractionEntityRole.MODEL_SECTION.value,
-            sort_order=7,
-            is_required=False,
-        ),
-        ExtractionEntityType(
-            id=_ET_FINAL_PREDICTORS,
-            template_id=_CHARMS_TEMPLATE_ID,
-            name="final_predictors",
-            label="Final Predictors",
-            description="Final predictors included in the model (multiple allowed)",
-            parent_entity_type_id=_ET_PREDICTION_MODELS,
-            cardinality="many",
-            role=ExtractionEntityRole.MODEL_SECTION.value,
-            sort_order=8,
-            is_required=False,
-        ),
-        ExtractionEntityType(
-            id=_ET_MODEL_PERF,
-            template_id=_CHARMS_TEMPLATE_ID,
-            name="model_performance",
-            label="Model Performance",
-            description="Model performance: calibration, discrimination, overall, clinical utility (CHARMS 8.1–8.4)",
-            parent_entity_type_id=_ET_PREDICTION_MODELS,
-            cardinality="one",
-            role=ExtractionEntityRole.MODEL_SECTION.value,
-            sort_order=9,
-            is_required=False,
-        ),
-        ExtractionEntityType(
-            id=_ET_MODEL_VALID,
-            template_id=_CHARMS_TEMPLATE_ID,
-            name="model_validation",
-            label="Model Validation",
-            description="Model validation (CHARMS 9.1–9.2)",
-            parent_entity_type_id=_ET_PREDICTION_MODELS,
-            cardinality="one",
-            role=ExtractionEntityRole.MODEL_SECTION.value,
-            sort_order=10,
-            is_required=False,
-        ),
-        ExtractionEntityType(
-            id=_ET_MODEL_RESULTS,
-            template_id=_CHARMS_TEMPLATE_ID,
-            name="model_results",
-            label="Results",
-            description="Final model results (CHARMS 10.1–10.4)",
-            parent_entity_type_id=_ET_PREDICTION_MODELS,
-            cardinality="one",
-            role=ExtractionEntityRole.MODEL_SECTION.value,
-            sort_order=11,
-            is_required=False,
-        ),
-        ExtractionEntityType(
-            id=_ET_MODEL_INTERP,
-            template_id=_CHARMS_TEMPLATE_ID,
-            name="model_interpretation",
-            label="Interpretation",
-            description="Interpretation of the presented model (CHARMS 11.1)",
-            parent_entity_type_id=_ET_PREDICTION_MODELS,
-            cardinality="one",
-            role=ExtractionEntityRole.MODEL_SECTION.value,
-            sort_order=12,
-            is_required=False,
-        ),
-        # === Study-level closing notes ===
-        ExtractionEntityType(
-            id=_ET_MODEL_OBS,
-            template_id=_CHARMS_TEMPLATE_ID,
-            name="model_observations",
-            label="Observations",
-            description="Extraction process observations and additional information (CHARMS 12.1–12.2)",
-            parent_entity_type_id=None,
-            cardinality="one",
-            role=ExtractionEntityRole.STUDY_SECTION.value,
-            sort_order=13,
-            is_required=False,
-        ),
+    # Sort order is just display order (the TemplateCloneService topologically
+    # sorts before insertion, so children can come before parents in the seed
+    # if needed). ``role`` is the structural discriminant that downstream
+    # services and the frontend partition on.
+    _study = ExtractionEntityRole.STUDY_SECTION
+    _container = ExtractionEntityRole.MODEL_CONTAINER
+    _section = ExtractionEntityRole.MODEL_SECTION
+    _charms_entity_types: list[_EntitySpec] = [
+        # Study-level
+        _EntitySpec(_ET_SOURCE_OF_DATA,    "source_of_data",          "Source of Data",          "Data source used in the study (CHARMS 1.1)",                                                              None,                  "one",  _study,     0),
+        _EntitySpec(_ET_PARTICIPANTS,      "participants",            "Participants",            "Participant information (CHARMS 2.1–2.8)",                                                                None,                  "one",  _study,     1),
+        _EntitySpec(_ET_OUTCOME,           "outcome_to_be_predicted", "Outcome to be Predicted", "Outcome variable to be predicted (CHARMS 3.1–3.7)",                                                       None,                  "one",  _study,     2),
+        _EntitySpec(_ET_CANDIDATE_PRED,    "candidate_predictors",    "Candidate Predictors",    "Candidate predictors assessed (CHARMS 4.1–4.6)",                                                          None,                  "one",  _study,     3),
+        _EntitySpec(_ET_SAMPLE_SIZE,       "sample_size",             "Sample Size",             "Sample size and events (CHARMS 5.1–5.3)",                                                                 None,                  "one",  _study,     4),
+        _EntitySpec(_ET_MISSING_DATA,      "missing_data",            "Missing Data",            "Missing data and handling (CHARMS 6.1–6.2)",                                                              None,                  "one",  _study,     5),
+        # Model container (drives the ModelSelector UI)
+        _EntitySpec(_ET_PREDICTION_MODELS, "prediction_models",       "Prediction Models",       "Prediction models evaluated in the article. Each model owns its own development, predictors, performance, validation, results, and interpretation sections.", None, "many", _container, 6),
+        # Per-model children
+        _EntitySpec(_ET_MODEL_DEV,         "model_development",       "Model Development",       "Prediction model development (CHARMS 7.1–7.4)",                                                           _ET_PREDICTION_MODELS, "one",  _section,   7),
+        _EntitySpec(_ET_FINAL_PREDICTORS,  "final_predictors",        "Final Predictors",        "Final predictors included in the model (multiple allowed)",                                               _ET_PREDICTION_MODELS, "many", _section,   8),
+        _EntitySpec(_ET_MODEL_PERF,        "model_performance",       "Model Performance",       "Model performance: calibration, discrimination, overall, clinical utility (CHARMS 8.1–8.4)",             _ET_PREDICTION_MODELS, "one",  _section,   9),
+        _EntitySpec(_ET_MODEL_VALID,       "model_validation",        "Model Validation",        "Model validation (CHARMS 9.1–9.2)",                                                                       _ET_PREDICTION_MODELS, "one",  _section,   10),
+        _EntitySpec(_ET_MODEL_RESULTS,     "model_results",           "Results",                 "Final model results (CHARMS 10.1–10.4)",                                                                  _ET_PREDICTION_MODELS, "one",  _section,   11),
+        _EntitySpec(_ET_MODEL_INTERP,      "model_interpretation",    "Interpretation",          "Interpretation of the presented model (CHARMS 11.1)",                                                     _ET_PREDICTION_MODELS, "one",  _section,   12),
+        # Study-level closing notes
+        _EntitySpec(_ET_MODEL_OBS,         "model_observations",      "Observations",            "Extraction process observations and additional information (CHARMS 12.1–12.2)",                          None,                  "one",  _study,     13),
     ]
-    for et in _et:
-        session.add(et)
+    for spec in _charms_entity_types:
+        session.add(_entity_type_from_spec(spec, template_id=_CHARMS_TEMPLATE_ID))
 
     # ---- Fields ----
     def _f(
@@ -1357,65 +1244,16 @@ async def seed_probast(session: AsyncSession) -> None:
     )
 
     # ---- Entity types (5 domains, all single-instance) ----
-    entity_types = [
-        ExtractionEntityType(
-            id=_PROBAST_ET_PARTICIPANTS,
-            template_id=_PROBAST_TEMPLATE_ID,
-            name="participants",
-            label="Participants",
-            description="PROBAST domain 1 — appraisal of participant selection.",
-            cardinality="one",
-            role=ExtractionEntityRole.STUDY_SECTION.value,
-            sort_order=1,
-            is_required=False,
-        ),
-        ExtractionEntityType(
-            id=_PROBAST_ET_PREDICTORS,
-            template_id=_PROBAST_TEMPLATE_ID,
-            name="predictors",
-            label="Predictors",
-            description="PROBAST domain 2 — appraisal of candidate predictors.",
-            cardinality="one",
-            role=ExtractionEntityRole.STUDY_SECTION.value,
-            sort_order=2,
-            is_required=False,
-        ),
-        ExtractionEntityType(
-            id=_PROBAST_ET_OUTCOME,
-            template_id=_PROBAST_TEMPLATE_ID,
-            name="outcome",
-            label="Outcome",
-            description="PROBAST domain 3 — appraisal of outcome definition and measurement.",
-            cardinality="one",
-            role=ExtractionEntityRole.STUDY_SECTION.value,
-            sort_order=3,
-            is_required=False,
-        ),
-        ExtractionEntityType(
-            id=_PROBAST_ET_ANALYSIS,
-            template_id=_PROBAST_TEMPLATE_ID,
-            name="analysis",
-            label="Analysis",
-            description="PROBAST domain 4 — appraisal of statistical analysis.",
-            cardinality="one",
-            role=ExtractionEntityRole.STUDY_SECTION.value,
-            sort_order=4,
-            is_required=False,
-        ),
-        ExtractionEntityType(
-            id=_PROBAST_ET_OVERALL,
-            template_id=_PROBAST_TEMPLATE_ID,
-            name="overall",
-            label="Overall",
-            description="Overall PROBAST judgment across all domains.",
-            cardinality="one",
-            role=ExtractionEntityRole.STUDY_SECTION.value,
-            sort_order=5,
-            is_required=False,
-        ),
+    _study = ExtractionEntityRole.STUDY_SECTION
+    _probast_specs: list[_EntitySpec] = [
+        _EntitySpec(_PROBAST_ET_PARTICIPANTS, "participants", "Participants", "PROBAST domain 1 — appraisal of participant selection.",                None, "one", _study, 1),
+        _EntitySpec(_PROBAST_ET_PREDICTORS,   "predictors",   "Predictors",   "PROBAST domain 2 — appraisal of candidate predictors.",                 None, "one", _study, 2),
+        _EntitySpec(_PROBAST_ET_OUTCOME,      "outcome",      "Outcome",      "PROBAST domain 3 — appraisal of outcome definition and measurement.",  None, "one", _study, 3),
+        _EntitySpec(_PROBAST_ET_ANALYSIS,     "analysis",     "Analysis",     "PROBAST domain 4 — appraisal of statistical analysis.",                 None, "one", _study, 4),
+        _EntitySpec(_PROBAST_ET_OVERALL,      "overall",      "Overall",      "Overall PROBAST judgment across all domains.",                          None, "one", _study, 5),
     ]
-    for et in entity_types:
-        session.add(et)
+    for spec in _probast_specs:
+        session.add(_entity_type_from_spec(spec, template_id=_PROBAST_TEMPLATE_ID))
 
     # ---- Fields ----
     fields: list[ExtractionField] = []
@@ -1672,65 +1510,16 @@ async def seed_quadas2(session: AsyncSession) -> None:
     )
 
     # ---- Entity types (5 domains, all single-instance) ----
-    entity_types = [
-        ExtractionEntityType(
-            id=_QUADAS2_ET_PATIENT_SELECTION,
-            template_id=_QUADAS2_TEMPLATE_ID,
-            name="patient_selection",
-            label="Patient Selection",
-            description="QUADAS-2 domain 1 — appraisal of patient selection.",
-            cardinality="one",
-            role=ExtractionEntityRole.STUDY_SECTION.value,
-            sort_order=1,
-            is_required=False,
-        ),
-        ExtractionEntityType(
-            id=_QUADAS2_ET_INDEX_TEST,
-            template_id=_QUADAS2_TEMPLATE_ID,
-            name="index_test",
-            label="Index Test",
-            description="QUADAS-2 domain 2 — appraisal of index test.",
-            cardinality="one",
-            role=ExtractionEntityRole.STUDY_SECTION.value,
-            sort_order=2,
-            is_required=False,
-        ),
-        ExtractionEntityType(
-            id=_QUADAS2_ET_REFERENCE_STANDARD,
-            template_id=_QUADAS2_TEMPLATE_ID,
-            name="reference_standard",
-            label="Reference Standard",
-            description="QUADAS-2 domain 3 — appraisal of reference standard.",
-            cardinality="one",
-            role=ExtractionEntityRole.STUDY_SECTION.value,
-            sort_order=3,
-            is_required=False,
-        ),
-        ExtractionEntityType(
-            id=_QUADAS2_ET_FLOW_TIMING,
-            template_id=_QUADAS2_TEMPLATE_ID,
-            name="flow_and_timing",
-            label="Flow and Timing",
-            description="QUADAS-2 domain 4 — appraisal of patient flow and timing.",
-            cardinality="one",
-            role=ExtractionEntityRole.STUDY_SECTION.value,
-            sort_order=4,
-            is_required=False,
-        ),
-        ExtractionEntityType(
-            id=_QUADAS2_ET_OVERALL,
-            template_id=_QUADAS2_TEMPLATE_ID,
-            name="overall",
-            label="Overall",
-            description="Overall QUADAS-2 judgment across all domains.",
-            cardinality="one",
-            role=ExtractionEntityRole.STUDY_SECTION.value,
-            sort_order=5,
-            is_required=False,
-        ),
+    _study = ExtractionEntityRole.STUDY_SECTION
+    _quadas2_specs: list[_EntitySpec] = [
+        _EntitySpec(_QUADAS2_ET_PATIENT_SELECTION,  "patient_selection",  "Patient Selection",  "QUADAS-2 domain 1 — appraisal of patient selection.",            None, "one", _study, 1),
+        _EntitySpec(_QUADAS2_ET_INDEX_TEST,         "index_test",         "Index Test",         "QUADAS-2 domain 2 — appraisal of index test.",                   None, "one", _study, 2),
+        _EntitySpec(_QUADAS2_ET_REFERENCE_STANDARD, "reference_standard", "Reference Standard", "QUADAS-2 domain 3 — appraisal of reference standard.",           None, "one", _study, 3),
+        _EntitySpec(_QUADAS2_ET_FLOW_TIMING,        "flow_and_timing",    "Flow and Timing",    "QUADAS-2 domain 4 — appraisal of patient flow and timing.",     None, "one", _study, 4),
+        _EntitySpec(_QUADAS2_ET_OVERALL,            "overall",            "Overall",            "Overall QUADAS-2 judgment across all domains.",                  None, "one", _study, 5),
     ]
-    for et in entity_types:
-        session.add(et)
+    for spec in _quadas2_specs:
+        session.add(_entity_type_from_spec(spec, template_id=_QUADAS2_TEMPLATE_ID))
 
     # ---- Fields ----
     fields: list[ExtractionField] = []
