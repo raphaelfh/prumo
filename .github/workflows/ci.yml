@@ -47,6 +47,39 @@ jobs:
       - name: Run MyPy (type check, advisory)
         run: uv run mypy app --ignore-missing-imports || true
 
+  # =================== ARCHITECTURAL FITNESS ===================
+  # Advisory gate that runs every architectural fitness function from
+  # scripts/fitness/. Each script enforces one invariant (migration split,
+  # legacy concept blacklist, glossary sync, RLS coverage, ApiResponse
+  # envelope, layered-architecture DAG, TanStack-Query key factories).
+  #
+  # Why advisory: pre-existing violations are grandfathered in `.baseline`
+  # files. The gate fires only on NEW violations beyond the baseline. Status
+  # stays `continue-on-error: true` until two sprints pass without a single
+  # baseline regression — then promote to required.
+  fitness:
+    name: Architectural Fitness
+    runs-on: ubuntu-latest
+    needs: [backend-lint]
+    continue-on-error: true   # advisory; promote to required after 2 clean sprints
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Run fitness functions
+        env:
+          PRUMO_TELEMETRY_OUT: ${{ github.workspace }}/fitness-telemetry.jsonl
+        run: bash scripts/fitness/run_all.sh
+      - name: Upload telemetry
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fitness-telemetry-${{ github.run_id }}
+          path: fitness-telemetry.jsonl
+          retention-days: 30
+
   # =================== BACKEND TEST ===================
   backend-test:
     name: Backend Tests

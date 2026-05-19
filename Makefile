@@ -353,6 +353,37 @@ lint-frontend: ## Executa linter do frontend
 
 lint: lint-backend lint-frontend ## Executa linter de todos os serviços
 
+##@ Quality loop (architectural fitness functions + autonomous loop)
+
+quality-scan: ## Roda o verify_all.sh (lint + tests + fitness scripts) — sem LLM
+	@echo "$(GREEN)🔬 Quality scan: running deterministic gates...$(NC)"
+	@bash scripts/verify_all.sh
+
+quality-fitness: ## Roda apenas os fitness scripts em scripts/fitness/
+	@echo "$(GREEN)🔬 Fitness functions only...$(NC)"
+	@bash scripts/fitness/run_all.sh
+
+quality-loop: ## Imprime instruções para invocar o quality-loop dentro do Claude Code
+	@echo "$(YELLOW)The full quality loop requires Claude Code's Skill tool:$(NC)"
+	@echo "  Skill architectural-quality-loop --scope \"<glob>\""
+	@echo ""
+	@echo "$(YELLOW)For autonomous cadence (in Claude Code):$(NC)"
+	@echo "  /loop 30m Skill architectural-quality-loop --scope \"<glob>\""
+	@echo ""
+	@echo "$(YELLOW)For deterministic-only sweep (no LLM):$(NC)"
+	@echo "  make quality-scan         # full verify_all.sh"
+	@echo "  make quality-fitness      # only scripts/fitness/run_all.sh"
+
+quality-mutation: ## Roda mutation testing nas extraction services (lento; 20–40 min)
+	@echo "$(GREEN)🧬 Mutation testing on extraction services...$(NC)"
+	@bash scripts/run_mutation_tests.sh
+
+quality-clean: ## Remove run-dirs convergidos com mais de 30 dias + git worktree prune
+	@echo "$(YELLOW)🧹 Cleaning orphaned quality-loop artefacts...$(NC)"
+	@git worktree prune
+	@find docs/superpowers/quality-runs/ -maxdepth 1 -type d -mtime +30 -name "*-converged" -exec rm -rf {} + 2>/dev/null || true
+	@echo "Done."
+
 ##@ URLs Úteis
 
 urls: ## Mostra URLs importantes dos serviços

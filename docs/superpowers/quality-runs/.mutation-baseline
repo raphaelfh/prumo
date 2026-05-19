@@ -1,0 +1,12 @@
+# Mutation testing baseline for prumo's extraction services.
+# Used by `scripts/run_mutation_tests.sh` to gate weekly CI runs.
+# A new run with `delta < PRUMO_MUTATION_BASELINE_DELTA` (default: -0.05)
+# fails the gate. Update this file when the live score legitimately improves.
+#
+# Seed value: 0.0 (initial — populate after first real mutmut run on
+# extraction_*services). The first run will write a real score; until then,
+# any non-negative score passes.
+
+score = 0.0
+last_updated = 2026-05-19
+scope = app/services/extraction_consensus_service.py,app/services/extraction_proposal_service.py,app/services/extraction_review_service.py
