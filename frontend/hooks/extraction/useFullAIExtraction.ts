@@ -44,6 +44,7 @@ export interface UseFullAIExtractionReturn {
     projectId: string;
     articleId: string;
     templateId: string;
+    runId?: string | null;
   }) => Promise<void>;
   loading: boolean;
   error: string | null;
@@ -163,6 +164,7 @@ export function useFullAIExtraction(options?: {
       projectId: string;
       articleId: string;
       templateId: string;
+      runId?: string | null;
     }) => {
         console.warn('[useFullAIExtraction] Starting full AI extraction', params);
       setLoading(true);
@@ -170,7 +172,7 @@ export function useFullAIExtraction(options?: {
       setProgress(null);
 
       try {
-        const { projectId, articleId, templateId } = params;
+        const { projectId, articleId, templateId, runId } = params;
 
           // PHASE 1: Extract models and top-level sections in parallel
           console.warn('[useFullAIExtraction] Phase 1: Extracting models and top-level sections in parallel...');
@@ -184,11 +186,14 @@ export function useFullAIExtraction(options?: {
             projectId,
             articleId,
             templateId,
+            runId: runId ?? undefined,
+            autoAdvanceToReview: runId ? false : undefined,
           }),
           extractTopLevelSections({
             projectId,
             articleId,
             templateId,
+            runId,
           }),
         ]);
 
@@ -223,6 +228,7 @@ export function useFullAIExtraction(options?: {
           projectId,
           articleId,
           templateId,
+          runId,
           models,
         });
 

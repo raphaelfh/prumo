@@ -39,6 +39,7 @@ export interface UseBatchAllModelsSectionsExtractionReturn {
     projectId: string;
     articleId: string;
     templateId: string;
+    runId?: string | null;
     models: Array<{ instanceId: string; modelName: string }>;
   }) => Promise<void>;
   loading: boolean;
@@ -88,6 +89,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
       projectId: string;
       articleId: string;
       templateId: string;
+      runId?: string | null;
       models: Array<{ instanceId: string; modelName: string }>;
     }) => {
         console.warn('[useBatchAllModelsSectionsExtraction] Starting extraction of sections for all models', {
@@ -98,7 +100,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
       setProgress(null);
 
       try {
-        const { projectId, articleId, templateId, models } = params;
+        const { projectId, articleId, templateId, runId, models } = params;
 
         if (models.length === 0) {
             toast.warning(t('extraction', 'noModelsFoundTitle'), {
@@ -157,6 +159,8 @@ export function useBatchAllModelsSectionsExtraction(options?: {
                 templateId,
                 parentInstanceId: model.instanceId,
                 extractAllSections: true,
+                runId: runId ?? undefined,
+                autoAdvanceToReview: runId ? false : undefined,
               },
               chunkSize,
               onProgress: (sectionProgress) => {

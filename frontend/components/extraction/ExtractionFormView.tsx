@@ -61,6 +61,8 @@ export interface ExtractionFormViewProps {
   articleId: string;
   /** Required for section-scoped AI extraction. */
   templateId: string;
+  /** Active HITL run. AI proposals must be written here when present. */
+  runId?: string | null;
   modelsLoading: boolean;
   /** Callback to refresh values/suggestions after AI extraction. */
   onExtractionComplete?: () => void;
@@ -91,6 +93,8 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
         projectId: props.projectId,
         articleId: props.articleId,
         templateId: props.templateId,
+        runId: props.runId ?? undefined,
+        autoAdvanceToReview: props.runId ? false : undefined,
       });
     } catch (error) {
       console.error('[ExtractionFormView] Error in model extraction:', error);
@@ -128,6 +132,8 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
         templateId: props.templateId,
         parentInstanceId: props.activeModelId,
         extractAllSections: true,
+        runId: props.runId ?? undefined,
+        autoAdvanceToReview: props.runId ? false : undefined,
       });
     } catch (error) {
       console.error('[ExtractionFormView] Error in extraction of all sections:', error);
@@ -166,6 +172,7 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
         projectId: props.projectId,
         articleId: props.articleId,
         templateId: props.templateId,
+        runId: props.runId,
         models: props.models.map(m => ({
           instanceId: m.instanceId,
           modelName: m.modelName,
@@ -191,6 +198,7 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
             projectId={props.projectId}
             articleId={props.articleId}
             templateId={props.templateId}
+            runId={props.runId}
             otherExtractions={props.otherExtractions}
             aiSuggestions={props.aiSuggestions}
             onAcceptAI={props.acceptSuggestion}
@@ -230,6 +238,7 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
           projectId={props.projectId}
           articleId={props.articleId}
           templateId={props.templateId}
+          runId={props.runId}
           onExtractModels={handleExtractModels}
           extractingModels={extractingModels}
           onExtractAllSections={handleExtractAllSections}
@@ -259,6 +268,7 @@ export const ExtractionFormView = memo(ExtractionFormViewComponent, (prevProps, 
     prevProps.studyLevelSections === nextProps.studyLevelSections &&
     prevProps.modelChildSections === nextProps.modelChildSections &&
     prevProps.activeModelId === nextProps.activeModelId &&
+    prevProps.runId === nextProps.runId &&
     prevProps.models.length === nextProps.models.length &&
     !aiSuggestionsChanged
   );

@@ -36,6 +36,7 @@ export interface UseTopLevelSectionsExtractionReturn {
     projectId: string;
     articleId: string;
     templateId: string;
+    runId?: string | null;
     options?: {
       model?: 'gpt-4o-mini' | 'gpt-4o' | 'gpt-5';
     };
@@ -74,6 +75,7 @@ export function useTopLevelSectionsExtraction(options?: {
       projectId: string;
       articleId: string;
       templateId: string;
+      runId?: string | null;
       options?: {
         model?: 'gpt-4o-mini' | 'gpt-4o' | 'gpt-5';
       };
@@ -84,7 +86,7 @@ export function useTopLevelSectionsExtraction(options?: {
       setProgress(null);
 
       try {
-        const { projectId, articleId, templateId, options: extractionOptions } = params;
+        const { projectId, articleId, templateId, runId, options: extractionOptions } = params;
 
           // 1. Fetch top-level sections list
           console.warn('[useTopLevelSectionsExtraction] Fetching top-level sections...');
@@ -119,6 +121,8 @@ export function useTopLevelSectionsExtraction(options?: {
               articleId,
               templateId,
               entityTypeId: section.id,
+              runId: runId ?? undefined,
+              autoAdvanceToReview: runId ? false : undefined,
                 // NO parentInstanceId - top-level sections are linked directly to the article
               options: extractionOptions,
             };

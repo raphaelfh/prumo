@@ -63,6 +63,8 @@ export interface SectionExtractionRequest {
   templateId: string;
   entityTypeId: string;
   parentInstanceId?: string; // To filter child entities by model
+  runId?: string;
+  autoAdvanceToReview?: boolean;
   options?: {
     model?: SupportedAIModel;
   };
@@ -105,6 +107,8 @@ export interface ModelExtractionRequest {
   projectId: string;
   articleId: string;
   templateId: string;
+  runId?: string;
+  autoAdvanceToReview?: boolean;
   options?: {
     model?: SupportedAIModel;
   };
@@ -130,6 +134,8 @@ export interface BatchSectionExtractionRequest {
   extractAllSections: true; // Flag for batch extraction
   sectionIds?: string[]; // Filter specific sections (for chunking)
   pdfText?: string; // Pre-processed PDF text (avoids reprocessing)
+  runId?: string;
+  autoAdvanceToReview?: boolean;
   options?: {
     model?: SupportedAIModel;
   };

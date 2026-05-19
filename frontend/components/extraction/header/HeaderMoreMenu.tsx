@@ -22,7 +22,6 @@ import {Tooltip, TooltipContent, TooltipTrigger,} from '@/components/ui/tooltip'
 import {Download, ExternalLink, HelpCircle, Keyboard, MoreHorizontal, ShieldAlert, Sparkles} from 'lucide-react';
 import {ExtractionExport} from '@/components/extraction/ExtractionExport';
 import {useFullAIExtraction} from '@/hooks/extraction/useFullAIExtraction';
-import {useRunAIExtraction} from '@/hooks/extraction/ai/useRunAIExtraction';
 import {useHITLProjectTemplates} from '@/hooks/hitl/useHITLProjectTemplates';
 import type {ExtractionValueDisplay, ExtractionInstance, ProjectExtractionTemplate} from '@/types/extraction';
 import {t} from '@/lib/copy';
@@ -43,10 +42,9 @@ interface HeaderMoreMenuProps {
   /** Template ID para extração IA */
   templateId?: string;
   /**
-   * Active extraction run id. When provided, "Extract with AI" reuses
-   * this run via ``extract_for_run`` (preserving any human proposals
-   * the user already typed). When absent, falls back to the legacy
-   * multi-step orchestration that creates a fresh run.
+   * Active extraction run id. When provided, "Extract with AI" forwards
+   * it through the full extraction orchestration so AI proposals land in
+   * the same run the form is reading.
    */
   runId?: string | null;
   /** Callback após extração completa */
@@ -74,9 +72,8 @@ export function HeaderMoreMenu({
   const { globalTemplates: qaTemplates, loading: qaTemplatesLoading } =
     useHITLProjectTemplates({ projectId, kind: 'quality_assessment' });
 
-    // Hook for full AI extraction (legacy path: creates a fresh run).
-    // Used when no active run is available — e.g., bulk operations from
-    // the articles table.
+    // Hook for full AI extraction. When an active HITL run is available it
+    // is forwarded so every AI proposal lands in the same run the form reads.
   const { extractFullAI, loading: extractingFullAI, progress: extractionProgress } = useFullAIExtraction({
     onSuccess: async () => {
       if (onExtractionComplete) {
@@ -85,19 +82,7 @@ export function HeaderMoreMenu({
     },
   });
 
-  // Run-scoped AI extraction (preferred when ``runId`` is available):
-  // calls ``extract_for_run`` against the existing run with
-  // ``skipFieldsWithHumanProposals=true`` so manual edits aren't buried
-  // by a fresh AI guess.
-  const { extractForRun, loading: extractingForRun } = useRunAIExtraction({
-    onSuccess: async () => {
-      if (onExtractionComplete) {
-        await onExtractionComplete();
-      }
-    },
-  });
-
-  const extractingAI = extractingFullAI || extractingForRun;
+  const extractingAI = extractingFullAI;
 
   // Expor estado para parent (para renderizar progresso fora do menu)
   useEffect(() => {
@@ -137,23 +122,12 @@ export function HeaderMoreMenu({
     }
 
     try {
-      if (runId) {
-        // Active run available — reuse it. ``extract_for_run`` keeps
-        // any ``human`` proposals the user has typed while filling
-        // unfilled coords with AI guesses.
-        await extractForRun({
-          projectId,
-          articleId,
-          templateId,
-          runId,
-        });
-      } else {
-        await extractFullAI({
-          projectId,
-          articleId,
-          templateId,
-        });
-      }
+      await extractFullAI({
+        projectId,
+        articleId,
+        templateId,
+        runId,
+      });
     } catch (error) {
       // Erro já tratado pelo hook com toast
         console.error('[HeaderMoreMenu] Full AI extraction error:', error);

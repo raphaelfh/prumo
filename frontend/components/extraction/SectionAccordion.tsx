@@ -34,6 +34,7 @@ interface SectionAccordionProps {
   projectId: string;
   articleId: string;
     templateId: string; // Required for section extraction
+    runId?: string | null;
     parentInstanceId?: string; // Parent instance ID (to filter child entities by model)
   otherExtractions?: OtherExtraction[];
   aiSuggestions?: Record<string, AISuggestion>;
@@ -108,6 +109,8 @@ export function SectionAccordion(props: SectionAccordionProps) {
         articleId,
         templateId,
         entityTypeId: entityType.id,
+        runId: props.runId ?? undefined,
+        autoAdvanceToReview: props.runId ? false : undefined,
         parentInstanceId: props.parentInstanceId, // Nova: passar parentInstanceId quando fornecido
       });
     } catch (error) {

@@ -59,9 +59,15 @@ class TestSectionExtractionEndpoints:
         """Test extraction with valid request."""
         from app.services.section_extraction_service import SectionExtractionResult
 
-        with patch(
-            "app.api.v1.endpoints.section_extraction.SectionExtractionService"
-        ) as mock_service_class:
+        with (
+            patch(
+                "app.api.v1.endpoints.section_extraction.ensure_project_member",
+                new_callable=AsyncMock,
+            ) as mock_ensure_member,
+            patch(
+                "app.api.v1.endpoints.section_extraction.SectionExtractionService"
+            ) as mock_service_class,
+        ):
             mock_service = mock_service_class.return_value
             mock_service.extract_section = AsyncMock(
                 return_value=SectionExtractionResult(
@@ -76,6 +82,7 @@ class TestSectionExtractionEndpoints:
             )
 
             trace_id = "test-section-trace-id"
+            run_id = uuid4()
             response = await client.post(
                 "/api/v1/extraction/sections",
                 json={
@@ -83,6 +90,8 @@ class TestSectionExtractionEndpoints:
                     "articleId": str(uuid4()),
                     "templateId": str(uuid4()),
                     "entityTypeId": str(uuid4()),
+                    "runId": str(run_id),
+                    "autoAdvanceToReview": False,
                 },
                 headers={"X-Trace-Id": trace_id},
             )
@@ -93,6 +102,10 @@ class TestSectionExtractionEndpoints:
             assert data.get("trace_id") == trace_id
             assert response.headers.get("X-Trace-Id") == trace_id
             assert mock_service_class.call_args.kwargs["trace_id"] == trace_id
+            mock_ensure_member.assert_awaited_once()
+            extract_kwargs = mock_service.extract_section.await_args.kwargs
+            assert extract_kwargs["run_id"] == run_id
+            assert extract_kwargs["auto_advance_to_review"] is False
 
     @pytest.mark.asyncio
     async def test_section_extraction_batch_valid_request(
@@ -102,9 +115,15 @@ class TestSectionExtractionEndpoints:
         """Test batch extraction with valid request."""
         from app.services.section_extraction_service import BatchExtractionResult
 
-        with patch(
-            "app.api.v1.endpoints.section_extraction.SectionExtractionService"
-        ) as mock_service_class:
+        with (
+            patch(
+                "app.api.v1.endpoints.section_extraction.ensure_project_member",
+                new_callable=AsyncMock,
+            ) as mock_ensure_member,
+            patch(
+                "app.api.v1.endpoints.section_extraction.SectionExtractionService"
+            ) as mock_service_class,
+        ):
             mock_service = mock_service_class.return_value
             mock_service.extract_all_sections = AsyncMock(
                 return_value=BatchExtractionResult(
@@ -120,6 +139,7 @@ class TestSectionExtractionEndpoints:
             )
 
             trace_id = "test-batch-trace-id"
+            run_id = uuid4()
             response = await client.post(
                 "/api/v1/extraction/sections",
                 json={
@@ -128,6 +148,8 @@ class TestSectionExtractionEndpoints:
                     "templateId": str(uuid4()),
                     "extractAllSections": True,
                     "parentInstanceId": str(uuid4()),
+                    "runId": str(run_id),
+                    "autoAdvanceToReview": False,
                 },
                 headers={"X-Trace-Id": trace_id},
             )
@@ -137,6 +159,10 @@ class TestSectionExtractionEndpoints:
             assert data.get("ok") is True
             assert data.get("trace_id") == trace_id
             assert mock_service_class.call_args.kwargs["trace_id"] == trace_id
+            mock_ensure_member.assert_awaited_once()
+            extract_kwargs = mock_service.extract_all_sections.await_args.kwargs
+            assert extract_kwargs["run_id"] == run_id
+            assert extract_kwargs["auto_advance_to_review"] is False
 
 
 class TestModelExtractionEndpoints:
@@ -164,9 +190,15 @@ class TestModelExtractionEndpoints:
         """Test model extraction with valid request."""
         from app.services.model_extraction_service import ModelExtractionResult
 
-        with patch(
-            "app.api.v1.endpoints.model_extraction.ModelExtractionService"
-        ) as mock_service_class:
+        with (
+            patch(
+                "app.api.v1.endpoints.model_extraction.ensure_project_member",
+                new_callable=AsyncMock,
+            ) as mock_ensure_member,
+            patch(
+                "app.api.v1.endpoints.model_extraction.ModelExtractionService"
+            ) as mock_service_class,
+        ):
             mock_service = mock_service_class.return_value
             mock_service.extract = AsyncMock(
                 return_value=ModelExtractionResult(
@@ -182,12 +214,15 @@ class TestModelExtractionEndpoints:
             )
 
             trace_id = "test-model-trace-id"
+            run_id = uuid4()
             response = await client.post(
                 "/api/v1/extraction/models",
                 json={
                     "projectId": str(uuid4()),
                     "articleId": str(uuid4()),
                     "templateId": str(uuid4()),
+                    "runId": str(run_id),
+                    "autoAdvanceToReview": False,
                 },
                 headers={"X-Trace-Id": trace_id},
             )
@@ -198,3 +233,7 @@ class TestModelExtractionEndpoints:
             assert data.get("trace_id") == trace_id
             assert response.headers.get("X-Trace-Id") == trace_id
             assert mock_service_class.call_args.kwargs["trace_id"] == trace_id
+            mock_ensure_member.assert_awaited_once()
+            extract_kwargs = mock_service.extract.await_args.kwargs
+            assert extract_kwargs["run_id"] == run_id
+            assert extract_kwargs["auto_advance_to_review"] is False

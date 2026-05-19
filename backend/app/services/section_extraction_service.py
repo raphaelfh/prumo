@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import LoggerMixin
 from app.infrastructure.storage import StorageAdapter
 from app.models.extraction import (
+    ExtractionEntityRole,
     ExtractionEntityType,
     ExtractionEvidence,
     ExtractionInstance,
@@ -126,6 +127,8 @@ class SectionExtractionService(LoggerMixin):
         entity_type_id: UUID,
         parent_instance_id: UUID | None = None,
         model: str = "gpt-4o-mini",
+        run_id: UUID | None = None,
+        auto_advance_to_review: bool = True,
     ) -> SectionExtractionResult:
         """
         Extract a specific section from a template.
@@ -144,25 +147,33 @@ class SectionExtractionService(LoggerMixin):
         start_time = perf_counter()
         phase_durations_ms: dict[str, float] = {}
 
-        # 1. Create extraction_run via the unified lifecycle service so the
-        # NOT NULL columns (version_id, hitl_config_snapshot) and kind
-        # discriminator are populated. Then advance pending → proposal.
-        run = await self._lifecycle.create_run(
-            project_id=project_id,
-            article_id=article_id,
-            project_template_id=template_id,
-            user_id=UUID(self.user_id),
-            parameters={
-                "model": model,
-                "entity_type_id": str(entity_type_id),
-                "parent_instance_id": str(parent_instance_id) if parent_instance_id else None,
-            },
-        )
-        run = await self._lifecycle.advance_stage(
-            run_id=run.id,
-            target_stage=ExtractionRunStage.PROPOSAL,
-            user_id=UUID(self.user_id),
-        )
+        if run_id is not None:
+            run = await self._get_existing_proposal_run(
+                run_id=run_id,
+                project_id=project_id,
+                article_id=article_id,
+                template_id=template_id,
+            )
+        else:
+            # 1. Create extraction_run via the unified lifecycle service so the
+            # NOT NULL columns (version_id, hitl_config_snapshot) and kind
+            # discriminator are populated. Then advance pending → proposal.
+            run = await self._lifecycle.create_run(
+                project_id=project_id,
+                article_id=article_id,
+                project_template_id=template_id,
+                user_id=UUID(self.user_id),
+                parameters={
+                    "model": model,
+                    "entity_type_id": str(entity_type_id),
+                    "parent_instance_id": str(parent_instance_id) if parent_instance_id else None,
+                },
+            )
+            run = await self._lifecycle.advance_stage(
+                run_id=run.id,
+                target_stage=ExtractionRunStage.PROPOSAL,
+                user_id=UUID(self.user_id),
+            )
 
         # Mark as running
         await self._runs.start_run(run.id)
@@ -218,15 +229,14 @@ class SectionExtractionService(LoggerMixin):
             )
             phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
 
-            # 7b. Advance proposal → review so the extraction UI can record
-            #     ReviewerDecisions (edit / accept_proposal) without an extra
-            #     UX gesture. Equivalent of "AI is done proposing; humans now
-            #     review and decide".
-            await self._lifecycle.advance_stage(
-                run_id=run.id,
-                target_stage=ExtractionRunStage.REVIEW,
-                user_id=UUID(self.user_id),
-            )
+            if auto_advance_to_review:
+                # 7b. Advance proposal → review so legacy callers can record
+                # ReviewerDecisions. The HITL form keeps editing in PROPOSAL.
+                await self._lifecycle.advance_stage(
+                    run_id=run.id,
+                    target_stage=ExtractionRunStage.REVIEW,
+                    user_id=UUID(self.user_id),
+                )
 
             duration = (perf_counter() - start_time) * 1000
 
@@ -503,6 +513,7 @@ class SectionExtractionService(LoggerMixin):
             .where(
                 ExtractionEntityType.project_template_id == template_id,
                 ExtractionEntityType.parent_entity_type_id.is_(None),
+                ExtractionEntityType.role == ExtractionEntityRole.STUDY_SECTION.value,
             )
             .order_by(ExtractionEntityType.sort_order)
         )
@@ -560,6 +571,27 @@ class SectionExtractionService(LoggerMixin):
                 human.add(field_id)
         return human
 
+    async def _get_existing_proposal_run(
+        self,
+        *,
+        run_id: UUID,
+        project_id: UUID,
+        article_id: UUID,
+        template_id: UUID,
+    ) -> ExtractionRun:
+        run = await self.db.get(ExtractionRun, run_id)
+        if run is None:
+            raise ValueError(f"Run {run_id} not found")
+        if (
+            run.project_id != project_id
+            or run.article_id != article_id
+            or run.template_id != template_id
+        ):
+            raise ValueError("runId does not match the requested project, article, and template")
+        if run.stage != ExtractionRunStage.PROPOSAL.value:
+            raise ValueError(f"Run {run_id} stage is {run.stage}; AI extraction requires PROPOSAL")
+        return run
+
     async def extract_all_sections(
         self,
         project_id: UUID,
@@ -569,6 +601,8 @@ class SectionExtractionService(LoggerMixin):
         section_ids: list[UUID] | None = None,
         pdf_text: str | None = None,
         model: str = "gpt-4o-mini",
+        run_id: UUID | None = None,
+        auto_advance_to_review: bool = True,
     ) -> BatchExtractionResult:
         """
         Extract all child sections from a model with summarized memory.
@@ -593,24 +627,32 @@ class SectionExtractionService(LoggerMixin):
         start_time = perf_counter()
         phase_durations_ms: dict[str, float] = {}
 
-        # Create primary run for batch extraction via lifecycle service.
-        run = await self._lifecycle.create_run(
-            project_id=project_id,
-            article_id=article_id,
-            project_template_id=template_id,
-            user_id=UUID(self.user_id),
-            parameters={
-                "model": model,
-                "batch_extraction": True,
-                "parent_instance_id": str(parent_instance_id),
-                "section_ids": [str(sid) for sid in section_ids] if section_ids else None,
-            },
-        )
-        run = await self._lifecycle.advance_stage(
-            run_id=run.id,
-            target_stage=ExtractionRunStage.PROPOSAL,
-            user_id=UUID(self.user_id),
-        )
+        if run_id is not None:
+            run = await self._get_existing_proposal_run(
+                run_id=run_id,
+                project_id=project_id,
+                article_id=article_id,
+                template_id=template_id,
+            )
+        else:
+            # Create primary run for batch extraction via lifecycle service.
+            run = await self._lifecycle.create_run(
+                project_id=project_id,
+                article_id=article_id,
+                project_template_id=template_id,
+                user_id=UUID(self.user_id),
+                parameters={
+                    "model": model,
+                    "batch_extraction": True,
+                    "parent_instance_id": str(parent_instance_id),
+                    "section_ids": [str(sid) for sid in section_ids] if section_ids else None,
+                },
+            )
+            run = await self._lifecycle.advance_stage(
+                run_id=run.id,
+                target_stage=ExtractionRunStage.PROPOSAL,
+                user_id=UUID(self.user_id),
+            )
 
         await self._runs.start_run(run.id)
 
@@ -663,6 +705,7 @@ class SectionExtractionService(LoggerMixin):
                         pdf_text=pdf_text,
                         memory_history=memory_history,
                         model=model,
+                        run=run,
                     )
 
                     successful += 1
@@ -705,13 +748,14 @@ class SectionExtractionService(LoggerMixin):
                         }
                     )
 
-            # Advance the primary batch run proposal → review now that all
-            # AI proposals have been written across child sections.
-            await self._lifecycle.advance_stage(
-                run_id=run.id,
-                target_stage=ExtractionRunStage.REVIEW,
-                user_id=UUID(self.user_id),
-            )
+            if auto_advance_to_review:
+                # Advance the primary batch run proposal → review now that all
+                # AI proposals have been written across child sections.
+                await self._lifecycle.advance_stage(
+                    run_id=run.id,
+                    target_stage=ExtractionRunStage.REVIEW,
+                    user_id=UUID(self.user_id),
+                )
 
             duration = (perf_counter() - start_time) * 1000
 
@@ -755,8 +799,7 @@ class SectionExtractionService(LoggerMixin):
                 sections=section_results,
             )
 
-        except Exception as e:
-            await self._runs.fail_run(run.id, str(e))
+        except Exception:
             raise
 
     async def _extract_section_with_memory(
@@ -769,6 +812,7 @@ class SectionExtractionService(LoggerMixin):
         pdf_text: str,
         memory_history: list[dict[str, str]],
         model: str,
+        run: ExtractionRun,
     ) -> dict[str, Any]:
         """
         Extract one section with summarized memory context.
@@ -786,30 +830,7 @@ class SectionExtractionService(LoggerMixin):
         Returns:
             Dict with suggestions_created, tokens_total, and summary.
         """
-        section_start = perf_counter()
         section_phase_durations_ms: dict[str, float] = {}
-
-        # Create run for this specific section via lifecycle service.
-        run = await self._lifecycle.create_run(
-            project_id=project_id,
-            article_id=article_id,
-            project_template_id=template_id,
-            user_id=UUID(self.user_id),
-            parameters={
-                "model": model,
-                "entity_type_id": str(entity_type.id),
-                "parent_instance_id": str(parent_instance_id),
-                "batch_section": True,
-                "memory_context_size": len(memory_history),
-            },
-        )
-        run = await self._lifecycle.advance_stage(
-            run_id=run.id,
-            target_stage=ExtractionRunStage.PROPOSAL,
-            user_id=UUID(self.user_id),
-        )
-
-        await self._runs.start_run(run.id)
 
         try:
             # Build schema
@@ -842,29 +863,6 @@ class SectionExtractionService(LoggerMixin):
 
             # Generate memory summary (max 200 chars)
             summary = self._generate_extraction_summary(entity_type, extracted_data)
-
-            # Advance proposal → review now that AI proposing is done.
-            await self._lifecycle.advance_stage(
-                run_id=run.id,
-                target_stage=ExtractionRunStage.REVIEW,
-                user_id=UUID(self.user_id),
-            )
-
-            # Complete run
-            phase_start = perf_counter()
-            await self._runs.complete_run(
-                run_id=run.id,
-                results={
-                    "suggestions_created": suggestions_created,
-                    "tokens_prompt": llm_response.usage.prompt_tokens,
-                    "tokens_completion": llm_response.usage.completion_tokens,
-                    "tokens_total": llm_response.usage.total_tokens,
-                    "summary": summary,
-                    "duration_ms": (perf_counter() - section_start) * 1000,
-                    "phase_durations_ms": section_phase_durations_ms,
-                },
-            )
-            section_phase_durations_ms["complete_run"] = (perf_counter() - phase_start) * 1000
 
             return {
                 "suggestions_created": suggestions_created,

@@ -10,6 +10,7 @@ from time import perf_counter
 from fastapi import APIRouter, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
 
+from app.api.deps.security import ensure_project_member, get_current_user_sub
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
 from app.core.factories import create_storage_adapter
 from app.core.logging import get_logger
@@ -73,6 +74,9 @@ async def extract_section(
     )
 
     try:
+        current_user_sub = await get_current_user_sub(user)
+        await ensure_project_member(db, payload.project_id, current_user_sub)
+
         # Create storage adapter via factory
         storage = create_storage_adapter(supabase)
 
@@ -88,7 +92,11 @@ async def extract_section(
             openai_api_key=user_openai_key,
         )
 
-        if payload.run_id is not None:
+        if (
+            payload.run_id is not None
+            and payload.entity_type_id is None
+            and not payload.extract_all_sections
+        ):
             # Pre-opened run path. Used by Quality-Assessment (the HITL
             # session service opens the Run + parks it at PROPOSAL, then
             # the UI fires this endpoint to fill the fields).
@@ -135,6 +143,8 @@ async def extract_section(
                 section_ids=payload.section_ids,
                 pdf_text=payload.pdf_text,
                 model=payload.model or "gpt-4o-mini",
+                run_id=payload.run_id,
+                auto_advance_to_review=payload.auto_advance_to_review,
             )
 
             db_commit_start = perf_counter()
@@ -173,6 +183,8 @@ async def extract_section(
                 entity_type_id=payload.entity_type_id,  # type: ignore
                 parent_instance_id=payload.parent_instance_id,
                 model=payload.model or "gpt-4o-mini",
+                run_id=payload.run_id,
+                auto_advance_to_review=payload.auto_advance_to_review,
             )
 
             db_commit_start = perf_counter()
@@ -202,6 +214,8 @@ async def extract_section(
 
         return ApiResponse(ok=True, data=response_data, trace_id=trace_id)
 
+    except HTTPException:
+        raise
     except ValueError as e:
         rollback_start = perf_counter()
         await db.rollback()

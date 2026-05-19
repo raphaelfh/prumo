@@ -82,6 +82,8 @@ export class SectionExtractionService {
         templateId: request.templateId,
         entityTypeId: request.entityTypeId,
         parentInstanceId: request.parentInstanceId,
+        runId: request.runId,
+        autoAdvanceToReview: request.autoAdvanceToReview,
         model: request.options?.model,
       });
 
@@ -141,6 +143,8 @@ export class SectionExtractionService {
         projectId: request.projectId,
         articleId: request.articleId,
         templateId: request.templateId,
+        runId: request.runId,
+        autoAdvanceToReview: request.autoAdvanceToReview,
         model: request.options?.model,
       });
 
@@ -204,6 +208,8 @@ export class SectionExtractionService {
         extractAllSections: true,
         sectionIds: request.sectionIds,
         pdfText: request.pdfText,
+        runId: request.runId,
+        autoAdvanceToReview: request.autoAdvanceToReview,
         model: request.options?.model,
       });
 

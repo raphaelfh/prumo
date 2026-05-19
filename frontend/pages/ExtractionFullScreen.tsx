@@ -1130,6 +1130,7 @@ export default function ExtractionFullScreen() {
                 projectId: projectId || '',
                 articleId: articleId || '',
                 templateId: template?.id || '',
+                runId: activeRunId,
                 modelsLoading,
                 onExtractionComplete: handleExtractionComplete,
               }}

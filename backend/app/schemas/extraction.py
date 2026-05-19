@@ -101,10 +101,11 @@ class SectionExtractionRequest(BaseModel):
     @model_validator(mode="after")
     def validate_extraction_mode(self) -> "SectionExtractionRequest":
         """Valida que os fields corretos estao presentes for cada modo."""
-        # QA / pre-opened-run mode: caller passes ``run_id`` and the
+        # Full pre-opened-run mode: caller passes only ``run_id`` and the
         # service iterates every top-level entity_type of that run's
-        # template. No parent_instance_id / entity_type_id required.
-        if self.run_id is not None:
+        # template. Section-scoped requests may also pass ``run_id`` but
+        # still need the normal mode-specific coordinates below.
+        if self.run_id is not None and self.entity_type_id is None and not self.extract_all_sections:
             return self
         if self.extract_all_sections:
             if not self.parent_instance_id:
@@ -153,6 +154,8 @@ class ModelExtractionRequest(BaseModel):
     project_id: UUID = Field(..., alias="projectId")
     article_id: UUID = Field(..., alias="articleId")
     template_id: UUID = Field(..., alias="templateId")
+    run_id: UUID | None = Field(default=None, alias="runId")
+    auto_advance_to_review: bool = Field(default=True, alias="autoAdvanceToReview")
 
     # Opcoes de extraction
     model: str | None = Field(

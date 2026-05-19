@@ -22,6 +22,7 @@ from app.models.extraction import (
     ExtractionEntityRole,
     ExtractionInstance,
     ExtractionInstanceStatus,
+    ExtractionRun,
     ExtractionRunStage,
 )
 from app.repositories import (
@@ -103,6 +104,8 @@ class ModelExtractionService(LoggerMixin):
         article_id: UUID,
         template_id: UUID,
         model: str = "gpt-4o-mini",
+        run_id: UUID | None = None,
+        auto_advance_to_review: bool = True,
     ) -> ModelExtractionResult:
         """
         Extract prediction models from an article.
@@ -119,24 +122,32 @@ class ModelExtractionService(LoggerMixin):
         start_time = perf_counter()
         phase_durations_ms: dict[str, float] = {}
 
-        # 1. Create extraction_run via the unified lifecycle service so the new
-        # NOT NULL columns (version_id, hitl_config_snapshot) and the kind
-        # discriminator are populated correctly. Then advance pending → proposal.
-        run = await self._lifecycle.create_run(
-            project_id=project_id,
-            article_id=article_id,
-            project_template_id=template_id,
-            user_id=UUID(self.user_id),
-            parameters={
-                "model": model,
-                "extraction_type": "model_identification",
-            },
-        )
-        run = await self._lifecycle.advance_stage(
-            run_id=run.id,
-            target_stage=ExtractionRunStage.PROPOSAL,
-            user_id=UUID(self.user_id),
-        )
+        if run_id is not None:
+            run = await self._get_existing_proposal_run(
+                run_id=run_id,
+                project_id=project_id,
+                article_id=article_id,
+                template_id=template_id,
+            )
+        else:
+            # 1. Create extraction_run via the unified lifecycle service so the new
+            # NOT NULL columns (version_id, hitl_config_snapshot) and the kind
+            # discriminator are populated correctly. Then advance pending → proposal.
+            run = await self._lifecycle.create_run(
+                project_id=project_id,
+                article_id=article_id,
+                project_template_id=template_id,
+                user_id=UUID(self.user_id),
+                parameters={
+                    "model": model,
+                    "extraction_type": "model_identification",
+                },
+            )
+            run = await self._lifecycle.advance_stage(
+                run_id=run.id,
+                target_stage=ExtractionRunStage.PROPOSAL,
+                user_id=UUID(self.user_id),
+            )
 
         await self._runs.start_run(run.id)
 
@@ -180,13 +191,14 @@ class ModelExtractionService(LoggerMixin):
             )
             phase_durations_ms["create_model_instances"] = (perf_counter() - phase_start) * 1000
 
-            # Advance proposal → review so the form UI can write
-            # ReviewerDecisions on top of the instances we just created.
-            await self._lifecycle.advance_stage(
-                run_id=run.id,
-                target_stage=ExtractionRunStage.REVIEW,
-                user_id=UUID(self.user_id),
-            )
+            if auto_advance_to_review:
+                # Advance proposal → review so legacy callers can write
+                # ReviewerDecisions on top of the instances we just created.
+                await self._lifecycle.advance_stage(
+                    run_id=run.id,
+                    target_stage=ExtractionRunStage.REVIEW,
+                    user_id=UUID(self.user_id),
+                )
 
             duration = (perf_counter() - start_time) * 1000
 
@@ -272,6 +284,23 @@ class ModelExtractionService(LoggerMixin):
                 phase_durations_ms=phase_durations_ms,
             )
             raise
+
+    async def _get_existing_proposal_run(
+        self,
+        *,
+        run_id: UUID,
+        project_id: UUID,
+        article_id: UUID,
+        template_id: UUID,
+    ) -> ExtractionRun:
+        run = await self.db.get(ExtractionRun, run_id)
+        if run is None:
+            raise ValueError(f"Run {run_id} not found")
+        if run.project_id != project_id or run.article_id != article_id or run.template_id != template_id:
+            raise ValueError("runId does not match the requested project, article, and template")
+        if run.stage != ExtractionRunStage.PROPOSAL.value:
+            raise ValueError(f"Run {run_id} stage is {run.stage}; AI extraction requires PROPOSAL")
+        return run
 
     async def _get_pdf(self, article_id: UUID) -> bytes:
         """Fetch and download article PDF via Storage Adapter."""

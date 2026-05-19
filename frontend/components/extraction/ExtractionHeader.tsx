@@ -200,7 +200,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                   articleId={currentArticleId}
                   templateId={template?.id}
                   runId={props.runId}
-                  onExtractionComplete={props.onRefreshInstances}
+                  onExtractionComplete={props.onExtractionComplete ?? props.onRefreshInstances}
                   onExtractionStateChange={props.onExtractionStateChange}
                 />
               </div>
@@ -269,7 +269,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                 articleId={currentArticleId}
                 templateId={template?.id}
                 runId={props.runId}
-                onExtractionComplete={props.onRefreshInstances}
+                onExtractionComplete={props.onExtractionComplete ?? props.onRefreshInstances}
                 onExtractionStateChange={props.onExtractionStateChange}
               />
             </div>

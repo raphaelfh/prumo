@@ -10,6 +10,7 @@ from time import perf_counter
 from fastapi import APIRouter, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
 
+from app.api.deps.security import ensure_project_member, get_current_user_sub
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
 from app.core.factories import create_storage_adapter
 from app.core.logging import get_logger
@@ -69,6 +70,9 @@ async def extract_models(
     )
 
     try:
+        current_user_sub = await get_current_user_sub(user)
+        await ensure_project_member(db, payload.project_id, current_user_sub)
+
         # Create storage adapter via factory
         storage = create_storage_adapter(supabase)
 
@@ -89,6 +93,8 @@ async def extract_models(
             article_id=payload.article_id,
             template_id=payload.template_id,
             model=payload.model or "gpt-4o-mini",
+            run_id=payload.run_id,
+            auto_advance_to_review=payload.auto_advance_to_review,
         )
 
         db_commit_start = perf_counter()
@@ -125,6 +131,8 @@ async def extract_models(
 
         return ApiResponse(ok=True, data=response_data, trace_id=trace_id)
 
+    except HTTPException:
+        raise
     except ValueError as e:
         rollback_start = perf_counter()
         await db.rollback()
