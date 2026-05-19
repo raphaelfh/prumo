@@ -32,10 +32,13 @@ from app.repositories import (
     ExtractionTemplateRepository,
     GlobalTemplateRepository,
 )
+from app.services.llm.model_identification_prompt import (
+    ModelIdentificationPrompt,
+    parse_models_from_response,
+)
 from app.services.openai_service import OpenAIService
 from app.services.pdf_processor import PDFProcessor
 from app.services.run_lifecycle_service import RunLifecycleService
-from app.utils.json_parser import extract_models_from_response
 
 
 @dataclass
@@ -341,25 +344,16 @@ class ModelExtractionService(LoggerMixin):
                 else [],
             )
 
-        # Prompt ajustado for retornar objeto JSON (required por response_format)
-        prompt = f"""Analyze the following scientific article text and identify all prediction models described.
+        # Prompt + parser come from app/services/llm/ so they're testable
+        # in isolation and don't couple the service to specific field
+        # names. The label is sourced from the template metadata (falls
+        # back to a neutral string when the template has no container).
+        container_label = model_entity.label if model_entity else "prediction models"
+        prompt = ModelIdentificationPrompt.build(
+            container_label=container_label,
+            pdf_text=pdf_text,
+        )
 
-For each model found, extract:
-1. model_name: A clear, descriptive name for the model
-2. model_type: Type of model (e.g., logistic regression, random forest, neural network)
-3. target_outcome: What the model predicts
-
-Article text:
-{pdf_text[:15000]}
-
-Return a JSON object with a "models" key containing an array of models.
-Example format:
-{{"models": [{{"model_name": "...", "model_type": "...", "target_outcome": "..."}}]}}
-
-If in the models are found, return: {{"models": []}}
-"""
-
-        # Usar chat_completion_full for obter tokens
         response = await self.openai_service.chat_completion_full(
             messages=[
                 {
@@ -371,9 +365,7 @@ If in the models are found, return: {{"models": []}}
             model=model,
             response_format={"type": "json_object"},
         )
-
-        # Use robust parser that handles multiple formats
-        models = extract_models_from_response(response.content, trace_id=self.trace_id)
+        models = parse_models_from_response(response.content)
 
         self.logger.info(
             "models_identified",
@@ -523,19 +515,19 @@ If in the models are found, return: {{"models": []}}
         total_children_created = 0
 
         for idx, model_data in enumerate(models):
-            # 1. Criar instance do modelo (parent)
+            # 1. Criar instance do modelo (parent). The label comes from
+            # the LLM's neutral "name" field — see
+            # ``ModelIdentificationPrompt`` for the contract.
             model_instance = ExtractionInstance(
                 project_id=project_id,
                 article_id=article_id,
                 template_id=template_id,
                 entity_type_id=UUID(entity_type_id),
-                label=model_data.get("model_name", f"Model {idx + 1}"),
+                label=model_data.get("name") or f"Model {idx + 1}",
                 sort_order=idx,
                 metadata_={
                     "ai_extracted": True,
                     "ai_run_id": str(run.id),
-                    "model_type": model_data.get("model_type"),
-                    "target_outcome": model_data.get("target_outcome"),
                     "raw_extraction": model_data,
                 },
                 created_by=UUID(self.user_id),
