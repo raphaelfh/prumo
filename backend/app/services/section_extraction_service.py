@@ -806,7 +806,7 @@ class SectionExtractionService(LoggerMixin):
         self,
         project_id: UUID,
         article_id: UUID,
-        template_id: UUID,
+        _template_id: UUID,
         entity_type: Any,
         parent_instance_id: UUID,
         pdf_text: str,
