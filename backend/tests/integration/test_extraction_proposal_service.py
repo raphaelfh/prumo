@@ -230,3 +230,48 @@ async def test_list_by_item_returns_chronological(
     assert p1.id in ids and p2.id in ids
     assert ids.index(p1.id) < ids.index(p2.id)
     await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_list_by_run_returns_chronological_filtered_by_run_id(
+    db_session: AsyncSession,
+) -> None:
+    """list_by_run returns every proposal for the given run, in insertion order,
+    and does NOT leak proposals from a different run on the same coordinates."""
+    fx1 = await _setup_run_with_instance_field(db_session)
+    fx2 = await _setup_run_with_instance_field(db_session)
+    if fx1 is None or fx2 is None:
+        pytest.skip("Missing fixtures.")
+    run_a, instance_id, field_id, _ = fx1
+    run_b, _instance_b, _field_b, _ = fx2
+    service = ExtractionProposalService(db_session)
+
+    a1 = await service.record_proposal(
+        run_id=run_a,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value={"v": "a1"},
+    )
+    a2 = await service.record_proposal(
+        run_id=run_a,
+        instance_id=instance_id,
+        field_id=field_id,
+        source=ExtractionProposalSource.AI,
+        proposed_value={"v": "a2"},
+    )
+    # Proposal on a DIFFERENT run with the same coordinates — must NOT appear.
+    b1 = await service.record_proposal(
+        run_id=run_b,
+        instance_id=_instance_b,
+        field_id=_field_b,
+        source=ExtractionProposalSource.AI,
+        proposed_value={"v": "b1"},
+    )
+
+    rows = await service.list_by_run(run_a)
+    ids = [r.id for r in rows]
+    assert a1.id in ids and a2.id in ids
+    assert b1.id not in ids, "list_by_run leaked a proposal from another run"
+    assert ids.index(a1.id) < ids.index(a2.id), "chronological order broken"
+    await db_session.rollback()
