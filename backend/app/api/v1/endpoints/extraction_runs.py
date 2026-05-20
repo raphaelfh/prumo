@@ -10,28 +10,10 @@ the ones that drive consensus + publish later.
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
 
 from app.api.deps.security import ensure_project_member, get_current_user_sub
 from app.core.deps import DbSession
 from app.core.logging import get_logger
-from app.models.extraction import ExtractionRun
-from app.models.extraction_workflow import (
-    ExtractionConsensusDecision,
-    ExtractionProposalRecord,
-    ExtractionPublishedState,
-    ExtractionReviewerDecision,
-)
-from app.models.user import Profile
-from app.repositories.extraction_consensus_decision_repository import (
-    ExtractionConsensusDecisionRepository,
-)
-from app.repositories.extraction_proposal_repository import (
-    ExtractionProposalRepository,
-)
-from app.repositories.extraction_reviewer_decision_repository import (
-    ExtractionReviewerDecisionRepository,
-)
 from app.schemas.common import ApiResponse
 from app.schemas.extraction_run import (
     AdvanceStageRequest,
@@ -45,7 +27,6 @@ from app.schemas.extraction_run import (
     PublishedStateResponse,
     ReviewerDecisionResponse,
     RunDetailResponse,
-    RunReviewerProfile,
     RunReviewersResponse,
     RunSummaryResponse,
 )
@@ -62,6 +43,12 @@ from app.services.extraction_proposal_service import (
 from app.services.extraction_review_service import (
     ExtractionReviewService,
     InvalidDecisionError,
+)
+from app.services.extraction_run_read_service import (
+    RunNotFoundError,
+    get_run_or_raise,
+    get_run_with_workflow_history,
+    list_run_participants,
 )
 from app.services.run_lifecycle_service import (
     CannotReopenRunError,
@@ -80,11 +67,18 @@ def _trace(request: Request) -> str | None:
     return getattr(request.state, "trace_id", None)
 
 
-async def _load_run_and_check_member(db, run_id: UUID, user_sub: UUID) -> ExtractionRun:
-    """Load a Run by id, 404 when missing, 403 when caller is not a member."""
-    run = await db.get(ExtractionRun, run_id)
-    if run is None:
-        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+async def _load_run_and_check_member(db, run_id: UUID, user_sub: UUID) -> RunSummaryResponse:
+    """Load a Run by id, 404 when missing, 403 when caller is not a member.
+
+    Returns the Run as a RunSummaryResponse schema (not the ORM type) so
+    the endpoint module avoids importing from app.models.* — see the
+    extraction_run_read_service docstring + the check_layered_arch
+    fitness function.
+    """
+    try:
+        run = await get_run_or_raise(db, run_id)
+    except RunNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
     await ensure_project_member(db, run.project_id, user_sub)
     return run
 
@@ -139,28 +133,10 @@ async def get_run(
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[RunDetailResponse]:
-    run = await _load_run_and_check_member(db, run_id, current_user_sub)
-    proposals = await ExtractionProposalRepository(db).list_by_run(run_id)
-    decisions = await ExtractionReviewerDecisionRepository(db).list_by_run(run_id)
-    consensus = await ExtractionConsensusDecisionRepository(db).list_by_run(run_id)
-    published_rows = (
-        (
-            await db.execute(
-                select(ExtractionPublishedState).where(ExtractionPublishedState.run_id == run_id)
-            )
-        )
-        .scalars()
-        .all()
-    )
-
+    await _load_run_and_check_member(db, run_id, current_user_sub)
+    detail = await get_run_with_workflow_history(db, run_id)
     return ApiResponse.success(
-        RunDetailResponse(
-            run=RunSummaryResponse.model_validate(run),
-            proposals=[ProposalRecordResponse.model_validate(p) for p in proposals],
-            decisions=[ReviewerDecisionResponse.model_validate(d) for d in decisions],
-            consensus_decisions=[ConsensusDecisionResponse.model_validate(c) for c in consensus],
-            published_states=[PublishedStateResponse.model_validate(ps) for ps in published_rows],
-        ),
+        detail,
         trace_id=getattr(request.state, "trace_id", None),
     )
 
@@ -407,70 +383,9 @@ async def list_run_reviewers(
     real names / avatars instead of bare UUIDs.
     """
     await _load_run_and_check_member(db, run_id, current_user_sub)
-
-    user_ids: set[UUID] = set()
-
-    proposal_users = (
-        (
-            await db.execute(
-                select(ExtractionProposalRecord.source_user_id).where(
-                    ExtractionProposalRecord.run_id == run_id,
-                    ExtractionProposalRecord.source_user_id.is_not(None),
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-    user_ids.update(uid for uid in proposal_users if uid is not None)
-
-    decision_users = (
-        (
-            await db.execute(
-                select(ExtractionReviewerDecision.reviewer_id).where(
-                    ExtractionReviewerDecision.run_id == run_id,
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-    user_ids.update(decision_users)
-
-    consensus_users = (
-        (
-            await db.execute(
-                select(ExtractionConsensusDecision.consensus_user_id).where(
-                    ExtractionConsensusDecision.run_id == run_id,
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-    user_ids.update(consensus_users)
-
-    if not user_ids:
-        return ApiResponse.success(
-            RunReviewersResponse(reviewers=[]),
-            trace_id=_trace(request),
-        )
-
-    profiles = (
-        (await db.execute(select(Profile).where(Profile.id.in_(list(user_ids))))).scalars().all()
-    )
-
+    reviewers = await list_run_participants(db, run_id)
     return ApiResponse.success(
-        RunReviewersResponse(
-            reviewers=[
-                RunReviewerProfile(
-                    id=p.id,
-                    full_name=p.full_name,
-                    avatar_url=p.avatar_url,
-                )
-                for p in profiles
-            ]
-        ),
+        RunReviewersResponse(reviewers=reviewers),
         trace_id=_trace(request),
     )
 
