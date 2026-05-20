@@ -113,3 +113,83 @@ def test_baseline_grandfathers_violation(tmp_path: Path) -> None:
         timeout=15,
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+# ============================================================
+# Union / Optional acceptance (extended matcher)
+# ============================================================
+
+
+def test_accepts_pep604_union_with_apiresponse_arm(tmp_path: Path) -> None:
+    """`Response | ApiResponse[T]` (PEP 604 union) must be accepted —
+    legitimate when an endpoint can return either a streaming binary
+    Response or an envelope (e.g. articles_export.py:start_export).
+    """
+    f = tmp_path / ENDPOINTS_REL / "union_pep604.py"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(
+        "from fastapi import APIRouter, Response\n"
+        "from app.schemas.common import ApiResponse\n"
+        "router = APIRouter()\n"
+        "\n"
+        "@router.post('/export')\n"
+        "async def export() -> Response | ApiResponse[dict]:\n"
+        "    return Response()\n"
+    )
+    proc = _run(tmp_path)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+def test_accepts_typing_union_with_apiresponse_arm(tmp_path: Path) -> None:
+    """Legacy `Union[Response, ApiResponse[T]]` must also be accepted."""
+    f = tmp_path / ENDPOINTS_REL / "union_typing.py"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(
+        "from typing import Union\n"
+        "from fastapi import APIRouter, Response\n"
+        "from app.schemas.common import ApiResponse\n"
+        "router = APIRouter()\n"
+        "\n"
+        "@router.post('/export')\n"
+        "async def export() -> Union[Response, ApiResponse[dict]]:\n"
+        "    return Response()\n"
+    )
+    proc = _run(tmp_path)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+def test_accepts_optional_apiresponse(tmp_path: Path) -> None:
+    """`Optional[ApiResponse[T]]` (== ApiResponse[T] | None) is accepted."""
+    f = tmp_path / ENDPOINTS_REL / "opt.py"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(
+        "from typing import Optional\n"
+        "from fastapi import APIRouter\n"
+        "from app.schemas.common import ApiResponse\n"
+        "router = APIRouter()\n"
+        "\n"
+        "@router.get('/maybe')\n"
+        "async def maybe() -> Optional[ApiResponse[dict]]:\n"
+        "    return None\n"
+    )
+    proc = _run(tmp_path)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+def test_rejects_union_without_apiresponse_arm(tmp_path: Path) -> None:
+    """A union where NO arm is ApiResponse must still fail (the matcher
+    isn't permissive — it only excuses unions when at least one arm is
+    the envelope)."""
+    f = tmp_path / ENDPOINTS_REL / "union_bad.py"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(
+        "from fastapi import APIRouter, Response\n"
+        "router = APIRouter()\n"
+        "\n"
+        "@router.post('/raw')\n"
+        "async def raw() -> Response | dict:\n"
+        "    return {}\n"
+    )
+    proc = _run(tmp_path)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "wrong_envelope" in proc.stdout

@@ -52,11 +52,33 @@ def _is_router_decorator(decorator: ast.expr) -> bool:
 
 
 def _is_api_response_annotation(node: ast.expr | None) -> bool:
-    """True iff the annotation is `ApiResponse[...]`."""
+    """True iff the annotation is `ApiResponse[...]` OR a Union with at least
+    one `ApiResponse[...]` arm.
+
+    Accepted shapes:
+        ApiResponse[T]                            (plain envelope)
+        Response | ApiResponse[T]                 (PEP 604 union; either side)
+        Optional[ApiResponse[T]]                  (= ApiResponse[T] | None)
+        Union[Response, ApiResponse[T]]           (legacy typing.Union)
+    """
     if node is None:
         return False
+    # Plain ApiResponse[T]
     if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name):
-        return node.value.id == "ApiResponse"
+        if node.value.id == "ApiResponse":
+            return True
+        # typing.Union[...] — recurse on each arm of the tuple slice.
+        if node.value.id == "Union":
+            slice_node = node.slice
+            if isinstance(slice_node, ast.Tuple):
+                return any(_is_api_response_annotation(elt) for elt in slice_node.elts)
+            return _is_api_response_annotation(slice_node)
+        # typing.Optional[X] == X | None — recurse on the inner arg.
+        if node.value.id == "Optional":
+            return _is_api_response_annotation(node.slice)
+    # PEP 604 union: X | Y → BinOp(BitOr). Recurse on both sides.
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _is_api_response_annotation(node.left) or _is_api_response_annotation(node.right)
     return False
 
 
