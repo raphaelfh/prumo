@@ -21,8 +21,8 @@ _GOOD = (
     "router = APIRouter()\n"
     "\n"
     "@router.get('/health')\n"
-    "async def health() -> ApiResponse[dict]:\n"
-    "    return ApiResponse(data={})\n"
+    "async def health() -> ApiResponse[HealthResp]:\n"
+    "    return ApiResponse(data=HealthResp())\n"
 )
 
 
@@ -133,7 +133,7 @@ def test_accepts_pep604_union_with_apiresponse_arm(tmp_path: Path) -> None:
         "router = APIRouter()\n"
         "\n"
         "@router.post('/export')\n"
-        "async def export() -> Response | ApiResponse[dict]:\n"
+        "async def export() -> Response | ApiResponse[MyResp]:\n"
         "    return Response()\n"
     )
     proc = _run(tmp_path)
@@ -151,7 +151,7 @@ def test_accepts_typing_union_with_apiresponse_arm(tmp_path: Path) -> None:
         "router = APIRouter()\n"
         "\n"
         "@router.post('/export')\n"
-        "async def export() -> Union[Response, ApiResponse[dict]]:\n"
+        "async def export() -> Union[Response, ApiResponse[MyResp]]:\n"
         "    return Response()\n"
     )
     proc = _run(tmp_path)
@@ -169,7 +169,7 @@ def test_accepts_optional_apiresponse(tmp_path: Path) -> None:
         "router = APIRouter()\n"
         "\n"
         "@router.get('/maybe')\n"
-        "async def maybe() -> Optional[ApiResponse[dict]]:\n"
+        "async def maybe() -> Optional[ApiResponse[MyResp]]:\n"
         "    return None\n"
     )
     proc = _run(tmp_path)
@@ -193,3 +193,97 @@ def test_rejects_union_without_apiresponse_arm(tmp_path: Path) -> None:
     proc = _run(tmp_path)
     assert proc.returncode == 1, proc.stdout + proc.stderr
     assert "wrong_envelope" in proc.stdout
+
+
+# ============================================================
+# Weak-payload rejection (the 2026-05-20-0200 tightening)
+# ============================================================
+
+
+def test_rejects_apiresponse_with_dict_payload(tmp_path: Path) -> None:
+    """ApiResponse[dict] gives consumers no schema — must fail."""
+    f = tmp_path / ENDPOINTS_REL / "weak1.py"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(
+        "from fastapi import APIRouter\n"
+        "from app.schemas.common import ApiResponse\n"
+        "router = APIRouter()\n"
+        "\n"
+        "@router.get('/weak')\n"
+        "async def weak() -> ApiResponse[dict]:\n"
+        "    return ApiResponse(data={})\n"
+    )
+    proc = _run(tmp_path)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "wrong_envelope" in proc.stdout
+    assert "dict" in proc.stdout
+
+
+def test_rejects_apiresponse_with_parametric_dict(tmp_path: Path) -> None:
+    """ApiResponse[dict[str, Any]] is equally weak."""
+    f = tmp_path / ENDPOINTS_REL / "weak2.py"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(
+        "from typing import Any\n"
+        "from fastapi import APIRouter\n"
+        "from app.schemas.common import ApiResponse\n"
+        "router = APIRouter()\n"
+        "\n"
+        "@router.get('/weak')\n"
+        "async def weak() -> ApiResponse[dict[str, Any]]:\n"
+        "    return ApiResponse(data={})\n"
+    )
+    proc = _run(tmp_path)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+
+
+def test_rejects_apiresponse_with_any_payload(tmp_path: Path) -> None:
+    """ApiResponse[Any] — explicit Any is the strongest wildcard signal."""
+    f = tmp_path / ENDPOINTS_REL / "weak3.py"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(
+        "from typing import Any\n"
+        "from fastapi import APIRouter\n"
+        "from app.schemas.common import ApiResponse\n"
+        "router = APIRouter()\n"
+        "\n"
+        "@router.get('/weak')\n"
+        "async def weak() -> ApiResponse[Any]:\n"
+        "    return ApiResponse(data=None)\n"
+    )
+    proc = _run(tmp_path)
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+
+
+def test_accepts_apiresponse_with_concrete_model(tmp_path: Path) -> None:
+    """The complement: a non-weak T must still be accepted."""
+    f = tmp_path / ENDPOINTS_REL / "strong.py"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(
+        "from fastapi import APIRouter\n"
+        "from app.schemas.common import ApiResponse\n"
+        "router = APIRouter()\n"
+        "\n"
+        "@router.get('/strong')\n"
+        "async def strong() -> ApiResponse[MyConcreteResponse]:\n"
+        "    return ApiResponse(data=MyConcreteResponse())\n"
+    )
+    proc = _run(tmp_path)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+def test_accepts_apiresponse_with_list_of_concrete_model(tmp_path: Path) -> None:
+    """`list[Model]` is parametric but still strong — accepted."""
+    f = tmp_path / ENDPOINTS_REL / "strong_list.py"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(
+        "from fastapi import APIRouter\n"
+        "from app.schemas.common import ApiResponse\n"
+        "router = APIRouter()\n"
+        "\n"
+        "@router.get('/strong')\n"
+        "async def strong() -> ApiResponse[list[ItemModel]]:\n"
+        "    return ApiResponse(data=[])\n"
+    )
+    proc = _run(tmp_path)
+    assert proc.returncode == 0, proc.stdout + proc.stderr

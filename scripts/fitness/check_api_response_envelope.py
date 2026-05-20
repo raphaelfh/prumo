@@ -51,22 +51,49 @@ def _is_router_decorator(decorator: ast.expr) -> bool:
     return False
 
 
+# Generic payload types that are *too weak* — they don't tell consumers
+# (or generated SDKs) what fields actually come back. Endpoints using these
+# should declare a dedicated Pydantic response model instead.
+_WEAK_PAYLOAD_NAMES = frozenset({"dict", "Dict", "Any", "object"})
+
+
+def _is_weakly_typed_payload(node: ast.expr | None) -> bool:
+    """True iff the generic param of ApiResponse is a wildcard-shaped type
+    that gives no structural information (dict, dict[K, V], Any, object)."""
+    if node is None:
+        return False
+    if isinstance(node, ast.Name):
+        return node.id in _WEAK_PAYLOAD_NAMES
+    if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name):
+        return node.value.id in _WEAK_PAYLOAD_NAMES
+    return False
+
+
 def _is_api_response_annotation(node: ast.expr | None) -> bool:
-    """True iff the annotation is `ApiResponse[...]` OR a Union with at least
-    one `ApiResponse[...]` arm.
+    """True iff the annotation is `ApiResponse[T]` (with T strongly typed —
+    NOT dict/Any/object) OR a Union containing at least one strongly-typed
+    `ApiResponse[T]` arm.
 
     Accepted shapes:
-        ApiResponse[T]                            (plain envelope)
+        ApiResponse[SomeModel]                    (plain envelope, strong T)
+        ApiResponse[list[SomeModel]]              (parametric collection)
         Response | ApiResponse[T]                 (PEP 604 union; either side)
         Optional[ApiResponse[T]]                  (= ApiResponse[T] | None)
         Union[Response, ApiResponse[T]]           (legacy typing.Union)
+
+    Rejected (the new tightening — surfaces as a violation so the loop's
+    next sweep can refactor each endpoint behind a dedicated schema):
+        ApiResponse[dict]
+        ApiResponse[dict[str, Any]]
+        ApiResponse[Any]
+        ApiResponse[object]
     """
     if node is None:
         return False
-    # Plain ApiResponse[T]
+    # Plain ApiResponse[T] — also check T is strongly typed.
     if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name):
         if node.value.id == "ApiResponse":
-            return True
+            return not _is_weakly_typed_payload(node.slice)
         # typing.Union[...] — recurse on each arm of the tuple slice.
         if node.value.id == "Union":
             slice_node = node.slice
@@ -203,7 +230,11 @@ def main(argv: list[str]) -> int:
         for v in new_violations:
             print(f"  {v.file}:{v.line}  {v.func_name}  [{v.reason}]")
         print("")
-        print(f"To grandfather: add 'file:func_name' to {baseline_path.relative_to(root)}")
+        try:
+            rel = baseline_path.relative_to(root)
+        except ValueError:
+            rel = baseline_path  # absolute path (e.g. /dev/null in tests)
+        print(f"To grandfather: add 'file:func_name' to {rel}")
     else:
         msg = f"baseline matched: {len(baseline)} grandfathered" if baseline else "no violations"
         print(f"check_api_response_envelope.py: OK ({duration_ms} ms; {msg})")

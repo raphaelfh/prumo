@@ -42,7 +42,10 @@ if ! uv run --frozen mutmut --version >/dev/null 2>&1; then
 fi
 
 echo "Running mutmut on extraction services (this may take 20–40 min)..."
-uv run --frozen mutmut run --parallel || true   # mutmut exits non-zero when survivors exist; we judge by score
+# mutmut 3.x exposes --max-children for parallelism. Cap at $(nproc)/2 so we
+# do not starve the test suite of CPU. Falls back to 4 if nproc unavailable.
+PARALLELISM=$( ( (command -v nproc >/dev/null && nproc) || sysctl -n hw.ncpu 2>/dev/null || echo 8 ) | awk '{print int($1/2 < 4 ? 4 : $1/2)}' )
+uv run --frozen mutmut run --max-children "${PARALLELISM}" || true   # mutmut exits non-zero when survivors exist; we judge by score
 
 # Compute current score: survived / total (lower is better; we use 1 - survived/total)
 TOTAL=$(uv run --frozen mutmut results 2>/dev/null | grep -c '^[0-9]\+:' || echo 0)
