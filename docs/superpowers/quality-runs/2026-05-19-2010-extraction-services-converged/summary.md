@@ -1,6 +1,6 @@
 # Summary — 2026-05-19-2010-extraction-services
 
-**Status:** `scan_complete` (Phase 2 SCAN-only proof-of-concept; APPLY phase deferred to Phase 5 first real sweep)
+**Status:** `converged` (6/6 findings closed; deterministic gates green within scope; full inferential re-SCAN deferred to next invocation).
 
 ## Scope
 
@@ -9,7 +9,7 @@
 - `extraction_proposal_service.py`
 - `extraction_review_service.py`
 
-## SCAN results
+## SCAN results (original)
 
 | Category | Count | High | Medium | Low |
 |---|---:|---:|---:|---:|
@@ -20,63 +20,58 @@
 | test-gaps | 2 | 1 | 1 | 0 |
 | **Total** | **6** | **5** | **1** | **0** |
 
-All 6 findings have `confidence ≥ 0.75` (well above 0.7 floor). 0 findings dropped.
+All 6 findings had `confidence ≥ 0.75` (well above the 0.7 floor). 0 dropped.
 
-## High-confidence findings (backlog priority)
+## Iterations (3 — all RESOLVES)
 
-### 1–4: TOCTOU race in run-stage transitions
+### Iteration 001 — closed f_005 (test-gaps, high)
+Commit [`d0e806a`](../../..) — added `test_list_by_run_returns_chronological_filtered_by_run_id` exercising the chronological + run-id filter contract. Cross-run seeding doubles as the counterfactual probe.
 
-Four high-severity (`confidence=0.9–0.95`) security findings: `extraction_consensus_service.py:58`, `:154`, `extraction_proposal_service.py:41`, `extraction_review_service.py:49`. All follow the same pattern:
+### Iteration 002 — closed f_006 (test-gaps, medium)
+Commit [`78f1a66`](../../..) — added `test_get_reviewer_state_returns_none_for_unknown_coordinates` + `test_get_reviewer_state_returns_state_after_record_decision`. Two short tests cover the None edge case and explicit positive retrieval.
 
-```python
-run = await self.db.get(ExtractionRun, run_id)
-if run is None:
-    raise ...
-if run.stage != ExtractionRunStage.<EXPECTED>.value:
-    raise ...
-# ... append to extraction_proposal_records / extraction_reviewer_decisions / etc.
-```
+### Iteration 003 — closed f_001/f_002/f_003/f_004 (security, high — batched)
+Commit [`25c06eb`](../../..) — introduced `backend/app/services/_extraction_run_lock.py` with `load_run_for_update(db, run_id)` issuing `SELECT … FOR UPDATE`. Refactored 4 service callsites
+(`extraction_consensus_service.record_consensus`, `.publish`,
+`extraction_proposal_service.record_proposal`,
+`extraction_review_service.record_decision`) to use the helper.
+Added `backend/tests/integration/test_extraction_run_lock.py` as the
+TDD recurrence guard: two-session test that holds a FOR UPDATE on the
+run row from session2, asserts session1's `record_proposal` blocks
+within `asyncio.wait_for(..., timeout=1.5)` and raises TimeoutError.
+Without the fix the test fails (no block); with it the test passes (1.64s wall).
 
-Between the stage check and the append, a concurrent `run_lifecycle_service.advance_stage()` can advance the run; the appended row lands on a run in the wrong stage. **Fix:** `SELECT ... FOR UPDATE` row lock when loading `run`, OR a CHECK constraint enforcing valid stage transitions at the DB level.
+## Final gate state
 
-**Recurrence guard required:** integration test that exercises the race with two concurrent sessions.
+| Gate | Result | Detail |
+|---|---|---|
+| pytest (backend full suite) | 539 PASSED, 31 skipped (27.49s) | +5 tests vs Phase 0 baseline; no regression |
+| pytest scoped to extraction_* services | 27 PASSED (3.47s) | includes the new TOCTOU concurrency test |
+| ruff check | OK | 3 unused `ExtractionRun` imports trimmed during fix |
+| ruff format (this run's 5 touched files) | OK | all 5 files clean |
+| fitness/run_all.sh (7 checks) | OK (~1 s total) | 0 hard violations; baselines unchanged |
+| `backend/app/services/extraction_*.py` grep for `db.get(ExtractionRun` | 0 matches | original TOCTOU pattern eradicated from scope |
 
-### 5: `extraction_proposal_service.list_by_run` has no test
+## Out-of-scope (separate findings for next sweep)
 
-`backend/app/services/extraction_proposal_service.py:99` — public function with no integration test. **Fix:** add `backend/tests/integration/test_extraction_proposal_service_list_by_run.py` asserting chronological order + run-id filter.
+These were observed during VERIFY but are outside this run-dir's scope; they enter the **next** loop invocation's backlog rather than block this one's convergence.
 
-### 6: `extraction_review_service.get_reviewer_state` lacks edge-case test
+- **`ruff format` drift on 16 unrelated backend files** (test_template_clone_extraction.py, test_model_identification_prompt.py, …). Pre-existing on `dev` HEAD `77bc471`; documented in the original Phase 2 summary. The `make lint-backend` gate (only `ruff check`) is currently green; the stricter `ruff format --check` part of `scripts/verify_all.sh` and CI catches them. Recommended next backlog item: scoped `ruff format` PR on those 16 files.
 
-`backend/app/services/extraction_review_service.py:106` — `get_reviewer_state` only exercised as a side effect of `record_decision` tests; no test for the `None` return case (unknown coordinates). **Fix:** add explicit unit test for `get_reviewer_state` returning `None` and for direct positive retrieval.
+## Telemetry recap
 
-## Telemetry
+- Wall-clock total (SCAN + 3 iterations + VERIFY): ≈ 75 s deterministic + ≈ 68 s subagent SCAN = ≈ 2.5 min.
+- Subagent calls: 5 (Phase 2 SCAN) — well under the 150-call hard cap.
+- Tokens used: ≈ 19 600 (SCAN only) — well under the 500k hard cap.
+- Iterations closed: 3 of 3; loopbacks: 0; quarantined: 0.
 
-- Duration (wall): 5 subagents in parallel ≈ 68 s
-- Subagent calls: 5 (well under 150 hard cap)
-- Tokens used: ≈ 19 600 (well under 500k hard cap)
-- Resumed from: (none — fresh run)
+## What the loop earned
 
-## Phase 2 acceptance — fulfilled
+Six real architectural findings on critical HITL service code, closed in three small reversible commits with their own recurrence guards. The TOCTOU fix (iteration 003) is the highest-value change: it eliminates a real concurrency window in the run-stage transition path that would have been a hard-to-debug production incident.
 
-| Check | Result |
-|---|---|
-| Run-dir exists | ✅ `2026-05-19-2010-extraction-services/` |
-| `findings.jsonl` non-empty | ✅ 6 rows |
-| `telemetry.jsonl` non-empty | ✅ 8 rows |
-| All findings ≥ 0.7 confidence | ✅ lowest is 0.75 |
-| ≥1 category present | ✅ security + test-gaps |
-| Budget within cap | ✅ 10 subagent_calls / 150 hard cap; 39 200 tokens / 500 000 hard cap |
-| Schema validates | ✅ `jq -c '.category'` returns clean enum |
+## Next invocation
 
-## Why Phase 2 stops here (no APPLY)
-
-By design — Phase 2 is the **SCAN-only** phase. The orchestrator has all pieces of the loop, but APPLY/VERIFY/CONVERGE require driving a finding through a worktree-isolated diff + LLM judge. Those phases ship in Phase 5 (first real sweep) where the orchestrator picks a finding from this backlog and closes it end-to-end.
-
-## Side finding (out-of-scope but recorded)
-
-While building `scripts/verify_all.sh` (Phase 3), we discovered the prumo `dev` baseline has **16 backend files with pre-existing `ruff format --check` drift** that are not in the scope of this scan. They are tracked as a separate baseline issue for the Phase 5 first real sweep to address.
-
-## Next steps
-
-- Phase 5 first real sweep can resume this run-dir (idempotency: same `scope_hash`) OR pick a fresh slice. The 6 findings above are excellent first-fix candidates for proving the full loop on a real-world TOCTOU bug.
-- Phase 6 CI integration will mean each PR sees `scripts/fitness/run_all.sh` as an advisory gate; the security findings above would have been caught at PR-time had this loop existed.
+Suggested scope candidates for a follow-up sweep:
+- `concept:hitl-session` — exercises `template_clone_service`, `hitl_session_service`, the API endpoints that compose them.
+- `backend/app/api/v1/endpoints/extraction_runs.py` — the largest grandfathered layered-arch hotspot (4 forbidden imports).
+- Whole `frontend/` — the 4 query-key grandfathered call sites + the 16 ruff-format drift backlog item.
