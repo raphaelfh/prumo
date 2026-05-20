@@ -115,9 +115,7 @@ def upgrade() -> None:
         $$;
         """
     )
-    op.execute(
-        "REVOKE ALL ON FUNCTION public.calculate_model_progress(uuid, uuid) FROM PUBLIC;"
-    )
+    op.execute("REVOKE ALL ON FUNCTION public.calculate_model_progress(uuid, uuid) FROM PUBLIC;")
     op.execute(
         "GRANT EXECUTE ON FUNCTION public.calculate_model_progress(uuid, uuid) "
         "TO authenticated, service_role;"

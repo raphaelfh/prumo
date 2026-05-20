@@ -342,9 +342,7 @@ async def test_partial_unique_index_blocks_second_active_extraction_template(
     # Insert two active extraction templates in a single transaction; the
     # second insert must fail. Use a savepoint per insert so the test
     # session isn't poisoned by a failed transaction.
-    profile_id = (
-        await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))
-    ).scalar()
+    profile_id = (await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
 
     await db_session.execute(
         text(
@@ -428,9 +426,7 @@ async def test_clone_reactivates_inactive_existing_extraction_template(
 
     # Take the existing CHARMS clone offline.
     await db_session.execute(
-        text(
-            "UPDATE public.project_extraction_templates SET is_active = false WHERE id = :id"
-        ),
+        text("UPDATE public.project_extraction_templates SET is_active = false WHERE id = :id"),
         {"id": str(tpl_id)},
     )
     await db_session.commit()
@@ -443,9 +439,7 @@ async def test_clone_reactivates_inactive_existing_extraction_template(
 
     is_active = (
         await db_session.execute(
-            text(
-                "SELECT is_active FROM public.project_extraction_templates WHERE id = :id"
-            ),
+            text("SELECT is_active FROM public.project_extraction_templates WHERE id = :id"),
             {"id": str(tpl_id)},
         )
     ).scalar()

@@ -337,9 +337,7 @@ class ModelExtractionService(LoggerMixin):
                 "no_model_container_entity_type",
                 trace_id=self.trace_id,
                 template_id=str(template.id),
-                available_entity_types=[
-                    {"name": et.name, "role": et.role} for et in entity_types
-                ]
+                available_entity_types=[{"name": et.name, "role": et.role} for et in entity_types]
                 if entity_types
                 else [],
             )

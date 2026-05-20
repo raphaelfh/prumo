@@ -50,9 +50,7 @@ async def auth_as_profile(db_session: AsyncSession) -> AsyncGenerator[UUID, None
 
 
 async def _pick_article(db: AsyncSession) -> tuple[UUID, UUID] | None:
-    row = (
-        await db.execute(text("SELECT id, project_id FROM public.articles LIMIT 1"))
-    ).first()
+    row = (await db.execute(text("SELECT id, project_id FROM public.articles LIMIT 1"))).first()
     if row is None:
         return None
     return UUID(str(row[0])), UUID(str(row[1]))
@@ -97,9 +95,7 @@ async def _wipe_clone_chain(db: AsyncSession, *, project_id: UUID, global_id: UU
     await db.commit()
 
 
-async def _seed_charms_clone(
-    db: AsyncSession, db_client: AsyncClient, project_id: UUID
-) -> UUID:
+async def _seed_charms_clone(db: AsyncSession, db_client: AsyncClient, project_id: UUID) -> UUID:
     from app.seed import seed_charms
 
     await seed_charms(db)
@@ -628,10 +624,7 @@ async def test_backfill_uses_existing_advisory_lock(
     leak across requests."""
     locks = (
         await db_session.execute(
-            text(
-                "SELECT COUNT(*) FROM pg_locks "
-                "WHERE locktype = 'advisory' AND objsubid = 2"
-            )
+            text("SELECT COUNT(*) FROM pg_locks WHERE locktype = 'advisory' AND objsubid = 2")
         )
     ).scalar()
     # No session-scoped advisory locks before / after this test boundary.

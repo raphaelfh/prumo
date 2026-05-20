@@ -78,6 +78,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        "DROP INDEX IF EXISTS public.uq_one_active_extraction_template_per_project;"
-    )
+    op.execute("DROP INDEX IF EXISTS public.uq_one_active_extraction_template_per_project;")

@@ -7,6 +7,7 @@ Pins the contract:
 * Response schema requires only ``name`` (no field-name coupling).
 * Parser normalizes legacy + new key formats during rollout.
 """
+
 from app.services.llm.model_identification_prompt import (
     MODEL_IDENTIFICATION_RESPONSE_SCHEMA,
     ModelIdentificationPrompt,

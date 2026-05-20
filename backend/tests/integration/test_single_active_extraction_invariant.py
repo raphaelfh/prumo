@@ -163,7 +163,9 @@ async def test_index_is_partial_with_extraction_predicate(db_session: AsyncSessi
     assert "kind = 'extraction'" in definition
 
 
-async def test_inserting_first_active_extraction_template_succeeds(db_session: AsyncSession) -> None:
+async def test_inserting_first_active_extraction_template_succeeds(
+    db_session: AsyncSession,
+) -> None:
     """Spec: a project with no extraction template can have one inserted active."""
     target = await _pick_project_with_member(db_session)
     if target is None:
@@ -239,10 +241,7 @@ async def test_promoting_second_template_to_active_fails(db_session: AsyncSessio
 
     with pytest.raises(IntegrityError):
         await db_session.execute(
-            text(
-                "UPDATE public.project_extraction_templates "
-                "SET is_active = true WHERE id = :tid"
-            ),
+            text("UPDATE public.project_extraction_templates SET is_active = true WHERE id = :tid"),
             {"tid": str(sleeping_id)},
         )
         await db_session.flush()

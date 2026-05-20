@@ -166,9 +166,7 @@ def extract_models_task(
                             # the new neutral "name" or the legacy
                             # "modelName"/"model_name".
                             "model_name": (
-                                m.get("name")
-                                or m.get("modelName")
-                                or m.get("model_name")
+                                m.get("name") or m.get("modelName") or m.get("model_name")
                             ),
                             "model_type": (
                                 m.get("modellingMethod")

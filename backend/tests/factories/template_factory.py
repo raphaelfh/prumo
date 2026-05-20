@@ -15,6 +15,7 @@ exercises the CHECK constraint + deferred trigger from migration 0016
 on every fixture insert, so misuse fails loud at test setup instead of
 silently producing inconsistent rows that mask real bugs downstream.
 """
+
 from __future__ import annotations
 
 from typing import Literal
@@ -51,9 +52,7 @@ def make_entity_type(
     session and commits — this function does no I/O.
     """
     if (project_template_id is None) == (template_id is None):
-        raise ValueError(
-            "Exactly one of project_template_id / template_id must be set"
-        )
+        raise ValueError("Exactly one of project_template_id / template_id must be set")
     return ExtractionEntityType(
         id=uuid4(),
         project_template_id=project_template_id,

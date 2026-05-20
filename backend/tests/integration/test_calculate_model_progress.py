@@ -228,7 +228,9 @@ async def project_with_run(db_session: AsyncSession) -> AsyncGenerator[dict, Non
     await db_session.commit()
 
 
-async def _call_progress(db: AsyncSession, *, article_id: UUID, model_id: UUID) -> tuple[int, int, float]:
+async def _call_progress(
+    db: AsyncSession, *, article_id: UUID, model_id: UUID
+) -> tuple[int, int, float]:
     row = (
         await db.execute(
             text(
@@ -330,10 +332,7 @@ async def test_return_columns_match_frontend_destructure(db_session: AsyncSessio
     frontend reads. Drift breaks the badge silently."""
     cols = (
         await db_session.execute(
-            text(
-                "SELECT proargnames FROM pg_proc "
-                "WHERE proname = 'calculate_model_progress'"
-            )
+            text("SELECT proargnames FROM pg_proc WHERE proname = 'calculate_model_progress'")
         )
     ).scalar()
     # proargnames lists input + output args in order; the last three are the

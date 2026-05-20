@@ -211,11 +211,7 @@ def downgrade() -> None:
         "ALTER TABLE public.extraction_entity_types "
         "DROP CONSTRAINT IF EXISTS ck_extraction_entity_types_role_parent"
     )
-    op.execute(
-        "DROP INDEX IF EXISTS public.uq_extraction_entity_types_one_container_per_project"
-    )
-    op.execute(
-        "DROP INDEX IF EXISTS public.uq_extraction_entity_types_one_container_per_global"
-    )
+    op.execute("DROP INDEX IF EXISTS public.uq_extraction_entity_types_one_container_per_project")
+    op.execute("DROP INDEX IF EXISTS public.uq_extraction_entity_types_one_container_per_global")
     op.drop_column("extraction_entity_types", "role", schema="public")
     op.execute("DROP TYPE IF EXISTS public.extraction_entity_role")

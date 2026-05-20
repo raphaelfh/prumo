@@ -6,6 +6,7 @@ target outcome, performance) is captured later by section extraction
 against the container's children — not here. That separation keeps this
 prompt independent of the template's field naming.
 """
+
 from __future__ import annotations
 
 import json
@@ -60,7 +61,7 @@ class ModelIdentificationPrompt:
             f"clear and descriptive name as it appears in the article.\n\n"
             f"Article text:\n"
             f"{pdf_text[: ModelIdentificationPrompt._MAX_PDF_CHARS]}\n\n"
-            f'Respond with a JSON object matching: '
+            f"Respond with a JSON object matching: "
             f'{{"models": [{{"name": "..."}}]}}.\n'
             f'If no models are found, return: {{"models": []}}.'
         )

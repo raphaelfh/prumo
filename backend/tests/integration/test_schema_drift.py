@@ -82,9 +82,7 @@ async def test_is_project_reviewer_helper_exists(db_session: AsyncSession) -> No
     reviewer decisions."""
     exists = (
         await db_session.execute(
-            text(
-                "SELECT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'is_project_reviewer')"
-            )
+            text("SELECT EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'is_project_reviewer')")
         )
     ).scalar()
     assert exists is True
@@ -167,17 +165,21 @@ async def test_template_kind_enum_values(db_session: AsyncSession) -> None:
     """Contract: ``template_kind = {extraction, quality_assessment}``.
     Frontend's ``HITLKind`` Zod / TS union mirrors this exactly."""
     values = (
-        await db_session.execute(
-            text(
-                """
+        (
+            await db_session.execute(
+                text(
+                    """
                 SELECT enumlabel FROM pg_enum e
                 JOIN pg_type t ON t.oid = e.enumtypid
                 WHERE t.typname = 'template_kind'
                 ORDER BY e.enumsortorder
                 """
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert set(values) == {"extraction", "quality_assessment"}
 
 
@@ -186,17 +188,21 @@ async def test_extraction_run_stage_enum_values(db_session: AsyncSession) -> Non
     the frontend uses to gate the UI ("Submit for review" only shows on
     PROPOSAL, "Publish assessment" only on CONSENSUS, etc.)."""
     values = (
-        await db_session.execute(
-            text(
-                """
+        (
+            await db_session.execute(
+                text(
+                    """
                 SELECT enumlabel FROM pg_enum e
                 JOIN pg_type t ON t.oid = e.enumtypid
                 WHERE t.typname = 'extraction_run_stage'
                 ORDER BY e.enumsortorder
                 """
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert list(values) == [
         "pending",
         "proposal",
@@ -212,17 +218,21 @@ async def test_extraction_reviewer_decision_enum_values(db_session: AsyncSession
     ``edit``. Changes here cascade into ``aiSuggestionService`` and the
     consensus check."""
     values = (
-        await db_session.execute(
-            text(
-                """
+        (
+            await db_session.execute(
+                text(
+                    """
                 SELECT enumlabel FROM pg_enum e
                 JOIN pg_type t ON t.oid = e.enumtypid
                 WHERE t.typname = 'extraction_reviewer_decision'
                 ORDER BY e.enumsortorder
                 """
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert set(values) == {"accept_proposal", "reject", "edit"}
 
 

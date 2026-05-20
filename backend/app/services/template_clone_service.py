@@ -230,9 +230,7 @@ class TemplateCloneService:
         children_of: dict[UUID | None, list[ExtractionEntityType]] = {}
         for et in entity_types:
             effective_parent = (
-                et.parent_entity_type_id
-                if et.parent_entity_type_id in ids_in_scope
-                else None
+                et.parent_entity_type_id if et.parent_entity_type_id in ids_in_scope else None
             )
             children_of.setdefault(effective_parent, []).append(et)
         for bucket in children_of.values():
