@@ -8,6 +8,4 @@
 # fail PRs unrelated to query-keys. NEW call sites must conform.
 
 frontend/hooks/extraction/useArticleTextBlocks.ts:41
-frontend/pages/Dashboard.tsx:24
-frontend/pages/Dashboard.tsx:66
 frontend/test/hooks-runs.test.tsx:333
