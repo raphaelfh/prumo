@@ -15,7 +15,7 @@ from redis import Redis
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
 from app.core.factories import create_storage_adapter
 from app.core.logging import get_logger
-from app.repositories.unit_of_work import UnitOfWork
+from app.core.transactions import UnitOfWork
 from app.schemas.articles_export import (
     ExportCancelResponse,
     ExportRequest,

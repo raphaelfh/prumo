@@ -1,0 +1,4 @@
+{"ts":"2026-05-20T01:30:00Z","run_id":"2026-05-20-0100-layered-arch-final","phase":"VERIFY","gate":"lint:ruff","duration_ms":250,"exit_code":0}
+{"ts":"2026-05-20T01:30:01Z","run_id":"2026-05-20-0100-layered-arch-final","phase":"VERIFY","gate":"test:pytest","duration_ms":22120,"exit_code":0,"finding_count":0}
+{"ts":"2026-05-20T01:30:02Z","run_id":"2026-05-20-0100-layered-arch-final","phase":"VERIFY","gate":"fitness:check_layered_arch","duration_ms":51,"exit_code":0,"edge_count":0,"new_violation_count":0,"baseline_size":0}
+{"ts":"2026-05-20T01:30:03Z","run_id":"2026-05-20-0100-layered-arch-final","phase":"CONVERGE","gate":"phase_summary","duration_ms":60000,"exit_code":0,"finding_count":7,"tokens_used":0,"subagent_calls":0,"retries":0,"resumed_from":null}

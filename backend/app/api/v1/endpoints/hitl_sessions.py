@@ -10,9 +10,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from app.api.deps.security import ensure_project_member, get_current_user_sub
 from app.core.deps import DbSession
-from app.models.extraction import TemplateKind
 from app.schemas.common import ApiResponse
-from app.schemas.hitl_session import OpenHITLSessionRequest, OpenHITLSessionResponse
+from app.schemas.hitl_session import (
+    OpenHITLSessionRequest,
+    OpenHITLSessionResponse,
+    TemplateKind,
+)
 from app.services.hitl_session_service import (
     HITLSessionInputError,
     HITLSessionService,
