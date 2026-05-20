@@ -6,6 +6,7 @@ Identifica and cria instances de modelos with its hierarquias completas.
 """
 
 from time import perf_counter
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
@@ -36,7 +37,7 @@ async def extract_models(
     db: DbSession,
     user: CurrentUser,
     supabase: SupabaseClient,
-) -> ApiResponse:
+) -> ApiResponse[dict[str, Any]]:
     """
     Run prediction model extraction for an article.
 

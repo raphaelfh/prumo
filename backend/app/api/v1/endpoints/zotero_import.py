@@ -79,7 +79,7 @@ async def zotero_action(
     user: CurrentUser,
     supabase: SupabaseClient,
     body: dict[str, Any] | None = None,
-) -> ApiResponse:
+) -> ApiResponse[dict[str, Any]]:
     """
     Executa uma acao de integracao with Zotero.
 

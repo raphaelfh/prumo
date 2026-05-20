@@ -1,0 +1,4 @@
+{"ts":"2026-05-19T23:30:00Z","run_id":"2026-05-19-2310-backend-envelope-batch","phase":"VERIFY","gate":"lint:ruff","duration_ms":150,"exit_code":0}
+{"ts":"2026-05-19T23:30:01Z","run_id":"2026-05-19-2310-backend-envelope-batch","phase":"VERIFY","gate":"test:pytest","duration_ms":25010,"exit_code":0,"finding_count":0}
+{"ts":"2026-05-19T23:30:02Z","run_id":"2026-05-19-2310-backend-envelope-batch","phase":"VERIFY","gate":"fitness:check_api_response_envelope","duration_ms":11,"exit_code":0,"new_violation_count":0,"baseline_size":1}
+{"ts":"2026-05-19T23:30:03Z","run_id":"2026-05-19-2310-backend-envelope-batch","phase":"CONVERGE","gate":"phase_summary","duration_ms":30000,"exit_code":0,"finding_count":9,"tokens_used":0,"subagent_calls":0,"retries":0,"resumed_from":null}
