@@ -387,6 +387,303 @@ async def test_qa_session_returns_404_when_global_template_missing(
     assert res.status_code == 404
 
 
+# =================== BOLA + missing-coverage branches (quality-loop run 2026-05-20-0200) ===================
+
+
+def _err_message(response_json: dict) -> str:
+    """Pull the human-readable error message out of the API envelope.
+
+    Errors come back as ``{ok: False, error: {code, message}, trace_id}``,
+    never as the FastAPI default ``{detail: ...}``.
+    """
+    return str(response_json.get("error", {}).get("message", ""))
+
+
+async def _make_isolated_project(
+    db: AsyncSession,
+    *,
+    creator_profile_id: UUID,
+    with_member: bool,
+) -> UUID:
+    """Insert a fresh project (and optionally enrol the creator as manager)
+    so the BOLA tests can fabricate the "other project" they need.
+
+    Returns the new ``project_id``. The caller is responsible for cleanup
+    if needed.
+    """
+    from uuid import uuid4
+
+    project_id = uuid4()
+    await db.execute(
+        text(
+            """
+            INSERT INTO public.projects (id, name, created_by_id)
+            VALUES (:pid, :name, :uid)
+            """
+        ),
+        {
+            "pid": str(project_id),
+            "name": f"BOLA test project {project_id.hex[:8]}",
+            "uid": str(creator_profile_id),
+        },
+    )
+    if with_member:
+        await db.execute(
+            text(
+                """
+                INSERT INTO public.project_members (project_id, user_id, role)
+                VALUES (:pid, :uid, 'manager')
+                """
+            ),
+            {"pid": str(project_id), "uid": str(creator_profile_id)},
+        )
+    return project_id
+
+
+async def _make_article_in(db: AsyncSession, *, project_id: UUID) -> UUID:
+    from uuid import uuid4
+
+    article_id = uuid4()
+    await db.execute(
+        text(
+            """
+            INSERT INTO public.articles (id, project_id, title)
+            VALUES (:aid, :pid, :title)
+            """
+        ),
+        {
+            "aid": str(article_id),
+            "pid": str(project_id),
+            "title": f"BOLA test article {article_id.hex[:8]}",
+        },
+    )
+    return article_id
+
+
+@pytest.mark.asyncio
+async def test_session_rejects_article_from_another_project(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,
+) -> None:
+    """BOLA defense (f_001 / f_002): a caller authenticated for project P_A
+    must not be able to open a HITL session that points at an article owned
+    by project P_B. The endpoint enforces membership for ``project_id`` but
+    never validated that ``article_id`` belongs to that project — letting a
+    legitimate manager of one project create instances/runs that reference
+    another project's article. Must surface as a 400.
+    """
+    home = await _pick_article(db_session)
+    home_template = await _pick_extraction_project_template(db_session)
+    if home is None or home_template is None:
+        pytest.skip("Need an article + extraction template in the home project")
+    _home_article_id, home_project_id = home
+
+    # Fabricate an isolated project + article that the auth profile is NOT a
+    # member of. The membership check passes for home_project_id; only the
+    # new article-ownership invariant should reject the request.
+    foreign_project_id = await _make_isolated_project(
+        db_session, creator_profile_id=auth_as_profile, with_member=False
+    )
+    foreign_article_id = await _make_article_in(db_session, project_id=foreign_project_id)
+    await db_session.commit()
+
+    try:
+        res = await db_client.post(
+            _SESSION_URL,
+            json={
+                "kind": "extraction",
+                "project_id": str(home_project_id),
+                "article_id": str(foreign_article_id),
+                "project_template_id": str(home_template),
+            },
+        )
+        assert res.status_code == 400, res.text
+        assert "article" in _err_message(res.json()).lower()
+    finally:
+        await db_session.execute(
+            text("DELETE FROM public.articles WHERE id = :aid"),
+            {"aid": str(foreign_article_id)},
+        )
+        await db_session.execute(
+            text("DELETE FROM public.projects WHERE id = :pid"),
+            {"pid": str(foreign_project_id)},
+        )
+        await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_session_rejects_template_from_another_project(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,
+) -> None:
+    """Covers f_003: ``_resolve_project_template`` already rejects templates
+    whose ``project_id`` does not match the request, but no test pinned that
+    behaviour. Lock it in: passing a project_template_id from another project
+    must return 400, not 404 or 500.
+    """
+    home = await _pick_article(db_session)
+    if home is None:
+        pytest.skip("Need an article in the home project")
+    home_article_id, home_project_id = home
+
+    # Build an isolated project + an extraction template owned by it. The
+    # template id can then be smuggled into a request that claims to target
+    # the home project — _resolve_project_template must reject it.
+    from uuid import uuid4
+
+    foreign_project_id = await _make_isolated_project(
+        db_session, creator_profile_id=auth_as_profile, with_member=False
+    )
+    foreign_template_id = uuid4()
+    await db_session.execute(
+        text(
+            """
+            INSERT INTO public.project_extraction_templates
+                (id, project_id, name, kind, framework, is_active, created_by)
+            VALUES
+                (:tid, :pid, :name, 'extraction', 'CUSTOM', false, :uid)
+            """
+        ),
+        {
+            "tid": str(foreign_template_id),
+            "pid": str(foreign_project_id),
+            "name": f"foreign-tpl-{foreign_template_id.hex[:8]}",
+            "uid": str(auth_as_profile),
+        },
+    )
+    # Migration 0004 deferred trigger: every project_extraction_template must
+    # have exactly one active version row, otherwise commit fails.
+    await db_session.execute(
+        text(
+            """
+            INSERT INTO public.extraction_template_versions
+                (project_template_id, version, schema, published_by, is_active)
+            VALUES
+                (:tid, 1, '{}'::jsonb, :uid, true)
+            """
+        ),
+        {"tid": str(foreign_template_id), "uid": str(auth_as_profile)},
+    )
+    await db_session.commit()
+
+    try:
+        res = await db_client.post(
+            _SESSION_URL,
+            json={
+                "kind": "extraction",
+                "project_id": str(home_project_id),
+                "article_id": str(home_article_id),
+                "project_template_id": str(foreign_template_id),
+            },
+        )
+        assert res.status_code == 400, res.text
+    finally:
+        await db_session.execute(
+            text("DELETE FROM public.project_extraction_templates WHERE id = :tid"),
+            {"tid": str(foreign_template_id)},
+        )
+        await db_session.execute(
+            text("DELETE FROM public.projects WHERE id = :pid"),
+            {"pid": str(foreign_project_id)},
+        )
+        await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_session_rejects_kind_mismatch(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    """Covers f_004: ``_resolve_project_template`` rejects requests whose
+    declared kind disagrees with the template's stored kind. Pin the 400.
+    """
+    article = await _pick_article(db_session)
+    if article is None:
+        pytest.skip("Need an article")
+    article_id, project_id = article
+
+    qa_template = (
+        await db_session.execute(
+            text(
+                """
+                SELECT id FROM public.project_extraction_templates
+                WHERE project_id = :pid AND kind = 'quality_assessment'
+                LIMIT 1
+                """
+            ),
+            {"pid": str(project_id)},
+        )
+    ).scalar()
+    if qa_template is None:
+        pytest.skip("Need a quality_assessment template in the article's project")
+
+    res = await db_client.post(
+        _SESSION_URL,
+        json={
+            "kind": "extraction",  # mismatch — template is quality_assessment
+            "project_id": str(project_id),
+            "article_id": str(article_id),
+            "project_template_id": str(qa_template),
+        },
+    )
+    assert res.status_code == 400, res.text
+    assert "kind" in _err_message(res.json()).lower()
+
+
+@pytest.mark.asyncio
+async def test_session_open_captures_hitl_config_snapshot(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    """Covers f_005: every Run created via ``_reuse_or_create_run`` must
+    carry a ``hitl_config_snapshot`` populated from ``HitlConfigService``.
+    Without this snapshot, replaying old runs would silently inherit the
+    project's *current* HITL config — defeating the whole point of pinning
+    reviewer counts/consensus rule at the moment the Run started.
+    """
+    article = await _pick_article(db_session)
+    global_template_id = await _pick_qa_global_template(db_session)
+    if article is None or global_template_id is None:
+        pytest.skip("Need an article + a seeded QA template")
+    article_id, project_id = article
+
+    await _wipe_qa_state(
+        db_session,
+        project_id=project_id,
+        global_template_id=global_template_id,
+        article_id=article_id,
+    )
+
+    res = await db_client.post(
+        _SESSION_URL,
+        json={
+            "kind": "quality_assessment",
+            "project_id": str(project_id),
+            "article_id": str(article_id),
+            "global_template_id": str(global_template_id),
+        },
+    )
+    assert res.status_code == 201, res.text
+    run_id = res.json()["data"]["run_id"]
+
+    snapshot = (
+        await db_session.execute(
+            text("SELECT hitl_config_snapshot FROM public.extraction_runs WHERE id = :rid"),
+            {"rid": run_id},
+        )
+    ).scalar()
+    assert snapshot is not None, "hitl_config_snapshot must be populated at Run creation"
+    assert isinstance(snapshot, dict)
+    # The snapshot resolves to either a system default or a project override —
+    # in both cases the contract guarantees reviewer_count + consensus_rule.
+    assert "reviewer_count" in snapshot
+    assert "consensus_rule" in snapshot
+
+
 # =================== Extraction kind ===================
 
 

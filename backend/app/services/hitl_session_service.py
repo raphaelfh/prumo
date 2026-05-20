@@ -18,6 +18,7 @@ from uuid import UUID
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.article import Article
 from app.models.extraction import (
     ExtractionCardinality,
     ExtractionEntityType,
@@ -98,6 +99,12 @@ class HITLSessionService:
         project_template_id: UUID | None = None,
         global_template_id: UUID | None = None,
     ) -> HITLSession:
+        # BOLA defense: the endpoint enforces membership for ``project_id`` but
+        # treats ``article_id`` as opaque. Verify the article truly belongs to
+        # the project before we materialise any state on it. Returning a
+        # uniform input error (400) avoids leaking which article ids exist.
+        await self._ensure_article_in_project(project_id=project_id, article_id=article_id)
+
         project_template_id = await self._resolve_project_template(
             kind=kind,
             project_id=project_id,
@@ -132,6 +139,14 @@ class HITLSessionService:
             },
             created=created,
         )
+
+    async def _ensure_article_in_project(self, *, project_id: UUID, article_id: UUID) -> None:
+        stmt = select(Article.project_id).where(Article.id == article_id)
+        owner = (await self.db.execute(stmt)).scalar_one_or_none()
+        if owner is None or owner != project_id:
+            raise HITLSessionInputError(
+                f"article {article_id} does not belong to project {project_id}"
+            )
 
     async def _resolve_project_template(
         self,
