@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionRun, ExtractionRunStage
+from app.models.extraction import ExtractionRunStage
 from app.models.extraction_workflow import (
     ExtractionConsensusDecision,
     ExtractionConsensusMode,
@@ -23,6 +23,7 @@ from app.repositories.extraction_published_state_repository import (
 from app.repositories.extraction_reviewer_decision_repository import (
     ExtractionReviewerDecisionRepository,
 )
+from app.services._extraction_run_lock import load_run_for_update
 from app.services.coordinate_coherence import assert_coords_coherent
 
 
@@ -55,7 +56,7 @@ class ExtractionConsensusService:
         value: dict | None = None,
         rationale: str | None = None,
     ) -> tuple[ExtractionConsensusDecision, ExtractionPublishedState]:
-        run = await self.db.get(ExtractionRun, run_id)
+        run = await load_run_for_update(self.db, run_id)
         if run is None:
             raise InvalidConsensusError(f"Run {run_id} not found")
         if run.stage != ExtractionRunStage.CONSENSUS.value:
@@ -151,7 +152,7 @@ class ExtractionConsensusService:
         published_by: UUID,
         expected_version: int,
     ) -> ExtractionPublishedState:
-        run = await self.db.get(ExtractionRun, run_id)
+        run = await load_run_for_update(self.db, run_id)
         if run is None:
             raise InvalidConsensusError(f"Run {run_id} not found")
         if run.stage != ExtractionRunStage.CONSENSUS.value:

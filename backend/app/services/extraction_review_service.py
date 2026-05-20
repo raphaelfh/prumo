@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionRun, ExtractionRunStage
+from app.models.extraction import ExtractionRunStage
 from app.models.extraction_workflow import (
     ExtractionReviewerDecision,
     ExtractionReviewerDecisionType,
@@ -19,6 +19,7 @@ from app.repositories.extraction_reviewer_decision_repository import (
 from app.repositories.extraction_reviewer_state_repository import (
     ExtractionReviewerStateRepository,
 )
+from app.services._extraction_run_lock import load_run_for_update
 from app.services.coordinate_coherence import assert_coords_coherent
 
 
@@ -46,7 +47,7 @@ class ExtractionReviewService:
         value: dict | None = None,
         rationale: str | None = None,
     ) -> ExtractionReviewerDecision:
-        run = await self.db.get(ExtractionRun, run_id)
+        run = await load_run_for_update(self.db, run_id)
         if run is None:
             raise InvalidDecisionError(f"Run {run_id} not found")
         if run.stage != ExtractionRunStage.REVIEW.value:
