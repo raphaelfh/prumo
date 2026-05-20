@@ -11,6 +11,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { runsKeys } from "@/hooks/runs/types";
 import {
   useAdvanceRun,
   useCreateConsensus,
@@ -330,6 +331,6 @@ describe("mutation cache invalidation", () => {
       });
     });
 
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["runs", "run-cache"] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: runsKeys.detail("run-cache") });
   });
 });

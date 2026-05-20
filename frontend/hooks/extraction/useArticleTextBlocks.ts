@@ -9,6 +9,7 @@
 import {useQuery} from '@tanstack/react-query';
 
 import {apiClient} from '@/integrations/api/client';
+import {articleKeys} from '@/lib/query-keys';
 
 /**
  * Wire shape mirrored from the backend response (camelCase JSON).
@@ -38,7 +39,7 @@ const STALE_MS = 5 * 60_000;
 
 export function useArticleTextBlocks(articleFileId: string | null | undefined) {
   return useQuery({
-    queryKey: ['article-text-blocks', articleFileId],
+    queryKey: articleKeys.textBlocks(articleFileId ?? ''),
     enabled: Boolean(articleFileId),
     staleTime: STALE_MS,
     queryFn: async (): Promise<ArticleTextBlock[]> => {

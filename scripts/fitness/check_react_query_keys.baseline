@@ -2,10 +2,6 @@
 # Each entry is a real architectural finding (pre-convention site).
 # Format: <repo-relative-file>:<line-number>. Empty/# lines OK.
 #
-# The convention introduced in 2026-05-19 (Phase 5a) requires routing every
-# queryKey through a factory in `frontend/lib/query-keys/`. This baseline
-# grandfathers pre-existing call sites so the gate does not retroactively
-# fail PRs unrelated to query-keys. NEW call sites must conform.
-
-frontend/hooks/extraction/useArticleTextBlocks.ts:41
-frontend/test/hooks-runs.test.tsx:333
+# (Empty as of run 2026-05-20-0130-querykeys-final — useArticleTextBlocks
+# migrated to articleKeys.textBlocks, hooks-runs test now asserts against
+# runsKeys.detail instead of the literal array.)
