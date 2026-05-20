@@ -9,11 +9,11 @@
  *    source) so both human and AI proposals appear immediately. This
  *    mirrors the QA flow (``QualityAssessmentFullScreen.tsx:163-185``).
  *
- *  * ``stage in {'review','consensus','finalized'}`` — proposals have
- *    been "frozen" and reviewers are deciding. The form hydrates from
- *    ``extraction_reviewer_states`` (current decision pointer per
- *    coord, scoped to the active user) — the same path that has been
- *    in use since the ``extracted_values`` removal.
+ *  * ``stage in {'review','consensus','finalized'}`` — proposals are the
+ *    baseline shown to the reviewer. ``extraction_reviewer_states``
+ *    then overlays the active user's current decisions. This keeps
+ *    submitted/reopened runs from rendering blank before the reviewer
+ *    has made any decisions.
  *
  *  * ``stage='pending'`` or no run — empty map; autosave is also a
  *    no-op so the user's typing stays in local state until the page
@@ -70,6 +70,29 @@ function unwrapProposalValue(raw: unknown): unknown {
   return raw;
 }
 
+function proposalValuesByCoord(
+  proposals: ProposalRecordResponse[] | undefined,
+): Record<string, any> {
+  const valuesMap: Record<string, any> = {};
+  const ordered = [...(proposals ?? [])].sort((a, b) =>
+    a.created_at.localeCompare(b.created_at),
+  );
+
+  for (const p of ordered) {
+    const key = `${p.instance_id}_${p.field_id}`;
+    const unwrapped = unwrapProposalValue(p.proposed_value);
+    const unit =
+      typeof p.proposed_value === 'object' &&
+      p.proposed_value !== null &&
+      'unit' in (p.proposed_value as Record<string, unknown>)
+        ? ((p.proposed_value as { unit: string | null }).unit ?? null)
+        : null;
+    valuesMap[key] = extractValueFromDb({ value: unwrapped, unit });
+  }
+
+  return valuesMap;
+}
+
 export function useExtractedValues(
   props: UseExtractedValuesProps,
 ): UseExtractedValuesReturn {
@@ -79,6 +102,11 @@ export function useExtractedValues(
   const [loading, setLoading] = useState(true);
   const [initialized, setInitialized] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setValues({});
+    setInitialized(false);
+  }, [runId]);
 
   const loadValues = useCallback(
     async (silent = false) => {
@@ -93,21 +121,7 @@ export function useExtractedValues(
         }
 
         if (stage === 'proposal') {
-          const valuesMap: Record<string, any> = {};
-          // ``proposals`` is sorted newest-first by the API; first hit per
-          // coord wins, regardless of source — mirrors QA's hydration.
-          for (const p of proposals ?? []) {
-            const key = `${p.instance_id}_${p.field_id}`;
-            if (key in valuesMap) continue;
-            const unwrapped = unwrapProposalValue(p.proposed_value);
-            const unit =
-              typeof p.proposed_value === 'object' &&
-              p.proposed_value !== null &&
-              'unit' in (p.proposed_value as Record<string, unknown>)
-                ? ((p.proposed_value as { unit: string | null }).unit ?? null)
-                : null;
-            valuesMap[key] = extractValueFromDb({ value: unwrapped, unit });
-          }
+          const valuesMap = proposalValuesByCoord(proposals);
           setValues((prev) => mergeValuesById(prev, valuesMap));
           setInitialized(true);
           return;
@@ -132,10 +146,13 @@ export function useExtractedValues(
             runId,
             user.id,
           );
-          const valuesMap: Record<string, any> = {};
+          const valuesMap = proposalValuesByCoord(proposals);
           for (const row of rows) {
-            if (row.decision === 'reject') continue;
             const key = `${row.instanceId}_${row.fieldId}`;
+            if (row.decision === 'reject') {
+              valuesMap[key] = null;
+              continue;
+            }
             const unit =
               typeof row.value === 'object' &&
               row.value !== null &&

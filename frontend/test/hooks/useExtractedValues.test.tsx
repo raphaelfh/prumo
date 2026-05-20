@@ -4,9 +4,9 @@
  * The hook now branches by ``run.stage``:
  *  - ``proposal``: hydrate from ``runDetail.proposals`` (newest-per-coord,
  *    any source). No DB call. Mirrors QA.
- *  - ``review`` / ``consensus`` / ``finalized``: hydrate from
- *    ``ExtractionValueService.loadValuesForUser`` (current decision per
- *    coord, scoped to the active reviewer).
+ *  - ``review`` / ``consensus`` / ``finalized``: hydrate from proposals as
+ *    the baseline, then overlay ``ExtractionValueService.loadValuesForUser``
+ *    (current decision per coord, scoped to the active reviewer).
  *  - missing run / pending / unknown: empty.
  *
  * The legacy ``save()`` method is gone — the autosave is the sole
@@ -57,6 +57,18 @@ describe('useExtractedValues — stage=proposal', () => {
         stage: 'proposal',
         proposals: [
           {
+            id: 'p-old',
+            run_id: 'run-1',
+            instance_id: 'inst-1',
+            field_id: 'field-1',
+            source: 'human',
+            source_user_id: 'user-1',
+            proposed_value: { value: 'old' },
+            confidence_score: null,
+            rationale: null,
+            created_at: '2026-04-28T10:00:00Z',
+          },
+          {
             id: 'p-newest',
             run_id: 'run-1',
             instance_id: 'inst-1',
@@ -67,18 +79,6 @@ describe('useExtractedValues — stage=proposal', () => {
             confidence_score: null,
             rationale: null,
             created_at: '2026-04-28T11:00:00Z',
-          },
-          {
-            id: 'p-old',
-            run_id: 'run-1',
-            instance_id: 'inst-1',
-            field_id: 'field-1',
-            source: 'ai',
-            source_user_id: null,
-            proposed_value: { value: 'old' },
-            confidence_score: 0.9,
-            rationale: null,
-            created_at: '2026-04-28T10:00:00Z',
           },
           {
             id: 'p-other',
@@ -119,7 +119,39 @@ describe('useExtractedValues — stage=proposal', () => {
 });
 
 describe('useExtractedValues — stage=review and beyond', () => {
-  it('routes through loadValuesForUser and skips reject decisions', async () => {
+  it('uses proposals as the baseline when no reviewer decisions exist', async () => {
+    (ExtractionValueService.loadValuesForUser as any).mockResolvedValueOnce([]);
+
+    const { result } = renderHook(() =>
+      useExtractedValues({
+        runId: 'run-1',
+        stage: 'review',
+        proposals: [
+          {
+            id: 'p-system',
+            run_id: 'run-1',
+            instance_id: 'inst-1',
+            field_id: 'field-1',
+            source: 'system',
+            source_user_id: null,
+            proposed_value: { value: 'seeded from published state' },
+            confidence_score: null,
+            rationale: null,
+            created_at: '2026-04-28T10:00:00Z',
+          },
+        ],
+      }),
+    );
+
+    await waitFor(() => expect(result.current.initialized).toBe(true));
+    expect(ExtractionValueService.loadValuesForUser).toHaveBeenCalledWith(
+      'run-1',
+      'user-1',
+    );
+    expect(result.current.values['inst-1_field-1']).toBe('seeded from published state');
+  });
+
+  it('overlays reviewer decisions over proposal baselines and clears rejects', async () => {
     (ExtractionValueService.loadValuesForUser as any).mockResolvedValueOnce([
       {
         instanceId: 'inst-1',
@@ -151,6 +183,32 @@ describe('useExtractedValues — stage=review and beyond', () => {
       useExtractedValues({
         runId: 'run-1',
         stage: 'review',
+        proposals: [
+          {
+            id: 'p-1',
+            run_id: 'run-1',
+            instance_id: 'inst-1',
+            field_id: 'field-1',
+            source: 'human',
+            source_user_id: 'user-1',
+            proposed_value: { value: 'proposal value' },
+            confidence_score: null,
+            rationale: null,
+            created_at: '2026-04-28T09:00:00Z',
+          },
+          {
+            id: 'p-2',
+            run_id: 'run-1',
+            instance_id: 'inst-2',
+            field_id: 'field-2',
+            source: 'human',
+            source_user_id: 'user-1',
+            proposed_value: { value: 'proposal should be cleared' },
+            confidence_score: null,
+            rationale: null,
+            created_at: '2026-04-28T09:00:00Z',
+          },
+        ],
       }),
     );
 
@@ -160,7 +218,7 @@ describe('useExtractedValues — stage=review and beyond', () => {
       'user-1',
     );
     expect(result.current.values['inst-1_field-1']).toBe(42);
-    expect(result.current.values['inst-2_field-2']).toBeUndefined();
+    expect(result.current.values['inst-2_field-2']).toBeNull();
     expect(result.current.values['inst-3_field-3']).toEqual({
       value: 'A',
       unit: 'mg',
