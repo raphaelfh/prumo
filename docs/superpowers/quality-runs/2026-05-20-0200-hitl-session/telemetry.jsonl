@@ -1,0 +1,6 @@
+{"ts":"2026-05-20T02:30:00Z","run_id":"2026-05-20-0200-hitl-session","phase":"SCAN","gate":"subagent:concept-drift","duration_ms":48000,"exit_code":0,"finding_count":0,"tokens_used":3400,"subagent_calls":1,"retries":0}
+{"ts":"2026-05-20T02:30:00Z","run_id":"2026-05-20-0200-hitl-session","phase":"SCAN","gate":"subagent:layered-arch","duration_ms":42000,"exit_code":0,"finding_count":0,"tokens_used":3000,"subagent_calls":1,"retries":0}
+{"ts":"2026-05-20T02:30:00Z","run_id":"2026-05-20-0200-hitl-session","phase":"SCAN","gate":"subagent:security","duration_ms":62000,"exit_code":0,"finding_count":2,"tokens_used":5400,"subagent_calls":1,"retries":0}
+{"ts":"2026-05-20T02:30:00Z","run_id":"2026-05-20-0200-hitl-session","phase":"SCAN","gate":"subagent:legacy-spotter","duration_ms":51000,"exit_code":0,"finding_count":0,"tokens_used":3800,"subagent_calls":1,"retries":0}
+{"ts":"2026-05-20T02:30:00Z","run_id":"2026-05-20-0200-hitl-session","phase":"SCAN","gate":"subagent:test-gaps","duration_ms":58000,"exit_code":0,"finding_count":3,"tokens_used":4900,"subagent_calls":1,"retries":0}
+{"ts":"2026-05-20T02:30:00Z","run_id":"2026-05-20-0200-hitl-session","phase":"SCAN","gate":"phase_summary","duration_ms":62000,"exit_code":0,"finding_count":5,"tokens_used":20500,"subagent_calls":5,"retries":0,"resumed_from":null}
