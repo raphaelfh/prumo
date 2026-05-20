@@ -152,7 +152,7 @@ describe('useExtractedValues — stage=review and beyond', () => {
   });
 
   it('overlays reviewer decisions over proposal baselines and clears rejects', async () => {
-    (ExtractionValueService.loadValuesForUser as any).mockResolvedValueOnce([
+    (ExtractionValueService.loadValuesForUser as any).mockResolvedValue([
       {
         instanceId: 'inst-1',
         fieldId: 'field-1',
