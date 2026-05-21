@@ -8,6 +8,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.article import Article
 from app.models.extraction import (
     ExtractionRun,
     ExtractionRunStage,
@@ -34,6 +35,10 @@ class TemplateVersionNotFoundError(Exception):
 
 class TemplateNotFoundError(Exception):
     """Raised when no ProjectExtractionTemplate exists for the supplied id."""
+
+
+class ArticleNotInProjectError(Exception):
+    """Raised when an article is missing or not owned by the requested project."""
 
 
 class CannotReopenRunError(Exception):
@@ -88,10 +93,21 @@ class RunLifecycleService:
         user_id: UUID,
         parameters: dict[str, Any] | None = None,
     ) -> ExtractionRun:
-        # Resolve template (for kind) — must exist
+        # Resolve template (for kind) — must exist and belong to the project
+        # supplied by the caller. The API layer enforces membership on
+        # project_id, so accepting a foreign template here would corrupt run
+        # lineage and leak template-scoped HITL config.
         template = await self.db.get(ProjectExtractionTemplate, project_template_id)
-        if template is None:
+        if template is None or template.project_id != project_id:
             raise TemplateNotFoundError(f"Template {project_template_id} not found")
+
+        article_project_id = (
+            await self.db.execute(select(Article.project_id).where(Article.id == article_id))
+        ).scalar_one_or_none()
+        if article_project_id is None or article_project_id != project_id:
+            raise ArticleNotInProjectError(
+                f"Article {article_id} does not belong to project {project_id}"
+            )
 
         # Resolve active TemplateVersion. Templates created directly through
         # the frontend (Supabase client) skip the backend backfill from

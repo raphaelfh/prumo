@@ -51,6 +51,7 @@ from app.services.extraction_run_read_service import (
     list_run_participants,
 )
 from app.services.run_lifecycle_service import (
+    ArticleNotInProjectError,
     CannotReopenRunError,
     InvalidStageTransitionError,
     RunLifecycleService,
@@ -110,6 +111,15 @@ async def create_run(
             error=str(e),
         )
         raise HTTPException(status_code=404, detail=str(e)) from e
+    except ArticleNotInProjectError as e:
+        logger.warning(
+            "hitl_run_create_article_mismatch",
+            trace_id=trace_id,
+            project_id=str(body.project_id),
+            article_id=str(body.article_id),
+            error=str(e),
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
     await db.commit()
     logger.info(
         "hitl_run_created",

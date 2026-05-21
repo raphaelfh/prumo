@@ -26,6 +26,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
+from app.models.article import Article
+from app.models.project import Project, ProjectMember
+from tests.factories import TemplateFactory
 
 API_PREFIX = "/api/v1/runs"
 
@@ -38,37 +41,30 @@ async def _resolve_fixtures(
 ) -> tuple[UUID, UUID, UUID, UUID, UUID, UUID] | None:
     """Resolve (project, article, template, profile, instance, field) IDs from the
     test database, picking instance + field that share the same template/entity_type."""
-    project_id = (await db.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
-    article_id = (await db.execute(text("SELECT id FROM public.articles LIMIT 1"))).scalar()
-    template_id = (
-        await db.execute(
-            text(
-                "SELECT id FROM public.project_extraction_templates "
-                "WHERE kind = 'extraction' LIMIT 1"
-            )
-        )
-    ).scalar()
     profile_id = (await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
-    if not all((project_id, article_id, template_id, profile_id)):
+    if profile_id is None:
         return None
 
     row = await db.execute(
         text(
             """
-            SELECT i.id AS iid, f.id AS fid
+            SELECT i.project_id, i.article_id, i.template_id, i.id AS iid, f.id AS fid
             FROM public.extraction_instances i
+            JOIN public.project_extraction_templates pt
+              ON pt.id = i.template_id AND pt.kind = 'extraction'
             JOIN public.extraction_entity_types et ON et.id = i.entity_type_id
             JOIN public.extraction_fields f ON f.entity_type_id = et.id
-            WHERE i.template_id = :tid
+            WHERE i.article_id IS NOT NULL
+              AND public.is_project_member(i.project_id, :uid)
             LIMIT 1
             """
         ),
-        {"tid": template_id},
+        {"uid": str(profile_id)},
     )
     pair = row.first()
     if pair is None:
         return None
-    instance_id, field_id = pair
+    project_id, article_id, template_id, instance_id, field_id = pair
     return project_id, article_id, template_id, profile_id, instance_id, field_id
 
 
@@ -248,6 +244,108 @@ async def test_create_run_with_nonexistent_template_returns_404(
     body = response.json()
     assert body["ok"] is False
     assert "not found" in body["error"]["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_create_run_rejects_article_from_another_project(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,
+) -> None:
+    project_id = uuid4()
+    foreign_project_id = uuid4()
+    foreign_article_id = uuid4()
+
+    db_session.add_all(
+        [
+            Project(
+                id=project_id,
+                name="run-create-owned-project",
+                created_by_id=auth_as_profile,
+            ),
+            Project(
+                id=foreign_project_id,
+                name="run-create-foreign-article-project",
+                created_by_id=auth_as_profile,
+            ),
+            ProjectMember(project_id=project_id, user_id=auth_as_profile, role="manager"),
+            Article(
+                id=foreign_article_id,
+                project_id=foreign_project_id,
+                title="Foreign article must not receive an owned-project run",
+            ),
+        ]
+    )
+    template_id = await TemplateFactory(db_session, project_id, auth_as_profile).create(
+        name="owned-run-template"
+    )
+    await db_session.flush()
+
+    response = await db_client.post(
+        API_PREFIX,
+        json={
+            "project_id": str(project_id),
+            "article_id": str(foreign_article_id),
+            "project_template_id": str(template_id),
+        },
+    )
+
+    assert response.status_code == 400, response.text
+    body = response.json()
+    assert body["ok"] is False
+    assert "does not belong" in body["error"]["message"]
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_create_run_rejects_template_from_another_project(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,
+) -> None:
+    project_id = uuid4()
+    foreign_project_id = uuid4()
+    article_id = uuid4()
+
+    db_session.add_all(
+        [
+            Project(
+                id=project_id,
+                name="run-create-owned-template-project",
+                created_by_id=auth_as_profile,
+            ),
+            Project(
+                id=foreign_project_id,
+                name="run-create-foreign-template-project",
+                created_by_id=auth_as_profile,
+            ),
+            ProjectMember(project_id=project_id, user_id=auth_as_profile, role="manager"),
+            Article(
+                id=article_id,
+                project_id=project_id,
+                title="Owned article must not use a foreign project template",
+            ),
+        ]
+    )
+    foreign_template_id = await TemplateFactory(
+        db_session, foreign_project_id, auth_as_profile
+    ).create(name="foreign-run-template")
+    await db_session.flush()
+
+    response = await db_client.post(
+        API_PREFIX,
+        json={
+            "project_id": str(project_id),
+            "article_id": str(article_id),
+            "project_template_id": str(foreign_template_id),
+        },
+    )
+
+    assert response.status_code == 404, response.text
+    body = response.json()
+    assert body["ok"] is False
+    assert "not found" in body["error"]["message"].lower()
+    await db_session.rollback()
 
 
 # =================== GET /runs/{id} ===================
