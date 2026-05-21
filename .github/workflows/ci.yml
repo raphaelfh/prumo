@@ -138,9 +138,16 @@ jobs:
         run: |
           psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 <<'SQL'
           CREATE SCHEMA IF NOT EXISTS auth;
+          -- Supabase's auth.users carries far more columns (instance_id, aud,
+          -- role, encrypted_password, ...). Tests that exercise the JWT path
+          -- — notably test_membership_guards.outsider_user — insert with the
+          -- minimum useful subset, so mirror it in the stub.
           CREATE TABLE IF NOT EXISTS auth.users (
             id UUID PRIMARY KEY,
-            email TEXT
+            email TEXT,
+            instance_id UUID,
+            aud TEXT,
+            role TEXT
           );
           -- Stub auth.uid() and auth.role(): real implementations live in
           -- Supabase's auth schema. Alembic migrations reference these via
@@ -255,9 +262,16 @@ jobs:
         run: |
           psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 <<'SQL'
           CREATE SCHEMA IF NOT EXISTS auth;
+          -- Supabase's auth.users carries far more columns (instance_id, aud,
+          -- role, encrypted_password, ...). Tests that exercise the JWT path
+          -- — notably test_membership_guards.outsider_user — insert with the
+          -- minimum useful subset, so mirror it in the stub.
           CREATE TABLE IF NOT EXISTS auth.users (
             id UUID PRIMARY KEY,
-            email TEXT
+            email TEXT,
+            instance_id UUID,
+            aud TEXT,
+            role TEXT
           );
           CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid
             LANGUAGE sql STABLE AS $$ SELECT NULL::uuid $$;
