@@ -5,8 +5,10 @@
 
 services:
   - type: web
-    # Must match the Render service name when adopting Blueprint on an existing instance.
-    name: prumo
+    # Must match the existing Render service name so Blueprint adopts the
+    # current instance (https://review-hub-backend.onrender.com) instead of
+    # forking a new one.
+    name: review-hub-backend
     runtime: python
     rootDir: backend
     branch: main
@@ -41,11 +43,11 @@ services:
       - key: REDIS_URL
         fromService:
           type: keyvalue
-          name: prumo-redis
+          name: review-hub-redis
           property: connectionString
 
   - type: worker
-    name: prumo-worker
+    name: review-hub-worker
     runtime: python
     rootDir: backend
     branch: main
@@ -73,7 +75,7 @@ services:
       - key: ENCRYPTION_KEY
         fromService:
           type: web
-          name: prumo
+          name: review-hub-backend
           envVarKey: ENCRYPTION_KEY
       - key: DEBUG
         value: false
@@ -82,11 +84,11 @@ services:
       - key: REDIS_URL
         fromService:
           type: keyvalue
-          name: prumo-redis
+          name: review-hub-redis
           property: connectionString
 
   - type: keyvalue
-    name: prumo-redis
+    name: review-hub-redis
     region: virginia
     plan: free
     ipAllowList: []  # empty list = private network only, no public ingress
