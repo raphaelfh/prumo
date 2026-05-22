@@ -57,12 +57,10 @@ def upgrade() -> None:
     )
 
     op.execute(
-        "REVOKE EXECUTE ON FUNCTION "
-        "public.find_user_id_by_email(text, uuid) FROM anon, PUBLIC;"
+        "REVOKE EXECUTE ON FUNCTION public.find_user_id_by_email(text, uuid) FROM anon, PUBLIC;"
     )
     op.execute(
-        "GRANT EXECUTE ON FUNCTION "
-        "public.find_user_id_by_email(text, uuid) TO authenticated;"
+        "GRANT EXECUTE ON FUNCTION public.find_user_id_by_email(text, uuid) TO authenticated;"
     )
 
 
@@ -85,11 +83,5 @@ def downgrade() -> None:
         $fn$;
         """
     )
-    op.execute(
-        "REVOKE EXECUTE ON FUNCTION "
-        "public.find_user_id_by_email(text) FROM anon, PUBLIC;"
-    )
-    op.execute(
-        "GRANT EXECUTE ON FUNCTION "
-        "public.find_user_id_by_email(text) TO authenticated;"
-    )
+    op.execute("REVOKE EXECUTE ON FUNCTION public.find_user_id_by_email(text) FROM anon, PUBLIC;")
+    op.execute("GRANT EXECUTE ON FUNCTION public.find_user_id_by_email(text) TO authenticated;")
