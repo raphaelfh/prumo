@@ -164,7 +164,20 @@ export function useExtractedValues(
   );
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled) {
+      // ``loading`` is initialised to ``true`` (so the first paint shows
+      // a spinner instead of an empty form). When the hook is disabled
+      // — typically because the parent has no active ``runId`` yet,
+      // e.g. while ``useExtractionSession`` is still POSTing
+      // ``/api/v1/hitl/sessions`` — there is nothing to load, but the
+      // effect must still flip ``loading`` to ``false`` so the page's
+      // ``if (loading || valuesLoading) → spinner`` gate doesn't sit on
+      // the spinner forever. Treat ``initialized = true`` here as
+      // "we know there are no values to show" (the empty map below).
+      setLoading(false);
+      setInitialized(true);
+      return;
+    }
     void loadValues();
   }, [enabled, loadValues]);
 

@@ -200,6 +200,71 @@ describe('useExtractedValues — missing run / no auth', () => {
   });
 });
 
+describe('useExtractedValues — disabled state (no run yet)', () => {
+  // Regression: ``loading`` is initialised to ``true`` so the first
+  // paint shows a spinner. Before the fix the effect early-returned on
+  // ``enabled=false`` *without* resetting ``loading``, leaving the
+  // extraction page stuck on its render-gate
+  // ``if (loading || valuesLoading) → <Loader2 />`` forever whenever
+  // ``useExtractionSession`` had not yet returned a ``runId`` (Render
+  // cold start, BOLA reject, silent 401, …). This locks the contract
+  // that a disabled hook does NOT sit in the loading state.
+
+  it('flips loading=false and initialized=true synchronously when enabled=false', async () => {
+    const { result } = renderHook(() =>
+      useExtractedValues({
+        runId: null,
+        stage: null,
+        proposals: [],
+        enabled: false,
+      }),
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.initialized).toBe(true);
+    expect(result.current.values).toEqual({});
+    expect(ExtractionValueService.loadValuesForUser).not.toHaveBeenCalled();
+  });
+
+  it('does not get stuck even when runId is set but enabled is explicitly false', async () => {
+    const { result } = renderHook(() =>
+      useExtractedValues({
+        runId: 'run-1',
+        stage: 'review',
+        proposals: [],
+        enabled: false,
+      }),
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(ExtractionValueService.loadValuesForUser).not.toHaveBeenCalled();
+  });
+
+  it('starts fetching once enabled flips from false to true', async () => {
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) =>
+        useExtractedValues({
+          runId: 'run-1',
+          stage: 'review',
+          proposals: [],
+          enabled,
+        }),
+      { initialProps: { enabled: false } },
+    );
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(ExtractionValueService.loadValuesForUser).not.toHaveBeenCalled();
+
+    rerender({ enabled: true });
+    // After re-enabling the hook must trigger the reviewer-state load
+    // (the page wouldn't otherwise hydrate the form once the session
+    // resolves).
+    await waitFor(() =>
+      expect(ExtractionValueService.loadValuesForUser).toHaveBeenCalledWith(
+        'run-1',
+        'user-1',
+      ),
+    );
+  });
+});
+
 describe('useExtractedValues — local update', () => {
   it('updateValue patches the local map immediately', async () => {
     const { result } = renderHook(() =>
