@@ -82,15 +82,20 @@ export function useModelManagement({
     activeModelIdRef.current = activeModelId;
   }, [activeModelId]);
 
-    // Calculate progress for a model (using optimized SQL function)
-    // Declared BEFORE loadModels because loadModels depends on it
+    // Calculate progress for a model (using optimized SQL function).
+    // Declared BEFORE loadModels because loadModels depends on it.
+    //
+    // Contract: the RPC was rewritten in alembic migration 0013 to
+    // ``calculate_model_progress(p_article_id, p_model_id)`` returning a
+    // single ``(completed_fields, total_fields, percentage)`` row scoped
+    // to a single model. See ``frontend/integrations/supabase/types.ts``
+    // for the generated signature.
   const getModelProgress = useCallback(async (instanceId: string): Promise<Model['progress']> => {
     try {
-      // Use optimized SQL function and filter target model.
       const { data, error } = await supabase
         .rpc('calculate_model_progress', {
-          p_project_id: projectId,
           p_article_id: articleId,
+          p_model_id: instanceId,
         });
 
       if (error) {
@@ -98,25 +103,25 @@ export function useModelManagement({
         return { completed: 0, total: 0, percentage: 0 };
       }
 
-      if (!data || data.length === 0) {
+        // PostgREST wraps a single-row TABLE return in an array; guard for
+        // both shapes so a future schema change to RETURNS RECORD does
+        // not silently regress us.
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!row) {
         return { completed: 0, total: 0, percentage: 0 };
       }
 
-      const result = data.find((row) => row.extraction_instance_id === instanceId);
-      if (!result) {
-        return { completed: 0, total: 0, percentage: 0 };
-      }
       return {
-        completed: result.filled_fields || 0,
-        total: result.total_fields || 0,
-        percentage: Number(result.completion_percentage || 0)
+        completed: row.completed_fields ?? 0,
+        total: row.total_fields ?? 0,
+        percentage: Number(row.percentage ?? 0),
       };
 
     } catch (err) {
         console.error('Error calculating model progress:', err);
       return { completed: 0, total: 0, percentage: 0 };
     }
-  }, [articleId, projectId]);
+  }, [articleId]);
 
     // Load existing models
   const loadModels = useCallback(async () => {
