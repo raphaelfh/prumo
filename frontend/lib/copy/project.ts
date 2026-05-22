@@ -128,6 +128,7 @@ export const project = {
     teamCardRolesDesc: 'Each role has different levels of access to the project.',
     teamErrorLoadingMembers: 'Error loading members',
     teamErrorFindingUser: 'Error finding user',
+    teamErrorOnlyManagersInvite: 'Only project managers can invite members',
     teamUserNotFound: 'User not found with this email',
     teamUserAlreadyMember: 'User is already a project member',
     teamMemberAddedAs: 'Member added as',

@@ -2049,7 +2049,10 @@ export type Database = {
         }
         Returns: string
       }
-      find_user_id_by_email: { Args: { p_email: string }; Returns: string }
+      find_user_id_by_email: {
+        Args: { p_email: string; p_project_id: string }
+        Returns: string
+      }
       get_project_members: {
         Args: { p_project_id: string }
         Returns: {

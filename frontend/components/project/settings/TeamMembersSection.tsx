@@ -63,10 +63,15 @@ export function TeamMembersSection({ projectId }: TeamMembersSectionProps) {
     try {
         const {data: userId, error: rpcError} = await supabase.rpc('find_user_id_by_email', {
             p_email: email,
+            p_project_id: projectId,
         });
       if (rpcError) {
           console.error('Error finding user:', rpcError);
-          toast.error(t('project', 'teamErrorFindingUser'));
+          if (rpcError.code === '42501') {
+              toast.error(t('project', 'teamErrorOnlyManagersInvite'));
+          } else {
+              toast.error(t('project', 'teamErrorFindingUser'));
+          }
         return;
       }
       if (!userId) {
