@@ -8,6 +8,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.article import Article
 from app.models.extraction import (
     ExtractionRun,
     ExtractionRunStage,
@@ -38,6 +39,10 @@ class TemplateNotFoundError(Exception):
 
 class CannotReopenRunError(Exception):
     """Raised when a Run cannot be reopened (e.g., not finalized)."""
+
+
+class CreateRunInputError(Exception):
+    """Raised when create_run receives cross-project or otherwise invalid ids."""
 
 
 class EmptyFinalizeError(InvalidStageTransitionError):
@@ -88,9 +93,19 @@ class RunLifecycleService:
         user_id: UUID,
         parameters: dict[str, Any] | None = None,
     ) -> ExtractionRun:
-        # Resolve template (for kind) — must exist
+        # BOLA defense: verify both the article and the template belong to the
+        # requested project before materialising any state. Returns the same
+        # error message for "does not exist" and "wrong project" to avoid
+        # leaking which UUIDs are valid in other projects.
+        article = await self.db.get(Article, article_id)
+        if article is None or article.project_id != project_id:
+            raise CreateRunInputError(
+                f"article {article_id} does not belong to project {project_id}"
+            )
+
+        # Resolve template (for kind) — must exist and belong to the same project
         template = await self.db.get(ProjectExtractionTemplate, project_template_id)
-        if template is None:
+        if template is None or template.project_id != project_id:
             raise TemplateNotFoundError(f"Template {project_template_id} not found")
 
         # Resolve active TemplateVersion. Templates created directly through
