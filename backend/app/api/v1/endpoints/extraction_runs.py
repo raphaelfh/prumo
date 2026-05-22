@@ -52,6 +52,7 @@ from app.services.extraction_run_read_service import (
 )
 from app.services.run_lifecycle_service import (
     CannotReopenRunError,
+    CreateRunInputError,
     InvalidStageTransitionError,
     RunLifecycleService,
     TemplateNotFoundError,
@@ -101,6 +102,15 @@ async def create_run(
             user_id=current_user_sub,
             parameters=body.parameters,
         )
+    except CreateRunInputError as e:
+        logger.warning(
+            "hitl_run_create_bola_rejected",
+            trace_id=trace_id,
+            project_id=str(body.project_id),
+            article_id=str(body.article_id),
+            error=str(e),
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except (TemplateNotFoundError, TemplateVersionNotFoundError) as e:
         logger.warning(
             "hitl_run_create_template_missing",

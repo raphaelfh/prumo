@@ -37,20 +37,32 @@ async def _resolve_fixtures(
     db: AsyncSession,
 ) -> tuple[UUID, UUID, UUID, UUID, UUID, UUID] | None:
     """Resolve (project, article, template, profile, instance, field) IDs from the
-    test database, picking instance + field that share the same template/entity_type."""
-    project_id = (await db.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
-    article_id = (await db.execute(text("SELECT id FROM public.articles LIMIT 1"))).scalar()
-    template_id = (
+    test database, picking instance + field that share the same template/entity_type.
+
+    Queries article and template under the same project so the BOLA ownership
+    checks in create_run pass (article.project_id == project_id, and
+    template.project_id == project_id).
+    """
+    profile_id = (await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
+    # Find a project that has both an article and an extraction template so the
+    # ownership invariant is satisfied without the test having to set up its own data.
+    row = (
         await db.execute(
             text(
-                "SELECT id FROM public.project_extraction_templates "
-                "WHERE kind = 'extraction' LIMIT 1"
+                """
+                SELECT p.id AS project_id, a.id AS article_id, t.id AS template_id
+                FROM public.projects p
+                JOIN public.articles a ON a.project_id = p.id
+                JOIN public.project_extraction_templates t
+                    ON t.project_id = p.id AND t.kind = 'extraction'
+                LIMIT 1
+                """
             )
         )
-    ).scalar()
-    profile_id = (await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
-    if not all((project_id, article_id, template_id, profile_id)):
+    ).first()
+    if row is None or profile_id is None:
         return None
+    project_id, article_id, template_id = row
 
     row = await db.execute(
         text(
@@ -995,3 +1007,146 @@ async def test_full_lifecycle_create_to_finalized(
     assert detail["published_states"][0]["version"] == 1
     assert detail["published_states"][0]["instance_id"] == str(instance_id)
     assert detail["published_states"][0]["field_id"] == str(field_id)
+
+
+# =================== BOLA: cross-project ownership ===================
+
+
+@pytest.mark.asyncio
+async def test_create_run_rejects_article_from_another_project(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,
+) -> None:
+    """POST /runs must reject an article_id that belongs to a different project.
+
+    The endpoint checks that the caller is a member of project_id but previously
+    did not validate that article_id belongs to that project. This test pins the
+    fix: a cross-project article must return 400, not 201.
+    """
+    fx = await _resolve_fixtures(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    project_id, _article_id, template_id, _, _, _ = fx
+
+    # Create an isolated project + article that the authenticated profile does
+    # NOT belong to (no project_members row). The membership guard passes for
+    # project_id; only the new article-ownership check should reject it.
+    foreign_project_id = uuid4()
+    foreign_article_id = uuid4()
+    await db_session.execute(
+        text("INSERT INTO public.projects (id, name, created_by_id) VALUES (:pid, :name, :uid)"),
+        {
+            "pid": str(foreign_project_id),
+            "name": f"bola-test-{foreign_project_id.hex[:8]}",
+            "uid": str(auth_as_profile),
+        },
+    )
+    await db_session.execute(
+        text("INSERT INTO public.articles (id, project_id, title) VALUES (:aid, :pid, :title)"),
+        {
+            "aid": str(foreign_article_id),
+            "pid": str(foreign_project_id),
+            "title": f"bola-test-article-{foreign_article_id.hex[:8]}",
+        },
+    )
+    await db_session.commit()
+
+    try:
+        res = await db_client.post(
+            API_PREFIX,
+            json={
+                "project_id": str(project_id),
+                "article_id": str(foreign_article_id),
+                "project_template_id": str(template_id),
+            },
+        )
+        assert res.status_code == 400, res.text
+        assert "article" in res.json().get("detail", "").lower()
+    finally:
+        await db_session.execute(
+            text("DELETE FROM public.articles WHERE id = :aid"),
+            {"aid": str(foreign_article_id)},
+        )
+        await db_session.execute(
+            text("DELETE FROM public.projects WHERE id = :pid"),
+            {"pid": str(foreign_project_id)},
+        )
+        await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_create_run_rejects_template_from_another_project(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,
+) -> None:
+    """POST /runs must reject a project_template_id that belongs to a different project.
+
+    The endpoint validated project membership but not template ownership. This test
+    pins the fix: a cross-project template must return 404, not 201.
+    """
+    fx = await _resolve_fixtures(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    project_id, article_id, _template_id, _, _, _ = fx
+
+    foreign_project_id = uuid4()
+    foreign_template_id = uuid4()
+    await db_session.execute(
+        text("INSERT INTO public.projects (id, name, created_by_id) VALUES (:pid, :name, :uid)"),
+        {
+            "pid": str(foreign_project_id),
+            "name": f"bola-tpl-{foreign_project_id.hex[:8]}",
+            "uid": str(auth_as_profile),
+        },
+    )
+    await db_session.execute(
+        text(
+            """
+            INSERT INTO public.project_extraction_templates
+                (id, project_id, name, kind, framework, is_active, created_by)
+            VALUES (:tid, :pid, :name, 'extraction', 'CUSTOM', false, :uid)
+            """
+        ),
+        {
+            "tid": str(foreign_template_id),
+            "pid": str(foreign_project_id),
+            "name": f"bola-tpl-{foreign_template_id.hex[:8]}",
+            "uid": str(auth_as_profile),
+        },
+    )
+    # Migration 0004 deferred trigger: a project_extraction_template must have
+    # at least one active version, otherwise commit fails.
+    await db_session.execute(
+        text(
+            """
+            INSERT INTO public.extraction_template_versions
+                (project_template_id, version, schema, published_by, is_active)
+            VALUES (:tid, 1, '{}'::jsonb, :uid, true)
+            """
+        ),
+        {"tid": str(foreign_template_id), "uid": str(auth_as_profile)},
+    )
+    await db_session.commit()
+
+    try:
+        res = await db_client.post(
+            API_PREFIX,
+            json={
+                "project_id": str(project_id),
+                "article_id": str(article_id),
+                "project_template_id": str(foreign_template_id),
+            },
+        )
+        assert res.status_code == 404, res.text
+    finally:
+        await db_session.execute(
+            text("DELETE FROM public.project_extraction_templates WHERE id = :tid"),
+            {"tid": str(foreign_template_id)},
+        )
+        await db_session.execute(
+            text("DELETE FROM public.projects WHERE id = :pid"),
+            {"pid": str(foreign_project_id)},
+        )
+        await db_session.commit()
