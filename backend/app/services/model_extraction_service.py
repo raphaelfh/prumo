@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import LoggerMixin
 from app.infrastructure.storage import StorageAdapter
 from app.models.extraction import (
+    ExtractionEntityRole,
     ExtractionInstance,
     ExtractionInstanceStatus,
     ExtractionRunStage,
@@ -31,10 +32,13 @@ from app.repositories import (
     ExtractionTemplateRepository,
     GlobalTemplateRepository,
 )
+from app.services.llm.model_identification_prompt import (
+    ModelIdentificationPrompt,
+    parse_models_from_response,
+)
 from app.services.openai_service import OpenAIService
 from app.services.pdf_processor import PDFProcessor
 from app.services.run_lifecycle_service import RunLifecycleService
-from app.utils.json_parser import extract_models_from_response
 
 
 @dataclass
@@ -240,7 +244,28 @@ class ModelExtractionService(LoggerMixin):
             )
 
         except Exception as e:
-            await self._runs.fail_run(run.id, str(e))
+            # Issue #21: any DB-level error during instance creation aborts
+            # the session — every subsequent statement on `self.db` will
+            # raise InFailedSQLTransactionError. Rollback once so the
+            # follow-up `fail_run()` runs on a clean session and the run is
+            # actually marked as failed in the DB (no more orphaned
+            # status='running' rows).
+            try:
+                await self.db.rollback()
+            except Exception:
+                self.logger.warning(
+                    "model_extraction_rollback_failed",
+                    trace_id=self.trace_id,
+                    run_id=str(run.id),
+                )
+            try:
+                await self._runs.fail_run(run.id, str(e))
+            except Exception:
+                self.logger.error(
+                    "model_extraction_mark_failed_error",
+                    trace_id=self.trace_id,
+                    run_id=str(run.id),
+                )
             self.logger.error(
                 "model_extraction_failed",
                 trace_id=self.trace_id,
@@ -298,44 +323,35 @@ class ModelExtractionService(LoggerMixin):
         Returns:
             Tuple of model list and OpenAI response.
         """
-        # Find entity type "prediction_models" or "model" in template
+        # Find the model container entity type by structural role —
+        # replaces the legacy ``name in ("prediction_models", "model", ...)``
+        # lookup that silently masked typos and template renames.
         entity_types = template.entity_types if hasattr(template, "entity_types") else []
         model_entity = next(
-            (
-                et
-                for et in entity_types
-                if et.name.lower() in ("prediction_models", "model", "models")
-            ),
+            (et for et in entity_types if et.role == ExtractionEntityRole.MODEL_CONTAINER.value),
             None,
         )
 
         if not model_entity:
             self.logger.warning(
-                "no_model_entity_type",
+                "no_model_container_entity_type",
                 trace_id=self.trace_id,
                 template_id=str(template.id),
-                available_entity_types=[et.name for et in entity_types] if entity_types else [],
+                available_entity_types=[{"name": et.name, "role": et.role} for et in entity_types]
+                if entity_types
+                else [],
             )
 
-        # Prompt ajustado for retornar objeto JSON (required por response_format)
-        prompt = f"""Analyze the following scientific article text and identify all prediction models described.
+        # Prompt + parser come from app/services/llm/ so they're testable
+        # in isolation and don't couple the service to specific field
+        # names. The label is sourced from the template metadata (falls
+        # back to a neutral string when the template has no container).
+        container_label = model_entity.label if model_entity else "prediction models"
+        prompt = ModelIdentificationPrompt.build(
+            container_label=container_label,
+            pdf_text=pdf_text,
+        )
 
-For each model found, extract:
-1. model_name: A clear, descriptive name for the model
-2. model_type: Type of model (e.g., logistic regression, random forest, neural network)
-3. target_outcome: What the model predicts
-
-Article text:
-{pdf_text[:15000]}
-
-Return a JSON object with a "models" key containing an array of models.
-Example format:
-{{"models": [{{"model_name": "...", "model_type": "...", "target_outcome": "..."}}]}}
-
-If in the models are found, return: {{"models": []}}
-"""
-
-        # Usar chat_completion_full for obter tokens
         response = await self.openai_service.chat_completion_full(
             messages=[
                 {
@@ -347,9 +363,7 @@ If in the models are found, return: {{"models": []}}
             model=model,
             response_format={"type": "json_object"},
         )
-
-        # Use robust parser that handles multiple formats
-        models = extract_models_from_response(response.content, trace_id=self.trace_id)
+        models = parse_models_from_response(response.content)
 
         self.logger.info(
             "models_identified",
@@ -360,29 +374,34 @@ If in the models are found, return: {{"models": []}}
 
         return models, response
 
-    async def _get_prediction_models_entity_type_id(
+    async def _get_model_container_entity_type_id(
         self,
         template_id: UUID,
     ) -> str | None:
         """
-        Fetch entity_type_id for 'prediction_models' in template.
+        Fetch the entity_type_id of the template's model container.
+
+        Looks up by structural ``role='model_container'`` (the schema
+        guarantees at most one per template). Falls back to the global
+        catalogue if the project clone lookup misses, so callers can pass
+        either id flavour without branching.
 
         Returns:
-            entity_type_id or None if not found.
+            entity_type_id or None if the template has no model container.
         """
-        # Try first by project_template_id
-        entity_type = await self._entity_types.get_by_name(
-            "prediction_models", template_id, is_project_template=True
+        entity_type = await self._entity_types.get_by_role(
+            ExtractionEntityRole.MODEL_CONTAINER.value,
+            template_id,
+            is_project_template=True,
         )
-
         if entity_type:
             return str(entity_type.id)
 
-        # Try by template_id (global templates)
-        entity_type = await self._entity_types.get_by_name(
-            "prediction_models", template_id, is_project_template=False
+        entity_type = await self._entity_types.get_by_role(
+            ExtractionEntityRole.MODEL_CONTAINER.value,
+            template_id,
+            is_project_template=False,
         )
-
         if entity_type:
             return str(entity_type.id)
 
@@ -443,25 +462,21 @@ If in the models are found, return: {{"models": []}}
                 status=ExtractionInstanceStatus.PENDING.value,
             )
 
-            try:
-                await self._instances.create(child_instance)
-                created_count += 1
+            # Issue #21: same reasoning as `_create_model_instances`. A failed
+            # `create()` aborts the underlying transaction; catching it here
+            # would only make every subsequent statement on the same session
+            # raise InFailedSQLTransactionError, including the lifecycle and
+            # fail_run calls in the outer handler. Let it bubble up.
+            await self._instances.create(child_instance)
+            created_count += 1
 
-                self.logger.debug(
-                    "child_instance_created",
-                    trace_id=self.trace_id,
-                    parent_id=parent_instance_id,
-                    child_id=str(child_instance.id),
-                    entity_type=child_et.name,
-                )
-            except Exception as e:
-                # Log but do not fail - child instances can be created later
-                self.logger.warning(
-                    "child_instance_creation_failed",
-                    trace_id=self.trace_id,
-                    error=str(e),
-                    entity_type=child_et.name,
-                )
+            self.logger.debug(
+                "child_instance_created",
+                trace_id=self.trace_id,
+                parent_id=parent_instance_id,
+                child_id=str(child_instance.id),
+                entity_type=child_et.name,
+            )
 
         return created_count
 
@@ -483,12 +498,12 @@ If in the models are found, return: {{"models": []}}
         Returns:
             Tuple (list of created models, total children created).
         """
-        # Fetch entity_type_id for 'prediction_models'
-        entity_type_id = await self._get_prediction_models_entity_type_id(template_id)
+        # Fetch entity_type_id of the template's model container (role-keyed).
+        entity_type_id = await self._get_model_container_entity_type_id(template_id)
 
         if not entity_type_id:
             self.logger.warning(
-                "no_prediction_models_entity_type",
+                "no_model_container_entity_type",
                 trace_id=self.trace_id,
                 template_id=str(template_id),
             )
@@ -498,62 +513,59 @@ If in the models are found, return: {{"models": []}}
         total_children_created = 0
 
         for idx, model_data in enumerate(models):
-            # 1. Criar instance do modelo (parent)
+            # 1. Criar instance do modelo (parent). The label comes from
+            # the LLM's neutral "name" field — see
+            # ``ModelIdentificationPrompt`` for the contract.
             model_instance = ExtractionInstance(
                 project_id=project_id,
                 article_id=article_id,
                 template_id=template_id,
                 entity_type_id=UUID(entity_type_id),
-                label=model_data.get("model_name", f"Model {idx + 1}"),
+                label=model_data.get("name") or f"Model {idx + 1}",
                 sort_order=idx,
                 metadata_={
                     "ai_extracted": True,
                     "ai_run_id": str(run.id),
-                    "model_type": model_data.get("model_type"),
-                    "target_outcome": model_data.get("target_outcome"),
                     "raw_extraction": model_data,
                 },
                 created_by=UUID(self.user_id),
                 status=ExtractionInstanceStatus.PENDING.value,
             )
 
-            try:
-                saved_instance = await self._instances.create(model_instance)
-                created.append(saved_instance)
+            # Issue #21: do NOT catch-and-continue here. `create()` calls
+            # `session.flush()` and any DB error puts the asyncpg connection
+            # into a failed-transaction state — every subsequent SQL on the
+            # same session then raises InFailedSQLTransactionError. Letting
+            # the exception propagate gives the outer handler a chance to
+            # rollback() and then mark the run as failed on a clean session.
+            saved_instance = await self._instances.create(model_instance)
+            created.append(saved_instance)
 
-                self.logger.info(
-                    "model_instance_created",
-                    trace_id=self.trace_id,
-                    instance_id=str(saved_instance.id),
-                    label=model_instance.label,
-                )
+            self.logger.info(
+                "model_instance_created",
+                trace_id=self.trace_id,
+                instance_id=str(saved_instance.id),
+                label=model_instance.label,
+            )
 
-                # 2. Criar child instances for este modelo
-                children_count = await self._create_child_instances(
-                    parent_instance_id=str(saved_instance.id),
-                    parent_entity_type_id=entity_type_id,
-                    project_id=project_id,
-                    article_id=article_id,
-                    template_id=template_id,
-                    run_id=run.id,
-                )
+            # 2. Criar child instances for este modelo
+            children_count = await self._create_child_instances(
+                parent_instance_id=str(saved_instance.id),
+                parent_entity_type_id=entity_type_id,
+                project_id=project_id,
+                article_id=article_id,
+                template_id=template_id,
+                run_id=run.id,
+            )
 
-                total_children_created += children_count
+            total_children_created += children_count
 
-                self.logger.info(
-                    "model_hierarchy_created",
-                    trace_id=self.trace_id,
-                    model_id=str(saved_instance.id),
-                    children_created=children_count,
-                )
-
-            except Exception as e:
-                self.logger.error(
-                    "model_instance_creation_failed",
-                    trace_id=self.trace_id,
-                    error=str(e),
-                    model_name=model_data.get("model_name"),
-                )
+            self.logger.info(
+                "model_hierarchy_created",
+                trace_id=self.trace_id,
+                model_id=str(saved_instance.id),
+                children_created=children_count,
+            )
 
         self.logger.info(
             "all_hierarchies_created",

@@ -6,6 +6,7 @@ Suporta extraction individual or em batch de todas as sections.
 """
 
 from time import perf_counter
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
@@ -40,7 +41,7 @@ async def extract_section(
     db: DbSession,
     user: CurrentUser,
     supabase: SupabaseClient,
-) -> ApiResponse:
+) -> ApiResponse[dict[str, Any]]:
     """
     Executa extraction de section(oes) de um template.
 

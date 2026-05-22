@@ -1,9 +1,10 @@
 """Clone a global extraction or quality-assessment template into a project."""
 
+from collections import deque
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import (
@@ -97,6 +98,20 @@ class TemplateCloneService:
                 f"Active-version invariant violated for project_extraction_template "
                 f"{existing.id}; the DB trigger should have prevented this."
             )
+            # Re-importing a template re-activates it (user intent: "use
+            # this template now"). For extraction kind, also enforce the
+            # single-active invariant by deactivating siblings *before*
+            # touching ``existing.is_active`` — the partial unique index
+            # ``uq_one_active_extraction_template_per_project`` is checked
+            # eagerly on every flush, so we must clear the field first.
+            if kind == TemplateKind.EXTRACTION:
+                await self._deactivate_sibling_extraction_templates(
+                    project_id=project_id, keep_active_id=existing.id
+                )
+                await self.db.flush()
+            if not existing.is_active:
+                existing.is_active = True
+            await self.db.flush()
             return TemplateClone(
                 project_template_id=existing.id,
                 version_id=version.id,
@@ -104,6 +119,20 @@ class TemplateCloneService:
                 field_count=fields,
                 created=False,
             )
+
+        # Single-active invariant for extraction templates: deactivate every
+        # currently-active extraction template in the project *before*
+        # inserting the new one. The partial unique index
+        # ``uq_one_active_extraction_template_per_project`` is enforced on
+        # the same flush as the INSERT, so the cleanup must land first or
+        # the INSERT trips the index. QA templates coexist (PROBAST +
+        # QUADAS-2) and are not affected — kind discriminator on the index
+        # keeps QA out of scope.
+        if kind == TemplateKind.EXTRACTION:
+            await self._deactivate_sibling_extraction_templates(
+                project_id=project_id, keep_active_id=None
+            )
+            await self.db.flush()
 
         project_tpl = ProjectExtractionTemplate(
             project_id=project_id,
@@ -145,6 +174,83 @@ class TemplateCloneService:
             created=True,
         )
 
+    async def _deactivate_sibling_extraction_templates(
+        self,
+        *,
+        project_id: UUID,
+        keep_active_id: UUID | None,
+    ) -> None:
+        """Deactivate active extraction templates in the project.
+
+        ``keep_active_id`` is excluded from the update (idempotent re-import
+        of the same clone). Passing ``None`` deactivates every active
+        extraction template, e.g. just before inserting a brand-new one
+        whose id is not known yet.
+
+        Mirrors the constraint enforced on the manual deactivate path in
+        ``update_project_template_active``: the extraction workflow assumes
+        exactly one active template per project at any time. Clone must
+        therefore supersede the previous active template rather than create
+        ambiguity that would split the Configuration view from the
+        Extraction view.
+        """
+        stmt = (
+            update(ProjectExtractionTemplate)
+            .where(
+                ProjectExtractionTemplate.project_id == project_id,
+                ProjectExtractionTemplate.kind == TemplateKind.EXTRACTION.value,
+                ProjectExtractionTemplate.is_active.is_(True),
+            )
+            .values(is_active=False)
+        )
+        if keep_active_id is not None:
+            stmt = stmt.where(ProjectExtractionTemplate.id != keep_active_id)
+        await self.db.execute(stmt)
+
+    @staticmethod
+    def _topologically_sorted(
+        entity_types: list[ExtractionEntityType],
+    ) -> list[ExtractionEntityType]:
+        """Return ``entity_types`` ordered so every parent precedes its children.
+
+        Kahn's algorithm; treats rows whose ``parent_entity_type_id`` falls
+        outside the supplied list as roots (defensive — the caller always
+        passes a complete template tree). Raises ``ValueError`` if a cycle
+        is detected, which would indicate a corrupt template (the model has
+        no cycle-prevention check; this surfaces it loudly instead of
+        looping or producing partial output).
+
+        Replaces the previous implicit assumption that the caller's
+        ``ORDER BY sort_order`` already happened to place parents first —
+        a fragile contract that forced the CHARMS seed to use globally
+        unique sort orders even where local-per-parent orders would have
+        read better.
+        """
+        ids_in_scope = {et.id for et in entity_types}
+        children_of: dict[UUID | None, list[ExtractionEntityType]] = {}
+        for et in entity_types:
+            effective_parent = (
+                et.parent_entity_type_id if et.parent_entity_type_id in ids_in_scope else None
+            )
+            children_of.setdefault(effective_parent, []).append(et)
+        for bucket in children_of.values():
+            bucket.sort(key=lambda x: x.sort_order)
+
+        ordered: list[ExtractionEntityType] = []
+        queue: deque[ExtractionEntityType] = deque(children_of.get(None, []))
+        while queue:
+            current = queue.popleft()
+            ordered.append(current)
+            queue.extend(children_of.get(current.id, []))
+
+        if len(ordered) != len(entity_types):
+            missing = {et.id for et in entity_types} - {et.id for et in ordered}
+            raise ValueError(
+                f"Cycle or unreachable parent in template tree; "
+                f"could not order entity_types: {missing}"
+            )
+        return ordered
+
     async def _insert_project_structure_from_global(
         self,
         *,
@@ -152,8 +258,14 @@ class TemplateCloneService:
         global_entity_types: list[ExtractionEntityType],
     ) -> int:
         """Copy global entity types and fields into a project template (one field read batch)."""
+        # Topologically sort so every parent is inserted before its children.
+        # The caller loads rows ordered by ``sort_order`` (display order),
+        # which is *not* the same as topological order — this layer owns the
+        # invariant instead of depending on the seed to honour it.
+        ordered_entity_types = self._topologically_sorted(global_entity_types)
+
         entity_type_id_map: dict[UUID, UUID] = {}
-        for et in global_entity_types:
+        for et in ordered_entity_types:
             new_id = uuid4()
             entity_type_id_map[et.id] = new_id
             self.db.add(
@@ -170,6 +282,7 @@ class TemplateCloneService:
                         else None
                     ),
                     cardinality=et.cardinality,
+                    role=et.role,
                     sort_order=et.sort_order,
                     is_required=et.is_required,
                 )
@@ -318,6 +431,7 @@ class TemplateCloneService:
                                     'label', et.label,
                                     'parent_entity_type_id', et.parent_entity_type_id,
                                     'cardinality', et.cardinality,
+                                    'role', et.role,
                                     'sort_order', et.sort_order,
                                     'is_required', et.is_required,
                                     'fields', COALESCE(

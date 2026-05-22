@@ -114,9 +114,15 @@ export function useExtractedValues(
         }
 
         if (REVIEWER_STATE_STAGES.has(stage)) {
-          const {
-            data: { user },
-          } = await supabase.auth.getUser();
+          // Surface auth errors instead of treating them as "user is
+          // signed out" — a transient Supabase 5xx on /auth/v1/user
+          // would otherwise blank the entire extraction form silently
+          // (#49). Throwing here flows into the catch below, which
+          // sets ``error`` and toasts so the reviewer knows their
+          // edits are not lost.
+          const userRes = await supabase.auth.getUser();
+          if (userRes.error) throw userRes.error;
+          const user = userRes.data.user;
           if (!user) {
             setValues({});
             return;

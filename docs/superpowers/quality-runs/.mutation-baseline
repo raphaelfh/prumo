@@ -1,0 +1,21 @@
+# Mutation testing baseline for prumo's extraction services.
+# Used by `scripts/run_mutation_tests.sh` to gate weekly CI runs.
+#
+# A new run with `delta < PRUMO_MUTATION_BASELINE_DELTA` (default: -0.05)
+# fails the gate. Update this file when the live score legitimately improves.
+#
+# Seed status (2026-05-20-0200):
+#   Score is 0.0 (placeholder). The infrastructure is in place:
+#     - `mutmut>=3.0` in backend/pyproject.toml dev deps
+#     - `scripts/run_mutation_tests.sh` wraps `mutmut run --max-children N`
+#       and computes the score from `mutmut results`
+#     - `.github/workflows/mutation.yml` runs the wrapper weekly (Sundays
+#       03:00 UTC) + on workflow_dispatch
+#   The first real run via the weekly cron (or a manual dispatch) will
+#   populate the score by replacing the line below. Local runs are
+#   possible but slow (~20-40 min on 3 service files; the wrapper
+#   parallelises via --max-children $(nproc)/2).
+
+score = 0.0
+last_updated = 2026-05-20
+scope = app/services/extraction_consensus_service.py,app/services/extraction_proposal_service.py,app/services/extraction_review_service.py

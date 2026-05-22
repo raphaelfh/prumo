@@ -184,39 +184,44 @@ class ExtractionEntityTypeRepository(BaseRepository[ExtractionEntityType]):
         )
         return result.scalar_one_or_none()
 
-    async def get_by_name(
+    async def get_by_role(
         self,
-        name: str,
+        role: str,
         template_id: UUID | str,
         is_project_template: bool = True,
     ) -> ExtractionEntityType | None:
         """
-        Fetch entity type by name inside a template.
+        Fetch the single entity type for a given role within a template.
+
+        The partial unique index from migration 0016
+        (``uq_extraction_entity_types_one_container_per_*``) enforces at
+        most one ``model_container`` per template, so this returns at
+        most one row without needing a defensive ``LIMIT 1``. Returns
+        ``None`` when the template has no entity type with the given
+        role (e.g. QA templates have no ``model_container``).
 
         Args:
-            name: Entity type name.
-            template_id: Template ID.
-            is_project_template: Whether template is project-scoped.
-
-        Returns:
-            Entity type or None.
+            role: ``ExtractionEntityRole`` value (e.g.
+                ``'model_container'``).
+            template_id: Template ID (global or project, per the flag).
+            is_project_template: ``True`` for project clones (default);
+                ``False`` for the global catalogue.
         """
         if isinstance(template_id, str):
             template_id = UUID(template_id)
 
-        query = select(ExtractionEntityType).where(ExtractionEntityType.name == name)
-
+        query = select(ExtractionEntityType).where(ExtractionEntityType.role == role)
         if is_project_template:
             query = query.where(ExtractionEntityType.project_template_id == template_id)
         else:
             query = query.where(ExtractionEntityType.template_id == template_id)
 
         query_start = perf_counter()
-        result = await self.db.execute(query.limit(1))
+        result = await self.db.execute(query)
         logger.debug(
             "repository_query_db_latency",
             repository=self.__class__.__name__,
-            operation="get_by_name",
+            operation="get_by_role",
             db_duration_ms=(perf_counter() - query_start) * 1000,
         )
         return result.scalar_one_or_none()

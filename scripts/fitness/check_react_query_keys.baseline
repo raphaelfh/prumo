@@ -1,0 +1,7 @@
+# TanStack Query call sites that still use a literal `queryKey: [...]` array.
+# Each entry is a real architectural finding (pre-convention site).
+# Format: <repo-relative-file>:<line-number>. Empty/# lines OK.
+#
+# (Empty as of run 2026-05-20-0130-querykeys-final — useArticleTextBlocks
+# migrated to articleKeys.textBlocks, hooks-runs test now asserts against
+# runsKeys.detail instead of the literal array.)

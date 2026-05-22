@@ -17,16 +17,17 @@ import {extractionInstanceService} from '@/services/extractionInstanceService';
 import type {Article} from '@/types/article';
 import type {Project} from '@/types/project';
 import type {
-    ExtractionEntityType,
-    ExtractionField,
+    ExtractionEntityTypeWithFields,
     ExtractionInstance,
     ProjectExtractionTemplate
 } from '@/types/extraction';
 
-// Tipo auxiliar para entity types com fields
-export interface EntityTypeWithFields extends ExtractionEntityType {
-  fields: ExtractionField[];
-}
+/**
+ * Re-export the canonical type for callers that imported it from this
+ * module before consolidation. New callers should import directly from
+ * ``@/types/extraction``.
+ */
+export type EntityTypeWithFields = ExtractionEntityTypeWithFields;
 
 /**
  * Returns a new array only when something actually changed (added, removed,
@@ -115,43 +116,6 @@ export function useExtractionData({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-    // Load or create instances (using service for auto-init)
-  const loadOrCreateInstances = useCallback(async (
-    templateId: string,
-    entityTypesList: EntityTypeWithFields[]
-  ) => {
-    if (!articleId || !projectId || !templateId) {
-      setInstances([]);
-      return;
-    }
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-          throw new Error(t('common', 'errors_userNotAuthenticated'));
-      }
-
-        // Delegate to service (auto-init)
-      const instances = await extractionInstanceService.initializeArticleInstances(
-        articleId,
-        projectId,
-        { id: templateId } as ProjectExtractionTemplate,
-        entityTypesList,
-        user.id
-      );
-
-      setInstances(instances.map(instance => ({
-        ...instance,
-        article_id: instance.article_id!,
-        metadata: instance.metadata as unknown,
-      })));
-    } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : t('extraction', 'errors_loadInstances');
-        console.error('Error loading/creating instances:', err);
-      toast.error(message);
-    }
-  }, [articleId, projectId]);
-
     // Load existing instances (without creating). Uses merge-by-id so a
     // refresh keeps existing React keys stable for instances that didn't
     // change — only added/updated entries trigger downstream re-renders. This
@@ -214,14 +178,24 @@ export function useExtractionData({
       if (projectError) throw projectError;
       setProject(projectData);
 
-        // 3. Load active template
+      // 3. Load active extraction template. The backend enforces a single
+      // active extraction template per project (clone deactivates siblings,
+      // PATCH refuses to deactivate the last one). Order DESC so the
+      // selection matches ``ExtractionInterface``'s active picker (which
+      // also picks the newest active from a DESC-sorted list) — keeping
+      // Configuration and Extraction views on the same template. Defensive:
+      // if a legacy project still carries multiple actives (pre-fix data),
+      // both readers will agree on the newest, which is the one the user
+      // most recently imported and is therefore actively configuring.
       const { data: templateData, error: templateError } = await supabase
         .from('project_extraction_templates')
         .select('*')
         .eq('project_id', projectId)
         .eq('is_active', true)
         .eq('kind', 'extraction')
-        .single();
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
       if (templateError) throw templateError;
         if (!templateData) throw new Error(t('common', 'errors_templateNotFound'));
@@ -253,8 +227,12 @@ export function useExtractionData({
 
       setEntityTypes(typesWithFields);
 
-        // 5. Load or create instances (using service for auto-init)
-      await loadOrCreateInstances(templateData.id, typesWithFields);
+        // 5. Load instances already materialised by the backend
+        // ``hitl_session_service._ensure_instances`` on session open.
+        // ``ExtractionFullScreen`` re-triggers ``refreshInstances`` once
+        // the session ``activeRunId`` is available, so we don't have to
+        // race the session here.
+      await loadInstances(templateData.id);
 
         // 6. Load article list (for navigation)
       const { data: articlesData, error: articlesError } = await supabase
@@ -275,7 +253,7 @@ export function useExtractionData({
     } finally {
       setLoading(false);
     }
-  }, [projectId, articleId, enabled, loadOrCreateInstances]);
+  }, [projectId, articleId, enabled, loadInstances]);
 
     // Load initial data
   useEffect(() => {

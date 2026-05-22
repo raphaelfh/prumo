@@ -5,6 +5,11 @@ from uuid import UUID
 
 from pydantic import BaseModel, model_validator
 
+# Re-export TemplateKind so endpoints can convert request.kind into the
+# canonical enum value without importing directly from app.models.* —
+# enforced by scripts/fitness/check_layered_arch.py.
+from app.models.extraction_versioning import TemplateKind  # noqa: E402,F401
+
 
 class OpenHITLSessionRequest(BaseModel):
     kind: Literal["extraction", "quality_assessment"]

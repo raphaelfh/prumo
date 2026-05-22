@@ -6,7 +6,9 @@ Identifica and cria instances de modelos with its hierarquias completas.
 """
 
 from time import perf_counter
+from typing import Any
 from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
 
@@ -23,8 +25,8 @@ from app.schemas.extraction import (
     ModelHierarchyChildResponse,
 )
 from app.services.api_key_service import APIKeyService
-from app.services.model_hierarchy_service import ModelHierarchyService
 from app.services.model_extraction_service import ModelExtractionService
+from app.services.model_hierarchy_service import ModelHierarchyService
 from app.utils.rate_limiter import limiter
 
 router = APIRouter()
@@ -33,7 +35,7 @@ logger = get_logger(__name__)
 
 @router.post(
     "/manual",
-    response_model=ApiResponse,
+    response_model=ApiResponse[CreateModelHierarchyResponse],
     status_code=status.HTTP_201_CREATED,
     summary="Create one prediction model hierarchy",
     description="Creates the parent prediction model and required singleton children in one transaction.",
@@ -44,7 +46,7 @@ async def create_manual_model_hierarchy(
     payload: CreateModelHierarchyRequest,
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
-) -> ApiResponse:
+) -> ApiResponse[CreateModelHierarchyResponse]:
     trace_id = getattr(request.state, "trace_id", None) or "missing-trace-id"
     service = ModelHierarchyService(db)
 
@@ -109,7 +111,7 @@ async def extract_models(
     db: DbSession,
     user: CurrentUser,
     supabase: SupabaseClient,
-) -> ApiResponse:
+) -> ApiResponse[dict[str, Any]]:
     """
     Run prediction model extraction for an article.
 

@@ -154,12 +154,12 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
         // for the active user, both filtered by template, in parallel.
         const [instancesResult, statesResult] = await Promise.all([
             supabase
-                .from("extraction_instances" as any)
+                .from("extraction_instances")
                 .select("article_id")
                 .eq("project_id", projectId)
                 .eq("template_id", activeTemplate.id),
             supabase
-                .from("extraction_reviewer_states" as any)
+                .from("extraction_reviewer_states")
                 .select(`
             current_decision_id,
             reviewer_decision:extraction_reviewer_decisions!fk_extraction_reviewer_states_decision_run_match(decision),

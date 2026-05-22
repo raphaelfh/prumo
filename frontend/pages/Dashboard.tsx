@@ -12,6 +12,7 @@ import {AddProjectDialog} from "@/components/project/AddProjectDialog";
 import {ErrorState} from "@/components/patterns/ErrorState";
 import type {ProjectListItem} from "@/types/project";
 import {t} from '@/lib/copy';
+import {projectKeys} from '@/lib/query-keys';
 
 export default function Dashboard() {
   const {user} = useAuth();
@@ -21,7 +22,7 @@ export default function Dashboard() {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
 
     const {data: projects = [], isLoading, isError, refetch} = useQuery<ProjectListItem[]>({
-    queryKey: ['projects'],
+    queryKey: projectKeys.all,
     queryFn: async () => {
       const {data, error} = await supabase
         .from("projects")
@@ -63,7 +64,7 @@ export default function Dashboard() {
       }
 
         toast.success(t('pages', 'dashboardProjectCreated'));
-      await queryClient.invalidateQueries({queryKey: ['projects']});
+      await queryClient.invalidateQueries({queryKey: projectKeys.all});
       setAddDialogOpen(false);
     } catch (_err) {
         toast.error(t('pages', 'dashboardUnexpectedError'));

@@ -254,6 +254,39 @@ class UserAPIKeyRepository(BaseRepository[UserAPIKey]):
 
         return True
 
+    async def update_key_name(
+        self,
+        key_id: UUID | str,
+        user_id: UUID | str,
+        key_name: str | None,
+    ) -> bool:
+        """
+        Update the display name of an API key.
+
+        Args:
+            key_id: Key ID.
+            user_id: User ID for ownership validation.
+            key_name: New display name (None clears it).
+
+        Returns:
+            True if a row was updated.
+        """
+        if isinstance(key_id, str):
+            key_id = UUID(key_id)
+        if isinstance(user_id, str):
+            user_id = UUID(user_id)
+
+        result = await self.db.execute(
+            update(UserAPIKey)
+            .where(
+                UserAPIKey.id == key_id,
+                UserAPIKey.user_id == user_id,
+            )
+            .values(key_name=key_name)
+        )
+        await self.db.flush()
+        return result.rowcount > 0
+
     async def update_last_used(self, key_id: UUID | str) -> None:
         """
         Update last-used timestamp.

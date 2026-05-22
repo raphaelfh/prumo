@@ -139,7 +139,12 @@ class ExtractionReviewerDecision(BaseModel):
     )
     proposal_record_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("public.extraction_proposal_records.id", ondelete="SET NULL"),
+        # Issue #22: must be RESTRICT — the CHECK constraint
+        # `accept_has_proposal` forbids NULL when decision='accept_proposal'.
+        # A SET NULL action would surface as a confusing CHECK violation
+        # instead of the expected RESTRICT error when something tries to
+        # delete a referenced proposal record.
+        ForeignKey("public.extraction_proposal_records.id", ondelete="RESTRICT"),
         nullable=True,
     )
     value: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
@@ -264,7 +269,6 @@ class ExtractionConsensusDecision(BaseModel):
     )
     selected_decision_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("public.extraction_reviewer_decisions.id", ondelete="SET NULL"),
         nullable=True,
     )
     value: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
@@ -276,6 +280,15 @@ class ExtractionConsensusDecision(BaseModel):
             "run_id",
             "instance_id",
             "field_id",
+        ),
+        ForeignKeyConstraint(
+            ["run_id", "selected_decision_id"],
+            [
+                "public.extraction_reviewer_decisions.run_id",
+                "public.extraction_reviewer_decisions.id",
+            ],
+            name="fk_extraction_consensus_decisions_selected_run_match",
+            ondelete="SET NULL",
         ),
         CheckConstraint(
             "mode <> 'select_existing' OR selected_decision_id IS NOT NULL",

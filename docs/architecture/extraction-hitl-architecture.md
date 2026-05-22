@@ -127,7 +127,76 @@ ExtractionTemplateGlobal (kind = extraction | quality_assessment)
                    └─ ExtractionEvidence       (polymorphic FK → proposal/decision/consensus)
 ```
 
-### 4.1 Project template import (extraction catalogue)
+### 4.1 Entity type roles & hierarchy invariants
+
+Every `extraction_entity_types` row carries a structural **role**
+(`extraction_entity_role` enum, migration `0016_entity_role_column`):
+
+| Role | Meaning | Where rendered |
+|---|---|---|
+| `study_section` | Root entity type. Filled once per article regardless of model. | Top-level accordion in `ExtractionFormView`. |
+| `model_container` | Root entity type with `cardinality='many'`. At most one per template. Drives the model selector UI. | `ModelSection` + `ModelSelector`. |
+| `model_section` | Child of a `model_container`. Rendered once per active model instance. | Inside `ModelSection`, scoped to the active model. |
+
+The role is the **single source of truth** for partitioning entity
+types — the frontend's `partitionEntityTypes` helper
+(`frontend/lib/extraction/entityTypeRoles.ts`) reads only the role
+column; backend services look up the container via
+`ExtractionEntityTypeRepository.get_by_role('model_container', ...)`.
+The previous convention of matching `name = 'prediction_models'` is
+gone everywhere except seed/migration files (where `name` is part of
+the data, not a discriminant).
+
+Database guarantees post 0016:
+
+1. **At most one `model_container` per template** — partial unique
+   indexes `uq_extraction_entity_types_one_container_per_global` and
+   `uq_extraction_entity_types_one_container_per_project`.
+2. **Role ↔ parent coherence** — CHECK constraint
+   `ck_extraction_entity_types_role_parent`: `study_section` and
+   `model_container` rows must have `parent_entity_type_id IS NULL`;
+   `model_section` rows must have a parent.
+3. **`model_section` parent must be `model_container`** — deferred
+   trigger `trg_check_model_section_parent_role`. Deferred so
+   `TemplateCloneService` can insert parent+children in the same
+   transaction.
+4. **`sort_order` is display order only** — `TemplateCloneService`
+   topologically sorts before insertion (Kahn's algorithm with cycle
+   detection, O(N) via `collections.deque`), so seeds and project clones
+   can use any sort_order numbering (local-per-parent or globally unique)
+   without breaking the clone. No more implicit "parents must sort
+   before children" contract.
+
+5. **Snapshot consistency** — `extraction_template_versions.schema_` JSONB
+   snapshots include `role` for every entity_type. Migration `0017`
+   backfilled the role into pre-existing snapshots by joining with the
+   live entity_types (information-preserving: same data, new label),
+   so any future consumer that partitions a snapshot by role works on
+   every Run, not just runs created post-0016.
+
+### 4.2 LLM prompt module pattern
+
+Prompts that drive LLM calls live in `backend/app/services/llm/`, not
+inline inside services. Each prompt is a pure module exposing:
+
+- A `build(...)` static method that returns the prompt text (pure
+  function: no I/O, no globals, deterministic given inputs).
+- A `*_RESPONSE_SCHEMA` constant in JSON-schema shape for when
+  structured-output mode is enabled on the OpenAI call.
+- A `parse_*_from_response(...)` helper that normalizes the LLM JSON
+  into the service's expected shape.
+
+Example: `app/services/llm/model_identification_prompt.py` is consumed by
+`model_extraction_service._identify_models`. The prompt is field-name-
+agnostic — it asks the LLM for a neutral `name` per model and uses the
+template's container `label` for grounding, so managers can rename
+fields in the Configuration tab without breaking extraction.
+
+Unit tests in `tests/unit/test_model_identification_prompt.py` pin the
+prompt's neutrality (no internal field names appear in the text), the
+response schema, and the parser's backward-compat path.
+
+### 4.2 Project template import (extraction catalogue)
 
 The extraction **Import template** dialog reads `extraction_templates_global` through the Supabase client (RLS). **Do not** insert `project_extraction_templates` from the frontend: a deferred trigger requires every project template to have an **active** `extraction_template_versions` row at commit time, so creation stays in the API layer.
 

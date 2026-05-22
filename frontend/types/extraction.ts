@@ -8,12 +8,21 @@
  */
 
 import {z} from 'zod';
+import type {AISuggestion} from './ai-extraction';
 
 // =================== ENUMS ===================
 
 export type ExtractionFramework = 'CHARMS' | 'PICOS' | 'CUSTOM';
 export type ExtractionFieldType = 'text' | 'number' | 'date' | 'select' | 'multiselect' | 'boolean';
 export type ExtractionCardinality = 'one' | 'many';
+/**
+ * Structural role of an entity type within a template.
+ *
+ * Mirrors the backend ``ExtractionEntityRole`` enum (migration
+ * ``0016_entity_role_column``). Replaces the legacy convention of
+ * identifying the model container by ``name === 'prediction_models'``.
+ */
+export type ExtractionEntityRole = 'study_section' | 'model_container' | 'model_section';
 export type ExtractionSource = 'human' | 'ai' | 'rule';
 
 /**
@@ -83,9 +92,23 @@ export interface ExtractionEntityType {
   description: string | null;
   parent_entity_type_id: string | null;
   cardinality: ExtractionCardinality;
+  /**
+   * Structural discriminant the UI partitions on. See
+   * ``partitionEntityTypes`` and ``isModelContainer``.
+   */
+  role: ExtractionEntityRole;
   sort_order: number;
   is_required: boolean;
   created_at: string;
+}
+
+/**
+ * Entity type joined with its fields list — the shape the form needs to
+ * render. Lives at the type layer instead of being redeclared in every
+ * consumer.
+ */
+export interface ExtractionEntityTypeWithFields extends ExtractionEntityType {
+  fields: ExtractionField[];
 }
 
 export interface ExtractionField {

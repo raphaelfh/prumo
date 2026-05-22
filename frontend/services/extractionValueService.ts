@@ -200,14 +200,37 @@ export const ExtractionValueService = {
     runId: string,
     currentReviewerId: string,
   ): Promise<OtherUserDecisions[]> {
-    const { data, error } = await supabase
+    // PostgREST embed syntax: ``alias:target_table!fk_name(...)``.
+    // The previous ``reviewer:reviewer_id(...)`` form was invalid —
+    // PostgREST treats the token before ``(`` as a relation name and
+    // there is no ``reviewer_id`` relation, so the whole query 400'd
+    // and the comparison panel never rendered other-reviewer values
+    // (#50). The FK ``extraction_reviewer_states_reviewer_id_fkey``
+    // links to ``public.profiles(id)``.
+    // The generated Supabase types omit `extraction_reviewer_states`,
+    // so we go through an untyped client view for this query (the
+    // shape is enforced manually by the `Row` cast below, and the
+    // runtime behaviour is covered by vitest).
+    type UntypedSupabase = {
+      from: (table: string) => {
+        select: (cols: string) => {
+          eq: (col: string, val: string) => {
+            neq: (col: string, val: string) => Promise<{
+              data: unknown;
+              error: { message: string } | null;
+            }>;
+          };
+        };
+      };
+    };
+    const { data, error } = await (supabase as unknown as UntypedSupabase)
       .from('extraction_reviewer_states')
       .select(
         `run_id, reviewer_id, instance_id, field_id, current_decision_id,
          reviewer_decision:extraction_reviewer_decisions!fk_extraction_reviewer_states_decision_run_match (
            decision, value, created_at
          ),
-         reviewer:reviewer_id (
+         reviewer:profiles!extraction_reviewer_states_reviewer_id_fkey (
            id, full_name, avatar_url
          )`,
       )

@@ -21,6 +21,7 @@ import {toast} from 'sonner';
 import {supabase} from '@/integrations/supabase/client';
 import {extractionInstanceService} from '@/services/extractionInstanceService';
 import {extractionLogger} from '@/lib/extraction/observability';
+import {useEntityTypePartition} from '@/lib/extraction/entityTypeRoles';
 import {errorTracker} from '@/services/errorTracking';
 import {ResizablePanel, ResizablePanelGroup} from '@/components/ui/resizable';
 import {Button} from '@/components/ui/button';
@@ -128,6 +129,17 @@ export default function ExtractionFullScreen() {
     enabled: !!projectId && !!articleId && !!template?.id,
   });
   const activeRunId = sessionResult.session?.runId ?? null;
+
+  // The backend's ``hitl_session_service._ensure_instances`` materialises
+  // study-level + per-model singletons on the first session open. The
+  // data hook initially reads what's there; once the session reports a
+  // runId, those new rows exist — refresh so the form binds to them
+  // instead of "no instances created" placeholders.
+  useEffect(() => {
+    if (activeRunId) {
+      void refreshInstances();
+    }
+  }, [activeRunId, refreshInstances]);
 
   // Detail fetch on the active run — drives the "Revision" badge when
   // `parameters.parent_run_id` is present, the stage-aware read path of
@@ -264,10 +276,13 @@ export default function ExtractionFullScreen() {
     try {
       await reopenMutation.mutateAsync(finalizedRun.id);
       // The reopen endpoint creates a fresh REVIEW-stage run linked via
-      // parameters.parent_run_id. Refreshing the active-run resolver
-      // (refreshValues) plus the finalized-run lookup picks up the new
-      // run on the next render. We also clear the local Reopen banner.
-      await Promise.all([refreshValues(), refreshFinalizedRun()]);
+      // parameters.parent_run_id. We refetch the HITL session first so
+      // activeRunId points at the new child run; only then do the
+      // value / runDetail / finalized-run reads run against the new
+      // coordinate. Without the session refetch the banner stays stuck
+      // on the finalized run and the revision badge never appears.
+      await sessionResult.refetch();
+      await Promise.all([refreshValues(), refreshFinalizedRun(), refetchRun()]);
       toast.success('Extraction reopened for revision.');
     } catch (err) {
       toast.error(
@@ -276,7 +291,14 @@ export default function ExtractionFullScreen() {
     } finally {
       setReopening(false);
     }
-  }, [finalizedRun?.id, reopenMutation, refreshValues, refreshFinalizedRun]);
+  }, [
+    finalizedRun?.id,
+    reopenMutation,
+    sessionResult,
+    refreshValues,
+    refreshFinalizedRun,
+    refetchRun,
+  ]);
 
   // Hook para calcular progresso
   const { completedFields, totalFields, completionPercentage, isComplete } =
@@ -369,9 +391,16 @@ export default function ExtractionFullScreen() {
     onSuggestionRejected: handleAISuggestionRejected
   });
 
-  // Identificar model parent entity type
-  const modelParentEntityType = entityTypes.find(et => et.name === 'prediction_models');
-  
+  // Partition entity types into study-level + model container + per-model
+  // children by structural role. The partition function is the single
+  // source of truth — no more ``name === 'prediction_models'`` lookups
+  // sprinkled across the codebase.
+  const {
+    studyLevel: studyLevelSections,
+    modelContainer: modelParentEntityType,
+    modelChildren: modelChildSections,
+  } = useEntityTypePartition(entityTypes);
+
   // Hook para gerenciamento de modelos
   const {
     models,
@@ -410,17 +439,6 @@ export default function ExtractionFullScreen() {
   }, [articleId, models, activeModelId, setActiveModelId]);
 
   // =================== MEMOIZAÇÕES PARA PERFORMANCE ===================
-
-  // ✅ Memoizar entity types filtrados (evita recalcular a cada render)
-  const studyLevelSections = useMemo(
-    () => entityTypes.filter(et => !et.parent_entity_type_id && et.name !== 'prediction_models'),
-    [entityTypes]
-  );
-
-  const modelChildSections = useMemo(
-    () => entityTypes.filter(et => et.parent_entity_type_id === modelParentEntityType?.id),
-    [entityTypes, modelParentEntityType]
-  );
 
     // Memoize instance filter function (avoids recreating it)
   const getInstancesForModel = useCallback((entityTypeId: string, modelId: string) => {
@@ -1038,7 +1056,7 @@ export default function ExtractionFullScreen() {
           <div className="flex items-center gap-2">
             <HITLStatusBadges
               kind="extraction"
-              finalized={!activeRunId && !!finalizedRun}
+              finalized={isFinalized || (!activeRunId && !!finalizedRun)}
               parentRunId={parentRunId}
             />
             {runDetail ? (
@@ -1051,7 +1069,7 @@ export default function ExtractionFullScreen() {
           </div>
           <HITLReopenButton
             kind="extraction"
-            visible={!activeRunId && !!finalizedRun}
+            visible={isFinalized || (!activeRunId && !!finalizedRun)}
             onClick={() => void handleReopen()}
             reopening={reopening}
           />

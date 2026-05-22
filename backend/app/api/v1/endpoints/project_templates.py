@@ -16,20 +16,21 @@ lifecycle and is separate.
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
 
-from app.api.deps.security import get_current_user_sub
+from app.api.deps.security import get_current_user_sub, require_project_manager
 from app.core.deps import DbSession
-from app.models.extraction import (
-    ProjectExtractionTemplate,
-    TemplateKind,
-)
 from app.schemas.common import ApiResponse
 from app.schemas.hitl_session import (
     CloneTemplateRequest,
     CloneTemplateResponse,
+    TemplateKind,
     UpdateTemplateActiveRequest,
     UpdateTemplateActiveResponse,
+)
+from app.services.project_template_active_service import (
+    LastActiveExtractionTemplateError,
+    ProjectTemplateNotFoundError,
+    set_template_active,
 )
 from app.services.template_clone_service import (
     TemplateCloneService,
@@ -50,13 +51,7 @@ async def clone_template_into_project(
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[CloneTemplateResponse]:
-    """Clone a global template into the project (idempotent).
-
-    Used by the Configuration UI to enable a tool. For QA, the project can
-    have several rows enabled at once (PROBAST + QUADAS-2). For extraction,
-    the workflow today is one custom template per project, but the endpoint
-    accepts both kinds — the policy lives in the UI.
-    """
+    """Clone a global template into the project (idempotent)."""
     service = TemplateCloneService(db)
     try:
         result = await service.clone(
@@ -89,44 +84,25 @@ async def update_project_template_active(
     body: UpdateTemplateActiveRequest,
     request: Request,
     db: DbSession,
-    current_user_sub: UUID = Depends(get_current_user_sub),  # noqa: ARG001
+    _user_sub: UUID = Depends(require_project_manager),
 ) -> ApiResponse[UpdateTemplateActiveResponse]:
     """Toggle ``is_active`` on a project template.
 
     Disabling an extraction template that is the project's only active
-    extraction template returns 400 — the extraction workflow assumes a
-    single active template at all times. QA has no such constraint:
-    disabling the last QA template just means the project chose not to run
-    any QA tool at the moment.
+    extraction template returns 400 — see service for the invariant.
     """
-    tpl = await db.get(ProjectExtractionTemplate, template_id)
-    if tpl is None or tpl.project_id != project_id:
-        raise HTTPException(status_code=404, detail="Project template not found")
-
-    if tpl.kind == TemplateKind.EXTRACTION.value and body.is_active is False:
-        siblings_stmt = select(ProjectExtractionTemplate).where(
-            ProjectExtractionTemplate.project_id == project_id,
-            ProjectExtractionTemplate.kind == TemplateKind.EXTRACTION.value,
-            ProjectExtractionTemplate.is_active.is_(True),
-            ProjectExtractionTemplate.id != template_id,
+    try:
+        result = await set_template_active(
+            db,
+            project_id=project_id,
+            template_id=template_id,
+            is_active=body.is_active,
         )
-        other_active = (await db.execute(siblings_stmt)).scalars().first()
-        if other_active is None:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Cannot disable the only active extraction template for "
-                    "this project; import another extraction template first."
-                ),
-            )
-
-    tpl.is_active = body.is_active
-    await db.flush()
-    await db.commit()
+    except ProjectTemplateNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except LastActiveExtractionTemplateError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return ApiResponse.success(
-        UpdateTemplateActiveResponse(
-            project_template_id=tpl.id,
-            is_active=tpl.is_active,
-        ),
+        result,
         trace_id=getattr(request.state, "trace_id", None),
     )

@@ -1,6 +1,6 @@
 # prumo Development Guidelines
 
-Last updated: 2026-04-30
+Last updated: 2026-05-19
 
 ## Active Technologies
 
@@ -54,6 +54,55 @@ docs/                     # architecture/, superpowers/, planos/, ...
 
 ## Recent Changes
 
+- **2026-05-19**: **Final cleanup wave** following the role-column
+  migration (8 commits). Highlights: (a) migration `0017_backfill_role_in_snapshot`
+  patches pre-0016 snapshots so every `extraction_template_versions.schema_`
+  carries the role — no more divergence between live entity_types and
+  frozen snapshots; (b) `model_extraction_service` no longer hardcodes
+  `model_name`/`model_type`/`target_outcome` in the LLM prompt — the new
+  `app/services/llm/model_identification_prompt.py` module asks for a
+  neutral `name` (container label is sourced from template metadata),
+  so renaming fields in the Configuration tab doesn't break extraction;
+  (c) `seed.py` is now data-driven (`_EntitySpec` NamedTuple +
+  insertion helper — 300 lines saved); (d) `tests/factories/template_factory.py`
+  replaces raw-SQL `INSERT INTO extraction_entity_types` across 5 test
+  files (ORM-routed inserts exercise the role/parent CHECK + trigger);
+  (e) `useExtractionFormAIActions` hook groups the three AI extraction
+  hooks; (f) `EntityTypeWithFields` consolidated into
+  `ExtractionEntityTypeWithFields` shared type; (g) topological sort
+  uses `collections.deque` (O(1) popleft); (h) repository's
+  unused `get_by_name` removed, `get_by_role` no longer defensive
+  (uniqueness enforced by partial unique index from 0016).
+- **2026-05-18**: Promoted **entity type "role"** from convention to
+  schema column. Migration `0016_entity_role_column` adds
+  `extraction_entity_role` enum (`study_section` / `model_container` /
+  `model_section`), backfills every row, and locks the invariants with
+  a partial unique index (≤1 `model_container` per template), a CHECK
+  constraint (role ↔ parent coherence), and a deferred trigger
+  (`model_section` parent must be `model_container`). The
+  `name = 'prediction_models'` magic string is gone from every service
+  and component — `partitionEntityTypes`
+  (`frontend/lib/extraction/entityTypeRoles.ts`) and
+  `ExtractionEntityTypeRepository.get_by_role` are the only places that
+  know the role values. `TemplateCloneService` now topologically sorts
+  before insertion (no more implicit "parent must sort before child"
+  contract on `sort_order`), and the per-model render block was
+  extracted from `ExtractionFormView` into its own `ModelSection`
+  component. See `docs/architecture/extraction-hitl-architecture.md`
+  §4.1.
+- **2026-05-17**: CHARMS template split into **study-level** and
+  **per-model** sections (bumped to v1.1.0). Migration `0015_charms_studylevel_split`
+  reparents Source of Data, Participants, Outcome, Candidate Predictors,
+  Sample Size, Missing Data, and Observations to the root of the template
+  (and of every project clone), leaving Model Development, Final
+  Predictors, Performance, Validation, Results, and Interpretation under
+  `prediction_models`. Restores per-CHARMS-methodology behaviour where
+  study-level fields are entered once per article and per-model fields
+  are entered once per evaluated model. The migration also de-duplicates
+  pre-existing instances (keeps the oldest per `(article, entity_type)`,
+  CASCADE-drops the rest). The `sort_order` on the global template is
+  globally unique so `TemplateCloneService` continues to see parents
+  before children when iterating.
 - **2026-04-30**: Extraction **template import** uses
   `POST /api/v1/projects/{id}/templates/clone` only (no direct browser
   inserts into `project_extraction_templates`). `TemplateCloneService`

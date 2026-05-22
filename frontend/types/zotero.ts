@@ -26,6 +26,7 @@ export interface ZoteroCredentialsInput {
   zoteroUserId: string;
   apiKey: string;
   libraryType: 'user' | 'group';
+  [key: string]: unknown;
 }
 
 // =================== COLLECTIONS ===================

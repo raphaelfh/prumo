@@ -6,10 +6,13 @@ WORKDIR /app
 # Install uv for faster dependency installation
 RUN pip install --no-cache-dir uv
 
-# Copy dependency files
-COPY pyproject.toml ./
+# Copy dependency files + the package itself. hatchling resolves
+# `tool.hatch.build.targets.wheel.packages = ["app"]` at install time, so
+# the source tree must exist before `uv pip install -e .` runs.
+COPY pyproject.toml README.md ./
+COPY app ./app
 
-# Install dependencies
+# Install dependencies (editable so the runtime stage can reuse site-packages)
 RUN uv pip install --system --no-cache -e .
 
 # =================== RUNTIME STAGE ===================

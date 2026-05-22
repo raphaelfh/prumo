@@ -5,6 +5,7 @@ Endpoints for gerenciar API keys de provedores externos (OpenAI, Anthropic, etc.
 As keys sao criptografadas via Fernet in the aplicacao (mesmo padrao de ZoteroIntegration).
 """
 
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
@@ -33,7 +34,7 @@ async def list_api_keys(
     db: DbSession,
     user: CurrentUser,
     active_only: bool = True,
-) -> ApiResponse:
+) -> ApiResponse[dict[str, Any]]:
     """
     List API keys do user autenticado.
 
@@ -106,7 +107,7 @@ async def create_api_key(
     db: DbSession,
     user: CurrentUser,
     request: CreateAPIKeyRequest,
-) -> ApiResponse:
+) -> ApiResponse[dict[str, Any]]:
     """
     Create nova API key.
 
@@ -173,13 +174,25 @@ async def update_api_key(
     db: DbSession,
     user: CurrentUser,
     request: UpdateAPIKeyRequest,
-) -> ApiResponse:
+) -> ApiResponse[dict[str, Any]]:
     """
     Update uma API key existente.
 
     Permite alterar is_default, is_active and key_name.
     """
     service = APIKeyService(db=db, user_id=user.sub)
+
+    # Issue #31: refuse the inconsistent combination up front. `get_default`
+    # filters on `is_active = TRUE AND is_default = TRUE`, so a key that ends
+    # up `is_default=True, is_active=False` is invisible to the resolver but
+    # also blocks any future `set_default` (unset_default targets active
+    # rows). Treat this as a client error rather than silently producing a
+    # ghost default.
+    if request.is_default is True and request.is_active is False:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot set a key as default and inactive in the same request.",
+        )
 
     try:
         # Se esta marcando como default
@@ -194,6 +207,16 @@ async def update_api_key(
         # Se esta desativando
         if request.is_active is False:
             success = await service.deactivate_key(key_id)
+            if not success:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="API key not found",
+                )
+
+        # Issue #29 / #63: persist key_name updates (the schema has always
+        # exposed `keyName`, but the handler used to discard it).
+        if request.key_name is not None:
+            success = await service.update_key_name(key_id, request.key_name)
             if not success:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
@@ -233,7 +256,7 @@ async def update_api_key(
     summary="Listar provedores suportados",
     description="List os provedores de IA suportados.",
 )
-async def list_providers() -> ApiResponse:
+async def list_providers() -> ApiResponse[dict[str, Any]]:
     """
     List os provedores de IA suportados.
 
@@ -280,7 +303,7 @@ async def delete_api_key(
     key_id: UUID,
     db: DbSession,
     user: CurrentUser,
-) -> ApiResponse:
+) -> ApiResponse[dict[str, Any]]:
     """
     Remove permanentemente uma API key.
 
@@ -334,7 +357,7 @@ async def validate_api_key(
     key_id: UUID,
     db: DbSession,
     user: CurrentUser,
-) -> ApiResponse:
+) -> ApiResponse[dict[str, Any]]:
     """
     Revalida uma API key existente.
 

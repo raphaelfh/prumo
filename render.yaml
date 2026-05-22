@@ -15,6 +15,7 @@ services:
     buildCommand: pip install -e .
     # Gunicorn default worker timeout is 30s; template clone + DB round-trips to
     # Supabase often exceed that in production. Keep this >= frontend clone timeout.
+    # Only the web service runs Alembic — worker boots after migrations are done.
     startCommand: alembic upgrade head && gunicorn -k uvicorn.workers.UvicornWorker -w 1 -t 120 -b 0.0.0.0:$PORT app.main:app
     healthCheckPath: /health
     envVars:
@@ -37,3 +38,55 @@ services:
         value: false
       - key: PYTHON_VERSION
         value: 3.12.0
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: prumo-redis
+          property: connectionString
+
+  - type: worker
+    name: prumo-worker
+    runtime: python
+    rootDir: backend
+    branch: main
+    region: virginia
+    buildCommand: pip install -e .
+    # Celery worker. Listens on every named queue plus celery's default queue
+    # (export_tasks has no explicit route). Concurrency / prefetch come from
+    # the worker app config (see backend/app/worker/celery_app.py).
+    startCommand: celery -A app.worker.celery_app worker --loglevel=info --queues=extractions,imports,celery
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      # Keep encryption keyed identically to the web service — encrypted Zotero
+      # credentials must be readable across processes.
+      - key: ENCRYPTION_KEY
+        fromService:
+          type: web
+          name: prumo
+          envVarKey: ENCRYPTION_KEY
+      - key: DEBUG
+        value: false
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: prumo-redis
+          property: connectionString
+
+  - type: keyvalue
+    name: prumo-redis
+    region: virginia
+    plan: free
+    ipAllowList: []  # empty list = private network only, no public ingress

@@ -29,7 +29,8 @@ interface UseModelManagementProps {
   projectId: string;
   articleId: string;
   templateId: string;
-  modelParentEntityTypeId: string | null; // ID do entity_type "prediction_models"
+  /** ID of the template's model container entity type (role='model_container'). */
+  modelParentEntityTypeId: string | null;
   enabled?: boolean;
 }
 

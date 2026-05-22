@@ -56,6 +56,10 @@ export function useExtractionAutoSave(
   // Last successfully written value per `${instanceId}_${fieldId}`,
   // stringified so we can compare nested objects (selects, units, etc).
   const lastSavedByKey = useRef<Record<string, string>>({});
+  // Mutex guard — React state updates are async, so `isSaving` cannot be
+  // used to detect overlap. A ref is the only mutual-exclusion primitive
+  // that works across overlapping debounce/saveNow invocations.
+  const isSavingRef = useRef(false);
 
   useEffect(() => {
     if (!enabled || !runId) return;
@@ -68,28 +72,39 @@ export function useExtractionAutoSave(
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [values, enabled, runId]);
 
   const saveDiff = async () => {
     if (!runId) return;
+    // Concurrency guard — a previous saveDiff is still in flight. Bail
+    // out so the second writer can't read pre-update `lastSavedByKey`
+    // and re-POST the same proposals (duplicate row in
+    // ``extraction_proposal_records``).
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
     setIsSaving(true);
     setError(null);
 
     try {
       const dirty: Array<[string, any]> = [];
       for (const [key, value] of Object.entries(values)) {
-        if (value === null || value === undefined || value === '') continue;
-        const stringified = JSON.stringify(value);
+        // Skip `undefined` (field never touched) but treat `null` and
+        // `''` as deliberate clears — they must be persisted as
+        // `{ value: null }` proposals so reloads don't resurrect the
+        // previous value.
+        if (value === undefined) continue;
+        const stringified = JSON.stringify(value ?? null);
         if (lastSavedByKey.current[key] === stringified) continue;
         dirty.push([key, value]);
       }
       if (dirty.length === 0) {
-        setIsSaving(false);
         return;
       }
 
-      await Promise.all(
+      // ``Promise.allSettled`` so a single failed write does not abort
+      // the others mid-flight; otherwise their `lastSavedByKey` updates
+      // race the catch block and leave the diff map inconsistent.
+      const results = await Promise.allSettled(
         dirty.map(async ([key, valueData]) => {
           const [instanceId, fieldId] = key.split('_');
           const {
@@ -102,18 +117,34 @@ export function useExtractionAutoSave(
             : unit !== null && unit !== undefined
               ? { value: actualValue, unit }
               : actualValue;
+          // Treat empty-string clears as `null` on the wire so the
+          // backend records a deliberate "no value" proposal (#25);
+          // otherwise the JSONB column stores `""` and the reload still
+          // appears non-empty in the UI.
+          const normalized =
+            writeValue === '' || writeValue === undefined ? null : writeValue;
           await apiClient(`/api/v1/runs/${runId}/proposals`, {
             method: 'POST',
             body: {
               instance_id: instanceId,
               field_id: fieldId,
               source: 'human',
-              proposed_value: { value: writeValue ?? null },
+              proposed_value: { value: normalized },
             },
           });
-          lastSavedByKey.current[key] = JSON.stringify(valueData);
+          lastSavedByKey.current[key] = JSON.stringify(valueData ?? null);
         }),
       );
+
+      const failures = results.filter(
+        (r): r is PromiseRejectedResult => r.status === 'rejected',
+      );
+      if (failures.length > 0) {
+        const first = failures[0].reason;
+        const message =
+          first instanceof Error ? first.message : String(first ?? 'unknown');
+        throw new Error(message);
+      }
 
       setLastSaved(new Date());
     } catch (err: any) {
@@ -121,12 +152,18 @@ export function useExtractionAutoSave(
       setError(err.message || t('extraction', 'errors_autoSaveFailed'));
       toast.error(t('extraction', 'errors_autoSaveFailed'));
     } finally {
+      isSavingRef.current = false;
       setIsSaving(false);
     }
   };
 
   const saveNow = async () => {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    // Mirror the debounced path guard — callers may flush on unmount or
+    // navigation even when the run is read-only (finalized run, consensus
+    // view). Without this check, ``saveNow`` would POST proposals to a
+    // non-PROPOSAL run and surface a spurious error toast.
+    if (!enabled || !runId) return;
     await saveDiff();
   };
 

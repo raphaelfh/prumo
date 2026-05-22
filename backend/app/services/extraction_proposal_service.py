@@ -4,7 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionRun, ExtractionRunStage
+from app.models.extraction import ExtractionRunStage
 from app.models.extraction_workflow import (
     ExtractionProposalRecord,
     ExtractionProposalSource,
@@ -12,6 +12,7 @@ from app.models.extraction_workflow import (
 from app.repositories.extraction_proposal_repository import (
     ExtractionProposalRepository,
 )
+from app.services._extraction_run_lock import load_run_for_update
 from app.services.coordinate_coherence import assert_coords_coherent
 
 
@@ -38,7 +39,7 @@ class ExtractionProposalService:
         confidence_score: float | None = None,
         rationale: str | None = None,
     ) -> ExtractionProposalRecord:
-        run = await self.db.get(ExtractionRun, run_id)
+        run = await load_run_for_update(self.db, run_id)
         if run is None:
             raise InvalidProposalError(f"Run {run_id} not found")
 

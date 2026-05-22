@@ -109,6 +109,19 @@ async def test_manual_only_extraction_flow(db_session: AsyncSession) -> None:
         pytest.skip("Missing fixtures.")
     project_id, article_id, template_id, profile_id, instance_id, field_id = fx
 
+    # Clear ALL pre-existing runs for this coord so the session creates
+    # a fresh PROPOSAL run — the surrounding integration suite leaks
+    # runs in REVIEW/CONSENSUS/FINALIZED via committed HTTP calls. The
+    # transaction-scoped rollback at the end of this test will undo
+    # the cleanup along with the rest of our writes.
+    await db_session.execute(
+        text(
+            "DELETE FROM public.extraction_runs WHERE project_id = :pid "
+            "AND article_id = :aid AND template_id = :tid"
+        ),
+        {"pid": str(project_id), "aid": str(article_id), "tid": str(template_id)},
+    )
+
     # 1. Open session — backend creates / resumes a Run and parks it in PROPOSAL.
     session_service = HITLSessionService(db_session)
     session = await session_service.open_or_resume(

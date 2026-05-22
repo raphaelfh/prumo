@@ -1,0 +1,4 @@
+{"ts":"2026-05-19T23:32:00Z","run_id":"2026-05-19-2255-frontend-querykeys-dashboard","phase":"VERIFY","gate":"lint:tsc","duration_ms":1343,"exit_code":0}
+{"ts":"2026-05-19T23:32:10Z","run_id":"2026-05-19-2255-frontend-querykeys-dashboard","phase":"VERIFY","gate":"test:vitest","duration_ms":8500,"exit_code":0,"finding_count":0}
+{"ts":"2026-05-19T23:32:15Z","run_id":"2026-05-19-2255-frontend-querykeys-dashboard","phase":"VERIFY","gate":"fitness:check_react_query_keys","duration_ms":67,"exit_code":0,"new_violation_count":0,"baseline_size":2}
+{"ts":"2026-05-19T23:32:16Z","run_id":"2026-05-19-2255-frontend-querykeys-dashboard","phase":"CONVERGE","gate":"phase_summary","duration_ms":10000,"exit_code":0,"finding_count":2,"tokens_used":0,"subagent_calls":0,"retries":0,"resumed_from":null}

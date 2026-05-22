@@ -1,0 +1,4 @@
+{"ts":"2026-05-20T01:50:00Z","run_id":"2026-05-20-0130-querykeys-final","phase":"VERIFY","gate":"lint:tsc","duration_ms":1500,"exit_code":0}
+{"ts":"2026-05-20T01:50:01Z","run_id":"2026-05-20-0130-querykeys-final","phase":"VERIFY","gate":"test:vitest","duration_ms":12840,"exit_code":0,"finding_count":0}
+{"ts":"2026-05-20T01:50:02Z","run_id":"2026-05-20-0130-querykeys-final","phase":"VERIFY","gate":"fitness:check_react_query_keys","duration_ms":99,"exit_code":0,"new_violation_count":0,"baseline_size":0}
+{"ts":"2026-05-20T01:50:03Z","run_id":"2026-05-20-0130-querykeys-final","phase":"CONVERGE","gate":"phase_summary","duration_ms":15000,"exit_code":0,"finding_count":2,"tokens_used":0,"subagent_calls":0,"retries":0,"resumed_from":null}

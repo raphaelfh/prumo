@@ -60,6 +60,31 @@ class ExtractionCardinality(str, PyEnum):
     MANY = "many"
 
 
+class ExtractionEntityRole(str, PyEnum):
+    """Structural role of an entity type within a template.
+
+    Replaces the previous convention of identifying the "prediction models"
+    container by ``name='prediction_models'`` (a magic string scattered
+    across services and the frontend). The role makes the structural
+    intent first-class in the schema:
+
+    * ``STUDY_SECTION`` — root entity type (``parent_entity_type_id IS NULL``).
+      Rendered as a top-level accordion, filled once per article.
+    * ``MODEL_CONTAINER`` — root, ``cardinality='many'``. Drives the
+      model selector UI. At most one per template (enforced by partial
+      unique index).
+    * ``MODEL_SECTION`` — child of a ``MODEL_CONTAINER``. Rendered once
+      per model instance; only meaningful when a model is active.
+
+    Database CHECK constraints enforce parent/role coherence (see
+    migration ``0016_entity_role_column``).
+    """
+
+    STUDY_SECTION = "study_section"
+    MODEL_CONTAINER = "model_container"
+    MODEL_SECTION = "model_section"
+
+
 class ExtractionRunStage(str, PyEnum):
     """Estagio da execucao de extraction (HITL lifecycle)."""
 
@@ -244,6 +269,16 @@ class ExtractionEntityType(BaseModel):
     cardinality: Mapped[str] = mapped_column(
         PostgreSQLEnumType("extraction_cardinality"),
         default="one",
+        nullable=False,
+    )
+
+    # Structural discriminant — see ``ExtractionEntityRole``. Replaces the
+    # legacy practice of identifying the model container by
+    # ``name='prediction_models'``.
+    role: Mapped[str] = mapped_column(
+        PostgreSQLEnumType("extraction_entity_role"),
+        default=ExtractionEntityRole.STUDY_SECTION.value,
+        server_default=ExtractionEntityRole.STUDY_SECTION.value,
         nullable=False,
     )
 

@@ -1,0 +1,10 @@
+# Layered-architecture violations on the current tree, grandfathered.
+# Format: <repo-relative-file>:<full-import-module> (line-independent).
+# Empty line OK. # comments OK.
+#
+# (Empty as of run 2026-05-20-0100-layered-arch-final — every endpoint now
+# imports only services + schemas + core + cross-cutting support modules.
+# The previous 13 grandfathered entries have all been closed across runs
+# 2026-05-19-2010 (TOCTOU work, no edits), 2026-05-20-0030 (extraction_runs
+# refactor: 6), 2026-05-20-0100 (this run: 7 in 6 small endpoints + the
+# TemplateKind/UnitOfWork re-exports + 3 new read services).)

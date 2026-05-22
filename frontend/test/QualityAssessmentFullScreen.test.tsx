@@ -1,7 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("sonner", () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+  Toaster: () => null,
+}));
 
 import QualityAssessmentFullScreen from "@/pages/QualityAssessmentFullScreen";
 
@@ -249,5 +255,36 @@ describe("QualityAssessmentFullScreen", () => {
       // Re-running AI should preserve user-entered values by default.
       expect(lastBody.skipFieldsWithHumanProposals).toBe(true);
     });
+  });
+
+  it("Publish with no values shows error toast and does NOT advance the run", async () => {
+    // BUG-001 regression: clicking "Publish assessment" when no fields are
+    // filled previously advanced the run through review → consensus →
+    // finalized without writing any consensus, producing a "Published"
+    // run with zero PublishedState rows. The preflight check now blocks
+    // this before any backend write.
+    const { apiClient } = (await import(
+      "@/integrations/api"
+    )) as unknown as { apiClient: ReturnType<typeof vi.fn> };
+    apiClient.mockClear();
+    (toast.error as ReturnType<typeof vi.fn>).mockClear();
+
+    renderPage();
+    const button = await screen.findByTestId("qa-publish-button");
+    await waitFor(() => expect(button).not.toBeDisabled());
+    button.click();
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        expect.stringMatching(/at least one signaling question/i),
+      );
+    });
+
+    // Crucially, no advance / consensus calls were made.
+    const sideEffects = apiClient.mock.calls.filter(([url]) =>
+      typeof url === "string"
+        && (url.includes("/advance") || url.includes("/consensus")),
+    );
+    expect(sideEffects).toHaveLength(0);
   });
 });

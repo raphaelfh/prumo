@@ -1,0 +1,20 @@
+# Grandfathered endpoints that do not return ApiResponse[T] with a strongly
+# typed T.
+# Format: <repo-relative-file>:<function-name> (line-independent).
+#
+# Tightened on 2026-05-20-0200: the check now rejects ApiResponse[dict],
+# ApiResponse[dict[K, V]], ApiResponse[Any], ApiResponse[object] — they
+# satisfy the structural check but give consumers (and generated SDKs)
+# no real schema. The 9 endpoints below were typed with
+# ApiResponse[dict[str, Any]] in the earlier envelope-batch run as a
+# stopgap; each needs a dedicated Pydantic response model in a follow-up.
+
+backend/app/api/v1/endpoints/model_extraction.py:extract_models
+backend/app/api/v1/endpoints/section_extraction.py:extract_section
+backend/app/api/v1/endpoints/user_api_keys.py:list_api_keys
+backend/app/api/v1/endpoints/user_api_keys.py:create_api_key
+backend/app/api/v1/endpoints/user_api_keys.py:update_api_key
+backend/app/api/v1/endpoints/user_api_keys.py:list_providers
+backend/app/api/v1/endpoints/user_api_keys.py:delete_api_key
+backend/app/api/v1/endpoints/user_api_keys.py:validate_api_key
+backend/app/api/v1/endpoints/zotero_import.py:zotero_action

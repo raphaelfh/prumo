@@ -140,4 +140,14 @@ omit = [
 [dependency-groups]
 dev = [
     "pytest-asyncio>=1.3.0",
+    "mutmut>=3.0",
 ]
+
+[tool.mutmut]
+# Mutation testing — used by `scripts/run_mutation_tests.sh` and the weekly
+# CI cron job. Scoped to extraction services because they are the most
+# regression-prone path in prumo's HITL stack.
+paths_to_mutate = "app/services/extraction_consensus_service.py,app/services/extraction_proposal_service.py,app/services/extraction_review_service.py"
+runner = "uv run pytest -x -q"
+tests_dir = "tests/unit"
+backup = false

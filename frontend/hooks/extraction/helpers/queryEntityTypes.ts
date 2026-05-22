@@ -66,10 +66,22 @@ export async function queryEntityTypesWithFallback<T = any>(
     return query;
   };
 
-  // Tentar primeiro project_template_id (template de projeto)
-  let { data: results, error } = await buildQuery(true);
+  // Try the project_template_id query first. Critically: surface DB
+  // errors BEFORE entering the fallback path. The previous code only
+  // checked `!results`, which is true on both "no rows" *and* "DB
+  // error returned null data" — so an RLS denial silently fell
+  // through to the global-template query and returned the wrong
+  // field set (#72).
+  const projectResult = await buildQuery(true);
+  if (projectResult.error) {
+    throw new Error(
+      `Failed to query entity types: ${projectResult.error.message}`,
+    );
+  }
 
-    // If not found, try template_id (global template)
+  let results = projectResult.data;
+
+  // Only fall back when the first query genuinely returned zero rows.
   if (!results || results.length === 0) {
     const { data: globalResults, error: globalError } = await buildQuery(false);
 
@@ -78,11 +90,6 @@ export async function queryEntityTypesWithFallback<T = any>(
     }
 
     results = globalResults;
-    error = null;
-  }
-
-  if (error) {
-    throw new Error(`Failed to query entity types: ${error.message}`);
   }
 
   return (results || []) as T[];

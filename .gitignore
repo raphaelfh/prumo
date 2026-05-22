@@ -167,3 +167,8 @@ supabase/.branches/*
 
 /.ai/mcp/mcp.json
 .playwright-mcp/
+
+# Claude Code local artifacts (skill cache, isolated worktrees, superpowers shim)
+.claude/skills/
+.claude/worktrees/
+.superpowers/

@@ -11,10 +11,9 @@ import {server} from './mocks/server';
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Vi {
-
+      // eslint-disable-next-line @typescript-eslint/no-empty-object-type
       interface JestAssertion<T = any>
-      extends jest.Matchers<void, T>,
-        jest.Matchers<Promise<void>, T> {}
+      extends jest.Matchers<Promise<void>, T> {}
   }
 }
 
@@ -60,14 +59,18 @@ global.ResizeObserver = class ResizeObserver {
 
 // Mock IntersectionObserver (needed for lazy loading)
 global.IntersectionObserver = class IntersectionObserver {
+  root: Element | Document | null = null;
+  rootMargin: string = '';
+  thresholds: ReadonlyArray<number> = [];
   constructor() {}
   observe() {}
   unobserve() {}
   disconnect() {}
+  takeRecords(): IntersectionObserverEntry[] { return []; }
 };
 
 // Mock PDF.js (needed for PDF components)
-global.pdfjsLib = {
+(globalThis as Record<string, unknown>).pdfjsLib = {
   GlobalWorkerOptions: {
     workerSrc: '',
   },
@@ -82,4 +85,4 @@ global.pdfjsLib = {
       }),
     }),
   }),
-} as any;
+} as unknown;

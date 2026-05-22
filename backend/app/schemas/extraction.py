@@ -255,6 +255,10 @@ class ExtractionEntityTypeSchema(BaseModel):
     label: str
     description: str | None = None
     cardinality: Literal["one", "many"]
+    # ``role`` is the structural discriminant the frontend partitions on
+    # (study-level accordions vs model container vs per-model children).
+    # See ``ExtractionEntityRole`` and migration ``0016_entity_role_column``.
+    role: Literal["study_section", "model_container", "model_section"] = "study_section"
     is_required: bool = Field(default=False, alias="isRequired")
     sort_order: int = Field(default=0, alias="sortOrder")
     parent_entity_type_id: UUID | None = Field(default=None, alias="parentEntityTypeId")

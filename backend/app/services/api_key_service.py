@@ -265,6 +265,28 @@ class APIKeyService(LoggerMixin):
 
         return success
 
+    async def update_key_name(self, key_id: str | UUID, key_name: str | None) -> bool:
+        """
+        Update the display name of an API key.
+
+        Args:
+            key_id: Key ID.
+            key_name: New display name (None clears it).
+
+        Returns:
+            True if a row was updated.
+        """
+        success = await self._repo.update_key_name(key_id, self.user_id, key_name)
+
+        if success:
+            self.logger.info(
+                "api_key_renamed",
+                user_id=str(self.user_id),
+                key_id=str(key_id),
+            )
+
+        return success
+
     async def deactivate_key(self, key_id: str | UUID) -> bool:
         """
         Deactivate an API key.

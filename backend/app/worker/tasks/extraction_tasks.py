@@ -161,7 +161,13 @@ def extract_models_task(
                     "models": [
                         {
                             "instance_id": m.get("instanceId") or m.get("instance_id"),
-                            "model_name": m.get("modelName") or m.get("model_name"),
+                            # Public API contract keeps "model_name" as
+                            # the key; internal sources may use either
+                            # the new neutral "name" or the legacy
+                            # "modelName"/"model_name".
+                            "model_name": (
+                                m.get("name") or m.get("modelName") or m.get("model_name")
+                            ),
                             "model_type": (
                                 m.get("modellingMethod")
                                 or m.get("modelType")

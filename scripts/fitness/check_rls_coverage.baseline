@@ -1,0 +1,3 @@
+# Tables (extraction_* / project_*) known to be without a CREATE POLICY on
+# the current tree. Each entry is a real architectural finding.
+# Format: one bare table name per line. # comments OK. Empty lines OK.

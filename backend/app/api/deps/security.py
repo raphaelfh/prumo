@@ -22,6 +22,27 @@ async def get_current_user_sub(user: CurrentUser) -> UUID:
         )
 
 
+async def ensure_project_member(db: DbSession, project_id: UUID, user_sub: UUID) -> None:
+    """Enforce project-membership at the API layer.
+
+    The DB session runs as service-role (RLS bypassed); enforce membership
+    manually using the same SQL helper the RLS policies use. Plain async
+    helper (not a FastAPI dependency) so callers can pass a ``project_id``
+    sourced from the request body — see hitl_sessions / extraction_runs.
+    """
+    is_member = (
+        await db.execute(
+            text("SELECT public.is_project_member(:pid, :uid) AS ok"),
+            {"pid": str(project_id), "uid": str(user_sub)},
+        )
+    ).scalar_one()
+    if not is_member:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Project access denied",
+        )
+
+
 async def require_project_scope(
     project_id: UUID,
     db: DbSession,

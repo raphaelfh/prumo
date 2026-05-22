@@ -104,8 +104,8 @@ async def test_alembic_head_is_expected_revision() -> None:
     out = _run_alembic("current")
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0006_article_text_blocks" in out, (
-        f"Expected head revision '0006_article_text_blocks', got:\n{out}"
+    assert "0017_backfill_role_in_snapshot" in out, (
+        f"Expected head revision '0017_backfill_role_in_snapshot', got:\n{out}"
     )
 
 

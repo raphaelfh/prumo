@@ -1,12 +1,15 @@
 /**
- * Helper to fetch top-level (study-level) sections
+ * Helper to fetch study-level (top-level) sections.
  *
- * Top-level sections are entity_types that:
- * - Have parent_entity_type_id = null (not children of other entity_types)
- * - Are NOT prediction_models (name != 'prediction_models')
- * - May have cardinality = 'one' or 'many'
- * - Are linked directly to the article (no parentInstanceId)
+ * Study-level sections are entity types with ``role = 'study_section'``
+ * — rendered as a top-level accordion, filled once per article. The
+ * filter used to spell this as ``parent_entity_type_id IS NULL AND name
+ * <> 'prediction_models'``; migration ``0016_entity_role_column``
+ * promoted the concept to a column, so this stays in sync with the rest
+ * of the form by reading the role directly.
  */
+
+import {ENTITY_ROLE} from '@/lib/extraction/entityTypeRoles';
 
 import {queryEntityTypesWithFallback} from './queryEntityTypes';
 
@@ -18,10 +21,8 @@ export interface TopLevelSection {
 }
 
 /**
- * Fetches all top-level sections of the template
- *
- * @param templateId - Template ID
- * @returns Array of top-level sections ordered by sort_order
+ * Fetches all study-level sections of the template, ordered by
+ * ``sort_order`` (display order).
  */
 export async function getTopLevelSections(
   templateId: string,
@@ -29,9 +30,7 @@ export async function getTopLevelSections(
   return queryEntityTypesWithFallback<TopLevelSection>({
     templateId,
     select: 'id, name, label, sort_order',
-    filters: (query) => query
-      .is('parent_entity_type_id', null)
-      .neq('name', 'prediction_models'),
+    filters: (query) => query.eq('role', ENTITY_ROLE.STUDY_SECTION),
   });
 }
 

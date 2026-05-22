@@ -1,0 +1,8 @@
+{"ts":"2026-05-19T23:19:14Z","phase":"fitness","gate":"check_migration_split.sh","duration_ms":45,"exit_code":0}
+{"ts":"2026-05-19T23:19:14Z","phase":"fitness","gate":"check_legacy_concepts.py","duration_ms":65,"exit_code":0}
+{"ts":"2026-05-19T23:18:30Z","run_id":"2026-05-19-2010-extraction-services","phase":"SCAN","gate":"subagent:concept-drift","duration_ms":42000,"exit_code":0,"finding_count":0,"tokens_used":3200,"subagent_calls":1,"retries":0}
+{"ts":"2026-05-19T23:18:30Z","run_id":"2026-05-19-2010-extraction-services","phase":"SCAN","gate":"subagent:layered-arch","duration_ms":38000,"exit_code":0,"finding_count":0,"tokens_used":2800,"subagent_calls":1,"retries":0}
+{"ts":"2026-05-19T23:18:30Z","run_id":"2026-05-19-2010-extraction-services","phase":"SCAN","gate":"subagent:security","duration_ms":56000,"exit_code":0,"finding_count":4,"tokens_used":4800,"subagent_calls":1,"retries":0}
+{"ts":"2026-05-19T23:18:30Z","run_id":"2026-05-19-2010-extraction-services","phase":"SCAN","gate":"subagent:legacy-spotter","duration_ms":48000,"exit_code":0,"finding_count":0,"tokens_used":3600,"subagent_calls":1,"retries":0}
+{"ts":"2026-05-19T23:18:30Z","run_id":"2026-05-19-2010-extraction-services","phase":"SCAN","gate":"subagent:test-gaps","duration_ms":62000,"exit_code":0,"finding_count":2,"tokens_used":5200,"subagent_calls":1,"retries":0}
+{"ts":"2026-05-19T23:18:30Z","run_id":"2026-05-19-2010-extraction-services","phase":"SCAN","gate":"phase_summary","duration_ms":68000,"exit_code":0,"finding_count":6,"tokens_used":19600,"subagent_calls":5,"retries":0,"resumed_from":null}

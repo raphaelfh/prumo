@@ -174,22 +174,6 @@ export function logTemplateDebug(
 }
 
 /**
- * Ensures we use project_template_id in queries
- *
- * @deprecated Use validateProjectTemplateId() for more robust validation
- */
-export function ensureProjectTemplateId(templateId: string): void {
-    console.warn('ensureProjectTemplateId() is deprecated. Use validateProjectTemplateId() for full validation.');
-  
-  if (!templateId) {
-      throw new Error('Template ID cannot be empty');
-  }
-
-    // Basic log for debug
-    console.warn(`🔍 Template ID in use: ${templateId}`);
-}
-
-/**
  * Gets the active template for a project
  */
 export async function getActiveProjectTemplate(projectId: string): Promise<{

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction import (
     ExtractionCardinality,
+    ExtractionEntityRole,
     ExtractionEntityType,
     ExtractionField,
     ExtractionInstance,
@@ -15,8 +16,9 @@ from app.models.extraction import (
     ExtractionRunStage,
     ProjectExtractionTemplate,
 )
-from app.models.extraction_workflow import ExtractionProposalSource
 from app.models.extraction_versioning import TemplateKind
+from app.models.extraction_workflow import ExtractionProposalSource
+from app.repositories.extraction_repository import ExtractionTemplateRepository
 from app.services.extraction_proposal_service import ExtractionProposalService
 
 
@@ -140,14 +142,21 @@ class ModelHierarchyService:
             proposal_run_id=proposal_run_id,
         )
 
-    async def _prediction_models_entity_type(self, template_id: UUID) -> ExtractionEntityType | None:
-        stmt = select(ExtractionEntityType).where(
-            ExtractionEntityType.project_template_id == template_id,
-            ExtractionEntityType.name == "prediction_models",
+    async def _prediction_models_entity_type(
+        self, template_id: UUID
+    ) -> ExtractionEntityType | None:
+        # Migration 0016 promoted the "prediction_models" magic name to the
+        # ``extraction_entity_role`` enum; the partial unique index guarantees
+        # at most one MODEL_CONTAINER per template.
+        return await ExtractionTemplateRepository(self.db).get_by_role(
+            role=ExtractionEntityRole.MODEL_CONTAINER.value,
+            template_id=template_id,
+            is_project_template=True,
         )
-        return (await self.db.execute(stmt)).scalars().first()
 
-    async def _model_singleton_children(self, parent_entity_type_id: UUID) -> list[ExtractionEntityType]:
+    async def _model_singleton_children(
+        self, parent_entity_type_id: UUID
+    ) -> list[ExtractionEntityType]:
         stmt = (
             select(ExtractionEntityType)
             .where(

@@ -346,6 +346,20 @@ export default function QualityAssessmentFullScreen() {
   }, [session?.runId, reopenMutation, refetchSession]);
   const handlePublish = useCallback(async () => {
     if (!session || !runDetail) return;
+
+    // Preflight: an empty publish has no semantic meaning — the run would
+    // reach FINALIZED with zero PublishedState rows. Bail out before any
+    // stage-advance side-effect so the run is not left half-progressed.
+    const filled = Object.entries(values).filter(
+      ([, v]) => v !== undefined && v !== null && v !== "",
+    );
+    if (filled.length === 0) {
+      toast.error(
+        "Fill at least one signaling question before publishing.",
+      );
+      return;
+    }
+
     setPublishing(true);
     try {
       const stage = runDetail.run.stage;
@@ -361,9 +375,6 @@ export default function QualityAssessmentFullScreen() {
       // Manual-override consensus per filled (instance, field) — writes the
       // value directly to PublishedState without requiring a per-field
       // ReviewerDecision row.
-      const filled = Object.entries(values).filter(
-        ([, v]) => v !== undefined && v !== null && v !== "",
-      );
       for (const [k, v] of filled) {
         const [instanceId, fieldId] = k.split("::");
         await consensusMutation.mutateAsync({

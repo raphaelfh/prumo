@@ -129,7 +129,11 @@ export async function createInitialInstances(
           created_by: userId,
         });
 
-      if (insertError && !insertError.message.includes('duplicate')) {
+      // Detect unique-constraint violations by PostgreSQL SQLSTATE, not by
+      // matching the human-readable message — `lc_messages` is locale-dependent
+      // and other errors can incidentally contain the word "duplicate".
+      // PostgreSQL `unique_violation` is SQLSTATE 23505.
+      if (insertError && insertError.code !== '23505') {
         throw insertError;
       }
     }

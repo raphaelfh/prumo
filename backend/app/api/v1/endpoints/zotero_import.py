@@ -20,7 +20,7 @@ from app.core.deps import CurrentUser, DbSession, SupabaseClient
 from app.core.error_handler import AppError, AuthorizationError, NotFoundError
 from app.core.factories import create_storage_adapter
 from app.core.logging import get_logger
-from app.repositories.unit_of_work import UnitOfWork
+from app.core.transactions import UnitOfWork
 from app.schemas.common import ApiResponse
 from app.schemas.zotero import (
     DownloadAttachmentRequest,
@@ -79,7 +79,7 @@ async def zotero_action(
     user: CurrentUser,
     supabase: SupabaseClient,
     body: dict[str, Any] | None = None,
-) -> ApiResponse:
+) -> ApiResponse[dict[str, Any]]:
     """
     Executa uma acao de integracao with Zotero.
 
