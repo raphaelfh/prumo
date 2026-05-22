@@ -89,6 +89,12 @@ export function useExtractionSession({
       });
     } catch (err) {
       if (myGeneration !== generationRef.current) return;
+      // Surface the failure to the console — the page only renders
+      // ``error`` inline if the form is already mounted, but the
+      // extraction route gates rendering on ``valuesLoading`` until the
+      // session resolves. Without this log a silent backend rejection
+      // (BOLA, 401, 404) is invisible to support.
+      console.error("[useExtractionSession] open() failed:", err);
       setError(
         err instanceof Error
           ? err.message
