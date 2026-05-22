@@ -360,6 +360,35 @@ async def test_patch_template_active_403_for_non_member(
     assert res.status_code == 403, res.text
 
 
+# =================== POST /projects/{id}/templates/clone ===================
+
+
+@pytest.mark.asyncio
+async def test_clone_template_403_for_non_member(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    outsider_user: UUID,
+) -> None:
+    """Cloning a template into a project must reject non-managers (BOLA guard).
+
+    Any ``global_template_id`` works — ``require_project_manager`` fires
+    before the service lookup, so the response is 403, not 404.
+    """
+    fx = await _pick_template_for_outsider(db_session, outsider_user)
+    if fx is None:
+        pytest.skip("Need a template in a project the outsider does not belong to")
+    _template_id, project_id = fx
+
+    res = await db_client.post(
+        f"/api/v1/projects/{project_id}/templates/clone",
+        json={
+            "global_template_id": str(uuid.uuid4()),
+            "kind": "extraction",
+        },
+    )
+    assert res.status_code == 403, res.text
+
+
 # =================== #28: DELETE /articles-export/status/{job_id} ===================
 
 

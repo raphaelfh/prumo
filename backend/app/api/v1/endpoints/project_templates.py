@@ -17,7 +17,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from app.api.deps.security import get_current_user_sub, require_project_manager
+from app.api.deps.security import require_project_manager
 from app.core.deps import DbSession
 from app.schemas.common import ApiResponse
 from app.schemas.hitl_session import (
@@ -49,9 +49,14 @@ async def clone_template_into_project(
     body: CloneTemplateRequest,
     request: Request,
     db: DbSession,
-    current_user_sub: UUID = Depends(get_current_user_sub),
+    current_user_sub: UUID = Depends(require_project_manager),
 ) -> ApiResponse[CloneTemplateResponse]:
-    """Clone a global template into the project (idempotent)."""
+    """Clone a global template into the project (idempotent).
+
+    Restricted to project managers — cloning materializes new rows in
+    ``project_extraction_templates`` and ``extraction_template_versions``,
+    which is project-wide configuration, matching the PATCH endpoint below.
+    """
     service = TemplateCloneService(db)
     try:
         result = await service.clone(
