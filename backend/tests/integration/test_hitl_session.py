@@ -9,7 +9,7 @@ Covers both kinds the endpoint accepts:
 """
 
 from collections.abc import AsyncGenerator
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
@@ -43,6 +43,189 @@ async def auth_as_profile(
 
     app.dependency_overrides[get_current_user] = override_get_current_user
     yield profile_id
+
+
+@pytest_asyncio.fixture
+async def home_project_fixture(
+    db_session: AsyncSession,
+) -> AsyncGenerator[tuple[UUID, UUID, UUID, UUID, UUID], None]:
+    """Yield ``(profile_id, project_id, article_id, extraction_tpl_id, qa_tpl_id)``
+    for an extraction-ready setup the JWT profile manages.
+
+    Replaces the ``pytest.skip("Need an article + ...")`` paths in the
+    BOLA + snapshot tests so CI — which seeds only the global templates —
+    exercises them instead of skipping. Reuses the dev-DB rows when they
+    already line up (profile is a member of a project that owns one
+    article + an extraction template + a QA template); fabricates them
+    and cleans up otherwise.
+
+    Sets up its own ``get_current_user`` override, so a test that uses
+    this fixture must NOT also depend on ``auth_as_profile`` — the two
+    would race over ``app.dependency_overrides``.
+    """
+    raw = (await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
+    if raw is not None:
+        profile_id = UUID(str(raw))
+        seeded_profile = False
+    else:
+        # Materialise a profile via auth.users — the handle_new_user
+        # trigger creates the matching public.profiles row.
+        profile_id = uuid4()
+        await db_session.execute(
+            text(
+                "INSERT INTO auth.users (id, email, instance_id, aud, role) "
+                "VALUES (:id, :email, "
+                "'00000000-0000-0000-0000-000000000000', "
+                "'authenticated', 'authenticated')"
+            ),
+            {
+                "id": str(profile_id),
+                "email": f"ci-home-{profile_id.hex[:8]}@hitl-test.local",
+            },
+        )
+        await db_session.commit()
+        confirmed = (
+            await db_session.execute(
+                text("SELECT id FROM public.profiles WHERE id = :id"),
+                {"id": str(profile_id)},
+            )
+        ).scalar()
+        if confirmed is None:
+            # Trigger absent (degraded test DB) — create the profile by hand.
+            await db_session.execute(
+                text("INSERT INTO public.profiles (id, full_name) VALUES (:id, 'CI Home Profile')"),
+                {"id": str(profile_id)},
+            )
+            await db_session.commit()
+        seeded_profile = True
+
+    async def override_get_current_user() -> TokenPayload:
+        return TokenPayload(
+            sub=str(profile_id),
+            email="ci-home@hitl-test.local",
+            role="authenticated",
+            aal="aal1",
+        )
+
+    app.dependency_overrides[get_current_user] = override_get_current_user
+
+    # Reuse a (project, article, extraction_tpl, qa_tpl) tuple the
+    # profile manages, when dev DB already has one.
+    existing = (
+        await db_session.execute(
+            text(
+                """
+                SELECT pet.project_id, a.id, pet.id, qa.id
+                FROM public.project_extraction_templates pet
+                JOIN public.articles a ON a.project_id = pet.project_id
+                JOIN public.project_members pm
+                  ON pm.project_id = pet.project_id AND pm.user_id = :uid
+                JOIN public.project_extraction_templates qa
+                  ON qa.project_id = pet.project_id
+                 AND qa.kind = 'quality_assessment'
+                WHERE pet.kind = 'extraction'
+                LIMIT 1
+                """
+            ),
+            {"uid": str(profile_id)},
+        )
+    ).first()
+
+    if existing is not None:
+        project_id = UUID(str(existing[0]))
+        article_id = UUID(str(existing[1]))
+        extraction_tpl_id = UUID(str(existing[2]))
+        qa_tpl_id = UUID(str(existing[3]))
+        seeded_project = False
+    else:
+        project_id = uuid4()
+        article_id = uuid4()
+        extraction_tpl_id = uuid4()
+        qa_tpl_id = uuid4()
+
+        await db_session.execute(
+            text(
+                "INSERT INTO public.projects (id, name, created_by_id) VALUES (:pid, :name, :uid)"
+            ),
+            {
+                "pid": str(project_id),
+                "name": f"ci-home-{project_id.hex[:8]}",
+                "uid": str(profile_id),
+            },
+        )
+        await db_session.execute(
+            text(
+                "INSERT INTO public.project_members (project_id, user_id, role) "
+                "VALUES (:pid, :uid, 'manager')"
+            ),
+            {"pid": str(project_id), "uid": str(profile_id)},
+        )
+        await db_session.execute(
+            text("INSERT INTO public.articles (id, project_id, title) VALUES (:aid, :pid, :title)"),
+            {
+                "aid": str(article_id),
+                "pid": str(project_id),
+                "title": f"ci-home-article-{article_id.hex[:8]}",
+            },
+        )
+        for tpl_id, kind in (
+            (extraction_tpl_id, "extraction"),
+            (qa_tpl_id, "quality_assessment"),
+        ):
+            await db_session.execute(
+                text(
+                    """
+                    INSERT INTO public.project_extraction_templates
+                        (id, project_id, name, kind, framework, is_active, created_by)
+                    VALUES
+                        (:tid, :pid, :name, CAST(:kind AS template_kind),
+                         'CUSTOM', true, :uid)
+                    """
+                ),
+                {
+                    "tid": str(tpl_id),
+                    "pid": str(project_id),
+                    "name": f"ci-{kind}-{tpl_id.hex[:8]}",
+                    "kind": kind,
+                    "uid": str(profile_id),
+                },
+            )
+            # Migration 0004's deferred trigger refuses to commit a
+            # project_extraction_template without an active version row.
+            await db_session.execute(
+                text(
+                    """
+                    INSERT INTO public.extraction_template_versions
+                        (project_template_id, version, schema, published_by, is_active)
+                    VALUES (:tid, 1, '{}'::jsonb, :uid, true)
+                    """
+                ),
+                {"tid": str(tpl_id), "uid": str(profile_id)},
+            )
+        await db_session.commit()
+        seeded_project = True
+
+    try:
+        yield profile_id, project_id, article_id, extraction_tpl_id, qa_tpl_id
+    finally:
+        if seeded_project:
+            # CASCADE wipes articles + members + templates + versions.
+            await db_session.execute(
+                text("DELETE FROM public.projects WHERE id = :pid"),
+                {"pid": str(project_id)},
+            )
+            await db_session.commit()
+        if seeded_profile:
+            await db_session.execute(
+                text("DELETE FROM public.profiles WHERE id = :id"),
+                {"id": str(profile_id)},
+            )
+            await db_session.execute(
+                text("DELETE FROM auth.users WHERE id = :id"),
+                {"id": str(profile_id)},
+            )
+            await db_session.commit()
+        app.dependency_overrides.pop(get_current_user, None)
 
 
 async def _pick_qa_global_template(db: AsyncSession) -> UUID | None:
@@ -411,8 +594,6 @@ async def _make_isolated_project(
     Returns the new ``project_id``. The caller is responsible for cleanup
     if needed.
     """
-    from uuid import uuid4
-
     project_id = uuid4()
     await db.execute(
         text(
@@ -441,8 +622,6 @@ async def _make_isolated_project(
 
 
 async def _make_article_in(db: AsyncSession, *, project_id: UUID) -> UUID:
-    from uuid import uuid4
-
     article_id = uuid4()
     await db.execute(
         text(
@@ -464,7 +643,7 @@ async def _make_article_in(db: AsyncSession, *, project_id: UUID) -> UUID:
 async def test_session_rejects_article_from_another_project(
     db_client: AsyncClient,
     db_session: AsyncSession,
-    auth_as_profile: UUID,
+    home_project_fixture: tuple[UUID, UUID, UUID, UUID, UUID],
 ) -> None:
     """BOLA defense (f_001 / f_002): a caller authenticated for project P_A
     must not be able to open a HITL session that points at an article owned
@@ -473,17 +652,13 @@ async def test_session_rejects_article_from_another_project(
     legitimate manager of one project create instances/runs that reference
     another project's article. Must surface as a 400.
     """
-    home = await _pick_article(db_session)
-    home_template = await _pick_extraction_project_template(db_session)
-    if home is None or home_template is None:
-        pytest.skip("Need an article + extraction template in the home project")
-    _home_article_id, home_project_id = home
+    profile_id, home_project_id, _home_article_id, home_template, _ = home_project_fixture
 
     # Fabricate an isolated project + article that the auth profile is NOT a
     # member of. The membership check passes for home_project_id; only the
     # new article-ownership invariant should reject the request.
     foreign_project_id = await _make_isolated_project(
-        db_session, creator_profile_id=auth_as_profile, with_member=False
+        db_session, creator_profile_id=profile_id, with_member=False
     )
     foreign_article_id = await _make_article_in(db_session, project_id=foreign_project_id)
     await db_session.commit()
@@ -516,25 +691,20 @@ async def test_session_rejects_article_from_another_project(
 async def test_session_rejects_template_from_another_project(
     db_client: AsyncClient,
     db_session: AsyncSession,
-    auth_as_profile: UUID,
+    home_project_fixture: tuple[UUID, UUID, UUID, UUID, UUID],
 ) -> None:
     """Covers f_003: ``_resolve_project_template`` already rejects templates
     whose ``project_id`` does not match the request, but no test pinned that
     behaviour. Lock it in: passing a project_template_id from another project
     must return 400, not 404 or 500.
     """
-    home = await _pick_article(db_session)
-    if home is None:
-        pytest.skip("Need an article in the home project")
-    home_article_id, home_project_id = home
+    profile_id, home_project_id, home_article_id, _et, _qa = home_project_fixture
 
     # Build an isolated project + an extraction template owned by it. The
     # template id can then be smuggled into a request that claims to target
     # the home project — _resolve_project_template must reject it.
-    from uuid import uuid4
-
     foreign_project_id = await _make_isolated_project(
-        db_session, creator_profile_id=auth_as_profile, with_member=False
+        db_session, creator_profile_id=profile_id, with_member=False
     )
     foreign_template_id = uuid4()
     await db_session.execute(
@@ -550,7 +720,7 @@ async def test_session_rejects_template_from_another_project(
             "tid": str(foreign_template_id),
             "pid": str(foreign_project_id),
             "name": f"foreign-tpl-{foreign_template_id.hex[:8]}",
-            "uid": str(auth_as_profile),
+            "uid": str(profile_id),
         },
     )
     # Migration 0004 deferred trigger: every project_extraction_template must
@@ -564,7 +734,7 @@ async def test_session_rejects_template_from_another_project(
                 (:tid, 1, '{}'::jsonb, :uid, true)
             """
         ),
-        {"tid": str(foreign_template_id), "uid": str(auth_as_profile)},
+        {"tid": str(foreign_template_id), "uid": str(profile_id)},
     )
     await db_session.commit()
 
@@ -594,31 +764,13 @@ async def test_session_rejects_template_from_another_project(
 @pytest.mark.asyncio
 async def test_session_rejects_kind_mismatch(
     db_client: AsyncClient,
-    db_session: AsyncSession,
-    auth_as_profile: UUID,  # noqa: ARG001
+    db_session: AsyncSession,  # noqa: ARG001
+    home_project_fixture: tuple[UUID, UUID, UUID, UUID, UUID],
 ) -> None:
     """Covers f_004: ``_resolve_project_template`` rejects requests whose
     declared kind disagrees with the template's stored kind. Pin the 400.
     """
-    article = await _pick_article(db_session)
-    if article is None:
-        pytest.skip("Need an article")
-    article_id, project_id = article
-
-    qa_template = (
-        await db_session.execute(
-            text(
-                """
-                SELECT id FROM public.project_extraction_templates
-                WHERE project_id = :pid AND kind = 'quality_assessment'
-                LIMIT 1
-                """
-            ),
-            {"pid": str(project_id)},
-        )
-    ).scalar()
-    if qa_template is None:
-        pytest.skip("Need a quality_assessment template in the article's project")
+    _profile_id, project_id, article_id, _et, qa_template = home_project_fixture
 
     res = await db_client.post(
         _SESSION_URL,
@@ -637,7 +789,7 @@ async def test_session_rejects_kind_mismatch(
 async def test_session_open_captures_hitl_config_snapshot(
     db_client: AsyncClient,
     db_session: AsyncSession,
-    auth_as_profile: UUID,  # noqa: ARG001
+    home_project_fixture: tuple[UUID, UUID, UUID, UUID, UUID],
 ) -> None:
     """Covers f_005: every Run created via ``_reuse_or_create_run`` must
     carry a ``hitl_config_snapshot`` populated from ``HitlConfigService``.
@@ -645,11 +797,10 @@ async def test_session_open_captures_hitl_config_snapshot(
     project's *current* HITL config — defeating the whole point of pinning
     reviewer counts/consensus rule at the moment the Run started.
     """
-    article = await _pick_article(db_session)
+    _profile_id, project_id, article_id, _et, _qa = home_project_fixture
     global_template_id = await _pick_qa_global_template(db_session)
-    if article is None or global_template_id is None:
-        pytest.skip("Need an article + a seeded QA template")
-    article_id, project_id = article
+    if global_template_id is None:
+        pytest.skip("Need a seeded QA global template (PROBAST / QUADAS-2)")
 
     await _wipe_qa_state(
         db_session,
