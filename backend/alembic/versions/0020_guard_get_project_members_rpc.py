@@ -71,9 +71,7 @@ def upgrade() -> None:
         $fn$;
         """
     )
-    op.execute(
-        "REVOKE EXECUTE ON FUNCTION public.get_project_members(uuid) FROM anon, PUBLIC;"
-    )
+    op.execute("REVOKE EXECUTE ON FUNCTION public.get_project_members(uuid) FROM anon, PUBLIC;")
     op.execute("GRANT EXECUTE ON FUNCTION public.get_project_members(uuid) TO authenticated;")
     op.execute("GRANT EXECUTE ON FUNCTION public.get_project_members(uuid) TO service_role;")
 
@@ -105,8 +103,6 @@ def downgrade() -> None:
         $fn$;
         """
     )
-    op.execute(
-        "REVOKE EXECUTE ON FUNCTION public.get_project_members(uuid) FROM anon, PUBLIC;"
-    )
+    op.execute("REVOKE EXECUTE ON FUNCTION public.get_project_members(uuid) FROM anon, PUBLIC;")
     op.execute("GRANT EXECUTE ON FUNCTION public.get_project_members(uuid) TO authenticated;")
     op.execute("GRANT EXECUTE ON FUNCTION public.get_project_members(uuid) TO service_role;")
