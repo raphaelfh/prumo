@@ -132,6 +132,93 @@ async def _pick_template_for_outsider(
     return UUID(str(row[0])), UUID(str(row[1]))
 
 
+async def _pick_project_scope_with_foreign_article(
+    db: AsyncSession,
+) -> tuple[UUID, UUID, UUID, UUID] | None:
+    """Return (project_id, owned_article_id, owned_template_id, foreign_article_id)."""
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT p.id, owned_article.id, tpl.id, foreign_article.id
+                FROM public.projects p
+                JOIN public.articles owned_article ON owned_article.project_id = p.id
+                JOIN public.project_extraction_templates tpl
+                  ON tpl.project_id = p.id
+                 AND tpl.kind = 'extraction'
+                JOIN public.articles foreign_article
+                  ON foreign_article.project_id != p.id
+                LIMIT 1
+                """
+            )
+        )
+    ).first()
+    if row is None:
+        return None
+    return UUID(str(row[0])), UUID(str(row[1])), UUID(str(row[2])), UUID(str(row[3]))
+
+
+async def _pick_project_scope_with_foreign_template(
+    db: AsyncSession,
+) -> tuple[UUID, UUID, UUID] | None:
+    """Return (project_id, owned_article_id, foreign_template_id)."""
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT p.id, owned_article.id, foreign_tpl.id
+                FROM public.projects p
+                JOIN public.articles owned_article ON owned_article.project_id = p.id
+                JOIN public.project_extraction_templates foreign_tpl
+                  ON foreign_tpl.project_id != p.id
+                 AND foreign_tpl.kind = 'extraction'
+                LIMIT 1
+                """
+            )
+        )
+    ).first()
+    if row is None:
+        return None
+    return UUID(str(row[0])), UUID(str(row[1])), UUID(str(row[2]))
+
+
+async def _grant_temp_project_membership(
+    db: AsyncSession,
+    *,
+    project_id: UUID,
+    user_id: UUID,
+) -> None:
+    await db.execute(
+        text(
+            """
+            INSERT INTO public.project_members (project_id, user_id, role)
+            VALUES (:project_id, :user_id, 'manager')
+            ON CONFLICT DO NOTHING
+            """
+        ),
+        {"project_id": str(project_id), "user_id": str(user_id)},
+    )
+    await db.commit()
+
+
+async def _revoke_temp_project_membership(
+    db: AsyncSession,
+    *,
+    project_id: UUID,
+    user_id: UUID,
+) -> None:
+    await db.execute(
+        text(
+            """
+            DELETE FROM public.project_members
+            WHERE project_id = :project_id AND user_id = :user_id
+            """
+        ),
+        {"project_id": str(project_id), "user_id": str(user_id)},
+    )
+    await db.commit()
+
+
 # =================== #57: GET /runs/{id} ===================
 
 
@@ -238,6 +325,72 @@ async def test_create_run_403_for_non_member(
 
 
 @pytest.mark.asyncio
+async def test_create_run_rejects_article_from_another_project(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    outsider_user: UUID,
+) -> None:
+    fx = await _pick_project_scope_with_foreign_article(db_session)
+    if fx is None:
+        pytest.skip("Need two projects plus an extraction template and articles")
+    project_id, _owned_article_id, template_id, foreign_article_id = fx
+    await _grant_temp_project_membership(
+        db_session,
+        project_id=project_id,
+        user_id=outsider_user,
+    )
+    try:
+        res = await db_client.post(
+            "/api/v1/runs",
+            json={
+                "project_id": str(project_id),
+                "article_id": str(foreign_article_id),
+                "project_template_id": str(template_id),
+            },
+        )
+    finally:
+        await _revoke_temp_project_membership(
+            db_session,
+            project_id=project_id,
+            user_id=outsider_user,
+        )
+    assert res.status_code == 400, res.text
+
+
+@pytest.mark.asyncio
+async def test_create_run_rejects_template_from_another_project(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    outsider_user: UUID,
+) -> None:
+    fx = await _pick_project_scope_with_foreign_template(db_session)
+    if fx is None:
+        pytest.skip("Need two projects plus an extraction template and article")
+    project_id, article_id, foreign_template_id = fx
+    await _grant_temp_project_membership(
+        db_session,
+        project_id=project_id,
+        user_id=outsider_user,
+    )
+    try:
+        res = await db_client.post(
+            "/api/v1/runs",
+            json={
+                "project_id": str(project_id),
+                "article_id": str(article_id),
+                "project_template_id": str(foreign_template_id),
+            },
+        )
+    finally:
+        await _revoke_temp_project_membership(
+            db_session,
+            project_id=project_id,
+            user_id=outsider_user,
+        )
+    assert res.status_code == 400, res.text
+
+
+@pytest.mark.asyncio
 async def test_open_hitl_session_403_for_non_member(
     db_client: AsyncClient,
     db_session: AsyncSession,
@@ -266,6 +419,113 @@ async def test_open_hitl_session_403_for_non_member(
         },
     )
     assert res.status_code == 403, res.text
+
+
+@pytest.mark.asyncio
+async def test_section_extraction_for_run_403_for_non_member(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    outsider_user: UUID,
+) -> None:
+    fx = await _pick_run_for_outsider(db_session, outsider_user)
+    if fx is None:
+        pytest.skip("Need a run in a project the outsider does not belong to")
+    run_id, _, _, _ = fx
+
+    res = await db_client.post(
+        "/api/v1/extraction/sections",
+        json={
+            "runId": str(run_id),
+            "projectId": str(uuid.uuid4()),
+            "articleId": str(uuid.uuid4()),
+            "templateId": str(uuid.uuid4()),
+        },
+    )
+    assert res.status_code == 403, res.text
+
+
+@pytest.mark.asyncio
+async def test_model_extraction_403_for_non_member(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    outsider_user: UUID,
+) -> None:
+    fx = await _pick_template_for_outsider(db_session, outsider_user)
+    if fx is None:
+        pytest.skip("Need a template in a project the outsider does not belong to")
+    template_id, project_id = fx
+    article_id = (
+        await db_session.execute(
+            text("SELECT id FROM public.articles WHERE project_id = :pid LIMIT 1"),
+            {"pid": str(project_id)},
+        )
+    ).scalar()
+    if article_id is None:
+        pytest.skip("Need an article in the same project")
+
+    res = await db_client.post(
+        "/api/v1/extraction/models",
+        json={
+            "projectId": str(project_id),
+            "articleId": str(article_id),
+            "templateId": str(template_id),
+        },
+    )
+    assert res.status_code == 403, res.text
+
+
+@pytest.mark.asyncio
+async def test_manual_model_hierarchy_403_for_non_member(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    outsider_user: UUID,
+) -> None:
+    fx = await _pick_template_for_outsider(db_session, outsider_user)
+    if fx is None:
+        pytest.skip("Need a template in a project the outsider does not belong to")
+    template_id, project_id = fx
+    article_id = (
+        await db_session.execute(
+            text("SELECT id FROM public.articles WHERE project_id = :pid LIMIT 1"),
+            {"pid": str(project_id)},
+        )
+    ).scalar()
+    if article_id is None:
+        pytest.skip("Need an article in the same project")
+
+    res = await db_client.post(
+        "/api/v1/extraction/models/manual",
+        json={
+            "projectId": str(project_id),
+            "articleId": str(article_id),
+            "templateId": str(template_id),
+            "modelName": "Outsider model",
+        },
+    )
+    assert res.status_code == 403, res.text
+
+
+@pytest.mark.asyncio
+async def test_get_project_members_rpc_rejects_non_member(
+    db_session: AsyncSession,
+    outsider_user: UUID,
+) -> None:
+    fx = await _pick_template_for_outsider(db_session, outsider_user)
+    if fx is None:
+        pytest.skip("Need a project the outsider does not belong to")
+    _template_id, project_id = fx
+
+    await db_session.execute(
+        text("SELECT set_config('request.jwt.claim.sub', :uid, true)"),
+        {"uid": str(outsider_user)},
+    )
+    with pytest.raises(Exception) as exc_info:
+        await db_session.execute(
+            text("SELECT * FROM public.get_project_members(:project_id)"),
+            {"project_id": str(project_id)},
+        )
+    await db_session.rollback()
+    assert "forbidden: caller is not a member" in str(exc_info.value)
 
 
 # =================== #76: POST /runs/{id}/proposals + /decisions + /consensus ===================

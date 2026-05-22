@@ -11,6 +11,13 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
 
+from app.api.deps.security import (
+    ensure_article_in_project,
+    ensure_project_member,
+    ensure_project_template_in_project,
+    ensure_run_member,
+    get_current_user_sub,
+)
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
 from app.core.factories import create_storage_adapter
 from app.core.logging import get_logger
@@ -60,6 +67,7 @@ async def extract_section(
     """
     trace_id = getattr(request.state, "trace_id", None) or "missing-trace-id"
     endpoint_start = perf_counter()
+    current_user_sub = await get_current_user_sub(user)
 
     logger.info(
         "section_extraction_request",
@@ -74,6 +82,13 @@ async def extract_section(
     )
 
     try:
+        if payload.run_id is not None:
+            await ensure_run_member(db, payload.run_id, current_user_sub)
+        else:
+            await ensure_project_member(db, payload.project_id, current_user_sub)
+            await ensure_article_in_project(db, payload.project_id, payload.article_id)
+            await ensure_project_template_in_project(db, payload.project_id, payload.template_id)
+
         # Create storage adapter via factory
         storage = create_storage_adapter(supabase)
 
@@ -203,6 +218,8 @@ async def extract_section(
 
         return ApiResponse(ok=True, data=response_data, trace_id=trace_id)
 
+    except HTTPException:
+        raise
     except ValueError as e:
         rollback_start = perf_counter()
         await db.rollback()

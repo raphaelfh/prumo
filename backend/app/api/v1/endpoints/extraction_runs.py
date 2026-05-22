@@ -11,7 +11,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from app.api.deps.security import ensure_project_member, get_current_user_sub
+from app.api.deps.security import (
+    ensure_article_in_project,
+    ensure_project_member,
+    ensure_project_template_in_project,
+    get_current_user_sub,
+)
 from app.core.deps import DbSession
 from app.core.logging import get_logger
 from app.schemas.common import ApiResponse
@@ -91,6 +96,8 @@ async def create_run(
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[RunSummaryResponse]:
     await ensure_project_member(db, body.project_id, current_user_sub)
+    await ensure_article_in_project(db, body.project_id, body.article_id)
+    await ensure_project_template_in_project(db, body.project_id, body.project_template_id)
     service = RunLifecycleService(db)
     trace_id = _trace(request)
     try:

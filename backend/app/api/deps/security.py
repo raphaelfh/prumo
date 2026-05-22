@@ -43,6 +43,64 @@ async def ensure_project_member(db: DbSession, project_id: UUID, user_sub: UUID)
         )
 
 
+async def ensure_article_in_project(db: DbSession, project_id: UUID, article_id: UUID) -> None:
+    """Ensure an article id is scoped to the project supplied by the caller."""
+    owner = (
+        await db.execute(
+            text("SELECT project_id FROM public.articles WHERE id = :article_id"),
+            {"article_id": str(article_id)},
+        )
+    ).scalar_one_or_none()
+    if owner is None or UUID(str(owner)) != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Article does not belong to the requested project",
+        )
+
+
+async def ensure_project_template_in_project(
+    db: DbSession,
+    project_id: UUID,
+    project_template_id: UUID,
+) -> None:
+    """Ensure a project template id is scoped to the project supplied by the caller."""
+    owner = (
+        await db.execute(
+            text(
+                "SELECT project_id FROM public.project_extraction_templates "
+                "WHERE id = :project_template_id"
+            ),
+            {"project_template_id": str(project_template_id)},
+        )
+    ).scalar_one_or_none()
+    if owner is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project template {project_template_id} not found",
+        )
+    if UUID(str(owner)) != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Project template does not belong to the requested project",
+        )
+
+
+async def ensure_run_member(db: DbSession, run_id: UUID, user_sub: UUID) -> None:
+    """Ensure the caller belongs to the project that owns the run."""
+    project_id = (
+        await db.execute(
+            text("SELECT project_id FROM public.extraction_runs WHERE id = :run_id"),
+            {"run_id": str(run_id)},
+        )
+    ).scalar_one_or_none()
+    if project_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Run {run_id} not found",
+        )
+    await ensure_project_member(db, UUID(str(project_id)), user_sub)
+
+
 async def require_project_scope(
     project_id: UUID,
     db: DbSession,
