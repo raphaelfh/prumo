@@ -10,6 +10,7 @@ from app.api.v1.endpoints import (
     article_text_blocks,
     articles_export,
     citations,
+    extraction_export,
     extraction_runs,
     hitl_configs,
     hitl_sessions,
@@ -87,4 +88,10 @@ api_router.include_router(
     article_text_blocks.router,
     prefix="/article-files",
     tags=["article-text-blocks"],
+)
+
+api_router.include_router(
+    extraction_export.router,
+    prefix="/projects",
+    tags=["extraction-export"],
 )
