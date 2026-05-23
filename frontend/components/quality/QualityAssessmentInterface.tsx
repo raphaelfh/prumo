@@ -118,7 +118,7 @@ export function QualityAssessmentInterface({ projectId }: Props) {
     if (activeTab === "dashboard") {
       return (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-          <Card className="border-border/40 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+          <Card className="border-border/40 shadow-popover">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4 pb-1 pt-4">
               <CardTitle className="text-[13px] font-medium">
                 {t("extraction", "dashboardArticles")}
@@ -132,7 +132,7 @@ export function QualityAssessmentInterface({ projectId }: Props) {
               </p>
             </CardContent>
           </Card>
-          <Card className="border-border/40 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+          <Card className="border-border/40 shadow-popover">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4 pb-1 pt-4">
               <CardTitle className="text-[13px] font-medium">
                 {t("extraction", "dashboardExtractionsStarted")}
@@ -146,7 +146,7 @@ export function QualityAssessmentInterface({ projectId }: Props) {
               </p>
             </CardContent>
           </Card>
-          <Card className="border-border/40 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+          <Card className="border-border/40 shadow-popover">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 px-4 pb-1 pt-4">
               <CardTitle className="text-[13px] font-medium">
                 {t("extraction", "dashboardProgress")}

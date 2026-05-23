@@ -84,7 +84,7 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({projectName, open, 
             <KbdBadge keys={['K']} className="ml-1" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-[260px] p-1 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-border/50">
+        <DropdownMenuContent align="start" className="w-[260px] p-1 shadow-popover border-border/50">
           {loading ? (
             <div className="flex items-center justify-center p-4">
               <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
