@@ -5,6 +5,8 @@ export const extraction = {
     headerBlindMode: 'Blind mode',
     headerSaving: 'Saving…',
     headerSavedAt: 'Saved at',
+    headerUnsavedChanges: 'Unsaved changes',
+    headerSaveFailed: 'Save failed — will retry on next edit',
     headerProgressFields: 'fields complete',
     headerProgressOf: 'of',
     headerViewAllStatus: 'View all status',

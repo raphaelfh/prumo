@@ -4,7 +4,12 @@
 
 export { useRun, type UseRunOptions } from "./useRun";
 export { useCreateRun } from "./useCreateRun";
-export { useCreateProposal } from "./useCreateProposal";
+export {
+  useAutoSaveProposals,
+  type SaveState,
+  type UseAutoSaveProposalsProps,
+  type UseAutoSaveProposalsReturn,
+} from "./useAutoSaveProposals";
 export { useCreateDecision } from "./useCreateDecision";
 export { useCreateConsensus } from "./useCreateConsensus";
 export { useAdvanceRun } from "./useAdvanceRun";
