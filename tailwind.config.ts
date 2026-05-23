@@ -61,6 +61,17 @@ export default {
           DEFAULT: "hsl(var(--info))",
           foreground: "hsl(var(--info-foreground))",
         },
+        ai: {
+          DEFAULT: "hsl(var(--ai))",
+          foreground: "hsl(var(--ai-foreground))",
+        },
+        reviewer: {
+          1: "hsl(var(--reviewer-1))",
+          2: "hsl(var(--reviewer-2))",
+          3: "hsl(var(--reviewer-3))",
+          4: "hsl(var(--reviewer-4))",
+          5: "hsl(var(--reviewer-5))",
+        },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
           foreground: "hsl(var(--sidebar-foreground))",
@@ -71,6 +82,10 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+      },
+      boxShadow: {
+        card: "var(--shadow-card)",
+        popover: "var(--shadow-popover)",
       },
       borderRadius: {
         lg: "var(--radius)",
