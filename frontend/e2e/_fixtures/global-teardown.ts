@@ -75,11 +75,6 @@ export default async function globalTeardown(_config: FullConfig): Promise<void>
   }
 
   const grouped: Record<string, string[]> = {
-    evaluation_runs: [],
-    evaluation_schemas: [],
-    evaluation_schema_versions: [],
-    evaluation_items: [],
-    evidence_records: [],
     extraction_instances: [],
     extraction_fields: [],
     extraction_entity_types: [],
@@ -89,21 +84,6 @@ export default async function globalTeardown(_config: FullConfig): Promise<void>
 
   for (const entry of entries) {
     switch (entry.kind) {
-      case "evaluation_run":
-        grouped.evaluation_runs.push(entry.id);
-        break;
-      case "evaluation_schema":
-        grouped.evaluation_schemas.push(entry.id);
-        break;
-      case "evaluation_schema_version":
-        grouped.evaluation_schema_versions.push(entry.id);
-        break;
-      case "evaluation_item":
-        grouped.evaluation_items.push(entry.id);
-        break;
-      case "evidence_record":
-        grouped.evidence_records.push(entry.id);
-        break;
       case "extraction_instance":
         grouped.extraction_instances.push(entry.id);
         break;
@@ -127,12 +107,6 @@ export default async function globalTeardown(_config: FullConfig): Promise<void>
   const summary: Record<string, DeleteResult> = {};
 
   // Order matters: delete dependents first.
-  summary.evidence_records = await deleteFromTable(
-    env.supabaseUrl,
-    env.supabaseServiceRoleKey,
-    "evidence_records",
-    grouped.evidence_records
-  );
   summary.extraction_instances = await deleteFromTable(
     env.supabaseUrl,
     env.supabaseServiceRoleKey,
@@ -150,30 +124,6 @@ export default async function globalTeardown(_config: FullConfig): Promise<void>
     env.supabaseServiceRoleKey,
     "extraction_entity_types",
     grouped.extraction_entity_types
-  );
-  summary.evaluation_runs = await deleteFromTable(
-    env.supabaseUrl,
-    env.supabaseServiceRoleKey,
-    "evaluation_runs",
-    grouped.evaluation_runs
-  );
-  summary.evaluation_items = await deleteFromTable(
-    env.supabaseUrl,
-    env.supabaseServiceRoleKey,
-    "evaluation_items",
-    grouped.evaluation_items
-  );
-  summary.evaluation_schema_versions = await deleteFromTable(
-    env.supabaseUrl,
-    env.supabaseServiceRoleKey,
-    "evaluation_schema_versions",
-    grouped.evaluation_schema_versions
-  );
-  summary.evaluation_schemas = await deleteFromTable(
-    env.supabaseUrl,
-    env.supabaseServiceRoleKey,
-    "evaluation_schemas",
-    grouped.evaluation_schemas
   );
 
   let storageDeleted = 0;
