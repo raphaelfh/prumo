@@ -60,9 +60,15 @@ class TestSectionExtractionEndpoints:
         """Test extraction with valid request."""
         from app.services.section_extraction_service import SectionExtractionResult
 
-        with patch(
-            "app.api.v1.endpoints.section_extraction.SectionExtractionService"
-        ) as mock_service_class:
+        with (
+            patch(
+                "app.api.v1.endpoints.section_extraction.SectionExtractionService"
+            ) as mock_service_class,
+            patch(
+                "app.api.v1.endpoints.section_extraction.ensure_project_member",
+                new_callable=AsyncMock,
+            ) as guard,
+        ):
             mock_service = mock_service_class.return_value
             mock_service.extract_section = AsyncMock(
                 return_value=SectionExtractionResult(
@@ -94,6 +100,7 @@ class TestSectionExtractionEndpoints:
             assert data.get("trace_id") == trace_id
             assert response.headers.get("X-Trace-Id") == trace_id
             assert mock_service_class.call_args.kwargs["trace_id"] == trace_id
+            guard.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_section_extraction_batch_valid_request(
@@ -103,9 +110,15 @@ class TestSectionExtractionEndpoints:
         """Test batch extraction with valid request."""
         from app.services.section_extraction_service import BatchExtractionResult
 
-        with patch(
-            "app.api.v1.endpoints.section_extraction.SectionExtractionService"
-        ) as mock_service_class:
+        with (
+            patch(
+                "app.api.v1.endpoints.section_extraction.SectionExtractionService"
+            ) as mock_service_class,
+            patch(
+                "app.api.v1.endpoints.section_extraction.ensure_project_member",
+                new_callable=AsyncMock,
+            ) as guard,
+        ):
             mock_service = mock_service_class.return_value
             mock_service.extract_all_sections = AsyncMock(
                 return_value=BatchExtractionResult(
@@ -138,6 +151,7 @@ class TestSectionExtractionEndpoints:
             assert data.get("ok") is True
             assert data.get("trace_id") == trace_id
             assert mock_service_class.call_args.kwargs["trace_id"] == trace_id
+            guard.assert_awaited_once()
 
 
 class TestModelExtractionEndpoints:
@@ -165,9 +179,15 @@ class TestModelExtractionEndpoints:
         """Test model extraction with valid request."""
         from app.services.model_extraction_service import ModelExtractionResult
 
-        with patch(
-            "app.api.v1.endpoints.model_extraction.ModelExtractionService"
-        ) as mock_service_class:
+        with (
+            patch(
+                "app.api.v1.endpoints.model_extraction.ModelExtractionService"
+            ) as mock_service_class,
+            patch(
+                "app.api.v1.endpoints.model_extraction.ensure_project_member",
+                new_callable=AsyncMock,
+            ) as guard,
+        ):
             mock_service = mock_service_class.return_value
             mock_service.extract = AsyncMock(
                 return_value=ModelExtractionResult(
@@ -199,6 +219,7 @@ class TestModelExtractionEndpoints:
             assert data.get("trace_id") == trace_id
             assert response.headers.get("X-Trace-Id") == trace_id
             assert mock_service_class.call_args.kwargs["trace_id"] == trace_id
+            guard.assert_awaited_once()
 
 
 class TestManualModelHierarchyEndpoints:
@@ -225,7 +246,13 @@ class TestManualModelHierarchyEndpoints:
             ModelHierarchyResult,
         )
 
-        with patch("app.api.v1.endpoints.model_extraction.ModelHierarchyService") as svc_cls:
+        with (
+            patch("app.api.v1.endpoints.model_extraction.ModelHierarchyService") as svc_cls,
+            patch(
+                "app.api.v1.endpoints.model_extraction.ensure_project_member",
+                new_callable=AsyncMock,
+            ) as guard,
+        ):
             svc = svc_cls.return_value
             svc.create_model_hierarchy = AsyncMock(
                 return_value=ModelHierarchyResult(
@@ -260,6 +287,7 @@ class TestManualModelHierarchyEndpoints:
             assert payload["data"]["modelLabel"] == "Cox Model"
             assert len(payload["data"]["childInstances"]) == 1
             svc.create_model_hierarchy.assert_awaited_once()
+            guard.assert_awaited_once()
 
 
 class TestManualModelHierarchyService:
