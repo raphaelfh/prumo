@@ -83,6 +83,8 @@ test.describe("Extraction multi-instance + all field types", () => {
     const projectTemplateId = env.templateId!;
 
     // Two fresh entity types: one with cardinality=many, one with cardinality=one.
+    // role=study_section because migration 0016 made the column NOT NULL and
+    // these are standalone sections (no model hierarchy).
     const [manyEntity, oneEntity] = await adminInsert<{ id: string }>(
       "extraction_entity_types",
       [
@@ -93,6 +95,7 @@ test.describe("Extraction multi-instance + all field types", () => {
           cardinality: "many",
           sort_order: 100,
           is_required: false,
+          role: "study_section",
         },
         {
           project_template_id: projectTemplateId,
@@ -101,6 +104,7 @@ test.describe("Extraction multi-instance + all field types", () => {
           cardinality: "one",
           sort_order: 101,
           is_required: false,
+          role: "study_section",
         },
       ]
     );
@@ -187,7 +191,8 @@ test.describe("Extraction multi-instance + all field types", () => {
 
     const projectTemplateId = env.templateId!;
 
-    // Fresh entity_type to host all field types.
+    // Fresh entity_type to host all field types. role=study_section because
+    // migration 0016 made the column NOT NULL.
     const [entity] = await adminInsert<{ id: string }>("extraction_entity_types", [
       {
         project_template_id: projectTemplateId,
@@ -196,6 +201,7 @@ test.describe("Extraction multi-instance + all field types", () => {
         cardinality: "one",
         sort_order: 200,
         is_required: false,
+        role: "study_section",
       },
     ]);
     recordResource({ kind: "extraction_entity_type", id: entity.id });
