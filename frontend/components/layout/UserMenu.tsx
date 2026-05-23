@@ -57,7 +57,7 @@ export const UserMenu: React.FC<UserMenuProps> = ({collapsed}) => {
           )}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" side="top" className="w-64 p-1 shadow-popover border-border/50">
+      <DropdownMenuContent align="end" side="top" className="w-64 p-1 shadow-elev-popover border-border/50">
         <DropdownMenuLabel className="font-normal px-2 py-1.5 flex items-center gap-2">
           <Avatar className="h-7 w-7 border border-border/40">
             <AvatarImage src={user.avatar} alt={user.name} />

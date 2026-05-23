@@ -29,7 +29,7 @@ export function SettingsCard({
     return (
         <Card
             className={cn(
-                'border-border/40 shadow-popover rounded-md',
+                'border-border/40 shadow-elev-popover rounded-md',
                 destructive && 'border-destructive/20',
                 className
             )}

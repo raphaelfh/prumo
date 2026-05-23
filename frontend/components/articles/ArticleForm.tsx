@@ -1178,7 +1178,7 @@ export function ArticleForm({
                         <section id="article-section-files" className="scroll-mt-4 space-y-6">
                             <SettingsSection title={t('articles', 'filesLabel')}
                                              description={t('articles', 'filesDesc')}>
-                                <Card className="rounded-md border-border/40 shadow-popover">
+                                <Card className="rounded-md border-border/40 shadow-elev-popover">
                                     <CardHeader
                                         className="flex flex-row items-start justify-between gap-3 space-y-0 p-4 pb-2">
                                         <div className="min-w-0 space-y-1.5">

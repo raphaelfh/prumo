@@ -194,7 +194,7 @@
 @layer components {
     /* Linear inspired card */
     .linear-card {
-        @apply rounded-md border border-border/50 bg-card/30 shadow-card transition-all hover:border-border hover:shadow-[0_2px_8px_rgba(0,0,0,0.08)];
+        @apply rounded-md border border-border/50 bg-card/30 shadow-elev-card transition-all hover:border-border hover:shadow-[0_2px_8px_rgba(0,0,0,0.08)];
     }
 
     /* High density list item */

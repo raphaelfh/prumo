@@ -84,8 +84,12 @@ export default {
         },
       },
       boxShadow: {
-        card: "var(--shadow-card)",
-        popover: "var(--shadow-popover)",
+        // NB: keys must NOT collide with `theme.colors` keys, otherwise
+        // Tailwind treats `shadow-<name>` as a colour modifier
+        // (--tw-shadow-color) instead of a box-shadow. `card` and `popover`
+        // are color keys, so we prefix with `elev-`.
+        "elev-card": "var(--shadow-card)",
+        "elev-popover": "var(--shadow-popover)",
       },
       borderRadius: {
         lg: "var(--radius)",

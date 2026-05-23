@@ -877,7 +877,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                                       </Button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end"
-                                                       className="w-56 border-border/50 shadow-popover">
+                                                       className="w-56 border-border/50 shadow-elev-popover">
                                       <DropdownMenuLabel>{t('extraction', 'tableBatchActionsLabel')}</DropdownMenuLabel>
                                       <DropdownMenuSeparator/>
                                       <DropdownMenuItem onClick={handleBatchAIExtraction} disabled={isExtracting}

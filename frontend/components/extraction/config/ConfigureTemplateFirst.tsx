@@ -22,7 +22,7 @@ export function ConfigureTemplateFirst({
     };
 
     return (
-        <Card className="border border-border/40 shadow-popover rounded-md">
+        <Card className="border border-border/40 shadow-elev-popover rounded-md">
             <CardHeader className="text-center pb-2 pt-6">
                 <div className="mx-auto w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center mb-3">
                     <FileStack className="h-4 w-4 text-primary" strokeWidth={1.5}/>

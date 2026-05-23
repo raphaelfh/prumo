@@ -70,7 +70,7 @@ export function ListDisplaySortPopover({
                     <TooltipContent side="bottom">{tooltipLabel}</TooltipContent>
                 </Tooltip>
             </TooltipProvider>
-            <PopoverContent className="w-72 p-0 border-border/50 shadow-popover" align="end">
+            <PopoverContent className="w-72 p-0 border-border/50 shadow-elev-popover" align="end">
                 <div className="p-3 space-y-4">
                     <div className="space-y-2">
                         <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
