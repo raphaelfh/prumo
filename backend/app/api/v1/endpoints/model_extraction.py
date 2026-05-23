@@ -12,7 +12,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
 
-from app.api.deps.security import get_current_user_sub
+from app.api.deps.security import ensure_project_member, get_current_user_sub
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
 from app.core.factories import create_storage_adapter
 from app.core.logging import get_logger
@@ -54,6 +54,8 @@ async def create_manual_model_hierarchy(
 ) -> ApiResponse[CreateModelHierarchyResponse]:
     trace_id = getattr(request.state, "trace_id", None) or "missing-trace-id"
     service = ModelHierarchyService(db)
+
+    await ensure_project_member(db, payload.project_id, current_user_sub)
 
     try:
         result = await service.create_model_hierarchy(
@@ -116,6 +118,7 @@ async def extract_models(
     db: DbSession,
     user: CurrentUser,
     supabase: SupabaseClient,
+    current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[dict[str, Any]]:
     """
     Run prediction model extraction for an article.
@@ -147,6 +150,8 @@ async def extract_models(
         template_id=str(payload.template_id),
         model=payload.model,
     )
+
+    await ensure_project_member(db, payload.project_id, current_user_sub)
 
     try:
         # Create storage adapter via factory

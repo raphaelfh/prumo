@@ -2,6 +2,7 @@
 Extraction Endpoints Integration Tests.
 """
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
@@ -259,3 +260,33 @@ class TestManualModelHierarchyEndpoints:
             assert payload["data"]["modelLabel"] == "Cox Model"
             assert len(payload["data"]["childInstances"]) == 1
             svc.create_model_hierarchy.assert_awaited_once()
+
+
+class TestManualModelHierarchyService:
+    """Regression tests for cross-project model hierarchy invariants."""
+
+    @pytest.mark.asyncio
+    async def test_rejects_article_from_another_project(self) -> None:
+        from app.services.model_hierarchy_service import ModelHierarchyService
+
+        project_id = uuid4()
+        article_id = uuid4()
+        template_id = uuid4()
+        db = AsyncMock()
+        db.get = AsyncMock(
+            side_effect=[
+                SimpleNamespace(project_id=project_id, kind="extraction"),
+                SimpleNamespace(project_id=uuid4()),
+            ]
+        )
+
+        service = ModelHierarchyService(db)
+
+        with pytest.raises(ValueError, match="Article not found in project"):
+            await service.create_model_hierarchy(
+                project_id=project_id,
+                article_id=article_id,
+                template_id=template_id,
+                user_id=uuid4(),
+                model_name="Cox Model",
+            )
