@@ -150,7 +150,7 @@ export function QualityAssessmentConfiguration({
                   data-testid={`hitl-quality_assessment-config-row-${global.id}`}
                 >
                   <div className="flex items-start gap-3">
-                    <ShieldCheck className="mt-0.5 h-4 w-4 text-amber-600" />
+                    <ShieldCheck className="mt-0.5 h-4 w-4 text-warning" />
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium">

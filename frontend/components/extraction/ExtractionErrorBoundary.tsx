@@ -97,8 +97,8 @@ export class ExtractionErrorBoundary extends Component<Props, State> {
 
         // Default error UI
       return (
-        <div className="flex items-center justify-center min-h-screen bg-slate-50 p-4">
-          <Card className="max-w-2xl w-full">
+        <div className="flex items-center justify-center min-h-screen bg-background p-4">
+          <Card className="max-w-2xl w-full border-border/60">
             <CardHeader>
               <div className="flex items-center gap-3 mb-2">
                 <AlertCircle className="h-8 w-8 text-destructive" />
@@ -114,18 +114,18 @@ export class ExtractionErrorBoundary extends Component<Props, State> {
                 <p className="font-semibold text-sm text-destructive mb-2">
                     {t('extraction', 'errorBoundaryDetailsLabel')}
                 </p>
-                <p className="text-sm font-mono text-slate-700">
+                <p className="text-sm font-mono text-foreground">
                     {this.state.error?.message || t('extraction', 'errorBoundaryUnknown')}
                 </p>
               </div>
 
               {/* Stack trace (apenas em dev) */}
               {import.meta.env.DEV && this.state.errorInfo && (
-                <details className="bg-slate-100 rounded-lg p-4">
-                  <summary className="cursor-pointer font-semibold text-sm text-slate-700 mb-2">
+                <details className="bg-muted rounded-lg p-4 border border-border/40">
+                  <summary className="cursor-pointer font-semibold text-sm text-foreground mb-2">
                     Stack Trace (Dev Only)
                   </summary>
-                  <pre className="text-xs overflow-auto max-h-60 text-slate-600">
+                  <pre className="text-xs overflow-auto max-h-60 text-muted-foreground">
                     {this.state.errorInfo.componentStack}
                   </pre>
                 </details>
@@ -147,11 +147,11 @@ export class ExtractionErrorBoundary extends Component<Props, State> {
               </div>
 
                 {/* Suggestions */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <p className="font-semibold text-sm text-blue-900 mb-2">
+              <div className="bg-info/10 border border-info/30 rounded-lg p-4">
+                <p className="font-semibold text-sm text-info mb-2">
                     💡 {t('extraction', 'errorBoundarySuggestionsTitle')}
                 </p>
-                <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
+                <ul className="text-sm text-foreground/80 space-y-1 list-disc list-inside">
                     <li>{t('extraction', 'errorBoundarySuggestionReload')}</li>
                     <li>{t('extraction', 'errorBoundarySuggestionCache')}</li>
                     <li>{t('extraction', 'errorBoundarySuggestionConnection')}</li>

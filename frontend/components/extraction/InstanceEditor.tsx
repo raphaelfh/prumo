@@ -158,9 +158,9 @@ export function InstanceEditor({
                       <div className="flex items-center space-x-3">
                         <div className="flex items-center space-x-2">
                           {completionPercentage === 100 ? (
-                            <CheckCircle className="h-5 w-5 text-green-500" />
+                            <CheckCircle className="h-5 w-5 text-success" />
                           ) : (
-                            <AlertCircle className="h-5 w-5 text-orange-500" />
+                            <AlertCircle className="h-5 w-5 text-warning" />
                           )}
                           <div>
                             <h4 className="font-medium">{instance.label}</h4>
@@ -187,7 +187,7 @@ export function InstanceEditor({
                     
                     {/* Progress bar */}
                     <div className="mt-3">
-                      <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div className="w-full bg-muted rounded-full h-2">
                         <div
                           className="bg-primary h-2 rounded-full transition-all"
                           style={{ width: `${completionPercentage}%` }}

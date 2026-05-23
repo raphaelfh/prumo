@@ -143,12 +143,12 @@ export function SectionAccordion(props: SectionAccordionProps) {
   // Calcular porcentagem de progresso
   const progressPercentage = totalRequired > 0 ? Math.round((completedRequired / totalRequired) * 100) : 0;
 
-  // Determinar cor da borda esquerda baseada no status
-  const borderColor = isComplete 
-    ? "border-l-green-500" 
+  // Determine left border color based on status (semantic tokens flip in dark mode)
+  const borderColor = isComplete
+    ? "border-l-success"
     : completedRequired > 0
-    ? "border-l-blue-500"
-    : "border-l-slate-300";
+    ? "border-l-info"
+    : "border-l-border";
 
     // Ref for accordion trigger so chevron can be clicked to open/close
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -164,10 +164,10 @@ export function SectionAccordion(props: SectionAccordionProps) {
       type="single"
       collapsible
       defaultValue={entityType.id}
-      className={cn("bg-white border-l-4", borderColor)}
+      className={cn("bg-card border-l-4", borderColor)}
     >
       <AccordionItem value={entityType.id} className="border-none group/accordion-item">
-        <div className="px-6 py-4 hover:bg-slate-50/50">
+        <div className="px-6 py-4 hover:bg-muted/40 transition-colors duration-75">
           <div className="flex items-center gap-3">
             <AccordionPrimitive.Header className="flex flex-1">
               <AccordionPrimitive.Trigger
@@ -233,7 +233,7 @@ export function SectionAccordion(props: SectionAccordionProps) {
             <button
               type="button"
               onClick={handleChevronClick}
-              className="flex items-center justify-center h-8 w-8 shrink-0 hover:bg-slate-100 rounded-md transition-colors cursor-pointer"
+              className="flex items-center justify-center h-8 w-8 shrink-0 hover:bg-muted rounded-md transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               aria-label="Toggle accordion"
             >
               <ChevronDown className="h-4 w-4 transition-transform duration-200 group-data-[state=open]/accordion-item:rotate-180" />
@@ -299,7 +299,7 @@ export function SectionAccordion(props: SectionAccordionProps) {
               </>
             ) : (
                 // Single section: show fields directly
-              <div className="divide-y divide-slate-100">
+              <div className="divide-y divide-border/40">
                 {fields.map(field => {
                   const key = `${instances[0].id}_${field.id}`;
                   

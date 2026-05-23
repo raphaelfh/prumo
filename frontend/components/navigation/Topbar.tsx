@@ -10,7 +10,6 @@ import {cn} from '@/lib/utils';
 import {useUserProfile} from '@/hooks/useNavigation';
 import {SidebarContext} from '@/contexts/SidebarContext';
 import {ProjectContext} from '@/contexts/ProjectContext';
-import {ProfileMenu} from './ProfileMenu';
 import {FeedbackButton} from '@/components/feedback/FeedbackButton';
 import {NotificationCenter} from './NotificationCenter';
 import type {TopbarProps} from '@/types/navigation';
@@ -129,48 +128,11 @@ export const Topbar: React.FC<TopbarProps> = ({
 
         </div>
 
-        {/* Right Section - Notifications + Feedback + Profile Menu */}
+        {/* Right Section - Notifications + Feedback */}
               <div className="flex items-center gap-1.5 flex-shrink-0">
           <NotificationCenter />
           <FeedbackButton />
-                  <div className="h-4 w-[1px] bg-border/40 mx-1"/>
-          <ProfileMenu user={user} />
         </div>
-      </div>
-    </header>
-  );
-};
-
-// Simplified Topbar component for specific screens
-export const SimpleTopbar: React.FC<{
-  title: string;
-  onBack?: () => void;
-  className?: string;
-}> = ({ title, onBack, className }) => {
-  const { user } = useUserProfile();
-
-  return (
-      <header
-          className={cn("sticky top-0 z-40 w-full border-b border-border/40 bg-background/80 backdrop-blur-md", className)}>
-          <div className="mx-auto flex h-12 w-full max-w-[1200px] items-center gap-3 px-4">
-        {onBack && (
-            <Button variant="ghost" size="icon" onClick={onBack} aria-label={t('navigation', 'ariaBack')}>
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </Button>
-        )}
-        
-        <div className="flex-1">
-            <h1 className="text-[13px] font-medium truncate">{title}</h1>
-        </div>
-
-        {user && (
-          <div className="flex items-center gap-1">
-            <FeedbackButton />
-            <ProfileMenu user={user} />
-          </div>
-        )}
       </div>
     </header>
   );

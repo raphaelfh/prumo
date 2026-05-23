@@ -1,0 +1,332 @@
+openapi: 3.0.3
+info:
+  title: Prumo — Extraction Export API
+  version: 1.0.0
+  description: |
+    Endpoints for downloading a project's extraction data as a Microsoft Excel
+    workbook (.xlsx). Lives under the existing `/api/v1` versioning. All
+    responses use the project-wide `ApiResponse` envelope.
+
+    Authentication: Bearer JWT (Supabase Auth). The `user_id` is extracted
+    from the JWT `sub` claim; never read from the request body.
+
+    See spec.md FR-001 through FR-040 for the full functional contract.
+
+servers:
+  - url: https://api.prumo.example.com
+    description: Production
+  - url: http://localhost:8000
+    description: Local development
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/v1/projects/{project_id}/extraction-export:
+    post:
+      summary: Start an extraction export
+      operationId: startExtractionExport
+      description: |
+        Triggers an export. Returns either:
+          • **200 OK** with the `.xlsx` bytes inline (Content-Type:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)
+            for small payloads — see `SYNC_EXPORT_MAX_ARTICLES` threshold;
+          • **202 Accepted** with a job_id for async generation;
+          • **400 / 403 / 422 / 503** error envelopes for the obvious cases.
+
+        Rate limited to 10 requests / minute / IP.
+      tags: [extraction-export]
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExtractionExportRequest' }
+            examples:
+              consensus_current_list:
+                summary: Consensus, current list, no AI metadata (default)
+                value:
+                  template_id: "11111111-1111-1111-1111-111111111111"
+                  mode: consensus
+                  article_scope: current_list
+                  article_ids: ["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"]
+                  include_ai_metadata: false
+                  anonymize_reviewer_names: false
+              single_user_self:
+                summary: Single user (caller targets themselves)
+                value:
+                  template_id: "11111111-1111-1111-1111-111111111111"
+                  mode: single_user
+                  reviewer_id: "00000000-0000-0000-0000-000000000001"
+                  article_scope: selected_only
+                  article_ids: ["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]
+                  include_ai_metadata: false
+                  anonymize_reviewer_names: false
+              all_users_anonymized_with_ai:
+                summary: All users + AI metadata sheet, reviewer names anonymized (manager only)
+                value:
+                  template_id: "11111111-1111-1111-1111-111111111111"
+                  mode: all_users
+                  article_scope: current_list
+                  article_ids: ["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]
+                  include_ai_metadata: true
+                  anonymize_reviewer_names: true
+      responses:
+        '200':
+          description: Sync export — `.xlsx` bytes inline.
+          headers:
+            Content-Disposition:
+              description: 'Attachment with sanitised filename (FR-024).'
+              schema: { type: string, example: 'attachment; filename="prumo_charms_consensus_20260523-141502.xlsx"' }
+            X-Trace-Id:
+              schema: { type: string, format: uuid }
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        '202':
+          description: Async export queued — poll `/status/{job_id}`.
+          headers:
+            X-Trace-Id:
+              schema: { type: string, format: uuid }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse_ExportStarted'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/EmptyEligibleArticles'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/QueueUnavailable'
+
+  /api/v1/projects/{project_id}/extraction-export/status/{job_id}:
+    get:
+      summary: Poll async export status
+      operationId: getExtractionExportStatus
+      tags: [extraction-export]
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: path
+          name: job_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Job status (one of pending/running/completed/failed/cancelled).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponse_ExportStatus' }
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/projects/{project_id}/extraction-export/status/{job_id}/cancel:
+    post:
+      summary: Cancel a queued/running export
+      operationId: cancelExtractionExport
+      tags: [extraction-export]
+      parameters:
+        - in: path
+          name: project_id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: path
+          name: job_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Cancel result (no-op when already terminal).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiResponse_ExportCancel' }
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+
+    ExtractionExportRequest:
+      type: object
+      required: [template_id, mode, article_scope]
+      properties:
+        template_id:
+          type: string
+          format: uuid
+          description: ID of the active `project_extraction_templates` row.
+        mode:
+          type: string
+          enum: [consensus, single_user, all_users]
+          description: Value-source mode (FR-002 §1).
+        reviewer_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            Required when `mode=single_user`. The caller may only pass their
+            own `user.sub` unless they have project `manager` role (FR-004).
+        article_scope:
+          type: string
+          enum: [current_list, selected_only]
+          description: Universe of articles to consider before mode eligibility (FR-018).
+        article_ids:
+          type: array
+          items: { type: string, format: uuid }
+          description: |
+            Universe of candidate articles. Must be non-empty.
+            For `current_list`: every article currently visible after filters/search.
+            For `selected_only`: only articles ticked in the Extraction table.
+        include_ai_metadata:
+          type: boolean
+          default: false
+          description: Adds the optional `AI metadata` sheet (FR-036–FR-040).
+        anonymize_reviewer_names:
+          type: boolean
+          default: false
+          description: |
+            Only meaningful when `mode=all_users`. When `true`, reviewer columns
+            are labelled "Reviewer A/B/…" stably by reviewer_id (FR-011).
+
+    ExportStartedData:
+      type: object
+      required: [job_id]
+      properties:
+        job_id:
+          type: string
+
+    ApiResponse_ExportStarted:
+      type: object
+      required: [ok, data, trace_id]
+      properties:
+        ok: { type: boolean, enum: [true] }
+        data: { $ref: '#/components/schemas/ExportStartedData' }
+        trace_id: { type: string, format: uuid }
+
+    ExportStatusData:
+      type: object
+      required: [job_id, status]
+      properties:
+        job_id: { type: string }
+        status:
+          type: string
+          enum: [pending, running, completed, failed, cancelled]
+        download_url:
+          type: string
+          format: uri
+          nullable: true
+          description: Signed Supabase Storage URL (1h TTL). Present only when status=completed.
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        error:
+          type: string
+          nullable: true
+          description: Failure reason; present only when status=failed.
+
+    ApiResponse_ExportStatus:
+      type: object
+      required: [ok, data, trace_id]
+      properties:
+        ok: { type: boolean, enum: [true] }
+        data: { $ref: '#/components/schemas/ExportStatusData' }
+        trace_id: { type: string, format: uuid }
+
+    ExportCancelData:
+      type: object
+      required: [cancelled]
+      properties:
+        cancelled: { type: boolean }
+
+    ApiResponse_ExportCancel:
+      type: object
+      required: [ok, data, trace_id]
+      properties:
+        ok: { type: boolean, enum: [true] }
+        data: { $ref: '#/components/schemas/ExportCancelData' }
+        trace_id: { type: string, format: uuid }
+
+    ErrorDetail:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum:
+            - VALIDATION_ERROR
+            - FORBIDDEN
+            - NOT_FOUND
+            - EMPTY_ELIGIBLE_ARTICLES
+            - TOO_MANY_REQUESTS
+            - SERVICE_UNAVAILABLE
+            - INTERNAL_ERROR
+        message:
+          type: string
+
+    ApiResponse_Error:
+      type: object
+      required: [ok, error, trace_id]
+      properties:
+        ok: { type: boolean, enum: [false] }
+        error: { $ref: '#/components/schemas/ErrorDetail' }
+        trace_id: { type: string, format: uuid }
+
+  responses:
+    ValidationError:
+      description: Request payload failed validation.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiResponse_Error' }
+    Forbidden:
+      description: |
+        Caller is not a project member, or invoked a manager-only mode without
+        the `manager` role.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiResponse_Error' }
+    NotFound:
+      description: Project, template, article, or job not found / expired.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiResponse_Error' }
+    EmptyEligibleArticles:
+      description: |
+        After intersecting article_scope with the mode's eligibility rule
+        (FR-013 / FR-014 / FR-015), zero articles remain — nothing to export.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiResponse_Error' }
+    TooManyRequests:
+      description: Rate limit exceeded (10/minute on the start endpoint).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiResponse_Error' }
+    QueueUnavailable:
+      description: Redis/Celery is unreachable; cannot enqueue the async job.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiResponse_Error' }

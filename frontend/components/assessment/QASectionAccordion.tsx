@@ -167,7 +167,7 @@ export function QASectionAccordion({
         <AccordionTrigger className="px-4 py-3 hover:no-underline">
           <div className="flex flex-1 items-center justify-between gap-3 text-left">
             <div className="flex items-center gap-2">
-              <ShieldAlert className="h-4 w-4 text-amber-600" />
+              <ShieldAlert className="h-4 w-4 text-warning" />
               <span className="text-sm font-semibold">{sectionLabel}</span>
               {signaling.length > 0 ? (
                 <Badge variant="secondary" className="text-[10px]">
@@ -246,10 +246,10 @@ export function QASectionAccordion({
 
           {summary.length > 0 ? (
             <div
-              className="mt-4 rounded-md border border-amber-300 bg-amber-50/40 p-3 dark:border-amber-900 dark:bg-amber-950/30"
+              className="mt-4 rounded-md border border-warning/30 bg-warning/10 p-3"
               data-testid={`qa-domain-summary-${entityType.name}`}
             >
-              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-amber-700 dark:text-amber-200">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-warning">
                 Domain judgment
               </p>
               <div className="space-y-1 divide-y">

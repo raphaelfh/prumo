@@ -128,11 +128,11 @@ export function RemoveModelDialog({
           )}
 
             {/* Operation details */}
-          <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-            <p className="text-sm font-medium text-slate-900 mb-2">
+          <div className="bg-muted/40 rounded-lg p-4 border border-border/40">
+            <p className="text-sm font-medium text-foreground mb-2">
                 {t('extraction', 'removeModelWhatRemoved')}
             </p>
-            <ul className="space-y-1 text-sm text-slate-600">
+            <ul className="space-y-1 text-sm text-muted-foreground">
               <li className="flex items-start gap-2">
                 <span className="text-destructive">•</span>
                   <span>Model "{modelName}"</span>

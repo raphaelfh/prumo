@@ -39,7 +39,7 @@ export function AIAcceptRejectButtons(props: AIAcceptRejectButtonsProps) {
             disabled={loading}
             className={cn(
               buttonClass,
-              "text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-950/20"
+              "text-success hover:text-success hover:bg-success/10"
             )}
           >
             {loading ? (
@@ -64,7 +64,7 @@ export function AIAcceptRejectButtons(props: AIAcceptRejectButtonsProps) {
             disabled={loading}
             className={cn(
               buttonClass,
-              "text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20"
+              "text-destructive hover:text-destructive hover:bg-destructive/10"
             )}
           >
             <X className="h-4 w-4" />

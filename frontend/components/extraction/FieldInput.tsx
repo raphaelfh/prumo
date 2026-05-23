@@ -171,7 +171,7 @@ export function FieldInput(props: FieldInputProps) {
               disabled={disabled}
               className={cn(
                   "text-sm min-h-[80px]",
-                hasAIPending && "border-purple-500 bg-purple-50/30 dark:bg-purple-950/10",
+                hasAIPending && "border-ai/60 bg-ai/5",
                 validationError && "border-destructive"
               )}
             />
@@ -187,7 +187,7 @@ export function FieldInput(props: FieldInputProps) {
               className={cn(
                 inputHeight,
                   "text-sm",
-                hasAIPending && "border-purple-500 bg-purple-50/30 dark:bg-purple-950/10",
+                hasAIPending && "border-ai/60 bg-ai/5",
                 validationError && "border-destructive"
               )}
           />

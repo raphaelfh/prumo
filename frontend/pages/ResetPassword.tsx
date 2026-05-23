@@ -195,8 +195,8 @@ export default function ResetPassword() {
                 {sessionError && !sessionReady && (
                     <div className="space-y-5 text-center">
                         <div
-                            className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-100 dark:bg-red-900">
-                            <AlertCircle className="h-7 w-7 text-red-600 dark:text-red-400"/>
+                            className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-destructive/15">
+                            <AlertCircle className="h-7 w-7 text-destructive"/>
                         </div>
                         <div>
                             <p className="font-semibold">{t("auth", "invalidLinkTitle")}</p>
@@ -214,8 +214,8 @@ export default function ResetPassword() {
                 {success && (
                     <div className="space-y-5 text-center">
                         <div
-                            className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-green-100 dark:bg-green-900">
-                            <CheckCircle2 className="h-7 w-7 text-green-600 dark:text-green-400"/>
+                            className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-success/15">
+                            <CheckCircle2 className="h-7 w-7 text-success"/>
                         </div>
                         <div>
                             <p className="font-semibold">{t("auth", "passwordResetSuccessTitle")}</p>
@@ -240,8 +240,10 @@ export default function ResetPassword() {
                         <form onSubmit={handleSubmit} className="space-y-4">
                             {error && (
                                 <div
-                                    className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
-                                    <AlertCircle className="h-4 w-4 shrink-0"/>
+                                    role="alert"
+                                    data-testid="auth-error"
+                                    className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                                    <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true"/>
                                     {error}
                                 </div>
                             )}

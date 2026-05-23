@@ -182,15 +182,15 @@ export function AddModelDialog({
 
               {/* Info about existing models */}
             {existingModels.length > 0 && (
-              <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
-                <p className="text-xs text-slate-600 font-medium mb-2">
+              <div className="bg-muted/40 rounded-lg p-3 border border-border/40">
+                <p className="text-xs text-muted-foreground font-medium mb-2">
                     {t('extraction', 'modelsAlreadyAdded')}
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {existingModels.map((name, index) => (
                     <span
                       key={index}
-                      className="text-xs bg-white px-2 py-1 rounded border border-slate-200"
+                      className="text-xs bg-card px-2 py-1 rounded border border-border/60 text-foreground"
                     >
                       {name}
                     </span>

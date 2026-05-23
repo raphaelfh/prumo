@@ -3,7 +3,8 @@
  * Controlled `open` state allows external triggers (⌘K).
  */
 import React, {useState} from 'react';
-import {ChevronDown, Loader2, Plus} from 'lucide-react';
+import {ChevronDown, Folder, Loader2, Plus} from 'lucide-react';
+import {useNavigate} from 'react-router-dom';
 import {Button} from '@/components/ui/button';
 import {KbdBadge} from '@/components/ui/kbd-badge';
 import {
@@ -29,6 +30,7 @@ interface SidebarHeaderProps {
 export const SidebarHeader: React.FC<SidebarHeaderProps> = ({projectName, open, onOpenChange}) => {
   const {user} = useAuth();
   const {projects, loading, switchProject, loadProjects} = useProjectsList();
+  const navigate = useNavigate();
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
 
@@ -113,6 +115,13 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({projectName, open, 
               >
                 <Plus className="h-3.5 w-3.5 mr-2" />
                 <span>{t('layout', 'createNewProject')}</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => navigate('/')}
+                className="px-2 py-1.5 rounded-md text-[13px] focus:bg-muted/60"
+              >
+                <Folder className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
+                <span>{t('layout', 'backToProjects')}</span>
               </DropdownMenuItem>
             </>
           )}

@@ -12,7 +12,7 @@ test.describe("Auth UI flows", () => {
     await page.fill("#login-password", "invalid-password");
     await page.locator("form button[type='submit']").click();
 
-    const errorAlert = page.locator("form div.bg-red-50, form div.bg-red-950").first();
+    const errorAlert = page.getByTestId("auth-error").first();
     await expect(errorAlert).toBeVisible({ timeout: 10000 });
     expect(page.url()).toContain("/auth");
   });

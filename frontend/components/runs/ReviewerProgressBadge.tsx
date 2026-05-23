@@ -33,10 +33,10 @@ export function ReviewerProgressBadge({
   const single = requiredReviewerCount <= 1;
 
   const colorClass = single
-    ? "border-slate-300 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+    ? "border-border/60 bg-muted/40 text-muted-foreground"
     : complete
-      ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
-      : "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200";
+      ? "border-success/30 bg-success/10 text-success"
+      : "border-warning/30 bg-warning/10 text-warning";
 
   const label = `${reviewerCount}/${requiredReviewerCount} reviewer${
     requiredReviewerCount === 1 ? "" : "s"
@@ -66,7 +66,7 @@ export function ReviewerProgressBadge({
             <span>{label}</span>
             {divergentCount > 0 ? (
               <span
-                className="ml-1 rounded bg-amber-500/20 px-1 text-[10px] font-semibold text-amber-700 dark:text-amber-200"
+                className="ml-1 rounded bg-warning/20 px-1 text-[10px] font-semibold text-warning"
                 data-testid="reviewer-progress-divergence"
               >
                 {divergentCount} ⚠

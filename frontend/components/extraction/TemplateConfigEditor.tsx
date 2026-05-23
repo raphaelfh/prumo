@@ -310,7 +310,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
                         </h4>
                         <div className="space-y-3 pl-4">
                           {children.map((child) => (
-                            <Card key={child.id} className="bg-slate-50">
+                            <Card key={child.id} className="bg-muted/40 border-border/40">
                               <CardHeader className="pb-3">
                                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                                   <div>

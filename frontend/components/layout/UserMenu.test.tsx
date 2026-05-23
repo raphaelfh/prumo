@@ -20,6 +20,7 @@ describe('UserMenu', () => {
       </MemoryRouter>,
     );
     await user.click(screen.getByRole('button', {name: /Raphael/i}));
+    expect(screen.getByText('Back to projects')).toBeInTheDocument();
     expect(screen.getByText('Profile')).toBeInTheDocument();
     expect(screen.getByText('Settings')).toBeInTheDocument();
     expect(screen.getByText('Invite members')).toBeInTheDocument();

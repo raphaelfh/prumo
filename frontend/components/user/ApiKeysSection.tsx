@@ -196,7 +196,7 @@ export function ApiKeysSection() {
       case 'valid':
         return (
             <Badge variant="outline"
-                   className="gap-1 text-[11px] font-normal text-green-700 border-green-200/80 bg-green-50/80 dark:bg-green-950/30 dark:border-green-800/50">
+                   className="gap-1 text-[11px] font-normal text-success border-success/30 bg-success/10">
                 <CheckCircle2 className="h-3 w-3" strokeWidth={1.5}/>
                 {t('user', 'apiKeysBadgeValid')}
           </Badge>
@@ -204,7 +204,7 @@ export function ApiKeysSection() {
       case 'invalid':
         return (
             <Badge variant="outline"
-                   className="gap-1 text-[11px] font-normal text-red-700 border-red-200/80 bg-red-50/80 dark:bg-red-950/30 dark:border-red-800/50">
+                   className="gap-1 text-[11px] font-normal text-destructive border-destructive/30 bg-destructive/10">
                 <XCircle className="h-3 w-3" strokeWidth={1.5}/>
                 {t('user', 'apiKeysBadgeInvalid')}
           </Badge>
@@ -212,7 +212,7 @@ export function ApiKeysSection() {
       default:
         return (
             <Badge variant="outline"
-                   className="gap-1 text-[11px] font-normal text-amber-700 border-amber-200/80 bg-amber-50/80 dark:bg-amber-950/30 dark:border-amber-800/50">
+                   className="gap-1 text-[11px] font-normal text-warning border-warning/30 bg-warning/10">
                 <Clock className="h-3 w-3" strokeWidth={1.5}/>
                 {t('user', 'apiKeysBadgePending')}
           </Badge>

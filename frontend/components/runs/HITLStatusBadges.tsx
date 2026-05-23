@@ -46,7 +46,7 @@ export function HITLStatusBadges({
       {finalized ? (
         <Badge
           variant="outline"
-          className="border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
+          className="border-success/30 bg-success/10 text-success"
           data-testid={`${kind}-finalized-badge`}
         >
           <CheckCircle2 className="mr-1 h-3 w-3" />
@@ -56,7 +56,7 @@ export function HITLStatusBadges({
       {parentRunId ? (
         <Badge
           variant="outline"
-          className="border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-200"
+          className="border-info/30 bg-info/10 text-info"
           data-testid={`${kind}-revision-badge`}
           title={`Derived from run ${parentRunId}`}
         >

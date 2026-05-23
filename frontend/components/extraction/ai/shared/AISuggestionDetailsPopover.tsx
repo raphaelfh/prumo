@@ -68,7 +68,7 @@ export function AISuggestionDetailsPopover({
       >
         <DialogHeader className="p-4 pr-12 pb-3 border-b shrink-0 space-y-0">
           <DialogTitle className="flex items-center gap-2 text-base">
-            <Sparkles className="h-4 w-4 text-purple-600 shrink-0" />
+            <Sparkles className="h-4 w-4 text-ai shrink-0" />
               Suggestion details
           </DialogTitle>
         </DialogHeader>
