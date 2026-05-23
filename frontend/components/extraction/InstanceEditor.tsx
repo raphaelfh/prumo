@@ -46,7 +46,7 @@ export function InstanceEditor({
           <div className="text-center py-8">
             <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <h4 className="font-medium mb-2">{t('extraction', 'noTemplateSelected')}</h4>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-[13px] text-muted-foreground">
                 {t('extraction', 'selectTemplateToStart')}
             </p>
           </div>
@@ -61,7 +61,7 @@ export function InstanceEditor({
       <div className="flex items-center justify-between">
         <div>
             <h3 className="text-lg font-semibold">{t('extraction', 'instanceEditorTitle')}</h3>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-[13px] text-muted-foreground">
               {t('extraction', 'instanceEditorDesc').replace('{{name}}', template.name)}
           </p>
         </div>
@@ -128,14 +128,14 @@ export function InstanceEditor({
             <div className="flex items-center justify-center py-8">
               <div className="text-center">
                 <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent mx-auto mb-2"></div>
-                  <p className="text-sm text-muted-foreground">{t('extraction', 'loadingInstances')}</p>
+                  <p className="text-[13px] text-muted-foreground">{t('extraction', 'loadingInstances')}</p>
               </div>
             </div>
           ) : instances.length === 0 ? (
             <div className="text-center py-8">
               <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                 <h4 className="font-medium mb-2">{t('extraction', 'noInstancesCreated')}</h4>
-              <p className="text-sm text-muted-foreground mb-4">
+              <p className="text-[13px] text-muted-foreground mb-4">
                   {t('extraction', 'createInstancesToStart')}
               </p>
               <Button>
@@ -164,7 +164,7 @@ export function InstanceEditor({
                           )}
                           <div>
                             <h4 className="font-medium">{instance.label}</h4>
-                            <p className="text-sm text-muted-foreground">
+                            <p className="text-[13px] text-muted-foreground">
                                 {instanceValues.length} {t('extraction', 'valuesFilledCount')}
                             </p>
                           </div>
@@ -214,7 +214,7 @@ export function InstanceEditor({
           <div className="text-center py-8">
             <Edit className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <h4 className="font-medium mb-2">{t('extraction', 'selectInstance')}</h4>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-[13px] text-muted-foreground">
                 {t('extraction', 'clickInstanceToEdit')}
             </p>
           </div>
