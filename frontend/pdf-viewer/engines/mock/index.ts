@@ -174,7 +174,6 @@ class MockEngineImpl implements PDFEngine {
     this.cfg = cfg;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async load(_source: PDFSource, _opts?: LoadOptions): Promise<PDFDocumentHandle> {
     return new MockDocumentHandle(this.cfg);
   }

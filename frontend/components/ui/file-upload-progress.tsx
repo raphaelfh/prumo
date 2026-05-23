@@ -204,7 +204,7 @@ const FileUploadItem: React.FC<FileUploadItemProps> = ({ item, onCancel, onRetry
   return (
     <div className={cn(
       "flex items-start gap-3 p-3 rounded-lg border transition-colors",
-      item.status === 'success' && "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-900",
+      item.status === 'success' && "bg-success/10 border-success/30",
       item.status === 'error' && "bg-destructive/10 border-destructive/20"
     )}>
       {/* Status icon */}
@@ -265,7 +265,7 @@ const FileUploadItem: React.FC<FileUploadItemProps> = ({ item, onCancel, onRetry
 
         {/* Mensagem de sucesso */}
         {item.status === 'success' && (
-            <p className="text-xs text-green-600 dark:text-green-400">Upload completed successfully</p>
+            <p className="text-xs text-success">Upload completed successfully</p>
         )}
       </div>
     </div>

@@ -56,7 +56,7 @@ export function ArticleKeywordsField({
         <div className={cn('overflow-hidden rounded-md border border-border/40', className)}>
             <div className="flex items-center justify-between gap-2 border-b border-border/40 bg-muted/20 px-3 py-2">
                 <div className="flex min-w-0 items-center gap-2">
-                    <Tag className="h-4 w-4 shrink-0 text-orange-500 dark:text-orange-400" strokeWidth={1.5}
+                    <Tag className="h-4 w-4 shrink-0 text-warning" strokeWidth={1.5}
                          aria-hidden/>
                     <span
                         className="truncate text-[13px] font-medium text-foreground">{headerLabel(value.length)}</span>

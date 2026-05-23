@@ -16,7 +16,6 @@ import {
   useAdvanceRun,
   useCreateConsensus,
   useCreateDecision,
-  useCreateProposal,
   useCreateRun,
   useRun,
   type RunDetailResponse,
@@ -139,44 +138,6 @@ describe("useCreateRun", () => {
     });
     expect(mutationResult?.id).toBe("run-2");
     await waitFor(() => expect(result.current.data?.id).toBe("run-2"));
-  });
-});
-
-describe("useCreateProposal", () => {
-  it("POSTs /api/v1/runs/{runId}/proposals with the request body", async () => {
-    apiClientMock.mockResolvedValueOnce({
-      id: "proposal-1",
-      run_id: "run-3",
-      instance_id: "instance-1",
-      field_id: "field-1",
-      source: "ai",
-      source_user_id: null,
-      proposed_value: { value: "x" },
-      confidence_score: 0.9,
-      rationale: null,
-      created_at: "2026-04-26T12:00:00Z",
-    });
-
-    const { wrapper } = createWrapper();
-    const { result } = renderHook(() => useCreateProposal("run-3"), { wrapper });
-
-    const body = {
-      instance_id: "instance-1",
-      field_id: "field-1",
-      source: "ai" as const,
-      proposed_value: { value: "x" },
-    };
-
-    let mutationResult: Awaited<ReturnType<typeof result.current.mutateAsync>> | undefined;
-    await act(async () => {
-      mutationResult = await result.current.mutateAsync(body);
-    });
-
-    expect(apiClientMock).toHaveBeenCalledWith("/api/v1/runs/run-3/proposals", {
-      method: "POST",
-      body,
-    });
-    expect(mutationResult?.id).toBe("proposal-1");
   });
 });
 

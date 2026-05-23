@@ -37,8 +37,8 @@ export function AISuggestionActions({
               disabled={loading}
               className={cn(
                 "h-7 w-7 rounded-full",
-                isAccepted && "ring-1 ring-green-500 bg-green-50 dark:bg-green-950/20",
-                "text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-950/20",
+                isAccepted && "ring-1 ring-success bg-success/10",
+                "text-success hover:text-success hover:bg-success/10",
                 loading && "opacity-50 cursor-not-allowed"
               )}
             >
@@ -65,8 +65,8 @@ export function AISuggestionActions({
               disabled={loading}
               className={cn(
                 "h-7 w-7 rounded-full",
-                isRejected && "ring-1 ring-red-500 bg-red-50 dark:bg-red-950/20",
-                "text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20",
+                isRejected && "ring-1 ring-destructive bg-destructive/10",
+                "text-destructive hover:text-destructive hover:bg-destructive/10",
                 loading && "opacity-50 cursor-not-allowed"
               )}
             >

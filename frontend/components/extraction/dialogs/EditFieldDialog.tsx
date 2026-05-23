@@ -355,7 +355,7 @@ export function EditFieldDialog({
                           <FormDescription>
                               {t('extraction', 'configureUnitsDesc')} {t('extraction', 'firstUnitDefaultShort')}
                             {validation && validation.extractedValuesCount > 0 && (
-                              <span className="block mt-1 text-amber-600">
+                              <span className="block mt-1 text-warning">
                                 ⚠️ {t('extraction', 'changesAffectNewOnly').replace('{{count}}', String(validation.extractedValuesCount))}
                               </span>
                             )}

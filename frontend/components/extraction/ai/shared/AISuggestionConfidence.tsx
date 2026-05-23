@@ -18,7 +18,7 @@ interface AISuggestionConfidenceProps {
 }
 
 const confidenceSpanClass =
-  'text-xs font-medium text-muted-foreground px-1.5 py-0.5 rounded transition-colors';
+  'text-xs font-medium text-muted-foreground px-1.5 py-0.5 rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
 
 export function AISuggestionConfidence({
   suggestion,

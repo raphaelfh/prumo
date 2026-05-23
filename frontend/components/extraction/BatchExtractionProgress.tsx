@@ -25,13 +25,13 @@ export function BatchExtractionProgress({ progress }: BatchExtractionProgressPro
   const sectionsProgress = totalSections > 0 ? (completedSections / totalSections) * 100 : 0;
 
   return (
-    <Card className="border-blue-200 bg-blue-50/50">
+    <Card className="border-info/30 bg-info/5">
       <CardContent className="pt-6">
         <div className="space-y-4">
           {/* Header */}
           <div className="flex items-center gap-2">
-            <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-            <h3 className="text-sm font-semibold text-slate-900">
+            <Loader2 className="h-4 w-4 animate-spin text-info" />
+            <h3 className="text-sm font-semibold text-foreground">
                 {t('extraction', 'batchExtractingAllSections')}
             </h3>
           </div>
@@ -39,10 +39,10 @@ export function BatchExtractionProgress({ progress }: BatchExtractionProgressPro
           {/* Progresso de chunks */}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-600">
+              <span className="text-muted-foreground">
                 {t('extraction', 'batchChunkOf').replace('{{current}}', String(currentChunk)).replace('{{total}}', String(totalChunks))}
               </span>
-              <span className="text-slate-500">
+              <span className="text-muted-foreground">
                 {Math.round(chunksProgress)}%
               </span>
             </div>
@@ -52,10 +52,10 @@ export function BatchExtractionProgress({ progress }: BatchExtractionProgressPro
             {/* Section progress */}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-600">
+              <span className="text-muted-foreground">
                 {t('extraction', 'batchSectionsOf').replace('{{completed}}', String(completedSections)).replace('{{total}}', String(totalSections))}
               </span>
-              <span className="text-slate-500">
+              <span className="text-muted-foreground">
                 {Math.round(sectionsProgress)}%
               </span>
             </div>
@@ -64,7 +64,7 @@ export function BatchExtractionProgress({ progress }: BatchExtractionProgressPro
 
             {/* Current section */}
           {currentSectionName && (
-            <div className="text-xs text-slate-500 italic">
+            <div className="text-xs text-muted-foreground italic">
                 {t('extraction', 'batchProcessing').replace('{{name}}', currentSectionName)}
             </div>
           )}

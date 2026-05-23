@@ -45,12 +45,12 @@ export function FullAIExtractionProgress({ progress, onClose, onMinimize }: Full
 
   if (isMinimized) {
     return (
-      <Card className="border-blue-200 bg-white shadow-lg">
+      <Card className="border-info/30 bg-info/5 shadow-elev-popover">
         <CardContent className="p-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Loader2 className="h-3 w-3 animate-spin text-blue-600" />
-              <span className="text-xs font-medium text-slate-900">
+              <Loader2 className="h-3 w-3 animate-spin text-info" />
+              <span className="text-xs font-medium text-foreground">
                 {t('extraction', 'fullAIProgressInProgress')}
               </span>
             </div>
@@ -83,12 +83,12 @@ export function FullAIExtractionProgress({ progress, onClose, onMinimize }: Full
   }
 
   return (
-    <Card className="border-blue-200 bg-white shadow-lg">
+    <Card className="border-info/30 bg-info/5 shadow-elev-popover">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-            <h3 className="text-sm font-semibold text-slate-900">
+            <Loader2 className="h-4 w-4 animate-spin text-info" />
+            <h3 className="text-sm font-semibold text-foreground">
                 {t('extraction', 'fullAIProgressTitle')}
             </h3>
           </div>
@@ -126,7 +126,7 @@ export function FullAIExtractionProgress({ progress, onClose, onMinimize }: Full
             <div className="space-y-4">
                 {/* Model extraction */}
               <div className="space-y-2">
-                <div className="flex items-center gap-2 text-xs text-slate-600">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <Sparkles className="h-3 w-3" />
                     <span>{t('extraction', 'fullAIProgressExtractingModels')}</span>
                 </div>
@@ -135,15 +135,15 @@ export function FullAIExtractionProgress({ progress, onClose, onMinimize }: Full
 
                 {/* Top-level section extraction */}
               {topLevelSectionsProgress && (
-                <div className="space-y-2 pt-2 border-t border-blue-200">
+                <div className="space-y-2 pt-2 border-t border-info/20">
                   <div className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2 text-slate-600">
+                    <div className="flex items-center gap-2 text-muted-foreground">
                       <Sparkles className="h-3 w-3" />
                       <span>
                         {t('extraction', 'fullAIProgressExtractingSections').replace('{{label}}', topLevelSectionsProgress.currentSectionName || `${topLevelSectionsProgress.currentSection}/${topLevelSectionsProgress.totalSections}`)}
                       </span>
                     </div>
-                    <span className="text-slate-500">
+                    <span className="text-muted-foreground">
                       {calculateProgressPercent(
                         topLevelSectionsProgress.completedSections,
                         topLevelSectionsProgress.totalSections
@@ -165,11 +165,11 @@ export function FullAIExtractionProgress({ progress, onClose, onMinimize }: Full
             {/* Stage 2: Extracting sections */}
           {isExtractingSections && modelsProgress && (
             <div className="space-y-3">
-              <div className="flex items-center gap-2 text-xs text-slate-600">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Sparkles className="h-3 w-3" />
                   <span>{t('extraction', 'fullAIProgressExtractingAllSections')}</span>
               </div>
-              <div className="pt-2 border-t border-blue-200">
+              <div className="pt-2 border-t border-info/20">
                 <BatchAllModelsSectionsProgress progress={modelsProgress} />
               </div>
             </div>

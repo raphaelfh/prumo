@@ -260,7 +260,7 @@ export function TeamMembersSection({ projectId }: TeamMembersSectionProps) {
                                                   onClick={() => handleSaveRole(member.id)}
                                                   aria-label={t('project', 'teamAriaSaveChange')}
                                               >
-                                                  <Check className="h-4 w-4 text-green-600" strokeWidth={1.5}/>
+                                                  <Check className="h-4 w-4 text-success" strokeWidth={1.5}/>
                                               </Button>
                                               <Button
                                                   size="icon"

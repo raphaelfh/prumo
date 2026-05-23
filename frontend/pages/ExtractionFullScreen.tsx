@@ -37,7 +37,7 @@ import {useExtractedValues} from '@/hooks/extraction/useExtractedValues';
 import {useExtractionSession} from '@/hooks/extraction/useExtractionSession';
 import {useFinalizedExtractionRun} from '@/hooks/extraction/useFinalizedExtractionRun';
 import {useExtractionProgress} from '@/hooks/extraction/useExtractionProgress';
-import {useExtractionAutoSave} from '@/hooks/extraction/useExtractionAutoSave';
+import {useAutoSaveProposals} from '@/hooks/runs';
 import {useOtherExtractions} from '@/hooks/extraction/colaboracao/useOtherExtractions';
 import {useAISuggestions} from '@/hooks/extraction/ai/useAISuggestions';
 import {useComparisonPermissions} from '@/hooks/shared/useComparisonPermissions';
@@ -311,7 +311,9 @@ export default function ExtractionFullScreen() {
 
     // Auto-save hook — writes `human` proposals on the active run; no-op
     // until the session is open and the run is in a writable stage.
-  const { isSaving, lastSaved, saveNow } = useExtractionAutoSave({
+    // The hook flushes pending edits on unmount, ``pagehide``, and
+    // visibility changes so navigating mid-debounce never drops a save.
+  const { saveState, lastSavedAt, hasUnsavedChanges, saveNow } = useAutoSaveProposals({
     runId: activeRunId,
     values,
     enabled: !!activeRunId && !loading && valuesInitialized && !isFinalized,
@@ -321,7 +323,7 @@ export default function ExtractionFullScreen() {
   // PROPOSAL to REVIEW so other reviewers can pick up. Mirrors QA's
   // ``handlePublish`` shape but stops at REVIEW because Data Extraction
   // expects multi-reviewer accept/reject before consensus + finalize.
-  // Declared after `useExtractionAutoSave` so the closure picks up the
+  // Declared after `useAutoSaveProposals` so the closure picks up the
   // already-initialized `saveNow` (avoids the temporal-dead-zone crash
   // on first render).
   const handleSubmitForReview = useCallback(async () => {
@@ -1007,8 +1009,9 @@ export default function ExtractionFullScreen() {
         hasOtherExtractions={permissions.canSeeOthers && otherExtractions.length > 0}
         userRole={permissions.userRole}
         isBlindMode={permissions.isBlindMode}
-        isSaving={isSaving}
-        lastSaved={lastSaved}
+        saveState={saveState}
+        lastSavedAt={lastSavedAt}
+        hasUnsavedChanges={hasUnsavedChanges}
         isComplete={isComplete}
         onFinalize={stage === 'proposal' ? handleSubmitForReview : handleFinalize}
         finalizeLabel={stage === 'proposal' ? 'Submit for review' : undefined}

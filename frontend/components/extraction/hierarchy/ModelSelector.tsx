@@ -17,6 +17,7 @@
 import { useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Select,
   SelectContent,
@@ -25,7 +26,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Plus, Trash2, Sparkles, Loader2, ChevronDown } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import {t} from '@/lib/copy';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -88,19 +88,27 @@ export function ModelSelector({
     return models.find(m => m.instanceId === activeModelId);
   }, [models, activeModelId]);
 
-  // Renderizar badge de progresso
+  // Renderizar badge de progresso (semantic tokens; flips correctly in dark mode)
   const renderProgressBadge = (progress?: Model['progress']) => {
     if (!progress) return null;
 
     const { percentage, completed, total } = progress;
-    const variant = percentage === 100 ? 'default' : percentage > 0 ? 'secondary' : 'outline';
-    const bgColor = percentage === 100 ? 'bg-green-500' : percentage > 0 ? 'bg-blue-500' : '';
-
+    if (percentage === 100) {
+      return (
+        <Badge className="bg-success text-success-foreground text-xs hover:bg-success/90">
+          {completed}/{total}
+        </Badge>
+      );
+    }
+    if (percentage > 0) {
+      return (
+        <Badge className="bg-info text-info-foreground text-xs hover:bg-info/90">
+          {completed}/{total}
+        </Badge>
+      );
+    }
     return (
-      <Badge
-        variant={variant}
-        className={cn('text-xs', bgColor && `${bgColor} text-white`)}
-      >
+      <Badge variant="outline" className="text-xs">
         {completed}/{total}
       </Badge>
     );
@@ -109,8 +117,8 @@ export function ModelSelector({
   // Loading state
   if (loading) {
     return (
-      <div className="bg-white border rounded-lg p-4 animate-pulse">
-        <div className="h-10 bg-slate-200 rounded"></div>
+      <div className="rounded-lg border border-border/60 bg-card p-4">
+        <Skeleton className="h-10 w-full" />
       </div>
     );
   }
@@ -118,12 +126,12 @@ export function ModelSelector({
     // Empty state (no models)
   if (models.length === 0) {
     return (
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-dashed border-blue-200 rounded-lg p-6">
+      <div className="rounded-lg border-2 border-dashed border-info/30 bg-info/5 p-6">
         <div className="text-center">
-          <h3 className="text-base font-semibold text-slate-900 mb-2">
+          <h3 className="text-base font-semibold text-foreground mb-2">
               {t('extraction', 'noModelsAdded')}
           </h3>
-          <p className="text-sm text-slate-600 mb-4">
+          <p className="text-sm text-muted-foreground mb-4">
             Adicione um modelo manualmente ou extraia automaticamente do artigo.
           </p>
           <div className="flex flex-col sm:flex-row gap-2 justify-center">
@@ -160,12 +168,12 @@ export function ModelSelector({
 
     // Interface with dropdown
   return (
-    <div className="bg-white border rounded-lg shadow-sm p-4 space-y-4">
+    <div className="rounded-lg border border-border/60 bg-card p-4 space-y-4 shadow-elev-card">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-            <h3 className="text-sm font-semibold text-slate-900">{t('extraction', 'modelSelectorTitle')}</h3>
-          <p className="text-xs text-slate-500 mt-1">
+            <h3 className="text-sm font-semibold text-foreground">{t('extraction', 'modelSelectorTitle')}</h3>
+          <p className="text-xs text-muted-foreground mt-1">
               {t('extraction', 'modelSelectorDesc')}
           </p>
         </div>
@@ -253,16 +261,16 @@ export function ModelSelector({
 
         {/* Active model info */}
       {activeModel && (
-        <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+        <div className="rounded-lg border border-border/40 bg-muted/40 p-3">
           <div className="flex items-center justify-between">
             <div className="min-w-0 flex-1">
-                <p className="text-xs text-slate-600">{t('extraction', 'modelActiveLabel')}</p>
-              <p className="font-medium text-slate-900 mt-0.5 truncate">{activeModel.modelName}</p>
+                <p className="text-xs text-muted-foreground">{t('extraction', 'modelActiveLabel')}</p>
+              <p className="font-medium text-foreground mt-0.5 truncate">{activeModel.modelName}</p>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               {activeModel.progress && (
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-slate-700">
+                  <span className="text-sm font-medium text-foreground">
                     {activeModel.progress.completed}/{activeModel.progress.total}
                   </span>
                   {renderProgressBadge(activeModel.progress)}

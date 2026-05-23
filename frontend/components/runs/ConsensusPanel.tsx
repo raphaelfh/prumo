@@ -130,8 +130,8 @@ function CoordRow({
       className={cn(
         "border-l-4",
         isResolved
-          ? "border-l-emerald-500"
-          : "border-l-amber-500",
+          ? "border-l-success"
+          : "border-l-warning",
       )}
       data-testid={`consensus-coord-${coordKey}`}
     >
@@ -139,9 +139,9 @@ function CoordRow({
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             {isResolved ? (
-              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              <CheckCircle2 className="h-4 w-4 text-success" />
             ) : (
-              <AlertTriangle className="h-4 w-4 text-amber-600" />
+              <AlertTriangle className="h-4 w-4 text-warning" />
             )}
             <CardTitle className="text-sm font-semibold">{fieldLabel}</CardTitle>
           </div>
@@ -158,7 +158,7 @@ function CoordRow({
         {isResolved ? (
           <Badge
             variant="outline"
-            className="border-emerald-300 bg-emerald-50 text-emerald-800"
+            className="border-success/30 bg-success/10 text-success"
             data-testid={`consensus-coord-resolved-${coordKey}`}
           >
             <ShieldCheck className="mr-1 h-3 w-3" />
@@ -177,7 +177,7 @@ function CoordRow({
                 className={cn(
                   "rounded border p-3 text-sm",
                   isReject
-                    ? "border-rose-200 bg-rose-50 dark:border-rose-900 dark:bg-rose-950"
+                    ? "border-destructive/30 bg-destructive/5"
                     : "border-border/60",
                 )}
                 data-testid={`consensus-decision-${d.id}`}
@@ -331,7 +331,7 @@ export function ConsensusPanel({
     // Reviewers all agreed; nothing to resolve here. Surface a fast-path.
     return (
       <div
-        className="m-4 rounded border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100"
+        className="m-4 rounded border border-success/30 bg-success/10 p-4 text-sm text-foreground"
         data-testid="consensus-empty"
       >
         <p className="font-medium">No conflicts to resolve.</p>

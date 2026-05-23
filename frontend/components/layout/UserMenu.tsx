@@ -3,7 +3,7 @@
  * Placeholder items show a toast until backed by real flows.
  */
 import React from 'react';
-import {ChevronDown, HelpCircle, LogOut, Settings, UserPlus, User as UserIcon} from 'lucide-react';
+import {ChevronDown, Folder, HelpCircle, LogOut, Settings, UserPlus, User as UserIcon} from 'lucide-react';
 import {useNavigate} from 'react-router-dom';
 import {toast} from 'sonner';
 import {Avatar, AvatarFallback, AvatarImage} from '@/components/ui/avatar';
@@ -57,7 +57,7 @@ export const UserMenu: React.FC<UserMenuProps> = ({collapsed}) => {
           )}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" side="top" className="w-64 p-1 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-border/50">
+      <DropdownMenuContent align="end" side="top" className="w-64 p-1 shadow-elev-popover border-border/50">
         <DropdownMenuLabel className="font-normal px-2 py-1.5 flex items-center gap-2">
           <Avatar className="h-7 w-7 border border-border/40">
             <AvatarImage src={user.avatar} alt={user.name} />
@@ -69,6 +69,10 @@ export const UserMenu: React.FC<UserMenuProps> = ({collapsed}) => {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator className="bg-border/30" />
+        <DropdownMenuItem onClick={() => navigate('/')} className="px-2 py-1.5 rounded-md text-[13px] focus:bg-muted/60">
+          <Folder className="mr-2 h-4 w-4" strokeWidth={1.5} />
+          {t('layout', 'backToProjects')}
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={() => showPlaceholder(t('layout', 'profile'))} className="px-2 py-1.5 rounded-md text-[13px] focus:bg-muted/60">
           <UserIcon className="mr-2 h-4 w-4" strokeWidth={1.5} />
           {t('layout', 'profile')}

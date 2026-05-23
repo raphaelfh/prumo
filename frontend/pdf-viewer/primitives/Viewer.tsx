@@ -174,6 +174,10 @@ function Page({
   children?: ReactNode;
 }) {
   return (
+    // bg-white is intentional, not a missed token: a PDF page is a
+    // physical sheet of white paper. It must stay white in both light
+    // and dark themes so the page contents render with the contrast
+    // and colour the document author intended.
     <div data-page-number={pageNumber} className="relative shadow-md bg-white">
       {children}
     </div>

@@ -161,10 +161,10 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
                         <div
                           key={suggestion.id}
                           className={cn(
-                            "p-2 sm:p-3 rounded-lg border transition-colors",
+                            "p-2 sm:p-3 rounded-lg border transition-colors duration-75",
                             isCurrent
-                              ? "bg-purple-50 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800"
-                              : "bg-background border-border hover:bg-muted/50"
+                              ? "bg-ai/10 border-ai/30"
+                              : "bg-background border-border/60 hover:bg-muted/40"
                           )}
                         >
                           {/* Valor e Status */}
@@ -185,10 +185,10 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
                                 className={cn(
                                   "text-xs",
                                   suggestion.status === 'accepted'
-                                    ? "bg-green-50 border-green-200 text-green-700 dark:bg-green-950/20 dark:border-green-800"
+                                    ? "bg-success/10 border-success/30 text-success"
                                     : suggestion.status === 'rejected'
-                                    ? "bg-red-50 border-red-200 text-red-700 dark:bg-red-950/20 dark:border-red-800"
-                                    : "bg-purple-50 border-purple-200 text-purple-700 dark:bg-purple-950/20 dark:border-purple-800"
+                                    ? "bg-destructive/10 border-destructive/30 text-destructive"
+                                    : "bg-ai/10 border-ai/30 text-ai"
                                 )}
                               >
                                 {suggestion.status === 'accepted'
@@ -213,24 +213,24 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  className="h-7 px-2 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                  className="h-7 px-2 text-success hover:text-success hover:bg-success/10"
                                   onClick={() => {
                                     if (onAccept) onAccept(suggestion);
                                   }}
                                 >
                                   <Check className="h-3 w-3 mr-1" />
-                                  <span className="hidden sm:inline">Aceitar</span>
+                                  <span className="hidden sm:inline">{t('extraction', 'acceptButton')}</span>
                                 </Button>
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  className="h-7 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  className="h-7 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
                                   onClick={() => {
                                     if (onReject) onReject(suggestion);
                                   }}
                                 >
                                   <X className="h-3 w-3 mr-1" />
-                                  <span className="hidden sm:inline">Rejeitar</span>
+                                  <span className="hidden sm:inline">{t('extraction', 'rejectButton')}</span>
                                 </Button>
                               </div>
                             )}

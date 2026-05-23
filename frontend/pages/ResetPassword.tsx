@@ -28,9 +28,9 @@ function getPasswordStrength(password: string): { strength: number; labelKey: St
     if (/[a-z]/.test(password)) strength++;
     if (/[0-9]/.test(password)) strength++;
     if (/[^A-Za-z0-9]/.test(password)) strength++;
-    if (strength <= 2) return {strength, labelKey: "strengthWeak", color: "bg-red-500"};
-    if (strength <= 4) return {strength, labelKey: "strengthMedium", color: "bg-yellow-500"};
-    return {strength, labelKey: "strengthStrong", color: "bg-green-500"};
+    if (strength <= 2) return {strength, labelKey: "strengthWeak", color: "bg-destructive"};
+    if (strength <= 4) return {strength, labelKey: "strengthMedium", color: "bg-warning"};
+    return {strength, labelKey: "strengthStrong", color: "bg-success"};
 }
 
 function PasswordStrengthBar({password}: { password: string }) {
@@ -42,7 +42,7 @@ function PasswordStrengthBar({password}: { password: string }) {
             <div className="flex items-center justify-between text-xs">
                 <span className="text-muted-foreground">{t("auth", "passwordStrengthLabel")}</span>
                 <span className={`font-medium ${
-                    labelKey === "strengthWeak" ? "text-red-500" : labelKey === "strengthMedium" ? "text-yellow-500" : "text-green-500"
+                    labelKey === "strengthWeak" ? "text-destructive" : labelKey === "strengthMedium" ? "text-warning" : "text-success"
                 }`}>{label}</span>
             </div>
             <div className="flex gap-1">
@@ -64,13 +64,13 @@ function PasswordMatchIndicator({password, confirm}: { password: string; confirm
         <div className="flex items-center gap-1.5 text-xs">
             {match ? (
                 <>
-                    <CheckCircle2 className="h-3 w-3 text-green-500"/>
-                    <span className="text-green-500">{t("auth", "passwordsMatch")}</span>
+                    <CheckCircle2 className="h-3 w-3 text-success"/>
+                    <span className="text-success">{t("auth", "passwordsMatch")}</span>
                 </>
             ) : (
                 <>
-                    <AlertCircle className="h-3 w-3 text-red-500"/>
-                    <span className="text-red-500">{t("auth", "passwordsDoNotMatch")}</span>
+                    <AlertCircle className="h-3 w-3 text-destructive"/>
+                    <span className="text-destructive">{t("auth", "passwordsDoNotMatch")}</span>
                 </>
             )}
         </div>
@@ -195,8 +195,8 @@ export default function ResetPassword() {
                 {sessionError && !sessionReady && (
                     <div className="space-y-5 text-center">
                         <div
-                            className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-100 dark:bg-red-900">
-                            <AlertCircle className="h-7 w-7 text-red-600 dark:text-red-400"/>
+                            className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-destructive/15">
+                            <AlertCircle className="h-7 w-7 text-destructive"/>
                         </div>
                         <div>
                             <p className="font-semibold">{t("auth", "invalidLinkTitle")}</p>
@@ -214,8 +214,8 @@ export default function ResetPassword() {
                 {success && (
                     <div className="space-y-5 text-center">
                         <div
-                            className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-green-100 dark:bg-green-900">
-                            <CheckCircle2 className="h-7 w-7 text-green-600 dark:text-green-400"/>
+                            className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-success/15">
+                            <CheckCircle2 className="h-7 w-7 text-success"/>
                         </div>
                         <div>
                             <p className="font-semibold">{t("auth", "passwordResetSuccessTitle")}</p>
@@ -240,8 +240,10 @@ export default function ResetPassword() {
                         <form onSubmit={handleSubmit} className="space-y-4">
                             {error && (
                                 <div
-                                    className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
-                                    <AlertCircle className="h-4 w-4 shrink-0"/>
+                                    role="alert"
+                                    data-testid="auth-error"
+                                    className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                                    <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true"/>
                                     {error}
                                 </div>
                             )}

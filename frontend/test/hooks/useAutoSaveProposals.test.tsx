@@ -1,0 +1,408 @@
+/**
+ * Tests for the unified ``useAutoSaveProposals`` hook.
+ *
+ * Coverage:
+ *   - Diff-aware POSTs (only changed coords)
+ *   - State machine transitions (idle → dirty → saving → saved | error)
+ *   - Survivability: flush on unmount, ``pagehide`` triggers save, all
+ *     POSTs carry ``keepalive: true``
+ *   - Mutex on concurrent ``saveNow``
+ *   - ``saveNow`` cancels the debounce timer
+ *   - ``hasUnsavedChanges`` reflects the diff against last-saved
+ */
+
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('@/integrations/api', () => ({
+  apiClient: vi.fn(),
+}));
+
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
+
+vi.mock('@/lib/copy', () => ({
+  t: (_ns: string, key: string) => key,
+}));
+
+import { apiClient } from '@/integrations/api';
+import { useAutoSaveProposals } from '@/hooks/runs/useAutoSaveProposals';
+
+const apiClientMock = apiClient as unknown as ReturnType<typeof vi.fn>;
+
+const PROPOSAL_RESPONSE = {
+  id: 'p-1',
+  run_id: 'run-1',
+  instance_id: 'inst-1',
+  field_id: 'field-1',
+  source: 'human',
+  source_user_id: null,
+  proposed_value: { value: 'hello' },
+  confidence_score: null,
+  rationale: null,
+  created_at: '2026-04-28T00:00:00Z',
+};
+
+beforeEach(() => {
+  apiClientMock.mockReset();
+});
+
+afterEach(() => {
+  vi.clearAllMocks();
+});
+
+describe('useAutoSaveProposals — basic write semantics', () => {
+  it('writes a human proposal per changed coord on saveNow()', async () => {
+    apiClientMock.mockResolvedValue(PROPOSAL_RESPONSE);
+
+    const { result } = renderHook(() =>
+      useAutoSaveProposals({
+        runId: 'run-1',
+        values: { 'inst-1_field-1': 'hello' },
+      }),
+    );
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+
+    expect(apiClientMock).toHaveBeenCalledTimes(1);
+    expect(apiClientMock).toHaveBeenCalledWith(
+      '/api/v1/runs/run-1/proposals',
+      expect.objectContaining({
+        method: 'POST',
+        keepalive: true,
+        body: {
+          instance_id: 'inst-1',
+          field_id: 'field-1',
+          source: 'human',
+          proposed_value: { value: 'hello' },
+        },
+      }),
+    );
+    expect(result.current.lastSavedAt).not.toBeNull();
+    expect(result.current.saveState).toBe('saved');
+  });
+
+  it('skips coords whose value did not change since the last save', async () => {
+    apiClientMock.mockResolvedValue(PROPOSAL_RESPONSE);
+
+    const { result, rerender } = renderHook(
+      ({ values }) =>
+        useAutoSaveProposals({
+          runId: 'run-1',
+          values,
+        }),
+      {
+        initialProps: {
+          values: { 'inst-1_field-1': 'a' } as Record<string, unknown>,
+        },
+      },
+    );
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+    expect(apiClientMock).toHaveBeenCalledTimes(1);
+
+    rerender({ values: { 'inst-1_field-1': 'a' } });
+    await act(async () => {
+      await result.current.saveNow();
+    });
+    expect(apiClientMock).toHaveBeenCalledTimes(1);
+
+    rerender({ values: { 'inst-1_field-1': 'b' } });
+    await act(async () => {
+      await result.current.saveNow();
+    });
+    expect(apiClientMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('is a no-op when runId is missing', async () => {
+    const { result } = renderHook(() =>
+      useAutoSaveProposals({
+        runId: null,
+        values: { 'inst-1_field-1': 'hello' },
+      }),
+    );
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+    expect(apiClientMock).not.toHaveBeenCalled();
+    expect(result.current.saveState).toBe('idle');
+  });
+
+  it('skips only undefined; null and empty-string are persisted as clears (#25)', async () => {
+    apiClientMock.mockResolvedValue(PROPOSAL_RESPONSE);
+
+    const { result } = renderHook(() =>
+      useAutoSaveProposals({
+        runId: 'run-1',
+        values: {
+          'inst-1_field-empty': '',
+          'inst-1_field-null': null,
+          'inst-1_field-undef': undefined,
+          'inst-1_field-real': 'hello',
+        },
+      }),
+    );
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+    expect(apiClientMock).toHaveBeenCalledTimes(3);
+    const fieldIds = apiClientMock.mock.calls.map(
+      (c) => (c[1] as { body: { field_id: string } }).body.field_id,
+    );
+    expect(fieldIds).toEqual(
+      expect.arrayContaining(['field-empty', 'field-null', 'field-real']),
+    );
+    expect(fieldIds).not.toContain('field-undef');
+    const clearCall = apiClientMock.mock.calls.find(
+      (c) => (c[1] as { body: { field_id: string } }).body.field_id === 'field-empty',
+    );
+    expect(
+      (clearCall![1] as { body: { proposed_value: unknown } }).body.proposed_value,
+    ).toEqual({ value: null });
+  });
+
+  it('saveNow is a no-op when enabled=false (#51)', async () => {
+    const { result } = renderHook(() =>
+      useAutoSaveProposals({
+        runId: 'run-1',
+        values: { 'inst-1_field-1': 'hello' },
+        enabled: false,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+    expect(apiClientMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('useAutoSaveProposals — mutex + error handling', () => {
+  it('concurrent saveNow invocations do not double-write (mutex)', async () => {
+    let release!: () => void;
+    const block = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    apiClientMock.mockImplementation(async () => {
+      await block;
+      return PROPOSAL_RESPONSE;
+    });
+
+    const { result } = renderHook(() =>
+      useAutoSaveProposals({
+        runId: 'run-1',
+        values: { 'inst-1_field-1': 'hello' },
+      }),
+    );
+
+    await act(async () => {
+      const first = result.current.saveNow();
+      const second = result.current.saveNow();
+      release();
+      await Promise.all([first, second]);
+    });
+
+    expect(apiClientMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces partial failures and retries only the failed coord', async () => {
+    apiClientMock
+      .mockResolvedValueOnce(PROPOSAL_RESPONSE)
+      .mockRejectedValueOnce(new Error('network drop'))
+      .mockResolvedValueOnce(PROPOSAL_RESPONSE);
+
+    const { result, rerender } = renderHook(
+      ({ values }) =>
+        useAutoSaveProposals({
+          runId: 'run-1',
+          values,
+        }),
+      {
+        initialProps: {
+          values: {
+            'inst-1_a': '1',
+            'inst-1_b': '2',
+            'inst-1_c': '3',
+          } as Record<string, unknown>,
+        },
+      },
+    );
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+
+    expect(apiClientMock).toHaveBeenCalledTimes(3);
+    expect(result.current.saveState).toBe('error');
+    expect(result.current.error).not.toBeNull();
+
+    apiClientMock.mockClear();
+    apiClientMock.mockResolvedValueOnce(PROPOSAL_RESPONSE);
+    rerender({
+      values: { 'inst-1_a': '1', 'inst-1_b': '2', 'inst-1_c': '3' },
+    });
+    await act(async () => {
+      await result.current.saveNow();
+    });
+    expect(apiClientMock).toHaveBeenCalledTimes(1);
+    expect((apiClientMock.mock.calls[0][1] as { body: { field_id: string } }).body.field_id)
+      .toBe('b');
+    expect(result.current.saveState).toBe('saved');
+  });
+});
+
+describe('useAutoSaveProposals — state machine', () => {
+  it('transitions idle → dirty → saving → saved through the debounce', async () => {
+    apiClientMock.mockResolvedValue(PROPOSAL_RESPONSE);
+
+    const { result, rerender } = renderHook(
+      ({ values }) =>
+        useAutoSaveProposals({
+          runId: 'run-1',
+          values,
+          debounceMs: 20,
+        }),
+      {
+        initialProps: { values: {} as Record<string, unknown> },
+      },
+    );
+    expect(result.current.saveState).toBe('idle');
+
+    rerender({ values: { 'inst-1_field-1': 'typed' } });
+    expect(result.current.saveState).toBe('dirty');
+    expect(result.current.hasUnsavedChanges).toBe(true);
+
+    await waitFor(() => expect(result.current.saveState).toBe('saved'), {
+      timeout: 1000,
+    });
+    expect(result.current.hasUnsavedChanges).toBe(false);
+    expect(apiClientMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('error → dirty cycle on the next keystroke', async () => {
+    apiClientMock.mockRejectedValueOnce(new Error('boom'));
+
+    const { result, rerender } = renderHook(
+      ({ values }) =>
+        useAutoSaveProposals({
+          runId: 'run-1',
+          values,
+        }),
+      {
+        initialProps: {
+          values: { 'inst-1_a': 'x' } as Record<string, unknown>,
+        },
+      },
+    );
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+    expect(result.current.saveState).toBe('error');
+
+    apiClientMock.mockResolvedValueOnce(PROPOSAL_RESPONSE);
+    rerender({ values: { 'inst-1_a': 'y' } });
+    expect(result.current.saveState).toBe('dirty');
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+    expect(result.current.saveState).toBe('saved');
+  });
+});
+
+describe('useAutoSaveProposals — lifecycle survivability', () => {
+  it('flushes pending edits on unmount (the original bug)', async () => {
+    apiClientMock.mockResolvedValue(PROPOSAL_RESPONSE);
+
+    const { unmount } = renderHook(() =>
+      useAutoSaveProposals({
+        runId: 'run-1',
+        values: { 'inst-1_field-1': 'mid-typing' },
+        debounceMs: 5000,
+      }),
+    );
+
+    // User leaves the page WAY before the 5s debounce would have fired.
+    unmount();
+
+    await waitFor(() => expect(apiClientMock).toHaveBeenCalledTimes(1));
+    expect(apiClientMock).toHaveBeenCalledWith(
+      '/api/v1/runs/run-1/proposals',
+      expect.objectContaining({ keepalive: true }),
+    );
+  });
+
+  it('does not flush on unmount when there are no dirty changes', async () => {
+    apiClientMock.mockResolvedValue(PROPOSAL_RESPONSE);
+
+    const { result, unmount } = renderHook(() =>
+      useAutoSaveProposals({
+        runId: 'run-1',
+        values: { 'inst-1_field-1': 'persisted' },
+      }),
+    );
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+    expect(apiClientMock).toHaveBeenCalledTimes(1);
+
+    unmount();
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 10));
+    });
+    expect(apiClientMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('pagehide triggers an immediate flush', async () => {
+    apiClientMock.mockResolvedValue(PROPOSAL_RESPONSE);
+
+    renderHook(() =>
+      useAutoSaveProposals({
+        runId: 'run-1',
+        values: { 'inst-1_field-1': 'about-to-leave' },
+        debounceMs: 5000,
+      }),
+    );
+
+    await act(async () => {
+      window.dispatchEvent(new Event('pagehide'));
+    });
+
+    await waitFor(() => expect(apiClientMock).toHaveBeenCalledTimes(1));
+    expect(apiClientMock).toHaveBeenCalledWith(
+      '/api/v1/runs/run-1/proposals',
+      expect.objectContaining({ keepalive: true }),
+    );
+  });
+
+  it('visibilitychange to "hidden" triggers a flush', async () => {
+    apiClientMock.mockResolvedValue(PROPOSAL_RESPONSE);
+
+    renderHook(() =>
+      useAutoSaveProposals({
+        runId: 'run-1',
+        values: { 'inst-1_field-1': 'tab-switched' },
+        debounceMs: 5000,
+      }),
+    );
+
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'hidden',
+      configurable: true,
+    });
+    await act(async () => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    await waitFor(() => expect(apiClientMock).toHaveBeenCalledTimes(1));
+  });
+});

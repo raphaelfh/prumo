@@ -20,7 +20,10 @@ import { expect, test } from "@playwright/test";
 import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { loginViaUi, resolveAuthToken } from "../_fixtures/auth";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
-import { adminSelect } from "../_fixtures/supabase-admin";
+import {
+  adminSelect,
+  resolveActiveExtractionTemplateId,
+} from "../_fixtures/supabase-admin";
 
 interface RunSummaryResponse {
   id: string;
@@ -37,7 +40,6 @@ test.describe("HITL run lifecycle invariants", () => {
       "E2E_USER_PASSWORD",
       "E2E_PROJECT_ID",
       "E2E_ARTICLE_ID",
-      "E2E_TEMPLATE_ID",
     ]);
     test.skip(required.length > 0, `Missing required env: ${required.join(", ")}`);
 
@@ -45,6 +47,7 @@ test.describe("HITL run lifecycle invariants", () => {
     await loginViaUi(page);
     const token = await resolveAuthToken(page);
     const traceId = createTraceId("e2e-run-lifecycle");
+    const templateId = await resolveActiveExtractionTemplateId(env.projectId!);
 
     // Ensure instances exist under (template, article) by opening a HITL
     // session — idempotent and creates one extraction_instance per
@@ -55,7 +58,7 @@ test.describe("HITL run lifecycle invariants", () => {
         kind: "extraction",
         project_id: env.projectId,
         article_id: env.articleId,
-        project_template_id: env.templateId,
+        project_template_id: templateId,
       },
       timeout: 30000,
     });
@@ -67,7 +70,7 @@ test.describe("HITL run lifecycle invariants", () => {
     // one field.
     const instances = await adminSelect<{ id: string; entity_type_id: string }>(
       "extraction_instances",
-      `select=id,entity_type_id&template_id=eq.${env.templateId}&article_id=eq.${env.articleId}&limit=50`,
+      `select=id,entity_type_id&template_id=eq.${templateId}&article_id=eq.${env.articleId}&limit=50`,
     );
     test.skip(instances.length === 0, "No extraction_instances available");
 
@@ -103,7 +106,7 @@ test.describe("HITL run lifecycle invariants", () => {
       data: {
         project_id: env.projectId,
         article_id: env.articleId,
-        project_template_id: env.templateId,
+        project_template_id: templateId,
       },
       timeout: 15000,
     });

@@ -34,7 +34,7 @@ export function AISuggestionsPanel({
           <div className="text-center py-8">
             <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <h4 className="font-medium mb-2">{t('extraction', 'aiPanelNoTemplate')}</h4>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-[13px] text-muted-foreground">
                 {t('extraction', 'aiPanelNoTemplateDesc')}
             </p>
           </div>
@@ -50,7 +50,7 @@ export function AISuggestionsPanel({
           <div className="text-center py-8">
             <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <h4 className="font-medium mb-2">{t('extraction', 'aiPanelNoArticle')}</h4>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-[13px] text-muted-foreground">
                 {t('extraction', 'aiPanelNoArticleDesc')}
             </p>
           </div>
@@ -65,7 +65,7 @@ export function AISuggestionsPanel({
       <div className="flex items-center justify-between">
         <div>
             <h3 className="text-lg font-semibold">{t('extraction', 'aiPanelTitle')}</h3>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-[13px] text-muted-foreground">
               {t('extraction', 'aiPanelSubtitle')}
           </p>
         </div>
@@ -84,7 +84,7 @@ export function AISuggestionsPanel({
           <CardContent>
             <div className="flex items-center space-x-2">
               <Clock className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm">{t('extraction', 'aiPanelStatusNotRun')}</span>
+                <span className="text-[13px]">{t('extraction', 'aiPanelStatusNotRun')}</span>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
                 {t('extraction', 'aiPanelStatusNotRunDesc')}
@@ -190,7 +190,7 @@ export function AISuggestionsPanel({
           <div className="text-center py-8">
             <Brain className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <h4 className="font-medium mb-2">{t('extraction', 'aiPanelNoRunsFound')}</h4>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-[13px] text-muted-foreground">
                 {t('extraction', 'aiPanelNoRunsDesc')}
             </p>
           </div>
@@ -212,7 +212,7 @@ export function AISuggestionsPanel({
           <div className="text-center py-8">
             <XCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <h4 className="font-medium mb-2">{t('extraction', 'aiPanelNoSuggestionsAvailable')}</h4>
-            <p className="text-sm text-muted-foreground mb-4">
+            <p className="text-[13px] text-muted-foreground mb-4">
                 {t('extraction', 'aiPanelNoSuggestionsDesc')}
             </p>
             <Button>

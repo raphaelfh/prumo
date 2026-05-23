@@ -277,18 +277,18 @@ export function RemoveSectionDialog({
             {/* Impacto visual */}
             <div className="grid grid-cols-3 gap-4">
               <div className="text-center p-3 bg-muted rounded-lg">
-                <FileText className="h-6 w-6 mx-auto mb-1 text-blue-500" />
-                <div className="font-bold text-lg">{impact.fieldsCount}</div>
+                <FileText className="h-6 w-6 mx-auto mb-1 text-info" />
+                <div className="font-bold text-lg text-foreground">{impact.fieldsCount}</div>
                   <div className="text-xs text-muted-foreground">{t('extraction', 'fieldsLabel')}</div>
               </div>
               <div className="text-center p-3 bg-muted rounded-lg">
-                <Users className="h-6 w-6 mx-auto mb-1 text-green-500" />
-                <div className="font-bold text-lg">{impact.instancesCount}</div>
+                <Users className="h-6 w-6 mx-auto mb-1 text-success" />
+                <div className="font-bold text-lg text-foreground">{impact.instancesCount}</div>
                   <div className="text-xs text-muted-foreground">{t('extraction', 'instancesLabel')}</div>
               </div>
               <div className="text-center p-3 bg-muted rounded-lg">
-                <Database className="h-6 w-6 mx-auto mb-1 text-purple-500" />
-                <div className="font-bold text-lg">{impact.dataCount}</div>
+                <Database className="h-6 w-6 mx-auto mb-1 text-primary" />
+                <div className="font-bold text-lg text-foreground">{impact.dataCount}</div>
                   <div className="text-xs text-muted-foreground">{t('extraction', 'dataLabel')}</div>
               </div>
             </div>

@@ -61,7 +61,7 @@ export function ConsensusIndicator({
 
     // Divergence (< threshold)
   return (
-    <Badge variant="outline" className={`gap-1 text-orange-600 ${className}`}>
+    <Badge variant="outline" className={`gap-1 text-warning ${className}`}>
       <AlertTriangle className="h-3 w-3" />
         {variant === 'default' ? t('shared', 'divergence') : `${consensus.percentage}%`}
     </Badge>

@@ -255,43 +255,90 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
         throw instancesError;
       }
 
-        // 3. Fetch the user's current ReviewerDecisions via reviewer_states
-        //    for instances in this template. Map each into the legacy
-        //    ExtractionValueDisplay shape so the row-level rendering stays the same.
+        // 3. Fetch the user's persisted work in two parallel reads:
+        //    - Reviewer decisions (post-publish / explicit accept): the
+        //      reviewer_states pointer joined with the decision payload.
+        //    - Human proposals (autosave during typing): rows in
+        //      extraction_proposal_records authored by the current user.
+        //    Both contribute to "filled" — without proposals the table
+        //    would show 0 % progress until the user explicitly publishes
+        //    or accepts an AI suggestion, even though autosave already
+        //    persisted the typed value.
       const instanceIds = (instancesData || []).map((i) => i.id);
-      let valuesData: any[] = [];
+      const valuesData: any[] = [];
       if (instanceIds.length > 0) {
-        const { data: statesData, error: statesError } = await supabase
-          .from('extraction_reviewer_states')
-          .select(
-            `instance_id, current_decision_id,
-             reviewer_decision:extraction_reviewer_decisions!fk_extraction_reviewer_states_decision_run_match(field_id, value, decision, created_at)`,
-          )
-          .in('instance_id', instanceIds)
-          .eq('reviewer_id', currentUserId);
-        if (statesError) {
-          console.error('Error fetching reviewer states:', statesError);
-          throw statesError;
+        const [statesResult, proposalsResult] = await Promise.all([
+          supabase
+            .from('extraction_reviewer_states')
+            .select(
+              `instance_id, current_decision_id,
+               reviewer_decision:extraction_reviewer_decisions!fk_extraction_reviewer_states_decision_run_match(field_id, value, decision, created_at)`,
+            )
+            .in('instance_id', instanceIds)
+            .eq('reviewer_id', currentUserId),
+          supabase
+            .from('extraction_proposal_records')
+            .select('instance_id, field_id, proposed_value, created_at')
+            .in('instance_id', instanceIds)
+            .eq('source', 'human')
+            .eq('source_user_id', currentUserId)
+            .order('created_at', { ascending: false }),
+        ]);
+        if (statesResult.error) {
+          console.error('Error fetching reviewer states:', statesResult.error);
+          throw statesResult.error;
         }
-        valuesData = (statesData || [])
-          .map((s: any) => {
-            if (!s.current_decision_id) return null;
-            const dec = Array.isArray(s.reviewer_decision)
-              ? s.reviewer_decision[0]
-              : s.reviewer_decision;
-            if (!dec || dec.decision === 'reject') return null;
-            return {
-              id: s.current_decision_id,
-              instance_id: s.instance_id,
-              field_id: dec.field_id,
-              value: dec.value,
-              source: 'human',
-              reviewer_id: currentUserId,
-              created_at: dec.created_at,
-              updated_at: dec.created_at,
-            };
-          })
-          .filter((v: any) => v !== null);
+        if (proposalsResult.error) {
+          console.error('Error fetching proposals:', proposalsResult.error);
+          throw proposalsResult.error;
+        }
+
+        const seen = new Set<string>();
+        for (const s of (statesResult.data ?? []) as any[]) {
+          if (!s.current_decision_id) continue;
+          const dec = Array.isArray(s.reviewer_decision)
+            ? s.reviewer_decision[0]
+            : s.reviewer_decision;
+          if (!dec || dec.decision === 'reject') continue;
+          const key = `${s.instance_id}_${dec.field_id}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          valuesData.push({
+            id: s.current_decision_id,
+            instance_id: s.instance_id,
+            field_id: dec.field_id,
+            value: dec.value,
+            source: 'human',
+            reviewer_id: currentUserId,
+            created_at: dec.created_at,
+            updated_at: dec.created_at,
+          });
+        }
+        for (const p of (proposalsResult.data ?? []) as any[]) {
+          const key = `${p.instance_id}_${p.field_id}`;
+          if (seen.has(key)) continue;
+          const raw = p.proposed_value;
+          const unwrapped =
+            raw && typeof raw === 'object' && 'value' in raw
+              ? (raw as { value: unknown }).value
+              : raw;
+          // Skip deliberate clears so a typed-then-erased field is not
+          // counted as "filled".
+          if (unwrapped === null || unwrapped === undefined || unwrapped === '') {
+            continue;
+          }
+          seen.add(key);
+          valuesData.push({
+            id: `proposal:${p.instance_id}:${p.field_id}`,
+            instance_id: p.instance_id,
+            field_id: p.field_id,
+            value: raw,
+            source: 'human',
+            reviewer_id: currentUserId,
+            created_at: p.created_at,
+            updated_at: p.created_at,
+          });
+        }
       }
 
         // 4. Combine articles with their extractions
@@ -623,7 +670,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                   <TooltipTrigger asChild>
                       <Badge
                           variant="secondary"
-                          className="h-7 w-7 cursor-default justify-center rounded-full border border-blue-200/70 bg-blue-50/60 p-0 text-blue-700 shadow-none dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-300"
+                          className="h-7 w-7 cursor-default justify-center rounded-full border border-info/30 bg-info/10 p-0 text-info shadow-none"
                           aria-label={t('extraction', 'listStatusNotStarted')}
                       >
                           <Circle className="h-3 w-3"/>
@@ -644,7 +691,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                   <TooltipTrigger asChild>
                       <Badge
                           variant="secondary"
-                          className="h-7 w-7 cursor-default justify-center rounded-full border border-emerald-200/70 bg-emerald-50/60 p-0 text-emerald-700 shadow-none dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300"
+                          className="h-7 w-7 cursor-default justify-center rounded-full border border-success/30 bg-success/10 p-0 text-success shadow-none"
                           aria-label={t('extraction', 'listStatusComplete')}
                       >
                           <CheckCircle2 className="h-3 w-3"/>
@@ -664,7 +711,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                 <TooltipTrigger asChild>
                     <Badge
                         variant="secondary"
-                        className="h-7 w-7 cursor-default justify-center rounded-full border border-amber-200/80 bg-amber-50/70 p-0 text-amber-700 shadow-none dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300"
+                        className="h-7 w-7 cursor-default justify-center rounded-full border border-warning/30 bg-warning/10 p-0 text-warning shadow-none"
                         aria-label={t('extraction', 'listStatusInProgress')}
                     >
                         <span className="text-[9px] font-semibold leading-none">{roundedProgress}%</span>
@@ -877,7 +924,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                                       </Button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end"
-                                                       className="w-56 border-border/50 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+                                                       className="w-56 border-border/50 shadow-elev-popover">
                                       <DropdownMenuLabel>{t('extraction', 'tableBatchActionsLabel')}</DropdownMenuLabel>
                                       <DropdownMenuSeparator/>
                                       <DropdownMenuItem onClick={handleBatchAIExtraction} disabled={isExtracting}
@@ -1164,7 +1211,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                                         className={`h-8 w-8 rounded-full p-0 shadow-none ${
                                             isComplete
                                                 ? 'border-border/60 bg-background hover:bg-muted/60'
-                                                : 'border-blue-200/80 bg-blue-50/60 text-blue-700 hover:bg-blue-100/70 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-300 dark:hover:bg-blue-900/40'
+                                                : 'border-info/30 bg-info/10 text-info hover:bg-info/20'
                                         }`}
                                     >
                                         {isComplete ? (
@@ -1245,7 +1292,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                                                               className={`h-8 w-8 rounded-full p-0 shadow-none ${
                                                                   isComplete
                                                                       ? 'border-border/60 bg-background hover:bg-muted/60'
-                                                                      : 'border-blue-200/80 bg-blue-50/60 text-blue-700 hover:bg-blue-100/70 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-300 dark:hover:bg-blue-900/40'
+                                                                      : 'border-info/30 bg-info/10 text-info hover:bg-info/20'
                                                               }`}>
                                                           {isComplete ? <CheckCircle className="h-3.5 w-3.5"/> :
                                                               <Edit className="h-3.5 w-3.5"/>}

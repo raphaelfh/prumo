@@ -218,7 +218,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   const renderDashboard = () => (
       <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              <Card className="border-border/40 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+              <Card className="border-border/40 shadow-elev-popover">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
                       <CardTitle className="text-[13px] font-medium">{t('extraction', 'dashboardArticles')}</CardTitle>
                       <FileText className="h-4 w-4 text-muted-foreground" strokeWidth={1.5}/>
@@ -229,7 +229,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
           </CardContent>
         </Card>
 
-              <Card className="border-border/40 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+              <Card className="border-border/40 shadow-elev-popover">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
                       <CardTitle
                           className="text-[13px] font-medium">{t('extraction', 'dashboardExtractionsStarted')}</CardTitle>
@@ -248,7 +248,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
           </CardContent>
         </Card>
 
-              <Card className="border-border/40 shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+              <Card className="border-border/40 shadow-elev-popover">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
                       <CardTitle
                           className="text-[13px] font-medium">{t('extraction', 'dashboardOverallProgress')}</CardTitle>
@@ -262,19 +262,19 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
       </div>
 
       {!activeTemplate && !templatesLoading && (
-          <Card className="border-border/40 border-blue-200 bg-blue-50">
+          <Card className="border-info/30 bg-info/5">
               <CardContent className="pt-4 pb-4 px-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex items-start space-x-3">
-                  <Settings className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" strokeWidth={1.5}/>
+                  <Settings className="h-4 w-4 text-info mt-0.5 flex-shrink-0" strokeWidth={1.5}/>
                 <div>
-                    <p className="text-[13px] font-medium text-blue-900">{t('extraction', 'dashboardConfigureTitle')}</p>
-                    <p className="text-[13px] text-blue-700 mt-1">
+                    <p className="text-[13px] font-medium text-foreground">{t('extraction', 'dashboardConfigureTitle')}</p>
+                    <p className="text-[13px] text-muted-foreground mt-1">
                         {t('extraction', 'dashboardConfigureDesc')}
                   </p>
                   <div className="mt-3 space-y-2">
-                      <p className="text-[13px] text-blue-800 font-medium">{t('extraction', 'dashboardYouCan')}</p>
-                      <ul className="text-[13px] text-blue-700 space-y-1 ml-4">
+                      <p className="text-[13px] text-foreground font-medium">{t('extraction', 'dashboardYouCan')}</p>
+                      <ul className="text-[13px] text-muted-foreground space-y-1 ml-4">
                           <li>• {t('extraction', 'dashboardImportCharmsOption')}</li>
                           <li>• {t('extraction', 'dashboardCreateSectionsOption')}</li>
                     </ul>
@@ -307,7 +307,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
         ) : isManager ? (
             <ConfigureTemplateFirst onConfigureClick={() => setActiveTab('configuration')}/>
         ) : (
-            <Card className="border-border/40 shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-md w-full">
+            <Card className="border-border/40 shadow-elev-popover rounded-md w-full">
                 <CardContent className="pt-6 pb-6">
                     <div className="flex items-start gap-3 text-[13px] text-muted-foreground">
                         <AlertCircle className="h-5 w-5 text-muted-foreground flex-shrink-0 mt-0.5" strokeWidth={1.5}/>
@@ -327,7 +327,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
             templateId={activeTemplate.id}
           />
         ) : (
-            <Card className="border-border/40 shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-md w-full">
+            <Card className="border-border/40 shadow-elev-popover rounded-md w-full">
                 <CardHeader className="pb-2">
                     <CardTitle
                         className="text-[13px] font-medium text-foreground">{t('extraction', 'configPanelTitle')}</CardTitle>
@@ -361,12 +361,12 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
               </div>
 
                     {/* 2. Manager info */}
-                    <div className="bg-blue-50 border border-border/40 border-blue-200 rounded-lg p-4">
+                    <div className="bg-info/5 border border-info/30 rounded-lg p-4">
                 <div className="flex items-start space-x-3">
-                    <AlertCircle className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" strokeWidth={1.5}/>
-                    <div className="text-[13px] text-blue-800">
+                    <AlertCircle className="h-4 w-4 text-info mt-0.5 flex-shrink-0" strokeWidth={1.5}/>
+                    <div className="text-[13px] text-foreground">
                         <p className="font-medium mb-1">{t('extraction', 'configManagersNote')}</p>
-                    <p className="text-blue-700">
+                    <p className="text-muted-foreground">
                         {t('extraction', 'configManagersNoteDesc')}
                     </p>
                   </div>
@@ -448,7 +448,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
         ) : isManager ? (
             <ConfigureTemplateFirst onConfigureClick={() => setActiveTab('configuration')}/>
         ) : (
-            <Card className="border-border/40 shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-md w-full">
+            <Card className="border-border/40 shadow-elev-popover rounded-md w-full">
                 <CardContent className="pt-6 pb-6">
                     <div className="flex items-start gap-3 text-[13px] text-muted-foreground">
                         <AlertCircle className="h-5 w-5 text-muted-foreground flex-shrink-0 mt-0.5" strokeWidth={1.5}/>

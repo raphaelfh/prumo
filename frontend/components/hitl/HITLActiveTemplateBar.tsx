@@ -44,7 +44,7 @@ export function HITLActiveTemplateBar({
 }: Props) {
   const Icon = kind === "quality_assessment" ? ShieldCheck : Sparkles;
   const iconColor =
-    kind === "quality_assessment" ? "text-amber-600" : "text-blue-600";
+    kind === "quality_assessment" ? "text-warning" : "text-info";
 
   if (templates.length === 0) {
     return (

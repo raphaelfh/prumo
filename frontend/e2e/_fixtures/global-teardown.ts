@@ -30,6 +30,33 @@ async function deleteFromTable(
   return { deleted: ids.length, failed: 0 };
 }
 
+/**
+ * Delete every row in `table` whose `column` matches one of the supplied
+ * parent ids. Used to cascade-by-hand before deleting parents whose FK is
+ * ON DELETE RESTRICT (e.g. extraction_instances.entity_type_id) so test
+ * teardown stays robust against side-effect rows created by other code
+ * paths (HITL session opens auto-create cardinality=one instances, etc).
+ */
+async function deleteByForeignId(
+  supabaseUrl: string,
+  serviceKey: string,
+  table: string,
+  column: string,
+  parentIds: string[]
+): Promise<void> {
+  if (parentIds.length === 0) return;
+  const inFilter = parentIds.map((id) => `"${id}"`).join(",");
+  const url = `${supabaseUrl}/rest/v1/${table}?${column}=in.(${inFilter})`;
+  await fetch(url, {
+    method: "DELETE",
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      Prefer: "return=minimal",
+    },
+  });
+}
+
 async function deleteAuthUser(
   supabaseUrl: string,
   serviceKey: string,
@@ -75,11 +102,6 @@ export default async function globalTeardown(_config: FullConfig): Promise<void>
   }
 
   const grouped: Record<string, string[]> = {
-    evaluation_runs: [],
-    evaluation_schemas: [],
-    evaluation_schema_versions: [],
-    evaluation_items: [],
-    evidence_records: [],
     extraction_instances: [],
     extraction_fields: [],
     extraction_entity_types: [],
@@ -89,21 +111,6 @@ export default async function globalTeardown(_config: FullConfig): Promise<void>
 
   for (const entry of entries) {
     switch (entry.kind) {
-      case "evaluation_run":
-        grouped.evaluation_runs.push(entry.id);
-        break;
-      case "evaluation_schema":
-        grouped.evaluation_schemas.push(entry.id);
-        break;
-      case "evaluation_schema_version":
-        grouped.evaluation_schema_versions.push(entry.id);
-        break;
-      case "evaluation_item":
-        grouped.evaluation_items.push(entry.id);
-        break;
-      case "evidence_record":
-        grouped.evidence_records.push(entry.id);
-        break;
       case "extraction_instance":
         grouped.extraction_instances.push(entry.id);
         break;
@@ -127,12 +134,6 @@ export default async function globalTeardown(_config: FullConfig): Promise<void>
   const summary: Record<string, DeleteResult> = {};
 
   // Order matters: delete dependents first.
-  summary.evidence_records = await deleteFromTable(
-    env.supabaseUrl,
-    env.supabaseServiceRoleKey,
-    "evidence_records",
-    grouped.evidence_records
-  );
   summary.extraction_instances = await deleteFromTable(
     env.supabaseUrl,
     env.supabaseServiceRoleKey,
@@ -145,35 +146,22 @@ export default async function globalTeardown(_config: FullConfig): Promise<void>
     "extraction_fields",
     grouped.extraction_fields
   );
+  // extraction_instances.entity_type_id is ON DELETE RESTRICT, so any
+  // instances created by other code paths (HITL session opens auto-spawn
+  // cardinality=one instances) would block the entity_type delete below.
+  // Sweep those orphans first.
+  await deleteByForeignId(
+    env.supabaseUrl,
+    env.supabaseServiceRoleKey,
+    "extraction_instances",
+    "entity_type_id",
+    grouped.extraction_entity_types
+  );
   summary.extraction_entity_types = await deleteFromTable(
     env.supabaseUrl,
     env.supabaseServiceRoleKey,
     "extraction_entity_types",
     grouped.extraction_entity_types
-  );
-  summary.evaluation_runs = await deleteFromTable(
-    env.supabaseUrl,
-    env.supabaseServiceRoleKey,
-    "evaluation_runs",
-    grouped.evaluation_runs
-  );
-  summary.evaluation_items = await deleteFromTable(
-    env.supabaseUrl,
-    env.supabaseServiceRoleKey,
-    "evaluation_items",
-    grouped.evaluation_items
-  );
-  summary.evaluation_schema_versions = await deleteFromTable(
-    env.supabaseUrl,
-    env.supabaseServiceRoleKey,
-    "evaluation_schema_versions",
-    grouped.evaluation_schema_versions
-  );
-  summary.evaluation_schemas = await deleteFromTable(
-    env.supabaseUrl,
-    env.supabaseServiceRoleKey,
-    "evaluation_schemas",
-    grouped.evaluation_schemas
   );
 
   let storageDeleted = 0;

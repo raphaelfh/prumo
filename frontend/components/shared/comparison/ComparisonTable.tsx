@@ -179,7 +179,7 @@ export function ComparisonTable<T = any>({
               {stats.consensus} {t('shared', 'consensus')}
           </Badge>
           <Badge variant="outline" className="gap-1">
-            <AlertTriangle className="h-3 w-3 text-orange-600" />
+            <AlertTriangle className="h-3 w-3 text-warning" />
               {stats.divergent} {t('shared', 'divergence')}
           </Badge>
           <Badge variant="outline" className="ml-auto">
@@ -195,7 +195,7 @@ export function ComparisonTable<T = any>({
                 <TableHead className="w-[200px] font-semibold">{t('shared', 'fieldLabel')}</TableHead>
 
                 {/* Current user column (highlighted) */}
-              <TableHead className="w-[150px] bg-blue-50 dark:bg-blue-950/20 font-semibold">
+              <TableHead className="w-[150px] bg-info/10 font-semibold">
                 <div className="flex items-center gap-2">
                   <span>{currentUser.userName}</span>
                     <Badge variant="secondary" className="text-xs">{t('shared', 'youLabel')}</Badge>

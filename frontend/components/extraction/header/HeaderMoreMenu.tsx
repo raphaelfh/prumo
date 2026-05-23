@@ -219,7 +219,7 @@ export function HeaderMoreMenu({
                       }
                       data-testid={`header-qa-template-${tpl.name}`}
                     >
-                      <ShieldAlert className="mr-2 h-4 w-4 text-amber-600" />
+                      <ShieldAlert className="mr-2 h-4 w-4 text-warning" />
                       <span>{tpl.name}</span>
                       <span className="ml-auto text-[10px] text-muted-foreground">
                         v{tpl.version}

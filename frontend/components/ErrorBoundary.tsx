@@ -107,8 +107,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
         <div className="min-h-[400px] flex items-center justify-center p-4">
           <Card className="w-full max-w-md">
             <CardHeader className="text-center">
-              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
-                <AlertTriangle className="h-6 w-6 text-red-600" />
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10">
+                <AlertTriangle className="h-6 w-6 text-destructive" />
               </div>
                 <CardTitle className="text-xl">{t('common', 'errorBoundaryTitle')}</CardTitle>
               <CardDescription>
@@ -121,7 +121,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               {/* Detalhes do erro (apenas em desenvolvimento) */}
               {this.props.showDetails && this.state.error && (
                 <details className="rounded-md border p-3 text-sm">
-                  <summary className="cursor-pointer font-medium text-gray-700 hover:text-gray-900">
+                  <summary className="cursor-pointer font-medium text-foreground hover:text-foreground/90">
                     <Bug className="mr-2 inline h-4 w-4" />
                       {t('common', 'errorBoundaryTechnicalDetails')}
                   </summary>
@@ -135,7 +135,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                     {this.state.error.stack && (
                       <div>
                         <strong>Stack Trace:</strong>
-                        <pre className="mt-1 max-h-32 overflow-auto rounded bg-gray-100 p-2 text-xs">
+                        <pre className="mt-1 max-h-32 overflow-auto rounded bg-muted p-2 text-xs text-muted-foreground">
                           {this.state.error.stack}
                         </pre>
                       </div>
@@ -161,7 +161,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               </div>
 
                 {/* Support information */}
-              <div className="text-center text-xs text-gray-500">
+              <div className="text-center text-xs text-muted-foreground">
                   {t('common', 'errorBoundarySupportMessage')}
                 <br />
                   {t('common', 'errorBoundaryErrorIdFooter')} {this.state.errorId}

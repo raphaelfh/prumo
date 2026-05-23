@@ -394,10 +394,10 @@ export function ArticleFileUploadDialogNew({
   // Obter cor do status
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'completed': return 'text-green-600';
-      case 'error': return 'text-red-600';
-      case 'uploading': return 'text-blue-600';
-      default: return 'text-gray-600';
+      case 'completed': return 'text-success';
+      case 'error': return 'text-destructive';
+      case 'uploading': return 'text-info';
+      default: return 'text-muted-foreground';
     }
   };
 
@@ -562,7 +562,7 @@ export function ArticleFileUploadDialogNew({
                                 </div>
 
                                 {fileWithRole.error && (
-                                  <div className="mt-1 text-xs text-red-600 break-words">
+                                  <div className="mt-1 text-xs text-destructive break-words">
                                     {fileWithRole.error}
                                   </div>
                                 )}
@@ -594,15 +594,15 @@ export function ArticleFileUploadDialogNew({
                             <div className="text-muted-foreground">{t('articles', 'uploadTotal')}</div>
                         </div>
                         <div>
-                          <div className="font-semibold text-green-600">{uploadStats.completed}</div>
+                          <div className="font-semibold text-success">{uploadStats.completed}</div>
                             <div className="text-muted-foreground">{t('articles', 'uploadReady')}</div>
                         </div>
                         <div>
-                          <div className="font-semibold text-blue-600">{uploadStats.total - uploadStats.completed - uploadStats.failed}</div>
+                          <div className="font-semibold text-info">{uploadStats.total - uploadStats.completed - uploadStats.failed}</div>
                             <div className="text-muted-foreground">{t('articles', 'uploadPending')}</div>
                         </div>
                         <div>
-                          <div className="font-semibold text-red-600">{uploadStats.failed}</div>
+                          <div className="font-semibold text-destructive">{uploadStats.failed}</div>
                             <div className="text-muted-foreground">{t('articles', 'errors')}</div>
                         </div>
                       </div>
@@ -635,7 +635,7 @@ export function ArticleFileUploadDialogNew({
                       )}
                       
                       {fileWithRole.error && (
-                        <div className="text-sm text-red-600 break-words">
+                        <div className="text-sm text-destructive break-words">
                           {fileWithRole.error}
                         </div>
                       )}

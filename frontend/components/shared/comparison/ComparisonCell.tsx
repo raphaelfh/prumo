@@ -127,9 +127,9 @@ export function ComparisonCell({
     <TableCell
       className={cn(
         "font-mono text-sm transition-colors group relative",
-        isCurrentUser && "bg-blue-50/50 dark:bg-blue-950/10",
-        matches && !isCurrentUser && "bg-green-50 dark:bg-green-950/20 border-l-2 border-l-green-400",
-        canEdit && !isEditing && "hover:bg-blue-100/70 cursor-pointer",
+        isCurrentUser && "bg-info/5",
+        matches && !isCurrentUser && "bg-success/10 border-l-2 border-l-success",
+        canEdit && !isEditing && "hover:bg-info/15 cursor-pointer",
         onClick && "cursor-pointer hover:bg-muted/50",
           isEditing && "min-w-[250px]", // More space when editing
         className
@@ -179,7 +179,7 @@ export function ComparisonCell({
 
               {/* Match icon (when value equals current user's) */}
             {matches && !isCurrentUser && (
-              <Check className="h-4 w-4 text-green-600 shrink-0" aria-label="Valor igual" />
+              <Check className="h-4 w-4 text-success shrink-0" aria-label="Valor igual" />
             )}
 
               {/* Consensus badge (when it's the consensus value) */}

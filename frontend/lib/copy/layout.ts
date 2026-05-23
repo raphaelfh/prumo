@@ -23,7 +23,7 @@ export const layout = {
     navDataExtraction: 'Data extraction',
     navQualityAssessment: 'Quality assessment',
     navPrismaReport: 'PRISMA report',
-    navSettings: 'Settings',
+    navSettings: 'Configuration',
 
     // Coming soon placeholder
     comingSoonTitle: 'Coming soon',

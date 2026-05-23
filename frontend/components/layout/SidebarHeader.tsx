@@ -3,7 +3,8 @@
  * Controlled `open` state allows external triggers (⌘K).
  */
 import React, {useState} from 'react';
-import {ChevronDown, Loader2, Plus} from 'lucide-react';
+import {ChevronDown, Folder, Loader2, Plus} from 'lucide-react';
+import {useNavigate} from 'react-router-dom';
 import {Button} from '@/components/ui/button';
 import {KbdBadge} from '@/components/ui/kbd-badge';
 import {
@@ -29,6 +30,7 @@ interface SidebarHeaderProps {
 export const SidebarHeader: React.FC<SidebarHeaderProps> = ({projectName, open, onOpenChange}) => {
   const {user} = useAuth();
   const {projects, loading, switchProject, loadProjects} = useProjectsList();
+  const navigate = useNavigate();
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
 
@@ -68,6 +70,7 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({projectName, open, 
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
+            aria-keyshortcuts="G P"
             className="w-full justify-start gap-2 h-8 px-2 rounded-md hover:bg-muted/50 transition-colors group"
           >
             <div className="h-5 w-5 rounded bg-primary/10 flex items-center justify-center flex-shrink-0 border border-primary/15">
@@ -81,10 +84,10 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({projectName, open, 
               </h2>
             </div>
             <ChevronDown className="h-3 w-3 text-muted-foreground/50" />
-            <KbdBadge keys={['K']} className="ml-1" />
+            <KbdBadge keys={['G', 'P']} variant="sequence" className="ml-1" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-[260px] p-1 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-border/50">
+        <DropdownMenuContent align="start" className="w-[260px] p-1 shadow-elev-popover border-border/50">
           {loading ? (
             <div className="flex items-center justify-center p-4">
               <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
@@ -112,6 +115,13 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({projectName, open, 
               >
                 <Plus className="h-3.5 w-3.5 mr-2" />
                 <span>{t('layout', 'createNewProject')}</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => navigate('/')}
+                className="px-2 py-1.5 rounded-md text-[13px] focus:bg-muted/60"
+              >
+                <Folder className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
+                <span>{t('layout', 'backToProjects')}</span>
               </DropdownMenuItem>
             </>
           )}

@@ -27,6 +27,11 @@ from app.schemas.extraction import (
 from app.services.api_key_service import APIKeyService
 from app.services.model_extraction_service import ModelExtractionService
 from app.services.model_hierarchy_service import ModelHierarchyService
+from app.services.run_lifecycle_service import (
+    CreateRunInputError,
+    TemplateNotFoundError,
+    TemplateVersionNotFoundError,
+)
 from app.utils.rate_limiter import limiter
 
 router = APIRouter()
@@ -200,6 +205,31 @@ async def extract_models(
 
         return ApiResponse(ok=True, data=response_data, trace_id=trace_id)
 
+    except CreateRunInputError as e:
+        rollback_start = perf_counter()
+        await db.rollback()
+        rollback_duration_ms = (perf_counter() - rollback_start) * 1000
+        logger.warning(
+            "model_extraction_bola_rejected",
+            trace_id=trace_id,
+            project_id=str(payload.project_id),
+            article_id=str(payload.article_id),
+            error=str(e),
+            rollback_duration_ms=rollback_duration_ms,
+        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    except (TemplateNotFoundError, TemplateVersionNotFoundError) as e:
+        rollback_start = perf_counter()
+        await db.rollback()
+        rollback_duration_ms = (perf_counter() - rollback_start) * 1000
+        logger.warning(
+            "model_extraction_template_missing",
+            trace_id=trace_id,
+            template_id=str(payload.template_id),
+            error=str(e),
+            rollback_duration_ms=rollback_duration_ms,
+        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except ValueError as e:
         rollback_start = perf_counter()
         await db.rollback()

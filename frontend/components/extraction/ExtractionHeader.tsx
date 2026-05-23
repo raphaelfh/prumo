@@ -18,6 +18,7 @@ import {HeaderAIActions} from './header/HeaderAIActions';
 import {HeaderMoreMenu} from './header/HeaderMoreMenu';
 import type {AISuggestion} from '@/types/ai-extraction';
 import type {ExtractionValueDisplay, ExtractionInstance, ProjectExtractionTemplate} from '@/types/extraction';
+import type {SaveState} from '@/hooks/runs';
 
 // =================== INTERFACES ===================
 
@@ -55,8 +56,9 @@ interface ExtractionHeaderProps {
   isBlindMode?: boolean;
 
     // Status and actions
-  isSaving?: boolean;
-  lastSaved?: Date | null;
+  saveState?: SaveState;
+  lastSavedAt?: Date | null;
+  hasUnsavedChanges?: boolean;
   isComplete: boolean;
   onFinalize: () => void;
   /** Optional label override for the finalize button — set to
@@ -108,8 +110,9 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
     hasOtherExtractions,
     userRole,
     isBlindMode,
-    isSaving = false,
-    lastSaved = null,
+    saveState,
+    lastSavedAt = null,
+    hasUnsavedChanges = false,
     isComplete,
     onFinalize,
     finalizeLabel,
@@ -152,8 +155,9 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                   completedFields={completedFields}
                   totalFields={totalFields}
                   completionPercentage={completionPercentage}
-                  isSaving={isSaving}
-                  lastSaved={lastSaved}
+                  saveState={saveState}
+                  lastSavedAt={lastSavedAt}
+                  hasUnsavedChanges={hasUnsavedChanges}
                   compact={true}
                 />
               </div>
@@ -247,8 +251,9 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                 completedFields={completedFields}
                 totalFields={totalFields}
                 completionPercentage={completionPercentage}
-                isSaving={isSaving}
-                lastSaved={lastSaved}
+                saveState={saveState}
+                lastSavedAt={lastSavedAt}
+                hasUnsavedChanges={hasUnsavedChanges}
                 compact={false}
               />
             </div>

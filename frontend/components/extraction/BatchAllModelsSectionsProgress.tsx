@@ -19,13 +19,13 @@ export function BatchAllModelsSectionsProgress({ progress }: BatchAllModelsSecti
   const modelsProgress = totalModels > 0 ? (currentModel / totalModels) * 100 : 0;
 
   return (
-    <Card className="border-blue-200 bg-blue-50/50">
+    <Card className="border-info/30 bg-info/5">
       <CardContent className="pt-6">
         <div className="space-y-4">
           {/* Header */}
           <div className="flex items-center gap-2">
-            <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-            <h3 className="text-sm font-semibold text-slate-900">
+            <Loader2 className="h-4 w-4 animate-spin text-info" />
+            <h3 className="text-sm font-semibold text-foreground">
                 Extracting sections from all models
             </h3>
           </div>
@@ -33,13 +33,13 @@ export function BatchAllModelsSectionsProgress({ progress }: BatchAllModelsSecti
             {/* Model progress */}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-600">
+              <span className="text-muted-foreground">
                 {currentModelName
                     ? `Extracting sections from model ${currentModel} of ${totalModels}: ${currentModelName}`
                     : `Model ${currentModel} of ${totalModels}`
                 }
               </span>
-              <span className="text-slate-500">
+              <span className="text-muted-foreground">
                 {Math.round(modelsProgress)}%
               </span>
             </div>
@@ -48,7 +48,7 @@ export function BatchAllModelsSectionsProgress({ progress }: BatchAllModelsSecti
 
             {/* Current model section progress */}
           {sectionProgress && (
-            <div className="pt-2 border-t border-blue-200">
+            <div className="pt-2 border-t border-info/20">
               <BatchExtractionProgress progress={sectionProgress} />
             </div>
           )}

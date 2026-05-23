@@ -98,9 +98,9 @@ export function OtherExtractionsPopover(props: OtherExtractionsPopoverProps) {
                   <div
                     key={ext.userId}
                     className={cn(
-                      "p-3 rounded-lg border",
-                      matchesMe && "bg-green-50 dark:bg-green-950/20 border-green-200",
-                      !matchesMe && isConsensusValue && "bg-blue-50 dark:bg-blue-950/20"
+                      "p-3 rounded-lg border border-border/60",
+                      matchesMe && "bg-success/10 border-success/30",
+                      !matchesMe && isConsensusValue && "bg-info/10 border-info/30"
                     )}
                   >
                     <div className="flex items-start gap-3">

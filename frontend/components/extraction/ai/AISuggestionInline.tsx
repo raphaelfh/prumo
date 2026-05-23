@@ -13,6 +13,7 @@ import {AISuggestionActions} from '@/components/shared/ai-suggestions';
 import {AISuggestionConfidence} from './shared/AISuggestionConfidence';
 import {AISuggestionValue} from './shared/AISuggestionValue';
 import {isSuggestionAccepted} from '@/lib/ai-extraction/suggestionUtils';
+import {t} from '@/lib/copy';
 
 // =================== INTERFACES ===================
 
@@ -67,7 +68,7 @@ export function AISuggestionInline({
           onReject={() => onReject?.()}
           trigger={
             <span className="text-xs font-medium text-muted-foreground cursor-help px-1.5 py-0.5 rounded">
-              IA aceita
+              {t('extraction', 'aiAccepted')}
             </span>
           }
         />

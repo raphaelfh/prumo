@@ -43,7 +43,7 @@ export const sidebarSections: SidebarSection[] = [
         title: t('layout', 'sectionProject'),
         items: [
             {id: 'overview', label: t('layout', 'navOverview'), icon: LayoutDashboard, shortcut: 'O', comingSoon: true},
-            {id: 'settings', label: t('layout', 'navSettings'), icon: Settings, shortcut: 'S'},
+            {id: 'settings', label: t('layout', 'navSettings'), icon: Settings, shortcut: 'C'},
         ],
     },
     {

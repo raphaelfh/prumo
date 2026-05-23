@@ -34,13 +34,14 @@ import { useAISuggestions } from "@/hooks/extraction/ai/useAISuggestions";
 import { useRunAIExtraction } from "@/hooks/extraction/ai/useRunAIExtraction";
 import {
   useAdvanceRun,
+  useAutoSaveProposals,
   useCreateConsensus,
-  useCreateProposal,
   useReopenRun,
   useReviewerSummary,
   useRun,
   useRunReviewers,
 } from "@/hooks/runs";
+import { SaveStatusBadge } from "@/components/runs/SaveStatusBadge";
 import { ReviewerProgressBadge } from "@/components/runs/ReviewerProgressBadge";
 import {
   HITLReopenButton,
@@ -54,8 +55,11 @@ interface FieldKey {
   fieldId: string;
 }
 
+// Key shape ``${instanceId}_${fieldId}`` is shared with the autosave
+// hook (``useAutoSaveProposals``) which splits on ``_``. UUIDs use
+// hyphens, so the underscore split is unambiguous.
 function keyOf(k: FieldKey): string {
-  return `${k.instanceId}::${k.fieldId}`;
+  return `${k.instanceId}_${k.fieldId}`;
 }
 
 export default function QualityAssessmentFullScreen() {
@@ -152,7 +156,6 @@ export default function QualityAssessmentFullScreen() {
     enabled: !!session?.runId,
   });
 
-  const proposalMutation = useCreateProposal(session?.runId ?? "");
   const advanceMutation = useAdvanceRun(session?.runId ?? "");
   const consensusMutation = useCreateConsensus(session?.runId ?? "");
   const reopenMutation = useReopenRun();
@@ -189,28 +192,24 @@ export default function QualityAssessmentFullScreen() {
     });
   }, [runDetail]);
 
+  // The autosave hook below watches ``values`` and debounces writes;
+  // ``handleValueChange`` only needs to update local state. Lifecycle
+  // handlers in the hook (unmount flush, ``pagehide``, visibility) carry
+  // the write through any navigation that happens mid-debounce.
   const handleValueChange = useCallback(
     (instanceId: string, fieldId: string, value: unknown) => {
       const k = keyOf({ instanceId, fieldId });
       setValues((prev) => ({ ...prev, [k]: value }));
-      if (!session) return;
-      proposalMutation.mutate(
-        {
-          instance_id: instanceId,
-          field_id: fieldId,
-          source: "human",
-          source_user_id: undefined,
-          proposed_value: { value: value ?? null },
-        },
-        {
-          onError: (err) => {
-            toast.error(`Failed to record proposal: ${err.message}`);
-          },
-        },
-      );
     },
-    [session, proposalMutation],
+    [],
   );
+
+  const { saveState, lastSavedAt, hasUnsavedChanges, saveNow } =
+    useAutoSaveProposals({
+      runId: session?.runId ?? null,
+      values,
+      enabled: !!session && !!runDetail && runDetail.run.stage === "proposal",
+    });
 
   // AI suggestions wiring — kind-agnostic hooks reused from Data
   // Extraction. Two key adaptations for QA:
@@ -362,6 +361,10 @@ export default function QualityAssessmentFullScreen() {
 
     setPublishing(true);
     try {
+      // Flush any pending debounced edits before the stage advances —
+      // otherwise the consensus loop below would publish stale values.
+      await saveNow();
+
       const stage = runDetail.run.stage;
       if (stage === "proposal") {
         await advanceMutation.mutateAsync({ target_stage: "review" });
@@ -376,7 +379,7 @@ export default function QualityAssessmentFullScreen() {
       // value directly to PublishedState without requiring a per-field
       // ReviewerDecision row.
       for (const [k, v] of filled) {
-        const [instanceId, fieldId] = k.split("::");
+        const [instanceId, fieldId] = k.split("_");
         await consensusMutation.mutateAsync({
           instance_id: instanceId,
           field_id: fieldId,
@@ -403,6 +406,7 @@ export default function QualityAssessmentFullScreen() {
     consensusMutation,
     values,
     refetchRun,
+    saveNow,
   ]);
 
   const sortedDomains = useMemo(() => domains, [domains]);
@@ -436,7 +440,7 @@ export default function QualityAssessmentFullScreen() {
         </Button>
         <Badge
           variant="outline"
-          className="border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
+          className="border-warning/30 bg-warning/10 text-warning"
           data-testid="qa-kind-badge"
         >
           Quality Assessment
@@ -463,6 +467,12 @@ export default function QualityAssessmentFullScreen() {
           />
         ) : null}
         <HeaderAIActions suggestions={aiSuggestions} compact />
+        <SaveStatusBadge
+          saveState={saveState}
+          lastSavedAt={lastSavedAt}
+          hasUnsavedChanges={hasUnsavedChanges}
+          hidden={!session || finalized}
+        />
       </div>
       <div className="flex items-center gap-2">
         <HITLReopenButton
@@ -515,7 +525,7 @@ export default function QualityAssessmentFullScreen() {
     <div className="space-y-3 p-4" data-testid="qa-form-panel">
       {error ? (
         <div
-          className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200"
+          className="rounded border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
           data-testid="qa-error"
         >
           {error}

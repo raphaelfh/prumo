@@ -61,6 +61,34 @@
     --info: 199 89% 48%;
     --info-foreground: 0 0% 100%;
 
+    /* AI accent — used by AI suggestion surfaces (FieldInput pending state,
+       AISuggestionHistoryPopover, AISuggestionDetailsPopover). Replaces
+       hard-coded purple-*. Same hue in light/dark; opacity modifiers
+       (`bg-ai/10`) give the soft tinted surfaces. */
+    --ai: 262 83% 58%;
+    --ai-foreground: 0 0% 100%;
+
+    /* Reviewer palette — used by ReviewerAvatarStack to colour avatar
+       bubbles deterministically by user_id hash. Same hue intent as the
+       legacy sky/emerald/amber/violet/rose 200/800 pair. */
+    --reviewer-1: 199 89% 48%;   /* sky    */
+    --reviewer-2: 158 64% 40%;   /* emerald */
+    --reviewer-3: 38 92% 50%;    /* amber  */
+    --reviewer-4: 262 83% 58%;   /* violet */
+    --reviewer-5: 350 89% 60%;   /* rose   */
+
+    /* Shadows — soft elevation tokens. `card` for static surfaces,
+       `popover` for floating menus / dropdowns. Defined as full
+       box-shadow values (not HSL), consumed via Tailwind's
+       boxShadow.card / boxShadow.popover mappings. */
+    --shadow-card: 0 1px 3px rgb(0 0 0 / 0.05);
+    --shadow-popover: 0 8px 30px rgb(0 0 0 / 0.04);
+
+    /* Primary hover — slightly lighter than --primary in light mode
+       (since --primary is near-black). Referenced from
+       tailwind.config.ts:colors.primary.hover. */
+    --primary-hover: 240 5.9% 20%;
+
       --border: 240 5.9% 90%;
       --input: 240 5.9% 90%;
       --ring: 240 5.9% 10%;
@@ -111,6 +139,26 @@
     --info: 199 89% 48%;
     --info-foreground: 0 0% 100%;
 
+    /* AI accent — lifted slightly in dark for legibility on dark surfaces. */
+    --ai: 262 83% 68%;
+    --ai-foreground: 0 0% 100%;
+
+    /* Reviewer palette — lifted for dark-mode legibility. */
+    --reviewer-1: 199 89% 60%;
+    --reviewer-2: 158 64% 52%;
+    --reviewer-3: 38 92% 60%;
+    --reviewer-4: 262 83% 68%;
+    --reviewer-5: 350 89% 70%;
+
+    /* Shadows — higher alpha because dark backgrounds swallow low-alpha
+       shadows. */
+    --shadow-card: 0 1px 3px rgb(0 0 0 / 0.40);
+    --shadow-popover: 0 8px 30px rgb(0 0 0 / 0.35);
+
+    /* Primary hover — slightly darker than --primary in dark mode
+       (since --primary is near-white). */
+    --primary-hover: 0 0% 88%;
+
       --border: 240 3.7% 15.9%;
       --input: 240 3.7% 15.9%;
       --ring: 240 4.9% 83.9%;
@@ -146,7 +194,7 @@
 @layer components {
     /* Linear inspired card */
     .linear-card {
-        @apply rounded-md border border-border/50 bg-card/30 shadow-[0_1px_3px_rgba(0,0,0,0.05)] transition-all hover:border-border hover:shadow-[0_2px_8px_rgba(0,0,0,0.08)];
+        @apply rounded-md border border-border/50 bg-card/30 shadow-elev-card transition-all hover:border-border hover:shadow-[0_2px_8px_rgba(0,0,0,0.08)];
     }
 
     /* High density list item */

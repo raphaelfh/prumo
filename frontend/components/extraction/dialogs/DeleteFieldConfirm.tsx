@@ -62,7 +62,7 @@ export function DeleteFieldConfirm({
           <AlertDialogTitle className="flex items-center gap-2">
             {canDelete ? (
               <>
-                <AlertTriangle className="h-5 w-5 text-orange-500" />
+                <AlertTriangle className="h-5 w-5 text-warning" />
                   {t('extraction', 'confirmDeleteTitle')}
               </>
             ) : (
@@ -96,12 +96,12 @@ export function DeleteFieldConfirm({
 
               {/* Aviso baseado no status */}
               {canDelete ? (
-                <div className="rounded-lg border border-orange-200 bg-orange-50 p-4">
+                <div className="rounded-lg border border-warning/30 bg-warning/10 p-4">
                   <div className="flex items-start gap-2">
-                    <AlertTriangle className="h-5 w-5 text-orange-600 mt-0.5 flex-shrink-0" />
+                    <AlertTriangle className="h-5 w-5 text-warning mt-0.5 flex-shrink-0" />
                     <div className="flex-1">
-                        <p className="font-medium text-orange-900">{t('common', 'attention')}</p>
-                      <ul className="mt-2 list-disc list-inside space-y-1 text-sm text-orange-800">
+                        <p className="font-medium text-foreground">{t('common', 'attention')}</p>
+                      <ul className="mt-2 list-disc list-inside space-y-1 text-sm text-foreground/80">
                           <li>{t('extraction', 'deleteFieldWarningUndo')}</li>
                           <li>{t('extraction', 'deleteFieldWarningRemoved')}</li>
                           <li>{t('extraction', 'deleteFieldWarningNewArticles')}</li>

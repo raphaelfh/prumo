@@ -24,7 +24,10 @@ import { expect, test } from "@playwright/test";
 import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { resolveAuthToken, loginViaUi } from "../_fixtures/auth";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
-import { adminSelect } from "../_fixtures/supabase-admin";
+import {
+  adminSelect,
+  resolveActiveExtractionTemplateId,
+} from "../_fixtures/supabase-admin";
 
 interface RunSummaryResponse {
   id: string;
@@ -66,7 +69,6 @@ test.describe("HITL AI proposal pipeline", () => {
       "E2E_USER_PASSWORD",
       "E2E_PROJECT_ID",
       "E2E_ARTICLE_ID",
-      "E2E_TEMPLATE_ID",
     ]);
     test.skip(required.length > 0, `Missing required env: ${required.join(", ")}`);
 
@@ -74,6 +76,7 @@ test.describe("HITL AI proposal pipeline", () => {
     await loginViaUi(page);
     const token = await resolveAuthToken(page);
     const traceId = createTraceId("e2e-hitl-ai-proposal");
+    const templateId = await resolveActiveExtractionTemplateId(env.projectId!);
 
     // Ensure instances exist by opening a HITL session (idempotent).
     await request.post(`${env.apiUrl}/api/v1/hitl/sessions`, {
@@ -82,7 +85,7 @@ test.describe("HITL AI proposal pipeline", () => {
         kind: "extraction",
         project_id: env.projectId,
         article_id: env.articleId,
-        project_template_id: env.templateId,
+        project_template_id: templateId,
       },
       timeout: 30000,
     });
@@ -95,7 +98,7 @@ test.describe("HITL AI proposal pipeline", () => {
       entity_type_id: string;
     }>(
       "extraction_instances",
-      `select=id,entity_type_id&template_id=eq.${env.templateId}&article_id=eq.${env.articleId}&limit=50`,
+      `select=id,entity_type_id&template_id=eq.${templateId}&article_id=eq.${env.articleId}&limit=50`,
     );
     test.skip(instances.length === 0, "No extraction_instances seeded for this template+article");
 
@@ -120,7 +123,7 @@ test.describe("HITL AI proposal pipeline", () => {
       data: {
         project_id: env.projectId,
         article_id: env.articleId,
-        project_template_id: env.templateId,
+        project_template_id: templateId,
       },
       timeout: 15000,
     });

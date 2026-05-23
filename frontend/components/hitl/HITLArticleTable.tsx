@@ -207,31 +207,72 @@ export function HITLArticleTable({
         const instances = (instancesRes.data ?? []) as ExtractionInstanceRow[];
 
         const instanceIds = instances.map((i) => i.id);
-        let values: ReviewerValueRow[] = [];
+        const values: ReviewerValueRow[] = [];
         if (instanceIds.length > 0) {
-          const statesRes = await supabase
-            .from("extraction_reviewer_states")
-            .select(
-              `instance_id, current_decision_id,
-               reviewer_decision:extraction_reviewer_decisions!fk_extraction_reviewer_states_decision_run_match(field_id, value, decision)`,
-            )
-            .in("instance_id", instanceIds)
-            .eq("reviewer_id", currentUserId);
+          // Progress reflects work the current user has persisted —
+          // either a non-rejected ReviewerDecision (the post-publish
+          // path) OR a ``human`` ProposalRecord written by autosave
+          // while typing. Both sources must contribute, otherwise the
+          // table shows 0 % until the user explicitly clicks "Publish"
+          // (QA) or "Accept" on an AI proposal (extraction), even
+          // though autosave already persisted the typed value.
+          const [statesRes, proposalsRes] = await Promise.all([
+            supabase
+              .from("extraction_reviewer_states")
+              .select(
+                `instance_id, current_decision_id,
+                 reviewer_decision:extraction_reviewer_decisions!fk_extraction_reviewer_states_decision_run_match(field_id, value, decision)`,
+              )
+              .in("instance_id", instanceIds)
+              .eq("reviewer_id", currentUserId),
+            supabase
+              .from("extraction_proposal_records")
+              .select("instance_id, field_id, proposed_value, created_at")
+              .in("instance_id", instanceIds)
+              .eq("source", "human")
+              .eq("source_user_id", currentUserId)
+              .order("created_at", { ascending: false }),
+          ]);
           if (statesRes.error) throw statesRes.error;
-          values = (statesRes.data ?? [])
-            .map((row: any) => {
-              const dec = Array.isArray(row.reviewer_decision)
-                ? row.reviewer_decision[0]
-                : row.reviewer_decision;
-              if (!dec || dec.decision === "reject") return null;
-              return {
-                instance_id: row.instance_id as string,
-                field_id: dec.field_id as string,
-                value: dec.value,
-                decision: dec.decision as string,
-              };
-            })
-            .filter((v): v is ReviewerValueRow => v !== null);
+          if (proposalsRes.error) throw proposalsRes.error;
+
+          const seen = new Set<string>();
+          for (const row of (statesRes.data ?? []) as any[]) {
+            const dec = Array.isArray(row.reviewer_decision)
+              ? row.reviewer_decision[0]
+              : row.reviewer_decision;
+            if (!dec || dec.decision === "reject") continue;
+            const key = `${row.instance_id}_${dec.field_id}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            values.push({
+              instance_id: row.instance_id as string,
+              field_id: dec.field_id as string,
+              value: dec.value,
+              decision: dec.decision as string,
+            });
+          }
+          for (const row of (proposalsRes.data ?? []) as any[]) {
+            const key = `${row.instance_id}_${row.field_id}`;
+            if (seen.has(key)) continue;
+            const raw = row.proposed_value;
+            const unwrapped =
+              raw && typeof raw === "object" && "value" in raw
+                ? (raw as { value: unknown }).value
+                : raw;
+            // Skip deliberate clears so a typed-then-erased field is
+            // not counted as "filled".
+            if (unwrapped === null || unwrapped === undefined || unwrapped === "") {
+              continue;
+            }
+            seen.add(key);
+            values.push({
+              instance_id: row.instance_id as string,
+              field_id: row.field_id as string,
+              value: raw,
+              decision: "edit",
+            });
+          }
         }
 
         const merged: ArticleWithProgress[] = baseArticles.map((article) => {
@@ -438,7 +479,7 @@ export function HITLArticleTable({
             <TooltipTrigger asChild>
               <Badge
                 variant="secondary"
-                className="h-7 w-7 cursor-default justify-center rounded-full border border-blue-200/70 bg-blue-50/60 p-0 text-blue-700 shadow-none dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-300"
+                className="h-7 w-7 cursor-default justify-center rounded-full border border-info/30 bg-info/10 p-0 text-info shadow-none"
               >
                 <Circle className="h-3 w-3" />
               </Badge>
@@ -457,7 +498,7 @@ export function HITLArticleTable({
             <TooltipTrigger asChild>
               <Badge
                 variant="secondary"
-                className="h-7 w-7 cursor-default justify-center rounded-full border border-emerald-200/70 bg-emerald-50/60 p-0 text-emerald-700 shadow-none dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300"
+                className="h-7 w-7 cursor-default justify-center rounded-full border border-success/30 bg-success/10 p-0 text-success shadow-none"
               >
                 <CheckCircle2 className="h-3 w-3" />
               </Badge>
@@ -475,7 +516,7 @@ export function HITLArticleTable({
           <TooltipTrigger asChild>
             <Badge
               variant="secondary"
-              className="h-7 w-7 cursor-default justify-center rounded-full border border-amber-200/80 bg-amber-50/70 p-0 text-amber-700 shadow-none dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300"
+              className="h-7 w-7 cursor-default justify-center rounded-full border border-warning/30 bg-warning/10 p-0 text-warning shadow-none"
             >
               <span className="text-[9px] font-semibold leading-none">
                 {progress}%
@@ -679,10 +720,10 @@ export function HITLArticleTable({
                         <div
                           className={`h-full ${
                             progress >= 100
-                              ? "bg-emerald-500"
+                              ? "bg-success"
                               : progress > 0
-                                ? "bg-amber-500"
-                                : "bg-blue-500/40"
+                                ? "bg-warning"
+                                : "bg-info/40"
                           }`}
                           style={{ width: `${progress}%` }}
                         />

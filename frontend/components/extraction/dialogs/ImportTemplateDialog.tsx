@@ -26,6 +26,7 @@ import {useGlobalTemplates} from '@/hooks/extraction/useGlobalTemplates';
 import {importGlobalTemplate} from '@/services/templateImportService';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
+import {cn} from '@/lib/utils';
 
 // =================== INTERFACES ===================
 
@@ -133,51 +134,55 @@ export function ImportTemplateDialog({
           <div className="space-y-4">
             {/* Lista de templates */}
             <RadioGroup value={selectedTemplateId || ''} onValueChange={setSelectedTemplateId}>
-              <div className="space-y-3">
-                {templates.map((template) => (
-                  <Card 
-                    key={template.id}
-                    className={`group cursor-pointer transition-all ${
-                      selectedTemplateId === template.id 
-                        ? 'ring-2 ring-primary' 
-                        : 'hover:bg-primary'
-                    }`}
-                    onClick={() => setSelectedTemplateId(template.id)}
-                  >
-                    <CardHeader className="pb-3">
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-3">
-                          <RadioGroupItem value={template.id} id={template.id} className="group-hover:text-white group-hover:border-white" />
-                          <div>
-                            <CardTitle className="text-base group-hover:text-white">
-                              <Label htmlFor={template.id} className="cursor-pointer group-hover:text-white">
-                                {template.name}
-                              </Label>
-                            </CardTitle>
-                            <CardDescription className="text-xs mt-1 group-hover:text-white">
-                              {template.description}
-                            </CardDescription>
+              <div className="space-y-2">
+                {templates.map((template) => {
+                  const isSelected = selectedTemplateId === template.id;
+                  return (
+                    <Card
+                      key={template.id}
+                      onClick={() => setSelectedTemplateId(template.id)}
+                      className={cn(
+                        'group cursor-pointer border border-border/60 bg-card transition-colors duration-75',
+                        'hover:bg-muted/50',
+                        'focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2',
+                        isSelected && 'border-primary/60 bg-muted/30 ring-1 ring-primary/30',
+                      )}
+                    >
+                      <CardHeader className="pb-3">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-3">
+                            <RadioGroupItem value={template.id} id={template.id} />
+                            <div>
+                              <CardTitle className="text-base text-foreground">
+                                <Label htmlFor={template.id} className="cursor-pointer">
+                                  {template.name}
+                                </Label>
+                              </CardTitle>
+                              <CardDescription className="text-xs mt-1 text-muted-foreground">
+                                {template.description}
+                              </CardDescription>
+                            </div>
+                          </div>
+                          <Badge variant="outline" className="ml-2">
+                            {template.framework}
+                          </Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="pt-0">
+                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                          <div className="flex items-center gap-1.5">
+                            <Layers className="h-4 w-4" strokeWidth={1.5} />
+                              <span>{template.entityTypesCount} {t('extraction', 'importSections')}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <FileText className="h-4 w-4" strokeWidth={1.5} />
+                            <span>v{template.version}</span>
                           </div>
                         </div>
-                        <Badge variant="outline" className="ml-2 group-hover:text-white group-hover:border-white">
-                          {template.framework}
-                        </Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="pt-0">
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground group-hover:text-white">
-                        <div className="flex items-center gap-1">
-                          <Layers className="h-4 w-4 group-hover:text-white" />
-                            <span>{template.entityTypesCount} {t('extraction', 'importSections')}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <FileText className="h-4 w-4 group-hover:text-white" />
-                          <span>v{template.version}</span>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
             </RadioGroup>
 

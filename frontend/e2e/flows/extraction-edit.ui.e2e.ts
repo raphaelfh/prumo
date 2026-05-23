@@ -16,7 +16,10 @@ import { expect, test } from "@playwright/test";
 import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { loginViaUi, resolveAuthToken } from "../_fixtures/auth";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
-import { adminSelect } from "../_fixtures/supabase-admin";
+import {
+  adminSelect,
+  resolveActiveExtractionTemplateId,
+} from "../_fixtures/supabase-admin";
 
 interface RunDetailResponse {
   run: { id: string; stage: string; status: string; template_id: string };
@@ -41,7 +44,6 @@ test.describe("Extraction edit + autosave persists through HITL stack", () => {
       "E2E_USER_PASSWORD",
       "E2E_PROJECT_ID",
       "E2E_ARTICLE_ID",
-      "E2E_TEMPLATE_ID",
     ]);
     test.skip(required.length > 0, `Missing required env: ${required.join(", ")}`);
 
@@ -49,6 +51,7 @@ test.describe("Extraction edit + autosave persists through HITL stack", () => {
     await loginViaUi(page);
     const token = await resolveAuthToken(page);
     const traceId = createTraceId("e2e-extraction-edit");
+    const templateId = await resolveActiveExtractionTemplateId(env.projectId!);
 
     // Ensure an active (non-terminal) extraction run exists by opening
     // a HITL session — idempotent. If the existing active run is already
@@ -62,7 +65,7 @@ test.describe("Extraction edit + autosave persists through HITL stack", () => {
           kind: "extraction",
           project_id: env.projectId,
           article_id: env.articleId,
-          project_template_id: env.templateId,
+          project_template_id: templateId,
         },
         timeout: 30000,
       },
@@ -71,7 +74,7 @@ test.describe("Extraction edit + autosave persists through HITL stack", () => {
 
     const runsBefore = await adminSelect<{ id: string; stage: string }>(
       "extraction_runs",
-      `select=id,stage&article_id=eq.${env.articleId}&template_id=eq.${env.templateId}` +
+      `select=id,stage&article_id=eq.${env.articleId}&template_id=eq.${templateId}` +
         `&stage=in.(pending,proposal,review,consensus)&order=created_at.desc&limit=1`,
     );
     test.skip(

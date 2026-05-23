@@ -214,7 +214,7 @@ export function NotificationCenter() {
             <Bell className="h-4 w-4" strokeWidth={1.5}/>
             {hasActiveBackgroundJobs && (
                 <span
-                    className="pointer-events-none absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-sky-500 shadow-[0_0_0_1px_hsl(var(--background))] motion-safe:animate-pulse dark:bg-sky-400"
+                    className="pointer-events-none absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-info shadow-[0_0_0_1px_hsl(var(--background))] motion-safe:animate-pulse"
                     aria-hidden
                 />
             )}
@@ -368,13 +368,13 @@ function getJobIcon(job: BackgroundJob) {
   switch (job.status) {
     case 'running':
     case 'pending':
-      return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
+      return <Loader2 className="h-4 w-4 animate-spin text-info" />;
     case 'completed':
-      return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+      return <CheckCircle2 className="h-4 w-4 text-success" />;
     case 'failed':
-      return <XCircle className="h-4 w-4 text-red-500" />;
+      return <XCircle className="h-4 w-4 text-destructive" />;
     case 'cancelled':
-      return <XCircle className="h-4 w-4 text-orange-500" />;
+      return <XCircle className="h-4 w-4 text-warning" />;
     default:
       return <Clock className="h-4 w-4 text-muted-foreground" />;
   }

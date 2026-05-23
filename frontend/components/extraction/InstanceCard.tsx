@@ -91,13 +91,13 @@ export function InstanceCard(props: InstanceCardProps) {
   };
 
   return (
-    <div className="bg-slate-50 rounded-lg border border-slate-200 shadow-sm">
+    <div className="bg-muted/30 rounded-lg border border-border/60 shadow-elev-card">
         {/* Instance header */}
-      <div className="px-8 py-5 border-b border-slate-200">
+      <div className="px-8 py-5 border-b border-border/40">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 flex-1">
               {/* Number badge */}
-            <Badge variant="outline" className="text-xs shrink-0 bg-white">
+            <Badge variant="outline" className="text-xs shrink-0 bg-card">
               #{index}
             </Badge>
 
@@ -135,13 +135,15 @@ export function InstanceCard(props: InstanceCardProps) {
                 </Button>
               </div>
             ) : (
-              <h4
-                className="text-sm font-semibold cursor-pointer hover:text-primary flex items-center gap-2"
+              <button
+                type="button"
+                className="text-sm font-semibold cursor-pointer hover:text-primary transition-colors duration-75 flex items-center gap-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 onClick={() => setIsEditingLabel(true)}
+                title={instance.label}
               >
                 {instance.label}
-                <Edit2 className="h-3 w-3 text-muted-foreground" />
-              </h4>
+                <Edit2 className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
+              </button>
             )}
           </div>
 
@@ -160,7 +162,7 @@ export function InstanceCard(props: InstanceCardProps) {
       </div>
 
         {/* Instance fields */}
-      <div className="bg-white rounded-b-lg px-2">
+      <div className="bg-card rounded-b-lg px-2">
         {fields.map(field => {
           const key = `${instance.id}_${field.id}`;
           const suggestion = props.aiSuggestions?.[key];

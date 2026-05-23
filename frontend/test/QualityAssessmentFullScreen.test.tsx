@@ -79,7 +79,14 @@ vi.mock("@/integrations/supabase/client", () => {
           return makeQuery(PROBAST_TEMPLATE);
         }
         if (table === "extraction_entity_types") {
-          return makeQuery([PARTICIPANTS_DOMAIN]);
+          // useProjectQATemplate uses select("*, extraction_fields(*)")
+          // — return the embedded join shape so fields are picked up.
+          return makeQuery([
+            {
+              ...PARTICIPANTS_DOMAIN,
+              extraction_fields: [SIGNALING_QUESTION, ROB_FIELD],
+            },
+          ]);
         }
         if (table === "extraction_fields") {
           return makeQuery([SIGNALING_QUESTION, ROB_FIELD]);
