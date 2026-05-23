@@ -3,6 +3,10 @@ import { expect, test } from "@playwright/test";
 import { loginViaUi, resolveAuthToken } from "../_fixtures/auth";
 import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
+import {
+  resolveActiveExtractionTemplateId,
+  resolveStudySectionEntityTypeId,
+} from "../_fixtures/supabase-admin";
 
 test.describe("Extraction flow (UI + API)", () => {
   test("opens extraction fullscreen route", async ({ page }) => {
@@ -22,23 +26,20 @@ test.describe("Extraction flow (UI + API)", () => {
 
   test("runs model and section extraction through API", async ({ request, page }) => {
     const env = loadE2EEnv();
-    const required = missingEnvKeys([
-      "E2E_PROJECT_ID",
-      "E2E_ARTICLE_ID",
-      "E2E_TEMPLATE_ID",
-      "E2E_ENTITY_TYPE_ID",
-    ]);
+    const required = missingEnvKeys(["E2E_PROJECT_ID", "E2E_ARTICLE_ID"]);
     test.skip(required.length > 0, `Missing required env: ${required.join(", ")}`);
 
     const token = await resolveAuthToken(page);
     const traceId = createTraceId("e2e-extraction");
+    const templateId = await resolveActiveExtractionTemplateId(env.projectId!);
+    const entityTypeId = await resolveStudySectionEntityTypeId(templateId);
 
     const modelResponse = await request.post(`${env.apiUrl}/api/v1/extraction/models`, {
       headers: authHeaders(token, traceId),
       data: {
         projectId: env.projectId,
         articleId: env.articleId,
-        templateId: env.templateId,
+        templateId,
         model: process.env.E2E_MODEL_NAME || "gpt-4o-mini",
       },
       timeout: 180000,
@@ -53,8 +54,8 @@ test.describe("Extraction flow (UI + API)", () => {
       data: {
         projectId: env.projectId,
         articleId: env.articleId,
-        templateId: env.templateId,
-        entityTypeId: env.entityTypeId,
+        templateId,
+        entityTypeId,
         extractAllSections: false,
         model: process.env.E2E_MODEL_NAME || "gpt-4o-mini",
       },
@@ -68,17 +69,19 @@ test.describe("Extraction flow (UI + API)", () => {
 
   test("rejects section extraction when article id is invalid", async ({ request, page }) => {
     const env = loadE2EEnv();
-    const required = missingEnvKeys(["E2E_PROJECT_ID", "E2E_TEMPLATE_ID", "E2E_ENTITY_TYPE_ID"]);
+    const required = missingEnvKeys(["E2E_PROJECT_ID"]);
     test.skip(required.length > 0, `Missing required env: ${required.join(", ")}`);
 
     const token = await resolveAuthToken(page);
+    const templateId = await resolveActiveExtractionTemplateId(env.projectId!);
+    const entityTypeId = await resolveStudySectionEntityTypeId(templateId);
     const response = await request.post(`${env.apiUrl}/api/v1/extraction/sections`, {
       headers: authHeaders(token, createTraceId("e2e-extraction-invalid")),
       data: {
         projectId: env.projectId,
         articleId: "00000000-0000-0000-0000-000000000000",
-        templateId: env.templateId,
-        entityTypeId: env.entityTypeId,
+        templateId,
+        entityTypeId,
         extractAllSections: false,
       },
     });

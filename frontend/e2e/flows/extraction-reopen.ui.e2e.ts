@@ -19,7 +19,11 @@ import { expect, test } from "@playwright/test";
 import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { loginViaUi, resolveAuthToken } from "../_fixtures/auth";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
-import { adminDelete, adminSelect } from "../_fixtures/supabase-admin";
+import {
+  adminDelete,
+  adminSelect,
+  resolveActiveExtractionTemplateId,
+} from "../_fixtures/supabase-admin";
 
 interface RunSummaryResponse {
   id: string;
@@ -36,7 +40,6 @@ test.describe("Extraction reopen UI flow", () => {
       "E2E_USER_PASSWORD",
       "E2E_PROJECT_ID",
       "E2E_ARTICLE_ID",
-      "E2E_TEMPLATE_ID",
     ]);
     test.skip(required.length > 0, `Missing required env: ${required.join(", ")}`);
 
@@ -44,6 +47,7 @@ test.describe("Extraction reopen UI flow", () => {
     await loginViaUi(page);
     const token = await resolveAuthToken(page);
     const traceId = createTraceId("e2e-extraction-reopen");
+    const templateId = await resolveActiveExtractionTemplateId(env.projectId!);
 
     // Reset extraction-kind runs for the triple so the run we create below
     // is the one the page latches onto. /hitl/sessions also seeds instances
@@ -60,7 +64,7 @@ test.describe("Extraction reopen UI flow", () => {
         kind: "extraction",
         project_id: env.projectId,
         article_id: env.articleId,
-        project_template_id: env.templateId,
+        project_template_id: templateId,
       },
       timeout: 30000,
     });
@@ -75,7 +79,7 @@ test.describe("Extraction reopen UI flow", () => {
     // entity_type that actually has fields.
     const instances = await adminSelect<{ id: string; entity_type_id: string }>(
       "extraction_instances",
-      `select=id,entity_type_id&template_id=eq.${env.templateId}&article_id=eq.${env.articleId}&limit=50`,
+      `select=id,entity_type_id&template_id=eq.${templateId}&article_id=eq.${env.articleId}&limit=50`,
     );
     test.skip(
       instances.length === 0,
@@ -104,7 +108,7 @@ test.describe("Extraction reopen UI flow", () => {
       data: {
         project_id: env.projectId,
         article_id: env.articleId,
-        project_template_id: env.templateId,
+        project_template_id: templateId,
       },
       timeout: 15000,
     });
@@ -179,7 +183,7 @@ test.describe("Extraction reopen UI flow", () => {
       parameters: Record<string, unknown> | null;
     }>(
       "extraction_runs",
-      `select=id,stage,parameters&article_id=eq.${env.articleId}&template_id=eq.${env.templateId}` +
+      `select=id,stage,parameters&article_id=eq.${env.articleId}&template_id=eq.${templateId}` +
         `&stage=in.(pending,proposal,review,consensus)&order=created_at.desc&limit=1`,
     );
     expect(newRuns.length).toBe(1);

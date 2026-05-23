@@ -30,6 +30,33 @@ async function deleteFromTable(
   return { deleted: ids.length, failed: 0 };
 }
 
+/**
+ * Delete every row in `table` whose `column` matches one of the supplied
+ * parent ids. Used to cascade-by-hand before deleting parents whose FK is
+ * ON DELETE RESTRICT (e.g. extraction_instances.entity_type_id) so test
+ * teardown stays robust against side-effect rows created by other code
+ * paths (HITL session opens auto-create cardinality=one instances, etc).
+ */
+async function deleteByForeignId(
+  supabaseUrl: string,
+  serviceKey: string,
+  table: string,
+  column: string,
+  parentIds: string[]
+): Promise<void> {
+  if (parentIds.length === 0) return;
+  const inFilter = parentIds.map((id) => `"${id}"`).join(",");
+  const url = `${supabaseUrl}/rest/v1/${table}?${column}=in.(${inFilter})`;
+  await fetch(url, {
+    method: "DELETE",
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      Prefer: "return=minimal",
+    },
+  });
+}
+
 async function deleteAuthUser(
   supabaseUrl: string,
   serviceKey: string,
@@ -118,6 +145,17 @@ export default async function globalTeardown(_config: FullConfig): Promise<void>
     env.supabaseServiceRoleKey,
     "extraction_fields",
     grouped.extraction_fields
+  );
+  // extraction_instances.entity_type_id is ON DELETE RESTRICT, so any
+  // instances created by other code paths (HITL session opens auto-spawn
+  // cardinality=one instances) would block the entity_type delete below.
+  // Sweep those orphans first.
+  await deleteByForeignId(
+    env.supabaseUrl,
+    env.supabaseServiceRoleKey,
+    "extraction_instances",
+    "entity_type_id",
+    grouped.extraction_entity_types
   );
   summary.extraction_entity_types = await deleteFromTable(
     env.supabaseUrl,

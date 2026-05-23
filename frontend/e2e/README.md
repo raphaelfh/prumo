@@ -29,11 +29,14 @@ Dataset identifiers:
 
 - `E2E_PROJECT_ID`
 - `E2E_ARTICLE_ID`
-- `E2E_TEMPLATE_ID`
-- `E2E_ENTITY_TYPE_ID`
 - `E2E_SCHEMA_ID` or `E2E_SCHEMA_VERSION_ID`
 - `E2E_TARGET_ID`
 - `E2E_ITEM_ID`
+- `E2E_TEMPLATE_ID`, `E2E_ENTITY_TYPE_ID` — **legacy**, used only by
+  `remote/` smoke tests. Local flows under `flows/` auto-resolve the
+  active extraction template + a study_section entity at test runtime
+  (see `supabase-admin.ts#resolveActiveExtractionTemplateId`) so the
+  suite survives backend pytest's reseed of CHARMS / PROBAST.
 
 Service-role utilities:
 
