@@ -37,13 +37,18 @@ function initials(name: string): string {
   return parts.map((p) => p.charAt(0).toUpperCase()).join("");
 }
 
-const PALETTE = [
-  "bg-sky-200 text-sky-900 dark:bg-sky-800 dark:text-sky-100",
-  "bg-emerald-200 text-emerald-900 dark:bg-emerald-800 dark:text-emerald-100",
-  "bg-amber-200 text-amber-900 dark:bg-amber-800 dark:text-amber-100",
-  "bg-violet-200 text-violet-900 dark:bg-violet-800 dark:text-violet-100",
-  "bg-rose-200 text-rose-900 dark:bg-rose-800 dark:text-rose-100",
-];
+// Literal lookup map — Tailwind cannot scan dynamic class names, so each
+// slot is a full string of class names. Opacity modifier `/20` (or `/30`
+// in dark mode) gives the soft tint without needing a separate `200`
+// shade per hue. Backed by --reviewer-1..5 CSS tokens in
+// frontend/index.css (light + dark variants).
+const PALETTE: readonly string[] = [
+  "bg-reviewer-1/20 text-reviewer-1 dark:bg-reviewer-1/30 dark:text-reviewer-1",
+  "bg-reviewer-2/20 text-reviewer-2 dark:bg-reviewer-2/30 dark:text-reviewer-2",
+  "bg-reviewer-3/20 text-reviewer-3 dark:bg-reviewer-3/30 dark:text-reviewer-3",
+  "bg-reviewer-4/20 text-reviewer-4 dark:bg-reviewer-4/30 dark:text-reviewer-4",
+  "bg-reviewer-5/20 text-reviewer-5 dark:bg-reviewer-5/30 dark:text-reviewer-5",
+] as const;
 
 function colorFor(id: string): string {
   // Deterministic-ish hash: pick a slot from PALETTE by id char codes.
