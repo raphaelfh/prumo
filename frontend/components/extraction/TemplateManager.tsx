@@ -9,6 +9,14 @@ import React, {useState} from 'react';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/dialog';
 import {AlertCircle, CheckCircle, Copy, Database, Plus, Settings} from 'lucide-react';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
@@ -137,9 +145,10 @@ export function TemplateManager({
           ) : (
             <div className="space-y-3">
               {templates.map((template) => (
-                <div
+                <button
                   key={template.id}
-                  className={`p-4 border rounded-lg cursor-pointer transition-colors ${
+                  type="button"
+                  className={`w-full text-left p-4 border rounded-lg cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
                     activeTemplate?.id === template.id
                       ? 'border-primary bg-primary/5'
                       : 'border-border hover:border-primary/50'
@@ -166,7 +175,7 @@ export function TemplateManager({
                   <div className="mt-2 text-xs text-muted-foreground">
                       {t('extraction', 'templateCreatedAt')} {new Date(template.created_at).toLocaleDateString()}
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           )}
@@ -260,64 +269,41 @@ export function TemplateManager({
         </CardContent>
       </Card>
 
-        {/* Dialogs placeholder - to be implemented later */}
-      {showCloneDialog && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <Card className="w-full max-w-md">
-            <CardHeader>
-                <CardTitle>{t('extraction', 'cloneTemplateTitle')}</CardTitle>
-              <CardDescription>
-                  {t('extraction', 'chooseTemplateToClone')}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                  {t('extraction', 'comingSoon')}
-              </p>
-              <div className="flex justify-end space-x-2">
-                <Button
-                  onClick={() => setShowCloneDialog(false)}
-                  variant="outline"
-                >
-                    {t('common', 'cancel')}
-                </Button>
-                <Button onClick={() => setShowCloneDialog(false)}>
-                    {t('extraction', 'cloneButton')}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      <Dialog open={showCloneDialog} onOpenChange={setShowCloneDialog}>
+          <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                  <DialogTitle>{t('extraction', 'cloneTemplateTitle')}</DialogTitle>
+                  <DialogDescription>{t('extraction', 'chooseTemplateToClone')}</DialogDescription>
+              </DialogHeader>
+              <p className="text-sm text-muted-foreground">{t('extraction', 'comingSoon')}</p>
+              <DialogFooter>
+                  <Button onClick={() => setShowCloneDialog(false)} variant="outline">
+                      {t('common', 'cancel')}
+                  </Button>
+                  <Button onClick={() => setShowCloneDialog(false)}>
+                      {t('extraction', 'cloneButton')}
+                  </Button>
+              </DialogFooter>
+          </DialogContent>
+      </Dialog>
 
-      {showCreateDialog && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <Card className="w-full max-w-md">
-            <CardHeader>
-                <CardTitle>{t('extraction', 'createCustomTemplateTitle')}</CardTitle>
-              <CardDescription>
-                  {t('extraction', 'createCustomTemplateDesc')}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                  {t('extraction', 'comingSoon')}
-              </p>
-              <div className="flex justify-end space-x-2">
-                <Button
-                  onClick={() => setShowCreateDialog(false)}
-                  variant="outline"
-                >
-                    {t('common', 'cancel')}
-                </Button>
-                <Button onClick={() => setShowCreateDialog(false)}>
-                    {t('extraction', 'createButton')}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+          <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                  <DialogTitle>{t('extraction', 'createCustomTemplateTitle')}</DialogTitle>
+                  <DialogDescription>{t('extraction', 'createCustomTemplateDesc')}</DialogDescription>
+              </DialogHeader>
+              <p className="text-sm text-muted-foreground">{t('extraction', 'comingSoon')}</p>
+              <DialogFooter>
+                  <Button onClick={() => setShowCreateDialog(false)} variant="outline">
+                      {t('common', 'cancel')}
+                  </Button>
+                  <Button onClick={() => setShowCreateDialog(false)}>
+                      {t('extraction', 'createButton')}
+                  </Button>
+              </DialogFooter>
+          </DialogContent>
+      </Dialog>
     </div>
   );
 }
