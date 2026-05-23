@@ -68,6 +68,7 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({projectName, open, 
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
+            aria-keyshortcuts="G P"
             className="w-full justify-start gap-2 h-8 px-2 rounded-md hover:bg-muted/50 transition-colors group"
           >
             <div className="h-5 w-5 rounded bg-primary/10 flex items-center justify-center flex-shrink-0 border border-primary/15">
@@ -81,7 +82,7 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({projectName, open, 
               </h2>
             </div>
             <ChevronDown className="h-3 w-3 text-muted-foreground/50" />
-            <KbdBadge keys={['K']} className="ml-1" />
+            <KbdBadge keys={['G', 'P']} variant="sequence" className="ml-1" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-[260px] p-1 shadow-elev-popover border-border/50">

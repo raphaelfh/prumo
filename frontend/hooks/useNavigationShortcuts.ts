@@ -1,5 +1,5 @@
 /**
- * Project-shell shortcuts: G+letter for nav, ⌘B for sidebar, ⌘K for project switcher.
+ * Project-shell shortcuts: G+letter for nav (including G P for the project switcher), ⌘B for sidebar.
  */
 import {useMemo} from 'react';
 import {useKeyboardShortcuts, type Binding} from './useKeyboardShortcuts';
@@ -20,11 +20,13 @@ export function useNavigationShortcuts({enabled, onNavigate, onToggleSidebar, on
       key: item.shortcut.toLowerCase(),
       handler: () => onNavigate(item.id),
     }));
+    const sequenceBindings: Binding[] = [
+      {type: 'sequence', prefix: 'g', key: 'p', handler: onOpenProjectSwitcher},
+    ];
     const chordBindings: Binding[] = [
       {type: 'chord', key: 'b', mod: true, handler: onToggleSidebar},
-      {type: 'chord', key: 'k', mod: true, handler: onOpenProjectSwitcher},
     ];
-    return [...navBindings, ...chordBindings];
+    return [...navBindings, ...sequenceBindings, ...chordBindings];
   }, [onNavigate, onToggleSidebar, onOpenProjectSwitcher]);
 
   useKeyboardShortcuts({bindings, enabled});

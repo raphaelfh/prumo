@@ -12,9 +12,12 @@ describe('KbdBadge', () => {
     expect(screen.getByText('A')).toBeInTheDocument();
   });
 
-  it('joins keys with middle dot for sequences', () => {
-    render(<KbdBadge keys={['G', 'A']} variant="sequence" />);
-    expect(screen.getByText('G·A')).toBeInTheDocument();
+  it('renders each sequence key as its own chip', () => {
+    const {container} = render(<KbdBadge keys={['G', 'A']} variant="sequence" />);
+    const chips = container.querySelectorAll('kbd');
+    expect(chips).toHaveLength(2);
+    expect(chips[0]).toHaveTextContent('G');
+    expect(chips[1]).toHaveTextContent('A');
   });
 
   it('renders modifier as ⌘ on mac', () => {
@@ -31,6 +34,11 @@ describe('KbdBadge', () => {
 
   it('is aria-hidden by default', () => {
     const {container} = render(<KbdBadge keys={['A']} />);
+    expect(container.firstChild).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('marks sequence container as aria-hidden', () => {
+    const {container} = render(<KbdBadge keys={['G', 'A']} variant="sequence" />);
     expect(container.firstChild).toHaveAttribute('aria-hidden', 'true');
   });
 });

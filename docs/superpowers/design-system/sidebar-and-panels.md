@@ -59,18 +59,20 @@ Anything new must declare these four values explicitly in its `<ResizablePanel>`
 
 ## 6. Keyboard shortcut badges
 
-- Component: `<KbdBadge keys={["G","A"]} />` (renders `G·A`) or `<KbdBadge keys={["⌘","B"]} />` (renders `⌘B`).
+- Component:
+  - **Chord** (keys pressed simultaneously): `<KbdBadge keys={["mod","B"]} />` renders as a single chip `⌘B`.
+  - **Sequence** (keys pressed one after the other): `<KbdBadge keys={["G","A"]} variant="sequence" />` renders as two adjacent chips `[G] [A]` (Linear/Plane style — no separator).
 - Always visible, never hover-only — passive learning is the goal.
 - Detect macOS via `lib/platform.ts#isMac()` and substitute `⌘` ↔ `Ctrl`.
-- `aria-hidden="true"` (the parent item carries `aria-keyshortcuts`).
+- `aria-hidden="true"` (the parent item carries `aria-keyshortcuts`, e.g. `"G P"` for a sequence).
 
 ## 7. Shortcut conventions
 
 | Class | Pattern | Example |
 |---|---|---|
 | Toggle a panel | `⌘<letter>` | `⌘B` (sidebar), `⌘\` (inspector) |
-| Navigate to a section | `G` then `<letter>` | `G O` (overview), `G A` (articles) |
-| Global action | `⌘<letter>` or `⌘<symbol>` | `⌘K` (search/switcher), `⌘,` (settings), `⌘Q` (sign out) |
+| Navigate to a section / open switcher | `G` then `<letter>` | `G O` (overview), `G A` (articles), `G P` (project switcher) |
+| Global action | `⌘<letter>` or `⌘<symbol>` | `⌘,` (settings), `⌘⇧Q` (sign out) |
 | Contextual action | single letter | reserved for future (article selection, screening decisions etc.) |
 
 All shortcut handlers MUST use the shared `useKeyboardShortcuts` hook so input-focus and dialog-open guards behave uniformly.
