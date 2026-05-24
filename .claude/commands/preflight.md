@@ -152,7 +152,7 @@ Run three checks:
      (you may shell out: `ls /Users/raphael/PycharmProjects/prumo/supabase/migrations/*.sql | wc -l`).
      Mismatch → FAIL ("auth/storage migration drift"). Match → PASS.
      NOTE: this checks auth/storage migrations only — Alembic state is
-     checked indirectly via the Render gate (Render's start command
+     checked indirectly via the Railway gate (Railway's Dockerfile CMD
      runs `alembic upgrade head` before gunicorn boots).
 
   C. Recent errors. Call get_logs for the last 5 minutes filtering to
@@ -179,7 +179,7 @@ evidence: |
 ```text
 You are the `remote-deploys` preflight gate for prumo. READ-ONLY.
 
-Three checks across Vercel and Render:
+Three checks across Vercel and Railway:
 
   A. Vercel — latest deployment.
      Call mcp__16b9320c-bebb-4437-8372-470b05309b53__list_deployments
@@ -194,9 +194,9 @@ Three checks across Vercel and Render:
      for the last 15 minutes on that deployment. Any HTTP 5xx → WARN.
      Clean → PASS.
 
-  C. Render — backend health.
+  C. Railway — backend health.
      Run: curl -fsS --max-time 10 -o /dev/null -w "%{http_code}" \
-            https://review-hub-backend.onrender.com/health
+            https://web-production-48b398.up.railway.app/health
      - HTTP 200 → PASS
      - Anything else, or curl exit non-zero → FAIL
 
@@ -206,11 +206,11 @@ Return ONLY the following YAML block:
 
 gate: remote-deploys
 status: PASS | WARN | FAIL | UNKNOWN
-summary: <e.g. "Vercel READY 2h ago / no 5xx / Render /health 200">
+summary: <e.g. "Vercel READY 2h ago / no 5xx / Railway /health 200">
 evidence: |
   Vercel: <deployment id, readyState, age>
   Vercel logs: <5xx count or "clean">
-  Render: <status code from /health>
+  Railway: <status code from /health>
 ```
 
 ---
