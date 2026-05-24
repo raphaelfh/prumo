@@ -20,6 +20,7 @@ celery_app = Celery(
         "app.worker.tasks.extraction_tasks",
         "app.worker.tasks.import_tasks",
         "app.worker.tasks.export_tasks",
+        "app.worker.tasks.extraction_export_tasks",
     ],
 )
 
@@ -48,14 +49,9 @@ celery_app.conf.update(
     task_routes={
         "app.worker.tasks.extraction_tasks.*": {"queue": "extractions"},
         "app.worker.tasks.import_tasks.*": {"queue": "imports"},
-    },
-    # Beat scheduler (tarefas periodicas)
-    beat_schedule={
-        # Exemplo: cleanup de resultados antigos
-        "cleanup-old-results": {
-            "task": "app.worker.tasks.maintenance_tasks.cleanup_old_results",
-            "schedule": 86400.0,  # 24 horas
-        },
+        # Keep CPU-bound XLSX builds off the LLM-heavy `extractions` queue
+        # so a long-running extraction can't starve a user-initiated export.
+        "app.worker.tasks.extraction_export_tasks.*": {"queue": "exports"},
     },
 )
 

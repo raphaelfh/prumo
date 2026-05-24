@@ -18,6 +18,7 @@ import {
 import {useProjectMemberRole} from '@/hooks/useProjectMemberRole';
 import {ArticleExtractionTable} from './ArticleExtractionTable';
 import {ConfigureTemplateFirst} from './config/ConfigureTemplateFirst';
+import {ExtractionExportDialog} from './ExtractionExportDialog';
 import {TemplateConfigEditor} from './TemplateConfigEditor';
 import {useAuth} from '@/contexts/AuthContext';
 import {CreateCustomTemplateDialog, ImportTemplateDialog} from './dialogs';
@@ -43,6 +44,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   const [activeTab, setActiveTab] = useState<'extraction' | 'dashboard' | 'configuration'>(initialTab);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showCreateCustomDialog, setShowCreateCustomDialog] = useState(false);
+  const [showExportDialog, setShowExportDialog] = useState(false);
   const [articles, setArticles] = useState<any[]>([]);
   const [extractionStats, setExtractionStats] = useState({
     totalArticles: 0,
@@ -300,10 +302,24 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     switch (activeTab) {
       case 'extraction':
         return activeTemplate ? (
-          <ArticleExtractionTable 
-            projectId={projectId} 
-            templateId={activeTemplate.id}
-          />
+          <div className="space-y-3">
+            <div className="flex items-center justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowExportDialog(true)}
+                disabled={articles.length === 0}
+                data-testid="extraction-export-button"
+              >
+                <Download className="h-4 w-4 mr-2" strokeWidth={1.5}/>
+                {t('extraction', 'exportButton')}
+              </Button>
+            </div>
+            <ArticleExtractionTable
+              projectId={projectId}
+              templateId={activeTemplate.id}
+            />
+          </div>
         ) : isManager ? (
             <ConfigureTemplateFirst onConfigureClick={() => setActiveTab('configuration')}/>
         ) : (
@@ -566,6 +582,19 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
           }
         }}
       />
+
+      {/* Dialog to export extraction data as .xlsx (009-extraction-excel-export) */}
+      {activeTemplate && (
+        <ExtractionExportDialog
+          open={showExportDialog}
+          onOpenChange={setShowExportDialog}
+          projectId={projectId}
+          templateId={activeTemplate.id}
+          currentListIds={articles.map((a) => a.id)}
+          selectedIds={[]}
+          isManager={isManager}
+        />
+      )}
     </div>
   );
 }

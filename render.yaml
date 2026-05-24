@@ -61,7 +61,7 @@ services:
 #      Branch:         main
 #      Region:         virginia
 #      Build command:  pip install -e .
-#      Start command:  celery -A app.worker.celery_app worker --loglevel=info --queues=extractions,imports,celery
+#      Start command:  celery -A app.worker.celery_app worker --loglevel=info --queues=extractions,imports,exports,celery
 #      Env vars:       same DATABASE_URL / DIRECT_DATABASE_URL / SUPABASE_*
 #                      / OPENAI_API_KEY / ENCRYPTION_KEY as the web service
 #                      (set ENCRYPTION_KEY to the *same* value — Zotero

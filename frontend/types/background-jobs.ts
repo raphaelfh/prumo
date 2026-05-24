@@ -5,7 +5,7 @@
  * allowing the user to keep using the app while they run.
  */
 
-export type JobType = 'zotero-import' | 'articles-export';
+export type JobType = 'zotero-import' | 'articles-export' | 'extraction-export';
 
 export type JobStatus =
     | 'pending'      // Waiting to start
@@ -117,6 +117,46 @@ export function createArticlesExportJob(
     return {
         id: `articles-export-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
         type: 'articles-export',
+        status: 'pending',
+        createdAt: Date.now(),
+        metadata: {
+            projectId,
+            backendJobId,
+            ...metadata,
+        },
+    };
+}
+
+/**
+ * Extraction Excel export specific (009-extraction-excel-export)
+ */
+export interface ExtractionExportJob extends BackgroundJob {
+    type: 'extraction-export';
+    metadata: {
+        projectId: string;
+        projectName?: string;
+        backendJobId: string;
+        templateId: string;
+        templateName?: string;
+        mode: 'consensus' | 'single_user' | 'all_users';
+        articleCount: number;
+        includeAiMetadata: boolean;
+        anonymizeReviewerNames: boolean;
+        downloadUrl?: string;
+    };
+}
+
+/**
+ * Helper to create a new extraction Excel export background job
+ */
+export function createExtractionExportJob(
+    projectId: string,
+    backendJobId: string,
+    metadata: Omit<ExtractionExportJob['metadata'], 'projectId' | 'backendJobId'>
+): ExtractionExportJob {
+    return {
+        id: `extraction-export-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+        type: 'extraction-export',
         status: 'pending',
         createdAt: Date.now(),
         metadata: {

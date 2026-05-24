@@ -132,9 +132,18 @@ export async function apiClient<T>(
     // Prepare body
   const requestBody = body ? JSON.stringify(body) : undefined;
 
-    // Create controller for timeout
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  // Keepalive requests survive page unload (autosave flush on pagehide,
+  // route change, tab close). Attaching the timeout AbortController to a
+  // keepalive fetch breaks the survivability contract on iOS Safari —
+  // the unload tears down the JS context, the signal observer goes with
+  // it, and the browser drops the in-flight request. Skip the timeout
+  // wiring entirely for keepalive callers; they accept the keepalive's
+  // own ~64KB cap and no client-side timeout in exchange for delivery.
+  const isKeepalive = fetchOptions.keepalive === true;
+  const controller = isKeepalive ? null : new AbortController();
+  const timeoutId = controller
+    ? setTimeout(() => controller.abort(), timeout)
+    : null;
 
   try {
     const url = `${API_BASE_URL}${endpoint}`;
@@ -147,10 +156,10 @@ export async function apiClient<T>(
       ...fetchOptions,
       headers,
       body: requestBody,
-      signal: controller.signal,
+      ...(controller ? { signal: controller.signal } : {}),
     });
 
-    clearTimeout(timeoutId);
+    if (timeoutId) clearTimeout(timeoutId);
 
       // Parse response
     const responseData: ApiResponse<T> = await response.json();
@@ -174,7 +183,7 @@ export async function apiClient<T>(
       // Return data
     return responseData.data as T;
   } catch (error) {
-    clearTimeout(timeoutId);
+    if (timeoutId) clearTimeout(timeoutId);
 
       // Handle timeout errors
     if (error instanceof Error && error.name === "AbortError") {
