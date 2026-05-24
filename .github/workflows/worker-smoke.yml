@@ -45,7 +45,10 @@ jobs:
         run: pip install uv
       - name: Install backend deps
         working-directory: backend
-        run: uv sync --frozen
+        # NOTE: `--frozen` is intentionally omitted because `backend/uv.lock`
+        # is in `.gitignore`. If the project ever starts tracking the
+        # lockfile, add `--frozen` here for reproducible CI installs.
+        run: uv sync
       - name: Boot worker in background
         working-directory: backend
         run: |
