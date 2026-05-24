@@ -41,9 +41,11 @@ USER appuser
 # Expose port
 EXPOSE 8000
 
-# Health check
+# Health check — read the same ${PORT:-8000} the CMD binds to so the
+# container is correctly marked healthy on Railway (where PORT is
+# injected) as well as locally (where it falls back to 8000).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD python -c "import httpx; httpx.get('http://localhost:8000/health')" || exit 1
+    CMD python -c "import httpx, os; httpx.get(f'http://localhost:{os.environ.get(\"PORT\", \"8000\")}/health')" || exit 1
 
 # Run migrations then start application
 CMD ["sh", "-c", "alembic upgrade head && gunicorn -k uvicorn.workers.UvicornWorker -w 1 -t 120 -b 0.0.0.0:${PORT:-8000} app.main:app"]
