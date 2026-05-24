@@ -31,6 +31,14 @@ SOURCE_FILE = REPO_ROOT / "railway.toml"
 
 #: Pattern matching ``--queues=a,b,c`` in the Railway worker start
 #: command. Allows letters, digits and underscores in queue names.
+#:
+#: NOTE: ``[\w,]+`` is intentionally strict — the captured group stops
+#: at the first character outside ``[A-Za-z0-9_,]``. This means the
+#: queue list in ``railway.toml`` MUST be a contiguous CSV with no
+#: whitespace and no line continuations: ``--queues=a,b,c`` works,
+#: ``--queues=a, b, c`` does NOT (the regex captures only ``a``).
+#: If a future format change introduces spaces or wraps the line,
+#: relax this pattern and add a test that documents the new format.
 QUEUES_PATTERN = re.compile(r"--queues=([\w,]+)")
 
 

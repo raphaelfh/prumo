@@ -189,6 +189,10 @@ def test_export_articles_task_signature_and_kwargs_alignment() -> None:
     # The task augments the service result with ``user_id`` on the way out.
     assert "user_id" in result
     fake_service.run_export_async.assert_awaited_once()
+    # Transaction management belongs to the service — the task body must
+    # not perform a raw commit. Catches a future regression where someone
+    # adds an `await session.commit()` to the task wrapper.
+    session.commit.assert_not_awaited()
 
 
 # ----------------------------------------------------------------------
