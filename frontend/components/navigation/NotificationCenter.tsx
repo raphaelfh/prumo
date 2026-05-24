@@ -25,9 +25,15 @@ import {useBackgroundJobPolling} from '@/hooks/useBackgroundJobPolling';
 import {cn} from '@/lib/utils';
 import {toast} from 'sonner';
 import {useNavigate} from 'react-router-dom';
-import type {ArticlesExportJob, BackgroundJob, ZoteroImportJob} from '@/types/background-jobs';
+import type {
+    ArticlesExportJob,
+    BackgroundJob,
+    ExtractionExportJob,
+    ZoteroImportJob,
+} from '@/types/background-jobs';
 import {t} from '@/lib/copy';
-import {getExportStatus} from '@/services/articlesExportService';
+import {getExportStatus as getArticlesExportStatus} from '@/services/articlesExportService';
+import {getExportStatus as getExtractionExportStatus} from '@/services/extractionExportService';
 
 export function NotificationCenter() {
   const navigate = useNavigate();
@@ -48,16 +54,22 @@ export function NotificationCenter() {
                     .getState()
                     .jobs.filter(
                         (job) =>
-                            job.type === 'articles-export' &&
+                            (job.type === 'articles-export' || job.type === 'extraction-export') &&
                             (job.status === 'pending' || job.status === 'running')
-                    ) as ArticlesExportJob[];
+                    ) as Array<ArticlesExportJob | ExtractionExportJob>;
 
                 if (exportJobs.length === 0) return;
 
                 await Promise.all(
                     exportJobs.map(async (job) => {
                         try {
-                            const status = await getExportStatus(job.metadata.backendJobId);
+                            const status =
+                                job.type === 'articles-export'
+                                    ? await getArticlesExportStatus(job.metadata.backendJobId)
+                                    : await getExtractionExportStatus(
+                                        job.metadata.projectId,
+                                        job.metadata.backendJobId,
+                                    );
                             const nextStatus = status.status === 'pending' ? 'running' : status.status;
                             updateJob(job.id, {
                                 status: nextStatus,
@@ -69,7 +81,7 @@ export function NotificationCenter() {
                                         ? Date.now()
                                         : undefined,
                                 error: status.error,
-                                progress: status.progress
+                                progress: 'progress' in status && status.progress
                                     ? {
                                         phase: status.progress.stage,
                                         current: status.progress.current,
@@ -82,7 +94,9 @@ export function NotificationCenter() {
                                     downloadUrl: status.download_url ?? job.metadata.downloadUrl,
                                 },
                                 stats:
-                                    status.skipped_files && status.skipped_files.length > 0
+                                    'skipped_files' in status &&
+                                    status.skipped_files &&
+                                    status.skipped_files.length > 0
                                         ? {skipped: status.skipped_files.length}
                                         : undefined,
                             });
@@ -125,11 +139,14 @@ export function NotificationCenter() {
                           navigate(`/projects/${zoteroJob.metadata.projectId}`);
                       },
                   }
-                  : job.type === 'articles-export'
+                  : job.type === 'articles-export' || job.type === 'extraction-export'
                       ? {
-                          label: t('articles', 'exportDownload'),
+                          label:
+                              job.type === 'articles-export'
+                                  ? t('articles', 'exportDownload')
+                                  : t('extraction', 'exportButton'),
                           onClick: () => {
-                              const exportJob = job as ArticlesExportJob;
+                              const exportJob = job as ArticlesExportJob | ExtractionExportJob;
                               if (exportJob.metadata.downloadUrl) {
                                   window.open(exportJob.metadata.downloadUrl, '_blank', 'noopener,noreferrer');
                               }
@@ -184,8 +201,11 @@ export function NotificationCenter() {
       setOpen(false);
         return;
     }
-      if (job.type === 'articles-export' && job.status === 'completed') {
-          const exportJob = job as ArticlesExportJob;
+      if (
+          (job.type === 'articles-export' || job.type === 'extraction-export') &&
+          job.status === 'completed'
+      ) {
+          const exportJob = job as ArticlesExportJob | ExtractionExportJob;
           if (exportJob.metadata.downloadUrl) {
               window.open(exportJob.metadata.downloadUrl, '_blank', 'noopener,noreferrer');
           }
@@ -281,7 +301,10 @@ interface NotificationItemProps {
 function NotificationItem({ job, onRemove, onClick }: NotificationItemProps) {
   const icon = getJobIcon(job);
     const isClickable =
-        job.status === 'completed' && (job.type === 'zotero-import' || job.type === 'articles-export');
+        job.status === 'completed' &&
+        (job.type === 'zotero-import' ||
+            job.type === 'articles-export' ||
+            job.type === 'extraction-export');
 
   return (
     <div
@@ -387,6 +410,9 @@ function getJobTitle(job: BackgroundJob): string {
     if (job.type === 'articles-export') {
         return t('articles', 'exportTitle');
     }
+    if (job.type === 'extraction-export') {
+        return t('extraction', 'exportDialogTitle');
+    }
     return t('navigation', 'backgroundTask');
 }
 
@@ -423,6 +449,22 @@ function getJobDescription(job: BackgroundJob): string {
             return t('articles', 'exportCancelled');
         }
     }
+    if (job.type === 'extraction-export') {
+        const metadata = (job as ExtractionExportJob).metadata;
+        const templateName = metadata.templateName || t('extraction', 'exportDialogTitle');
+        if (job.status === 'running' || job.status === 'pending') {
+            return `${t('extraction', 'exportGenerating')} (${metadata.articleCount} articles, ${templateName})`;
+        }
+        if (job.status === 'completed') {
+            return t('extraction', 'exportSuccessToast');
+        }
+        if (job.status === 'failed') {
+            return job.error || t('extraction', 'exportFailedToast');
+        }
+        if (job.status === 'cancelled') {
+            return t('extraction', 'exportCancel');
+        }
+    }
 
     return job.status === 'completed' ? t('navigation', 'statusCompleted') : job.error || t('navigation', 'statusInProgress');
 }
@@ -442,6 +484,9 @@ function getCompletionMessage(job: BackgroundJob): string {
   }
     if (job.type === 'articles-export') {
         return t('articles', 'exportDownloadReady');
+    }
+    if (job.type === 'extraction-export') {
+        return t('extraction', 'exportSuccessToast');
     }
 
     return t('navigation', 'taskCompleteSuccess');

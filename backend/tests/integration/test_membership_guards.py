@@ -132,6 +132,29 @@ async def _pick_template_for_outsider(
     return UUID(str(row[0])), UUID(str(row[1]))
 
 
+async def _pick_extraction_article_template_for_outsider(
+    db: AsyncSession, outsider_id: UUID
+) -> tuple[UUID, UUID, UUID] | None:
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT t.project_id, a.id, t.id
+                FROM public.project_extraction_templates t
+                JOIN public.articles a ON a.project_id = t.project_id
+                WHERE t.kind = 'extraction'
+                  AND NOT public.is_project_member(t.project_id, :uid)
+                LIMIT 1
+                """
+            ),
+            {"uid": str(outsider_id)},
+        )
+    ).first()
+    if row is None:
+        return None
+    return UUID(str(row[0])), UUID(str(row[1])), UUID(str(row[2]))
+
+
 # =================== #57: GET /runs/{id} ===================
 
 
@@ -263,6 +286,121 @@ async def test_open_hitl_session_403_for_non_member(
             "project_id": str(project_id),
             "article_id": str(article_id),
             "project_template_id": str(template_id),
+        },
+    )
+    assert res.status_code == 403, res.text
+
+
+# =================== Extraction AI endpoints ===================
+
+
+@pytest.mark.asyncio
+async def test_section_extraction_403_for_non_member(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    outsider_user: UUID,
+) -> None:
+    fx = await _pick_extraction_article_template_for_outsider(db_session, outsider_user)
+    if fx is None:
+        pytest.skip(
+            "Need an extraction article/template in a project the outsider does not belong to"
+        )
+    project_id, article_id, template_id = fx
+
+    res = await db_client.post(
+        "/api/v1/extraction/sections",
+        json={
+            "projectId": str(project_id),
+            "articleId": str(article_id),
+            "templateId": str(template_id),
+            "entityTypeId": str(uuid.uuid4()),
+        },
+    )
+    assert res.status_code == 403, res.text
+
+
+@pytest.mark.asyncio
+async def test_section_extraction_run_id_403_for_non_member(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    outsider_user: UUID,
+) -> None:
+    fx = await _pick_run_for_outsider(db_session, outsider_user)
+    if fx is None:
+        pytest.skip("Need a run in a project the outsider does not belong to")
+    run_id, _, _, _ = fx
+    row = (
+        await db_session.execute(
+            text(
+                """
+                SELECT project_id, article_id, template_id
+                FROM public.extraction_runs
+                WHERE id = :rid
+                """
+            ),
+            {"rid": str(run_id)},
+        )
+    ).first()
+    if row is None:
+        pytest.skip("Run disappeared before request")
+    project_id, article_id, template_id = row
+
+    res = await db_client.post(
+        "/api/v1/extraction/sections",
+        json={
+            "projectId": str(project_id),
+            "articleId": str(article_id),
+            "templateId": str(template_id),
+            "runId": str(run_id),
+        },
+    )
+    assert res.status_code == 403, res.text
+
+
+@pytest.mark.asyncio
+async def test_model_extraction_403_for_non_member(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    outsider_user: UUID,
+) -> None:
+    fx = await _pick_extraction_article_template_for_outsider(db_session, outsider_user)
+    if fx is None:
+        pytest.skip(
+            "Need an extraction article/template in a project the outsider does not belong to"
+        )
+    project_id, article_id, template_id = fx
+
+    res = await db_client.post(
+        "/api/v1/extraction/models",
+        json={
+            "projectId": str(project_id),
+            "articleId": str(article_id),
+            "templateId": str(template_id),
+        },
+    )
+    assert res.status_code == 403, res.text
+
+
+@pytest.mark.asyncio
+async def test_manual_model_hierarchy_403_for_non_member(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    outsider_user: UUID,
+) -> None:
+    fx = await _pick_extraction_article_template_for_outsider(db_session, outsider_user)
+    if fx is None:
+        pytest.skip(
+            "Need an extraction article/template in a project the outsider does not belong to"
+        )
+    project_id, article_id, template_id = fx
+
+    res = await db_client.post(
+        "/api/v1/extraction/models/manual",
+        json={
+            "projectId": str(project_id),
+            "articleId": str(article_id),
+            "templateId": str(template_id),
+            "modelName": "Outsider model",
         },
     )
     assert res.status_code == 403, res.text

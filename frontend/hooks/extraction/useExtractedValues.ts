@@ -25,7 +25,14 @@
  * autosave is the single writer.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import {
+  type Dispatch,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { toast } from 'sonner';
 
 import { supabase } from '@/integrations/supabase/client';
@@ -62,12 +69,47 @@ interface UseExtractedValuesReturn {
 
 const REVIEWER_STATE_STAGES = new Set(['review', 'consensus', 'finalized']);
 
+function resetValuesIfNeeded(
+  setValues: Dispatch<SetStateAction<Record<string, any>>>,
+) {
+  setValues((prev) => (Object.keys(prev).length > 0 ? {} : prev));
+}
+
 function unwrapProposalValue(raw: unknown): unknown {
   if (raw === null || raw === undefined) return null;
   if (typeof raw === 'object' && raw !== null && 'value' in raw) {
     return (raw as { value: unknown }).value ?? null;
   }
   return raw;
+}
+
+function mergeValuesById(
+  prev: Record<string, any>,
+  next: Record<string, any>,
+): Record<string, any> {
+  // Local edits are authoritative. ``useAutoSaveProposals`` is the
+  // sole writer that flips ``proposed_value`` on the backend; any
+  // diff between ``prev[key]`` and ``next[key]`` for a key the user
+  // has touched means the autosave POST simply hasn't landed yet (or
+  // a TanStack ``useRun`` refetch raced ahead of it). Overwriting in
+  // that window erased the keystroke before autosave's debounce
+  // fired — the autosave then saw "no dirty entries" and skipped the
+  // POST, silently dropping the input. We only adopt backend-shaped
+  // entries for coords absent from local state (initial hydration +
+  // AI proposals that introduce brand-new fields).
+  let changed = false;
+  const addedKeys: string[] = [];
+  const out = { ...prev };
+  for (const [key, value] of Object.entries(next)) {
+    if (key in prev) continue;
+    out[key] = value;
+    changed = true;
+    addedKeys.push(key);
+  }
+  if (addedKeys.length > 0) {
+    requestAnimationFrame(() => dispatchValueUpdates(addedKeys));
+  }
+  return changed ? out : prev;
 }
 
 export function useExtractedValues(
@@ -79,6 +121,24 @@ export function useExtractedValues(
   const [loading, setLoading] = useState(true);
   const [initialized, setInitialized] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const hydratedRunIdRef = useRef<string | null>(null);
+
+  const applyLoadedValues = useCallback(
+    (valuesMap: Record<string, any>) => {
+      setValues((prev) => {
+        if (hydratedRunIdRef.current !== runId) {
+          hydratedRunIdRef.current = runId ?? null;
+          const addedKeys = Object.keys(valuesMap);
+          if (addedKeys.length > 0) {
+            requestAnimationFrame(() => dispatchValueUpdates(addedKeys));
+          }
+          return valuesMap;
+        }
+        return mergeValuesById(prev, valuesMap);
+      });
+    },
+    [runId],
+  );
 
   const loadValues = useCallback(
     async (silent = false) => {
@@ -87,7 +147,8 @@ export function useExtractedValues(
 
       try {
         if (!runId || !stage) {
-          setValues({});
+          hydratedRunIdRef.current = null;
+          resetValuesIfNeeded(setValues);
           setInitialized(true);
           return;
         }
@@ -108,7 +169,7 @@ export function useExtractedValues(
                 : null;
             valuesMap[key] = extractValueFromDb({ value: unwrapped, unit });
           }
-          setValues((prev) => mergeValuesById(prev, valuesMap));
+          applyLoadedValues(valuesMap);
           setInitialized(true);
           return;
         }
@@ -124,7 +185,8 @@ export function useExtractedValues(
           if (userRes.error) throw userRes.error;
           const user = userRes.data.user;
           if (!user) {
-            setValues({});
+            hydratedRunIdRef.current = runId;
+            resetValuesIfNeeded(setValues);
             return;
           }
 
@@ -144,13 +206,14 @@ export function useExtractedValues(
                 : null;
             valuesMap[key] = extractValueFromDb({ value: row.value, unit });
           }
-          setValues((prev) => mergeValuesById(prev, valuesMap));
+          applyLoadedValues(valuesMap);
           setInitialized(true);
           return;
         }
 
         // PENDING / CANCELLED / unknown — no values to show.
-        setValues({});
+        hydratedRunIdRef.current = runId;
+        resetValuesIfNeeded(setValues);
         setInitialized(true);
       } catch (err: any) {
         console.error('Erro ao carregar valores extraídos:', err);
@@ -160,7 +223,7 @@ export function useExtractedValues(
         if (!silent) setLoading(false);
       }
     },
-    [runId, stage, proposals],
+    [runId, stage, proposals, applyLoadedValues],
   );
 
   useEffect(() => {
@@ -174,41 +237,14 @@ export function useExtractedValues(
       // ``if (loading || valuesLoading) → spinner`` gate doesn't sit on
       // the spinner forever. Treat ``initialized = true`` here as
       // "we know there are no values to show" (the empty map below).
+      hydratedRunIdRef.current = runId ?? null;
+      resetValuesIfNeeded(setValues);
       setLoading(false);
       setInitialized(true);
       return;
     }
     void loadValues();
   }, [enabled, loadValues]);
-
-  function mergeValuesById(
-    prev: Record<string, any>,
-    next: Record<string, any>,
-  ): Record<string, any> {
-    // Local edits are authoritative. ``useAutoSaveProposals`` is the
-    // sole writer that flips ``proposed_value`` on the backend; any
-    // diff between ``prev[key]`` and ``next[key]`` for a key the user
-    // has touched means the autosave POST simply hasn't landed yet (or
-    // a TanStack ``useRun`` refetch raced ahead of it). Overwriting in
-    // that window erased the keystroke before autosave's debounce
-    // fired — the autosave then saw "no dirty entries" and skipped the
-    // POST, silently dropping the input. We only adopt backend-shaped
-    // entries for coords absent from local state (initial hydration +
-    // AI proposals that introduce brand-new fields).
-    let changed = false;
-    const addedKeys: string[] = [];
-    const out = { ...prev };
-    for (const [key, value] of Object.entries(next)) {
-      if (key in prev) continue;
-      out[key] = value;
-      changed = true;
-      addedKeys.push(key);
-    }
-    if (addedKeys.length > 0) {
-      requestAnimationFrame(() => dispatchValueUpdates(addedKeys));
-    }
-    return changed ? out : prev;
-  }
 
   const updateValue = useCallback((instanceId: string, fieldId: string, value: any) => {
     const key = `${instanceId}_${fieldId}`;

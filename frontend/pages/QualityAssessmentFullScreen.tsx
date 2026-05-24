@@ -208,7 +208,10 @@ export default function QualityAssessmentFullScreen() {
     useAutoSaveProposals({
       runId: session?.runId ?? null,
       values,
-      enabled: !!session && !!runDetail && runDetail.run.stage === "proposal",
+      enabled:
+        !!session &&
+        !!runDetail &&
+        (runDetail.run.stage === "proposal" || runDetail.run.stage === "review"),
     });
 
   // AI suggestions wiring — kind-agnostic hooks reused from Data

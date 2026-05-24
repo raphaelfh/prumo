@@ -7,10 +7,12 @@ Suporta extraction individual or em batch de todas as sections.
 
 from time import perf_counter
 from typing import Any
+from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
 
+from app.api.deps.security import ensure_project_member, get_current_user_sub
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
 from app.core.factories import create_storage_adapter
 from app.core.logging import get_logger
@@ -21,6 +23,7 @@ from app.schemas.extraction import (
     SingleSectionResult,
 )
 from app.services.api_key_service import APIKeyService
+from app.services.extraction_run_read_service import RunNotFoundError, get_run_or_raise
 from app.services.run_lifecycle_service import (
     CreateRunInputError,
     TemplateNotFoundError,
@@ -31,6 +34,32 @@ from app.utils.rate_limiter import limiter
 
 router = APIRouter()
 logger = get_logger(__name__)
+
+
+async def _check_request_scope(
+    db: DbSession,
+    payload: SectionExtractionRequest,
+    current_user_sub: UUID,
+) -> None:
+    if payload.run_id is None:
+        await ensure_project_member(db, payload.project_id, current_user_sub)
+        return
+
+    try:
+        run = await get_run_or_raise(db, payload.run_id)
+    except RunNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    await ensure_project_member(db, run.project_id, current_user_sub)
+    if (
+        payload.project_id != run.project_id
+        or payload.article_id != run.article_id
+        or payload.template_id != run.template_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="runId does not match projectId, articleId, and templateId",
+        )
 
 
 @router.post(
@@ -46,6 +75,7 @@ async def extract_section(
     db: DbSession,
     user: CurrentUser,
     supabase: SupabaseClient,
+    current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[dict[str, Any]]:
     """
     Executa extraction de section(oes) de um template.
@@ -77,6 +107,8 @@ async def extract_section(
         extract_all_sections=payload.extract_all_sections,
         model=payload.model,
     )
+
+    await _check_request_scope(db, payload, current_user_sub)
 
     try:
         # Create storage adapter via factory
