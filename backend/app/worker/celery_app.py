@@ -1,17 +1,17 @@
 """
 Celery Application Configuration.
 
-Configura Celery with Redis como broker and result backend.
+Configures Celery with Redis as broker and result backend.
 """
 
 import os
 
 from celery import Celery
 
-# Configuracao do broker Redis
+# Redis broker configuration
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
-# Criar app Celery
+# Create the Celery app
 celery_app = Celery(
     "review_hub",
     broker=REDIS_URL,
@@ -24,7 +24,7 @@ celery_app = Celery(
     ],
 )
 
-# Configuracoes
+# Configuration
 celery_app.conf.update(
     # Task settings
     task_serializer="json",
@@ -33,19 +33,19 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
     # Result settings
-    result_expires=3600,  # 1 hora
+    result_expires=3600,  # 1 hour
     # Task execution
     task_acks_late=True,
     task_reject_on_worker_lost=True,
     # Rate limiting
-    task_default_rate_limit="10/m",  # 10 tasks por minuto por default
+    task_default_rate_limit="10/m",  # 10 tasks per minute by default
     # Retry settings
-    task_default_retry_delay=60,  # 1 minuto entre retries
+    task_default_retry_delay=60,  # 1 minute between retries
     task_max_retries=3,
     # Concurrency
     worker_concurrency=4,
     worker_prefetch_multiplier=2,
-    # Task routes (filas separadas por tipo)
+    # Task routes (queues separated by type)
     task_routes={
         "app.worker.tasks.extraction_tasks.*": {"queue": "extractions"},
         "app.worker.tasks.import_tasks.*": {"queue": "imports"},
@@ -58,10 +58,10 @@ celery_app.conf.update(
 
 # Task base class with logging
 class LoggedTask(celery_app.Task):
-    """Task base with logging estruturado."""
+    """Task base class with structured logging."""
 
     def on_failure(self, exc, task_id, args, kwargs, _einfo):
-        """Log em caso de falha."""
+        """Log on failure."""
         import structlog
 
         logger = structlog.get_logger()
@@ -75,7 +75,7 @@ class LoggedTask(celery_app.Task):
         )
 
     def on_success(self, _retval, task_id, _args, _kwargs):
-        """Log em caso de sucesso."""
+        """Log on success."""
         import structlog
 
         logger = structlog.get_logger()
@@ -86,7 +86,7 @@ class LoggedTask(celery_app.Task):
         )
 
     def on_retry(self, exc, task_id, _args, _kwargs, _einfo):
-        """Log em caso de retry."""
+        """Log on retry."""
         import structlog
 
         logger = structlog.get_logger()
@@ -99,5 +99,5 @@ class LoggedTask(celery_app.Task):
         )
 
 
-# Registrar task base
+# Register the base task class
 celery_app.Task = LoggedTask
