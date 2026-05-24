@@ -40,11 +40,30 @@ from collections.abc import AsyncGenerator
 from typing import NamedTuple
 from uuid import UUID
 
+import pytest
 import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import settings
+
+# =================== AUTO MARKER ===================
+# Every test collected under tests/integration/ gets the ``integration``
+# marker automatically. Saves us from putting
+# ``pytestmark = pytest.mark.integration`` at the top of all 40+ files.
+# Pairs with ``--strict-markers`` in pyproject so typo'd markers fail
+# instead of being silently ignored.
+
+
+def pytest_collection_modifyitems(
+    config: pytest.Config,  # noqa: ARG001
+    items: list[pytest.Item],
+) -> None:
+    """Auto-apply ``@pytest.mark.integration`` to every test in this dir."""
+    for item in items:
+        if "tests/integration/" in str(item.fspath):
+            item.add_marker(pytest.mark.integration)
+
 
 # =================== SENTINEL UUIDS ===================
 
