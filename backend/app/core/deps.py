@@ -51,12 +51,12 @@ AsyncSessionLocal = async_sessionmaker(
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
-    Dependency que fornece uma sessao de banco de data.
+    Dependency that provides a database session.
 
-    A sessao e automaticamente fechada ao final da request.
+    The session is automatically closed at the end of the request.
 
     Yields:
-        AsyncSession: Sessao do SQLAlchemy.
+        AsyncSession: SQLAlchemy async session.
     """
     async with AsyncSessionLocal() as session:
         try:
@@ -65,7 +65,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
-# Type alias for uso nas rotas
+# Type alias for use in routes
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 
 
@@ -90,7 +90,7 @@ def get_supabase_client() -> Client:
 
 
 def get_supabase() -> Client:
-    """Dependency for obter Supabase client."""
+    """Dependency to obtain a Supabase client."""
     return get_supabase_client()
 
 
@@ -107,9 +107,9 @@ CurrentUser = Annotated[TokenPayload, Depends(get_current_user)]
 
 class RequestContext:
     """
-    Contexto da requisicao with todas as dependencies comuns.
+    Request context grouping all common dependencies.
 
-    Agrupa db, user and supabase for facilitar passagem for services.
+    Bundles db, user, and supabase to simplify passing them to services.
     """
 
     def __init__(
@@ -124,7 +124,7 @@ class RequestContext:
 
     @property
     def user_id(self) -> str:
-        """user atual."""
+        """Current user id."""
         return self.user.sub
 
 
@@ -134,9 +134,9 @@ async def get_request_context(
     supabase: SupabaseClient,
 ) -> RequestContext:
     """
-    Dependency que fornece contexto completo da requisicao.
+    Dependency that provides the complete request context.
 
-    Util for services que precisam de multiplas dependencies.
+    Useful for services that need multiple dependencies.
     """
     return RequestContext(db=db, user=user, supabase=supabase)
 
