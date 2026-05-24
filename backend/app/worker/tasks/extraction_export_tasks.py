@@ -2,38 +2,30 @@
 
 Background-export worker. Opens its own DB session + storage adapter,
 runs the export service, uploads bytes, returns a signed URL.
+
+The async bridge is via ``app.worker._runner.run_task`` — see that
+module's docstring for the event-loop rationale.
 """
 
 from __future__ import annotations
 
-import asyncio
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from app.core.logging import get_logger
+from app.worker._runner import run_task
 from app.worker.celery_app import celery_app
 
 logger = get_logger(__name__)
 
-_WORKER_LOOP: asyncio.AbstractEventLoop | None = None
-
-#: Signed-URL TTL for the generated `.xlsx`. Matches the articles_export
+#: Signed-URL TTL for the generated ``.xlsx``. Matches the articles_export
 #: convention so users see consistent expiry windows across export types.
 _DOWNLOAD_URL_TTL_SECONDS = 3600
 
-#: Supabase Storage bucket. We reuse the existing `articles` bucket
-#: under a dedicated `exports/extraction/` prefix (research.md §2).
+#: Supabase Storage bucket. We reuse the existing ``articles`` bucket
+#: under a dedicated ``exports/extraction/`` prefix (research.md §2).
 _STORAGE_BUCKET = "articles"
 _STORAGE_PREFIX = "exports/extraction"
-
-
-def _run_in_worker_loop(coro):
-    """Reuse a worker-local event loop across task invocations."""
-    global _WORKER_LOOP
-    if _WORKER_LOOP is None or _WORKER_LOOP.is_closed():
-        _WORKER_LOOP = asyncio.new_event_loop()
-        asyncio.set_event_loop(_WORKER_LOOP)
-    return _WORKER_LOOP.run_until_complete(coro)
 
 
 @celery_app.task(
@@ -47,7 +39,7 @@ def export_extraction_task(
     template_id: str,
     mode: str,
     article_ids: list[str],
-    article_scope: str,  # noqa: ARG001 — currently informational; carried for audit/log
+    article_scope: str,  # noqa: ARG001 — informational; carried for audit/log
     user_id: str,
     reviewer_id: str | None = None,
     include_ai_metadata: bool = False,
@@ -58,15 +50,19 @@ def export_extraction_task(
     Builds the workbook via ``ExtractionExportService``, uploads bytes
     to Supabase Storage, returns ``{download_url, expires_at, user_id}``.
     """
-    from app.core.deps import AsyncSessionLocal, get_supabase_client
-    from app.core.factories import create_storage_adapter
-    from app.services.exports.extraction_xlsx_builder import build_workbook
-    from app.services.extraction_export_service import (
-        ExportMode,
-        ExtractionExportService,
-    )
 
     async def run() -> dict:
+        # Lazy imports + lazy client construction.
+        import asyncio
+
+        from app.core.deps import AsyncSessionLocal, get_supabase_client
+        from app.core.factories import create_storage_adapter
+        from app.services.exports.extraction_xlsx_builder import build_workbook
+        from app.services.extraction_export_service import (
+            ExportMode,
+            ExtractionExportService,
+        )
+
         async with AsyncSessionLocal() as session:
             supabase = get_supabase_client()
             storage = create_storage_adapter(supabase)
@@ -110,4 +106,4 @@ def export_extraction_task(
                 "user_id": user_id,
             }
 
-    return _run_in_worker_loop(run())
+    return run_task(run)

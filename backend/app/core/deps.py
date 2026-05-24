@@ -8,7 +8,6 @@ Contem todas as dependencies compartilhadas da aplicacao:
 """
 
 from collections.abc import AsyncGenerator
-from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends
@@ -73,17 +72,16 @@ DbSession = Annotated[AsyncSession, Depends(get_db)]
 # =================== SUPABASE CLIENT ===================
 
 
-@lru_cache
 def get_supabase_client() -> Client:
-    """
-    Return cliente Supabase configurado with service role.
+    """Return a fresh Supabase service-role client.
 
-    Usado for operacoes que precisam de acesso elevado:
-    - Storage operations
-    - Bypass RLS quando necessario
-
-    Returns:
-        Client: Supabase client configurado.
+    NOT cached. The cached version was the root cause of the 2026-05-24
+    event-loop reuse bug — the underlying httpx client binds its
+    connection pool to the loop active at construction time, so reusing
+    one across loops raises ``RuntimeError: <Future ...> attached to a
+    different loop``. Worker tasks construct one per invocation via
+    ``app.worker._runner.run_task``; FastAPI request handlers construct
+    one per request via ``get_supabase`` in this module.
     """
     return create_client(
         settings.SUPABASE_URL,

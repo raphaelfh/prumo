@@ -2,12 +2,15 @@
 Extraction Tasks.
 
 Tasks Celery for processamento de extractions.
+
+The async bridge is via ``app.worker._runner.run_task`` — see that
+module's docstring for the event-loop rationale.
 """
 
-import asyncio
 from typing import Any
 from uuid import UUID
 
+from app.worker._runner import run_task
 from app.worker.celery_app import celery_app
 
 
@@ -42,12 +45,13 @@ def extract_section_task(
     Returns:
         Dict with resultado da extraction.
     """
-    from app.core.deps import AsyncSessionLocal, get_supabase_client
-    from app.core.factories import create_storage_adapter
-    from app.services.api_key_service import APIKeyService
-    from app.services.section_extraction_service import SectionExtractionService
 
     async def run():
+        from app.core.deps import AsyncSessionLocal, get_supabase_client
+        from app.core.factories import create_storage_adapter
+        from app.services.api_key_service import APIKeyService
+        from app.services.section_extraction_service import SectionExtractionService
+
         async with AsyncSessionLocal() as session:
             try:
                 supabase = get_supabase_client()
@@ -88,7 +92,7 @@ def extract_section_task(
                 raise
 
     try:
-        return asyncio.run(run())
+        return run_task(run)
     except Exception as exc:
         self.retry(exc=exc)
 
@@ -120,12 +124,13 @@ def extract_models_task(
     Returns:
         Dict with modelos extraidos.
     """
-    from app.core.deps import AsyncSessionLocal, get_supabase_client
-    from app.core.factories import create_storage_adapter
-    from app.services.api_key_service import APIKeyService
-    from app.services.model_extraction_service import ModelExtractionService
 
     async def run():
+        from app.core.deps import AsyncSessionLocal, get_supabase_client
+        from app.core.factories import create_storage_adapter
+        from app.services.api_key_service import APIKeyService
+        from app.services.model_extraction_service import ModelExtractionService
+
         async with AsyncSessionLocal() as session:
             try:
                 supabase = get_supabase_client()
@@ -182,7 +187,7 @@ def extract_models_task(
                 raise
 
     try:
-        return asyncio.run(run())
+        return run_task(run)
     except Exception as exc:
         self.retry(exc=exc)
 

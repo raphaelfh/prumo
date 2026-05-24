@@ -2,23 +2,16 @@
 Import Tasks.
 
 Tasks Celery for importacao de data externos.
+
+The async bridge is via ``app.worker._runner.run_task`` — see that
+module's docstring for the event-loop rationale.
 """
 
-import asyncio
 from typing import Any
 from uuid import UUID
 
+from app.worker._runner import run_task
 from app.worker.celery_app import celery_app
-
-_WORKER_LOOP: asyncio.AbstractEventLoop | None = None
-
-
-def _run_in_worker_loop(coro):
-    global _WORKER_LOOP
-    if _WORKER_LOOP is None or _WORKER_LOOP.is_closed():
-        _WORKER_LOOP = asyncio.new_event_loop()
-        asyncio.set_event_loop(_WORKER_LOOP)
-    return _WORKER_LOOP.run_until_complete(coro)
 
 
 @celery_app.task(
@@ -50,11 +43,12 @@ def import_zotero_collection_task(
     Returns:
         Dict with resultado da importacao.
     """
-    from app.core.deps import AsyncSessionLocal, get_supabase_client
-    from app.core.factories import create_storage_adapter
-    from app.services.zotero_import_service import ZoteroImportService
 
     async def run():
+        from app.core.deps import AsyncSessionLocal, get_supabase_client
+        from app.core.factories import create_storage_adapter
+        from app.services.zotero_import_service import ZoteroImportService
+
         async with AsyncSessionLocal() as session:
             try:
                 supabase = get_supabase_client()
@@ -104,7 +98,7 @@ def import_zotero_collection_task(
                 raise
 
     try:
-        return _run_in_worker_loop(run())
+        return run_task(run)
     except Exception as exc:
         self.retry(exc=exc)
 
@@ -123,11 +117,11 @@ def retry_failed_zotero_sync_task(
     sync_run_id: str,
     limit: int = 100,
 ) -> dict[str, Any]:
-    from app.core.deps import AsyncSessionLocal, get_supabase_client
-    from app.core.factories import create_storage_adapter
-    from app.services.zotero_import_service import ZoteroImportService
-
     async def run():
+        from app.core.deps import AsyncSessionLocal, get_supabase_client
+        from app.core.factories import create_storage_adapter
+        from app.services.zotero_import_service import ZoteroImportService
+
         async with AsyncSessionLocal() as session:
             try:
                 supabase = get_supabase_client()
@@ -159,7 +153,7 @@ def retry_failed_zotero_sync_task(
                 raise
 
     try:
-        return _run_in_worker_loop(run())
+        return run_task(run)
     except Exception as exc:
         self.retry(exc=exc)
 
@@ -182,10 +176,11 @@ def sync_zotero_library_task(
     Returns:
         Dict with resultado da sincronizacao.
     """
-    from app.core.deps import AsyncSessionLocal
-    from app.services.zotero_service import ZoteroService
 
     async def run():
+        from app.core.deps import AsyncSessionLocal
+        from app.services.zotero_service import ZoteroService
+
         async with AsyncSessionLocal() as session:
             try:
                 zotero = ZoteroService(
@@ -222,6 +217,6 @@ def sync_zotero_library_task(
                 raise
 
     try:
-        return _run_in_worker_loop(run())
+        return run_task(run)
     except Exception as exc:
         self.retry(exc=exc)
