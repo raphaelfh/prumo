@@ -151,9 +151,3 @@ railway up backend --path-as-root --service worker --detach -m "<msg>"
 
 After the coverage debt is paid down and CI is green, no extra config
 is needed — Railway will resume auto-deploying.
-
-## Rollback fast paths
-
-(See "Rollback" section above for details.)
-
-(This mirrors the previous Render behavior — see the memory entry `reference_railway_deploys_from_main`.)
