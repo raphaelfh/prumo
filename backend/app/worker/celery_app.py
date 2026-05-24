@@ -49,14 +49,6 @@ celery_app.conf.update(
         "app.worker.tasks.extraction_tasks.*": {"queue": "extractions"},
         "app.worker.tasks.import_tasks.*": {"queue": "imports"},
     },
-    # Beat scheduler (tarefas periodicas)
-    beat_schedule={
-        # Exemplo: cleanup de resultados antigos
-        "cleanup-old-results": {
-            "task": "app.worker.tasks.maintenance_tasks.cleanup_old_results",
-            "schedule": 86400.0,  # 24 horas
-        },
-    },
 )
 
 
