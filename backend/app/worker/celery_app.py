@@ -53,14 +53,6 @@ celery_app.conf.update(
         # so a long-running extraction can't starve a user-initiated export.
         "app.worker.tasks.extraction_export_tasks.*": {"queue": "exports"},
     },
-    # Beat scheduler (tarefas periodicas)
-    beat_schedule={
-        # Exemplo: cleanup de resultados antigos
-        "cleanup-old-results": {
-            "task": "app.worker.tasks.maintenance_tasks.cleanup_old_results",
-            "schedule": 86400.0,  # 24 horas
-        },
-    },
 )
 
 
