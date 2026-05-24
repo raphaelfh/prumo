@@ -24,10 +24,17 @@
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"   # relative to source.rootDirectory (/backend)
 
-[deploy]
-healthcheckPath = "/health"
-restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 3
+# Deliberately NO global [deploy] section.
+#
+# Railway applies railway.toml's [deploy] to EVERY service that reads
+# this config file. The web service needs healthcheckPath="/health";
+# the worker is a Celery process with no HTTP endpoint and fails the
+# deploy if probed at /health (it can't answer, so Railway marks the
+# deployment FAILED after the probe timeout — observed 2026-05-24).
+#
+# Per-service [deploy] config lives in the Railway dashboard, applied
+# via `railway environment edit --service-config <svc> deploy.<key>`.
+# Effective values per service are documented in the inventory below.
 
 # -------------------------------------------------------------------------
 # Project: prumo  (id: 7d7a5e37-c5eb-48f2-9f06-fc8be79dbd2b)
@@ -44,7 +51,8 @@ restartPolicyMaxRetries = 3
 #                            auto-deploy because backend test coverage is
 #                            58.77% < 60% threshold in ci.yml; tracked as
 #                            a separate task)
-#     Healthcheck:           /health (from [deploy] above)
+#     Healthcheck:           /health (set per-service via Railway dashboard)
+#     Restart policy:        ON_FAILURE, max 3 retries (set per-service)
 #     Start command:         Dockerfile CMD
 #                            (alembic upgrade head && gunicorn -k UvicornWorker
 #                             -w 1 -t 120 -b 0.0.0.0:${PORT:-8000} app.main:app)
@@ -56,7 +64,10 @@ restartPolicyMaxRetries = 3
 #     Source:                raphaelfh/prumo, branch main, rootDirectory /backend
 #     Builder:               Dockerfile (Dockerfile within rootDirectory)
 #     Wait for CI:           true  (same as web)
-#     Healthcheck:           none
+#     Healthcheck:           none (Celery has no HTTP endpoint — deliberately
+#                            no per-service deploy.healthcheckPath; the
+#                            railway.toml above no longer sets a global one,
+#                            so the worker is not probed)
 #     Start command:         celery -A app.worker.celery_app worker --loglevel=info
 #                            --queues=extractions,imports,exports,celery
 #                            (override on the service — Dockerfile CMD is for web)
