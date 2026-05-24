@@ -1,0 +1,59 @@
+# Railway Infrastructure as Code — prumo backend.
+#
+# Source of truth for build settings. Service-level overrides (worker
+# start command, CORS_ORIGINS, REDIS_URL reference variables) live in
+# the Railway dashboard per service; the table at the bottom of this
+# file documents which keys live where.
+#
+# To apply this file: install the Railway CLI (`brew install railway`),
+# run `railway login`, then `railway up backend --path-as-root --service <name>`
+# from the repo root for each service.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "backend/Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
+# -------------------------------------------------------------------------
+# Project: prumo  (id: 7d7a5e37-c5eb-48f2-9f06-fc8be79dbd2b)
+# Environment: production
+# Region: us-east4-eqdc4a (US East / Virginia — same AZ class as Supabase)
+#
+# Services (configured in Railway dashboard, documented here):
+#
+#   web   (id: 2faf7ece-db11-4f16-8ec3-e63a839b08a8)
+#     Region:                US East
+#     Builder:               Dockerfile (this file)
+#     Healthcheck:           /health (from [deploy] above)
+#     Start command:         Dockerfile CMD
+#                            (alembic upgrade head && gunicorn -k UvicornWorker
+#                             -w 1 -t 120 -b 0.0.0.0:${PORT:-8000} app.main:app)
+#     Public domain:         https://web-production-48b398.up.railway.app
+#     Variables override:    CORS_ORIGINS=https://prumo-alpha.vercel.app
+#                            REDIS_URL=${{Redis.REDIS_URL}}
+#
+#   worker  (id: 7acd0799-9685-4445-971a-707bc1b9c41f)
+#     Region:                US East
+#     Builder:               Dockerfile (this file)
+#     Healthcheck:           none
+#     Start command:         celery -A app.worker.celery_app worker --loglevel=info
+#                            --queues=extractions,imports,exports,celery
+#     Public domain:         no
+#     Variables override:    REDIS_URL=${{Redis.REDIS_URL}}
+#
+#   Redis (managed plugin, id: 486d53c7-cc37-42a5-8ebc-c04f39e25dfc)
+#     Type:                  Database → Redis 8.2
+#     Region:                US East
+#     Exposes:               REDIS_URL on the private network (redis.railway.internal)
+#
+# Project-level shared variables (set on each service — Railway has no
+# project-level shared variables in the way some platforms do):
+#   ENCRYPTION_KEY, SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY,
+#   DATABASE_URL, DIRECT_DATABASE_URL, OPENAI_API_KEY, OPENAI_DEFAULT_MODEL,
+#   DEBUG=false, RATE_LIMIT_PER_MINUTE=60, PROJECT_NAME="Prumo API",
+#   API_V1_PREFIX=/api/v1, SUPABASE_ENV=production.
+# -------------------------------------------------------------------------
