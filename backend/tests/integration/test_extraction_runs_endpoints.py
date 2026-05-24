@@ -1062,7 +1062,11 @@ async def test_create_run_rejects_article_from_another_project(
             },
         )
         assert res.status_code == 400, res.text
-        assert "article" in res.json().get("detail", "").lower()
+        # ApiResponse envelope: the message lives at error.message, not at
+        # FastAPI's default ``detail`` key.
+        body = res.json()
+        message = body.get("error", {}).get("message", body.get("detail", ""))
+        assert "article" in message.lower(), body
     finally:
         await db_session.execute(
             text("DELETE FROM public.articles WHERE id = :aid"),

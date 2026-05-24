@@ -188,7 +188,11 @@ async def test_put_arbitrator_must_be_project_member(
         },
     )
     assert res.status_code == 400, res.text
-    assert "not a member" in res.json()["detail"].lower()
+    # ApiResponse envelope: the message lives at error.message, not at
+    # FastAPI's default ``detail`` key.
+    body = res.json()
+    message = body.get("error", {}).get("message", body.get("detail", ""))
+    assert "not a member" in message.lower(), body
 
 
 @pytest.mark.asyncio

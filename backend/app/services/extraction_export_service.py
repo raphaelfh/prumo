@@ -1143,7 +1143,7 @@ class ExtractionExportService(LoggerMixin):
         articles: tuple[ArticleDescriptor, ...],
         sections: tuple[SectionDescriptor, ...],
         value_map: dict[tuple[Any, ...], Any],
-        mode: ExportMode,  # noqa: ARG002 — used in US3 to choose value_map shape
+        mode: ExportMode,
     ) -> tuple[AIProposalRow, ...]:
         """Load every AI proposal for the in-scope runs into flat rows.
 
@@ -1320,7 +1320,12 @@ class ExtractionExportService(LoggerMixin):
                 latest_id=latest_id_per_key[(rid, iid, fid)],
                 decisions=decisions_by_key.get((rid, iid, fid), []),
             )
-            final_value = value_map.get((rid, iid, fid))
+            # ALL_USERS value_map uses 4-tuple keys (run, instance, field, reviewer_id|None);
+            # None is the consensus sub-column. Other modes use 3-tuple keys.
+            if mode is ExportMode.ALL_USERS:
+                final_value = value_map.get((rid, iid, fid, None))
+            else:
+                final_value = value_map.get((rid, iid, fid))
             row = AIProposalRow(
                 article_label=article.header_label,
                 section_label=section_label,

@@ -191,17 +191,27 @@ jobs:
       - name: Seed default data (PROBAST + QUADAS-2 templates)
         run: uv run python -m app.seed
 
-      # Coverage threshold lowered from 70 to 60 to match current reality
-      # (actual is ~60.07%). The 70 target was aspirational and never
-      # actually achieved. Ratchet upward as coverage grows; do NOT lower
-      # again once raised.
+      # Coverage gate timeline:
+      #   - was 70 (aspirational, never met)
+      #   - lowered to 60 to match the pre-2026-05-24 reality (~60.07%)
+      #   - 2026-05-24: F1 (seeded integration conftest) unblocked 196
+      #     silently-skipped integration tests; F2 covered
+      #     extraction_export_service.py (24% → 92%). Combined floor on
+      #     main: 64.06%.
+      #   - Gate raised to 62 (floor − 2 pt margin). Next ratchet target:
+      #     70% once F4 (repos/services unit tests) lands. After F4,
+      #     adopt `--cov-branch` (branch coverage is stricter; measure
+      #     first before changing the gate again).
+      #
+      # Hard rule: never lower this once raised. If a PR drops coverage,
+      # the PR adds tests, not the gate that gets relaxed.
       - name: Run tests with coverage
         run: |
           uv run pytest tests/ \
             --cov=app \
             --cov-report=xml \
             --cov-report=term-missing \
-            --cov-fail-under=60
+            --cov-fail-under=62
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

@@ -54,6 +54,17 @@ docs/                     # architecture/, superpowers/, planos/, ...
 
 ## Recent Changes
 
+- **2026-05-24**: Migrated backend hosting from **Render → Railway**.
+  Web (FastAPI + gunicorn) + Celery worker + managed Redis on the
+  Hobby plan, US East region. The async endpoints
+  (`articles_export`, `zotero_import`, `extraction_export`) now work
+  in prod — previously blocked on Render free because there was no
+  Redis. IaC committed at `railway.toml`. Topology and the canonical
+  env-var table live at `docs/architecture/deployment.md` (env files
+  are gitignored, so no `.env.railway.example` is tracked). Web URL:
+  https://web-production-48b398.up.railway.app. Vercel
+  `VITE_API_URL` updated and prod bundle rebuilt. Deletes
+  `render.yaml`.
 - **2026-05-19**: **Final cleanup wave** following the role-column
   migration (8 commits). Highlights: (a) migration `0017_backfill_role_in_snapshot`
   patches pre-0016 snapshots so every `extraction_template_versions.schema_`
