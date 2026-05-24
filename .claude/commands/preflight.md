@@ -1,5 +1,5 @@
 ---
-description: Pre-deploy readiness gate — runs verification-before-completion locally then probes Vercel, Supabase and Render. Read-only.
+description: Pre-deploy readiness gate — runs verification-before-completion locally then probes Vercel, Supabase and Railway. Read-only.
 argument-hint: "[--local-only] [--remote-only]"
 allowed-tools:
   - Task
@@ -11,6 +11,8 @@ allowed-tools:
   - mcp__16b9320c-bebb-4437-8372-470b05309b53__list_deployments
   - mcp__16b9320c-bebb-4437-8372-470b05309b53__get_deployment
   - mcp__16b9320c-bebb-4437-8372-470b05309b53__get_runtime_logs
+  - mcp__railway__list_deployments
+  - mcp__railway__get_logs
 model: sonnet
 ---
 
@@ -179,7 +181,7 @@ evidence: |
 ```text
 You are the `remote-deploys` preflight gate for prumo. READ-ONLY.
 
-Three checks across Vercel and Railway:
+Four checks across Vercel and Railway (web + worker + Redis):
 
   A. Vercel — latest deployment.
      Call mcp__16b9320c-bebb-4437-8372-470b05309b53__list_deployments
@@ -194,23 +196,42 @@ Three checks across Vercel and Railway:
      for the last 15 minutes on that deployment. Any HTTP 5xx → WARN.
      Clean → PASS.
 
-  C. Railway — backend health.
+  C. Railway — backend health (web service).
      Run: curl -fsS --max-time 10 -o /dev/null -w "%{http_code}" \
             https://web-production-48b398.up.railway.app/health
      - HTTP 200 → PASS
      - Anything else, or curl exit non-zero → FAIL
 
-Aggregate: worst status across A, B, C wins.
+  D. Railway — worker + Redis health.
+     The worker has no public endpoint, so probe via Railway MCP:
+       1. Call mcp__railway__list_deployments with service_id
+          7acd0799-9685-4445-971a-707bc1b9c41f (worker service in the
+          prumo project, environment production). Take the latest
+          deployment.
+          - status != "SUCCESS" → FAIL ("worker last deploy <status>")
+          - status == "SUCCESS" → continue
+       2. Call mcp__railway__get_logs for the same worker service with
+          limit=40. Look for two markers in the most recent boot block:
+            - "Connected to redis://" → Redis reachable
+            - "celery@... ready." → worker accepting jobs
+          Both present → PASS. Either missing → WARN. Both missing or
+          presence of "[ERROR]" / "ConnectionError" → FAIL.
+     This single check covers both the worker process and Redis — if
+     Redis is down, the worker logs will show "Connection refused" and
+     the gate fails fast.
+
+Aggregate: worst status across A, B, C, D wins.
 
 Return ONLY the following YAML block:
 
 gate: remote-deploys
 status: PASS | WARN | FAIL | UNKNOWN
-summary: <e.g. "Vercel READY 2h ago / no 5xx / Railway /health 200">
+summary: <e.g. "Vercel READY 2h ago / no 5xx / Railway /health 200 / worker+Redis ready">
 evidence: |
   Vercel: <deployment id, readyState, age>
   Vercel logs: <5xx count or "clean">
-  Railway: <status code from /health>
+  Railway web: <status code from /health>
+  Railway worker: <last deploy status, "redis ready" / "redis err">
 ```
 
 ---

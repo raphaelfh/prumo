@@ -60,17 +60,20 @@ DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
 3. DATABASE_URL do ambiente de produção
 4. Acesso ao servidor/container onde o backend roda
 
-### Opção 1: Via Render.com (Deploy Automático)
+### Opção 1: Via Railway (Deploy Automático)
 
-O seed é aplicado automaticamente no primeiro deploy via script de inicialização.
+O seed pode ser ligado ao deploy via Dockerfile `CMD` ou via Railway
+`pre_deploy_command`. Hoje o `backend/Dockerfile` roda apenas
+`alembic upgrade head && gunicorn ...` no boot — não chama o seed.
+Para incluir o seed nesse momento:
 
-```yaml
-# render.yaml
-startCommand: |
-  alembic upgrade head && \
-  python -m app.seed && \
-  gunicorn -k uvicorn.workers.UvicornWorker -w 4 app.main:app
+```dockerfile
+# backend/Dockerfile (alteração opcional)
+CMD ["sh", "-c", "alembic upgrade head && python -m app.seed && gunicorn -k uvicorn.workers.UvicornWorker -w 1 -t 120 -b 0.0.0.0:${PORT:-8000} app.main:app"]
 ```
+
+Como `seed.py` é idempotente, rodar a cada boot do `web` é seguro. Para
+o `worker`, evite — ele não precisa rodar seed (e tampouco roda Alembic).
 
 ### Opção 2: Manual (SSH / Script)
 
@@ -189,17 +192,22 @@ make seed
 make backend-start
 ```
 
-### Produção (Render.com)
+### Produção (Railway)
 
 ```bash
 # 1. Push código para GitHub
 git push origin main
 
-# 2. Render detecta push e faz deploy:
-#    a. Build: pip install uv && uv pip install --system -e .
-#    b. Start: alembic upgrade head && python -m app.seed && gunicorn ...
+# 2. Railway detecta push e faz deploy (apenas o serviço `web` roda
+#    Alembic — o worker boota depois):
+#    a. Build: backend/Dockerfile (Python 3.12 + uv pip install -e .)
+#    b. Start: alembic upgrade head && gunicorn ...
+#       (seed só roda se você adicionar `python -m app.seed` ao CMD
+#       — ver Opção 1 acima)
 
-# 3. Verificar logs no Render Dashboard
+# 3. Verificar logs:
+#    railway logs --service web --lines 200
+#    ou via Railway Dashboard
 ```
 
 ### Produção (Manual)
@@ -218,8 +226,8 @@ alembic upgrade head
 # 4. Aplica seed
 DATABASE_URL="$PROD_DATABASE_URL" uv run python -m app.seed
 
-# 5. Restart aplicação
-systemctl restart review-hub-backend
+# 5. Restart aplicação (Railway)
+railway service restart --service web
 ```
 
 ## ⚠️ Troubleshooting
