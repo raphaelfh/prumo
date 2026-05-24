@@ -21,6 +21,7 @@ import { expect, test } from "@playwright/test";
 import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { loginViaUi, resolveAuthToken } from "../_fixtures/auth";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
+import { resolveActiveExtractionTemplateId } from "../_fixtures/supabase-admin";
 
 interface HitlConfigRead {
   scope_kind: "project" | "template" | "system_default";
@@ -42,7 +43,6 @@ test.describe("HITL config CRUD", () => {
       "E2E_USER_EMAIL",
       "E2E_USER_PASSWORD",
       "E2E_PROJECT_ID",
-      "E2E_TEMPLATE_ID",
     ]);
     test.skip(required.length > 0, `Missing required env: ${required.join(", ")}`);
 
@@ -50,9 +50,10 @@ test.describe("HITL config CRUD", () => {
     await loginViaUi(page);
     const token = await resolveAuthToken(page);
     const traceId = createTraceId("e2e-hitl-config");
+    const templateId = await resolveActiveExtractionTemplateId(env.projectId!);
 
     const projectUrl = `${env.apiUrl}/api/v1/projects/${env.projectId}/hitl-config`;
-    const templateUrl = `${env.apiUrl}/api/v1/projects/${env.projectId}/templates/${env.templateId}/hitl-config`;
+    const templateUrl = `${env.apiUrl}/api/v1/projects/${env.projectId}/templates/${templateId}/hitl-config`;
 
     // Reset to a known starting state. Both DELETEs are idempotent (the
     // backend returns the resolved fallback even when no row existed).

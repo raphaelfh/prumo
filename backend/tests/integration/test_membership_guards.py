@@ -302,7 +302,9 @@ async def test_section_extraction_403_for_non_member(
 ) -> None:
     fx = await _pick_extraction_article_template_for_outsider(db_session, outsider_user)
     if fx is None:
-        pytest.skip("Need an extraction article/template in a project the outsider does not belong to")
+        pytest.skip(
+            "Need an extraction article/template in a project the outsider does not belong to"
+        )
     project_id, article_id, template_id = fx
 
     res = await db_client.post(
@@ -363,7 +365,9 @@ async def test_model_extraction_403_for_non_member(
 ) -> None:
     fx = await _pick_extraction_article_template_for_outsider(db_session, outsider_user)
     if fx is None:
-        pytest.skip("Need an extraction article/template in a project the outsider does not belong to")
+        pytest.skip(
+            "Need an extraction article/template in a project the outsider does not belong to"
+        )
     project_id, article_id, template_id = fx
 
     res = await db_client.post(
@@ -385,7 +389,9 @@ async def test_manual_model_hierarchy_403_for_non_member(
 ) -> None:
     fx = await _pick_extraction_article_template_for_outsider(db_session, outsider_user)
     if fx is None:
-        pytest.skip("Need an extraction article/template in a project the outsider does not belong to")
+        pytest.skip(
+            "Need an extraction article/template in a project the outsider does not belong to"
+        )
     project_id, article_id, template_id = fx
 
     res = await db_client.post(

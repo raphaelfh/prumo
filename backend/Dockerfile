@@ -1,5 +1,5 @@
 # =================== BUILD STAGE ===================
-FROM python:3.11-slim as builder
+FROM python:3.12-slim as builder
 
 WORKDIR /app
 
@@ -16,7 +16,7 @@ COPY app ./app
 RUN uv pip install --system --no-cache -e .
 
 # =================== RUNTIME STAGE ===================
-FROM python:3.11-slim as runtime
+FROM python:3.12-slim as runtime
 
 WORKDIR /app
 
@@ -24,7 +24,7 @@ WORKDIR /app
 RUN adduser --disabled-password --gecos "" appuser
 
 # Copy installed packages from builder
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy application code and Alembic migration files
@@ -41,10 +41,12 @@ USER appuser
 # Expose port
 EXPOSE 8000
 
-# Health check
+# Health check — read the same ${PORT:-8000} the CMD binds to so the
+# container is correctly marked healthy on Railway (where PORT is
+# injected) as well as locally (where it falls back to 8000).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD python -c "import httpx; httpx.get('http://localhost:8000/health')" || exit 1
+    CMD python -c "import httpx, os; httpx.get(f'http://localhost:{os.environ.get(\"PORT\", \"8000\")}/health')" || exit 1
 
 # Run migrations then start application
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "alembic upgrade head && gunicorn -k uvicorn.workers.UvicornWorker -w 1 -t 120 -b 0.0.0.0:${PORT:-8000} app.main:app"]
 

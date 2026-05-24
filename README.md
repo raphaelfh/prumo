@@ -211,40 +211,21 @@ prumo/
 
 ## 🚢 Deploy
 
-### Build de Produção
+Production hosting:
 
-```sh
-npm run build
-```
+- **Frontend:** Vercel (auto-deploys `main`).
+- **Backend (web + Celery worker):** Railway, Hobby plan, US East (deploys via `railway up backend --path-as-root --service <name>` from `main` — GitHub auto-deploy can be connected later via the Railway dashboard's GitHub App).
+- **Redis:** Railway managed plugin.
+- **Postgres + Auth + Storage:** Supabase.
 
-Os arquivos serão gerados em `dist/` e podem ser servidos por qualquer servidor estático.
+For topology, the full env var table, migration procedure, and rollback
+steps, see [`docs/architecture/deployment.md`](docs/architecture/deployment.md).
 
-### Opções de Deploy
-
-- **Vercel**: Conecte seu repositório GitHub e configure as variáveis de ambiente
-- **Netlify**: Similar ao Vercel, com suporte a Edge Functions
-- **Supabase**: Use o Supabase Hosting para backend 
-- **Docker**: Containerize a aplicação para deploy em qualquer plataforma
-
-### Variáveis de Ambiente Necessárias
-
-Consulte a [Documentação de Variáveis de Ambiente](docs/deployment/ENV_VARS.md) para lista completa.
-
-**Frontend (`.env`):**
-```env
-VITE_SUPABASE_ENV=local|production
-VITE_SUPABASE_URL=your_supabase_url
-VITE_SUPABASE_PUBLISHABLE_KEY=your_supabase_anon_key
-VITE_FASTAPI_BASE_URL=http://localhost:8000
-```
-
-**Backend (`backend/.env`):**
-```env
-SUPABASE_URL=your_supabase_url
-SUPABASE_KEY=your_supabase_service_role_key
-OPENAI_API_KEY=your_openai_api_key
-ANTHROPIC_API_KEY=your_anthropic_api_key
-```
+Local development uses Docker Compose — see [`docker-compose.yml`](docker-compose.yml).
+The dev backend env template lives at
+[`backend/.env.example`](backend/.env.example) (the only `.env.*` file
+checked into git — production env vars are documented in
+[`docs/architecture/deployment.md`](docs/architecture/deployment.md)).
 
 ## 📝 Licença
 

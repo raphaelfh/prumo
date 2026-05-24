@@ -82,3 +82,43 @@ export async function adminRpc<T>(
   }
   return (await response.json()) as T;
 }
+
+/**
+ * Resolve the active extraction template for a project at test runtime.
+ * Hardcoding E2E_TEMPLATE_ID in .env is fragile because backend pytest
+ * (test_template_clone_extraction.py) reseeds the project's templates,
+ * inventing fresh UUIDs every time `make test-backend` runs. Discovering
+ * the template through the DB at the moment the test needs it removes
+ * that coupling.
+ */
+export async function resolveActiveExtractionTemplateId(projectId: string): Promise<string> {
+  const rows = await adminSelect<{ id: string }>(
+    "project_extraction_templates",
+    `project_id=eq.${projectId}&kind=eq.extraction&is_active=eq.true&select=id&order=created_at.desc&limit=1`
+  );
+  if (rows.length === 0) {
+    throw new Error(
+      `No active extraction template found for project ${projectId}. Seed CHARMS via the Configuration UI or run \`python -m backend.app.seed\`.`
+    );
+  }
+  return rows[0].id;
+}
+
+/**
+ * Pick a study_section entity in the given template — a stable target for
+ * section-level extraction calls. Study sections live at the root of the
+ * template (no parent), making them safe to use regardless of model
+ * container presence.
+ */
+export async function resolveStudySectionEntityTypeId(templateId: string): Promise<string> {
+  const rows = await adminSelect<{ id: string }>(
+    "extraction_entity_types",
+    `project_template_id=eq.${templateId}&role=eq.study_section&select=id&order=sort_order&limit=1`
+  );
+  if (rows.length === 0) {
+    throw new Error(
+      `No study_section entity found in template ${templateId}. The template structure may be empty or corrupted.`
+    );
+  }
+  return rows[0].id;
+}
