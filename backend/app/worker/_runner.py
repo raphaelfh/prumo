@@ -7,7 +7,7 @@ correct way to bridge the two:
     @celery_app.task
     def my_task(...):
         async def run() -> dict:
-            async with AsyncSessionLocal() as db:
+            async with worker_session() as db:
                 ...
         return run_task(run)
 

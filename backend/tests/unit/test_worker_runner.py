@@ -152,3 +152,32 @@ def test_task_unknown_signal_emits_structured_event(monkeypatch):
     assert kw["task_id"] == "task-789"
     assert kw["task_name"] == "ghost.task"
     assert "remediation" in kw
+
+
+def test_worker_session_uses_fresh_engine_each_call() -> None:
+    """Each worker_session() must construct + dispose its own engine.
+
+    The 2026-05-24 incident root cause was a module-global engine whose
+    asyncpg connection pool bound its waiters to the first event loop
+    that touched it. ``worker_session`` MUST build a per-call engine so
+    no pool state ever crosses ``asyncio.run`` boundaries.
+    """
+    import asyncio
+
+    from app.worker._session import worker_session
+
+    engines_seen: list[int] = []
+
+    async def grab_engine_id() -> None:
+        async with worker_session() as session:
+            engines_seen.append(id(session.bind))
+
+    asyncio.run(grab_engine_id())
+    asyncio.run(grab_engine_id())
+
+    assert len(engines_seen) == 2
+    assert engines_seen[0] != engines_seen[1], (
+        "worker_session must construct a fresh engine per call — "
+        "engine identity reuse is the root cause of the 2026-05-24 "
+        "cross-loop bug."
+    )

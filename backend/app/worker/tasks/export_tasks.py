@@ -45,11 +45,12 @@ def export_articles_task(
     """
 
     async def run() -> dict:
-        from app.core.deps import AsyncSessionLocal, get_supabase_client
+        from app.core.deps import get_supabase_client
         from app.core.factories import create_storage_adapter
         from app.services.articles_export_service import ArticlesExportService
+        from app.worker._session import worker_session
 
-        async with AsyncSessionLocal() as session:
+        async with worker_session() as session:
             supabase = get_supabase_client()
             storage = create_storage_adapter(supabase)
             service = ArticlesExportService(

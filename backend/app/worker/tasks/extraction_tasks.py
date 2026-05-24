@@ -50,12 +50,13 @@ def extract_section_task(
     """
 
     async def run():
-        from app.core.deps import AsyncSessionLocal, get_supabase_client
+        from app.core.deps import get_supabase_client
         from app.core.factories import create_storage_adapter
         from app.services.api_key_service import APIKeyService
         from app.services.section_extraction_service import SectionExtractionService
+        from app.worker._session import worker_session
 
-        async with AsyncSessionLocal() as session:
+        async with worker_session() as session:
             try:
                 supabase = get_supabase_client()
                 storage = create_storage_adapter(supabase)
@@ -129,12 +130,13 @@ def extract_models_task(
     """
 
     async def run():
-        from app.core.deps import AsyncSessionLocal, get_supabase_client
+        from app.core.deps import get_supabase_client
         from app.core.factories import create_storage_adapter
         from app.services.api_key_service import APIKeyService
         from app.services.model_extraction_service import ModelExtractionService
+        from app.worker._session import worker_session
 
-        async with AsyncSessionLocal() as session:
+        async with worker_session() as session:
             try:
                 supabase = get_supabase_client()
                 storage = create_storage_adapter(supabase)

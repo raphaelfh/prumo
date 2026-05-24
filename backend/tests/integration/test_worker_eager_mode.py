@@ -10,7 +10,7 @@ on the pytest event loop, so loop reuse is impossible by construction.
 For loop coverage see the CI smoke job added in PR 3.
 
 Each test patches the *imports inside the task closure* (the task
-module imports ``AsyncSessionLocal``, ``get_supabase_client`` and the
+module imports ``worker_session``, ``get_supabase_client`` and the
 service classes lazily inside ``async def run``), then triggers the
 task via ``.apply(kwargs=...)`` which exercises the kwargs serialiser
 and the ``run_task`` async bridge.
@@ -44,7 +44,7 @@ class _FakeAsyncSession:
     """Drop-in for an SQLAlchemy ``AsyncSession`` that records lifecycle.
 
     Tasks call ``await session.commit()`` / ``await session.rollback()``
-    on the result of ``async with AsyncSessionLocal() as session``. We
+    on the result of ``async with worker_session() as session``. We
     don't need real SQL — just need awaitable no-ops so ``async with``
     and the commit/rollback calls succeed without raising.
     """
@@ -58,9 +58,9 @@ class _FakeAsyncSession:
 
 
 def _session_factory_returning(session: _FakeAsyncSession) -> Any:
-    """Return a callable that mimics ``AsyncSessionLocal()``.
+    """Return a callable that mimics ``worker_session()``.
 
-    ``AsyncSessionLocal()`` returns an async context manager whose
+    ``worker_session()`` returns an async context manager whose
     ``__aenter__`` yields the session. We can't use ``MagicMock`` here
     because ``async with`` requires ``__aenter__``/``__aexit__`` to be
     real coroutines.
@@ -106,7 +106,7 @@ def test_export_extraction_task_signature_and_kwargs_alignment() -> None:
             return_value=b"PK\x03\x04minimal-xlsx-bytes",
         ),
         patch(
-            "app.core.deps.AsyncSessionLocal",
+            "app.worker._session.worker_session",
             new=_session_factory_returning(session),
         ),
         patch(
@@ -166,7 +166,7 @@ def test_export_articles_task_signature_and_kwargs_alignment() -> None:
             return_value=MagicMock(),
         ),
         patch(
-            "app.core.deps.AsyncSessionLocal",
+            "app.worker._session.worker_session",
             new=_session_factory_returning(session),
         ),
         patch(
@@ -244,7 +244,7 @@ def test_import_zotero_collection_task_signature_and_kwargs_alignment() -> None:
             return_value=MagicMock(),
         ),
         patch(
-            "app.core.deps.AsyncSessionLocal",
+            "app.worker._session.worker_session",
             new=_session_factory_returning(session),
         ),
         patch(
@@ -316,7 +316,7 @@ def test_extract_section_task_signature_and_kwargs_alignment() -> None:
             return_value=MagicMock(),
         ),
         patch(
-            "app.core.deps.AsyncSessionLocal",
+            "app.worker._session.worker_session",
             new=_session_factory_returning(session),
         ),
         patch(

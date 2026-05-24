@@ -48,11 +48,12 @@ def import_zotero_collection_task(
     """
 
     async def run():
-        from app.core.deps import AsyncSessionLocal, get_supabase_client
+        from app.core.deps import get_supabase_client
         from app.core.factories import create_storage_adapter
         from app.services.zotero_import_service import ZoteroImportService
+        from app.worker._session import worker_session
 
-        async with AsyncSessionLocal() as session:
+        async with worker_session() as session:
             try:
                 supabase = get_supabase_client()
                 storage = create_storage_adapter(supabase)
@@ -121,11 +122,12 @@ def retry_failed_zotero_sync_task(
     limit: int = 100,
 ) -> dict[str, Any]:
     async def run():
-        from app.core.deps import AsyncSessionLocal, get_supabase_client
+        from app.core.deps import get_supabase_client
         from app.core.factories import create_storage_adapter
         from app.services.zotero_import_service import ZoteroImportService
+        from app.worker._session import worker_session
 
-        async with AsyncSessionLocal() as session:
+        async with worker_session() as session:
             try:
                 supabase = get_supabase_client()
                 storage = create_storage_adapter(supabase)
@@ -180,10 +182,10 @@ def sync_zotero_library_task(
     """
 
     async def run():
-        from app.core.deps import AsyncSessionLocal
         from app.services.zotero_service import ZoteroService
+        from app.worker._session import worker_session
 
-        async with AsyncSessionLocal() as session:
+        async with worker_session() as session:
             try:
                 zotero = ZoteroService(
                     db=session,
