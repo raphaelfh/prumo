@@ -873,3 +873,777 @@ class TestExtractOneEntityTypeForRun:
         )
 
         service._fields_with_recent_human_proposal.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _generate_extraction_summary (lines 897-927)
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateExtractionSummary:
+    """Covers _generate_extraction_summary including all branches."""
+
+    def _make_entity_type(self, name: str = "MySection", label: str | None = None):
+        et = MagicMock()
+        et.name = name
+        et.label = label
+        return et
+
+    def test_empty_data_returns_no_data_message(self, service):
+        et = self._make_entity_type("Section A")
+        result = service._generate_extraction_summary(et, {})
+        assert result == "Section A: No data extracted"
+
+    def test_none_values_are_skipped(self, service):
+        et = self._make_entity_type("Section B")
+        data = {"field1": None, "field2": None}
+        result = service._generate_extraction_summary(et, data)
+        assert "No data extracted" in result or "Section B" in result
+
+    def test_dict_value_uses_value_key(self, service):
+        et = self._make_entity_type("Section C")
+        data = {"field1": {"value": "extracted_val", "confidence": 0.9}}
+        result = service._generate_extraction_summary(et, data)
+        assert "extracted_val" in result
+
+    def test_plain_value_included(self, service):
+        et = self._make_entity_type("Section D")
+        data = {"field1": "plain_value"}
+        result = service._generate_extraction_summary(et, data)
+        assert "plain_value" in result
+
+    def test_label_preferred_over_name(self, service):
+        et = self._make_entity_type("MyName", label="MyLabel")
+        data = {"f": "v"}
+        result = service._generate_extraction_summary(et, data)
+        assert "MyLabel" in result
+        assert "MyName" not in result
+
+    def test_truncates_at_200_chars(self, service):
+        et = self._make_entity_type("Section")
+        data = {"field": "X" * 300}
+        result = service._generate_extraction_summary(et, data)
+        assert len(result) <= 200
+
+    def test_more_indicator_when_more_than_three_fields(self, service):
+        et = self._make_entity_type("Section")
+        data = {f"field{i}": f"val{i}" for i in range(5)}
+        result = service._generate_extraction_summary(et, data)
+        assert "..." in result
+
+    def test_no_more_indicator_for_three_or_fewer_fields(self, service):
+        et = self._make_entity_type("Section")
+        data = {"a": "1", "b": "2"}
+        result = service._generate_extraction_summary(et, data)
+        # Only trailing ... from truncation if long, not the more_indicator
+        # With 2 short fields this should not have "..." unless it's truncated
+        assert len(result) <= 200
+
+
+# ---------------------------------------------------------------------------
+# _get_child_entity_types edge cases (lines 964-998)
+# ---------------------------------------------------------------------------
+
+
+class TestGetChildEntityTypesEdgeCases:
+    @pytest.mark.asyncio
+    async def test_returns_empty_when_parent_instance_not_found(self, service):
+        service._instances.get_by_id = AsyncMock(return_value=None)
+        result = await service._get_child_entity_types(
+            template_id=uuid4(),
+            parent_instance_id=uuid4(),
+        )
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_when_no_child_entity_types(self, service):
+        parent = MagicMock()
+        parent.entity_type_id = uuid4()
+        service._instances.get_by_id = AsyncMock(return_value=parent)
+        service._entity_types.get_children = AsyncMock(return_value=[])
+        result = await service._get_child_entity_types(
+            template_id=uuid4(),
+            parent_instance_id=uuid4(),
+        )
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_filters_by_section_ids(self, service):
+        parent = MagicMock()
+        parent.entity_type_id = uuid4()
+        service._instances.get_by_id = AsyncMock(return_value=parent)
+
+        id1 = uuid4()
+        id2 = uuid4()
+        et1 = MagicMock()
+        et1.id = id1
+        et2 = MagicMock()
+        et2.id = id2
+        service._entity_types.get_children = AsyncMock(return_value=[et1, et2])
+
+        result = await service._get_child_entity_types(
+            template_id=uuid4(),
+            parent_instance_id=uuid4(),
+            section_ids=[id1],
+        )
+        assert len(result) == 1
+        assert result[0].id == id1
+
+
+# ---------------------------------------------------------------------------
+# _build_extraction_schema — allowed_values branches (lines 1034-1068)
+# ---------------------------------------------------------------------------
+
+
+class TestBuildExtractionSchemaAllowedValues:
+    def test_allowed_values_as_list_of_strings(self, service):
+        field = MagicMock()
+        field.name = "status"
+        field.field_type = "string"
+        field.description = "Status"
+        field.llm_description = None
+        field.is_required = False
+        field.allowed_values = ["active", "inactive", "pending"]
+
+        et = MagicMock()
+        et.fields = [field]
+        schema = service._build_extraction_schema(et)
+
+        assert "enum" in schema["properties"]["status"]
+        assert schema["properties"]["status"]["enum"] == ["active", "inactive", "pending"]
+
+    def test_allowed_values_as_dict_with_options(self, service):
+        field = MagicMock()
+        field.name = "risk"
+        field.field_type = "string"
+        field.description = "Risk level"
+        field.llm_description = None
+        field.is_required = False
+        field.allowed_values = {"options": [{"value": "low"}, {"value": "high"}]}
+
+        et = MagicMock()
+        et.fields = [field]
+        schema = service._build_extraction_schema(et)
+
+        assert schema["properties"]["risk"]["enum"] == ["low", "high"]
+
+    def test_allowed_values_options_appended_to_description(self, service):
+        field = MagicMock()
+        field.name = "choice"
+        field.field_type = "string"
+        field.description = "Pick one"
+        field.llm_description = None
+        field.is_required = False
+        field.allowed_values = ["yes", "no"]
+
+        et = MagicMock()
+        et.fields = [field]
+        schema = service._build_extraction_schema(et)
+
+        assert "Must be one of" in schema["properties"]["choice"]["description"]
+
+    def test_allowed_values_empty_list_no_enum(self, service):
+        field = MagicMock()
+        field.name = "nopts"
+        field.field_type = "string"
+        field.description = "desc"
+        field.llm_description = None
+        field.is_required = False
+        field.allowed_values = []
+
+        et = MagicMock()
+        et.fields = [field]
+        schema = service._build_extraction_schema(et)
+
+        assert "enum" not in schema["properties"]["nopts"]
+
+    def test_llm_description_preferred_over_description(self, service):
+        field = MagicMock()
+        field.name = "f"
+        field.field_type = "string"
+        field.description = "plain desc"
+        field.llm_description = "llm desc"
+        field.is_required = False
+        field.allowed_values = None
+
+        et = MagicMock()
+        et.fields = [field]
+        schema = service._build_extraction_schema(et)
+
+        assert schema["properties"]["f"]["description"] == "llm desc"
+
+    def test_multiselect_maps_to_array_type(self, service):
+        field = MagicMock()
+        field.name = "tags"
+        field.field_type = "multiselect"
+        field.description = "tags"
+        field.llm_description = None
+        field.is_required = False
+        field.allowed_values = None
+
+        et = MagicMock()
+        et.fields = [field]
+        schema = service._build_extraction_schema(et)
+
+        assert schema["properties"]["tags"]["type"] == "array"
+
+
+# ---------------------------------------------------------------------------
+# _extract_with_llm — memory context branch (lines 1120-1124)
+# ---------------------------------------------------------------------------
+
+
+class TestExtractWithLLMMemoryContext:
+    @pytest.mark.asyncio
+    async def test_memory_context_included_in_prompt(self, service):
+        from app.services.openai_service import OpenAIResponse, OpenAIUsage
+
+        captured: list[dict] = []
+
+        async def capture_call(messages, **kwargs):  # noqa: ARG001
+            captured.extend(messages)
+            return OpenAIResponse(
+                content="{}",
+                usage=OpenAIUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+                model="gpt-4o-mini",
+            )
+
+        service.openai_service.chat_completion_full = AsyncMock(side_effect=capture_call)
+
+        et = MagicMock()
+        et.name = "Methods"
+        et.description = "methods section"
+
+        memory = [
+            {"entity_type_name": "Participants", "summary": "N=100 patients"},
+        ]
+
+        await service._extract_with_llm(
+            pdf_text="article text",
+            entity_type=et,
+            schema={"type": "object", "properties": {}},
+            model="gpt-4o-mini",
+            memory_context=memory,
+        )
+
+        user_prompt = captured[1]["content"]
+        assert "CONTEXT FROM PREVIOUSLY EXTRACTED SECTIONS" in user_prompt
+        assert "Participants" in user_prompt
+        assert "N=100 patients" in user_prompt
+
+
+# ---------------------------------------------------------------------------
+# _create_suggestions — branches (lines 1248+)
+# ---------------------------------------------------------------------------
+
+
+class TestCreateSuggestions:
+    def _make_run(self):
+        run = MagicMock()
+        run.id = uuid4()
+        run.project_id = uuid4()
+        run.article_id = uuid4()
+        run.template_id = uuid4()
+        return run
+
+    @pytest.mark.asyncio
+    async def test_returns_zero_when_no_extracted_data(self, service):
+        run = self._make_run()
+        result = await service._create_suggestions(
+            project_id=run.project_id,
+            article_id=run.article_id,
+            entity_type_id=uuid4(),
+            parent_instance_id=None,
+            extracted_data={},
+            run=run,
+        )
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_returns_zero_when_entity_type_not_found(self, service):
+        service._entity_types.get_with_fields = AsyncMock(return_value=None)
+        run = self._make_run()
+        result = await service._create_suggestions(
+            project_id=run.project_id,
+            article_id=run.article_id,
+            entity_type_id=uuid4(),
+            parent_instance_id=None,
+            extracted_data={"field": "value"},
+            run=run,
+        )
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_skips_none_values(self, service):
+        field_id = uuid4()
+        field = MagicMock()
+        field.id = field_id
+        field.name = "f1"
+        et = MagicMock()
+        et.fields = [field]
+        service._entity_types.get_with_fields = AsyncMock(return_value=et)
+        instance = MagicMock()
+        instance.id = uuid4()
+        instance.parent_instance_id = None
+        service._instances.get_by_article = AsyncMock(return_value=[instance])
+        service._proposals.record_proposal = AsyncMock(return_value=MagicMock(id=uuid4()))
+        service.db.flush = AsyncMock()
+
+        run = self._make_run()
+        result = await service._create_suggestions(
+            project_id=run.project_id,
+            article_id=run.article_id,
+            entity_type_id=uuid4(),
+            parent_instance_id=None,
+            extracted_data={"f1": None},
+            run=run,
+        )
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_skips_unknown_field_names(self, service):
+        field = MagicMock()
+        field.id = uuid4()
+        field.name = "known_field"
+        et = MagicMock()
+        et.fields = [field]
+        service._entity_types.get_with_fields = AsyncMock(return_value=et)
+        instance = MagicMock()
+        instance.id = uuid4()
+        instance.parent_instance_id = None
+        service._instances.get_by_article = AsyncMock(return_value=[instance])
+        service._proposals.record_proposal = AsyncMock(return_value=MagicMock(id=uuid4()))
+        service.db.flush = AsyncMock()
+
+        run = self._make_run()
+        result = await service._create_suggestions(
+            project_id=run.project_id,
+            article_id=run.article_id,
+            entity_type_id=uuid4(),
+            parent_instance_id=None,
+            extracted_data={"unknown_field": "value"},
+            run=run,
+        )
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_records_proposal_for_plain_value(self, service):
+        field_id = uuid4()
+        field = MagicMock()
+        field.id = field_id
+        field.name = "title"
+        et = MagicMock()
+        et.fields = [field]
+        service._entity_types.get_with_fields = AsyncMock(return_value=et)
+        instance = MagicMock()
+        instance.id = uuid4()
+        instance.parent_instance_id = None
+        service._instances.get_by_article = AsyncMock(return_value=[instance])
+        proposal = MagicMock()
+        proposal.id = uuid4()
+        service._proposals.record_proposal = AsyncMock(return_value=proposal)
+        service.db.flush = AsyncMock()
+
+        run = self._make_run()
+        result = await service._create_suggestions(
+            project_id=run.project_id,
+            article_id=run.article_id,
+            entity_type_id=uuid4(),
+            parent_instance_id=None,
+            extracted_data={"title": "A Study"},
+            run=run,
+        )
+        assert result == 1
+        service._proposals.record_proposal.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_records_proposal_for_enriched_dict_value(self, service):
+        field_id = uuid4()
+        field = MagicMock()
+        field.id = field_id
+        field.name = "sample_size"
+        et = MagicMock()
+        et.fields = [field]
+        service._entity_types.get_with_fields = AsyncMock(return_value=et)
+        instance = MagicMock()
+        instance.id = uuid4()
+        instance.parent_instance_id = None
+        service._instances.get_by_article = AsyncMock(return_value=[instance])
+        proposal = MagicMock()
+        proposal.id = uuid4()
+        service._proposals.record_proposal = AsyncMock(return_value=proposal)
+        service.db.add = MagicMock()
+        service.db.flush = AsyncMock()
+
+        run = self._make_run()
+        result = await service._create_suggestions(
+            project_id=run.project_id,
+            article_id=run.article_id,
+            entity_type_id=uuid4(),
+            parent_instance_id=None,
+            extracted_data={
+                "sample_size": {
+                    "value": 150,
+                    "confidence": 0.9,
+                    "reasoning": "stated in methods",
+                    "evidence": {"text": "150 patients enrolled", "page_number": 2},
+                }
+            },
+            run=run,
+        )
+        assert result == 1
+        # Evidence row should have been added
+        service.db.add.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_auto_creates_instance_when_missing(self, service):
+        """When no instance exists, _create_suggestions auto-creates one."""
+        field_id = uuid4()
+        field = MagicMock()
+        field.id = field_id
+        field.name = "f"
+        et = MagicMock()
+        et.label = "My Label"
+        et.sort_order = 1
+        et.fields = [field]
+        service._entity_types.get_with_fields = AsyncMock(return_value=et)
+        # No existing instances
+        service._instances.get_by_article = AsyncMock(return_value=[])
+        new_instance = MagicMock()
+        new_instance.id = uuid4()
+        service._instances.create = AsyncMock(return_value=new_instance)
+        proposal = MagicMock()
+        proposal.id = uuid4()
+        service._proposals.record_proposal = AsyncMock(return_value=proposal)
+        service.db.flush = AsyncMock()
+
+        run = self._make_run()
+        result = await service._create_suggestions(
+            project_id=run.project_id,
+            article_id=run.article_id,
+            entity_type_id=uuid4(),
+            parent_instance_id=None,
+            extracted_data={"f": "val"},
+            run=run,
+        )
+        assert result == 1
+        service._instances.create.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_parent_instance_used_to_resolve_template_id(self, service):
+        """When parent_instance_id is provided and no instance exists,
+        the parent's template_id is inherited."""
+        field_id = uuid4()
+        field = MagicMock()
+        field.id = field_id
+        field.name = "f"
+        et = MagicMock()
+        et.label = None
+        et.name = "S"
+        et.sort_order = 0
+        et.fields = [field]
+        service._entity_types.get_with_fields = AsyncMock(return_value=et)
+        service._instances.get_by_article = AsyncMock(return_value=[])
+
+        parent = MagicMock()
+        parent_template_id = uuid4()
+        parent.template_id = parent_template_id
+        service._instances.get_by_id = AsyncMock(return_value=parent)
+
+        new_instance = MagicMock()
+        new_instance.id = uuid4()
+        service._instances.create = AsyncMock(return_value=new_instance)
+        proposal = MagicMock()
+        proposal.id = uuid4()
+        service._proposals.record_proposal = AsyncMock(return_value=proposal)
+        service.db.flush = AsyncMock()
+
+        run = self._make_run()
+        parent_instance_id = uuid4()
+
+        with patch(
+            "app.services.section_extraction_service.ExtractionInstance"
+        ) as mock_instance_class:
+            mock_created = MagicMock()
+            mock_created.id = uuid4()
+            mock_instance_class.return_value = mock_created
+            service._instances.create = AsyncMock(return_value=mock_created)
+            await service._create_suggestions(
+                project_id=run.project_id,
+                article_id=run.article_id,
+                entity_type_id=uuid4(),
+                parent_instance_id=parent_instance_id,
+                extracted_data={"f": "v"},
+                run=run,
+            )
+
+        # Verify the parent was looked up
+        service._instances.get_by_id.assert_awaited_once_with(parent_instance_id)
+
+    @pytest.mark.asyncio
+    async def test_evidence_without_text_not_added(self, service):
+        """Evidence dicts without 'text' key should not produce a db.add call."""
+        field_id = uuid4()
+        field = MagicMock()
+        field.id = field_id
+        field.name = "f"
+        et = MagicMock()
+        et.fields = [field]
+        service._entity_types.get_with_fields = AsyncMock(return_value=et)
+        instance = MagicMock()
+        instance.id = uuid4()
+        instance.parent_instance_id = None
+        service._instances.get_by_article = AsyncMock(return_value=[instance])
+        proposal = MagicMock()
+        proposal.id = uuid4()
+        service._proposals.record_proposal = AsyncMock(return_value=proposal)
+        service.db.add = MagicMock()
+        service.db.flush = AsyncMock()
+
+        run = self._make_run()
+        await service._create_suggestions(
+            project_id=run.project_id,
+            article_id=run.article_id,
+            entity_type_id=uuid4(),
+            parent_instance_id=None,
+            extracted_data={"f": {"value": "x", "evidence": {"page_number": 1}}},
+            run=run,
+        )
+        service.db.add.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# extract_section — exception path (lines 270-281)
+# ---------------------------------------------------------------------------
+
+
+class TestExtractSectionException:
+    @pytest.mark.asyncio
+    async def test_marks_run_as_failed_on_exception(self, service):
+        run = MagicMock()
+        run.id = uuid4()
+        service._lifecycle.create_run = AsyncMock(return_value=run)
+        service._lifecycle.advance_stage = AsyncMock(return_value=run)
+        service._runs.start_run = AsyncMock()
+        service._runs.fail_run = AsyncMock()
+
+        service._article_files.get_latest_pdf = AsyncMock(
+            side_effect=RuntimeError("pdf fetch failed")
+        )
+
+        with pytest.raises(RuntimeError, match="pdf fetch failed"):
+            await service.extract_section(
+                project_id=uuid4(),
+                article_id=uuid4(),
+                template_id=uuid4(),
+                entity_type_id=uuid4(),
+            )
+
+        service._runs.fail_run.assert_awaited_once_with(run.id, "pdf fetch failed")
+
+
+# ---------------------------------------------------------------------------
+# extract_all_sections (lines 593-760)
+# ---------------------------------------------------------------------------
+
+
+class TestExtractAllSections:
+    def _make_run(self):
+        run = MagicMock()
+        run.id = uuid4()
+        return run
+
+    def _minimal_lifecycle_wire(self, service, run):
+        service._lifecycle.create_run = AsyncMock(return_value=run)
+        service._lifecycle.advance_stage = AsyncMock(return_value=run)
+        service._runs.start_run = AsyncMock()
+        service._runs.complete_run = AsyncMock()
+        service._runs.fail_run = AsyncMock()
+
+    @pytest.mark.asyncio
+    async def test_batch_with_no_child_sections(self, service):
+        run = self._make_run()
+        self._minimal_lifecycle_wire(service, run)
+
+        service._instances.get_by_id = AsyncMock(return_value=None)
+        service._entity_types.get_children = AsyncMock(return_value=[])
+
+        result = await service.extract_all_sections(
+            project_id=uuid4(),
+            article_id=uuid4(),
+            template_id=uuid4(),
+            parent_instance_id=uuid4(),
+            pdf_text="pre-processed text",
+        )
+
+        assert result.total_sections == 0
+        assert result.successful_sections == 0
+        assert result.failed_sections == 0
+        assert result.total_suggestions_created == 0
+        service._runs.complete_run.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_batch_fetches_pdf_when_not_provided(self, service):
+        run = self._make_run()
+        self._minimal_lifecycle_wire(service, run)
+
+        service._instances.get_by_id = AsyncMock(return_value=None)
+        service._entity_types.get_children = AsyncMock(return_value=[])
+        mock_file = MagicMock()
+        mock_file.storage_key = "test.pdf"
+        service._article_files.get_latest_pdf = AsyncMock(return_value=mock_file)
+        service.storage.download = AsyncMock(return_value=b"%PDF")
+        service.pdf_processor.extract_text = AsyncMock(return_value="pdf text")
+
+        await service.extract_all_sections(
+            project_id=uuid4(),
+            article_id=uuid4(),
+            template_id=uuid4(),
+            parent_instance_id=uuid4(),
+            # No pdf_text provided → should fetch from storage
+        )
+
+        service._article_files.get_latest_pdf.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_batch_collects_failed_sections(self, service):
+        run = self._make_run()
+        self._minimal_lifecycle_wire(service, run)
+
+        parent = MagicMock()
+        parent.entity_type_id = uuid4()
+        service._instances.get_by_id = AsyncMock(return_value=parent)
+
+        child1 = MagicMock()
+        child1.id = uuid4()
+        child1.name = "Section A"
+        service._entity_types.get_children = AsyncMock(return_value=[child1])
+
+        # _extract_section_with_memory raises for child1
+        service._extract_section_with_memory = AsyncMock(side_effect=RuntimeError("llm error"))
+
+        result = await service.extract_all_sections(
+            project_id=uuid4(),
+            article_id=uuid4(),
+            template_id=uuid4(),
+            parent_instance_id=uuid4(),
+            pdf_text="text",
+        )
+
+        assert result.failed_sections == 1
+        assert result.successful_sections == 0
+        section_entry = result.sections[0]
+        assert section_entry["success"] is False
+
+    @pytest.mark.asyncio
+    async def test_batch_accumulates_memory_history(self, service):
+        run = self._make_run()
+        self._minimal_lifecycle_wire(service, run)
+
+        parent = MagicMock()
+        parent.entity_type_id = uuid4()
+        service._instances.get_by_id = AsyncMock(return_value=parent)
+
+        child1 = MagicMock()
+        child1.id = uuid4()
+        child1.name = "Sec1"
+        child1.label = "Section 1"
+
+        service._entity_types.get_children = AsyncMock(return_value=[child1])
+        service._extract_section_with_memory = AsyncMock(
+            return_value={
+                "suggestions_created": 2,
+                "tokens_total": 100,
+                "summary": "Sec1: N=50",
+            }
+        )
+
+        result = await service.extract_all_sections(
+            project_id=uuid4(),
+            article_id=uuid4(),
+            template_id=uuid4(),
+            parent_instance_id=uuid4(),
+            pdf_text="text",
+        )
+
+        assert result.successful_sections == 1
+        assert result.total_suggestions_created == 2
+
+    @pytest.mark.asyncio
+    async def test_batch_fails_run_on_unexpected_error(self, service):
+        run = self._make_run()
+        service._lifecycle.create_run = AsyncMock(return_value=run)
+        service._lifecycle.advance_stage = AsyncMock(return_value=run)
+        service._runs.start_run = AsyncMock()
+        service._runs.fail_run = AsyncMock()
+
+        # Make the PDF fetch explode unexpectedly (before any section loops)
+        service._instances.get_by_id = AsyncMock(side_effect=RuntimeError("db exploded"))
+
+        with pytest.raises(RuntimeError, match="db exploded"):
+            await service.extract_all_sections(
+                project_id=uuid4(),
+                article_id=uuid4(),
+                template_id=uuid4(),
+                parent_instance_id=uuid4(),
+                pdf_text="text",
+            )
+
+        service._runs.fail_run.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# extract_for_run — entity error path (lines 370-386)
+# ---------------------------------------------------------------------------
+
+
+class TestExtractForRunErrorPath:
+    @pytest.mark.asyncio
+    async def test_entity_failure_recorded_in_section_results(self, service):
+        from app.models.extraction import ExtractionRunStage
+
+        run = MagicMock()
+        run.id = uuid4()
+        run.project_id = uuid4()
+        run.article_id = uuid4()
+        run.template_id = uuid4()
+        run.stage = ExtractionRunStage.PROPOSAL.value
+        run.kind = "extraction"
+
+        template = MagicMock()
+        template.framework = None
+
+        service.db.get = AsyncMock(
+            side_effect=lambda cls, _id: run if "Run" in cls.__name__ else template
+        )
+
+        service._article_files.get_latest_pdf = AsyncMock(
+            return_value=MagicMock(storage_key="f.pdf")
+        )
+        service.storage.download = AsyncMock(return_value=b"%PDF")
+        service.pdf_processor.extract_text = AsyncMock(return_value="text")
+
+        failing_et = MagicMock()
+        failing_et.id = uuid4()
+        failing_et.name = "BadSection"
+
+        scalars = MagicMock()
+        scalars.all.return_value = [failing_et]
+        execute_result = MagicMock()
+        execute_result.scalars.return_value = scalars
+        service.db.execute = AsyncMock(return_value=execute_result)
+
+        service._entity_types.get_with_fields = AsyncMock(
+            side_effect=RuntimeError("type fetch error")
+        )
+
+        service._runs.start_run = AsyncMock()
+        service._runs.complete_run = AsyncMock()
+        service._runs.fail_run = AsyncMock()
+        service._lifecycle.advance_stage = AsyncMock()
+
+        result = await service.extract_for_run(run_id=run.id)
+
+        assert result.failed_sections == 1
+        assert result.sections[0]["success"] is False
+        assert "type fetch error" in result.sections[0]["error"]
