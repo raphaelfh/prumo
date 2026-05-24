@@ -46,7 +46,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.config import settings
 
-
 # =================== SENTINEL UUIDS ===================
 
 # All seed rows live under the ``ffffffff-9999-NNNN-...`` namespace.
@@ -243,7 +242,7 @@ async def _seed_minimum_graph(session: AsyncSession) -> None:
         text(
             "INSERT INTO public.project_extraction_templates "
             "(id, project_id, name, description, framework, version, kind, "
-            ' schema, is_active, created_by) '
+            " schema, is_active, created_by) "
             "VALUES (:id, :pid, :name, NULL, 'CUSTOM', '1.0', 'extraction', "
             " '{}'::jsonb, true, :created_by) "
             "ON CONFLICT (id) DO NOTHING"
