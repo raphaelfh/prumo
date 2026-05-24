@@ -1,14 +1,13 @@
 """
 Dependencies Module.
 
-Contem todas as dependencies compartilhadas da aplicacao:
+Contains all shared application dependencies:
 - Database session
 - Supabase client
 - Current user
 """
 
 from collections.abc import AsyncGenerator
-from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends
@@ -24,9 +23,9 @@ logger = get_logger(__name__)
 # =================== DATABASE ===================
 
 # Engine async for PostgreSQL
-# NOTA: O workaround de ::VARCHAR for ENUMs foi REMOVIDO.
-# Agora usamos PostgreSQLEnumType (em app.models.base) que resolve o problema
-# de forma declarativa diretamente nos models SQLAlchemy.
+# NOTE: The ::VARCHAR workaround for ENUMs was REMOVED.
+# We now use PostgreSQLEnumType (in app.models.base), which resolves
+# the problem declaratively at the SQLAlchemy model level.
 engine = create_async_engine(
     settings.async_database_url,
     echo=settings.DEBUG,
@@ -34,9 +33,9 @@ engine = create_async_engine(
     pool_size=10,
     max_overflow=20,
     connect_args={
-        "statement_cache_size": 0,  # ✅ Desabilita prepared statements (compativel with pgbouncer)
+        "statement_cache_size": 0,  # Disable prepared statements (compatible with pgbouncer)
         "server_settings": {
-            "jit": "off",  # Desabilita JIT for melhor performance em queries complexas
+            "jit": "off",  # Disable JIT for better performance on complex queries
         },
     },
 )
@@ -52,12 +51,12 @@ AsyncSessionLocal = async_sessionmaker(
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
-    Dependency que fornece uma sessao de banco de data.
+    Dependency that provides a database session.
 
-    A sessao e automaticamente fechada ao final da request.
+    The session is automatically closed at the end of the request.
 
     Yields:
-        AsyncSession: Sessao do SQLAlchemy.
+        AsyncSession: SQLAlchemy async session.
     """
     async with AsyncSessionLocal() as session:
         try:
@@ -66,24 +65,23 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
-# Type alias for uso nas rotas
+# Type alias for use in routes
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 
 
 # =================== SUPABASE CLIENT ===================
 
 
-@lru_cache
 def get_supabase_client() -> Client:
-    """
-    Return cliente Supabase configurado with service role.
+    """Return a fresh Supabase service-role client.
 
-    Usado for operacoes que precisam de acesso elevado:
-    - Storage operations
-    - Bypass RLS quando necessario
-
-    Returns:
-        Client: Supabase client configurado.
+    NOT cached. The cached version was the root cause of the 2026-05-24
+    event-loop reuse bug — the underlying httpx client binds its
+    connection pool to the loop active at construction time, so reusing
+    one across loops raises ``RuntimeError: <Future ...> attached to a
+    different loop``. Worker tasks construct one per invocation via
+    ``app.worker._runner.run_task``; FastAPI request handlers construct
+    one per request via ``get_supabase`` in this module.
     """
     return create_client(
         settings.SUPABASE_URL,
@@ -92,7 +90,7 @@ def get_supabase_client() -> Client:
 
 
 def get_supabase() -> Client:
-    """Dependency for obter Supabase client."""
+    """Dependency to obtain a Supabase client."""
     return get_supabase_client()
 
 
@@ -109,9 +107,9 @@ CurrentUser = Annotated[TokenPayload, Depends(get_current_user)]
 
 class RequestContext:
     """
-    Contexto da requisicao with todas as dependencies comuns.
+    Request context grouping all common dependencies.
 
-    Agrupa db, user and supabase for facilitar passagem for services.
+    Bundles db, user, and supabase to simplify passing them to services.
     """
 
     def __init__(
@@ -126,7 +124,7 @@ class RequestContext:
 
     @property
     def user_id(self) -> str:
-        """user atual."""
+        """Current user id."""
         return self.user.sub
 
 
@@ -136,9 +134,9 @@ async def get_request_context(
     supabase: SupabaseClient,
 ) -> RequestContext:
     """
-    Dependency que fornece contexto completo da requisicao.
+    Dependency that provides the complete request context.
 
-    Util for services que precisam de multiplas dependencies.
+    Useful for services that need multiple dependencies.
     """
     return RequestContext(db=db, user=user, supabase=supabase)
 

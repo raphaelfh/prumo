@@ -312,8 +312,8 @@ class TestGetGlobalKey:
         svc = make_service()
         # settings.OPENAI_API_KEY is "x" in test env
         result = svc._get_global_key("openai")
-        # Acceptable: either "x" or None (depending on env), but no exception
-        assert result is not None or result is None
+        # Should return the settings key when configured
+        assert result is not None
 
     def test_unknown_provider_returns_none(self) -> None:
         svc = make_service()
