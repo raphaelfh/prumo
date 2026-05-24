@@ -62,3 +62,56 @@ def test_run_task_rejects_a_bare_coroutine() -> None:
 def test_run_task_rejects_a_non_callable_non_coroutine() -> None:
     with pytest.raises(TypeError, match="run_task requires a zero-arg callable"):
         run_task(42)  # type: ignore[arg-type]
+
+
+def test_logged_task_emits_specific_event_for_not_registered(monkeypatch):
+    from celery.exceptions import NotRegistered
+
+    from app.worker.celery_app import LoggedTask
+
+    captured: list[tuple[str, dict]] = []
+
+    class StubLogger:
+        def error(self, event: str, **kw):
+            captured.append((event, kw))
+
+    monkeypatch.setattr("structlog.get_logger", lambda: StubLogger())
+
+    task = LoggedTask()
+    task.name = "ghost.task"
+    task.on_failure(NotRegistered("ghost.task"), "task-123", (), {"a": 1}, None)
+
+    assert captured, "on_failure should have logged"
+    event, kw = captured[0]
+    assert event == "celery.task_unregistered"
+    assert kw["task_id"] == "task-123"
+    assert kw["task_name"] == "ghost.task"
+    assert "remediation" in kw
+
+
+def test_logged_task_emits_generic_event_for_other_failures(monkeypatch):
+    """Non-NotRegistered exceptions still go to ``task_failed``."""
+    from app.worker.celery_app import LoggedTask
+
+    captured: list[tuple[str, dict]] = []
+
+    class StubLogger:
+        def error(self, event: str, **kw):
+            captured.append((event, kw))
+
+    monkeypatch.setattr("structlog.get_logger", lambda: StubLogger())
+
+    task = LoggedTask()
+    task.name = "real.task"
+    task.on_failure(ValueError("boom"), "task-456", (), {}, None)
+
+    assert captured == [(
+        "task_failed",
+        {
+            "task_id": "task-456",
+            "task_name": "real.task",
+            "error": "boom",
+            "args": (),
+            "kwargs": {},
+        },
+    )]

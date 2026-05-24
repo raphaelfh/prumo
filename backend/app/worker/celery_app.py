@@ -74,8 +74,26 @@ class LoggedTask(celery_app.Task):
     def on_failure(self, exc, task_id, args, kwargs, _einfo):
         """Log on failure."""
         import structlog
+        from celery.exceptions import NotRegistered
 
         logger = structlog.get_logger()
+        if isinstance(exc, NotRegistered):
+            # P1-class incident: an enqueued task has no handler. Always
+            # caused by a module missing from celery_app.include or a
+            # routing typo. Surface separately so dashboards can alert.
+            logger.error(
+                "celery.task_unregistered",
+                task_id=task_id,
+                task_name=self.name,
+                args=args,
+                kwargs=kwargs,
+                remediation=(
+                    "Check celery_app.include for the missing module and "
+                    "tests/unit/test_celery_app_task_registry.py for the "
+                    "regression guard."
+                ),
+            )
+            return
         logger.error(
             "task_failed",
             task_id=task_id,
