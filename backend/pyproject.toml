@@ -125,10 +125,14 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "-v --tb=short"
+# --strict-markers: typo'd marker (@pytest.mark.intergration vs integration)
+# now fails the test instead of silently being ignored. Catches the class
+# of "marker doesn't filter what you think it filters" bug.
+addopts = "-v --tb=short --strict-markers"
 markers = [
     "e2e: end-to-end tests against live stack",
     "performance: performance-sensitive or long-running tests",
+    "integration: integration test requiring db_session + seeded fixtures from tests/integration/conftest.py",
 ]
 
 
