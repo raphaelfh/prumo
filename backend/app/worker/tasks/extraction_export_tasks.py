@@ -9,6 +9,7 @@ module's docstring for the event-loop rationale.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -53,8 +54,6 @@ def export_extraction_task(
 
     async def run() -> dict:
         # Lazy imports + lazy client construction.
-        import asyncio
-
         from app.core.deps import AsyncSessionLocal, get_supabase_client
         from app.core.factories import create_storage_adapter
         from app.services.exports.extraction_xlsx_builder import build_workbook

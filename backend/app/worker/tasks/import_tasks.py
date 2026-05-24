@@ -1,11 +1,13 @@
-"""
-Import Tasks.
+"""Import Celery tasks.
 
-Tasks Celery for importacao de data externos.
+Celery tasks that import external data (currently Zotero collections
+and Zotero library sync) into a project.
 
 The async bridge is via ``app.worker._runner.run_task`` — see that
 module's docstring for the event-loop rationale.
 """
+
+from __future__ import annotations
 
 from typing import Any
 from uuid import UUID
@@ -30,18 +32,19 @@ def import_zotero_collection_task(
     update_existing: bool = True,
     sync_run_id: str | None = None,
 ) -> dict[str, Any]:
-    """
-    Task for importacao de collection do Zotero.
+    """Import a Zotero collection into the project.
 
     Args:
-        project_id: project.
-        collection_key: Key da collection in the Zotero.
-        user_id: user.
-        import_pdfs: Se deve importar PDFs.
-        max_items: Maximo de items a importar.
+        project_id: Project UUID.
+        collection_key: Zotero collection key.
+        user_id: User UUID owning the import.
+        import_pdfs: Whether to also import attached PDFs.
+        max_items: Max items to import.
+        update_existing: Whether to update items that already exist.
+        sync_run_id: Existing sync-run UUID to attach to (optional).
 
     Returns:
-        Dict with resultado da importacao.
+        Dict with the import result summary.
     """
 
     async def run():
@@ -167,14 +170,13 @@ def sync_zotero_library_task(
     self,
     user_id: str,
 ) -> dict[str, Any]:
-    """
-    Task for sincronizacao completa da biblioteca Zotero.
+    """Sync the user's full Zotero library metadata.
 
     Args:
-        user_id: user.
+        user_id: User UUID whose Zotero library should be synced.
 
     Returns:
-        Dict with resultado da sincronizacao.
+        Dict with the sync result summary.
     """
 
     async def run():
@@ -188,7 +190,7 @@ def sync_zotero_library_task(
                     user_id=user_id,
                 )
 
-                # Testar conexao
+                # Test the connection
                 connection_result = await zotero.test_connection()
 
                 if not connection_result.get("success"):
@@ -197,7 +199,7 @@ def sync_zotero_library_task(
                         "error": connection_result.get("error"),
                     }
 
-                # Listar collections
+                # List collections
                 collections_result = await zotero.list_collections()
 
                 return {
@@ -209,7 +211,7 @@ def sync_zotero_library_task(
                             "key": c.get("key"),
                             "name": c.get("data", {}).get("name"),
                         }
-                        for c in collections_result.get("collections", [])[:20]  # Limitar
+                        for c in collections_result.get("collections", [])[:20]  # Cap response size
                     ],
                 }
             except Exception:

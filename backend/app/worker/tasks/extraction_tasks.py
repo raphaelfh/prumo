@@ -1,11 +1,13 @@
-"""
-Extraction Tasks.
+"""Extraction Celery tasks.
 
-Tasks Celery for processamento de extractions.
+Celery tasks that drive AI-assisted extraction (single-section and
+prediction-model extraction) plus a small batch-fanout helper.
 
 The async bridge is via ``app.worker._runner.run_task`` — see that
 module's docstring for the event-loop rationale.
 """
+
+from __future__ import annotations
 
 from typing import Any
 from uuid import UUID
@@ -30,20 +32,21 @@ def extract_section_task(
     parent_instance_id: str | None = None,
     openai_api_key: str | None = None,
 ) -> dict[str, Any]:
-    """
-    Task for extraction de uma section.
+    """Run AI extraction for a single section of an article.
 
     Args:
-        project_id: project.
-        article_id: article.
-        template_id: template.
-        entity_type_id: entity type.
-        user_id: user.
-        parent_instance_id: instance pai (optional).
-        openai_api_key: API key customizada (BYOK). Se None, busca do user or usa global.
+        project_id: Project UUID.
+        article_id: Article UUID.
+        template_id: Project template UUID.
+        entity_type_id: Entity type UUID to extract.
+        user_id: User UUID owning the run.
+        parent_instance_id: Parent instance UUID, when extracting a child
+            section under a model container (optional).
+        openai_api_key: BYOK override. If ``None``, the user's stored key
+            is resolved; falls back to the global service key.
 
     Returns:
-        Dict with resultado da extraction.
+        Dict with the extraction result summary.
     """
 
     async def run():
@@ -111,18 +114,18 @@ def extract_models_task(
     user_id: str,
     openai_api_key: str | None = None,
 ) -> dict[str, Any]:
-    """
-    Task for extraction de modelos de predicao.
+    """Run AI extraction for prediction models in an article.
 
     Args:
-        project_id: project.
-        article_id: article.
-        template_id: template.
-        user_id: user.
-        openai_api_key: API key customizada (BYOK). Se None, busca do user or usa global.
+        project_id: Project UUID.
+        article_id: Article UUID.
+        template_id: Project template UUID.
+        user_id: User UUID owning the run.
+        openai_api_key: BYOK override. If ``None``, the user's stored key
+            is resolved; falls back to the global service key.
 
     Returns:
-        Dict with modelos extraidos.
+        Dict with the extracted models summary.
     """
 
     async def run():
@@ -205,17 +208,16 @@ def batch_extract_task(
     template_id: str,
     user_id: str,
 ) -> dict[str, Any]:
-    """
-    Task for extraction em batch de multiplos articles.
+    """Fan out model extraction across a batch of articles.
 
     Args:
-        project_id: project.
-        article_ids: List de IDs de articles.
-        template_id: template.
-        user_id: user.
+        project_id: Project UUID.
+        article_ids: List of article UUIDs to extract.
+        template_id: Project template UUID.
+        user_id: User UUID owning the runs.
 
     Returns:
-        Dict with estatisticas do batch.
+        Dict with per-article queue stats for the batch.
     """
     results = {
         "total": len(article_ids),

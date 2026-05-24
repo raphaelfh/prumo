@@ -55,5 +55,10 @@ def test_run_task_rejects_a_bare_coroutine() -> None:
     async def coro() -> int:
         return 1
 
-    with pytest.raises(TypeError, match="callable"):
+    with pytest.raises(TypeError, match="coroutine object"):
         run_task(coro())  # type: ignore[arg-type]
+
+
+def test_run_task_rejects_a_non_callable_non_coroutine() -> None:
+    with pytest.raises(TypeError, match="run_task requires a zero-arg callable"):
+        run_task(42)  # type: ignore[arg-type]

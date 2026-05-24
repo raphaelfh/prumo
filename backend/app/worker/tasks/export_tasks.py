@@ -1,11 +1,13 @@
-"""
-Export Tasks.
+"""Export Celery tasks.
 
-Tasks Celery for exportacao de articles (CSV, RIS, RDF + files).
+Celery tasks that export articles (CSV, RIS, RDF) plus optional PDFs as
+a single ZIP, upload the bundle to storage, and return a signed URL.
 
 The async bridge is via ``app.worker._runner.run_task`` — see that
 module's docstring for the event-loop rationale.
 """
+
+from __future__ import annotations
 
 from uuid import UUID
 
@@ -26,18 +28,17 @@ def export_articles_task(
     file_scope: str,
     user_id: str,
 ) -> dict:
-    """
-    Task for exportacao de articles em background.
+    """Export a set of articles in the background.
 
-    Gera ZIP with metadata (CSV/RIS/RDF) and optionalmente files;
-    faz upload for storage and retorna URL assinada.
+    Builds a ZIP with metadata (CSV/RIS/RDF) and optionally the article
+    files; uploads the bundle to storage and returns a signed URL.
 
     Args:
-        project_id: project.
-        article_ids: List de IDs of the articles (UUID strings).
-        formats: List de formatos: csv, ris, rdf.
-        file_scope: none, main_only, all.
-        user_id: user (para ownership do job).
+        project_id: Project UUID.
+        article_ids: List of article UUIDs to export.
+        formats: List of metadata formats: csv, ris, rdf.
+        file_scope: One of none, main_only, all.
+        user_id: User UUID owning the export job.
 
     Returns:
         Dict with download_url, expires_at, skipped_files, user_id.

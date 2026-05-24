@@ -32,6 +32,7 @@ Why the runner takes a *factory*, not a coroutine:
 from __future__ import annotations
 
 import asyncio
+import inspect
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
@@ -39,12 +40,25 @@ T = TypeVar("T")
 
 
 def run_task(coro_factory: Callable[[], Awaitable[T]]) -> T:
-    """Run an async coroutine in a fresh event loop and return its result."""
+    """Run an async coroutine in a fresh event loop and return its result.
+
+    Args:
+        coro_factory: Zero-argument callable that returns the coroutine
+            to run. Must be a callable — passing a coroutine directly
+            defeats the per-call loop guarantee.
+
+    Raises:
+        TypeError: if ``coro_factory`` is a coroutine object or not callable.
+        Exception: re-raises any exception raised by the coroutine.
+    """
+    if inspect.iscoroutine(coro_factory):
+        raise TypeError(
+            "run_task requires a zero-arg callable, got a coroutine object. "
+            "Pass the function itself (e.g. run_task(run)), not the result "
+            "of calling it (e.g. run_task(run()))."
+        )
     if not callable(coro_factory):
         raise TypeError(
-            f"run_task requires a zero-arg callable, got "
-            f"{type(coro_factory).__name__}. Pass the coroutine function "
-            f"itself (e.g. run_task(run)), not the coroutine "
-            f"(e.g. run_task(run()))."
+            f"run_task requires a zero-arg callable, got {type(coro_factory).__name__}."
         )
     return asyncio.run(coro_factory())
