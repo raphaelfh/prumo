@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
+from tests.integration.conftest import SEED
 
 API_PREFIX = "/api/v1/runs"
 
@@ -34,54 +35,26 @@ API_PREFIX = "/api/v1/runs"
 
 
 async def _resolve_fixtures(
-    db: AsyncSession,
+    db: AsyncSession,  # noqa: ARG001
 ) -> tuple[UUID, UUID, UUID, UUID, UUID, UUID] | None:
-    """Resolve (project, article, template, profile, instance, field) IDs from the
-    test database, picking instance + field that share the same template/entity_type.
+    """Return the seeded sentinel (project, article, template, profile, instance, field).
 
-    Queries article and template under the same project so the BOLA ownership
-    checks in create_run pass (article.project_id == project_id, and
-    template.project_id == project_id).
+    Pinning to the seed sentinels (vs ``LIMIT 1``) keeps the BOLA-ownership
+    chain coherent — previous revisions of this helper picked any
+    project/article/template row at random, which could resolve to a stale,
+    half-orphaned trio committed by a previous test session and silently
+    skip the whole file with ``Missing fixtures``. The return type stays
+    ``... | None`` so every caller's ``if fx is None`` guard remains a
+    valid no-op without churn; with the seed always present, it never fires.
     """
-    profile_id = (await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
-    # Find a project that has both an article and an extraction template so the
-    # ownership invariant is satisfied without the test having to set up its own data.
-    row = (
-        await db.execute(
-            text(
-                """
-                SELECT p.id AS project_id, a.id AS article_id, t.id AS template_id
-                FROM public.projects p
-                JOIN public.articles a ON a.project_id = p.id
-                JOIN public.project_extraction_templates t
-                    ON t.project_id = p.id AND t.kind = 'extraction'
-                LIMIT 1
-                """
-            )
-        )
-    ).first()
-    if row is None or profile_id is None:
-        return None
-    project_id, article_id, template_id = row
-
-    row = await db.execute(
-        text(
-            """
-            SELECT i.id AS iid, f.id AS fid
-            FROM public.extraction_instances i
-            JOIN public.extraction_entity_types et ON et.id = i.entity_type_id
-            JOIN public.extraction_fields f ON f.entity_type_id = et.id
-            WHERE i.template_id = :tid
-            LIMIT 1
-            """
-        ),
-        {"tid": template_id},
+    return (
+        SEED.primary_project,
+        SEED.primary_article,
+        SEED.primary_template,
+        SEED.primary_profile,
+        SEED.primary_instance,
+        SEED.primary_field,
     )
-    pair = row.first()
-    if pair is None:
-        return None
-    instance_id, field_id = pair
-    return project_id, article_id, template_id, profile_id, instance_id, field_id
 
 
 @pytest_asyncio.fixture
@@ -92,14 +65,12 @@ async def auth_as_profile(
 
     Must be requested AFTER ``db_client`` (or alongside, since FastAPI just
     checks the override map at request time). Yielding the UUID lets each test
-    assert against the same id used by the API.
+    assert against the same id used by the API. Pinned to the seed sentinel
+    so the chosen profile is guaranteed to be a manager of both seed projects
+    (see conftest topology).
     """
-    profile_id_raw = (
-        await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))
-    ).scalar()
-    if profile_id_raw is None:
-        pytest.skip("No profile rows available in test database")
-    profile_id = UUID(str(profile_id_raw))
+    del db_session  # kept for fixture-dependency ordering against ``db_client``
+    profile_id = SEED.primary_profile
 
     async def override_get_current_user() -> TokenPayload:
         return TokenPayload(
