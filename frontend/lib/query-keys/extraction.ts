@@ -24,4 +24,9 @@ export const extractionKeys = {
   // HITL session
   hitlSession: (sessionId: string) =>
     [...extractionKeys.all, 'hitl-session', sessionId] as const,
+  // Export dialog (feature 009)
+  exportReviewers: (projectId: string, templateId: string) =>
+    [...extractionKeys.all, 'export-reviewers', projectId, templateId] as const,
+  exportJobStatus: (projectId: string, jobId: string) =>
+    [...extractionKeys.all, 'export-status', projectId, jobId] as const,
 } as const;

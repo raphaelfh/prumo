@@ -49,7 +49,7 @@ from app.models.project import ProjectMemberRole
 from app.repositories.extraction_template_version_repository import (
     ExtractionTemplateVersionRepository,
 )
-from app.repositories.project_repository import ProjectMemberRepository
+from app.repositories.project_repository import ProjectMemberRepository, ProjectRepository
 
 # ----------------------------------------------------------------------
 # Enums
@@ -160,6 +160,7 @@ class AIProposalRow:
 class ExportLayout:
     """Fully-resolved input for the XLSX builder."""
 
+    project_name: str
     template_name: str
     template_version: int
     sections: tuple[SectionDescriptor, ...]
@@ -206,6 +207,9 @@ class ExtractionExportService(LoggerMixin):
 
     def _project_members_repo(self) -> ProjectMemberRepository:
         return ProjectMemberRepository(self.db)
+
+    def _projects_repo(self) -> ProjectRepository:
+        return ProjectRepository(self.db)
 
     def _template_versions_repo(self) -> ExtractionTemplateVersionRepository:
         return ExtractionTemplateVersionRepository(self.db)
@@ -267,6 +271,7 @@ class ExtractionExportService(LoggerMixin):
         branches raise NotImplementedError until US2/US3 implement them.
         """
         template, version = await self._load_active_template_version(template_id)
+        project_name = await self._resolve_project_name(project_id)
         sections = await self._load_sections(template_id)
 
         reviewers: tuple[ReviewerDescriptor, ...] = ()
@@ -333,6 +338,7 @@ class ExtractionExportService(LoggerMixin):
             )
 
         return ExportLayout(
+            project_name=project_name,
             template_name=template.name,
             template_version=version.version,
             sections=sections,
@@ -376,6 +382,19 @@ class ExtractionExportService(LoggerMixin):
     # ==================================================================
     # Internal helpers — layout assembly
     # ==================================================================
+
+    async def _resolve_project_name(self, project_id: UUID) -> str:
+        """Best-effort project name for the export filename.
+
+        Falls back to the project id's first segment when the project
+        row has no name set — never raises, because filename formatting
+        runs after authorization has already confirmed the project
+        exists and the caller can access it.
+        """
+        project = await self._projects_repo().get_by_id(project_id)
+        if project is not None and project.name:
+            return str(project.name)
+        return str(project_id).split("-", 1)[0]
 
     async def _load_active_template_version(
         self,
@@ -810,6 +829,33 @@ class ExtractionExportService(LoggerMixin):
             # reject → key absent (renders blank)
         return out
 
+    async def list_eligible_reviewers_for_picker(
+        self,
+        *,
+        project_id: UUID,
+        template_id: UUID,
+    ) -> list[dict[str, str]]:
+        """Reviewers the caller is allowed to pick in the export dialog.
+
+        Managers see every reviewer who has at least one non-reject
+        decision on this template. Non-managers see only themselves —
+        enforced here so the endpoint stays free of role-resolution
+        plumbing (constitution §I: API layer is thin).
+        """
+        all_reviewers = await self.list_reviewers_with_decisions(
+            project_id=project_id, template_id=template_id
+        )
+        try:
+            caller_id = UUID(self.user_id)
+        except (TypeError, ValueError):
+            return []
+        is_manager = await self._project_members_repo().has_role(
+            project_id, caller_id, ProjectMemberRole.MANAGER
+        )
+        if is_manager:
+            return all_reviewers
+        return [r for r in all_reviewers if r["id"] == self.user_id]
+
     async def list_reviewers_with_decisions(
         self,
         *,
@@ -819,8 +865,9 @@ class ExtractionExportService(LoggerMixin):
         """Reviewers with ≥ 1 non-reject decision on this project template.
 
         Returns a list of ``{"id": "...", "name": "..."}`` dicts ordered
-        alphabetically by display name. Backs the reviewer-picker
-        endpoint used by the dialog (FR-028, T051).
+        alphabetically by display name. Primitive used by
+        ``list_eligible_reviewers_for_picker``; not called directly from
+        the API layer.
         """
         from app.models.extraction_workflow import (
             ExtractionReviewerDecision,

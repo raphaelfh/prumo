@@ -65,6 +65,7 @@ def _fixed_layout() -> ExportLayout:
         study_instances={section_id: inst_id},
     )
     return ExportLayout(
+        project_name="Test Project",
         template_name="CHARMS",
         template_version=1,
         sections=(section,),
@@ -127,6 +128,7 @@ def test_build_workbook_ai_metadata_path_is_deterministic():
         ),
     )
     layout = ExportLayout(
+        project_name=base.project_name,
         template_name=base.template_name,
         template_version=base.template_version,
         sections=base.sections,
