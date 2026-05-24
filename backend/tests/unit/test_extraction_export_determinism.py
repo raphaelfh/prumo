@@ -214,11 +214,24 @@ async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode() 
     mock_db = AsyncMock()
     mock_db.execute = AsyncMock(
         side_effect=[
-            _result([(inst_id, entity_type_id, article_id)]),              # instances
-            _result([(pid, run_id, inst_id, field_id, {"value": "Existing registry"}, 0.9, "rationale", ts)]),  # proposals
-            _result([]),                                                    # evidence
+            _result([(inst_id, entity_type_id, article_id)]),  # instances
+            _result(
+                [
+                    (
+                        pid,
+                        run_id,
+                        inst_id,
+                        field_id,
+                        {"value": "Existing registry"},
+                        0.9,
+                        "rationale",
+                        ts,
+                    )
+                ]
+            ),  # proposals
+            _result([]),  # evidence
             _result([(run_id, inst_id, field_id, "accept_proposal", pid)]),  # decisions
-            _result([(entity_type_id, "1. Source of data")]),              # entity labels
+            _result([(entity_type_id, "1. Source of data")]),  # entity labels
         ]
     )
 
