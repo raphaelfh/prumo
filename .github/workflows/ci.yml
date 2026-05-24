@@ -115,6 +115,15 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # diff-cover needs the merge-base between origin/<base_ref> and
+          # HEAD to compute the diff. The default shallow checkout
+          # (fetch-depth=1) leaves git with no common ancestor, breaking
+          # the "Diff coverage gate (PR only)" step below with
+          # `fatal: origin/<base>...HEAD: no merge base`. Full history is
+          # the simplest fix; the repo is small enough that the bandwidth
+          # cost is negligible.
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -238,11 +247,15 @@ jobs:
         env:
           PRUMO_DIFF_COVERAGE_MIN: ${{ vars.PRUMO_DIFF_COVERAGE_MIN || '80' }}
         run: |
-          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          # Belt-and-braces: the job's `actions/checkout` step sets
+          # `fetch-depth: 0` so the local clone already has full history,
+          # but refetch the base ref explicitly in case a self-hosted
+          # runner or future cache rewrite ships a partial tree.
+          git fetch --no-tags origin "${{ github.base_ref }}"
           uv run diff-cover coverage.xml \
             --compare-branch="origin/${{ github.base_ref }}" \
             --fail-under="${PRUMO_DIFF_COVERAGE_MIN}" \
-            --markdown-report=diff-coverage.md
+            --format "markdown:diff-coverage.md"
           echo "## Diff coverage" >> "$GITHUB_STEP_SUMMARY"
           cat diff-coverage.md >> "$GITHUB_STEP_SUMMARY"
 
