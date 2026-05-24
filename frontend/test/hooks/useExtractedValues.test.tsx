@@ -409,3 +409,60 @@ describe('useExtractedValues — local-edits-win on backend refetch', () => {
     expect(result.current.values['inst-1_field-1']).toBe('mine');
   });
 });
+
+describe('useExtractedValues — run boundary reset', () => {
+  it('replaces preserved local values when the active run changes', async () => {
+    const run1Proposals = [
+      {
+        id: 'p-run-1',
+        run_id: 'run-1',
+        instance_id: 'inst-1',
+        field_id: 'field-1',
+        source: 'human' as const,
+        source_user_id: 'user-1',
+        proposed_value: { value: 'old-run-value' },
+        confidence_score: null,
+        rationale: null,
+        created_at: '2026-04-28T10:00:00Z',
+      },
+    ];
+    const run2Proposals = [
+      {
+        id: 'p-run-2',
+        run_id: 'run-2',
+        instance_id: 'inst-1',
+        field_id: 'field-1',
+        source: 'human' as const,
+        source_user_id: 'user-1',
+        proposed_value: { value: 'new-run-value' },
+        confidence_score: null,
+        rationale: null,
+        created_at: '2026-04-28T11:00:00Z',
+      },
+    ];
+
+    const { result, rerender } = renderHook(
+      ({ runId, proposals }) =>
+        useExtractedValues({
+          runId,
+          stage: 'proposal',
+          proposals,
+        }),
+      { initialProps: { runId: 'run-1', proposals: run1Proposals } },
+    );
+
+    await waitFor(() => expect(result.current.initialized).toBe(true));
+    expect(result.current.values['inst-1_field-1']).toBe('old-run-value');
+
+    result.current.updateValue('inst-1', 'field-1', 'unsaved-run-1-edit');
+    await waitFor(() =>
+      expect(result.current.values['inst-1_field-1']).toBe('unsaved-run-1-edit'),
+    );
+
+    rerender({ runId: 'run-2', proposals: run2Proposals });
+
+    await waitFor(() =>
+      expect(result.current.values['inst-1_field-1']).toBe('new-run-value'),
+    );
+  });
+});
