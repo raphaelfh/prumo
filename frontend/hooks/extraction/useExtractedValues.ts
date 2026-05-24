@@ -25,7 +25,14 @@
  * autosave is the single writer.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  type Dispatch,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { toast } from 'sonner';
 
 import { supabase } from '@/integrations/supabase/client';
@@ -61,6 +68,12 @@ interface UseExtractedValuesReturn {
 }
 
 const REVIEWER_STATE_STAGES = new Set(['review', 'consensus', 'finalized']);
+
+function resetValuesIfNeeded(
+  setValues: Dispatch<SetStateAction<Record<string, any>>>,
+) {
+  setValues((prev) => (Object.keys(prev).length > 0 ? {} : prev));
+}
 
 function unwrapProposalValue(raw: unknown): unknown {
   if (raw === null || raw === undefined) return null;
@@ -135,7 +148,7 @@ export function useExtractedValues(
       try {
         if (!runId || !stage) {
           hydratedRunIdRef.current = null;
-          setValues({});
+          resetValuesIfNeeded(setValues);
           setInitialized(true);
           return;
         }
@@ -173,7 +186,7 @@ export function useExtractedValues(
           const user = userRes.data.user;
           if (!user) {
             hydratedRunIdRef.current = runId;
-            setValues({});
+            resetValuesIfNeeded(setValues);
             return;
           }
 
@@ -200,7 +213,7 @@ export function useExtractedValues(
 
         // PENDING / CANCELLED / unknown — no values to show.
         hydratedRunIdRef.current = runId;
-        setValues({});
+        resetValuesIfNeeded(setValues);
         setInitialized(true);
       } catch (err: any) {
         console.error('Erro ao carregar valores extraídos:', err);
@@ -225,7 +238,7 @@ export function useExtractedValues(
       // the spinner forever. Treat ``initialized = true`` here as
       // "we know there are no values to show" (the empty map below).
       hydratedRunIdRef.current = runId ?? null;
-      setValues({});
+      resetValuesIfNeeded(setValues);
       setLoading(false);
       setInitialized(true);
       return;
