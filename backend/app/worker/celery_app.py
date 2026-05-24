@@ -45,13 +45,24 @@ celery_app.conf.update(
     # Concurrency
     worker_concurrency=4,
     worker_prefetch_multiplier=2,
-    # Task routes (queues separated by type)
+    # Task routes (queues separated by type). Every module in
+    # ``include=`` MUST appear here explicitly — the registry test in
+    # ``tests/unit/test_celery_app_task_registry.py`` enforces this so
+    # new task modules cannot silently fall back to the default
+    # ``celery`` queue (which the Railway worker may or may not be
+    # consuming). The drift guard
+    # ``tests/unit/test_celery_routes_drift.py`` then asserts every
+    # queue named here is in the worker ``--queues=...`` list.
     task_routes={
         "app.worker.tasks.extraction_tasks.*": {"queue": "extractions"},
         "app.worker.tasks.import_tasks.*": {"queue": "imports"},
         # Keep CPU-bound XLSX builds off the LLM-heavy `extractions` queue
         # so a long-running extraction can't starve a user-initiated export.
         "app.worker.tasks.extraction_export_tasks.*": {"queue": "exports"},
+        # Article exports (CSV/RIS/RDF + ZIP) — explicit `celery` queue so
+        # the drift guard has a clean baseline. The Railway worker
+        # consumes `celery` alongside the three named queues.
+        "app.worker.tasks.export_tasks.*": {"queue": "celery"},
     },
 )
 
