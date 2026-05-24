@@ -144,16 +144,16 @@ class AIProposalRow:
 
     article_label: str
     section_label: str
-    instance_index: int          # 1-based: 1 for cardinality=one; 1..N for model instances
+    instance_index: int  # 1-based: 1 for cardinality=one; 1..N for model instances
     field_label: str
     ai_proposed_value: Any
     confidence: float | None
     rationale: str | None
-    evidence_text: str           # joined with ' | ' when multiple
-    evidence_pages: str          # joined with ', ' when multiple
+    evidence_text: str  # joined with ' | ' when multiple
+    evidence_pages: str  # joined with ', ' when multiple
     proposed_at: datetime
-    reviewer_outcome: str        # accepted | rejected | edited (best-effort) | pending | superseded
-    final_value_used: Any        # None when not published
+    reviewer_outcome: str  # accepted | rejected | edited (best-effort) | pending | superseded
+    final_value_used: Any  # None when not published
 
 
 @dataclass(frozen=True)
@@ -241,9 +241,7 @@ class ExtractionExportService(LoggerMixin):
             and target_reviewer_id != caller_id
         )
         if requires_manager:
-            is_manager = await repo.has_role(
-                project_id, caller_id, ProjectMemberRole.MANAGER
-            )
+            is_manager = await repo.has_role(project_id, caller_id, ProjectMemberRole.MANAGER)
             if not is_manager:
                 raise AuthorizationError(
                     "Only project managers can export other reviewers' "
@@ -287,9 +285,7 @@ class ExtractionExportService(LoggerMixin):
             )
         elif mode is ExportMode.SINGLE_USER:
             if reviewer_id is None:
-                raise NotFoundError(
-                    "reviewer_id is required when mode=single_user."
-                )
+                raise NotFoundError("reviewer_id is required when mode=single_user.")
             articles, omitted = await self._resolve_articles_for_single_user(
                 template_id=template_id,
                 project_id=project_id,
@@ -315,9 +311,7 @@ class ExtractionExportService(LoggerMixin):
                 reviewer_ids=[r.reviewer_id for r in reviewers],
             )
         else:
-            raise NotImplementedError(
-                f"resolve_layout: unknown mode={mode.value}."
-            )
+            raise NotImplementedError(f"resolve_layout: unknown mode={mode.value}.")
 
         notes = ExportNotes(
             omitted_articles_by_stage=omitted,
@@ -403,9 +397,7 @@ class ExtractionExportService(LoggerMixin):
         """Load the project template + its currently-active version row."""
         template = (
             await self.db.execute(
-                select(ProjectExtractionTemplate).where(
-                    ProjectExtractionTemplate.id == template_id
-                )
+                select(ProjectExtractionTemplate).where(ProjectExtractionTemplate.id == template_id)
             )
         ).scalar_one_or_none()
         if template is None:
@@ -432,24 +424,32 @@ class ExtractionExportService(LoggerMixin):
              order (entity_type.sort_order, then field.sort_order).
         """
         entity_rows = (
-            await self.db.execute(
-                select(ExtractionEntityType)
-                .where(ExtractionEntityType.project_template_id == template_id)
-                .order_by(ExtractionEntityType.sort_order, ExtractionEntityType.id)
+            (
+                await self.db.execute(
+                    select(ExtractionEntityType)
+                    .where(ExtractionEntityType.project_template_id == template_id)
+                    .order_by(ExtractionEntityType.sort_order, ExtractionEntityType.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         if not entity_rows:
             return ()
 
         entity_ids = [e.id for e in entity_rows]
         field_rows = (
-            await self.db.execute(
-                select(ExtractionField)
-                .where(ExtractionField.entity_type_id.in_(entity_ids))
-                .order_by(ExtractionField.sort_order, ExtractionField.id)
+            (
+                await self.db.execute(
+                    select(ExtractionField)
+                    .where(ExtractionField.entity_type_id.in_(entity_ids))
+                    .order_by(ExtractionField.sort_order, ExtractionField.id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         fields_by_section: dict[UUID, list[FieldDescriptor]] = {}
         for f in field_rows:
@@ -487,15 +487,19 @@ class ExtractionExportService(LoggerMixin):
 
         # Bulk-fetch runs for the candidate articles on this template.
         run_rows = (
-            await self.db.execute(
-                select(ExtractionRun).where(
-                    ExtractionRun.template_id == template_id,
-                    ExtractionRun.project_id == project_id,
-                    ExtractionRun.article_id.in_(candidate_ids),
-                    ExtractionRun.kind == "extraction",
+            (
+                await self.db.execute(
+                    select(ExtractionRun).where(
+                        ExtractionRun.template_id == template_id,
+                        ExtractionRun.project_id == project_id,
+                        ExtractionRun.article_id.in_(candidate_ids),
+                        ExtractionRun.kind == "extraction",
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         runs_by_article: dict[UUID, ExtractionRun] = {r.article_id: r for r in run_rows}
         omitted: dict[str, int] = {}
@@ -564,28 +568,32 @@ class ExtractionExportService(LoggerMixin):
         # load the runs once to know (article_id, template_id) pairs,
         # then bulk-fetch matching instances.
         runs = (
-            await self.db.execute(
-                select(ExtractionRun).where(ExtractionRun.id.in_(run_ids))
-            )
-        ).scalars().all()
+            (await self.db.execute(select(ExtractionRun).where(ExtractionRun.id.in_(run_ids))))
+            .scalars()
+            .all()
+        )
         if not runs:
             return {}
         article_ids = {r.article_id for r in runs}
         template_ids = {r.template_id for r in runs}
 
         inst_rows = (
-            await self.db.execute(
-                select(ExtractionInstance)
-                .where(
-                    ExtractionInstance.article_id.in_(article_ids),
-                    ExtractionInstance.template_id.in_(template_ids),
-                )
-                .order_by(
-                    ExtractionInstance.entity_type_id,
-                    ExtractionInstance.sort_order,
+            (
+                await self.db.execute(
+                    select(ExtractionInstance)
+                    .where(
+                        ExtractionInstance.article_id.in_(article_ids),
+                        ExtractionInstance.template_id.in_(template_ids),
+                    )
+                    .order_by(
+                        ExtractionInstance.entity_type_id,
+                        ExtractionInstance.sort_order,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         by_article: dict[UUID, list[ExtractionInstance]] = {}
         for inst in inst_rows:
@@ -686,15 +694,19 @@ class ExtractionExportService(LoggerMixin):
             return [], {}
 
         run_rows = (
-            await self.db.execute(
-                select(ExtractionRun).where(
-                    ExtractionRun.template_id == template_id,
-                    ExtractionRun.project_id == project_id,
-                    ExtractionRun.article_id.in_(candidate_ids),
-                    ExtractionRun.kind == "extraction",
+            (
+                await self.db.execute(
+                    select(ExtractionRun).where(
+                        ExtractionRun.template_id == template_id,
+                        ExtractionRun.project_id == project_id,
+                        ExtractionRun.article_id.in_(candidate_ids),
+                        ExtractionRun.kind == "extraction",
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         runs_by_article: dict[UUID, ExtractionRun] = {r.article_id: r for r in run_rows}
 
         if not runs_by_article:
@@ -707,14 +719,11 @@ class ExtractionExportService(LoggerMixin):
                 select(ExtractionReviewerState.run_id)
                 .join(
                     ExtractionReviewerDecision,
-                    ExtractionReviewerState.current_decision_id
-                    == ExtractionReviewerDecision.id,
+                    ExtractionReviewerState.current_decision_id == ExtractionReviewerDecision.id,
                 )
                 .where(
                     ExtractionReviewerState.reviewer_id == reviewer_id,
-                    ExtractionReviewerState.run_id.in_(
-                        [r.id for r in run_rows]
-                    ),
+                    ExtractionReviewerState.run_id.in_([r.id for r in run_rows]),
                     ExtractionReviewerDecision.decision != "reject",
                 )
                 .distinct()
@@ -805,13 +814,11 @@ class ExtractionExportService(LoggerMixin):
                 )
                 .join(
                     ExtractionReviewerDecision,
-                    ExtractionReviewerState.current_decision_id
-                    == ExtractionReviewerDecision.id,
+                    ExtractionReviewerState.current_decision_id == ExtractionReviewerDecision.id,
                 )
                 .outerjoin(
                     ExtractionProposalRecord,
-                    ExtractionReviewerDecision.proposal_record_id
-                    == ExtractionProposalRecord.id,
+                    ExtractionReviewerDecision.proposal_record_id == ExtractionProposalRecord.id,
                 )
                 .where(
                     ExtractionReviewerState.run_id.in_(run_ids),
@@ -884,16 +891,13 @@ class ExtractionExportService(LoggerMixin):
                 )
                 .join(
                     ExtractionReviewerDecision,
-                    ExtractionReviewerState.current_decision_id
-                    == ExtractionReviewerDecision.id,
+                    ExtractionReviewerState.current_decision_id == ExtractionReviewerDecision.id,
                 )
                 .join(
                     ExtractionRun,
                     ExtractionReviewerState.run_id == ExtractionRun.id,
                 )
-                .join(
-                    Profile, Profile.id == ExtractionReviewerState.reviewer_id
-                )
+                .join(Profile, Profile.id == ExtractionReviewerState.reviewer_id)
                 .where(
                     ExtractionRun.project_id == project_id,
                     ExtractionRun.template_id == template_id,
@@ -931,15 +935,19 @@ class ExtractionExportService(LoggerMixin):
             return [], {}
 
         run_rows = (
-            await self.db.execute(
-                select(ExtractionRun).where(
-                    ExtractionRun.template_id == template_id,
-                    ExtractionRun.project_id == project_id,
-                    ExtractionRun.article_id.in_(candidate_ids),
-                    ExtractionRun.kind == "extraction",
+            (
+                await self.db.execute(
+                    select(ExtractionRun).where(
+                        ExtractionRun.template_id == template_id,
+                        ExtractionRun.project_id == project_id,
+                        ExtractionRun.article_id.in_(candidate_ids),
+                        ExtractionRun.kind == "extraction",
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         runs_by_article: dict[UUID, ExtractionRun] = {r.article_id: r for r in run_rows}
 
         omitted: dict[str, int] = {}
@@ -1022,12 +1030,9 @@ class ExtractionExportService(LoggerMixin):
                 )
                 .join(
                     ExtractionReviewerDecision,
-                    ExtractionReviewerState.current_decision_id
-                    == ExtractionReviewerDecision.id,
+                    ExtractionReviewerState.current_decision_id == ExtractionReviewerDecision.id,
                 )
-                .outerjoin(
-                    Profile, Profile.id == ExtractionReviewerState.reviewer_id
-                )
+                .outerjoin(Profile, Profile.id == ExtractionReviewerState.reviewer_id)
                 .where(
                     ExtractionReviewerState.run_id.in_(run_ids),
                     ExtractionReviewerDecision.decision != "reject",
@@ -1051,8 +1056,7 @@ class ExtractionExportService(LoggerMixin):
             )
         ordered = sorted(by_id.items(), key=lambda kv: kv[1].lower())
         return tuple(
-            ReviewerDescriptor(reviewer_id=rid, display_label=label)
-            for rid, label in ordered
+            ReviewerDescriptor(reviewer_id=rid, display_label=label) for rid, label in ordered
         )
 
     async def _build_all_users_value_map(
@@ -1110,13 +1114,11 @@ class ExtractionExportService(LoggerMixin):
                 )
                 .join(
                     ExtractionReviewerDecision,
-                    ExtractionReviewerState.current_decision_id
-                    == ExtractionReviewerDecision.id,
+                    ExtractionReviewerState.current_decision_id == ExtractionReviewerDecision.id,
                 )
                 .outerjoin(
                     ExtractionProposalRecord,
-                    ExtractionReviewerDecision.proposal_record_id
-                    == ExtractionProposalRecord.id,
+                    ExtractionReviewerDecision.proposal_record_id == ExtractionProposalRecord.id,
                 )
                 .where(
                     ExtractionReviewerState.run_id.in_(run_ids),
@@ -1166,9 +1168,7 @@ class ExtractionExportService(LoggerMixin):
         articles_by_run: dict[UUID, ArticleDescriptor] = {
             a.run_id: a for a in articles if a.run_id is not None
         }
-        section_by_entity: dict[UUID, SectionDescriptor] = {
-            s.entity_type_id: s for s in sections
-        }
+        section_by_entity: dict[UUID, SectionDescriptor] = {s.entity_type_id: s for s in sections}
         field_label_by_id: dict[UUID, str] = {
             f.field_id: f.label for s in sections for f in s.fields
         }
@@ -1181,11 +1181,7 @@ class ExtractionExportService(LoggerMixin):
                     ExtractionInstance.id,
                     ExtractionInstance.entity_type_id,
                     ExtractionInstance.article_id,
-                ).where(
-                    ExtractionInstance.article_id.in_(
-                        [a.article_id for a in articles]
-                    )
-                )
+                ).where(ExtractionInstance.article_id.in_([a.article_id for a in articles]))
             )
         ).all()
         instance_meta: dict[UUID, tuple[UUID, UUID]] = {
@@ -1205,7 +1201,8 @@ class ExtractionExportService(LoggerMixin):
                     ExtractionProposalRecord.confidence_score,
                     ExtractionProposalRecord.rationale,
                     ExtractionProposalRecord.created_at,
-                ).where(
+                )
+                .where(
                     ExtractionProposalRecord.run_id.in_(run_ids),
                     ExtractionProposalRecord.source == "ai",
                 )
@@ -1256,20 +1253,15 @@ class ExtractionExportService(LoggerMixin):
                 )
                 .join(
                     ExtractionReviewerDecision,
-                    ExtractionReviewerState.current_decision_id
-                    == ExtractionReviewerDecision.id,
+                    ExtractionReviewerState.current_decision_id == ExtractionReviewerDecision.id,
                 )
                 .where(ExtractionReviewerState.run_id.in_(run_ids))
             )
         ).all()
         # Index decisions by (run, instance, field) → list of (decision, prop_id).
-        decisions_by_key: dict[
-            tuple[UUID, UUID, UUID], list[tuple[str, UUID | None]]
-        ] = {}
+        decisions_by_key: dict[tuple[UUID, UUID, UUID], list[tuple[str, UUID | None]]] = {}
         for rid, iid, fid, decision, prop_id in decision_rows:
-            decisions_by_key.setdefault((rid, iid, fid), []).append(
-                (decision, prop_id)
-            )
+            decisions_by_key.setdefault((rid, iid, fid), []).append((decision, prop_id))
 
         # Pre-compute the instance index map per article so we can label
         # "Instance #" 1..N for model_section instances.
@@ -1286,9 +1278,7 @@ class ExtractionExportService(LoggerMixin):
         ent_label_rows = (
             await self.db.execute(
                 select(ExtractionEntityType.id, ExtractionEntityType.label).where(
-                    ExtractionEntityType.id.in_(
-                        {etid for etid, _aid in instance_meta.values()}
-                    )
+                    ExtractionEntityType.id.in_({etid for etid, _aid in instance_meta.values()})
                     if instance_meta
                     else (False,)  # type: ignore[arg-type]  # SA short-circuits on no-op
                 )
@@ -1299,9 +1289,7 @@ class ExtractionExportService(LoggerMixin):
         # Field-label fallback when a field is not in the template snapshot
         # (rare; happens when the run was finalized on an older version).
         missing_field_ids = {
-            fid
-            for _pid, _rid, _iid, fid, *_ in proposal_rows
-            if fid not in field_label_by_id
+            fid for _pid, _rid, _iid, fid, *_ in proposal_rows if fid not in field_label_by_id
         }
         if missing_field_ids:
             fb_rows = (
