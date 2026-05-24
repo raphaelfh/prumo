@@ -185,7 +185,7 @@ describe('useAutoSaveProposals — basic write semantics', () => {
 });
 
 describe('useAutoSaveProposals — mutex + error handling', () => {
-  it('concurrent saveNow invocations do not double-write (mutex)', async () => {
+  it('concurrent saveNow invocations do not double-write unchanged values', async () => {
     let release!: () => void;
     const block = new Promise<void>((resolve) => {
       release = resolve;
@@ -210,6 +210,60 @@ describe('useAutoSaveProposals — mutex + error handling', () => {
     });
 
     expect(apiClientMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('queues a trailing save when values change during an in-flight save', async () => {
+    let releaseFirst!: () => void;
+    const firstRequest = new Promise<typeof PROPOSAL_RESPONSE>((resolve) => {
+      releaseFirst = () => resolve(PROPOSAL_RESPONSE);
+    });
+    apiClientMock
+      .mockReturnValueOnce(firstRequest)
+      .mockResolvedValueOnce(PROPOSAL_RESPONSE);
+
+    const { result, rerender } = renderHook(
+      ({ values }) =>
+        useAutoSaveProposals({
+          runId: 'run-1',
+          values,
+        }),
+      {
+        initialProps: {
+          values: { 'inst-1_field-1': 'first' } as Record<string, unknown>,
+        },
+      },
+    );
+
+    let firstSave!: Promise<void>;
+    await act(async () => {
+      firstSave = result.current.saveNow();
+      await Promise.resolve();
+    });
+    expect(apiClientMock).toHaveBeenCalledTimes(1);
+
+    rerender({ values: { 'inst-1_field-1': 'second' } });
+
+    let trailingSave!: Promise<void>;
+    await act(async () => {
+      trailingSave = result.current.saveNow();
+      await Promise.resolve();
+    });
+    expect(apiClientMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      releaseFirst();
+      await Promise.all([firstSave, trailingSave]);
+    });
+
+    expect(apiClientMock).toHaveBeenCalledTimes(2);
+    expect(apiClientMock).toHaveBeenLastCalledWith(
+      '/api/v1/runs/run-1/proposals',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          proposed_value: { value: 'second' },
+        }),
+      }),
+    );
   });
 
   it('surfaces partial failures and retries only the failed coord', async () => {

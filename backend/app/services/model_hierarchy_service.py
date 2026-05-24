@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.article import Article
 from app.models.extraction import (
     ExtractionCardinality,
     ExtractionEntityRole,
@@ -67,6 +68,10 @@ class ModelHierarchyService:
             raise ValueError("Template not found in project")
         if template.kind != TemplateKind.EXTRACTION.value:
             raise ValueError("Template kind must be extraction")
+
+        article = await self.db.get(Article, article_id)
+        if article is None or article.project_id != project_id:
+            raise ValueError("Article not found in project")
 
         model_entity_type = await self._prediction_models_entity_type(template_id)
         if model_entity_type is None:

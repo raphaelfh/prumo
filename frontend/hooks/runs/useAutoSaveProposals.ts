@@ -28,9 +28,9 @@
  * ``extraction_proposal_records`` table doesn't accumulate one
  * duplicate row per debounce tick.
  *
- * Concurrent ``performSave`` invocations are serialized via a
- * ref-based mutex; a save triggered while another is in flight is a
- * silent no-op (the in-flight one already has the latest values).
+ * Concurrent ``performSave`` invocations are serialized: a save triggered
+ * while another is in flight waits for the first batch, recomputes the
+ * dirty diff, and writes any trailing edits.
  *
  * Goes straight to ``apiClient`` rather than wrapping a TanStack Query
  * mutation: invalidating ``runs.detail(runId)`` on every debounced
@@ -88,10 +88,9 @@ export function useAutoSaveProposals(
   // Stringified last successful write per `${instanceId}_${fieldId}` —
   // the diff check against the current values map.
   const lastSavedByKeyRef = useRef<Record<string, string>>({});
-  // Mutual-exclusion guard. React state is async, so ``saveState ===
-  // 'saving'`` cannot be used as a synchronous lock across overlapping
-  // ``performSave`` invocations.
-  const isSavingRef = useRef(false);
+  // React state is async, so ``saveState === 'saving'`` cannot be used
+  // as a synchronous lock across overlapping ``performSave`` invocations.
+  const activeSavePromiseRef = useRef<Promise<void> | null>(null);
 
   const computeDirtyEntries = useCallback((): Array<[string, unknown]> => {
     const dirty: Array<[string, unknown]> = [];
@@ -109,18 +108,25 @@ export function useAutoSaveProposals(
   }, []);
 
   const performSave = useCallback(async (): Promise<void> => {
+    while (activeSavePromiseRef.current) {
+      try {
+        await activeSavePromiseRef.current;
+      } catch {
+        // The owner call surfaces the error state/toast; queued calls can
+        // still retry any dirty values that were not acknowledged.
+      }
+    }
+
     const currentRunId = runIdRef.current;
     if (!currentRunId || !enabledRef.current) return;
-    if (isSavingRef.current) return;
 
     const dirty = computeDirtyEntries();
     if (dirty.length === 0) return;
 
-    isSavingRef.current = true;
     setSaveState('saving');
     setError(null);
 
-    try {
+    const savePromise = (async () => {
       // ``Promise.allSettled`` so a single failed write does not abort
       // the others mid-flight; otherwise their ``lastSavedByKeyRef``
       // updates race the catch block and leave the diff map
@@ -170,6 +176,12 @@ export function useAutoSaveProposals(
 
       setLastSavedAt(new Date());
       setSaveState('saved');
+    })();
+
+    activeSavePromiseRef.current = savePromise;
+
+    try {
+      await savePromise;
     } catch (err) {
       const message =
         err instanceof Error
@@ -180,7 +192,9 @@ export function useAutoSaveProposals(
       setSaveState('error');
       toast.error(t('extraction', 'errors_autoSaveFailed'));
     } finally {
-      isSavingRef.current = false;
+      if (activeSavePromiseRef.current === savePromise) {
+        activeSavePromiseRef.current = null;
+      }
     }
   }, [computeDirtyEntries]);
 
