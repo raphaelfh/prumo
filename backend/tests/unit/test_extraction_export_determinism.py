@@ -17,8 +17,10 @@ from __future__ import annotations
 import io
 import zipfile
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
+import pytest
 from openpyxl import load_workbook
 
 from app.models.extraction import ExtractionEntityRole, ExtractionFieldType
@@ -152,3 +154,82 @@ def test_build_workbook_ai_metadata_path_is_deterministic():
     rows_a = [list(r) for r in ws_a.iter_rows(values_only=True)]
     rows_b = [list(r) for r in ws_b.iter_rows(values_only=True)]
     assert rows_a == rows_b
+
+
+# ----------------------------------------------------------------------
+# Regression: _load_ai_proposal_rows key-shape for ALL_USERS mode
+# ----------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode() -> None:
+    """Regression: when mode=ALL_USERS, the consensus value_map uses 4-tuple
+    keys (run_id, instance_id, field_id, None). _load_ai_proposal_rows must
+    use the 4-tuple lookup; a 3-tuple would silently produce final_value=None.
+    """
+    from app.services.extraction_export_service import ExtractionExportService
+
+    run_id = uuid4()
+    inst_id = uuid4()
+    field_id = uuid4()
+    entity_type_id = uuid4()
+    article_id = uuid4()
+    pid = uuid4()
+    ts = datetime(2026, 5, 23, 10, 0, 0, tzinfo=UTC)
+
+    field = FieldDescriptor(
+        field_id=field_id,
+        label="1.1 Source",
+        type=ExtractionFieldType.TEXT,
+        allowed_values=(),
+        parent_section_id=entity_type_id,
+    )
+    section = SectionDescriptor(
+        entity_type_id=entity_type_id,
+        label="1. Source of data",
+        role=ExtractionEntityRole.STUDY_SECTION,
+        parent_entity_type_id=None,
+        fields=(field,),
+    )
+    article = ArticleDescriptor(
+        article_id=article_id,
+        header_label="Gaca, 2011",
+        run_id=run_id,
+        run_stage=None,
+        model_instances=(),
+        study_instances={entity_type_id: inst_id},
+    )
+
+    # ALL_USERS value_map: consensus column uses (run_id, inst_id, field_id, None).
+    value_map = {(run_id, inst_id, field_id, None): "Existing registry"}
+
+    # Mock the five DB execute calls in _load_ai_proposal_rows order:
+    #   1. instance query, 2. proposal query, 3. evidence query,
+    #   4. decision query, 5. entity-type label query.
+    def _result(rows):
+        r = MagicMock()
+        r.all.return_value = rows
+        return r
+
+    mock_db = AsyncMock()
+    mock_db.execute = AsyncMock(
+        side_effect=[
+            _result([(inst_id, entity_type_id, article_id)]),              # instances
+            _result([(pid, run_id, inst_id, field_id, {"value": "Existing registry"}, 0.9, "rationale", ts)]),  # proposals
+            _result([]),                                                    # evidence
+            _result([(run_id, inst_id, field_id, "accept_proposal", pid)]),  # decisions
+            _result([(entity_type_id, "1. Source of data")]),              # entity labels
+        ]
+    )
+
+    service = ExtractionExportService(db=mock_db, user_id="user-1", storage=MagicMock())
+    rows = await service._load_ai_proposal_rows(
+        articles=(article,),
+        sections=(section,),
+        value_map=value_map,
+        mode=ExportMode.ALL_USERS,
+    )
+
+    assert len(rows) == 1
+    # Before the fix this was None; after the fix it resolves via the 4-tuple key.
+    assert rows[0].final_value_used == "Existing registry"
