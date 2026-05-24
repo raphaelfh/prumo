@@ -115,6 +115,15 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # diff-cover needs the merge-base between origin/<base_ref> and
+          # HEAD to compute the diff. The default shallow checkout
+          # (fetch-depth=1) leaves git with no common ancestor, breaking
+          # the "Diff coverage gate (PR only)" step below with
+          # `fatal: origin/<base>...HEAD: no merge base`. Full history is
+          # the simplest fix; the repo is small enough that the bandwidth
+          # cost is negligible.
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -205,6 +214,15 @@ jobs:
       #
       # Hard rule: never lower this once raised. If a PR drops coverage,
       # the PR adds tests, not the gate that gets relaxed.
+      #
+      # The global gate is the FLOOR. Two finer-grained gates run on top
+      # of it (see steps below):
+      #   - Diff coverage gate: lines touched by a PR must hit 80% (PR-only).
+      #     Catches "PR ships new code without tests" even when the global
+      #     ratchet wouldn't notice the dip yet.
+      #   - Critical-path coverage gate: aggregate over backend/.coverage_critical
+      #     must hit 85%. Modules where bug = data loss / BOLA / HITL state
+      #     corruption cannot regress even by a percentage point.
       - name: Run tests with coverage
         run: |
           uv run pytest tests/ \
@@ -212,6 +230,57 @@ jobs:
             --cov-report=xml \
             --cov-report=term-missing \
             --cov-fail-under=62
+
+      # Diff coverage gate (PR-only, hard fail).
+      # Why: a PR that adds 500 LOC with 200 tested still passes the 62%
+      # global ratchet, but degrades quality. Gating on diff coverage forces
+      # the new code to carry its own weight.
+      #
+      # `origin/${base_ref}` is the merge target (main or dev). For push
+      # events (already in trunk) the step is skipped — diff would be empty.
+      #
+      # PRUMO_DIFF_COVERAGE_MIN can be overridden via repo variables when
+      # iterating on the threshold; default 80 mirrors what most quality
+      # gates settle on (SonarCloud "Clean as You Code", Codecov defaults).
+      - name: Diff coverage gate (PR only)
+        if: github.event_name == 'pull_request'
+        env:
+          PRUMO_DIFF_COVERAGE_MIN: ${{ vars.PRUMO_DIFF_COVERAGE_MIN || '80' }}
+        run: |
+          # Belt-and-braces: the job's `actions/checkout` step sets
+          # `fetch-depth: 0` so the local clone already has full history,
+          # but refetch the base ref explicitly in case a self-hosted
+          # runner or future cache rewrite ships a partial tree.
+          git fetch --no-tags origin "${{ github.base_ref }}"
+          uv run diff-cover coverage.xml \
+            --compare-branch="origin/${{ github.base_ref }}" \
+            --fail-under="${PRUMO_DIFF_COVERAGE_MIN}" \
+            --format "markdown:diff-coverage.md"
+          echo "## Diff coverage" >> "$GITHUB_STEP_SUMMARY"
+          cat diff-coverage.md >> "$GITHUB_STEP_SUMMARY"
+
+      # Critical-path coverage gate (every run, hard fail).
+      # Why: the modules in backend/.coverage_critical have a no-regression
+      # contract — bug there means data loss, BOLA, or HITL state corruption.
+      # We measure their AGGREGATE (not per-file) so a single trim doesn't
+      # need its own justification, but the surface as a whole can never
+      # drift below the 85% floor. See backend/.coverage_critical for the
+      # current coverage snapshot and the rationale per file.
+      - name: Critical-path coverage gate
+        env:
+          PRUMO_CRITICAL_COVERAGE_MIN: ${{ vars.PRUMO_CRITICAL_COVERAGE_MIN || '85' }}
+        run: |
+          # Build a comma-separated include pattern from the curated list,
+          # stripping comments + blanks.
+          INCLUDE=$(grep -Ev '^\s*(#|$)' .coverage_critical | paste -sd, -)
+          if [[ -z "${INCLUDE}" ]]; then
+            echo "::error::backend/.coverage_critical is empty — refusing to soft-pass critical paths"
+            exit 1
+          fi
+          echo "Critical-path modules: ${INCLUDE}"
+          uv run coverage report \
+            --include="${INCLUDE}" \
+            --fail-under="${PRUMO_CRITICAL_COVERAGE_MIN}"
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

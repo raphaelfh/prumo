@@ -136,18 +136,51 @@ on the head commit passes).
 - Push to `dev` → no deploy. Use `dev` for staging-style integration;
   promote to `main` to ship.
 
-### Current constraint (2026-05-24)
+### What CI gates the deploy on
 
-The backend `--cov-fail-under=60` gate in `.github/workflows/ci.yml`
-is failing on `main` (current coverage 58.77%, threshold 60%). Until
-that is resolved — either by adding tests for the excel-export feature
-or by ratcheting the threshold down — every `main` push will SKIP the
-Railway auto-deploy. The fallback is a manual deploy:
+The Railway "Wait for CI" gate waits for every required check on the
+head commit. As of 2026-05-24 the relevant ones for backend code:
+
+1. **`backend-lint`** — ruff lint + ruff format (mypy advisory).
+2. **`fitness`** — every fitness function in `scripts/fitness/`
+   (migration boundaries, layered architecture, ApiResponse envelope,
+   TanStack query keys, glossary sync, RLS coverage, legacy concept
+   blacklist). Baselines are empty as of 2026-05-20; any new violation
+   blocks merge with no grandfathering.
+3. **`backend-test`** — pytest with three coverage gates:
+   - **Global ratchet** (`--cov-fail-under=62`): floor that only ever
+     goes up. Current `main` coverage is **71%**. Bumped from 60→62
+     on 2026-05-24 after F1/F2; next target 70% after F4 lands.
+     **Never lower this once raised** — if a PR drops coverage, the
+     PR adds tests, not a relaxed gate.
+   - **Diff coverage** (`PRUMO_DIFF_COVERAGE_MIN`, default 80%, PR-only):
+     the lines a PR introduces must be ≥80% covered. Catches "new code
+     without tests" before the global ratchet notices the dip.
+   - **Critical-path aggregate** (`PRUMO_CRITICAL_COVERAGE_MIN`,
+     default 85%): the modules listed in `backend/.coverage_critical`
+     (autosave write path, run lifecycle, HITL session opener, auth
+     deps, coord coherence, run lock, review service, proposal repo)
+     aggregate to ≥85%. Bug there = data loss / BOLA / HITL state
+     corruption. Snapshot today is 89%.
+4. **`backend-e2e`** — `pytest -m e2e`.
+5. **`backend-build`** — Docker image build.
+6. **`frontend-lint`** + **`frontend-build`** + the E2E gates when the
+   corresponding secrets are configured.
+
+Override the env-driven thresholds via repo variables
+(`PRUMO_DIFF_COVERAGE_MIN`, `PRUMO_CRITICAL_COVERAGE_MIN`) when
+deliberately experimenting; do not edit `ci.yml` for one-off tweaks.
+
+### Manual deploy fallback
+
+When CI is red for a known reason — e.g. a long-running migration PR
+where coverage temporarily dips while the spec is in flight — manual
+deploys remain available:
 
 ```bash
 railway up backend --path-as-root --service web --detach -m "<msg>"
 railway up backend --path-as-root --service worker --detach -m "<msg>"
 ```
 
-After the coverage debt is paid down and CI is green, no extra config
-is needed — Railway will resume auto-deploying.
+Use this sparingly. Manual deploys bypass the gates; if you are
+shipping past a red CI, document why in the deploy message.
