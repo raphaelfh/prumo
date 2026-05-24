@@ -1,13 +1,13 @@
 # `/preflight` slash command — design
 
-**Status**: design — pending implementation
-**Date**: 2026-05-22
+**Status**: implemented in `.claude/commands/preflight.md`
+**Date**: 2026-05-22 (updated 2026-05-24 for Render → Railway migration)
 
 ## Goal
 
 A single `/preflight` slash command that runs the full pre-deploy
 verification flow for prumo: local code-quality gates plus liveness
-probes against the three remote services (Vercel, Supabase, Render).
+probes against the three remote services (Vercel, Supabase, Railway).
 Output is a green/red gate report aligned with the
 `verification-before-completion` skill's "evidence before claims" rule.
 
@@ -119,5 +119,5 @@ None at design time.
   frontmatter pattern (`description`, `handoffs`).
 - `Makefile` targets `lint-backend`, `test-backend`, `db-lint-migrations`,
   `quality-scan`.
-- `render.yaml`, `vercel.json`, and the Vercel + Supabase MCP servers
-  already configured in this session.
+- `railway.toml`, `vercel.json`, and the Vercel + Supabase + Railway
+  MCP servers configured for this project.
