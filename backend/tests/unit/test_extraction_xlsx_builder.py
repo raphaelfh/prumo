@@ -152,9 +152,7 @@ def test_single_article_single_section_single_field_consensus():
     f = _field("1.1 Source of data", ExtractionFieldType.TEXT, parent=uuid4())
     section = _section("1. Source of data", ExtractionEntityRole.STUDY_SECTION, [f])
     inst_id = uuid4()
-    article = _article(
-        "Gaca, 2011", study_instances={section.entity_type_id: inst_id}
-    )
+    article = _article("Gaca, 2011", study_instances={section.entity_type_id: inst_id})
     field_id = section.fields[0].field_id
 
     data = build_workbook(
@@ -184,13 +182,9 @@ def test_single_article_single_section_single_field_consensus():
 def test_multi_instance_article_repeats_study_section_values():
     # Two sections: one study_section ("Author"), one model_section ("Model perf").
     study_field = _field("0.1 Author", ExtractionFieldType.TEXT, parent=uuid4())
-    model_field = _field(
-        "7.1 Modelling method", ExtractionFieldType.TEXT, parent=uuid4()
-    )
+    model_field = _field("7.1 Modelling method", ExtractionFieldType.TEXT, parent=uuid4())
     study = _section("0. Study", ExtractionEntityRole.STUDY_SECTION, [study_field])
-    model = _section(
-        "7. Model development", ExtractionEntityRole.MODEL_SECTION, [model_field]
-    )
+    model = _section("7. Model development", ExtractionEntityRole.MODEL_SECTION, [model_field])
 
     study_inst = uuid4()
     model_inst_a = uuid4()
@@ -338,10 +332,7 @@ def test_notes_sheet_lists_omitted_articles_by_stage():
         value_map={},
     )
     data = build_workbook(layout)
-    rows = [
-        list(row)
-        for row in _open(data)["Notes"].iter_rows(values_only=True)
-    ]
+    rows = [list(row) for row in _open(data)["Notes"].iter_rows(values_only=True)]
     flat = " ".join(str(c) for row in rows for c in row if c)
     assert "Articles omitted (stage=review)" in flat
     assert "Articles omitted (stage=no_run)" in flat
@@ -354,10 +345,7 @@ def test_ai_metadata_sheet_emits_placeholder_when_no_rows():
     ws = _open(data)["AI metadata"]
     # Header row plus 1 placeholder row.
     assert ws.cell(row=1, column=1).value == "Article"
-    assert (
-        ws.cell(row=2, column=1).value
-        == "(No AI proposals recorded for the selected articles.)"
-    )
+    assert ws.cell(row=2, column=1).value == "(No AI proposals recorded for the selected articles.)"
 
 
 def test_all_users_mode_fans_out_reviewer_subcolumns():
@@ -374,9 +362,7 @@ def test_all_users_mode_fans_out_reviewer_subcolumns():
     f = _field("1.1 Source", ExtractionFieldType.TEXT, parent=uuid4())
     section = _section("1. Source of data", ExtractionEntityRole.STUDY_SECTION, [f])
     inst_id = uuid4()
-    article = _article(
-        "Gaca, 2011", study_instances={section.entity_type_id: inst_id}
-    )
+    article = _article("Gaca, 2011", study_instances={section.entity_type_id: inst_id})
     reviewer_a_id = _uuid4()
     reviewer_b_id = _uuid4()
     field_id = section.fields[0].field_id

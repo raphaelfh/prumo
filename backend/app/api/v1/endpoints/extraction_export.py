@@ -54,9 +54,7 @@ logger = get_logger(__name__)
 #: ``articles_export.SYNC_METADATA_ONLY_MAX_ARTICLES`` (research.md §3).
 SYNC_EXPORT_MAX_ARTICLES = 50
 
-_XLSX_MIME = (
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
+_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 #: Redis owner record TTL (matches Celery ``result_expires``).
 _EXPORT_OWNER_KEY_PREFIX = "extraction_export_owner:"
@@ -148,20 +146,14 @@ async def start_extraction_export(
     trace_id = request.headers.get("x-trace-id") or str(uuid.uuid4())
 
     # --- request coherence ------------------------------------------------
-    if (
-        payload.mode is ExtractionExportMode.SINGLE_USER
-        and payload.reviewer_id is None
-    ):
+    if payload.mode is ExtractionExportMode.SINGLE_USER and payload.reviewer_id is None:
         return _envelope_failure(
             status.HTTP_400_BAD_REQUEST,
             code="VALIDATION_ERROR",
             message="reviewer_id is required when mode=single_user.",
             trace_id=trace_id,
         )
-    if (
-        payload.article_scope is ExtractionArticleScope.SELECTED_ONLY
-        and not payload.article_ids
-    ):
+    if payload.article_scope is ExtractionArticleScope.SELECTED_ONLY and not payload.article_ids:
         return _envelope_failure(
             status.HTTP_400_BAD_REQUEST,
             code="VALIDATION_ERROR",
@@ -264,8 +256,7 @@ async def start_extraction_export(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             code="SERVICE_UNAVAILABLE",
             message=(
-                "Background export queue is unavailable. Please start "
-                "Redis/Celery and try again."
+                "Background export queue is unavailable. Please start Redis/Celery and try again."
             ),
             trace_id=trace_id,
         )
@@ -286,8 +277,7 @@ async def start_extraction_export(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             code="SERVICE_UNAVAILABLE",
             message=(
-                "Background export queue is unavailable. Please start "
-                "Redis/Celery and try again."
+                "Background export queue is unavailable. Please start Redis/Celery and try again."
             ),
             trace_id=trace_id,
         )
@@ -343,9 +333,7 @@ async def list_extraction_export_reviewers(
             target_reviewer_id=None,
         )
     except AuthorizationError as exc:
-        return ApiResponse.failure(
-            code="FORBIDDEN", message=str(exc), trace_id=trace_id
-        )
+        return ApiResponse.failure(code="FORBIDDEN", message=str(exc), trace_id=trace_id)
 
     reviewers = await service.list_eligible_reviewers_for_picker(
         project_id=project_id, template_id=template_id

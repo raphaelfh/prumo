@@ -131,7 +131,10 @@ def _write_main_sheet(workbook: Workbook, layout: ExportLayout) -> None:
         last = col_cursor + span - 1
         if span > 1:
             ws.merge_cells(
-                start_row=1, start_column=first, end_row=1, end_column=last,
+                start_row=1,
+                start_column=first,
+                end_row=1,
+                end_column=last,
             )
         article_spans.append((article, first, last))
         col_cursor += span
@@ -149,11 +152,7 @@ def _write_main_sheet(workbook: Workbook, layout: ExportLayout) -> None:
                         "Consensus"
                         if rev is None
                         else next(
-                            (
-                                r.display_label
-                                for r in layout.reviewers
-                                if r.reviewer_id == rev
-                            ),
+                            (r.display_label for r in layout.reviewers if r.reviewer_id == rev),
                             str(rev).split("-")[0],
                         )
                     )
@@ -186,9 +185,7 @@ def _write_main_sheet(workbook: Workbook, layout: ExportLayout) -> None:
         row_cursor += 1
 
         for field in section.fields:
-            ws.cell(row=row_cursor, column=2, value=field.label).alignment = (
-                _FIRST_COL_ALIGN
-            )
+            ws.cell(row=row_cursor, column=2, value=field.label).alignment = _FIRST_COL_ALIGN
             for article, first_col, _last_col in article_spans:
                 # Iterate (model_index × reviewer_axis) — model-major
                 # so model sub-columns stay adjacent (FR-011 ordering).
@@ -271,9 +268,7 @@ def _lookup_value(
     if instance_id is None or article.run_id is None:
         return None
     if layout.mode is ExportMode.ALL_USERS:
-        return layout.value_map.get(
-            (article.run_id, instance_id, field.field_id, reviewer_id)
-        )
+        return layout.value_map.get((article.run_id, instance_id, field.field_id, reviewer_id))
     return layout.value_map.get((article.run_id, instance_id, field.field_id))
 
 
