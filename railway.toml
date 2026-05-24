@@ -1,17 +1,28 @@
 # Railway Infrastructure as Code — prumo backend.
 #
 # Source of truth for build settings. Service-level overrides (worker
-# start command, CORS_ORIGINS, REDIS_URL reference variables) live in
-# the Railway dashboard per service; the table at the bottom of this
-# file documents which keys live where.
+# start command, CORS_ORIGINS, REDIS_URL reference variables, source
+# repo + branch + rootDirectory) live in the Railway dashboard per
+# service; the inventory at the bottom of this file documents which
+# keys live where.
 #
-# To apply this file: install the Railway CLI (`brew install railway`),
-# run `railway login`, then `railway up backend --path-as-root --service <name>`
-# from the repo root for each service.
+# Both services now auto-deploy from `raphaelfh/prumo` branch `main`
+# via the Railway GitHub App. Manual deploys (fallback) use:
+#   railway up backend --path-as-root --service web --detach
+#   railway up backend --path-as-root --service worker --detach
+#
+# NOTE: this file lives at the repo root for documentation. Because
+# both services have `source.rootDirectory = "/backend"`, the effective
+# build context is `backend/`, so `build.dockerfilePath` is set on the
+# services to `Dockerfile` (NOT `backend/Dockerfile`). The values
+# below describe the *logical* topology — the Railway dashboard config
+# is the runtime source of truth (Railway does not read this file as
+# config-as-code by default; per Railway docs, the config file path
+# must be set explicitly with an absolute path if you want it loaded).
 
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "backend/Dockerfile"
+dockerfilePath = "Dockerfile"   # relative to source.rootDirectory (/backend)
 
 [deploy]
 healthcheckPath = "/health"
@@ -26,8 +37,13 @@ restartPolicyMaxRetries = 3
 # Services (configured in Railway dashboard, documented here):
 #
 #   web   (id: 2faf7ece-db11-4f16-8ec3-e63a839b08a8)
-#     Region:                US East
-#     Builder:               Dockerfile (this file)
+#     Source:                raphaelfh/prumo, branch main, rootDirectory /backend
+#     Builder:               Dockerfile (Dockerfile within rootDirectory)
+#     Wait for CI:           true  (Railway waits for GitHub Actions to pass
+#                            before promoting a build — currently blocks
+#                            auto-deploy because backend test coverage is
+#                            58.77% < 60% threshold in ci.yml; tracked as
+#                            a separate task)
 #     Healthcheck:           /health (from [deploy] above)
 #     Start command:         Dockerfile CMD
 #                            (alembic upgrade head && gunicorn -k UvicornWorker
@@ -37,11 +53,13 @@ restartPolicyMaxRetries = 3
 #                            REDIS_URL=${{Redis.REDIS_URL}}
 #
 #   worker  (id: 7acd0799-9685-4445-971a-707bc1b9c41f)
-#     Region:                US East
-#     Builder:               Dockerfile (this file)
+#     Source:                raphaelfh/prumo, branch main, rootDirectory /backend
+#     Builder:               Dockerfile (Dockerfile within rootDirectory)
+#     Wait for CI:           true  (same as web)
 #     Healthcheck:           none
 #     Start command:         celery -A app.worker.celery_app worker --loglevel=info
 #                            --queues=extractions,imports,exports,celery
+#                            (override on the service — Dockerfile CMD is for web)
 #     Public domain:         no
 #     Variables override:    REDIS_URL=${{Redis.REDIS_URL}}
 #

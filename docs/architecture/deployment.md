@@ -1,6 +1,6 @@
 # Deployment
 
-Last updated: 2026-05-24.
+Last updated: 2026-05-24 (post GitHub auto-deploy wiring).
 
 ## Topology
 
@@ -90,7 +90,36 @@ To roll back the frontend, change `VITE_API_URL` in Vercel back to the previous 
 
 ## Deploys are triggered by
 
-- Push to `main` → Railway auto-deploys `web` and `worker` (both services watch the same branch — once GitHub repo is connected to Railway services; until then deploys are manual via `railway up backend --path-as-root --service <name>`).
-- Push to `dev` → no deploy. Use `dev` for staging-style integration; promote to `main` to ship.
+Both `web` and `worker` are wired to `raphaelfh/prumo` branch `main`,
+root directory `/backend`, builder `DOCKERFILE`, with **Wait for CI**
+enabled (Railway holds the deploy until the GitHub Actions workflow
+on the head commit passes).
+
+- Push to `main` → Railway queues a deploy for both services. If CI
+  passes, deploys promote. If CI fails or is skipped, the Railway
+  deployment is marked `SKIPPED` and stays pending until a newer
+  commit's CI goes green.
+- Push to `dev` → no deploy. Use `dev` for staging-style integration;
+  promote to `main` to ship.
+
+### Current constraint (2026-05-24)
+
+The backend `--cov-fail-under=60` gate in `.github/workflows/ci.yml`
+is failing on `main` (current coverage 58.77%, threshold 60%). Until
+that is resolved — either by adding tests for the excel-export feature
+or by ratcheting the threshold down — every `main` push will SKIP the
+Railway auto-deploy. The fallback is a manual deploy:
+
+```bash
+railway up backend --path-as-root --service web --detach -m "<msg>"
+railway up backend --path-as-root --service worker --detach -m "<msg>"
+```
+
+After the coverage debt is paid down and CI is green, no extra config
+is needed — Railway will resume auto-deploying.
+
+## Rollback fast paths
+
+(See "Rollback" section above for details.)
 
 (This mirrors the previous Render behavior — see the memory entry `reference_railway_deploys_from_main`.)
