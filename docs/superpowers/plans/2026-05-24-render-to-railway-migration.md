@@ -431,10 +431,10 @@ Configure:
 - **Start command** (Service Settings → Deploy → Custom Start Command — overrides the Dockerfile `CMD`):
 
 ```
-celery -A app.worker.celery_app worker --loglevel=info --queues=extractions,imports,celery
+celery -A app.worker.celery_app worker --loglevel=info --queues=extractions,imports,exports,celery
 ```
 
-(Note: this matches `render.yaml:64`. If the separate "fix extraction_export_tasks include" task spawned earlier added a new `exports` queue, append it: `--queues=extractions,imports,celery,exports`.)
+(Note: this matches `render.yaml:64`.)
 
 - **No public domain.** Workers don't serve HTTP.
 - **No healthcheck.** Celery workers don't expose `/health`.
@@ -648,7 +648,7 @@ restartPolicyMaxRetries = 3
 #     Region:                US East
 #     Builder:               Dockerfile (this file)
 #     Healthcheck:           none
-#     Start command:         celery -A app.worker.celery_app worker --loglevel=info --queues=extractions,imports,celery
+#     Start command:         celery -A app.worker.celery_app worker --loglevel=info --queues=extractions,imports,exports,celery
 #     Public domain:         no
 #     Variables override:    REDIS_URL=${{Redis.REDIS_URL}}
 #
@@ -702,7 +702,7 @@ All three Railway services + the Redis plugin live in the same project, region *
 | Service | Builder | Start | Public | Healthcheck |
 |---|---|---|---|---|
 | `web` | `backend/Dockerfile` | `alembic upgrade head && gunicorn -k UvicornWorker -w 1 -t 120 -b 0.0.0.0:${PORT:-8000}` (Dockerfile CMD) | yes | `/health` |
-| `worker` | `backend/Dockerfile` | `celery -A app.worker.celery_app worker --loglevel=info --queues=extractions,imports,celery` (Railway custom start command — overrides Dockerfile CMD) | no | none |
+| `worker` | `backend/Dockerfile` | `celery -A app.worker.celery_app worker --loglevel=info --queues=extractions,imports,exports,celery` (Railway custom start command — overrides Dockerfile CMD) | no | none |
 | `Redis` | Railway managed plugin | n/a | private network only | n/a |
 
 ## Environment variables

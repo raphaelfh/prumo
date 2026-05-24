@@ -29,12 +29,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.error_handler import AppError, AuthorizationError, NotFoundError
+from app.core.error_handler import AuthorizationError, NotFoundError
 from app.core.logging import LoggerMixin
 from app.infrastructure.storage.base import StorageAdapter
 from app.models.article import Article
 from app.models.extraction import (
-    ExtractionCardinality,
     ExtractionEntityRole,
     ExtractionEntityType,
     ExtractionField,
@@ -1516,6 +1515,4 @@ __all__ = [
     "FieldDescriptor",
     "ReviewerDescriptor",
     "SectionDescriptor",
-    "AppError",
-    "ExtractionCardinality",
 ]
