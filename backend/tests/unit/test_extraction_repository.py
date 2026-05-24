@@ -13,14 +13,12 @@ import pytest
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionInstance,
-    ExtractionTemplateGlobal,
     ProjectExtractionTemplate,
 )
 from app.repositories.extraction_repository import (
     ExtractionEntityTypeRepository,
     ExtractionInstanceRepository,
     ExtractionTemplateRepository,
-    GlobalTemplateRepository,
 )
 
 # ---------------------------------------------------------------------------
@@ -84,7 +82,6 @@ def make_instance(
     inst.entity_type_id = entity_type_id or ENTITY_TYPE_ID
     inst.parent_instance_id = parent_instance_id
     inst.sort_order = 0
-    inst.values = []
     return inst
 
 
@@ -145,49 +142,6 @@ class TestExtractionTemplateRepository:
         result = await repo.get_with_entity_types(str(TEMPLATE_ID))
 
         assert result is None
-
-
-# ---------------------------------------------------------------------------
-# GlobalTemplateRepository
-# ---------------------------------------------------------------------------
-
-
-class TestGlobalTemplateRepository:
-    # NOTE: ExtractionTemplateGlobal.is_active does not exist on the ORM model.
-    # GlobalTemplateRepository.get_active() references this missing column, which
-    # makes the WHERE clause raise AttributeError at query-build time.
-    # Bug documented in DONE_WITH_CONCERNS. Tests are xfail to capture intent.
-
-    @pytest.mark.xfail(
-        reason=(
-            "BUG: ExtractionTemplateGlobal has no is_active column; "
-            "get_active() raises AttributeError — see DONE_WITH_CONCERNS"
-        ),
-        strict=True,
-    )
-    @pytest.mark.asyncio
-    async def test_get_active_returns_active_templates(self) -> None:
-        db = make_db()
-        tmpl = MagicMock(spec=ExtractionTemplateGlobal)
-        db.execute = AsyncMock(return_value=make_scalars_result([tmpl]))
-        repo = GlobalTemplateRepository(db)
-        result = await repo.get_active()
-        assert result == [tmpl]
-
-    @pytest.mark.xfail(
-        reason=(
-            "BUG: ExtractionTemplateGlobal has no is_active column; "
-            "get_active() raises AttributeError — see DONE_WITH_CONCERNS"
-        ),
-        strict=True,
-    )
-    @pytest.mark.asyncio
-    async def test_get_active_returns_empty_when_none(self) -> None:
-        db = make_db()
-        db.execute = AsyncMock(return_value=make_scalars_result([]))
-        repo = GlobalTemplateRepository(db)
-        result = await repo.get_active()
-        assert result == []
 
 
 # ---------------------------------------------------------------------------
@@ -380,53 +334,3 @@ class TestExtractionInstanceRepository:
         result = await repo.get_children(str(INSTANCE_ID))
 
         assert result == []
-
-    # NOTE: ExtractionInstance.values relationship does not exist on the ORM model.
-    # ExtractionInstanceRepository.get_with_values() calls selectinload(ExtractionInstance.values)
-    # which raises AttributeError at query-build time. Bug documented in DONE_WITH_CONCERNS.
-
-    @pytest.mark.xfail(
-        reason=(
-            "BUG: ExtractionInstance has no 'values' relationship; "
-            "get_with_values() raises AttributeError — see DONE_WITH_CONCERNS"
-        ),
-        strict=True,
-    )
-    @pytest.mark.asyncio
-    async def test_get_with_values_returns_instance(self) -> None:
-        db = make_db()
-        inst = make_instance()
-        db.execute = AsyncMock(return_value=make_scalar_one_or_none(inst))
-        repo = ExtractionInstanceRepository(db)
-        result = await repo.get_with_values(INSTANCE_ID)
-        assert result is inst
-
-    @pytest.mark.xfail(
-        reason=(
-            "BUG: ExtractionInstance has no 'values' relationship; "
-            "get_with_values() raises AttributeError — see DONE_WITH_CONCERNS"
-        ),
-        strict=True,
-    )
-    @pytest.mark.asyncio
-    async def test_get_with_values_returns_none(self) -> None:
-        db = make_db()
-        db.execute = AsyncMock(return_value=make_scalar_one_or_none(None))
-        repo = ExtractionInstanceRepository(db)
-        result = await repo.get_with_values(INSTANCE_ID)
-        assert result is None
-
-    @pytest.mark.xfail(
-        reason=(
-            "BUG: ExtractionInstance has no 'values' relationship; "
-            "get_with_values() raises AttributeError — see DONE_WITH_CONCERNS"
-        ),
-        strict=True,
-    )
-    @pytest.mark.asyncio
-    async def test_get_with_values_accepts_string_id(self) -> None:
-        db = make_db()
-        db.execute = AsyncMock(return_value=make_scalar_one_or_none(None))
-        repo = ExtractionInstanceRepository(db)
-        result = await repo.get_with_values(str(INSTANCE_ID))
-        assert result is None

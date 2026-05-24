@@ -12,24 +12,36 @@ from app.services.run_lifecycle_service import (
     InvalidStageTransitionError,
     RunLifecycleService,
 )
+from tests.integration.conftest import SEED
 
 
 async def _fixtures(db: AsyncSession) -> tuple[UUID, UUID, UUID, UUID] | None:
-    """Return (project_id, article_id, project_template_id, profile_id) or None."""
-    project_id = (await db.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
-    article_id = (await db.execute(text("SELECT id FROM public.articles LIMIT 1"))).scalar()
-    template_id = (
+    """Return the seeded coherent (project, article, template, profile) tuple.
+
+    Uses the sentinel rows seeded by ``seeded_integration_db`` instead of
+    independent ``LIMIT 1`` picks. Independent picks happily returned
+    project=A / article=A / template=B on a dev DB with mixed-origin rows,
+    making ``RunLifecycleService.create_run`` raise ``TemplateNotFoundError``
+    because the template's ``project_id`` did not match the request. The
+    sentinel rows always form a coherent graph rooted at
+    ``primary_profile → primary_project → primary_article + primary_template``.
+
+    Returns ``None`` only if the seed has not run (e.g., a session that
+    skipped the autouse fixture); tests fall back to ``pytest.skip(...)``.
+    """
+    if (
         await db.execute(
-            text(
-                "SELECT id FROM public.project_extraction_templates "
-                "WHERE kind = 'extraction' LIMIT 1"
-            )
+            text("SELECT 1 FROM public.profiles WHERE id = :id"),
+            {"id": str(SEED.primary_profile)},
         )
-    ).scalar()
-    profile_id = (await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
-    if not all((project_id, article_id, template_id, profile_id)):
+    ).scalar() is None:
         return None
-    return project_id, article_id, template_id, profile_id
+    return (
+        SEED.primary_project,
+        SEED.primary_article,
+        SEED.primary_template,
+        SEED.primary_profile,
+    )
 
 
 @pytest.mark.asyncio

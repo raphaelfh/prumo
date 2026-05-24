@@ -96,18 +96,6 @@ class GlobalTemplateRepository(BaseRepository[ExtractionTemplateGlobal]):
     def __init__(self, db: AsyncSession):
         super().__init__(db, ExtractionTemplateGlobal)
 
-    async def get_active(self) -> list[ExtractionTemplateGlobal]:
-        """
-        List active global templates.
-
-        Returns:
-            Active template list.
-        """
-        result = await self.db.execute(
-            select(ExtractionTemplateGlobal).where(ExtractionTemplateGlobal.is_active.is_(True))
-        )
-        return list(result.scalars().all())
-
 
 class ExtractionEntityTypeRepository(BaseRepository[ExtractionEntityType]):
     """Repository for extraction entity types."""
@@ -338,26 +326,3 @@ class ExtractionInstanceRepository(BaseRepository[ExtractionInstance]):
             db_duration_ms=(perf_counter() - query_start) * 1000,
         )
         return list(result.scalars().all())
-
-    async def get_with_values(
-        self,
-        instance_id: UUID | str,
-    ) -> ExtractionInstance | None:
-        """
-        Fetch instance with extracted values loaded.
-
-        Args:
-            instance_id: Instance ID.
-
-        Returns:
-            Instance with values or None.
-        """
-        if isinstance(instance_id, str):
-            instance_id = UUID(instance_id)
-
-        result = await self.db.execute(
-            select(ExtractionInstance)
-            .options(selectinload(ExtractionInstance.values))
-            .where(ExtractionInstance.id == instance_id)
-        )
-        return result.scalar_one_or_none()
