@@ -921,9 +921,17 @@ class TestGenerateExtractionSummary:
 
     def test_truncates_at_200_chars(self, service):
         et = self._make_entity_type("Section")
-        data = {"field": "X" * 300}
+        # Create multiple fields with long names to push summary over 200 chars
+        # Format: "Section: longfieldname1: X*50, longfieldname2: X*50, longfieldname3: X*50"
+        data = {
+            "very_long_field_name_number_one": "X" * 300,
+            "very_long_field_name_number_two": "Y" * 300,
+            "very_long_field_name_number_three": "Z" * 300,
+        }
         result = service._generate_extraction_summary(et, data)
-        assert len(result) <= 200
+        # Should truncate and append "..."
+        assert len(result) == 200
+        assert result.endswith("...")
 
     def test_more_indicator_when_more_than_three_fields(self, service):
         et = self._make_entity_type("Section")
