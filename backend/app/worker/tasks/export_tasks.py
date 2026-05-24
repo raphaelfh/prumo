@@ -1,23 +1,18 @@
-"""
-Export Tasks.
+"""Export Celery tasks.
 
-Tasks Celery for exportacao de articles (CSV, RIS, RDF + files).
+Celery tasks that export articles (CSV, RIS, RDF) plus optional PDFs as
+a single ZIP, upload the bundle to storage, and return a signed URL.
+
+The async bridge is via ``app.worker._runner.run_task`` — see that
+module's docstring for the event-loop rationale.
 """
 
-import asyncio
+from __future__ import annotations
+
 from uuid import UUID
 
+from app.worker._runner import run_task
 from app.worker.celery_app import celery_app
-
-_WORKER_LOOP: asyncio.AbstractEventLoop | None = None
-
-
-def _run_in_worker_loop(coro):
-    global _WORKER_LOOP
-    if _WORKER_LOOP is None or _WORKER_LOOP.is_closed():
-        _WORKER_LOOP = asyncio.new_event_loop()
-        asyncio.set_event_loop(_WORKER_LOOP)
-    return _WORKER_LOOP.run_until_complete(coro)
 
 
 @celery_app.task(
@@ -33,28 +28,29 @@ def export_articles_task(
     file_scope: str,
     user_id: str,
 ) -> dict:
-    """
-    Task for exportacao de articles em background.
+    """Export a set of articles in the background.
 
-    Gera ZIP with metadata (CSV/RIS/RDF) and optionalmente files;
-    faz upload for storage and retorna URL assinada.
+    Builds a ZIP with metadata (CSV/RIS/RDF) and optionally the article
+    files; uploads the bundle to storage and returns a signed URL.
 
     Args:
-        project_id: project.
-        article_ids: List de IDs of the articles (UUID strings).
-        formats: List de formatos: csv, ris, rdf.
-        file_scope: none, main_only, all.
-        user_id: user (para ownership do job).
+        project_id: Project UUID.
+        article_ids: List of article UUIDs to export.
+        formats: List of metadata formats: csv, ris, rdf.
+        file_scope: One of none, main_only, all.
+        user_id: User UUID owning the export job.
 
     Returns:
         Dict with download_url, expires_at, skipped_files, user_id.
     """
-    from app.core.deps import AsyncSessionLocal, get_supabase_client
-    from app.core.factories import create_storage_adapter
-    from app.services.articles_export_service import ArticlesExportService
 
     async def run() -> dict:
-        async with AsyncSessionLocal() as session:
+        from app.core.deps import get_supabase_client
+        from app.core.factories import create_storage_adapter
+        from app.services.articles_export_service import ArticlesExportService
+        from app.worker._session import worker_session
+
+        async with worker_session() as session:
             supabase = get_supabase_client()
             storage = create_storage_adapter(supabase)
             service = ArticlesExportService(
@@ -73,4 +69,4 @@ def export_articles_task(
             result["user_id"] = user_id
             return result
 
-    return _run_in_worker_loop(run())
+    return run_task(run)

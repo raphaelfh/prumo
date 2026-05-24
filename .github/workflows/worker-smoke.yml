@@ -1,0 +1,137 @@
+name: Worker Smoke Test
+
+on:
+  pull_request:
+    paths:
+      - "backend/app/worker/**"
+      - "backend/app/services/exports/**"
+      - "backend/app/services/extraction_export_service.py"
+      - "backend/app/services/articles_export_service.py"
+      - "backend/tests/integration/test_worker_eager_mode.py"
+      - ".github/workflows/worker-smoke.yml"
+
+jobs:
+  worker-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    env:
+      REDIS_URL: redis://localhost:6379/0
+      # Stub Supabase / OPENAI / encryption — the smoke test mocks the
+      # heavy services and only exercises the task <-> worker contract.
+      SUPABASE_URL: http://localhost:54321
+      SUPABASE_ANON_KEY: stub-anon
+      SUPABASE_SERVICE_ROLE_KEY: stub-service-role
+      ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      DATABASE_URL: postgresql+asyncpg://stub
+      DIRECT_DATABASE_URL: postgresql://stub
+      OPENAI_API_KEY: sk-stub
+      DEBUG: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install uv
+        run: pip install uv
+      - name: Install backend deps
+        working-directory: backend
+        # NOTE: `--frozen` is intentionally omitted because `backend/uv.lock`
+        # is in `.gitignore`. If the project ever starts tracking the
+        # lockfile, add `--frozen` here for reproducible CI installs.
+        run: uv sync
+      - name: Boot worker in background
+        working-directory: backend
+        run: |
+          uv run celery -A app.worker.celery_app worker \
+            --loglevel=info \
+            --queues=extractions,imports,exports,celery \
+            --pool=solo \
+            > worker.log 2>&1 &
+          echo $! > worker.pid
+          for i in {1..30}; do
+            grep -q "celery@.*ready" worker.log && break
+            sleep 1
+          done
+          grep -q "celery@.*ready" worker.log || (echo "Worker never became ready"; cat worker.log; exit 1)
+      - name: Dispatch two sequential extraction_export tasks
+        working-directory: backend
+        run: |
+          uv run python <<'PY'
+          import time
+          from celery.result import AsyncResult
+          from app.worker.celery_app import celery_app
+          ids = []
+          for i in range(2):
+              r = celery_app.send_task(
+                  "app.worker.tasks.extraction_export_tasks.export_extraction_task",
+                  kwargs={
+                      "project_id": "00000000-0000-0000-0000-000000000000",
+                      "template_id": "00000000-0000-0000-0000-000000000000",
+                      "mode": "consensus",
+                      "article_ids": ["00000000-0000-0000-0000-000000000000"],
+                      "article_scope": "current_list",
+                      "user_id": "00000000-0000-0000-0000-000000000000",
+                      "reviewer_id": None,
+                      "include_ai_metadata": False,
+                      "anonymize_reviewer_names": False,
+                  },
+              )
+              ids.append(r.id)
+              print(f"Dispatched #{i}: {r.id}")
+          deadline = time.time() + 45
+          while time.time() < deadline:
+              states = [AsyncResult(i, app=celery_app).state for i in ids]
+              print("States:", states)
+              if all(s not in ("PENDING", "STARTED") for s in states):
+                  break
+              time.sleep(2)
+          final_states = [AsyncResult(i, app=celery_app).state for i in ids]
+          still_pending = [
+              (i, s) for i, s in zip(ids, final_states)
+              if s in ("PENDING", "STARTED")
+          ]
+          if still_pending:
+              import sys
+              print(
+                  f"ERROR: {len(still_pending)} tasks never reached a "
+                  f"terminal state after 45s. States: {final_states}. "
+                  f"This usually means the worker crashed or never picked "
+                  f"up the message. See worker.log."
+              )
+              sys.exit(1)
+          PY
+      - name: Assert no loop-reuse error in worker log
+        working-directory: backend
+        run: |
+          if grep -q "attached to a different loop" worker.log; then
+            echo "Loop-reuse bug returned — see worker.log"
+            cat worker.log
+            exit 1
+          fi
+      - name: Assert no NotRegistered in worker log
+        working-directory: backend
+        run: |
+          if grep -q "NotRegistered\|celery.task_unregistered" worker.log; then
+            echo "A task was unregistered — celery_app.include drift"
+            cat worker.log
+            exit 1
+          fi
+      - name: Tail worker log on failure
+        if: failure()
+        working-directory: backend
+        run: tail -200 worker.log
+      - name: Stop worker
+        if: always()
+        working-directory: backend
+        run: |
+          [ -f worker.pid ] && kill "$(cat worker.pid)" || true

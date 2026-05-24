@@ -33,6 +33,40 @@ All three Railway services + the Redis plugin live in the same project, region *
 | `worker` | `backend/Dockerfile` | `celery -A app.worker.celery_app worker --loglevel=info --queues=extractions,imports,exports,celery` (Railway custom start command — overrides Dockerfile CMD) | no | none |
 | `Redis` | Railway managed plugin | n/a | private network only (`redis.railway.internal`) | n/a |
 
+## Worker — task runner
+
+Every Celery task in `backend/app/worker/tasks/` delegates to a single
+shared runner:
+
+```python
+from app.worker._runner import run_task
+
+@celery_app.task
+def my_task(self, ...):
+    async def run():
+        async with AsyncSessionLocal() as db:
+            ...
+    return run_task(run)
+```
+
+`run_task` calls `asyncio.run(coro_factory())` — a fresh loop per task.
+**Do not** cache event loops in module globals (we tried; see the
+2026-05-24 incident). **Do not** cache the Supabase client at module
+scope; `get_supabase_client()` returns a new instance per call, so the
+httpx connection pool stays bound to the current loop.
+
+## Observability — task-registry alerts
+
+`LoggedTask.on_failure` emits two distinct structlog events:
+
+| Event | Meaning | Recommended alert |
+|---|---|---|
+| `task_failed` | Generic task crash (business error, retry exhausted). | Aggregate; alert above baseline rate. |
+| `celery.task_unregistered` | The worker received a task name it has no handler for. **P1** — always caused by `celery_app.include` drift or a routing typo. | Page on first occurrence. |
+
+The drift guard at `backend/tests/unit/test_celery_app_task_registry.py`
+prevents this in CI, but the log event is the runtime safety net.
+
 ## Environment variables
 
 There is no tracked env template — env files match `.gitignore` line 21 (`.env.*`). This table is the canonical reference; paste the values into the Railway dashboard or use the Railway CLI to set them.

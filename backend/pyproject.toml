@@ -137,11 +137,13 @@ markers = [
 
 
 [tool.coverage.run]
-# KISS/DRY: focar coverage no código que está sendo efetivamente exercitado e mantido.
-# Estes diretórios estão atualmente sem testes (0%) e puxam a cobertura para baixo no CI.
+# Focus coverage on code that is actually exercised and maintained.
+# Directories listed here are intentionally excluded — `app/worker/*`
+# was previously here but PR 2 of the worker-hardening plan added real
+# tests (loop-isolation regression + eager-mode integration + drift
+# guard), so it has real coverage numbers now.
 omit = [
     "app/schemas/read_models/*",
-    "app/worker/*",
 ]
 
 [dependency-groups]

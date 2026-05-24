@@ -1,5 +1,5 @@
 """
 Celery Tasks.
 
-Tasks assincronas for processamento em background.
+Async tasks for background processing.
 """
