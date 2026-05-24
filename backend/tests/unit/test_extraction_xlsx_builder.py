@@ -24,7 +24,6 @@ from app.services.extraction_export_service import (
     SectionDescriptor,
 )
 
-
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
@@ -90,9 +89,11 @@ def _layout(
     articles: tuple[ArticleDescriptor, ...] = (),
     value_map: dict | None = None,
     include_ai_metadata: bool = False,
+    project_name: str = "Test Project",
     template_name: str = "CHARMS",
 ) -> ExportLayout:
     return ExportLayout(
+        project_name=project_name,
         template_name=template_name,
         template_version=1,
         sections=sections,
@@ -324,6 +325,7 @@ def test_notes_sheet_lists_omitted_articles_by_stage():
         generated_at=datetime(2026, 5, 23, 12, 0, 0, tzinfo=UTC),
     )
     layout = ExportLayout(
+        project_name="Test Project",
         template_name="CHARMS",
         template_version=1,
         sections=(),
@@ -380,6 +382,7 @@ def test_all_users_mode_fans_out_reviewer_subcolumns():
     field_id = section.fields[0].field_id
 
     layout = ExportLayout(
+        project_name="Test Project",
         template_name="CHARMS",
         template_version=1,
         sections=(section,),
@@ -443,6 +446,7 @@ def test_ai_metadata_sheet_writes_proposal_rows_in_canonical_order():
     )
     base = _layout(include_ai_metadata=True)
     layout = ExportLayout(
+        project_name=base.project_name,
         template_name=base.template_name,
         template_version=base.template_version,
         sections=base.sections,

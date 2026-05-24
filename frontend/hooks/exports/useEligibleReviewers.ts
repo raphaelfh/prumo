@@ -8,6 +8,7 @@
 
 import {useQuery} from "@tanstack/react-query";
 import {apiClient} from "@/integrations/api/client";
+import {extractionKeys} from "@/lib/query-keys";
 
 export interface EligibleReviewer {
     id: string;
@@ -21,7 +22,7 @@ export function useEligibleReviewers(
 ) {
     const {enabled = true} = options;
     return useQuery<EligibleReviewer[]>({
-        queryKey: ["extraction-export-reviewers", projectId, templateId],
+        queryKey: extractionKeys.exportReviewers(projectId ?? "", templateId ?? ""),
         queryFn: async () => {
             if (!projectId || !templateId) return [];
             const url = `/api/v1/projects/${encodeURIComponent(

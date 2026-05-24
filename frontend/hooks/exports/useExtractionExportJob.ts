@@ -10,6 +10,7 @@
 import {useQuery} from "@tanstack/react-query";
 import {getExportStatus} from "@/services/extractionExportService";
 import type {ExtractionExportStatus} from "@/types/extraction-export";
+import {extractionKeys} from "@/lib/query-keys";
 
 const TERMINAL_STATUSES: ExtractionExportStatus["status"][] = [
     "completed",
@@ -24,7 +25,7 @@ export function useExtractionExportJob(
 ) {
     const {enabled = true} = options;
     return useQuery<ExtractionExportStatus>({
-        queryKey: ["extraction-export-status", projectId, jobId],
+        queryKey: extractionKeys.exportJobStatus(projectId ?? "", jobId ?? ""),
         queryFn: async () => {
             if (!projectId || !jobId) {
                 throw new Error("projectId and jobId are required");

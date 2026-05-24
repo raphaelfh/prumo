@@ -118,42 +118,6 @@ def _should_run_sync(payload: ExtractionExportRequest) -> bool:
     return len(payload.article_ids) <= SYNC_EXPORT_MAX_ARTICLES
 
 
-# ----------------------------------------------------------------------
-# Project name lookup (for filename + audit log)
-# ----------------------------------------------------------------------
-
-
-async def _resolve_project_name(db, project_id: UUID) -> str:
-    """Best-effort project name for the filename. Falls back to short id."""
-    from sqlalchemy import select
-
-    from app.models.project import Project
-
-    row = (
-        await db.execute(select(Project.name).where(Project.id == project_id))
-    ).first()
-    if row and row[0]:
-        return str(row[0])
-    return str(project_id).split("-")[0]
-
-
-async def _resolve_template_name(db, template_id: UUID) -> str:
-    from sqlalchemy import select
-
-    from app.models.extraction import ProjectExtractionTemplate
-
-    row = (
-        await db.execute(
-            select(ProjectExtractionTemplate.name).where(
-                ProjectExtractionTemplate.id == template_id
-            )
-        )
-    ).first()
-    if row and row[0]:
-        return str(row[0])
-    return str(template_id).split("-")[0]
-
-
 # ======================================================================
 # POST /projects/{project_id}/extraction-export
 # ======================================================================
@@ -172,8 +136,15 @@ async def start_extraction_export(
     db: DbSession,
     user: CurrentUser,
     supabase: SupabaseClient,
-) -> Response:
-    """Validate, authorise, then dispatch via sync or async path."""
+) -> Response | ApiResponse[ExtractionExportStartedResponse]:
+    """Validate, authorise, then dispatch via sync or async path.
+
+    Sync path returns a raw binary ``Response`` (``.xlsx`` blob); async
+    path returns an ``ApiResponse[ExtractionExportStartedResponse]``
+    envelope; validation/auth failures are envelope-wrapped via
+    ``_envelope_failure``. The PEP 604 union covers both shapes and
+    satisfies the fitness check at ``scripts/fitness/check_api_response_envelope.py``.
+    """
     trace_id = request.headers.get("x-trace-id") or str(uuid.uuid4())
 
     # --- request coherence ------------------------------------------------
@@ -270,9 +241,8 @@ async def start_extraction_export(
         # Run the CPU-bound openpyxl writer off the event loop.
         data: bytes = await asyncio.to_thread(build_workbook, layout)
 
-        project_name = await _resolve_project_name(db, project_id)
         filename = ExtractionExportService.format_filename(
-            project_name=project_name,
+            project_name=layout.project_name,
             template_name=layout.template_name,
             mode=ExportMode(payload.mode.value),
             generated_at=layout.notes.generated_at,
@@ -377,21 +347,9 @@ async def list_extraction_export_reviewers(
             code="FORBIDDEN", message=str(exc), trace_id=trace_id
         )
 
-    reviewers = await service.list_reviewers_with_decisions(
+    reviewers = await service.list_eligible_reviewers_for_picker(
         project_id=project_id, template_id=template_id
     )
-
-    # Non-managers see only themselves.
-    from app.models.project import ProjectMemberRole
-    from app.repositories.project_repository import ProjectMemberRepository
-
-    repo = ProjectMemberRepository(db)
-    is_manager = await repo.has_role(
-        project_id, UUID(user.sub), ProjectMemberRole.MANAGER
-    )
-    if not is_manager:
-        reviewers = [r for r in reviewers if r["id"] == user.sub]
-
     return ApiResponse.success(data=reviewers, trace_id=trace_id)
 
 
@@ -422,11 +380,27 @@ async def get_extraction_export_status(
     result = AsyncResult(job_id, app=celery_app)
     state = result.state
 
-    # PENDING + no owner record == job never enqueued or fully expired.
-    if state == "PENDING" and _lookup_export_owner(job_id) is None:
+    # Ownership gate before any state-dependent return: every branch
+    # below leaks task state (and FAILURE leaks the exception repr),
+    # so a caller who guesses a valid job_id could enumerate or read
+    # another user's export progress. Mirror ``cancel_extraction_export``:
+    # Redis owner record is authoritative; fall back to the SUCCESS
+    # payload's user_id when the TTL expired but Celery still has the
+    # result cached.
+    owner = _lookup_export_owner(job_id)
+    if owner is None and state == "SUCCESS" and isinstance(result.result, dict):
+        owner = result.result.get("user_id")
+
+    if owner is None:
         return ApiResponse.failure(
             code="NOT_FOUND",
             message="Job not found or expired.",
+            trace_id=trace_id,
+        )
+    if owner != user.sub:
+        return ApiResponse.failure(
+            code="FORBIDDEN",
+            message="Job does not belong to current user.",
             trace_id=trace_id,
         )
 
@@ -451,12 +425,6 @@ async def get_extraction_export_status(
         )
     if state == "SUCCESS" and result.result:
         data = result.result
-        if isinstance(data, dict) and data.get("user_id") != user.sub:
-            return ApiResponse.failure(
-                code="FORBIDDEN",
-                message="Job does not belong to current user.",
-                trace_id=trace_id,
-            )
         return ApiResponse.success(
             data=ExtractionExportStatusResponse(
                 job_id=job_id,
