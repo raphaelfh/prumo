@@ -45,7 +45,7 @@ jobs:
         run: pip install uv
       - name: Install backend deps
         working-directory: backend
-        run: uv sync
+        run: uv sync --frozen
       - name: Boot worker in background
         working-directory: backend
         run: |
@@ -92,6 +92,20 @@ jobs:
               if all(s not in ("PENDING", "STARTED") for s in states):
                   break
               time.sleep(2)
+          final_states = [AsyncResult(i, app=celery_app).state for i in ids]
+          still_pending = [
+              (i, s) for i, s in zip(ids, final_states)
+              if s in ("PENDING", "STARTED")
+          ]
+          if still_pending:
+              import sys
+              print(
+                  f"ERROR: {len(still_pending)} tasks never reached a "
+                  f"terminal state after 45s. States: {final_states}. "
+                  f"This usually means the worker crashed or never picked "
+                  f"up the message. See worker.log."
+              )
+              sys.exit(1)
           PY
       - name: Assert no loop-reuse error in worker log
         working-directory: backend

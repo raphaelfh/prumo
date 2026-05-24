@@ -130,3 +130,46 @@ class LoggedTask(celery_app.Task):
 
 # Register the base task class
 celery_app.Task = LoggedTask
+
+
+# Register a signal handler for tasks that the worker receives but
+# cannot find in its registry. Celery routes this through the consumer
+# (signals.task_unknown), not the task instance's on_failure callback —
+# so a NotRegistered branch in on_failure alone would be dead code in
+# production. Keep both paths: the signal is the runtime hook, the
+# on_failure branch is defense in depth in case Celery changes routing.
+from celery.signals import task_unknown  # noqa: E402
+
+
+@task_unknown.connect
+def _on_task_unknown(
+    sender=None,  # noqa: ARG001
+    name: str | None = None,
+    id: str | None = None,  # noqa: A002 — Celery signal kwarg name
+    message=None,  # noqa: ARG001
+    exc: Exception | None = None,  # noqa: ARG001
+    **_kwargs,
+) -> None:
+    """Log unregistered-task events as a P1 incident.
+
+    Triggered by Celery when a worker pops a message whose ``task``
+    header does not match any entry in ``celery_app.tasks``. Always
+    caused by a module missing from ``celery_app.include`` or a routing
+    typo. The regression guard at
+    ``tests/unit/test_celery_app_task_registry.py`` prevents this at CI,
+    and the drift guard at ``tests/unit/test_celery_routes_drift.py``
+    prevents queue/route mismatches; this signal is the runtime safety
+    net.
+    """
+    import structlog
+
+    structlog.get_logger().error(
+        "celery.task_unregistered",
+        task_id=id,
+        task_name=name,
+        remediation=(
+            "Check celery_app.include for the missing module and "
+            "tests/unit/test_celery_app_task_registry.py for the "
+            "regression guard."
+        ),
+    )

@@ -105,13 +105,50 @@ def test_logged_task_emits_generic_event_for_other_failures(monkeypatch):
     task.name = "real.task"
     task.on_failure(ValueError("boom"), "task-456", (), {}, None)
 
-    assert captured == [(
-        "task_failed",
-        {
-            "task_id": "task-456",
-            "task_name": "real.task",
-            "error": "boom",
-            "args": (),
-            "kwargs": {},
-        },
-    )]
+    assert captured == [
+        (
+            "task_failed",
+            {
+                "task_id": "task-456",
+                "task_name": "real.task",
+                "error": "boom",
+                "args": (),
+                "kwargs": {},
+            },
+        )
+    ]
+
+
+def test_task_unknown_signal_emits_structured_event(monkeypatch):
+    """The runtime hook for NotRegistered is the celery signal — not the
+    task's on_failure callback. Verify the signal handler emits the
+    correct structlog event when fired.
+    """
+    from celery.signals import task_unknown
+
+    captured: list[tuple[str, dict]] = []
+
+    class StubLogger:
+        def error(self, event: str, **kw):
+            captured.append((event, kw))
+
+    monkeypatch.setattr("structlog.get_logger", lambda: StubLogger())
+
+    # Import the celery_app module so the @task_unknown.connect handler
+    # is registered as a side effect.
+    import app.worker.celery_app  # noqa: F401
+
+    task_unknown.send(
+        sender=None,
+        name="ghost.task",
+        id="task-789",
+        message=None,
+        exc=None,
+    )
+
+    matches = [kw for event, kw in captured if event == "celery.task_unregistered"]
+    assert matches, f"Expected celery.task_unregistered event from signal handler, got {captured!r}"
+    kw = matches[-1]
+    assert kw["task_id"] == "task-789"
+    assert kw["task_name"] == "ghost.task"
+    assert "remediation" in kw

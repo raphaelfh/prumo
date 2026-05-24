@@ -1,7 +1,7 @@
 """
 Dependencies Module.
 
-Contem todas as dependencies compartilhadas da aplicacao:
+Contains all shared application dependencies:
 - Database session
 - Supabase client
 - Current user
@@ -23,9 +23,9 @@ logger = get_logger(__name__)
 # =================== DATABASE ===================
 
 # Engine async for PostgreSQL
-# NOTA: O workaround de ::VARCHAR for ENUMs foi REMOVIDO.
-# Agora usamos PostgreSQLEnumType (em app.models.base) que resolve o problema
-# de forma declarativa diretamente nos models SQLAlchemy.
+# NOTE: The ::VARCHAR workaround for ENUMs was REMOVED.
+# We now use PostgreSQLEnumType (in app.models.base), which resolves
+# the problem declaratively at the SQLAlchemy model level.
 engine = create_async_engine(
     settings.async_database_url,
     echo=settings.DEBUG,
@@ -33,9 +33,9 @@ engine = create_async_engine(
     pool_size=10,
     max_overflow=20,
     connect_args={
-        "statement_cache_size": 0,  # ✅ Desabilita prepared statements (compativel with pgbouncer)
+        "statement_cache_size": 0,  # Disable prepared statements (compatible with pgbouncer)
         "server_settings": {
-            "jit": "off",  # Desabilita JIT for melhor performance em queries complexas
+            "jit": "off",  # Disable JIT for better performance on complex queries
         },
     },
 )
