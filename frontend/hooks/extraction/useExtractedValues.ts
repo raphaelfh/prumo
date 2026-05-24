@@ -30,7 +30,7 @@ import { toast } from 'sonner';
 
 import { supabase } from '@/integrations/supabase/client';
 import { extractValueFromDb } from '@/lib/validations/selectOther';
-import { dispatchValueUpdates, shallowValueEqual } from '@/lib/extraction/valueUpdates';
+import { dispatchValueUpdates } from '@/lib/extraction/valueUpdates';
 import { t } from '@/lib/copy';
 import { ExtractionValueService } from '@/services/extractionValueService';
 import type { ProposalRecordResponse } from '@/hooks/runs/types';
@@ -185,22 +185,27 @@ export function useExtractedValues(
     prev: Record<string, any>,
     next: Record<string, any>,
   ): Record<string, any> {
+    // Local edits are authoritative. ``useAutoSaveProposals`` is the
+    // sole writer that flips ``proposed_value`` on the backend; any
+    // diff between ``prev[key]`` and ``next[key]`` for a key the user
+    // has touched means the autosave POST simply hasn't landed yet (or
+    // a TanStack ``useRun`` refetch raced ahead of it). Overwriting in
+    // that window erased the keystroke before autosave's debounce
+    // fired — the autosave then saw "no dirty entries" and skipped the
+    // POST, silently dropping the input. We only adopt backend-shaped
+    // entries for coords absent from local state (initial hydration +
+    // AI proposals that introduce brand-new fields).
     let changed = false;
-    const updatedKeys: string[] = [];
+    const addedKeys: string[] = [];
     const out = { ...prev };
     for (const [key, value] of Object.entries(next)) {
-      const before = out[key];
-      const isDifferent = !shallowValueEqual(before, value);
-      if (isDifferent) {
-        out[key] = value;
-        changed = true;
-        if (before !== undefined) {
-          updatedKeys.push(key);
-        }
-      }
+      if (key in prev) continue;
+      out[key] = value;
+      changed = true;
+      addedKeys.push(key);
     }
-    if (updatedKeys.length > 0) {
-      requestAnimationFrame(() => dispatchValueUpdates(updatedKeys));
+    if (addedKeys.length > 0) {
+      requestAnimationFrame(() => dispatchValueUpdates(addedKeys));
     }
     return changed ? out : prev;
   }

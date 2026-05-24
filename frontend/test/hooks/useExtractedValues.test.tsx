@@ -281,3 +281,131 @@ describe('useExtractedValues — local update', () => {
     );
   });
 });
+
+describe('useExtractedValues — local-edits-win on backend refetch', () => {
+  // Regression: a TanStack ``useRun`` refetch (window focus, stale time,
+  // mount) produces a fresh ``proposals`` array reference. Without
+  // preserving locally-edited keys, ``mergeValuesById`` would overwrite
+  // the user's in-flight edit with the previously-saved backend value,
+  // and the autosave hook would then see ``no dirty entries`` and skip
+  // the POST — silently dropping every keystroke between two refetches.
+  // This locks in: once a key exists in local state, the merge MUST NOT
+  // clobber it with a backend-shaped value.
+
+  it('preserves a locally-edited value when proposals refetch with the previous backend value', async () => {
+    const initialProposals = [
+      {
+        id: 'p-1',
+        run_id: 'run-1',
+        instance_id: 'inst-1',
+        field_id: 'field-1',
+        source: 'human' as const,
+        source_user_id: 'user-1',
+        proposed_value: { value: 'old' },
+        confidence_score: null,
+        rationale: null,
+        created_at: '2026-04-28T10:00:00Z',
+      },
+    ];
+
+    const { result, rerender } = renderHook(
+      ({ proposals }) =>
+        useExtractedValues({
+          runId: 'run-1',
+          stage: 'proposal',
+          proposals,
+        }),
+      { initialProps: { proposals: initialProposals } },
+    );
+
+    await waitFor(() => expect(result.current.initialized).toBe(true));
+    expect(result.current.values['inst-1_field-1']).toBe('old');
+
+    // User types a new value (in-flight, autosave POST not yet flushed).
+    result.current.updateValue('inst-1', 'field-1', 'user-typed');
+    await waitFor(() =>
+      expect(result.current.values['inst-1_field-1']).toBe('user-typed'),
+    );
+
+    // TanStack refetch: a new array reference with the SAME old backend
+    // values (the user's POST hasn't landed yet, so the server still
+    // returns 'old'). This re-fires ``loadValues``.
+    const refetched = initialProposals.map((p) => ({ ...p }));
+    rerender({ proposals: refetched });
+
+    // The local edit must survive — the user is still typing.
+    await waitFor(() =>
+      expect(result.current.values['inst-1_field-1']).toBe('user-typed'),
+    );
+  });
+
+  it('still picks up newly-introduced keys (e.g. AI-extracted fields) on refetch', async () => {
+    const { result, rerender } = renderHook(
+      ({ proposals }) =>
+        useExtractedValues({
+          runId: 'run-1',
+          stage: 'proposal',
+          proposals,
+        }),
+      {
+        initialProps: {
+          proposals: [
+            {
+              id: 'p-existing',
+              run_id: 'run-1',
+              instance_id: 'inst-1',
+              field_id: 'field-1',
+              source: 'human' as const,
+              source_user_id: 'user-1',
+              proposed_value: { value: 'mine' },
+              confidence_score: null,
+              rationale: null,
+              created_at: '2026-04-28T10:00:00Z',
+            },
+          ],
+        },
+      },
+    );
+
+    await waitFor(() => expect(result.current.initialized).toBe(true));
+    expect(result.current.values['inst-1_field-1']).toBe('mine');
+    expect(result.current.values['inst-2_field-2']).toBeUndefined();
+
+    // AI extraction lands a brand-new proposal for a coord the user
+    // hasn't touched. Refetch surfaces it; the form should show it.
+    rerender({
+      proposals: [
+        {
+          id: 'p-existing',
+          run_id: 'run-1',
+          instance_id: 'inst-1',
+          field_id: 'field-1',
+          source: 'human' as const,
+          source_user_id: 'user-1',
+          proposed_value: { value: 'mine' },
+          confidence_score: null,
+          rationale: null,
+          created_at: '2026-04-28T10:00:00Z',
+        },
+        {
+          id: 'p-new',
+          run_id: 'run-1',
+          instance_id: 'inst-2',
+          field_id: 'field-2',
+          source: 'ai' as const,
+          source_user_id: null,
+          proposed_value: { value: 'ai-suggested' },
+          confidence_score: 0.9,
+          rationale: null,
+          created_at: '2026-04-28T10:30:00Z',
+        },
+      ],
+    });
+
+    await waitFor(() =>
+      expect(result.current.values['inst-2_field-2']).toBe('ai-suggested'),
+    );
+    // Pre-existing key still wins.
+    expect(result.current.values['inst-1_field-1']).toBe('mine');
+  });
+});
