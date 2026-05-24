@@ -275,7 +275,9 @@ describe('useExtractedValues — local update', () => {
       }),
     );
     await waitFor(() => expect(result.current.initialized).toBe(true));
-    result.current.updateValue('inst-1', 'field-1', 'typed');
+    act(() => {
+      result.current.updateValue('inst-1', 'field-1', 'typed');
+    });
     await waitFor(() =>
       expect(result.current.values['inst-1_field-1']).toBe('typed'),
     );
@@ -322,7 +324,9 @@ describe('useExtractedValues — local-edits-win on backend refetch', () => {
     expect(result.current.values['inst-1_field-1']).toBe('old');
 
     // User types a new value (in-flight, autosave POST not yet flushed).
-    result.current.updateValue('inst-1', 'field-1', 'user-typed');
+    act(() => {
+      result.current.updateValue('inst-1', 'field-1', 'user-typed');
+    });
     await waitFor(() =>
       expect(result.current.values['inst-1_field-1']).toBe('user-typed'),
     );
