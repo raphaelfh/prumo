@@ -13,7 +13,7 @@
  * writer.
  */
 
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/integrations/supabase/client', () => ({
@@ -454,7 +454,9 @@ describe('useExtractedValues — run boundary reset', () => {
     await waitFor(() => expect(result.current.initialized).toBe(true));
     expect(result.current.values['inst-1_field-1']).toBe('old-run-value');
 
-    result.current.updateValue('inst-1', 'field-1', 'unsaved-run-1-edit');
+    act(() => {
+      result.current.updateValue('inst-1', 'field-1', 'unsaved-run-1-edit');
+    });
     await waitFor(() =>
       expect(result.current.values['inst-1_field-1']).toBe('unsaved-run-1-edit'),
     );
