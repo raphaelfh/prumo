@@ -93,6 +93,18 @@ PRIMARY_FIELD_ID = UUID("ffffffff-9999-0005-0000-000000000001")
 
 PRIMARY_INSTANCE_ID = UUID("ffffffff-9999-0006-0000-000000000001")
 
+# Obsolete sentinel rows from prior conftest revisions that the current
+# seed no longer creates. The cross-project template at id ending in
+# ``...0002`` was seeded by an earlier version with
+# ``kind='quality_assessment'`` + ``global_template_id=NULL`` — a shape that
+# now violates the invariant tested by
+# ``test_existing_templates_backfilled_to_extraction_kind`` (every
+# non-extraction project template must point at a QA global). When a
+# sentinel ID is dropped from the seed, leaving the stale row behind also
+# leaves stale-data constraint failures behind; add the retired ID here so
+# the seed garbage-collects it on next run.
+_OBSOLETE_SENTINEL_TEMPLATE_IDS: tuple[UUID, ...] = (UUID("ffffffff-9999-0003-0000-000000000002"),)
+
 
 class IntegrationSeedIds(NamedTuple):
     """Stable IDs for the rows seeded by ``seeded_integration_db``.
@@ -156,13 +168,62 @@ async def _seed_minimum_graph(session: AsyncSession) -> None:
     - One article + one template + one entity_type + one field + one
       instance covers the run/proposal/consensus suite that queries the
       full chain.
+
+    No early-return guard: every INSERT below uses ``ON CONFLICT (id) DO
+    NOTHING`` so running on a partially-populated DB is safe and converges
+    to the intended shape. An earlier revision short-circuited on
+    "PRIMARY_PROFILE exists" and skipped the rest of the seed, which left
+    the dev DB stuck in a state where the profile was present but the
+    template + article + entity-type chain wasn't — fine for CI (empty
+    DB), broken for a developer DB that had accumulated rows from manual
+    usage.
     """
-    already_seeded = await session.execute(
-        text("SELECT 1 FROM public.profiles WHERE id = :id"),
-        {"id": str(PRIMARY_PROFILE_ID)},
+    # Garbage-collect any obsolete sentinel rows from prior seed revisions
+    # before re-inserting. CASCADE handles downstream tables
+    # (entity_types, versions, runs, instances) that depend on the dropped
+    # template.
+    if _OBSOLETE_SENTINEL_TEMPLATE_IDS:
+        await session.execute(
+            text("DELETE FROM public.project_extraction_templates WHERE id = ANY(:ids)"),
+            {"ids": [str(i) for i in _OBSOLETE_SENTINEL_TEMPLATE_IDS]},
+        )
+
+    # Sentinel projects belong wholly to the seed — the sentinel UUID
+    # namespace cannot collide with real data. Drop any non-sentinel
+    # extraction templates committed into the sentinel projects by prior
+    # test runs (commonly ``test_run_lifecycle_concurrency`` fixtures
+    # that committed an extra template, then panicked before cleanup).
+    # Without this, the partial unique index
+    # ``uq_one_active_extraction_template_per_project`` rejects the seed's
+    # active extraction template because a stale non-sentinel one also
+    # claims the slot. CASCADE handles entity types, versions, runs, etc.
+    await session.execute(
+        text(
+            "DELETE FROM public.project_extraction_templates "
+            "WHERE project_id = ANY(:pids) "
+            "AND id::text NOT LIKE 'ffffffff-9999-%'"
+        ),
+        {"pids": [str(PRIMARY_PROJECT_ID), str(SECONDARY_PROJECT_ID)]},
     )
-    if already_seeded.scalar() is not None:
-        return
+
+    # Drop any non-sentinel ``extraction_instances`` that collide with
+    # the sentinel slot. The cardinality trigger on
+    # ``(entity_type_id, article_id, parent_instance_id)`` blocks the
+    # sentinel INSERT below if a prior test left an orphan instance for
+    # the sentinel article + entity_type with a non-sentinel id.
+    # ``ON CONFLICT (id)`` only protects against id collisions; the
+    # cardinality constraint fires before that.
+    await session.execute(
+        text(
+            "DELETE FROM public.extraction_instances "
+            "WHERE article_id = :aid AND entity_type_id = :etid "
+            "AND id::text NOT LIKE 'ffffffff-9999-%'"
+        ),
+        {
+            "aid": str(PRIMARY_ARTICLE_ID),
+            "etid": str(PRIMARY_ENTITY_TYPE_ID),
+        },
+    )
 
     # --- Profiles ---
     # Insert via auth.users to fire the ``handle_new_user`` trigger
@@ -319,24 +380,32 @@ async def _seed_minimum_graph(session: AsyncSession) -> None:
         },
     )
 
-    await session.execute(
-        text(
-            "INSERT INTO public.extraction_instances "
-            "(id, project_id, template_id, entity_type_id, article_id, "
-            " label, status, created_by) "
-            "VALUES (:id, :pid, :tid, :etid, :aid, "
-            " 'Integration Test Instance', 'pending', :created_by) "
-            "ON CONFLICT (id) DO NOTHING"
-        ),
-        {
-            "id": str(PRIMARY_INSTANCE_ID),
-            "pid": str(PRIMARY_PROJECT_ID),
-            "tid": str(PRIMARY_TEMPLATE_ID),
-            "etid": str(PRIMARY_ENTITY_TYPE_ID),
-            "aid": str(PRIMARY_ARTICLE_ID),
-            "created_by": str(PRIMARY_PROFILE_ID),
-        },
+    # The cardinality trigger on ``extraction_instances`` is BEFORE
+    # INSERT, so it fires before the ``ON CONFLICT (id) DO NOTHING``
+    # clause can short-circuit a no-op re-insert of the same sentinel.
+    # Guard with an explicit existence check.
+    existing_instance = await session.execute(
+        text("SELECT 1 FROM public.extraction_instances WHERE id = :id"),
+        {"id": str(PRIMARY_INSTANCE_ID)},
     )
+    if existing_instance.scalar() is None:
+        await session.execute(
+            text(
+                "INSERT INTO public.extraction_instances "
+                "(id, project_id, template_id, entity_type_id, article_id, "
+                " label, status, created_by) "
+                "VALUES (:id, :pid, :tid, :etid, :aid, "
+                " 'Integration Test Instance', 'pending', :created_by)"
+            ),
+            {
+                "id": str(PRIMARY_INSTANCE_ID),
+                "pid": str(PRIMARY_PROJECT_ID),
+                "tid": str(PRIMARY_TEMPLATE_ID),
+                "etid": str(PRIMARY_ENTITY_TYPE_ID),
+                "aid": str(PRIMARY_ARTICLE_ID),
+                "created_by": str(PRIMARY_PROFILE_ID),
+            },
+        )
 
     await session.commit()
 
