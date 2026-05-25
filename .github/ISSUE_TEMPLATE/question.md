@@ -1,36 +1,21 @@
 ---
-name: ❓ Pergunta
-about: Faça uma pergunta sobre o projeto
+name: ❓ Question
+about: Ask a question about the project
 title: '[QUESTION] '
 labels: question
 assignees: ''
 ---
 
-## ❓ Pergunta
+> **Tip:** for open-ended questions, the [Q&A discussion forum](https://github.com/raphaelfh/prumo/discussions/categories/q-a) is usually a better fit than an issue.
 
-<!-- Faça sua pergunta de forma clara e específica -->
+## What you are trying to do
 
-## 🔍 Contexto
+A clear description of your goal.
 
-<!-- Forneça contexto adicional sobre sua pergunta -->
+## What you have tried
 
-## 📚 O que Você Já Tentou
+Steps you have already taken, with results.
 
-<!-- Descreva o que você já tentou ou pesquisou -->
+## Question
 
-## 📋 Informações Adicionais
-
-<!-- Adicione qualquer outra informação relevante -->
-
-**Versão do Projeto**: [ex: 1.0.0]
-**Ambiente**: [ex: Desenvolvimento, Produção]
-**Navegador**: [ex: Chrome 120]
-
-## 🔗 Links Relacionados
-
-<!-- Se houver documentação, issues ou discussões relacionadas, adicione links aqui -->
-
----
-
-**Nota**: Perguntas são bem-vindas! Responderemos o mais rápido possível.
-
+Your specific question.

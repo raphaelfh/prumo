@@ -1,13 +1,14 @@
 ---
-status: in_progress
+status: shipped
 last_reviewed: 2026-05-24
 owner: '@raphaelfh'
 supersedes: null
+shipped_on: '2026-05-24'
 ---
 
 # Documentation Overhaul 2026 — Implementation Plan
 
-> **Status:** In progress · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+> **Status:** Shipped 2026-05-24 · Last reviewed: 2026-05-24 · Owner: @raphaelfh
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

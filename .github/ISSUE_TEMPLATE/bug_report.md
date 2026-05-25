@@ -1,66 +1,41 @@
 ---
 name: 🐛 Bug Report
-about: Reporte um bug para nos ajudar a melhorar
+about: Report a bug to help us improve
 title: '[BUG] '
 labels: bug
 assignees: ''
 ---
 
-## 🐛 Descrição do Bug
+## Bug description
 
-<!-- Descreva o bug de forma clara e concisa -->
+A clear and concise description of what the bug is.
 
-## 🔄 Passos para Reproduzir
+## Steps to reproduce
 
-1. Vá para '...'
-2. Clique em '...'
-3. Role até '...'
-4. Veja o erro
+1. Go to '...'
+2. Click on '...'
+3. Scroll down to '...'
+4. See error
 
-## ✅ Comportamento Esperado
+## Expected behaviour
 
-<!-- Descreva o que você esperava que acontecesse -->
+A clear and concise description of what you expected to happen.
 
-## ❌ Comportamento Atual
+## Actual behaviour
 
-<!-- Descreva o que realmente aconteceu -->
+What actually happened.
 
-## 📸 Screenshots
+## Screenshots
 
-<!-- Se aplicável, adicione screenshots para ajudar a explicar o problema -->
+If applicable, add screenshots to help explain the problem.
 
-## 🖥️ Ambiente
+## Environment
 
-**Desktop (preencha as informações):**
- - OS: [ex: iOS, Windows, Linux]
- - Navegador: [ex: Chrome, Firefox, Safari]
- - Versão: [ex: 22]
+- OS: [e.g. macOS 14, Ubuntu 22.04]
+- Browser: [e.g. Chrome 128, Safari 17]
+- Node version: [e.g. 24.0.0]
+- Python version: [e.g. 3.11]
 
-**Mobile (preencha as informações):**
- - Dispositivo: [ex: iPhone 12, Samsung Galaxy S21]
- - OS: [ex: iOS 15.0, Android 11]
- - Navegador: [ex: Chrome, Safari]
- - Versão: [ex: 22]
+## Additional context
 
-**Versão do Node.js**: [ex: 18.17.0]
-
-## 📋 Contexto Adicional
-
-<!-- Adicione qualquer outro contexto sobre o problema aqui -->
-
-## 🔍 Possível Solução
-
-<!-- Se você tiver sugestões de como corrigir o bug, descreva aqui -->
-
-## 📝 Logs
-
-<!-- Se aplicável, adicione logs relevantes aqui -->
-
-```
-Cole os logs aqui
-```
-
----
-
-**Nota**: Por favor, certifique-se de que este bug não foi reportado anteriormente nas [Issues](https://github.com/seu-usuario/review-hub/issues).
-
+Logs, related issues, or anything else worth knowing.

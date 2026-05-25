@@ -1,119 +1,117 @@
+---
+status: stable
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+---
+
 # Prumo Backend
 
-Backend FastAPI para Prumo - Plataforma de Revisão Sistemática.
+> **Status:** Stable · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+
+FastAPI service for prumo — the systematic-review platform.
 
 ## Stack
 
-- **FastAPI** - Framework web async para endpoints de compute/ML
-- **SQLAlchemy 2.0** - ORM com suporte async (type-safe queries)
-- **Pydantic v2** - Validação e serialização
-- **Supabase** - Database + Auth + Storage (source of truth)
-- **OpenAI** - Integração com LLMs
+- **FastAPI** — async web framework.
+- **SQLAlchemy 2.0** (async) — ORM, typed queries.
+- **Alembic** — migrations for the `public` schema.
+- **Pydantic v2** — validation and serialisation.
+- **Celery + Redis** — background tasks (extraction, imports, exports).
+- **Gunicorn + UvicornWorker** — production server.
+- **Supabase** — Postgres + Auth + Storage (source of truth).
+- **OpenAI** (GPT-4o) and **Anthropic** (Claude) — LLM providers.
+- **structlog** — structured logging with `trace_id`, `run_id`, `duration_ms`.
 
-## Requisitos
+## Requirements
 
 - Python 3.11+
-- uv (recomendado) ou pip
+- [uv](https://github.com/astral-sh/uv) (recommended) or pip
+- Local Supabase stack (`supabase start` from the repo root)
 
 ## Setup
 
-### 1. Instalar dependências
-
 ```bash
-# Com uv (recomendado)
+# Install dependencies
 uv sync
 
-# Ou com pip
-pip install -e ".[dev]"
-```
-
-### 2. Configurar variáveis de ambiente
-
-```bash
+# Configure env
 cp .env.example .env
-# Editar .env com suas credenciais
+$EDITOR .env
+
+# Run the API
+uv run uvicorn app.main:app --reload --port 8000
 ```
 
-### 3. Executar em desenvolvimento
+## Layout
 
-```bash
-uvicorn app.main:app --reload --port 8000
-```
-
-## Estrutura
-
-```
+```text
 backend/
 ├── app/
-│   ├── api/v1/          # Endpoints da API
-│   ├── core/            # Config, security, deps
-│   ├── models/          # SQLAlchemy models
-│   ├── schemas/         # Pydantic schemas
-│   ├── services/        # Business logic
-│   └── utils/           # Utilities
-├── tests/               # Testes
-├── pyproject.toml       # Dependências
-└── Dockerfile           # Container
+│   ├── api/v1/             # REST endpoints (FastAPI routers)
+│   ├── core/               # Config, security, DI, factories
+│   ├── db/                 # Engine, AsyncSessionLocal
+│   ├── models/             # SQLAlchemy 2.0 models
+│   ├── repositories/       # CRUD layer (flush, never commit)
+│   ├── schemas/            # Pydantic v2 schemas
+│   ├── services/           # Business logic
+│   ├── worker/             # Celery app + task modules
+│   └── seed.py             # Idempotent seed
+├── alembic/                # Migration env
+│   └── versions/           # Migrations (active) + versions/archive/
+├── tests/                  # pytest (integration + unit + e2e contract)
+├── Dockerfile              # Used by Railway for both web and worker
+└── pyproject.toml          # Dependencies (uv)
 ```
 
-## Endpoints
+## API endpoints (high level)
 
-| Endpoint | Método | Descrição |
-|----------|--------|-----------|
-| `/health` | GET | Health check |
-| `/api/v1/zotero/{action}` | POST | Integração Zotero |
-| `/api/v1/assessment/ai` | POST | Avaliação AI |
-| `/api/v1/extraction/models` | POST | Extração de modelos |
-| `/api/v1/extraction/sections` | POST | Extração de seções |
+| Prefix | Domain |
+| --- | --- |
+| `/api/v1/projects` | Project + member management |
+| `/api/v1/articles` | Article CRUD + Zotero import |
+| `/api/v1/extraction` | Extraction-specific operations |
+| `/api/v1/runs` | HITL run lifecycle (proposals, decisions, consensus, publish) |
+| `/api/v1/hitl/sessions` | Open HITL session by kind (`extraction` or `quality_assessment`) |
+| `/api/v1/extraction-export` | Excel export of extraction results |
+| `/health` | Liveness probe |
 
-## Testes
+Full schema is served at `/api/v1/docs` (Swagger UI) and `/api/v1/redoc`.
+
+## Tests
 
 ```bash
-pytest
+# All tests
+uv run pytest
+
+# Integration only
+uv run pytest tests/integration/
+
+# With coverage
+uv run pytest --cov=app --cov-report=term-missing
 ```
 
-### Banco para testes de integração
+Integration tests require a local Postgres with the schema applied. The
+fast path is `make db-fresh` from the repo root.
 
-Os testes de integração esperam um Postgres com o schema do Supabase aplicado.
+## Architecture references
 
-Para aplicar as migrations SQL localmente em um Postgres apontado por `DATABASE_URL`:
-
-```bash
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres_test \
-  bash scripts/apply_supabase_migrations.sh
-```
-
-## Architecture: Alembic + Supabase
-
-Este projeto usa arquitetura híbrida:
-
-- **Alembic** como trilha principal de migrations do backend (`backend/alembic/versions`)
-- **Supabase SQL migrations** para recursos de plataforma (`supabase/migrations`)
-- **SQLAlchemy async** para acesso transacional no backend
-- **Supabase JS SDK** no frontend para fluxos diretos e autenticação
-
-### Schema management recomendado
-
-1. Alterar models/contratos no backend.
-2. Gerar/aplicar migration Alembic para schema `public`.
-3. Manter migrations de `supabase/migrations` para recursos específicos (por exemplo, `storage` e triggers em `auth`).
-4. Validar boundaries de migration antes do merge (`scripts/validate_migration_boundaries.sh`).
-
-### Observabilidade de extração (E2E + DB)
-
-- Endpoints e serviços de extração emitem logs estruturados com `trace_id`, `run_id` e `duration_ms`.
-- Repositórios de extração emitem latência de operações de banco (`db_duration_ms`).
-- Para baseline completo (browser + API + banco remoto), execute a suíte Playwright em `frontend/e2e`.
-- Guia completo: `docs/extraction-e2e-observability.md`.
+- [Migration strategy](../docs/reference/migrations.md) — Alembic owns `public`, Supabase CLI owns `auth`/`storage`. Hand-write migrations, one logical change each, RLS on every new table.
+- [Extraction + HITL architecture](../docs/reference/extraction-hitl-architecture.md) — schema, run lifecycle, RLS posture.
+- [Deployment](../docs/reference/deployment.md) — Railway topology, env vars, gunicorn timeouts, rollback.
+- [Extraction E2E observability](../docs/how-to/observability-extraction.md) — `trace_id`, `run_id`, `db_duration_ms`.
+- [ADRs](../docs/adr/) — recorded architecture decisions.
+- [Constitution](../.specify/memory/constitution.md) — non-negotiable architectural principles (layered architecture, DI first, split migration ownership, security by design, typed everything).
 
 ## Docker
 
 ```bash
-docker build -t review-hub-backend .
-docker run -p 8000:8000 --env-file .env review-hub-backend
+docker build -t prumo-backend .
+docker run -p 8000:8000 --env-file .env prumo-backend
 ```
 
-## Licença
+(The image tag `prumo-backend` is local-only — Railway builds the same
+Dockerfile and tags it internally.)
 
-AGPL-3.0 - Veja [LICENSE](../LICENSE) para detalhes.
+## License
 
+AGPL-3.0 — see [`LICENSE`](../LICENSE).

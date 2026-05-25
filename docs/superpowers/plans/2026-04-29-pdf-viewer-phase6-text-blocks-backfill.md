@@ -1,3 +1,11 @@
+---
+status: in_progress
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+---
+
+> **Status:** In_progress · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+
 # PDF Viewer — Phase 6: `article_text_blocks` ingestion + backfill
 
 > **Status:** Pending — depends on choosing/integrating an upstream

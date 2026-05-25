@@ -1,10 +1,18 @@
+---
+status: shipped
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+---
+
+> **Status:** Shipped · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+
 # Security Hardening Wave — 2026-05-21
 
 > **Historical note (2026-05-24):** This plan was written when the backend
 > was still on Render. The architectural references (Render Blueprint,
 > render.yaml, review-hub-backend.onrender.com health URL) are kept as-is
 > for traceability. The current deployment is Railway — see
-> [`docs/architecture/deployment.md`](../../architecture/deployment.md).
+> [`docs/reference/deployment.md`](../../reference/deployment.md).
 > When re-running similar work today, substitute Railway equivalents.
 
 > **For executor:** Tasks below are self-contained. Run them in order; each

@@ -1,3 +1,11 @@
+---
+status: in_progress
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+---
+
+> **Status:** In_progress · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+
 # Design: Screening Workflow + Imports (Greenfield, Modular, AI-Ready)
 
 **Date:** 2026-05-03
