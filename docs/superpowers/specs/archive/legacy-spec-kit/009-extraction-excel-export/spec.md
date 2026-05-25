@@ -1,3 +1,12 @@
+---
+status: shipped
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+spec_number: '009'
+---
+
+> **Status:** Shipped · Archived 2026-05-24. Do not edit.
+
 # Feature Specification: Extraction Excel Export
 
 **Feature Branch**: `009-extraction-excel-export`
