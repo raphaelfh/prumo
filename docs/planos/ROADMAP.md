@@ -159,6 +159,6 @@
 
 ## 🔗 Documentos Relacionados
 
-- [Estrutura do Projeto Macro](../estrutura_database/ESTRUTURA_PROJETO_MACRO.md)
+- [Estrutura do Projeto Macro](../README.md)
 - [Arquitetura Backend](../guias/ARQUITETURA_BACKEND.md)
 - [Planos de Correção](../planos/)
