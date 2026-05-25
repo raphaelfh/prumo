@@ -22,22 +22,24 @@ from uuid import UUID
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
+from tests.integration.conftest import SEED
 
 
 @pytest_asyncio.fixture
 async def auth_as_profile(
-    db_session: AsyncSession,
+    db_session: AsyncSession,  # noqa: ARG001 — kept for fixture-dep ordering
 ) -> AsyncGenerator[UUID, None]:
-    """Override get_current_user so JWT sub is a real profile UUID."""
-    raw = (await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
-    if raw is None:
-        pytest.skip("No profile rows available in test database")
-    profile_id = UUID(str(raw))
+    """Override get_current_user so JWT sub is the seeded primary profile.
+
+    Pinned to ``SEED.primary_profile`` so the chosen subject is always a
+    project manager of the seed projects — regardless of any stale rows the
+    test DB might have accumulated from previous sessions.
+    """
+    profile_id = SEED.primary_profile
 
     async def override_get_current_user() -> TokenPayload:
         return TokenPayload(
@@ -51,45 +53,23 @@ async def auth_as_profile(
     yield profile_id
 
 
-async def _pick_fixtures(db: AsyncSession) -> tuple[str, str, str, str, str] | None:
-    """Pick (project_id, article_id, template_id, instance_id, field_id) where
-    instance + field both belong to the same template/entity_type chain."""
-    project_id = (await db.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
-    article_id = (await db.execute(text("SELECT id FROM public.articles LIMIT 1"))).scalar()
-    template_id = (
-        await db.execute(
-            text(
-                "SELECT id FROM public.project_extraction_templates "
-                "WHERE kind = 'extraction' LIMIT 1"
-            )
-        )
-    ).scalar()
-    if not (project_id and article_id and template_id):
-        return None
-    pair = (
-        await db.execute(
-            text(
-                """
-                SELECT i.id, f.id
-                FROM public.extraction_instances i
-                JOIN public.extraction_entity_types et ON et.id = i.entity_type_id
-                JOIN public.extraction_fields f ON f.entity_type_id = et.id
-                WHERE i.template_id = :tid
-                LIMIT 1
-                """
-            ),
-            {"tid": template_id},
-        )
-    ).first()
-    if pair is None:
-        return None
-    instance_id, field_id = pair
+async def _pick_fixtures(
+    db: AsyncSession,  # noqa: ARG001 — kept for signature stability with callers
+) -> tuple[str, str, str, str, str] | None:
+    """Return the seeded sentinel chain (project, article, template, instance, field).
+
+    Pinned to the sentinels (previous revisions used ``LIMIT 1``) so the
+    helper does not silently pick a stale, half-orphaned trio committed by
+    a prior test session and skip the three lifecycle tests with
+    ``Need fixtures.`` The return type stays ``... | None`` so each
+    caller's ``if fx is None`` guard remains a valid (now dead) no-op.
+    """
     return (
-        str(project_id),
-        str(article_id),
-        str(template_id),
-        str(instance_id),
-        str(field_id),
+        str(SEED.primary_project),
+        str(SEED.primary_article),
+        str(SEED.primary_template),
+        str(SEED.primary_instance),
+        str(SEED.primary_field),
     )
 
 
