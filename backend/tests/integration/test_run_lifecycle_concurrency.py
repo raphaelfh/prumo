@@ -27,6 +27,7 @@ from app.services.run_lifecycle_service import (
     InvalidStageTransitionError,
     RunLifecycleService,
 )
+from tests.integration.conftest import SEED
 
 
 @pytest_asyncio.fixture
@@ -39,12 +40,25 @@ async def session_factory() -> AsyncGenerator[async_sessionmaker[AsyncSession], 
 
 
 async def _pick_basic_fixtures(db: AsyncSession) -> tuple[UUID, UUID, UUID] | None:
-    project_id = (await db.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
-    article_id = (await db.execute(text("SELECT id FROM public.articles LIMIT 1"))).scalar()
-    profile_id = (await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
-    if not all((project_id, article_id, profile_id)):
+    """Return the seeded coherent ``(project_id, article_id, profile_id)`` tuple.
+
+    Replaces three independent ``LIMIT 1`` lookups that, on a dev DB with
+    rows from several projects, happily returned project=A / article=B /
+    profile=C — incoherent, so ``RunLifecycleService.create_run`` raised
+    ``TemplateNotFoundError`` because the chosen template's
+    ``project_id`` did not match the chosen project. The sentinel tuple
+    seeded by ``seeded_integration_db`` always forms a coherent graph
+    (``primary_profile`` manages ``primary_project`` which owns
+    ``primary_article``).
+    """
+    if (
+        await db.execute(
+            text("SELECT 1 FROM public.profiles WHERE id = :id"),
+            {"id": str(SEED.primary_profile)},
+        )
+    ).scalar() is None:
         return None
-    return UUID(str(project_id)), UUID(str(article_id)), UUID(str(profile_id))
+    return SEED.primary_project, SEED.primary_article, SEED.primary_profile
 
 
 async def _create_fresh_extraction_template(
@@ -257,20 +271,16 @@ async def test_concurrent_advance_stage_serialises_via_row_lock(
         if fx is None:
             pytest.skip("Missing project/article/profile fixtures")
         project_id, article_id, profile_id = fx
-        template_id = (
-            await setup_session.execute(
-                text(
-                    "SELECT id FROM public.project_extraction_templates "
-                    "WHERE kind = 'extraction' LIMIT 1"
-                )
-            )
-        ).scalar()
-        if template_id is None:
-            pytest.skip("No extraction template available")
+        # Use the seeded sentinel template so it stays coherent with the
+        # project/article picked above. An earlier ``LIMIT 1`` over
+        # ``project_extraction_templates`` could land on a template from
+        # a different project on a polluted dev DB and trip
+        # ``TemplateNotFoundError`` inside ``create_run``.
+        template_id = SEED.primary_template
         run = await RunLifecycleService(setup_session).create_run(
             project_id=project_id,
             article_id=article_id,
-            project_template_id=UUID(str(template_id)),
+            project_template_id=template_id,
             user_id=profile_id,
         )
         await setup_session.commit()
@@ -339,20 +349,15 @@ async def test_concurrent_reopen_does_not_fork_multiple_children(
         if fx is None:
             pytest.skip("Missing fixtures")
         project_id, article_id, profile_id = fx
-        template_id = (
-            await setup_session.execute(
-                text(
-                    "SELECT id FROM public.project_extraction_templates "
-                    "WHERE kind = 'extraction' LIMIT 1"
-                )
-            )
-        ).scalar()
-        if template_id is None:
-            pytest.skip("No extraction template")
+        # Use the sentinel template so it stays coherent with the seeded
+        # project/article (see _pick_basic_fixtures). The previous
+        # ``LIMIT 1`` could land on a different project's template on a
+        # polluted dev DB.
+        template_id = SEED.primary_template
         run = await RunLifecycleService(setup_session).create_run(
             project_id=project_id,
             article_id=article_id,
-            project_template_id=UUID(str(template_id)),
+            project_template_id=template_id,
             user_id=profile_id,
         )
         # Drive directly to FINALIZED — no consensus needed for this test.
