@@ -1,0 +1,84 @@
+name: Issue Triage
+
+# Event-driven Claude Code triage. Reacts in seconds via webhook (not polling).
+# Requirements:
+#   - Repo secret ANTHROPIC_API_KEY must be set: gh secret set ANTHROPIC_API_KEY -R raphaelfh/prumo
+#   - Labels used: triaged, needs-info, scope:* (already exist). Creates `triaged` on first run if absent.
+# Skip rules: bot-authored issues, anything already auto-found, anything already triaged.
+
+on:
+  issues:
+    types: [opened, reopened]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: issue-triage-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    if: >-
+      github.event.issue.user.type != 'Bot'
+      && !contains(github.event.issue.labels.*.name, 'auto-found')
+      && !contains(github.event.issue.labels.*.name, 'triaged')
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure `triaged` label exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create triaged --color ededed --description "Auto-triaged by issue-triage workflow" -R ${{ github.repository }} 2>/dev/null || true
+          gh label create needs-info --color fbca04 --description "Awaiting reproduction or details from reporter" -R ${{ github.repository }} 2>/dev/null || true
+
+      - name: Triage with Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          model: claude-sonnet-4-6
+          timeout_minutes: "7"
+          allowed_tools: "Bash(gh:*),Bash(grep:*),Bash(rg:*),Bash(jq:*),Read,Grep,Glob,Skill"
+          prompt: |
+            You are triaging a freshly-opened issue on the prumo repo (raphaelfh/prumo).
+            Issue number: ${{ github.event.issue.number }}
+            Action: ${{ github.event.action }}
+
+            ## Procedure
+
+            1. Read it: `gh issue view ${{ github.event.issue.number }} --json title,body,author,labels`
+            2. Dedup check: search both `auto-found` and human-filed issues for the same root cause.
+               `gh issue list --repo raphaelfh/prumo --state all --limit 300 --json number,title,state,labels,body | jq -c '.[]'`
+               Same root cause = same file:line OR same described symptom + same component.
+               If duplicate: post one comment `Likely duplicate of #<N>. Closing — please reopen if the existing one does not match.`, then `gh issue close ${{ github.event.issue.number }} --reason "not planned"`. Stop here.
+            3. If body is empty / has no reproducible content: apply label `needs-info`, comment asking for repro steps + environment + expected vs actual, apply `triaged`, stop.
+            4. Classify into ONE: `bug` | `enhancement` | `question` | `documentation`. Apply that label (most already exist; do not invent new ones).
+            5. Infer scope and apply ONE `scope:<area>` label from this set: services, api, models, migrations, components, hooks, pages. Pick the closest match based on file paths in the body or affected feature.
+            6. **Bug branch only**: do a focused investigation:
+                a. Invoke the `systematic-debugging` skill if available (fallback gracefully — do not block on missing skill).
+                b. Read at most 3 likely-relevant files. Run `rg` to find candidate sites.
+                c. Post ONE comment with these H2 sections in order:
+                   ## Initial hypothesis  (≤3 sentences, evidence-based — no speculation)
+                   ## Likely sites  (file:line, max 5, from grep evidence)
+                   ## Suggested verification  (ONE pytest or vitest command that would confirm)
+                d. Do not propose a fix in the comment.
+            7. For non-bug: do NOT comment — just label and stop.
+            8. Always finish by applying `triaged` label: `gh issue edit ${{ github.event.issue.number }} --add-label triaged -R raphaelfh/prumo`.
+
+            ## Hard rules
+            - READ-ONLY on code. No file edits. No PRs. No branch creation.
+            - Maximum ONE comment on the issue (the hypothesis, OR the needs-info request, OR the duplicate note).
+            - Stay under 7 minutes. If you near the timeout, apply `triaged` + post what you have.
+            - Do not invoke skills that are not strictly needed (saves tokens).
+
+            ## Output
+            Last line MUST be:
+            `triage_done issue=${{ github.event.issue.number }} kind=<bug|enhancement|question|documentation|needs-info|duplicate> action=<labeled|commented|closed-dup>`
