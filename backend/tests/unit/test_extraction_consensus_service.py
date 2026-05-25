@@ -38,7 +38,6 @@ from app.services.extraction_consensus_service import (
     OptimisticConcurrencyError,
 )
 
-
 # =================== HELPERS ===================
 
 
