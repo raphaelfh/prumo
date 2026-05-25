@@ -130,13 +130,13 @@ O aplicativo estará disponível em:
 
 ### Documentação Legal
 
-- [Guia de Contribuição](CONTRIBUTING.md)
+- [Guia de Contribuição](.github/CONTRIBUTING.md)
 - [Código de Conduta](.github/CODE_OF_CONDUCT.md)
 - [Política de Segurança](.github/SECURITY.md)
 
 ## 🤝 Contribuindo
 
-Contribuições são bem-vindas! Por favor, leia nosso [Guia de Contribuição](CONTRIBUTING.md) para detalhes sobre nosso
+Contribuições são bem-vindas! Por favor, leia nosso [Guia de Contribuição](.github/CONTRIBUTING.md) para detalhes sobre nosso
 código de conduta e o processo para submeter pull requests.
 
 ### Primeiros Passos
@@ -147,7 +147,7 @@ código de conduta e o processo para submeter pull requests.
 4. Push para a branch (`git push origin feature/AmazingFeature`)
 5. Abra um Pull Request
 
-Para mais detalhes, consulte [CONTRIBUTING.md](CONTRIBUTING.md).
+Para mais detalhes, consulte [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md).
 
 ## 🏗️ Tecnologias Utilizadas
 
