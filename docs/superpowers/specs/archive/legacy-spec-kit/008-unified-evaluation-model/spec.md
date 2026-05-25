@@ -1,3 +1,16 @@
+---
+status: cancelled
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+spec_number: '008'
+superseded_by: '2026-04-27-extraction-hitl-and-qa-design.md'
+cancelled_in: 'migration 0016_drop_008_stack'
+---
+
+> **Status:** Cancelled — implementation skeleton dropped 2026-04-27 in migration `0016_drop_008_stack`. Replaced by the extraction-centric HITL stack with `kind=quality_assessment`. Do not edit.
+
+For the current design see [`../../../../2026-04-27-extraction-hitl-and-qa-design.md`](../../../../2026-04-27-extraction-hitl-and-qa-design.md).
+
 # Feature Specification: Unified Evaluation Data Model
 
 **Feature Branch**: `008-unified-evaluation-model`  
