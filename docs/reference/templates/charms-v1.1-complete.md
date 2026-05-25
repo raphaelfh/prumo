@@ -1,7 +1,17 @@
-# CHARMS 2.0 - Template Completo
+---
+status: stable
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+template_version: '1.1.0'
+---
+
+> **Status:** Stable · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+> Reflects the CHARMS template state after the 2026-05-17 study-level / per-model split (template version 1.1.0).
+
+# CHARMS v1.1 — Complete Template
 
 **Template ID**: Criado via migration `0017_charms_2_0_complete_template.sql`  
-**Version**: 2.0.0  
+**Version**: 1.1.0  
 **Status**: ✅ Implementado no banco de dados  
 **Framework**: CHARMS
 
@@ -11,7 +21,7 @@
 
 ### Hierarquia
 
-```
+```text
 prediction_models (ROOT - cardinality='many')
 │
 ├─ source_of_data (cardinality='one')
@@ -34,6 +44,7 @@ prediction_models (ROOT - cardinality='many')
 ## Mapeamento CHARMS → Entity Types → Fields
 
 ### 0.5 Model Name
+
 - **Entity Type**: `prediction_models`
 - **Field**: `model_name` (text)
 
@@ -240,20 +251,27 @@ prediction_models (ROOT - cardinality='many')
 ## Decisões de Design
 
 ### 1. Participant Description (2.8.1-2.8.5)
+
 ✅ **Escolhido**: Campos diretos em `participants` (não sub-entidade)
+
 - Simplifica queries e mantém estrutura plana
 
 ### 2. Campos com Confidence Interval (CI)
+
 ✅ **Escolhido**: Dois campos separados
+
 - `value` (number) + `*_ci` (text)
 - Exemplo: `c_statistic` (number) + `c_statistic_ci` (text como "0.64 to 0.78")
 - Mais flexível para diferentes formatos de CI
 
 ### 3. Campos "Other" com Especificação
+
 ✅ **Escolhido**: Abordagem híbrida com `validation_schema`
+
 - Campo principal: select com "Other (specify)" em `allowed_values`
 - Campo especificação: text com `validation_schema` definindo dependência condicional
 - Estrutura no `validation_schema`:
+
   ```json
   {
     "conditional_required": {
@@ -262,6 +280,7 @@ prediction_models (ROOT - cardinality='many')
     }
   }
   ```
+
 - Frontend renderiza campo `*_other_specify` condicionalmente quando "Other" selecionado
 
 ## Exemplo de Uso
@@ -299,6 +318,7 @@ RETURNING id INTO model_b_id;
 ## Queries Úteis
 
 ### Buscar todos os modelos de um artigo
+
 ```sql
 SELECT id, label 
 FROM extraction_instances
@@ -306,11 +326,12 @@ WHERE article_id = '<article_id>'
   AND entity_type_id = (
     SELECT id FROM extraction_entity_types 
     WHERE name = 'prediction_models'
-    AND template_id = (SELECT id FROM extraction_templates_global WHERE name = 'CHARMS 2.0')
+    AND template_id = (SELECT id FROM extraction_templates_global WHERE name = 'CHARMS v1.1')
   );
 ```
 
 ### Buscar children de um modelo
+
 ```sql
 SELECT et.name, et.label, ei.id, ei.label
 FROM extraction_instances ei
@@ -320,6 +341,7 @@ ORDER BY et.sort_order, ei.sort_order;
 ```
 
 ### Buscar valores extraídos de um modelo
+
 ```sql
 SELECT f.name, f.label, ev.value
 FROM extracted_values ev
@@ -345,11 +367,3 @@ ORDER BY f.sort_order;
 
 - [CHARMS Checklist Original](https://journals.plos.org/plosmedicine/article/file?id=10.1371/journal.pmed.1001744&type=printable)
 - [CHARMS 2023 Update](https://bmcmedresmethodol.biomedcentral.com/articles/10.1186/s12874-023-01849-0)
-
-
-
-
-
-
-
-
