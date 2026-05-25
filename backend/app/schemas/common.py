@@ -103,8 +103,15 @@ class ApiResponse(BaseModel, Generic[T]):
         message: str,
         details: dict[str, Any] | None = None,
         trace_id: str | None = None,
-    ) -> "ApiResponse[None]":
-        """Create error response."""
+    ) -> "ApiResponse[T]":
+        """Create error response.
+
+        Generic in ``T`` so callers can do
+        ``return ApiResponse.failure(...)`` inside an endpoint typed
+        ``-> ApiResponse[SomeModel]`` without a type error: an envelope
+        without ``data`` satisfies ``ApiResponse[T]`` because
+        ``data: T | None = None`` accepts the implicit ``None``.
+        """
         return cls(
             ok=False,
             error=ErrorDetail(code=code, message=message, details=details),
