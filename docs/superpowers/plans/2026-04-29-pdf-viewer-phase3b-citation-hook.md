@@ -1,3 +1,11 @@
+---
+status: in_progress
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+---
+
+> **Status:** In_progress · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+
 # PDF Viewer — Phase 3b: Citation hook + viewer integration
 
 > **Status:** Pending — backend + DB are ready, awaits frontend design decision.

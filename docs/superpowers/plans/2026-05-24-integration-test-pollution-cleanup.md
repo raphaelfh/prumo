@@ -1,3 +1,11 @@
+---
+status: in_progress
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+---
+
+> **Status:** In_progress · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+
 # Integration Test DB-Pollution Cleanup
 
 > **Status:** open. Follow-up to PRs [#137](https://github.com/raphaelfh/prumo/pull/137) and [#141](https://github.com/raphaelfh/prumo/pull/141), which made `tests/integration/conftest.py` self-healing and switched four test files from `LIMIT 1` lottery to seeded `SEED.*` constants.

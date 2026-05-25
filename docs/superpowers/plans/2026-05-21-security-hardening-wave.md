@@ -1,3 +1,11 @@
+---
+status: shipped
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+---
+
+> **Status:** Shipped · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+
 # Security Hardening Wave — 2026-05-21
 
 > **Historical note (2026-05-24):** This plan was written when the backend

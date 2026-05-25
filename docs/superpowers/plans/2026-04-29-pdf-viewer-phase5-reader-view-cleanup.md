@@ -1,3 +1,11 @@
+---
+status: in_progress
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+---
+
+> **Status:** In_progress · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+
 # PDF Viewer — Phase 5: Reader view + a11y + legacy cleanup
 
 > **Status:** Pending — needs design + a11y review.
