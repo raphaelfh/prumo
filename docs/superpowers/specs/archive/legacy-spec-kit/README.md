@@ -25,7 +25,7 @@ current**. For the up-to-date architecture, see
 ## Inventory
 
 | # | Slug | Status | Notes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 001 | alembic-migrations | Shipped | Backend Alembic adoption |
 | 002 | ai-assessment-flow | Shipped | Original AI assessment pipeline (largely superseded by HITL refactor) |
 | 003 | fix-assessment-sync | Shipped | Sync bug fix |
