@@ -10,27 +10,31 @@
 # Adding to this list: only with a clear rationale in the same PR.
 # Removing from this list: never.
 #
-# Coverage measured 2026-05-24 (commit 87ab794):
+# Coverage measured 2026-05-25 (commit 697ca6b):
 #   _extraction_run_lock.py            100.0%  TOCTOU lock helper
+#   coordinate_coherence.py            100.0%  (run,instance,field) triplet validator
+#   extraction_consensus_service.py    100.0%  consensus + publish (mocks anchor; PR #143)
+#   extraction_proposal_repository.py  100.0%  proposal persistence
+#   extraction_proposal_service.py      96.8%  autosave write path
 #   hitl_session_service.py             94.7%  session opener (auth-critical)
+#   extraction_review_service.py        94.6%  reviewer-decision writes
 #   run_lifecycle_service.py            92.1%  stage transitions
-#   extraction_review_service.py        89.2%  reviewer-decision writes
-#   coordinate_coherence.py             87.5%  (run,instance,field) triplet validator
-#   extraction_proposal_repository.py   82.6%  proposal persistence
-#   extraction_proposal_service.py      80.6%  autosave write path
 #   api/deps/security.py                64.0%  auth dependency
 #   ------------------------------------------------------------------
-#   aggregate                           89.1%  current; gate set at 85 (-4pt margin)
+#   aggregate                           94.0%  current; gate set at 85 (-9pt margin)
 #
-# TODO(post-coverage-debt): once extraction_consensus_service.py climbs from
-# 34.2% to 80%+ via a dedicated test PR, add it here. Today its coverage
-# would crater the aggregate; the gate's purpose is preventing regression,
-# not papering over an outlier that needs its own remediation.
+# extraction_consensus_service.py was previously excluded with a TODO to
+# remove it once coverage climbed from 34% to 80%+. PR #143 added 29
+# mock-driven unit tests, landing it at 100%. Including it here ratchets
+# the no-regression contract: the gate now also guards the consensus +
+# publish path against silent drift, the same way it does for the
+# autosave write path and the run lifecycle stage transitions.
 app/services/_extraction_run_lock.py
 app/services/run_lifecycle_service.py
 app/services/hitl_session_service.py
 app/services/extraction_proposal_service.py
 app/services/extraction_review_service.py
+app/services/extraction_consensus_service.py
 app/services/coordinate_coherence.py
 app/api/deps/security.py
 app/repositories/extraction_proposal_repository.py
