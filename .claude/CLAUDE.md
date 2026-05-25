@@ -1,4 +1,7 @@
 ---
+status: stable
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
 description: 
 alwaysApply: true
 ---
@@ -67,10 +70,10 @@ heart — read these before touching anything in `extraction_*` or
 `/api/v1/runs/...`:
 
 - **Canonical schema reference:**
-  `docs/architecture/extraction-hitl-architecture.md` — table inventory,
+  `docs/reference/extraction-hitl-architecture.md` — table inventory,
   glossary, conceptual flow, and the legacy-in-transition map.
 - **Migration strategy:**
-  `docs/architecture/migrations.md` — when to squash, how to write a
+  `docs/reference/migrations.md` — when to squash, how to write a
   migration, RLS conventions, AI-assistant pitfalls.
 - **Original design spec (immutable):**
   `docs/superpowers/specs/2026-04-27-extraction-hitl-and-qa-design.md`.
