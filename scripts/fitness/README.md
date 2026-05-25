@@ -1,3 +1,11 @@
+---
+status: stable
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+---
+
+> **Status:** Stable · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+
 # `scripts/fitness/` — deterministic architectural fitness functions
 
 Each script enforces one invariant. They run locally (`bash scripts/fitness/run_all.sh`) and in CI. Together they make up the *computational controls* lane of prumo's harness-engineering split — LLM scanners are advisory; these are ground truth.
@@ -19,7 +27,7 @@ Conventions that exist only as "code review will catch it" rot. Each invariant w
 ## Current checks
 
 | Script | Invariant |
-|---|---|
+| --- | --- |
 | `check_migration_split.sh` | Alembic edits only `public.*`; Supabase CLI owns `auth.*` and `storage.*`. Wraps `scripts/validate_migration_boundaries.sh`. |
 | `check_legacy_concepts.py` | 4 hard-tier banned patterns (`name == 'prediction_models'`, `extracted_values` SQL identifier, `ai_suggestions` SQL identifier, `===` variants) cannot return. 12 warn-tier patterns (`qa_assessments` endpoint, `@react-pdf-viewer/*`, etc.) are reported but do not fail. |
 
