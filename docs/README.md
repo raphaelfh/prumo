@@ -16,20 +16,20 @@ quadrant that matches what you need.
 > Start here if you are new. Each tutorial takes you from zero to a
 > known-good outcome.
 
-_None yet — see the root [`README.md`](../README.md) for setup until a real
-tutorial lives here._
+*None yet — see the root [`README.md`](../README.md) for setup until a real
+tutorial lives here.*
 
 ## How-to guides — *task recipes*
 
 | Guide | When to read |
-|---|---|
+| --- | --- |
 | [Seed the database](./how-to/seed-database.md) | After `make reset-db` or when bootstrapping a new env |
 | [Extraction E2E observability](./how-to/observability-extraction.md) | Debugging extraction latency / errors across browser → API → DB |
 
 ## Reference — *information lookup*
 
 | Reference | What's inside |
-|---|---|
+| --- | --- |
 | [Deployment](./reference/deployment.md) | Topology, env vars, rollback, Railway specifics |
 | [Migrations](./reference/migrations.md) | Alembic vs Supabase split, squash recipe, RLS conventions |
 | [Extraction + HITL architecture](./reference/extraction-hitl-architecture.md) | Canonical schema, run lifecycle, RLS posture |
@@ -40,14 +40,14 @@ tutorial lives here._
 ## Explanation — *understanding the why*
 
 | Doc | What it explains |
-|---|---|
+| --- | --- |
 | [ADR index](./adr/) | Architecture decisions (MADR 4.0) |
 | [Roadmap pointer](./ROADMAP.md) | Active milestones and link to GitHub Projects |
 
 ## Internal tooling
 
 | Path | Purpose |
-|---|---|
+| --- | --- |
 | [`docs/superpowers/specs/`](./superpowers/specs/) | Active design specs |
 | [`docs/superpowers/plans/`](./superpowers/plans/) | Active implementation plans |
 | [`docs/superpowers/quality-runs/`](./superpowers/quality-runs/) | Outputs of the architectural quality autoloop |
@@ -57,7 +57,7 @@ tutorial lives here._
 ## Community files
 
 | File | Lives in |
-|---|---|
+| --- | --- |
 | Contributing | [`.github/CONTRIBUTING.md`](../.github/CONTRIBUTING.md) |
 | Code of Conduct | [`.github/CODE_OF_CONDUCT.md`](../.github/CODE_OF_CONDUCT.md) |
 | Security policy | [`.github/SECURITY.md`](../.github/SECURITY.md) |

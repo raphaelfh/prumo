@@ -32,6 +32,7 @@ owner: '@raphaelfh'
 - Backlog scaling alert:
   - filter `evaluation_queue_backlog_scale_alert`
   - group by `project_id`
+
 # Extraction E2E and Database Observability
 
 ## Goal
