@@ -9,7 +9,7 @@ cancelled_in: 'migration 0016_drop_008_stack'
 
 > **Status:** Cancelled — implementation skeleton dropped 2026-04-27 in migration `0016_drop_008_stack`. Replaced by the extraction-centric HITL stack with `kind=quality_assessment`. Do not edit.
 
-For the current design see [`../../../../2026-04-27-extraction-hitl-and-qa-design.md`](../../../../2026-04-27-extraction-hitl-and-qa-design.md).
+For the current design see [`../../../2026-04-27-extraction-hitl-and-qa-design.md`](../../../2026-04-27-extraction-hitl-and-qa-design.md).
 
 # Feature Specification: Unified Evaluation Data Model
 

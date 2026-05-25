@@ -20,7 +20,7 @@ feature, with execution captured separately in `docs/superpowers/plans/`).
 The legacy specs below are preserved for historical context. They reflect the
 state of the project at the time they were written; **do not treat them as
 current**. For the up-to-date architecture, see
-[`docs/reference/extraction-hitl-architecture.md`](../../../../../reference/extraction-hitl-architecture.md).
+[`docs/reference/extraction-hitl-architecture.md`](../../../../reference/extraction-hitl-architecture.md).
 
 ## Inventory
 
