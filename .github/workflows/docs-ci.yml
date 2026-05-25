@@ -1,0 +1,58 @@
+name: docs-ci
+
+on:
+  pull_request:
+    paths:
+      - '**/*.md'
+      - '.github/markdownlint.json'
+      - '.github/lychee.toml'
+      - '.github/cspell.json'
+      - '.github/cspell-words.txt'
+      - 'scripts/docs/**'
+      - '.github/workflows/docs-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - '**/*.md'
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  markdownlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - run: npx -y markdownlint-cli2 "**/*.md" "!node_modules/**" "!playwright-report/**" "!test-results/**" "!**/.pytest_cache/**" "!backend/alembic/versions/archive/**"
+
+  cspell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - run: npx -y cspell --config .github/cspell.json "**/*.md"
+
+  links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lycheeverse/lychee-action@v2
+        with:
+          args: '--config .github/lychee.toml .'
+          fail: true
+
+  frontmatter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/docs/check-frontmatter.sh
+
+  staleness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: STALENESS_FAIL=0 bash scripts/docs/check-staleness.sh
