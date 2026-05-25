@@ -75,6 +75,7 @@ dev = [
     "httpx>=0.27.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
+    "celery-types>=0.22.0",
     "pre-commit>=4.0.0",
     # CI diff coverage gate (see .github/workflows/ci.yml "Diff coverage gate"
     # step). PR-only check: lines touched by the PR must hit
@@ -156,6 +157,7 @@ omit = [
 dev = [
     "pytest-asyncio>=1.3.0",
     "mutmut>=3.0",
+    "celery-types>=0.26.0",
 ]
 
 [tool.mutmut]
