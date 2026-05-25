@@ -1,0 +1,24 @@
+# https://lychee.cli.rs/usage/config/
+max_redirects = 5
+timeout = 30
+max_concurrency = 16
+accept = [200, 206, 429]
+exclude_path = [
+  "node_modules",
+  "playwright-report",
+  "test-results",
+  ".pytest_cache",
+  ".venv",
+  "dist",
+  "backend/alembic/versions/archive",
+]
+exclude = [
+  "^https?://localhost",
+  "^https?://127\\.0\\.0\\.1",
+  "^https?://0\\.0\\.0\\.0",
+  "^https?://.*\\.local",
+  "^https?://web-production-48b398\\.up\\.railway\\.app",
+  "^https?://prumo-alpha\\.vercel\\.app",
+]
+verbose = "info"
+no_progress = true
