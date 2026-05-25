@@ -1,3 +1,12 @@
+---
+status: shipped
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+spec_number: '003'
+---
+
+> **Status:** Shipped · Archived 2026-05-24. Do not edit.
+
 # Feature Specification: Sincronização da Interface na "Avaliação com IA" (Assessment)
 
 **Feature Branch**: `003-fix-assessment-sync`  
