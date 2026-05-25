@@ -1,0 +1,36 @@
+# Critical-path coverage gate.
+#
+# Modules listed here are aggregated and must stay above the threshold set in
+# .github/workflows/ci.yml (Critical-path coverage gate step). A regression
+# in any of these — even when global coverage is healthy — bounces the PR.
+#
+# Selection rule: "bug here = data loss, BOLA, or HITL state corruption".
+# This is the smallest blast-radius surface that absolutely cannot drift.
+#
+# Adding to this list: only with a clear rationale in the same PR.
+# Removing from this list: never.
+#
+# Coverage measured 2026-05-24 (commit 87ab794):
+#   _extraction_run_lock.py            100.0%  TOCTOU lock helper
+#   hitl_session_service.py             94.7%  session opener (auth-critical)
+#   run_lifecycle_service.py            92.1%  stage transitions
+#   extraction_review_service.py        89.2%  reviewer-decision writes
+#   coordinate_coherence.py             87.5%  (run,instance,field) triplet validator
+#   extraction_proposal_repository.py   82.6%  proposal persistence
+#   extraction_proposal_service.py      80.6%  autosave write path
+#   api/deps/security.py                64.0%  auth dependency
+#   ------------------------------------------------------------------
+#   aggregate                           89.1%  current; gate set at 85 (-4pt margin)
+#
+# TODO(post-coverage-debt): once extraction_consensus_service.py climbs from
+# 34.2% to 80%+ via a dedicated test PR, add it here. Today its coverage
+# would crater the aggregate; the gate's purpose is preventing regression,
+# not papering over an outlier that needs its own remediation.
+app/services/_extraction_run_lock.py
+app/services/run_lifecycle_service.py
+app/services/hitl_session_service.py
+app/services/extraction_proposal_service.py
+app/services/extraction_review_service.py
+app/services/coordinate_coherence.py
+app/api/deps/security.py
+app/repositories/extraction_proposal_repository.py

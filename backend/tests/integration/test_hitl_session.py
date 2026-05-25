@@ -19,8 +19,40 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
+from tests.integration.conftest import SEED
 
 _SESSION_URL = "/api/v1/hitl/sessions"
+
+
+@pytest_asyncio.fixture
+async def auth_as_seed_primary(
+    db_session: AsyncSession,  # noqa: ARG001 — fixture order: seed runs first
+) -> AsyncGenerator[UUID, None]:
+    """Override auth to ``SEED.primary_profile`` — the conftest-seeded
+    profile that manages ``SEED.primary_project`` (owner of
+    ``SEED.primary_article`` and ``SEED.primary_template``).
+
+    Use this instead of ``auth_as_profile`` when the test also pins
+    project/article/template to the seeded sentinel rows; ``LIMIT 1`` on
+    ``profiles`` is non-deterministic on a polluted dev DB and can return
+    a profile that doesn't manage the sentinel project, leading to 403
+    on writes against ``primary_project``.
+    """
+    profile_id = SEED.primary_profile
+
+    async def override_get_current_user() -> TokenPayload:
+        return TokenPayload(
+            sub=str(profile_id),
+            email="primary@integration-test.prumo.local",
+            role="authenticated",
+            aal="aal1",
+        )
+
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    try:
+        yield profile_id
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
 
 
 @pytest_asyncio.fixture
@@ -867,14 +899,17 @@ async def test_extraction_session_requires_project_template_id(
 @pytest.mark.asyncio
 async def test_extraction_session_opens_run_for_existing_project_template(
     db_client: AsyncClient,
-    db_session: AsyncSession,
-    auth_as_profile: UUID,  # noqa: ARG001
+    db_session: AsyncSession,  # noqa: ARG001 — kept for seed-fixture ordering
+    auth_as_seed_primary: UUID,  # noqa: ARG001
 ) -> None:
-    article = await _pick_article(db_session)
-    template_id = await _pick_extraction_project_template(db_session)
-    if article is None or template_id is None:
-        pytest.skip("Need an article + an extraction project template")
-    article_id, project_id = article
+    # Pin to the sentinel triple: ``_pick_article`` and
+    # ``_pick_extraction_project_template`` each ``LIMIT 1`` independently
+    # and could land in different projects on a polluted dev DB, surfacing
+    # as "project_template_id … not found in project" (400) instead of
+    # the 201/200 contract this test asserts.
+    project_id = SEED.primary_project
+    article_id = SEED.primary_article
+    template_id = SEED.primary_template
 
     res = await db_client.post(
         _SESSION_URL,
@@ -982,19 +1017,18 @@ async def test_patch_template_active_toggles_qa_template(
 async def test_patch_template_active_rejects_disabling_only_extraction_template(
     db_client: AsyncClient,
     db_session: AsyncSession,
-    auth_as_profile: UUID,  # noqa: ARG001
+    auth_as_seed_primary: UUID,  # noqa: ARG001
 ) -> None:
     """Disabling the project's only active extraction template must 400 —
     extraction's article-table view assumes a single active template."""
-    template_id = await _pick_extraction_project_template(db_session)
-    if template_id is None:
-        pytest.skip("Need an extraction project template")
-    project_id = (
-        await db_session.execute(
-            text("SELECT project_id FROM public.project_extraction_templates WHERE id = :tid"),
-            {"tid": str(template_id)},
-        )
-    ).scalar()
+    # Pin to the sentinel template + project so the auth principal
+    # (``SEED.primary_profile``, manager of ``SEED.primary_project``) is
+    # guaranteed to have write access. ``_pick_extraction_project_template``
+    # used to LIMIT 1 over all extraction templates and could return one
+    # from a project the auth principal does not manage, surfacing as
+    # 403 "Manager role required" instead of the 400 this test asserts.
+    project_id = SEED.primary_project
+    template_id = SEED.primary_template
 
     other_active = (
         await db_session.execute(
