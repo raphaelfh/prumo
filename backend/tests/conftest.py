@@ -13,7 +13,14 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy import event
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 from app.core.deps import get_db, get_supabase
@@ -79,34 +86,93 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
     app.dependency_overrides.clear()
 
 
+# =================== ENGINE (session-scoped, async-loop-agnostic) ===================
+
+
+@pytest.fixture(scope="session")
+def _engine() -> Generator[AsyncEngine, None, None]:
+    """
+    Single async engine reused across the test session.
+
+    Intentionally a SYNC fixture: ``create_async_engine`` is a sync
+    constructor, and ``NullPool`` means no connections are held between
+    calls — each ``engine.connect()`` opens a fresh connection bound to
+    the calling loop. This sidesteps pytest-asyncio 1.x loop-scope rules
+    that would otherwise forbid a session-scoped async fixture being
+    consumed by function-scoped tests.
+
+    ``engine.dispose()`` is async; we run it under a fresh ``asyncio.run``
+    at teardown — safe because there are no live connections to evict
+    (NullPool).
+    """
+    engine = create_async_engine(
+        settings.async_database_url,
+        echo=False,
+        poolclass=NullPool,
+    )
+    yield engine
+    asyncio.run(engine.dispose())
+
+
 # =================== FIXTURES COM BANCO REAL ===================
 
 
 @pytest_asyncio.fixture(scope="function")
-async def db_session() -> AsyncGenerator[AsyncSession, None]:
+async def db_session(_engine: AsyncEngine) -> AsyncGenerator[AsyncSession, None]:
     """
-    Fixture que fornece sessão de banco de dados REAL para testes de integração.
+    SAVEPOINT-isolated session for integration tests. The DEFAULT db fixture.
 
-    Cria engine e sessão por teste para evitar problemas de event loop.
+    Inner commits (test code, endpoints under test, services) land in a
+    SAVEPOINT that is rolled back at teardown — zero cross-test pollution
+    by construction. The ``after_transaction_end`` hook re-opens a fresh
+    SAVEPOINT every time an inner commit closes the current one, so the
+    outer transaction stays alive until ``finally``.
+
+    Use ``db_session_real`` when you need:
+      - Genuine cross-session visibility (test spins its own parallel
+        connection and expects to read its own writes).
+      - DEFERRED triggers to actually fire (commit-time constraint checks);
+        see ``backend/tests/integration/smoke_constraints/``.
     """
-    # Criar engine por teste para evitar problemas com event loop
-    database_url = settings.async_database_url
-    engine = create_async_engine(
-        database_url,
-        echo=False,
-        pool_pre_ping=True,
-    )
+    async with _engine.connect() as conn:
+        outer_trans = await conn.begin()
+        Session = async_sessionmaker(bind=conn, expire_on_commit=False)
+        async with Session() as session:
+            await session.begin_nested()  # initial SAVEPOINT
 
-    async_session = async_sessionmaker(
-        engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-    )
+            @event.listens_for(session.sync_session, "after_transaction_end")
+            def _restart_savepoint(sess, trans):  # type: ignore[no-redef]
+                if trans.nested and not trans._parent.nested:
+                    sess.begin_nested()
 
-    async with async_session() as session:
-        yield session
+            try:
+                yield session
+            finally:
+                if outer_trans.is_active:
+                    await outer_trans.rollback()
 
-    await engine.dispose()
+
+@pytest_asyncio.fixture(scope="function")
+async def db_session_real(_engine: AsyncEngine) -> AsyncGenerator[AsyncSession, None]:
+    """
+    Real-commit session — explicit opt-out from SAVEPOINT isolation.
+
+    Commits made through this session persist for the rest of the test
+    session unless the test cleans up after itself. Prefer ``db_session``
+    unless you specifically need:
+      - Cross-session visibility (concurrency tests).
+      - DEFERRED trigger coverage.
+
+    Tests using this fixture are responsible for their own teardown
+    (``DELETE`` what they ``INSERT``). The 3 existing concurrency tests
+    already open their own ``async_sessionmaker`` and do not need this
+    fixture; this is for new tests that want a single real-commit session
+    without re-implementing the boilerplate.
+    """
+    async with _engine.connect() as conn:
+        Session = async_sessionmaker(bind=conn, expire_on_commit=False)
+        async with Session() as session:
+            yield session
 
 
 @pytest_asyncio.fixture
