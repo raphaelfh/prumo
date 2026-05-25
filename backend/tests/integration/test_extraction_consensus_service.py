@@ -27,9 +27,19 @@ async def _setup_consensus_run(
 ) -> tuple[UUID, UUID, UUID, UUID, UUID] | None:
     """Build run, advance to consensus stage, return (run_id, instance_id, field_id, profile_id, decision_id)."""
     project_id = (await db.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
-    article_id = (await db.execute(text("SELECT id FROM public.articles LIMIT 1"))).scalar()
+    article_id = (
+        await db.execute(
+            text("SELECT id FROM public.articles WHERE project_id = :pid LIMIT 1"),
+            {"pid": project_id},
+        )
+    ).scalar()
     template_id = (
-        await db.execute(text("SELECT id FROM public.project_extraction_templates LIMIT 1"))
+        await db.execute(
+            text(
+                "SELECT id FROM public.project_extraction_templates WHERE project_id = :pid LIMIT 1"
+            ),
+            {"pid": project_id},
+        )
     ).scalar()
     profile_id = (await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
     if not all((project_id, article_id, template_id, profile_id)):
@@ -243,9 +253,19 @@ async def test_select_existing_rejects_reject_decision(
     """Issue #53: selecting a reject decision must raise, not publish {}."""
     # Build a run where the existing decision is a REJECT (not accept_proposal).
     project_id = (await db_session.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
-    article_id = (await db_session.execute(text("SELECT id FROM public.articles LIMIT 1"))).scalar()
+    article_id = (
+        await db_session.execute(
+            text("SELECT id FROM public.articles WHERE project_id = :pid LIMIT 1"),
+            {"pid": project_id},
+        )
+    ).scalar()
     template_id = (
-        await db_session.execute(text("SELECT id FROM public.project_extraction_templates LIMIT 1"))
+        await db_session.execute(
+            text(
+                "SELECT id FROM public.project_extraction_templates WHERE project_id = :pid LIMIT 1"
+            ),
+            {"pid": project_id},
+        )
     ).scalar()
     profile_id = (await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
     if not all((project_id, article_id, template_id, profile_id)):
@@ -363,9 +383,19 @@ async def test_publish_requires_consensus_stage(
 ) -> None:
     """Issue #43: publish() must reject runs that are not in CONSENSUS stage."""
     project_id = (await db_session.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
-    article_id = (await db_session.execute(text("SELECT id FROM public.articles LIMIT 1"))).scalar()
+    article_id = (
+        await db_session.execute(
+            text("SELECT id FROM public.articles WHERE project_id = :pid LIMIT 1"),
+            {"pid": project_id},
+        )
+    ).scalar()
     template_id = (
-        await db_session.execute(text("SELECT id FROM public.project_extraction_templates LIMIT 1"))
+        await db_session.execute(
+            text(
+                "SELECT id FROM public.project_extraction_templates WHERE project_id = :pid LIMIT 1"
+            ),
+            {"pid": project_id},
+        )
     ).scalar()
     profile_id = (await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
     if not all((project_id, article_id, template_id, profile_id)):

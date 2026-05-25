@@ -1,3 +1,11 @@
+---
+status: shipped
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+---
+
+> **Status:** Shipped · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+
 # Dark/Light UX tokenization & polish — design
 
 **Status**: design — pending implementation

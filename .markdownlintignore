@@ -1,0 +1,38 @@
+# Historical / archived content — preserved snapshots, do not lint
+docs/superpowers/plans/archive/**
+docs/superpowers/specs/archive/**
+docs/superpowers/quality-runs/**
+
+# In-flight + shipped plans — point-in-time snapshots, frequently contain
+# work-in-progress notes, mixed code/prose layouts, and intentional
+# compact tables. Active "doc surfaces" live under docs/{reference,how-to,adr,README,ROADMAP}.
+docs/superpowers/plans/2026-*-pdf-viewer-*.md
+docs/superpowers/plans/2026-04-27-sidebar-revitalization.md
+docs/superpowers/plans/2026-05-03-screening-phase0-foundation.md
+docs/superpowers/plans/2026-05-21-security-hardening-wave.md
+docs/superpowers/plans/2026-05-22-dark-light-ux-tokenization.md
+docs/superpowers/plans/2026-05-24-documentation-overhaul-2026.md
+docs/superpowers/plans/2026-05-24-integration-test-pollution-cleanup.md
+
+# Design specs — likewise snapshots
+docs/superpowers/specs/2026-*-design.md
+
+# Pre-existing assets outside the documentation surface
+backend/alembic/versions/archive/**
+playwright-report/**
+test-results/**
+.pytest_cache/**
+**/node_modules/**
+
+# Tooling surfaces — not the project documentation surface.
+# Skills, harness configs, and templates have their own authoring conventions.
+.claude/**
+.github/CODE_OF_CONDUCT.md
+.github/SECURITY.md
+.github/PULL_REQUEST_TEMPLATE.md
+.specify/**
+CLAUDE.md
+
+# Snapshot artefacts inside docs/ that are not actively maintained
+docs/superpowers/specs/2026-04-28-pdf-viewer-database-requirements.md
+docs/superpowers/design-system/sidebar-and-panels.md

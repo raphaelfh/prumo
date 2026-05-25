@@ -1,5 +1,6 @@
 """Service: validate reviewer decisions, write append-only, upsert ReviewerState."""
 
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,7 +45,7 @@ class ExtractionReviewService:
         reviewer_id: UUID,
         decision: ExtractionReviewerDecisionType | str,
         proposal_record_id: UUID | None = None,
-        value: dict | None = None,
+        value: dict[str, Any] | None = None,
         rationale: str | None = None,
     ) -> ExtractionReviewerDecision:
         run = await load_run_for_update(self.db, run_id)

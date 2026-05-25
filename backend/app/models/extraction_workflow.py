@@ -13,6 +13,7 @@ identifies a single field on a single instance under a single Run.
 
 from datetime import datetime
 from enum import Enum as PyEnum
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
@@ -86,7 +87,7 @@ class ExtractionProposalRecord(BaseModel):
         ForeignKey("public.profiles.id", ondelete="SET NULL"),
         nullable=True,
     )
-    proposed_value: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    proposed_value: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     confidence_score: Mapped[float | None] = mapped_column(Numeric, nullable=True)
     rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -147,7 +148,7 @@ class ExtractionReviewerDecision(BaseModel):
         ForeignKey("public.extraction_proposal_records.id", ondelete="RESTRICT"),
         nullable=True,
     )
-    value: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    value: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
@@ -271,7 +272,7 @@ class ExtractionConsensusDecision(BaseModel):
         PG_UUID(as_uuid=True),
         nullable=True,
     )
-    value: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    value: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
@@ -325,7 +326,7 @@ class ExtractionPublishedState(BaseModel):
         ForeignKey("public.extraction_fields.id", ondelete="RESTRICT"),
         nullable=False,
     )
-    value: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    value: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     published_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

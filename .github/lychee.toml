@@ -1,0 +1,37 @@
+# https://lychee.cli.rs/usage/config/
+max_redirects = 5
+timeout = 30
+max_concurrency = 16
+accept = [200, 206]
+max_retries = 2
+retry_wait_time = 2
+exclude_path = [
+  "node_modules",
+  "playwright-report",
+  "test-results",
+  ".pytest_cache",
+  ".venv",
+  "dist",
+  "backend/alembic/versions/archive",
+  # Snapshot / archived content — links reflect state at write time
+  # and would otherwise gate CI on history rewrites. Active doc surface
+  # lives under docs/{reference,how-to,adr,README,ROADMAP,design-references}.
+  "docs/superpowers",
+  # Frontend entrypoint — root-relative asset paths only valid at deploy
+  # root, not in local file:// resolution.
+  "index.html",
+]
+exclude = [
+  "^https?://localhost",
+  "^https?://127\\.0\\.0\\.1",
+  "^https?://0\\.0\\.0\\.0",
+  "^https?://.*\\.local",
+  "^https?://.*\\.onrender\\.com",
+  "^https?://web-production-48b398\\.up\\.railway\\.app",
+  "^https?://prumo-alpha\\.vercel\\.app",
+  # gnu.org throttles aggressively and returns 429 on the AGPL page;
+  # the URL is stable and famous, exclude rather than retry endlessly.
+  "^https?://www\\.gnu\\.org/licenses/agpl",
+]
+verbose = "info"
+no_progress = true

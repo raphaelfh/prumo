@@ -1,3 +1,14 @@
+---
+status: frozen
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+shipped_on: '2026-04-27'
+---
+
+> **Status:** Frozen — do not edit. Shipped 2026-04-27.
+> For the current state of the extraction + HITL stack, see
+> [`docs/reference/extraction-hitl-architecture.md`](../../reference/extraction-hitl-architecture.md).
+
 # Design: Extraction-Centric HITL Unification + Quality Assessment
 
 **Date:** 2026-04-27

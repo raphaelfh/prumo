@@ -1,0 +1,20 @@
+{
+  "version": "0.2",
+  "language": "en",
+  "dictionaryDefinitions": [
+    { "name": "prumo", "path": "./cspell-words.txt" }
+  ],
+  "dictionaries": ["prumo"],
+  "ignorePaths": [
+    "node_modules/**",
+    "playwright-report/**",
+    "test-results/**",
+    ".pytest_cache/**",
+    "**/*.lock",
+    "**/*.svg",
+    "**/.venv/**",
+    "**/dist/**",
+    "backend/alembic/versions/archive/**"
+  ],
+  "files": ["**/*.md"]
+}

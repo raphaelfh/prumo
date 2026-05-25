@@ -15,7 +15,7 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 CHECK = REPO_ROOT / "scripts" / "fitness" / "check_glossary_sync.py"
 
 MIRROR_REL = ".claude/skills/architectural-quality-loop/references/concept-glossary.md"
-CANONICAL_REL = "docs/architecture/extraction-hitl-architecture.md"
+CANONICAL_REL = "docs/reference/extraction-hitl-architecture.md"
 
 
 def _write(tmp_root: Path, mirror_terms: list[str], canonical_terms: list[str]) -> None:

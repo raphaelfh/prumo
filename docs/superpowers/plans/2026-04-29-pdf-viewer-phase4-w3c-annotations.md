@@ -1,3 +1,11 @@
+---
+status: in_progress
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+---
+
+> **Status:** In_progress · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+
 # PDF Viewer — Phase 4: W3C annotations + Recogito
 
 > **Status:** Pending — schema coordination required.

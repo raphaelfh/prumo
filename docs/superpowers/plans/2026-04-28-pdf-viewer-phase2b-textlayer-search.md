@@ -1,3 +1,11 @@
+---
+status: shipped
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+---
+
+> **Status:** Shipped · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+
 # PDF Viewer — Phase 2b: Real TextLayer + search service + SearchBar + consumer migration
 
 > **Status:** Shipped — commits [`a4335c3`](../../../) (consumer migration

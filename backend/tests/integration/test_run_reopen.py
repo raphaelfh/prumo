@@ -49,9 +49,19 @@ async def auth_as_profile(
 
 async def _pick_fixtures(db: AsyncSession) -> tuple[str, str, str, str, str] | None:
     project_id = (await db.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
-    article_id = (await db.execute(text("SELECT id FROM public.articles LIMIT 1"))).scalar()
+    article_id = (
+        await db.execute(
+            text("SELECT id FROM public.articles WHERE project_id = :pid LIMIT 1"),
+            {"pid": project_id},
+        )
+    ).scalar()
     template_id = (
-        await db.execute(text("SELECT id FROM public.project_extraction_templates LIMIT 1"))
+        await db.execute(
+            text(
+                "SELECT id FROM public.project_extraction_templates WHERE project_id = :pid LIMIT 1"
+            ),
+            {"pid": project_id},
+        )
     ).scalar()
     if not (project_id and article_id and template_id):
         return None

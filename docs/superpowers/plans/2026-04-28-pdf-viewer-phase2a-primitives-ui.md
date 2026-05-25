@@ -1,3 +1,11 @@
+---
+status: shipped
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+---
+
+> **Status:** Shipped · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+
 # PDF Viewer — Phase 2a: Compound primitives + UI shell
 
 > **Status:** Shipped — commit [`87681c9`](../../../).

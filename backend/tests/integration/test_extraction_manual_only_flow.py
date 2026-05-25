@@ -55,13 +55,19 @@ async def _coords(
     least one matching instance + field. Tests skip when the dev DB is
     not seeded."""
     project_id = (await db.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
-    article_id = (await db.execute(text("SELECT id FROM public.articles LIMIT 1"))).scalar()
+    article_id = (
+        await db.execute(
+            text("SELECT id FROM public.articles WHERE project_id = :pid LIMIT 1"),
+            {"pid": project_id},
+        )
+    ).scalar()
     template_id = (
         await db.execute(
             text(
                 "SELECT id FROM public.project_extraction_templates "
-                "WHERE kind = 'extraction' LIMIT 1"
-            )
+                "WHERE kind = 'extraction' AND project_id = :pid LIMIT 1"
+            ),
+            {"pid": project_id},
         )
     ).scalar()
     profile_id = (await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()

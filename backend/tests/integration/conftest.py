@@ -225,6 +225,20 @@ async def _seed_minimum_graph(session: AsyncSession) -> None:
         },
     )
 
+    # Purge ``extraction_runs`` left by previous test sessions inside the
+    # sentinel projects. Tests that exercise the lifecycle commit runs
+    # against the sentinel article+template, and ``ON CONFLICT (id) DO
+    # NOTHING`` does not clean those up — they accumulate across sessions
+    # and bleed state into downstream tables. CASCADE on
+    # ``extraction_proposal_records`` / ``extraction_reviewer_decisions`` /
+    # ``extraction_reviewer_states`` / ``extraction_consensus_decisions`` /
+    # ``extraction_published_states`` handles the rest. Sentinel projects
+    # belong entirely to the seed, so a project-scoped DELETE is safe.
+    await session.execute(
+        text("DELETE FROM public.extraction_runs WHERE project_id = ANY(:pids)"),
+        {"pids": [str(PRIMARY_PROJECT_ID), str(SECONDARY_PROJECT_ID)]},
+    )
+
     # --- Profiles ---
     # Insert via auth.users to fire the ``handle_new_user`` trigger
     # (which materialises ``public.profiles``). Fall back to a direct

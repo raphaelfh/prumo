@@ -5,7 +5,7 @@ These seven plans drove the 2026-04-27 refactor that merged the 008
 They were executed and shipped — keep them for historical context only.
 
 For the **current architecture**, see
-[`docs/architecture/extraction-hitl-architecture.md`](../../../../architecture/extraction-hitl-architecture.md).
+[`docs/reference/extraction-hitl-architecture.md`](../../../../reference/extraction-hitl-architecture.md).
 
 For the **original design spec**, see
 [`docs/superpowers/specs/2026-04-27-extraction-hitl-and-qa-design.md`](../../../specs/2026-04-27-extraction-hitl-and-qa-design.md).

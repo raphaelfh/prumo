@@ -34,7 +34,12 @@ async def test_resolve_returns_project_config_when_template_has_none(
 ) -> None:
     project_id = (await db_session.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
     template_id = (
-        await db_session.execute(text("SELECT id FROM public.project_extraction_templates LIMIT 1"))
+        await db_session.execute(
+            text(
+                "SELECT id FROM public.project_extraction_templates WHERE project_id = :pid LIMIT 1"
+            ),
+            {"pid": project_id},
+        )
     ).scalar()
     if not (project_id and template_id):
         pytest.skip("Need projects + project_extraction_templates fixtures.")
@@ -74,7 +79,12 @@ async def test_resolve_template_overrides_project(
 ) -> None:
     project_id = (await db_session.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
     template_id = (
-        await db_session.execute(text("SELECT id FROM public.project_extraction_templates LIMIT 1"))
+        await db_session.execute(
+            text(
+                "SELECT id FROM public.project_extraction_templates WHERE project_id = :pid LIMIT 1"
+            ),
+            {"pid": project_id},
+        )
     ).scalar()
     profile_id = (await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
     if not (project_id and template_id and profile_id):

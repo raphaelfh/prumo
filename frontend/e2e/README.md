@@ -1,3 +1,11 @@
+---
+status: stable
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+---
+
+> **Status:** Stable · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+
 # Frontend E2E Suite
 
 This directory contains robust end-to-end coverage for the app's active flows.

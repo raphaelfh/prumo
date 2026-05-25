@@ -174,3 +174,4 @@ supabase/.branches/*
 .claude/skills/
 .claude/worktrees/
 .superpowers/
+graphify-out/*

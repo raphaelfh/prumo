@@ -579,7 +579,7 @@ class ZoteroImportService(LoggerMixin):
         status_filter: str | None,
         offset: int,
         limit: int,
-    ) -> tuple[list, int]:
+    ) -> tuple[list[Any], int]:
         return await self._sync_events.list_run_events(
             sync_run_id=sync_run_id,
             status_filter=status_filter,

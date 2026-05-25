@@ -7,6 +7,7 @@ Both feed Run.hitl_config_snapshot at Run creation time.
 
 from datetime import datetime
 from enum import Enum as PyEnum
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, UniqueConstraint, func
@@ -55,7 +56,7 @@ class ExtractionTemplateVersion(BaseModel):
         index=True,
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
-    schema_: Mapped[dict] = mapped_column("schema", JSONB, nullable=False)
+    schema_: Mapped[dict[str, Any]] = mapped_column("schema", JSONB, nullable=False)
     published_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
