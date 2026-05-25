@@ -201,7 +201,6 @@ prumo/
 │   └── migrations/         # Migrações do banco de dados
 ├── docs/                   # Documentação
 │   ├── deployment/         # Guias de deploy
-│   ├── legal/              # Documentos legais
 │   ├── tecnicas/           # Documentação técnica
 │   ├── guias/              # Guias de desenvolvimento
 │   ├── estrutura_database/ # Schema do banco de dados
