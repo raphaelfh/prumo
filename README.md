@@ -132,7 +132,7 @@ O aplicativo estará disponível em:
 
 - [Guia de Contribuição](CONTRIBUTING.md)
 - [Código de Conduta](.github/CODE_OF_CONDUCT.md)
-- [Política de Segurança](SECURITY.md)
+- [Política de Segurança](.github/SECURITY.md)
 
 ## 🤝 Contribuindo
 
