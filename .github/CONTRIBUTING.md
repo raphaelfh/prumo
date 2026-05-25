@@ -52,3 +52,21 @@ The app is available at:
 ## Code of conduct
 
 By participating, you agree to follow [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md).
+
+## Commit message conventions
+
+We use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
+
+- `feat:` — new feature
+- `fix:` — bug fix
+- `docs:` — documentation only
+- `chore:` — tooling, deps, repo housekeeping
+- `test:` — adding or refactoring tests
+- `ci:` — CI configuration
+- `refactor:` — refactor without behaviour change
+- `perf:` — performance improvement
+
+Scope (optional): `feat(extraction): …`, `fix(worker): …`, `docs(adr): …`.
+
+Body / footer should explain **why**, not what. Mention the affected
+spec or ADR when relevant (`Refs: docs/adr/0003-…`).
