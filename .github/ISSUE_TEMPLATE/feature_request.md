@@ -1,67 +1,24 @@
 ---
 name: ✨ Feature Request
-about: Sugira uma ideia para o projeto
+about: Suggest an idea for this project
 title: '[FEATURE] '
 labels: enhancement
 assignees: ''
 ---
 
-## 🎯 Problema que a Feature Resolve
+## Problem
 
-<!-- Descreva o problema ou necessidade que esta feature resolveria -->
+Is your feature request related to a problem? Describe what's frustrating
+or missing.
 
-## 💡 Solução Proposta
+## Proposed solution
 
-<!-- Descreva como você imagina que a feature funcionaria -->
+A clear description of what you'd like to happen.
 
-## 🔄 Alternativas Consideradas
+## Alternatives considered
 
-<!-- Descreva alternativas ou features que você considerou -->
+A clear description of any alternative solutions or features you considered.
 
-## 📋 Exemplos de Uso
+## Additional context
 
-<!-- Se possível, forneça exemplos de como a feature seria usada -->
-
-**Cenário 1:**
-```
-Descreva um cenário de uso
-```
-
-**Cenário 2:**
-```
-Descreva outro cenário de uso
-```
-
-## 🎨 Mockups/Wireframes (se aplicável)
-
-<!-- Se a feature afetar a UI, adicione mockups ou wireframes -->
-
-## 📚 Documentação Relacionada
-
-<!-- Se houver documentação relacionada, adicione links aqui -->
-
-## ✅ Benefícios
-
-<!-- Liste os benefícios que esta feature traria -->
-
-- 
-- 
-- 
-
-## 🔍 Contexto Adicional
-
-<!-- Adicione qualquer outro contexto, screenshots ou informações sobre a feature request aqui -->
-
-## 🏷️ Prioridade
-
-<!-- Marque a prioridade que você acha que esta feature deveria ter -->
-
-- [ ] Baixa
-- [ ] Média
-- [ ] Alta
-- [ ] Crítica
-
----
-
-**Nota**: Esta é uma sugestão. A implementação dependerá da avaliação da equipe e da disponibilidade de recursos.
-
+Add any other context, mockups, or references about the feature request here.
