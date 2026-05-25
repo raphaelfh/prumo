@@ -45,7 +45,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: lycheeverse/lychee-action@v2
         with:
-          args: '--config .github/lychee.toml .'
+          # Scan only the actively-maintained doc surface.
+          # Snapshot / archived content (docs/superpowers/**) is excluded
+          # via .github/lychee.toml `exclude_path` and would otherwise
+          # gate CI on history rewrites.
+          args: '--config .github/lychee.toml README.md backend/README.md llms.txt docs/README.md docs/ROADMAP.md docs/adr docs/reference docs/how-to docs/design-references .github/CONTRIBUTING.md .github/SUPPORT.md'
           token: ${{ secrets.GITHUB_TOKEN }}
           fail: true
 

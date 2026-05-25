@@ -13,6 +13,13 @@ exclude_path = [
   ".venv",
   "dist",
   "backend/alembic/versions/archive",
+  # Snapshot / archived content — links reflect state at write time
+  # and would otherwise gate CI on history rewrites. Active doc surface
+  # lives under docs/{reference,how-to,adr,README,ROADMAP,design-references}.
+  "docs/superpowers",
+  # Frontend entrypoint — root-relative asset paths only valid at deploy
+  # root, not in local file:// resolution.
+  "index.html",
 ]
 exclude = [
   "^https?://localhost",
@@ -22,6 +29,9 @@ exclude = [
   "^https?://.*\\.onrender\\.com",
   "^https?://web-production-48b398\\.up\\.railway\\.app",
   "^https?://prumo-alpha\\.vercel\\.app",
+  # gnu.org throttles aggressively and returns 429 on the AGPL page;
+  # the URL is stable and famous, exclude rather than retry endlessly.
+  "^https?://www\\.gnu\\.org/licenses/agpl",
 ]
 verbose = "info"
 no_progress = true
