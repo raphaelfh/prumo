@@ -14,7 +14,9 @@
     "**/*.svg",
     "**/.venv/**",
     "**/dist/**",
-    "backend/alembic/versions/archive/**"
+    "backend/alembic/versions/archive/**",
+    "docs/superpowers/**",
+    "docs/design-references/**"
   ],
   "files": ["**/*.md"]
 }

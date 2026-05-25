@@ -1,3 +1,9 @@
+---
+status: draft
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+---
+
 # Phase 3 kickoff — parallelism + per-worker DB + factory expansion
 
 **Date:** 2026-05-24
@@ -27,7 +33,7 @@ factories.
 
 ## What changes (sketch)
 
-```
+```text
 backend/tests/conftest.py
   _bootstrap_test_db   session-scoped, autouse
     - On session start, ensure `prumo_test_template` exists with full

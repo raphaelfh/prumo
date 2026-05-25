@@ -1,3 +1,9 @@
+---
+status: in-progress
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+---
+
 # Test infra hardening — detection plugins + SAVEPOINT isolation
 
 **Date:** 2026-05-24

@@ -128,6 +128,17 @@ async def _wipe_charms_clone(
         ),
         {"pid": str(project_id), "gid": str(CHARMS_GLOBAL_ID)},
     )
+    # Deactivate any remaining active extraction templates (e.g. the sentinel
+    # seed template created by seeded_integration_db) so each test starts with
+    # a blank active-template slot and can insert its own without hitting the
+    # uq_one_active_extraction_template_per_project partial unique index.
+    await db.execute(
+        text(
+            "UPDATE public.project_extraction_templates SET is_active = FALSE "
+            "WHERE project_id = CAST(:pid AS uuid) AND kind = 'extraction' AND is_active = TRUE"
+        ),
+        {"pid": str(project_id)},
+    )
     await db.commit()
 
 
