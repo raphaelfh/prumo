@@ -175,3 +175,4 @@ supabase/.branches/*
 .claude/worktrees/
 .superpowers/
 graphify-out/.graphify_detect.json
+graphify-out/.graphify_python
