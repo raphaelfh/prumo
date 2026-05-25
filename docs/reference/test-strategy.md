@@ -1,3 +1,11 @@
+---
+status: stable
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+---
+
+> **Status:** Stable · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+
 # Extraction & HITL Test Strategy
 
 > Last updated: 2026-05-18. Audience: anyone touching `extraction_*`,
