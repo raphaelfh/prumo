@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID
+
+from celery import Task
 
 from app.core.logging import get_logger
 from app.worker._runner import run_task
@@ -35,7 +38,7 @@ _STORAGE_PREFIX = "exports/extraction"
     rate_limit="5/m",
 )
 def export_extraction_task(
-    self,
+    self: Task[Any, Any],
     project_id: str,
     template_id: str,
     mode: str,
@@ -45,14 +48,14 @@ def export_extraction_task(
     reviewer_id: str | None = None,
     include_ai_metadata: bool = False,
     anonymize_reviewer_names: bool = False,
-) -> dict:
+) -> dict[str, Any]:
     """Async extraction export job.
 
     Builds the workbook via ``ExtractionExportService``, uploads bytes
     to Supabase Storage, returns ``{download_url, expires_at, user_id}``.
     """
 
-    async def run() -> dict:
+    async def run() -> dict[str, Any]:
         # Lazy imports + lazy client construction.
         from app.core.deps import get_supabase_client
         from app.core.factories import create_storage_adapter

@@ -10,7 +10,10 @@ import io
 import re
 import zipfile
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import LoggerMixin
 from app.infrastructure.storage.base import StorageAdapter
@@ -138,11 +141,11 @@ class ArticlesExportService(LoggerMixin):
 
     def __init__(
         self,
-        db,
+        db: AsyncSession,
         user_id: str,
         storage: StorageAdapter,
         trace_id: str | None = None,
-    ):
+    ) -> None:
         self.db = db
         self.user_id = user_id
         self.storage = storage
@@ -176,7 +179,7 @@ class ArticlesExportService(LoggerMixin):
         formats: list[str],
         file_scope: str,
         job_id: str | None = None,  # noqa: ARG002
-    ) -> tuple[bytes, str, str, list[dict]]:
+    ) -> tuple[bytes, str, str, list[dict[str, Any]]]:
         """
         Executa export sincrono: gera conteudo (CSV/RIS/RDF and optionalmente ZIP with files).
         Return (content_bytes, content_type, suggested_filename, skipped_files).
@@ -189,7 +192,7 @@ class ArticlesExportService(LoggerMixin):
         if not articles:
             return b"", "application/octet-stream", "export.bin", []
 
-        skipped: list[dict] = []
+        skipped: list[dict[str, Any]] = []
         bucket = "articles"
 
         if file_scope == "none":
@@ -291,7 +294,7 @@ class ArticlesExportService(LoggerMixin):
         formats: list[str],
         file_scope: str,
         job_id: str,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Executa export and faz upload do ZIP for storage; retorna download_url, expires_at, skipped_files.
         """

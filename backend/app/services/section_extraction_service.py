@@ -1337,7 +1337,7 @@ Example response format:
 
             confidence_score: float | None = None
             reasoning: str | None = None
-            evidence_meta: dict | None = None
+            evidence_meta: dict[str, Any] | None = None
 
             if isinstance(value, dict):
                 confidence_score = value.get("confidence")

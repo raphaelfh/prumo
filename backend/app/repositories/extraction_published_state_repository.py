@@ -1,5 +1,6 @@
 """Repository for ExtractionPublishedState with optimistic concurrency."""
 
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select, update
@@ -35,7 +36,7 @@ class ExtractionPublishedStateRepository:
         run_id: UUID,
         instance_id: UUID,
         field_id: UUID,
-        value: dict,
+        value: dict[str, Any],
         published_by: UUID,
     ) -> ExtractionPublishedState | None:
         """INSERT ... ON CONFLICT DO NOTHING — returns the row on insert, else None.
@@ -72,7 +73,7 @@ class ExtractionPublishedStateRepository:
         run_id: UUID,
         instance_id: UUID,
         field_id: UUID,
-        value: dict,
+        value: dict[str, Any],
         published_by: UUID,
         expected_version: int,
     ) -> int:

@@ -16,6 +16,7 @@ Response semantics
   resolve up the chain and report ``inherited=true``.
 """
 
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -34,7 +35,7 @@ from app.services.hitl_config_service import (
 router = APIRouter()
 
 
-def _to_read(snapshot: dict) -> HitlConfigRead:
+def _to_read(snapshot: dict[str, Any]) -> HitlConfigRead:
     """Convert a service snapshot dict into the API response model."""
     scope_id = snapshot.get("scope_id")
     return HitlConfigRead(
