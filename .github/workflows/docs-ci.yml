@@ -17,7 +17,6 @@ on:
 
 permissions:
   contents: read
-  issues: write
 
 jobs:
   markdownlint:
@@ -26,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: '24' }
-      - run: npx -y markdownlint-cli2 --config .github/markdownlint.json "**/*.md" "!node_modules/**" "!playwright-report/**" "!test-results/**" "!**/.pytest_cache/**" "!backend/alembic/versions/archive/**"
+      - run: npx -y markdownlint-cli2@0.22.1 --config .github/markdownlint.json "**/*.md" "!node_modules/**" "!playwright-report/**" "!test-results/**" "!**/.pytest_cache/**" "!backend/alembic/versions/archive/**"
 
   cspell:
     runs-on: ubuntu-latest
@@ -34,7 +33,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: '24' }
-      - run: npx -y cspell --config .github/cspell.json "**/*.md"
+      - run: npx -y cspell@8.17.5 --config .github/cspell.json "**/*.md"
 
   links:
     runs-on: ubuntu-latest
@@ -43,6 +42,7 @@ jobs:
       - uses: lycheeverse/lychee-action@v2
         with:
           args: '--config .github/lychee.toml .'
+          token: ${{ secrets.GITHUB_TOKEN }}
           fail: true
 
   frontmatter:

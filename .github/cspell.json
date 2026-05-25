@@ -2,7 +2,7 @@
   "version": "0.2",
   "language": "en",
   "dictionaryDefinitions": [
-    { "name": "prumo", "path": "./cspell-words.txt", "addWords": true }
+    { "name": "prumo", "path": "./cspell-words.txt" }
   ],
   "dictionaries": ["prumo"],
   "ignorePaths": [

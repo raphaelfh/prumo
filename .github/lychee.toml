@@ -2,7 +2,9 @@
 max_redirects = 5
 timeout = 30
 max_concurrency = 16
-accept = [200, 206, 429]
+accept = [200, 206]
+max_retries = 2
+retry_wait_time = 2
 exclude_path = [
   "node_modules",
   "playwright-report",
