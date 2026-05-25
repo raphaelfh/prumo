@@ -1,5 +1,6 @@
 """Service: validate + record proposals append-only."""
 
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,7 +35,7 @@ class ExtractionProposalService:
         instance_id: UUID,
         field_id: UUID,
         source: ExtractionProposalSource | str,
-        proposed_value: dict,
+        proposed_value: dict[str, Any],
         source_user_id: UUID | None = None,
         confidence_score: float | None = None,
         rationale: str | None = None,

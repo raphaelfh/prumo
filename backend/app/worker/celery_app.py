@@ -5,6 +5,7 @@ Configures Celery with Redis as broker and result backend.
 """
 
 import os
+from typing import Any
 
 from celery import Celery
 
@@ -71,7 +72,14 @@ celery_app.conf.update(
 class LoggedTask(celery_app.Task):
     """Task base class with structured logging."""
 
-    def on_failure(self, exc, task_id, args, kwargs, _einfo):
+    def on_failure(
+        self,
+        exc: Exception,
+        task_id: str,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+        _einfo: Any,
+    ) -> None:
         """Log on failure."""
         import structlog
         from celery.exceptions import NotRegistered
@@ -103,7 +111,13 @@ class LoggedTask(celery_app.Task):
             kwargs=kwargs,
         )
 
-    def on_success(self, _retval, task_id, _args, _kwargs):
+    def on_success(
+        self,
+        _retval: Any,
+        task_id: str,
+        _args: tuple[Any, ...],
+        _kwargs: dict[str, Any],
+    ) -> None:
         """Log on success."""
         import structlog
 
@@ -114,7 +128,14 @@ class LoggedTask(celery_app.Task):
             task_name=self.name,
         )
 
-    def on_retry(self, exc, task_id, _args, _kwargs, _einfo):
+    def on_retry(
+        self,
+        exc: Exception,
+        task_id: str,
+        _args: tuple[Any, ...],
+        _kwargs: dict[str, Any],
+        _einfo: Any,
+    ) -> None:
         """Log on retry."""
         import structlog
 
@@ -143,12 +164,12 @@ from celery.signals import task_unknown  # noqa: E402
 
 @task_unknown.connect
 def _on_task_unknown(
-    sender=None,  # noqa: ARG001
+    sender: Any = None,  # noqa: ARG001
     name: str | None = None,
     id: str | None = None,  # noqa: A002 — Celery signal kwarg name
-    message=None,  # noqa: ARG001
+    message: Any = None,  # noqa: ARG001
     exc: Exception | None = None,  # noqa: ARG001
-    **_kwargs,
+    **_kwargs: Any,
 ) -> None:
     """Log unregistered-task events as a P1 incident.
 

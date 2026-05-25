@@ -1,5 +1,6 @@
 """Service: consensus decisions + publish with optimistic concurrency."""
 
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,7 +54,7 @@ class ExtractionConsensusService:
         consensus_user_id: UUID,
         mode: ExtractionConsensusMode | str,
         selected_decision_id: UUID | None = None,
-        value: dict | None = None,
+        value: dict[str, Any] | None = None,
         rationale: str | None = None,
     ) -> tuple[ExtractionConsensusDecision, ExtractionPublishedState]:
         run = await load_run_for_update(self.db, run_id)
@@ -148,7 +149,7 @@ class ExtractionConsensusService:
         run_id: UUID,
         instance_id: UUID,
         field_id: UUID,
-        value: dict,
+        value: dict[str, Any],
         published_by: UUID,
         expected_version: int,
     ) -> ExtractionPublishedState:
@@ -186,7 +187,7 @@ class ExtractionConsensusService:
         run_id: UUID,
         instance_id: UUID,
         field_id: UUID,
-        value: dict,
+        value: dict[str, Any],
         published_by: UUID,
     ) -> ExtractionPublishedState:
         # Race-free first publish: INSERT ... ON CONFLICT DO NOTHING. If a row

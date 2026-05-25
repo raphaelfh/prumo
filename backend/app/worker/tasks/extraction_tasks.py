@@ -12,6 +12,8 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
+from celery import Task
+
 from app.worker._runner import run_task
 from app.worker.celery_app import celery_app
 
@@ -23,7 +25,7 @@ from app.worker.celery_app import celery_app
     rate_limit="5/m",
 )
 def extract_section_task(
-    self,
+    self: Task[Any, Any],
     project_id: str,
     article_id: str,
     template_id: str,
@@ -49,7 +51,7 @@ def extract_section_task(
         Dict with the extraction result summary.
     """
 
-    async def run():
+    async def run() -> dict[str, Any]:
         from app.core.deps import get_supabase_client
         from app.core.factories import create_storage_adapter
         from app.services.api_key_service import APIKeyService
@@ -108,7 +110,7 @@ def extract_section_task(
     rate_limit="5/m",
 )
 def extract_models_task(
-    self,
+    self: Task[Any, Any],
     project_id: str,
     article_id: str,
     template_id: str,
@@ -129,7 +131,7 @@ def extract_models_task(
         Dict with the extracted models summary.
     """
 
-    async def run():
+    async def run() -> dict[str, Any]:
         from app.core.deps import get_supabase_client
         from app.core.factories import create_storage_adapter
         from app.services.api_key_service import APIKeyService
@@ -204,7 +206,7 @@ def extract_models_task(
     rate_limit="1/m",
 )
 def batch_extract_task(
-    self,  # noqa: ARG001
+    self: Task[Any, Any],  # noqa: ARG001
     project_id: str,
     article_ids: list[str],
     template_id: str,

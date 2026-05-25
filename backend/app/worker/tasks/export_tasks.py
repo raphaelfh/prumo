@@ -9,7 +9,10 @@ module's docstring for the event-loop rationale.
 
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID
+
+from celery import Task
 
 from app.worker._runner import run_task
 from app.worker.celery_app import celery_app
@@ -21,13 +24,13 @@ from app.worker.celery_app import celery_app
     rate_limit="5/m",
 )
 def export_articles_task(
-    self,
+    self: Task[Any, Any],
     project_id: str,
     article_ids: list[str],
     formats: list[str],
     file_scope: str,
     user_id: str,
-) -> dict:
+) -> dict[str, Any]:
     """Export a set of articles in the background.
 
     Builds a ZIP with metadata (CSV/RIS/RDF) and optionally the article
@@ -44,7 +47,7 @@ def export_articles_task(
         Dict with download_url, expires_at, skipped_files, user_id.
     """
 
-    async def run() -> dict:
+    async def run() -> dict[str, Any]:
         from app.core.deps import get_supabase_client
         from app.core.factories import create_storage_adapter
         from app.services.articles_export_service import ArticlesExportService

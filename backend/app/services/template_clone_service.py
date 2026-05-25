@@ -2,6 +2,7 @@
 
 from collections import deque
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import select, text, update
@@ -415,7 +416,7 @@ class TemplateCloneService:
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
-    async def _snapshot(self, project_template_id: UUID) -> dict:
+    async def _snapshot(self, project_template_id: UUID) -> dict[str, Any]:
         from sqlalchemy import text
 
         result = await self.db.execute(

@@ -10,6 +10,7 @@ the ones that drive consensus + publish later.
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps.security import ensure_project_member, get_current_user_sub
 from app.core.deps import DbSession
@@ -68,7 +69,9 @@ def _trace(request: Request) -> str | None:
     return getattr(request.state, "trace_id", None)
 
 
-async def _load_run_and_check_member(db, run_id: UUID, user_sub: UUID) -> RunSummaryResponse:
+async def _load_run_and_check_member(
+    db: AsyncSession, run_id: UUID, user_sub: UUID
+) -> RunSummaryResponse:
     """Load a Run by id, 404 when missing, 403 when caller is not a member.
 
     Returns the Run as a RunSummaryResponse schema (not the ORM type) so

@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import uuid
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Request, Response, status
@@ -299,7 +300,7 @@ async def start_extraction_export(
 
 @router.get(
     "/{project_id}/extraction-export/reviewers",
-    response_model=ApiResponse[list[dict]],
+    response_model=ApiResponse[list[dict[str, Any]]],
     summary="List reviewers with non-reject decisions for the picker (US2 / FR-028)",
 )
 @limiter.limit("30/minute")
@@ -310,7 +311,7 @@ async def list_extraction_export_reviewers(
     db: DbSession,
     user: CurrentUser,
     supabase: SupabaseClient,
-) -> ApiResponse[list[dict]]:
+) -> ApiResponse[list[dict[str, Any]]]:
     """Return reviewers who have ≥ 1 non-reject decision on this template.
 
     Non-managers see only themselves (when they have decisions); managers
