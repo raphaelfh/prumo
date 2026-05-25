@@ -99,14 +99,19 @@ async def _setup_proposal_run(
 
 @pytest.mark.asyncio
 async def test_record_proposal_blocks_on_concurrent_for_update_lock(
-    db_session: AsyncSession,
+    db_session_real: AsyncSession,
 ) -> None:
     """Without FOR UPDATE in load_run_for_update, this test FAILS (no timeout).
 
     With FOR UPDATE, session1's loader blocks on session2's lock and we
     observe asyncio.TimeoutError within the 1.5s budget.
+
+    Uses ``db_session_real`` because the test opens an independent engine
+    (``engine2``) to drive the parallel lock acquisition; the row created
+    by ``_setup_proposal_run`` must be visible across connections, which
+    the SAVEPOINT-based default fixture deliberately prevents.
     """
-    fx = await _setup_proposal_run(db_session)
+    fx = await _setup_proposal_run(db_session_real)
     if fx is None:
         pytest.skip("Missing fixtures.")
     run_id, instance_id, field_id, profile_id = fx
@@ -125,7 +130,7 @@ async def test_record_proposal_blocks_on_concurrent_for_update_lock(
             )
 
             # Session1 attempts record_proposal — must block on session2's lock.
-            service = ExtractionProposalService(db_session)
+            service = ExtractionProposalService(db_session_real)
             with pytest.raises((asyncio.TimeoutError, TimeoutError)):
                 await asyncio.wait_for(
                     service.record_proposal(
@@ -145,10 +150,10 @@ async def test_record_proposal_blocks_on_concurrent_for_update_lock(
 
     # Clean up the session1 row lock leftover from the timed-out call so
     # subsequent tests in this session are not polluted.
-    await db_session.rollback()
+    await db_session_real.rollback()
     # Tear down: remove the run + cascade rows.
-    await db_session.execute(
+    await db_session_real.execute(
         text("DELETE FROM public.extraction_runs WHERE id = :rid"),
         {"rid": str(run_id)},
     )
-    await db_session.commit()
+    await db_session_real.commit()

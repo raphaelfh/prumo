@@ -1048,22 +1048,29 @@ async def test_cannot_insert_two_model_containers_per_template(
 
 @pytest.mark.asyncio
 async def test_model_section_without_container_parent_rejected(
-    db_session: AsyncSession,
+    db_session_real: AsyncSession,
     auth_as_profile: UUID,  # noqa: ARG001
 ) -> None:
     """The deferred trigger rejects a model_section whose parent is not
     a model_container — even if the row otherwise satisfies the CHECK
     constraint (parent IS NOT NULL).
+
+    Uses ``db_session_real`` because the trigger is DEFERRABLE INITIALLY
+    DEFERRED — it fires at COMMIT, which the SAVEPOINT-based default
+    fixture never reaches. See also
+    ``backend/tests/integration/smoke_constraints/test_entity_role_parent.py``
+    for the schema-level coverage of the same trigger against a freshly
+    seeded graph.
     """
     from sqlalchemy.exc import IntegrityError
 
-    article = await _pick_article(db_session)
+    article = await _pick_article(db_session_real)
     if article is None:
         pytest.skip("Need an article + project")
     _, project_id = article
 
     clone_row = (
-        await db_session.execute(
+        await db_session_real.execute(
             text(
                 """
                 SELECT id FROM public.project_extraction_templates
@@ -1080,7 +1087,7 @@ async def test_model_section_without_container_parent_rejected(
     # Use a study_section as the bogus parent — it's a real row in the
     # same template but the wrong role for hosting a model_section.
     bogus_parent = (
-        await db_session.execute(
+        await db_session_real.execute(
             text(
                 """
                 SELECT id FROM public.extraction_entity_types
@@ -1094,7 +1101,7 @@ async def test_model_section_without_container_parent_rejected(
     assert bogus_parent is not None
 
     with pytest.raises(IntegrityError):
-        await db_session.execute(
+        await db_session_real.execute(
             text(
                 """
                 INSERT INTO public.extraction_entity_types
@@ -1106,7 +1113,6 @@ async def test_model_section_without_container_parent_rejected(
             ),
             {"tid": str(clone_row), "pet": str(bogus_parent)},
         )
-        # The trigger is DEFERRED — fires at COMMIT, so we have to flush
-        # to surface the violation in a test transaction.
-        await db_session.commit()
-    await db_session.rollback()
+        # The trigger is DEFERRED — fires at COMMIT, not at INSERT.
+        await db_session_real.commit()
+    await db_session_real.rollback()
