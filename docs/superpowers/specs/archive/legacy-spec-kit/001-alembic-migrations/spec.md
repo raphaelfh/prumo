@@ -1,3 +1,12 @@
+---
+status: shipped
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+spec_number: '001'
+---
+
+> **Status:** Shipped · Archived 2026-05-24. Do not edit. See [`docs/reference/migrations.md`](../../../../../../reference/migrations.md) for the current migration strategy.
+
 # Feature Specification: Alembic Migration Management for Application Domain
 
 **Feature Branch**: `001-alembic-migrations`

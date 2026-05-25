@@ -1,3 +1,13 @@
+---
+status: shipped
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+spec_number: '002'
+superseded_by: '2026-04-27-extraction-hitl-and-qa-design.md'
+---
+
+> **Status:** Shipped (largely superseded by the 2026-04-27 HITL refactor) · Archived 2026-05-24. Do not edit.
+
 # Feature Specification: AI Assessment Flow
 
 **Feature Branch**: `002-ai-assessment-flow`
