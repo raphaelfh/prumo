@@ -1,236 +1,159 @@
+---
+status: stable
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+---
+
 # Prumo
+
+> **Status:** Stable · Last reviewed: 2026-05-24 · Owner: @raphaelfh
 
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue.svg)
 ![React](https://img.shields.io/badge/React-18.3-blue.svg)
+![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)
 
-Sistema completo para gerenciamento de revisões sistemáticas e meta-análises.
+A complete platform for managing systematic reviews and meta-analyses.
 
-## ✨ Funcionalidades Principais
+## Features
 
-- **Gerenciamento de Artigos**: Importe, organize e gerencie artigos de pesquisa
-- **Integração com Zotero**: Importe artigos diretamente das suas collections do Zotero
-- **Avaliação com IA**: Avaliação automatizada de qualidade usando GPT-4o e Claude
-- **Batch Processing**: Processe múltiplos artigos e itens de avaliação em paralelo
-- **Extração de Dados**: Crie formulários customizados para extração de dados
-- **Avaliação de Qualidade**: Avalie o risco de viés usando instrumentos padronizados (CHARMS, RoB 2, etc.)
-- **Colaboração**: Trabalhe em equipe com controle de acesso e permissões
-- **Visualização de PDFs**: Leitor de PDF integrado com anotações e busca semântica
+- **Article management** — import, organise, and manage research articles.
+- **Zotero integration** — import articles directly from Zotero collections.
+- **AI-assisted assessment** — automated quality scoring with OpenAI (GPT-4o) and Anthropic (Claude).
+- **Batch processing** — process multiple articles and assessment items in parallel via Celery.
+- **Data extraction** — build custom forms backed by versioned templates (CHARMS, custom).
+- **Quality assessment (HITL)** — risk-of-bias appraisal with PROBAST, QUADAS-2, and reviewer consensus.
+- **PDF viewer** — integrated reader with annotations and search.
 
+## Tech stack
 
-## 🚀 Início Rápido
+**Backend** — Python 3.11+, FastAPI, SQLAlchemy 2.0 (async), Alembic, Celery + Redis, Pydantic v2, structlog, gunicorn + uvicorn worker.
+**Frontend** — TypeScript (strict), React 18.3 + Vite, TanStack Query, Zustand, Tailwind + shadcn/ui (Radix), react-hook-form, Zod, in-house i18n (`frontend/lib/copy/`).
+**Database / Auth / Storage** — PostgreSQL (Supabase), Row Level Security with project-scoped helpers.
+**Testing** — pytest (backend), Vitest (frontend), Playwright (E2E + a11y + visual).
+**Hosting** — Vercel (frontend) + Railway (backend web + Celery worker + managed Redis) + Supabase (Postgres + Auth + Storage).
 
-### Pré-requisitos
+## Quickstart
 
-- Node.js 18+ e npm (recomendado usar [nvm](https://github.com/nvm-sh/nvm#installing-and-updating))
-- Python 3.11+ e [uv](https://github.com/astral-sh/uv) (para o backend)
-- Supabase CLI (para desenvolvimento local)
-- Docker Desktop (para Supabase local)
-- Git
-- Make (geralmente já instalado no macOS/Linux)
+### Requirements
 
-### 🎯 Início Rápido com Makefile (Recomendado)
+- Node.js 24 LTS and `npm` (recommended via [`nvm`](https://github.com/nvm-sh/nvm#installing-and-updating))
+- Python 3.11+ and [`uv`](https://github.com/astral-sh/uv)
+- [Supabase CLI](https://supabase.com/docs/guides/cli)
+- Docker Desktop (for the local Supabase stack)
+- `make` (preinstalled on macOS/Linux)
 
-O projeto inclui um Makefile completo para facilitar o desenvolvimento:
-
-```sh
-# 1. Clone o repositório
-git clone https://github.com/raphaelfh/prumo.git
-cd review-hub
-
-# 2. Execute o setup completo (primeira vez)
-make setup
-# ou: ./scripts/setup.sh
-
-# 3. Configure as variáveis de ambiente (se necessário)
-# Edite .env e backend/.env com suas credenciais
-
-# 4. Inicie todos os serviços (Supabase + Backend + Frontend)
-make start
-
-# 5. Verifique o status
-make status
-
-# 6. Veja todas as URLs importantes
-make urls
-```
-
-**Nota**: O script de setup não depende de configurações pessoais (`.zshrc`, etc). Ele configura tudo automaticamente.
-
-**Comandos Makefile úteis:**
-- `make start` - Inicia todos os serviços
-- `make stop` - Para todos os serviços
-- `make restart` - Reinicia todos os serviços
-- `make status` - Verifica status de todos os serviços
-- `make health` - Health check de todos os serviços
-- `make urls` - Mostra todas as URLs importantes
-- `make help` - Lista todos os comandos disponíveis
-
-### Instalação Manual
-
-Se preferir iniciar os serviços manualmente:
+### Setup
 
 ```sh
-# 1. Clone o repositório
+# 1. Clone
 git clone https://github.com/raphaelfh/prumo.git
 cd prumo
 
-# 2. Instale as dependências do frontend
-npm install
+# 2. First-time install
+make setup
 
-# 3. Instale as dependências do backend
-cd backend && uv sync && cd ..
+# 3. (Optional) configure env
+cp .env.example .env  # only if make setup did not already
+$EDITOR .env backend/.env
 
-# 4. Configure as variáveis de ambiente
-cp .env.example .env
-# Edite .env com suas credenciais do Supabase
+# 4. Start the full local stack (Supabase + backend + worker + frontend)
+make start
 
-# 5. Inicie o Supabase localmente
-cd supabase && supabase start && cd ..
-
-# 6. Inicie o backend (em um terminal)
-cd backend && uv run uvicorn app.main:app --reload --port 8000
-
-# 7. Inicie o frontend (em outro terminal)
-npm run dev
+# 5. Sanity checks
+make status
+make urls
 ```
 
-O aplicativo estará disponível em:
-- Frontend: `http://localhost:8080`
-- Backend API: `http://localhost:8000`
-- Backend Docs: `http://localhost:8000/api/v1/docs`
-- Supabase Studio: `http://127.0.0.1:54323`
+| URL | Service |
+| --- | --- |
+| <http://localhost:8080> | Frontend (Vite dev server) |
+| <http://localhost:8000> | Backend API |
+| <http://localhost:8000/api/v1/docs> | OpenAPI / Swagger UI |
+| <http://127.0.0.1:54323> | Supabase Studio |
 
-## 🛠️ Scripts Disponíveis
+For manual setup (without `make`), see [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md).
 
-- `npm run dev` - Inicia servidor de desenvolvimento com hot-reload
-- `npm run build` - Build de produção
-- `npm run build:dev` - Build em modo desenvolvimento
-- `npm run preview` - Preview do build de produção
-- `npm run lint` - Executa o linter
-- `npm test` - Executa testes em modo watch
-- `npm run test:run` - Executa testes uma vez
-- `npm run test:coverage` - Executa testes com cobertura
+## Common commands
 
-## 📚 Documentação
+| Command | Purpose |
+| --- | --- |
+| `make start` / `make stop` / `make restart` | Lifecycle of the local stack |
+| `make status` / `make health` / `make urls` | Status, health, URL list |
+| `make test-backend` / `make lint-backend` | Backend pytest + ruff |
+| `make db-fresh` | Reset + migrate + seed (idempotent) |
+| `npm test` / `npm run test:run` / `npm run test:coverage` | Frontend Vitest |
+| `npm run lint` / `npm run build` / `npm run dev` | Frontend ESLint / production build / dev server |
+| `npx playwright test` | E2E suite (see [`frontend/e2e/README.md`](frontend/e2e/README.md)) |
 
-### Guias de Desenvolvimento
-- **[Índice de Guias](docs/guias/README.md)** - Todos os guias práticos
-- [Fluxo de Alteração de Database](docs/guias/FLUXO_ALTERACAO_DATABASE.md)
-- [Fluxo para Adicionar Endpoint](docs/guias/FLUXO_ADICIONAR_ENDPOINT.md)
-- [Fluxo para Adicionar Feature](docs/guias/FLUXO_ADICIONAR_FEATURE.md)
-- [Arquitetura do Backend](docs/guias/ARQUITETURA_BACKEND.md)
+## Documentation
 
-### Documentação do Banco de Dados
-- [Database Schema Completo](docs/estrutura_database/DATABASE_SCHEMA.md)
-- [Guia Rápido do Schema](docs/estrutura_database/GUIA_RAPIDO.md)
+- 📖 [Documentation index](docs/README.md) — Diátaxis-organised site map.
+- 🚀 [Deployment reference](docs/reference/deployment.md) — Railway + Vercel topology, env vars, rollback.
+- 🧱 [Extraction + HITL architecture](docs/reference/extraction-hitl-architecture.md) — canonical schema, run lifecycle.
+- 🛢️ [Migration strategy](docs/reference/migrations.md) — Alembic vs Supabase split, squash recipe.
+- ✅ [Test strategy](docs/reference/test-strategy.md) — load-bearing tests.
+- 🧭 [ADRs](docs/adr/) — recorded architecture decisions.
+- 🗺️ [Roadmap](docs/ROADMAP.md) — milestones + link to GitHub Projects.
 
-### Documentação Técnica
-- [Integração com Zotero](docs/tecnicas/ZOTERO_ARCHITECTURE.md)
+### Community
 
-### Documentação Legal
+- [Contributing](.github/CONTRIBUTING.md)
+- [Code of Conduct](.github/CODE_OF_CONDUCT.md)
+- [Security policy](.github/SECURITY.md)
+- [Support](.github/SUPPORT.md)
 
-- [Guia de Contribuição](.github/CONTRIBUTING.md)
-- [Código de Conduta](.github/CODE_OF_CONDUCT.md)
-- [Política de Segurança](.github/SECURITY.md)
+## Project layout
 
-## 🤝 Contribuindo
-
-Contribuições são bem-vindas! Por favor, leia nosso [Guia de Contribuição](.github/CONTRIBUTING.md) para detalhes sobre nosso
-código de conduta e o processo para submeter pull requests.
-
-### Primeiros Passos
-
-1. Fork o repositório
-2. Crie uma branch para sua feature (`git checkout -b feature/AmazingFeature`)
-3. Commit suas mudanças (`git commit -m 'feat: adiciona AmazingFeature'`)
-4. Push para a branch (`git push origin feature/AmazingFeature`)
-5. Abra um Pull Request
-
-Para mais detalhes, consulte [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md).
-
-## 🏗️ Tecnologias Utilizadas
-
-Este projeto é construído com:
-
-- **Frontend:**
-  - [Vite](https://vitejs.dev/) - Build tool e dev server
-  - [React](https://react.dev/) - Biblioteca UI
-  - [TypeScript](https://www.typescriptlang.org/) - Tipagem estática
-  - [Tailwind CSS](https://tailwindcss.com/) - Estilização
-  - [shadcn/ui](https://ui.shadcn.com/) - Componentes UI
-  - [TanStack Query](https://tanstack.com/query) - Gerenciamento de estado servidor
-  - [React Router](https://reactrouter.com/) - Roteamento
-
-- **Backend:**
-  - [FastAPI](https://fastapi.tiangolo.com/) - Framework Python moderno e rápido
-  - [Supabase](https://supabase.com/) - Backend as a Service
-    - PostgreSQL - Banco de dados
-    - Row Level Security (RLS) - Segurança de dados
-    - Realtime - Subscriptions em tempo real
-  - [OpenAI API](https://openai.com/) - GPT-4o para avaliações de IA
-  - [Anthropic API](https://anthropic.com/) - Claude para avaliações de IA
-
-- **Ferramentas:**
-  - [Vitest](https://vitest.dev/) - Framework de testes
-  - [Testing Library](https://testing-library.com/) - Testes de componentes
-  - [ESLint](https://eslint.org/) - Linter
-  - [Zod](https://zod.dev/) - Validação de schemas
-
-## 📦 Estrutura do Projeto
-
-```
+```text
 prumo/
-├── frontend/               # Código fonte do frontend
-│   ├── components/         # Componentes React
-│   ├── hooks/              # Custom hooks
-│   ├── services/           # Serviços e APIs
-│   ├── pages/              # Páginas/rotas
-│   ├── contexts/           # React contexts (Auth, etc.)
-│   ├── config/             # Configurações da aplicação
-│   ├── lib/                # Utilitários e helpers
-│   └── integrations/       # Integrações com APIs externas
-├── backend/                # Backend FastAPI
-│   ├── app/                # Código da aplicação
-│   │   ├── api/            # Endpoints REST
-│   │   ├── core/           # Configuração e segurança
-│   │   ├── services/       # Lógica de negócio
-│   │   └── models/         # Modelos de dados
-│   └── tests/              # Testes do backend
-├── supabase/
-│   └── migrations/         # Migrações do banco de dados
-├── docs/                   # Documentação
-│   ├── deployment/         # Guias de deploy
-│   ├── tecnicas/           # Documentação técnica
-│   ├── guias/              # Guias de desenvolvimento
-│   ├── estrutura_database/ # Schema do banco de dados
-│   └── templates/          # Templates de instrumentos
-└── scripts/                # Scripts de automação
+├── frontend/                # React + Vite app
+│   ├── components/          # UI components (shadcn + custom)
+│   ├── hooks/               # Custom React hooks
+│   ├── services/            # API clients
+│   ├── pages/               # Routes
+│   ├── lib/                 # Utilities, i18n (copy/), validators
+│   └── e2e/                 # Playwright suite
+├── backend/                 # FastAPI app
+│   ├── app/
+│   │   ├── api/v1/          # REST endpoints
+│   │   ├── core/            # Config, security, DI
+│   │   ├── db/              # Engine, session
+│   │   ├── models/          # SQLAlchemy models
+│   │   ├── repositories/    # CRUD layer
+│   │   ├── schemas/         # Pydantic v2 schemas
+│   │   ├── services/        # Business logic
+│   │   ├── worker/          # Celery tasks
+│   │   └── seed.py          # Idempotent seed (CHARMS, PROBAST, QUADAS-2)
+│   ├── alembic/versions/    # Migrations (app schema)
+│   └── tests/               # pytest suite
+├── supabase/migrations/     # Auth + Storage migrations only
+├── docs/                    # Documentation (Diátaxis)
+├── scripts/                 # Automation scripts
+├── railway.toml             # Backend IaC (Railway)
+├── vercel.json              # Frontend project config
+└── docker-compose.yml       # Local-only Postgres helper
 ```
 
-## 🚢 Deploy
+## Deployment
 
-Production hosting:
+| Service | Platform |
+| --- | --- |
+| Frontend | Vercel — auto-deploys `main` |
+| Backend `web` (FastAPI + gunicorn) | Railway, Hobby plan, US East |
+| Backend `worker` (Celery) | Railway, Hobby plan, US East |
+| Redis | Railway managed plugin |
+| Postgres + Auth + Storage | Supabase |
 
-- **Frontend:** Vercel (auto-deploys `main`).
-- **Backend (web + Celery worker):** Railway, Hobby plan, US East (deploys via `railway up backend --path-as-root --service <name>` from `main` — GitHub auto-deploy can be connected later via the Railway dashboard's GitHub App).
-- **Redis:** Railway managed plugin.
-- **Postgres + Auth + Storage:** Supabase.
+See [`docs/reference/deployment.md`](docs/reference/deployment.md) for the
+topology diagram, full environment-variable reference, deploy gates,
+rollback procedure, and the CI coverage constraint.
 
-For topology, the full env var table, migration procedure, and rollback
-steps, see [`docs/architecture/deployment.md`](docs/architecture/deployment.md).
+## License
 
-Local development uses Docker Compose — see [`docker-compose.yml`](docker-compose.yml).
-The dev backend env template lives at
-[`backend/.env.example`](backend/.env.example) (the only `.env.*` file
-checked into git — production env vars are documented in
-[`docs/architecture/deployment.md`](docs/architecture/deployment.md)).
+Prumo is released under the **GNU Affero General Public License v3.0 (AGPL-3.0-only)**.
+See [`LICENSE`](LICENSE) for the full text.
 
-## 📝 Licença
+## Acknowledgements
 
-Este projeto está licenciado sob a **GNU Affero General Public License v3.0 (AGPL-3.0-only)**. Veja os
-arquivos [LICENSE](LICENSE) e [LICENSE.txt](LICENSE.txt) na raiz do repositório para o texto completo da licença.
-
-## 🙏 Agradecimentos
-
-Agradecemos a todos os contribuidores que ajudam a tornar este projeto melhor!
+Thanks to every contributor who helped make this project better.
