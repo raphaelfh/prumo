@@ -1,3 +1,11 @@
+---
+status: stable
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+---
+
+> **Status:** Stable · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+
 # Database migration strategy
 
 > How Prumo manages schema changes — calibrated for AI-assisted
@@ -246,5 +254,5 @@ isolated improvement:
 - Alembic head: `uv run alembic current` (currently `0001_baseline_v1`)
 - Migration history: `make db-history`
 - Archived migrations (pre-squash): `backend/alembic/versions/archive/`
-- Architecture: `docs/architecture/extraction-hitl-architecture.md`
+- Architecture: `docs/reference/extraction-hitl-architecture.md`
 - AI assistant guide: `.claude/CLAUDE.md` §3 (golden rule)

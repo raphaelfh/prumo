@@ -41,5 +41,5 @@ the baseline directly via `alembic upgrade head`.
 
 ## When to squash again
 
-See `docs/architecture/migrations.md` §"When to squash". Rule of thumb:
+See `docs/reference/migrations.md` §"When to squash". Rule of thumb:
 on each stable release, after the in-flight refactors settle.

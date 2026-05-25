@@ -143,7 +143,7 @@ Stored in `scripts/fitness/`, each script exits non-zero on violation. They run 
 
 | Script | Invariant | Source of truth |
 |---|---|---|
-| `check_migration_split.sh` | Alembic only edits `public.*`; Supabase migrations only edit `auth.*` / `storage.*`. | [docs/architecture/migrations.md](../../architecture/migrations.md) |
+| `check_migration_split.sh` | Alembic only edits `public.*`; Supabase migrations only edit `auth.*` / `storage.*`. | [docs/reference/migrations.md](../../reference/migrations.md) |
 | `check_layered_arch.py` | `app/api/v1/routers/**` imports only services + schemas; `app/services/**` imports only repositories + schemas + other services; `app/repositories/**` imports only models. | [.specify/memory/constitution.md](../../../.specify/memory/constitution.md) principle I |
 | `check_rls_coverage.py` | Every `extraction_*` and `project_*` table has at least one RLS policy referencing `auth.uid()`. | constitution.md principle IV |
 | `check_api_response_envelope.py` | Every router function returns `ApiResponse[...]` (no raw dicts, no bare models). | [docs/reference/extraction-hitl-architecture.md](../../reference/extraction-hitl-architecture.md) §3 |

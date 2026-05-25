@@ -119,7 +119,7 @@ The worker does NOT run Alembic — it boots after the web service via Celery st
 2. Test locally: `alembic upgrade head` against the local stack.
 3. Open a PR, merge to `main`. Railway will autodeploy `web`, which runs Alembic before booting gunicorn.
 
-Auth/storage migrations still go through Supabase CLI (see `docs/architecture/migrations.md`).
+Auth/storage migrations still go through Supabase CLI (see `docs/reference/migrations.md`).
 
 ## Rollback
 
