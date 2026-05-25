@@ -7,6 +7,7 @@ Single source of truth for every `queryKey` used in TanStack Query hooks. Every 
 `queryKey` is the cache identity. Two call sites that drift in their keys silently double-cache the same data; an invalidation that targets one misses the other. The bug manifests as "stale UI after action X" — exactly the kind of subtle cache drift the code-review skill calls out as a recurring incident class on prumo.
 
 Centralising keys in factory functions:
+
 - Makes `invalidateQueries({ queryKey: projectKeys.detail(id) })` and the matching `useQuery({ queryKey: projectKeys.detail(id) })` provably identical.
 - Surfaces accidental key shape changes in code review (a PR touches the factory; reviewers see every consumer affected).
 - Lets `scripts/fitness/check_react_query_keys.py` enforce the rule deterministically.
@@ -15,6 +16,7 @@ Centralising keys in factory functions:
 
 - One file per **domain namespace**: `project.ts`, `articles.ts`, `extraction.ts`, …
 - Each namespace exports a `<domain>Keys` object with two-layer factory functions:
+
   ```ts
   export const projectKeys = {
     all: ['projects'] as const,
@@ -23,6 +25,7 @@ Centralising keys in factory functions:
     members: (id: string) => [...projectKeys.all, 'members', id] as const,
   }
   ```
+
 - Keys are `as const` so TanStack Query's type-inference gets a tuple, not a generic `string[]`.
 - The first element is always the domain name (lowercase plural where natural).
 - Sub-keys are flat strings: `'list'`, `'detail'`, `'members'`. Don't nest deep.
