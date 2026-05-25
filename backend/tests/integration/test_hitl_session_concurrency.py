@@ -43,7 +43,12 @@ async def session_factory() -> AsyncGenerator[async_sessionmaker[AsyncSession], 
 
 async def _pick_basic_fixtures(db: AsyncSession) -> tuple[UUID, UUID, UUID] | None:
     project_id = (await db.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
-    article_id = (await db.execute(text("SELECT id FROM public.articles LIMIT 1"))).scalar()
+    article_id = (
+        await db.execute(
+            text("SELECT id FROM public.articles WHERE project_id = :pid LIMIT 1"),
+            {"pid": project_id},
+        )
+    ).scalar()
     profile_id = (await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
     if not all((project_id, article_id, profile_id)):
         return None

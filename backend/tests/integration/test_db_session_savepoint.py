@@ -25,7 +25,6 @@ from sqlalchemy import text
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-
 pytestmark = pytest.mark.asyncio
 
 
@@ -120,9 +119,7 @@ async def test_db_session_real_actually_commits(
     marker = uuid.uuid4().hex
 
     try:
-        await db_session_real.execute(
-            text(f'CREATE TABLE "{table}" (marker text PRIMARY KEY)')
-        )
+        await db_session_real.execute(text(f'CREATE TABLE "{table}" (marker text PRIMARY KEY)'))
         await db_session_real.execute(
             text(f'INSERT INTO "{table}" (marker) VALUES (:m)'),
             {"m": marker},

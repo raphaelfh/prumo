@@ -18,6 +18,7 @@ export default defineConfig({
       'dist/**',
       'build/**',
       'coverage/**',
+      '.claude/worktrees/**',
       // Excluir testes de Edge Functions (Deno) - devem ser executados com deno test
       'supabase/functions/**/*.test.ts',
       'supabase/functions/**/*.spec.ts',

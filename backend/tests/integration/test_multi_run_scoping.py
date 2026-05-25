@@ -50,13 +50,19 @@ async def _coords(
     for an extraction-kind template that has at least one matching instance and field.
     Returns None if the dev DB hasn't been seeded — caller should ``pytest.skip``."""
     project_id = (await db.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
-    article_id = (await db.execute(text("SELECT id FROM public.articles LIMIT 1"))).scalar()
+    article_id = (
+        await db.execute(
+            text("SELECT id FROM public.articles WHERE project_id = :pid LIMIT 1"),
+            {"pid": project_id},
+        )
+    ).scalar()
     template_id = (
         await db.execute(
             text(
                 "SELECT id FROM public.project_extraction_templates "
-                "WHERE kind = 'extraction' LIMIT 1"
-            )
+                "WHERE kind = 'extraction' AND project_id = :pid LIMIT 1"
+            ),
+            {"pid": project_id},
         )
     ).scalar()
     profile_id = (await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()

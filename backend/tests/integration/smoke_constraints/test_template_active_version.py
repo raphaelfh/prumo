@@ -19,7 +19,6 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-
 pytestmark = pytest.mark.asyncio
 
 

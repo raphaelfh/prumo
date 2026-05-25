@@ -4,7 +4,7 @@
 Asserts every term defined in the skill's glossary mirror
 (`.claude/skills/architectural-quality-loop/references/concept-glossary.md`)
 also appears in the canonical architecture doc
-(`docs/architecture/extraction-hitl-architecture.md`).
+(`docs/reference/extraction-hitl-architecture.md`).
 
 The skill mirror is a sealed copy of the canonical doc's §6 Glossary. If the
 two diverge, the loop's `concept-drift` subagent operates on a stale glossary
@@ -27,7 +27,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_REPO_ROOT = SCRIPT_DIR.parent.parent
 
 GLOSSARY_MIRROR = ".claude/skills/architectural-quality-loop/references/concept-glossary.md"
-CANONICAL_DOC = "docs/architecture/extraction-hitl-architecture.md"
+CANONICAL_DOC = "docs/reference/extraction-hitl-architecture.md"
 
 # Mirror lists each term as a top-level bullet starting with `- **Term** —`.
 TERM_RE = re.compile(r"^\s*-\s+\*\*([^*]+)\*\*\s*—", re.MULTILINE)

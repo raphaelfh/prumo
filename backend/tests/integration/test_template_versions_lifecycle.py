@@ -23,10 +23,12 @@ async def test_template_version_unique_template_version_constraint(
     db_session: AsyncSession,
 ) -> None:
     # Pick a real existing project_template_id from backfill (v1 was seeded for each)
+    project_id = (await db_session.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
     row = await db_session.execute(
         text(
-            "SELECT id FROM public.project_extraction_templates LIMIT 1",
-        )
+            "SELECT id FROM public.project_extraction_templates WHERE project_id = :pid LIMIT 1",
+        ),
+        {"pid": project_id},
     )
     template_id = row.scalar()
     if template_id is None:
@@ -54,10 +56,12 @@ async def test_template_version_unique_template_version_constraint(
 async def test_template_version_only_one_active_per_template(
     db_session: AsyncSession,
 ) -> None:
+    project_id = (await db_session.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
     row = await db_session.execute(
         text(
-            "SELECT id FROM public.project_extraction_templates LIMIT 1",
-        )
+            "SELECT id FROM public.project_extraction_templates WHERE project_id = :pid LIMIT 1",
+        ),
+        {"pid": project_id},
     )
     template_id = row.scalar()
     if template_id is None:

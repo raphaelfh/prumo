@@ -65,7 +65,12 @@ async def test_evidence_check_constraint_present(db_session: AsyncSession) -> No
 @pytest.mark.asyncio
 async def test_evidence_check_blocks_empty_insert(db_session: AsyncSession) -> None:
     project_id = (await db_session.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
-    article_id = (await db_session.execute(text("SELECT id FROM public.articles LIMIT 1"))).scalar()
+    article_id = (
+        await db_session.execute(
+            text("SELECT id FROM public.articles WHERE project_id = :pid LIMIT 1"),
+            {"pid": project_id},
+        )
+    ).scalar()
     profile_id = (await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
     if not all((project_id, article_id, profile_id)):
         pytest.skip("Need projects/articles/profiles fixtures.")

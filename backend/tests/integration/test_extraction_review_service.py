@@ -24,9 +24,19 @@ async def _setup_review_run(
 ) -> tuple[UUID, UUID, UUID, UUID, UUID, UUID] | None:
     """Build run, advance to review, return (run_id, instance_id, field_id, profile_id, proposal_id, alt_profile_id)."""
     project_id = (await db.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
-    article_id = (await db.execute(text("SELECT id FROM public.articles LIMIT 1"))).scalar()
+    article_id = (
+        await db.execute(
+            text("SELECT id FROM public.articles WHERE project_id = :pid LIMIT 1"),
+            {"pid": project_id},
+        )
+    ).scalar()
     template_id = (
-        await db.execute(text("SELECT id FROM public.project_extraction_templates LIMIT 1"))
+        await db.execute(
+            text(
+                "SELECT id FROM public.project_extraction_templates WHERE project_id = :pid LIMIT 1"
+            ),
+            {"pid": project_id},
+        )
     ).scalar()
     profile_id = (await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
     if not all((project_id, article_id, template_id, profile_id)):
