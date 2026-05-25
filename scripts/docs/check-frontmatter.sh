@@ -11,7 +11,7 @@ FAIL=0
 
 while IFS= read -r -d '' file; do
   case "$file" in
-    *node_modules*|*playwright-report*|*test-results*|*.pytest_cache*|*backend/alembic/versions/archive*|*docs/superpowers/specs/archive*|*docs/superpowers/plans/archive*) continue ;;
+    *node_modules*|*playwright-report*|*test-results*|*.pytest_cache*|*backend/alembic/versions/archive*|*docs/superpowers/specs/archive*|*docs/superpowers/plans/archive*|*docs/superpowers/quality-runs*) continue ;;
   esac
 
   # Only enforce on files that should carry frontmatter: docs/**, root *.md, CLAUDE.md

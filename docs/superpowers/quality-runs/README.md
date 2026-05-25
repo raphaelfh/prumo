@@ -1,3 +1,11 @@
+---
+status: stable
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+---
+
+> **Status:** Stable · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+
 # `docs/superpowers/quality-runs/` — runtime artefacts from the architectural quality loop
 
 Every invocation of `Skill architectural-quality-loop` (manual or autonomous) creates a self-contained directory here. Each directory is an immutable audit log — once a run converges, do not edit it; future runs cite it via `resumed_from` in their telemetry.
