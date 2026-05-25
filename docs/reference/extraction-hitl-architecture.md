@@ -1,9 +1,13 @@
+---
+status: stable
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+---
+
 # Extraction-Centric HITL Architecture
 
-> Canonical reference for Prumo's data-extraction and quality-assessment
-> stack post the 2026-04-27 unification. Read this before touching anything
-> in `extraction_*`, `extraction_runs`, the workflow tables, or the
-> Quality-Assessment flow.
+> **Status:** Stable · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+> Canonical reference for the data-extraction and quality-assessment stack post the 2026-04-27 unification. Read this before touching anything in `extraction_*`, `extraction_runs`, the workflow tables, or the Quality-Assessment flow.
 
 ## 1. Why this exists
 
@@ -208,7 +212,7 @@ The extraction **Import template** dialog reads `extraction_templates_global` th
 
 Configuration flows for QA tools may call the same clone endpoint before sessions; session lifecycle for QA vs extraction is in §5.
 
-**Production timeouts** — The SPA (e.g. on Vercel) calls the API host directly (`VITE_API_URL`). Slow clones are usually capped by **Gunicorn’s worker timeout** (defaults to **30s** if not raised): the master kills the worker while SQLAlchemy is still working, and the browser sees a timeout or connection reset. Set Gunicorn `-t` to at least the clone request budget (this repo uses **120s** in `render.yaml`); the import client uses the same **120s** `fetch` budget.
+**Production timeouts** — The SPA (e.g. on Vercel) calls the API host directly (`VITE_API_URL`). Slow clones are usually capped by **Gunicorn’s worker timeout** (defaults to **30s** if not raised): the master kills the worker while SQLAlchemy is still working, and the browser sees a timeout or connection reset. Set Gunicorn `-t` to at least the clone request budget (the production Dockerfile uses **120s** (`-t 120`)); the import client uses the same **120s** `fetch` budget.
 
 **Performance (clone service)** — Prefer **set-based reads** and **minimal round-trips**: load all global fields for the template’s entity types in **one** `IN (...)` query instead of per–entity-type queries; combine structure **counts** into a **single** SQL statement; after a heal insert, derive counts from the in-memory tree instead of re-querying. Deeper wins later would be a DB-side `INSERT … SELECT` clone (one statement), traded off against migration and trigger complexity.
 

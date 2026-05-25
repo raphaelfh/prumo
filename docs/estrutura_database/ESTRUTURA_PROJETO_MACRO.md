@@ -4,7 +4,7 @@
 > extraction + HITL stack — schema, services, run lifecycle, QA seeds —
 > see the canonical reference:
 
-**👉 [`docs/architecture/extraction-hitl-architecture.md`](../architecture/extraction-hitl-architecture.md)**
+**👉 [`docs/reference/extraction-hitl-architecture.md`](../reference/extraction-hitl-architecture.md)**
 
 For day-to-day commands and AI-assistant rules, see:
 

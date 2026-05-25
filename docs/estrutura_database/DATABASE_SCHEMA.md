@@ -4,7 +4,7 @@
 > (templates, runs, proposals, decisions, consensus, published states,
 > evidence, QA seeds) lives in a single canonical reference:
 
-**👉 [`docs/architecture/extraction-hitl-architecture.md`](../architecture/extraction-hitl-architecture.md)**
+**👉 [`docs/reference/extraction-hitl-architecture.md`](../reference/extraction-hitl-architecture.md)**
 
 Go read that. It covers:
 

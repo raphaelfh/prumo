@@ -1,7 +1,7 @@
 # Roadmap - Prumo
 
 > Status snapshot post 2026-04-28 cleanup wave. Items marked ✅ shipped.
-> See [`docs/architecture/extraction-hitl-architecture.md`](../architecture/extraction-hitl-architecture.md)
+> See [`docs/reference/extraction-hitl-architecture.md`](../reference/extraction-hitl-architecture.md)
 > for the canonical state of the extraction + HITL stack.
 
 ## 🗄️ Database & Infraestrutura

@@ -11,7 +11,7 @@ search path.
 The 18-migration trail ran from project genesis through 2026-04-28. The
 final stretch (`20260427_0010` → `20260428_0019`) is the
 extraction-centric HITL unification documented in
-`docs/architecture/extraction-hitl-architecture.md` and the archived
+`docs/reference/extraction-hitl-architecture.md` and the archived
 plans under `docs/superpowers/plans/archive/2026-04-27-hitl-unification/`.
 
 ## What replaced them

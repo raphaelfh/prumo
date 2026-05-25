@@ -146,7 +146,7 @@ Stored in `scripts/fitness/`, each script exits non-zero on violation. They run 
 | `check_migration_split.sh` | Alembic only edits `public.*`; Supabase migrations only edit `auth.*` / `storage.*`. | [docs/architecture/migrations.md](../../architecture/migrations.md) |
 | `check_layered_arch.py` | `app/api/v1/routers/**` imports only services + schemas; `app/services/**` imports only repositories + schemas + other services; `app/repositories/**` imports only models. | [.specify/memory/constitution.md](../../../.specify/memory/constitution.md) principle I |
 | `check_rls_coverage.py` | Every `extraction_*` and `project_*` table has at least one RLS policy referencing `auth.uid()`. | constitution.md principle IV |
-| `check_api_response_envelope.py` | Every router function returns `ApiResponse[...]` (no raw dicts, no bare models). | [docs/architecture/extraction-hitl-architecture.md](../../architecture/extraction-hitl-architecture.md) §3 |
+| `check_api_response_envelope.py` | Every router function returns `ApiResponse[...]` (no raw dicts, no bare models). | [docs/reference/extraction-hitl-architecture.md](../../reference/extraction-hitl-architecture.md) §3 |
 | `check_legacy_concepts.py` | Forbids reintroduction of `extracted_values`, `ai_suggestions`, `name == 'prediction_models'`, `initializeArticleInstances`. Pattern list lives in the skill's `legacy-patterns.md`. | CLAUDE.md "Recent Changes" |
 | `check_react_query_keys.py` | Every `useQuery({ queryKey: [...] })` key starts with a domain constant (`projectKeys`, `articleKeys`, ...), not a string literal. | code-review skill |
 
