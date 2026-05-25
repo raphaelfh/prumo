@@ -1,3 +1,12 @@
+---
+status: shipped
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+spec_number: '004'
+---
+
+> **Status:** Shipped · Archived 2026-05-24. Do not edit.
+
 # Feature Specification: Aplicação em Inglês e Código Limpo (Frontend i18n)
 
 **Feature Branch**: `004-frontend-i18n`  
