@@ -76,6 +76,12 @@ dev = [
     "ruff>=0.8.0",
     "mypy>=1.13.0",
     "pre-commit>=4.0.0",
+    # CI diff coverage gate (see .github/workflows/ci.yml "Diff coverage gate"
+    # step). PR-only check: lines touched by the PR must hit
+    # PRUMO_DIFF_COVERAGE_MIN (default 80%). Coexists with the global ratchet
+    # `--cov-fail-under=62` — diff coverage catches "PR drops new code without
+    # tests" before the global gate notices the dip.
+    "diff-cover>=10.0",
 ]
 
 [build-system]
