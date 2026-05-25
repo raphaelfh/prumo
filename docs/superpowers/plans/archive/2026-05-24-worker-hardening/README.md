@@ -56,7 +56,7 @@ A lot of legacy Portuguese docstrings/comments in `app/worker/` were touched dur
 | Eager-mode kwargs/contract tests | [`backend/tests/integration/test_worker_eager_mode.py`](../../../../backend/tests/integration/test_worker_eager_mode.py) |
 | Route/queue drift guard | [`backend/tests/unit/test_celery_routes_drift.py`](../../../../backend/tests/unit/test_celery_routes_drift.py) |
 | CI smoke (real worker + Redis) | [`.github/workflows/worker-smoke.yml`](../../../../.github/workflows/worker-smoke.yml) |
-| Runbook | [`docs/architecture/deployment.md`](../../../../docs/architecture/deployment.md) §§ "Worker — task runner", "Observability — task-registry alerts" |
+| Runbook | [`docs/reference/deployment.md`](../../../../docs/reference/deployment.md) §§ "Worker — task runner", "Observability — task-registry alerts" |
 | AI-assistant guidance | [`.claude/skills/backend-development/SKILL.md`](../../../../.claude/skills/backend-development/SKILL.md) (line 208 + 233 reference the new runner) |
 
 ## 6. Not done — explicitly out of scope
