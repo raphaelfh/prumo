@@ -1,3 +1,12 @@
+---
+status: shipped
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+spec_number: '006'
+---
+
+> **Status:** Shipped · Archived 2026-05-24. Do not edit.
+
 # Feature Specification: Zotero Article Data Parity
 
 **Feature Branch**: `006-zotero-articles-sync`  
