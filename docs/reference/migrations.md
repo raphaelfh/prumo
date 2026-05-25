@@ -29,7 +29,7 @@ owner: '@raphaelfh'
 ## Two migration systems, sharply scoped
 
 | System | Scope | Where | Tool |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Alembic** | Application schema (`public.*` tables, indexes, triggers, RLS, enums) | `backend/alembic/versions/` | `uv run alembic` |
 | **Supabase migrations** | Auth + Storage built-ins (`auth.*`, `storage.buckets`, bucket policies) | `supabase/migrations/` | `supabase migration new` |
 
@@ -108,6 +108,7 @@ schema. Document the squash in the new baseline's docstring + a row in
 the architecture doc.
 
 **Don't squash:**
+
 - During an active refactor cycle (you'll just have to re-squash).
 - If production is reading from the affected tables and you're not
   prepared to `alembic stamp` carefully.
@@ -119,10 +120,13 @@ this as the template for the next squash):
 1. Pick a baseline id. Convention: `0001_baseline_v<N>` where N is the
    schema generation (we used `0001_baseline_v1`).
 2. Capture current schema:
+
    ```bash
    supabase db dump --local --schema=public --file=/tmp/dump.sql
    ```
+
 3. Strip the noise:
+
    ```bash
    awk '
    /^SET / { next }
@@ -134,8 +138,10 @@ this as the template for the next squash):
    { print }
    ' /tmp/dump.sql > backend/alembic/versions/baseline_v<N>.sql
    ```
+
 4. Create the Python wrapper (`0001_baseline_v<N>.py`) that reads + executes
    the `.sql` file. Pattern:
+
    ```python
    from pathlib import Path
    from alembic import op
@@ -151,13 +157,16 @@ this as the template for the next squash):
        op.execute("DROP SCHEMA IF EXISTS public CASCADE;")
        op.execute("CREATE SCHEMA public;")
    ```
+
 5. Move all old migrations: `git mv backend/alembic/versions/*.py
    backend/alembic/versions/archive/` (Alembic ignores subdirectories
    under `versions/`).
 6. Stamp existing DBs at the new baseline:
+
    ```bash
    uv run alembic stamp --purge 0001_baseline_v<N>
    ```
+
    The `--purge` flag clears any stale revision row that points at an
    archived id. Verify with `uv run alembic current`.
 7. Run the full test suite. If tests pass, the schema is functionally
@@ -240,7 +249,7 @@ isolated improvement:
 - **Squawk in CI** — Postgres migration linter; flags
   `ADD COLUMN NOT NULL` without default, drops on populated tables, FKs
   without indexes, and other dangerous patterns. Two-line GitHub
-  Actions step on top of `make db-fresh`. https://github.com/sbdchd/squawk
+  Actions step on top of `make db-fresh`. <https://github.com/sbdchd/squawk>
 - **Atlas (evaluation only)** — `atlasgo.io` does declarative
   schema-as-code with Postgres + SQLAlchemy integration. Agent edits a
   single source-of-truth file; Atlas computes the migration. Worth

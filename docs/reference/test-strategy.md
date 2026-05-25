@@ -35,7 +35,7 @@ below follow.
 
 ## 2. Test pyramid layout
 
-```
+```text
                        ┌────────────────────────┐
                        │  Playwright (manual /  │   smoke confidence
                        │  golden flow CHARMS)   │   on the wire
@@ -62,7 +62,7 @@ Each entry: file → invariant it pins → what breaks if it's removed.
 
 ### 3.1 Single-active-extraction-template invariant
 
-* **`tests/integration/test_single_active_extraction_invariant.py`**
+- **`tests/integration/test_single_active_extraction_invariant.py`**
   Pins the partial unique index `uq_one_active_extraction_template_per_project`.
   - `test_index_exists_in_catalog`, `test_index_is_partial_with_extraction_predicate`,
     `test_index_is_immediate_not_deferrable` — catalog-level facts a
@@ -87,7 +87,7 @@ Each entry: file → invariant it pins → what breaks if it's removed.
 
 ### 3.2 Session backfill — child singletons
 
-* **`tests/integration/test_session_backfill_extensive.py`** +
+- **`tests/integration/test_session_backfill_extensive.py`** +
   the two regression cases in `tests/integration/test_hitl_session.py`
   (`test_session_backfills_singleton_children_added_after_model_creation`,
   `test_session_backfill_is_idempotent`).
@@ -107,7 +107,7 @@ Each entry: file → invariant it pins → what breaks if it's removed.
 
 ### 3.3 `calculate_model_progress` contract
 
-* **`tests/integration/test_calculate_model_progress.py`**
+- **`tests/integration/test_calculate_model_progress.py`**
   - Argument names (`p_article_id`, `p_model_id`) — the frontend's call
     site uses them verbatim; drift here surfaces as PGRST202 in the UI.
   - Return columns (`completed_fields`, `total_fields`, `percentage`).
@@ -116,7 +116,7 @@ Each entry: file → invariant it pins → what breaks if it's removed.
   - Unknown model_id returns 0/0 (not NULL) so the frontend fallback
     isn't load-bearing.
 
-* **`tests/integration/test_schema_drift.py::test_calculate_model_progress_signature_locked`**
+- **`tests/integration/test_schema_drift.py::test_calculate_model_progress_signature_locked`**
   and `test_calculate_model_progress_is_security_definer` — second
   axis of the contract, derived from `pg_proc` so it catches drift
   even without running the function body.
@@ -127,7 +127,7 @@ Each entry: file → invariant it pins → what breaks if it's removed.
 
 ### 3.4 Schema drift catch-all
 
-* **`tests/integration/test_schema_drift.py`** — 13 catalog assertions:
+- **`tests/integration/test_schema_drift.py`** — 13 catalog assertions:
   template_kind / extraction_run_stage / extraction_reviewer_decision
   enum values; composite FKs that prevent cross-run leaks (migrations
   0005 and 0012); confirmation that `extracted_values` and `ai_suggestions`
@@ -140,7 +140,7 @@ Each entry: file → invariant it pins → what breaks if it's removed.
 
 ### 3.5 Template clone — coverage of every branch
 
-* **`tests/integration/test_template_clone_extraction.py`** now covers
+- **`tests/integration/test_template_clone_extraction.py`** now covers
   the full state machine of the clone service:
   - Empty project: create new (counts match global).
   - Existing clone, active: idempotent return.
@@ -156,7 +156,7 @@ Each entry: file → invariant it pins → what breaks if it's removed.
 
 ### 3.6 Frontend — picker symmetry and BUG #7 regression
 
-* **`frontend/test/hooks/useExtractionData.test.tsx`** — pins:
+- **`frontend/test/hooks/useExtractionData.test.tsx`** — pins:
   - DESC ordering on `created_at` (matches `ExtractionInterface`'s
     Configuration picker — closes BUG #1 split).
   - Filters by `project_id` + `kind='extraction'` + `is_active=true`.
@@ -164,7 +164,7 @@ Each entry: file → invariant it pins → what breaks if it's removed.
   - `mergeInstancesById` reference stability (refresh without label
     change reuses the same array, change yields a new one).
 
-* **`frontend/test/ExtractionFormView.test.tsx`** — pins BUG #7:
+- **`frontend/test/ExtractionFormView.test.tsx`** — pins BUG #7:
   - The parent prediction_models accordion only renders when there's an
     active model AND the parent has fields.
   - It binds to the active model instance (not to any other model row).
@@ -175,14 +175,14 @@ Each entry: file → invariant it pins → what breaks if it's removed.
   - The fully-loaded CHARMS shape renders study-level → parent →
     children in that order.
 
-* **`frontend/test/extractionValueService.test.ts`** — pins
+- **`frontend/test/extractionValueService.test.ts`** — pins
   `findActiveRun` and `findLatestFinalizedRun`:
   - `kind='extraction'` filter is non-optional (no QA-run leak).
   - DESC ordering on `created_at`.
   - Stage filter respects the non-terminal list.
   - APIError thrown on supabase failure (not silent).
 
-* **`frontend/test/hooks/useModelManagement.test.tsx`** — edges around
+- **`frontend/test/hooks/useModelManagement.test.tsx`** — edges around
   `createModel`:
   - Missing `modelParentEntityTypeId` → return null, no service call.
   - Trims model name.
@@ -220,7 +220,7 @@ When you add a new test, follow the rules these files agreed on:
 ## 5. Running the suite
 
 | Command | What it runs |
-|---|---|
+| --- | --- |
 | `make test-backend` | full pytest suite (488 passed / 31 skipped) |
 | `npm test -- --run` | full vitest suite (343 passed) |
 | `make lint-backend` | ruff check + format |
@@ -236,13 +236,13 @@ Run all four before opening a PR for anything in `backend/app/services/`,
 
 These remain manual / Playwright-only by choice:
 
-* **Full multi-reviewer consensus pipeline.** Covered by Playwright +
+- **Full multi-reviewer consensus pipeline.** Covered by Playwright +
   manual review during release; the integration cost of seeding 3
   reviewers + their decisions outweighs the regression risk.
-* **AI extraction end-to-end.** Hits real OpenAI; we have unit tests
+- **AI extraction end-to-end.** Hits real OpenAI; we have unit tests
   for the service surface and a Playwright happy-path. Heavy
   integration tests live behind an opt-in env flag.
-* **Visual regression of the extraction form.** Tracked in the
+- **Visual regression of the extraction form.** Tracked in the
   Playwright axe / snapshot suite, not here.
 
 When you find yourself reaching for one of these, ask first whether the

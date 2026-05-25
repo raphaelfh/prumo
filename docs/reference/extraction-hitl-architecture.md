@@ -31,7 +31,7 @@ A **Run** (`extraction_runs`) is the atomic HITL session for one
 ruling, and published value belongs to exactly one Run. A Run progresses
 through six stages, in this order — no skipping:
 
-```
+```text
 pending → proposal → review → consensus → finalized
                                          ↓
                                     cancelled (terminal at any non-terminal stage)
@@ -56,7 +56,7 @@ All tables live in the `public` schema with RLS enabled. Migration head:
 ### Core HITL tables (introduced 0010 → 0012, evolved through 0018)
 
 | Table | Append-only? | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `extraction_template_versions` | No (mutable `is_active`) | Immutable schema snapshot of a project template. Unique `(project_template_id, version)`; partial unique index keeps exactly one `is_active` per template. Run references via `version_id`. |
 | `extraction_hitl_configs` | No | HITL config (reviewer count, consensus rule, arbitrator) scoped to `project` or `template`. Resolution: template > project > system default. |
 | `extraction_proposal_records` | **Yes** | One row per proposed value for a `(run, instance, field)` triplet. Source: `ai` / `human` / `system`. CHECK: `human` requires `source_user_id`. |
@@ -68,7 +68,7 @@ All tables live in the `public` schema with RLS enabled. Migration head:
 ### Pre-existing tables — evolved
 
 | Table | Notable evolution | Where |
-|---|---|---|
+| --- | --- | --- |
 | `extraction_templates_global` | + `kind` column, unique `(id, kind)` | 0011 |
 | `project_extraction_templates` | + `kind`, unique `(id, kind)` | 0011 |
 | `extraction_runs` | + `kind`, `version_id` FK, `hitl_config_snapshot`; composite FK `(template_id, kind)` enforces template-run kind coherence; stage enum reconstructed | 0011 + 0014 |
@@ -80,7 +80,7 @@ The original 2026-04-27 cut had two transition shims (`ai_suggestions`,
 `extracted_values`). Both are gone. Status today:
 
 | Former table | Removed in | Replacement |
-|---|---|---|
+| --- | --- | --- |
 | `ai_suggestions` | Migration `20260428_0019` (now in archive) | `extraction_proposal_records` (filter `source='ai'`) — `aiSuggestionService` reads here, derives status from the current reviewer_state. |
 | `extracted_values` | Migration `0002_drop_extracted_values` | `extraction_reviewer_decisions` for per-user values, `extraction_published_states` for canonical post-consensus values. `ExtractionValueService` (frontend) wraps the read/write path. |
 | `suggestion_status` enum | Migration `20260428_0019` (archived) | Status derived from reviewer_state's current decision (accept_proposal / edit / reject). |
@@ -89,7 +89,7 @@ The original 2026-04-27 cut had two transition shims (`ai_suggestions`,
 ### Enums introduced or modified
 
 | Enum | Values | Migration |
-|---|---|---|
+| --- | --- | --- |
 | `template_kind` | `extraction`, `quality_assessment` | 0011 |
 | `hitl_config_scope_kind` | `project`, `template` | 0010 |
 | `consensus_rule` | `unanimous`, `majority`, `arbitrator` | 0010 |
@@ -108,7 +108,7 @@ reviewer writes in production.
 
 ## 4. Conceptual flow
 
-```
+```text
 ExtractionTemplateGlobal (kind = extraction | quality_assessment)
   └─ ProjectExtractionTemplate           (per-project clone, customizable)
        └─ ExtractionTemplateVersion      (immutable snapshot, exactly one active)
@@ -137,7 +137,7 @@ Every `extraction_entity_types` row carries a structural **role**
 (`extraction_entity_role` enum, migration `0016_entity_role_column`):
 
 | Role | Meaning | Where rendered |
-|---|---|---|
+| --- | --- | --- |
 | `study_section` | Root entity type. Filled once per article regardless of model. | Top-level accordion in `ExtractionFormView`. |
 | `model_container` | Root entity type with `cardinality='many'`. At most one per template. Drives the model selector UI. | `ModelSection` + `ModelSelector`. |
 | `model_section` | Child of a `model_container`. Rendered once per active model instance. | Inside `ModelSection`, scoped to the active model. |
@@ -205,7 +205,7 @@ response schema, and the parser's backward-compat path.
 The extraction **Import template** dialog reads `extraction_templates_global` through the Supabase client (RLS). **Do not** insert `project_extraction_templates` from the frontend: a deferred trigger requires every project template to have an **active** `extraction_template_versions` row at commit time, so creation stays in the API layer.
 
 | Step | What happens |
-|------|----------------|
+| ------ | ---------------- |
 | **UI** | Calls `POST /api/v1/projects/{project_id}/templates/clone` with `global_template_id` and `kind=extraction` (JWT via `apiClient`). The UI may still load the global row first to validate that the id exists in the catalogue. |
 | **Service** | `TemplateCloneService.clone` is **idempotent** on `(project_id, global_template_id)`: first call creates the project row, `extraction_entity_types`, `extraction_fields`, and exactly one active version; later calls return the existing clone and current counts. |
 | **Heal** | If a clone row exists but has zero entity types or fields (partial/legacy data), the service rebuilds structure from the global template and updates the active version snapshot. |
@@ -254,7 +254,7 @@ advances to `finalized`.
 Both flows share the **field-level primitives** but diverge above that:
 
 | Layer | Shared? | Where |
-|---|---|---|
+| --- | --- | --- |
 | `FieldInput` (typed input per field) | ✅ Yes | `frontend/components/extraction/FieldInput.tsx`. Consumed by both `SectionAccordion` (extraction) and `QASectionAccordion` (QA). |
 | `AssessmentShell` (PDF panel + form panel + header) | ✅ Yes (QA today; extraction page predates it) | `frontend/components/assessment/AssessmentShell.tsx`. |
 | `ExtractionValueService` (find run, load/save values) | ✅ Yes | `frontend/services/extractionValueService.ts`. Both flows use it for read/write. |
@@ -355,7 +355,7 @@ publish, AI), keep it in the page-specific component.
   - `app/services/extraction_review_service.py` — reviewer decisions
     (the per-user value store now flows through here).
   - `app/services/extraction_consensus_service.py` — consensus resolution
-    + PublishedState materialization (with optimistic concurrency).
+    and PublishedState materialization (with optimistic concurrency).
   - `app/services/template_clone_service.py` — kind-parametrized
     global → project clone (idempotent on
     `(project_id, global_template_id)`). Validates the global template's

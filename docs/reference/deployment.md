@@ -36,8 +36,8 @@ All three Railway services + the Redis plugin live in the same project, region *
 ## Services
 
 | Service | Builder | Start | Public | Healthcheck |
-|---|---|---|---|---|
-| `web` | `backend/Dockerfile` | `alembic upgrade head && gunicorn -k UvicornWorker -w 1 -t 120 -b 0.0.0.0:${PORT:-8000}` (Dockerfile CMD) | yes — https://web-production-48b398.up.railway.app | `/health` |
+| --- | --- | --- | --- | --- |
+| `web` | `backend/Dockerfile` | `alembic upgrade head && gunicorn -k UvicornWorker -w 1 -t 120 -b 0.0.0.0:${PORT:-8000}` (Dockerfile CMD) | yes — <https://web-production-48b398.up.railway.app> | `/health` |
 | `worker` | `backend/Dockerfile` | `celery -A app.worker.celery_app worker --loglevel=info --queues=extractions,imports,exports,celery` (Railway custom start command — overrides Dockerfile CMD) | no | none |
 | `Redis` | Railway managed plugin | n/a | private network only (`redis.railway.internal`) | n/a |
 
@@ -68,7 +68,7 @@ httpx connection pool stays bound to the current loop.
 `LoggedTask.on_failure` emits two distinct structlog events:
 
 | Event | Meaning | Recommended alert |
-|---|---|---|
+| --- | --- | --- |
 | `task_failed` | Generic task crash (business error, retry exhausted). | Aggregate; alert above baseline rate. |
 | `celery.task_unregistered` | The worker received a task name it has no handler for. **P1** — always caused by `celery_app.include` drift or a routing typo. | Page on first occurrence. |
 
@@ -82,7 +82,7 @@ There is no tracked env template — env files match `.gitignore` line 21 (`.env
 ### Shared across all services
 
 | Key | Source |
-|---|---|
+| --- | --- |
 | `ENCRYPTION_KEY` | rotated by hand; MUST be the same value across web + worker (Zotero credentials are cross-process) |
 | `SUPABASE_URL` | Supabase project settings |
 | `SUPABASE_ANON_KEY` | Supabase project settings |
@@ -100,7 +100,7 @@ There is no tracked env template — env files match `.gitignore` line 21 (`.env
 ### Service-level overrides
 
 | Service | Key | Value |
-|---|---|---|
+| --- | --- | --- |
 | `web` | `CORS_ORIGINS` | `https://prumo-alpha.vercel.app` |
 | `web` | `REDIS_URL` | `${{Redis.REDIS_URL}}` (reference variable, resolves to private network) |
 | `worker` | `REDIS_URL` | `${{Redis.REDIS_URL}}` (reference variable) |
@@ -109,7 +109,7 @@ There is no tracked env template — env files match `.gitignore` line 21 (`.env
 
 Alembic runs automatically as part of the web service's Dockerfile `CMD`:
 
-```
+```text
 alembic upgrade head && gunicorn ...
 ```
 
