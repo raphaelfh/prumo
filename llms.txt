@@ -1,0 +1,37 @@
+# prumo — entry point for AI agents
+
+Prumo is a systematic-review / meta-analysis platform. Backend: Python 3.11 +
+FastAPI + Celery + Postgres (Supabase). Frontend: React 18 + TypeScript + Vite.
+Hosting: Railway (backend + worker + Redis) + Vercel (frontend) + Supabase
+(Postgres + Auth + Storage).
+
+## Read these first if you are an AI agent
+
+- [README.md](README.md) — project overview, quickstart, scripts
+- [CLAUDE.md](CLAUDE.md) — recent changes, active stack, current spec pointer
+- [.claude/CLAUDE.md](.claude/CLAUDE.md) — project conventions for AI assistants
+- [.specify/memory/constitution.md](.specify/memory/constitution.md) — non-negotiable architectural principles
+- [docs/README.md](docs/README.md) — Diátaxis-organised doc index
+
+## Then, depending on what you are touching
+
+- Database / migrations → [docs/reference/migrations.md](docs/reference/migrations.md)
+- Extraction or quality-assessment → [docs/reference/extraction-hitl-architecture.md](docs/reference/extraction-hitl-architecture.md)
+- Deployment → [docs/reference/deployment.md](docs/reference/deployment.md)
+- Tests → [docs/reference/test-strategy.md](docs/reference/test-strategy.md)
+- An architectural decision → [docs/adr/](docs/adr/)
+
+## Do not read these (archived / generated)
+
+- backend/alembic/versions/archive/
+- docs/superpowers/specs/archive/
+- docs/superpowers/plans/archive/
+- node_modules/
+- playwright-report/
+- test-results/
+
+## Documentation conventions
+
+- Every doc carries `status`, `last_reviewed`, `owner` frontmatter.
+- Conventional commits (`feat:`, `fix:`, `docs:`, `chore:`, `test:`, `ci:`, `refactor:`).
+- English only for code, comments, commits, and documentation.
