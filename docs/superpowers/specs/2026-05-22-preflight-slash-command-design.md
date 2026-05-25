@@ -1,3 +1,11 @@
+---
+status: shipped
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+---
+
+> **Status:** Shipped · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+
 # `/preflight` slash command — design
 
 **Status**: implemented in `.claude/commands/preflight.md`

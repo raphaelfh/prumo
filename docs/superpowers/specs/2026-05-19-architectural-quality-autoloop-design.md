@@ -1,3 +1,11 @@
+---
+status: stable
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+---
+
+> **Status:** Stable · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+
 # Architectural Quality Auto-Loop — Design Spec
 
 **Date:** 2026-05-19

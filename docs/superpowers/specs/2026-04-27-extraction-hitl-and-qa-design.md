@@ -1,3 +1,13 @@
+---
+status: frozen
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+---
+
+> **Status:** Frozen · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+
+> **Frozen — do not edit.** For changes, write a new spec that supersedes this one.
+
 # Design: Extraction-Centric HITL Unification + Quality Assessment
 
 **Date:** 2026-04-27
