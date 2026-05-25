@@ -4,6 +4,7 @@ Project Repository.
 Project and membership persistence layer.
 """
 
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
@@ -99,7 +100,7 @@ class ProjectRepository(BaseRepository[Project]):
         )
         return result.scalar_one_or_none()
 
-    async def get_summary(self, project_id: UUID | str) -> dict:
+    async def get_summary(self, project_id: UUID | str) -> dict[str, Any]:
         """
         Fetch project summary data for AI context.
 

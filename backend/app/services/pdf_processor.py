@@ -76,7 +76,7 @@ class PDFProcessor(LoggerMixin):
         r"^(?:\d+\.?\s*)?supplementary",
     ]
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._compiled_patterns = [
             re.compile(p, re.IGNORECASE | re.MULTILINE) for p in self.SECTION_PATTERNS
         ]

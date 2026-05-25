@@ -12,6 +12,8 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
+from celery import Task
+
 from app.worker._runner import run_task
 from app.worker.celery_app import celery_app
 
@@ -23,7 +25,7 @@ from app.worker.celery_app import celery_app
     rate_limit="2/m",
 )
 def import_zotero_collection_task(
-    self,
+    self: Task[Any, Any],
     project_id: str,
     collection_key: str,
     user_id: str,
@@ -47,7 +49,7 @@ def import_zotero_collection_task(
         Dict with the import result summary.
     """
 
-    async def run():
+    async def run() -> dict[str, Any]:
         from app.core.deps import get_supabase_client
         from app.core.factories import create_storage_adapter
         from app.services.zotero_import_service import ZoteroImportService
@@ -114,14 +116,14 @@ def import_zotero_collection_task(
     rate_limit="2/m",
 )
 def retry_failed_zotero_sync_task(
-    self,
+    self: Task[Any, Any],
     project_id: str,
     source_sync_run_id: str,
     user_id: str,
     sync_run_id: str,
     limit: int = 100,
 ) -> dict[str, Any]:
-    async def run():
+    async def run() -> dict[str, Any]:
         from app.core.deps import get_supabase_client
         from app.core.factories import create_storage_adapter
         from app.services.zotero_import_service import ZoteroImportService
@@ -169,8 +171,8 @@ def retry_failed_zotero_sync_task(
     rate_limit="1/m",
 )
 def sync_zotero_library_task(
-    self,
-    user_id: str,
+    self: Task[Any, Any],
+    user_id: str,  # noqa: ARG001
 ) -> dict[str, Any]:
     """Sync the user's full Zotero library metadata.
 
@@ -181,7 +183,7 @@ def sync_zotero_library_task(
         Dict with the sync result summary.
     """
 
-    async def run():
+    async def run() -> dict[str, Any]:
         from app.services.zotero_service import ZoteroService
         from app.worker._session import worker_session
 
