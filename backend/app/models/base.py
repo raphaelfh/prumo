@@ -159,8 +159,10 @@ class Base(DeclarativeBase):
 
     metadata = MetaData(naming_convention=_naming_convention)
 
-    # Default schema for all application tables
-    __table_args__: dict[str, Any] = {
+    # Default schema for all application tables. The union covers both
+    # forms accepted by SQLAlchemy: a bare options dict, or a tuple of
+    # SchemaItems (Index / Constraint / FK) terminated by an options dict.
+    __table_args__: dict[str, Any] | tuple[Any, ...] = {
         "schema": "public",
     }
 

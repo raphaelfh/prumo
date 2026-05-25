@@ -7,7 +7,7 @@ instances, valores and suggestions de IA.
 
 from datetime import datetime
 from enum import Enum as PyEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from sqlalchemy import (
@@ -145,7 +145,7 @@ class ExtractionTemplateGlobal(BaseModel):
     )
 
     is_global: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    schema_: Mapped[dict] = mapped_column("schema", JSONB, default={}, nullable=False)
+    schema_: Mapped[dict[str, Any]] = mapped_column("schema", JSONB, default={}, nullable=False)
 
     # Relationships
     entity_types: Mapped[list["ExtractionEntityType"]] = relationship(
@@ -205,7 +205,7 @@ class ProjectExtractionTemplate(BaseModel):
         server_default=TemplateKind.EXTRACTION.value,
     )
 
-    schema_: Mapped[dict] = mapped_column("schema", JSONB, default={}, nullable=False)
+    schema_: Mapped[dict[str, Any]] = mapped_column("schema", JSONB, default={}, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     created_by: Mapped[UUID] = mapped_column(
@@ -334,10 +334,10 @@ class ExtractionField(BaseModel):
     )
 
     is_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    validation_schema: Mapped[dict] = mapped_column(JSONB, default={}, nullable=True)
-    allowed_values: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    validation_schema: Mapped[dict[str, Any]] = mapped_column(JSONB, default={}, nullable=True)
+    allowed_values: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     unit: Mapped[str | None] = mapped_column(String, nullable=True)
-    allowed_units: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    allowed_units: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
@@ -406,7 +406,7 @@ class ExtractionInstance(BaseModel):
 
     label: Mapped[str] = mapped_column(String, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default={}, nullable=False)
+    metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default={}, nullable=False)
 
     created_by: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -498,7 +498,7 @@ class ExtractionEvidence(BaseModel):
     )
 
     page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    position: Mapped[dict] = mapped_column(JSONB, default={}, nullable=True)
+    position: Mapped[dict[str, Any]] = mapped_column(JSONB, default={}, nullable=True)
     text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_by: Mapped[UUID] = mapped_column(
@@ -576,7 +576,7 @@ class ExtractionRun(Base, UUIDMixin):
         index=True,
     )
 
-    hitl_config_snapshot: Mapped[dict] = mapped_column(
+    hitl_config_snapshot: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         nullable=False,
         default=dict,
@@ -593,8 +593,8 @@ class ExtractionRun(Base, UUIDMixin):
         nullable=False,
     )
 
-    parameters: Mapped[dict] = mapped_column(JSONB, default={}, nullable=False)
-    results: Mapped[dict] = mapped_column(JSONB, default={}, nullable=False)
+    parameters: Mapped[dict[str, Any]] = mapped_column(JSONB, default={}, nullable=False)
+    results: Mapped[dict[str, Any]] = mapped_column(JSONB, default={}, nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     started_at: Mapped[datetime | None] = mapped_column(
