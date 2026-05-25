@@ -105,6 +105,29 @@ class StorageAdapter(ABC):
         pass
 
     @abstractmethod
+    async def get_signed_url(
+        self,
+        bucket: str,
+        path: str,
+        expires_in: int = 3600,
+    ) -> str:
+        """
+        Get a time-limited signed URL for a file.
+
+        Args:
+            bucket: Bucket name.
+            path: File path.
+            expires_in: Expiration time in seconds.
+
+        Returns:
+            Signed URL string.
+
+        Raises:
+            StorageError: On failure.
+        """
+        pass
+
+    @abstractmethod
     async def list_files(
         self,
         bucket: str,
