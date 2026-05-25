@@ -62,7 +62,7 @@ POSTGRESQL_ENUM_VALUES: dict[str, list[str]] = {
 }
 
 
-class PostgreSQLEnumType(TypeDecorator):
+class PostgreSQLEnumType(TypeDecorator[str]):
     """
     TypeDecorator que forca o uso correto do tipo ENUM nativo do PostgreSQL.
 
@@ -123,15 +123,15 @@ class PostgreSQLEnumType(TypeDecorator):
         """Processa o valor antes de enviar ao banco."""
         if value is None:
             return None
-        # Se for um Enum Python, pegar o value
         if isinstance(value, PyEnum):
-            return value.value
+            return str(value.value)
         return str(value)
 
     def process_result_value(self, value: Any, _dialect: Any) -> str | None:
         """Processa o valor recebido do banco."""
-        # Return como string for compatibilidade with Enum Python
-        return value
+        if value is None:
+            return None
+        return str(value)
 
 
 _naming_convention: dict[str, str] = {

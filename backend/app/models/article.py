@@ -6,7 +6,7 @@ Modelos for articles cientificos and seus files.
 
 from datetime import datetime
 from enum import Enum as PyEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String, Text
@@ -104,15 +104,15 @@ class Article(BaseModel):
 
     # Metadata adicionais
     study_design: Mapped[str | None] = mapped_column(String, nullable=True)
-    registration: Mapped[dict] = mapped_column(JSONB, default={}, nullable=True)
-    funding: Mapped[dict] = mapped_column(JSONB, default=[], nullable=True)
+    registration: Mapped[dict[str, Any]] = mapped_column(JSONB, default={}, nullable=True)
+    funding: Mapped[dict[str, Any]] = mapped_column(JSONB, default=[], nullable=True)
     conflicts_of_interest: Mapped[str | None] = mapped_column(Text, nullable=True)
     data_availability: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Controle de versao and ingestao
     hash_fingerprint: Mapped[str | None] = mapped_column(Text, nullable=True)
     ingestion_source: Mapped[str | None] = mapped_column(String, nullable=True)
-    source_payload: Mapped[dict] = mapped_column(JSONB, default={}, nullable=True)
+    source_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default={}, nullable=True)
     row_version: Mapped[int] = mapped_column(BigInteger, default=1, nullable=False)
 
     # Campos Zotero
@@ -124,7 +124,7 @@ class Article(BaseModel):
         DateTime(timezone=True), nullable=True
     )
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    sync_conflict_log: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    sync_conflict_log: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     pdf_extracted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     semantic_abstract_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     semantic_fulltext_text: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -288,7 +288,7 @@ class ArticleTextBlock(BaseModel):
     char_end: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # PDF user space, points: {x, y, width, height}.
-    bbox: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    bbox: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
     # Closed vocabulary: paragraph | heading | list_item | table_cell
     # | figure_caption | header | footer (CHECK constraint at the DB level).
@@ -339,7 +339,7 @@ class ArticleHighlight(BaseModel):
         nullable=True,
     )
     page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    position: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    position: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     highlighted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     color: Mapped[str | None] = mapped_column(String, nullable=True)
 
@@ -369,7 +369,7 @@ class ArticleBox(BaseModel):
         nullable=True,
     )
     page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    position: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    position: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     label: Mapped[str | None] = mapped_column(String, nullable=True)
     color: Mapped[str | None] = mapped_column(String, nullable=True)
 
@@ -399,7 +399,7 @@ class ArticleAnnotation(BaseModel):
         nullable=True,
     )
     page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    position: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    position: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = ({"schema": "public"},)
