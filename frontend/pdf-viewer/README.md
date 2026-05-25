@@ -1,3 +1,11 @@
+---
+status: stable
+last_reviewed: 2026-05-24
+owner: '@raphaelfh'
+---
+
+> **Status:** Stable · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+
 # @prumo/pdf-viewer
 
 Modular, headless PDF viewer for the Prumo research platform.
@@ -38,7 +46,7 @@ fully isolated state.
 The refactor plan files:
 
 | Phase | Plan filename | Status |
-|---|---|---|
+| --- | --- | --- |
 | 0 | `2026-04-28-pdf-viewer-phase0-foundation.md` | Shipped |
 | 1a | `2026-04-28-pdf-viewer-phase1a-core-types-store.md` | Shipped |
 | 1b | `2026-04-28-pdf-viewer-phase1b-pdfjs-engine.md` | Shipped |
@@ -52,7 +60,7 @@ The refactor plan files:
 
 ## Architecture (target — end of Phase 5)
 
-```
+```text
 @prumo/pdf-viewer/
 ├── core/             — PDFEngine interface, store factory, primitives
 ├── engines/pdfjs/    — concrete PDF.js v5 implementation
