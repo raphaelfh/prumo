@@ -131,7 +131,7 @@ O aplicativo estará disponível em:
 ### Documentação Legal
 
 - [Guia de Contribuição](CONTRIBUTING.md)
-- [Código de Conduta](CODE_OF_CONDUCT.md)
+- [Código de Conduta](.github/CODE_OF_CONDUCT.md)
 - [Política de Segurança](SECURITY.md)
 
 ## 🤝 Contribuindo
