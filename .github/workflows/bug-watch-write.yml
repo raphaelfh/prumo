@@ -1,0 +1,123 @@
+name: Bug Watch Write Mode
+
+# Event-driven auto-fix. Triggered when a human applies the `auto-fix-approved` label to an
+# `auto-found` issue. The issue already contains the hypothesis and file:line from bug-watch —
+# this workflow applies the minimal correction + regression test and opens a draft PR.
+#
+# Requirements:
+#   - Repo secret ANTHROPIC_API_KEY must be set
+#   - Label `auto-fix-approved` exists
+#   - The issue must already have label `auto-found` (defense in depth — refuses otherwise)
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: bug-watch-write-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    if: >-
+      github.event.label.name == 'auto-fix-approved'
+      && contains(github.event.issue.labels.*.name, 'auto-found')
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup git author
+        run: |
+          git config user.name "claude-autofix[bot]"
+          git config user.email "claude-autofix@users.noreply.github.com"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Apply minimal fix with Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          model: claude-sonnet-4-6
+          timeout_minutes: "15"
+          allowed_tools: "Bash(gh:*),Bash(git:*),Bash(make:*),Bash(npm:*),Bash(npx:*),Bash(python:*),Bash(uv:*),Bash(pytest:*),Bash(grep:*),Bash(rg:*),Bash(jq:*),Read,Write,Edit,Grep,Glob,Skill"
+          prompt: |
+            You are applying an authorized fix to an `auto-found` issue. The hypothesis, file:line,
+            and verification command are ALREADY in the issue body — your job is the minimum correction.
+
+            Issue: #${{ github.event.issue.number }}
+            Title: ${{ toJSON(github.event.issue.title) }}
+
+            ## Procedure
+
+            1. Read issue body: `gh issue view ${{ github.event.issue.number }} --json title,body,labels`
+            2. Parse from the body:
+               - The H2 `## File & Lines` section → primary file:line target
+               - The H2 `## Verification` section → reproduction / verification command
+               - The H2 `## Severity` section → only act if `high` or `med`. If `low` (lint/type only): comment "This `auto-fix-approved` request targets a low-severity finding — humans usually handle these inline. Aborting auto-fix to keep the queue focused on high-impact issues." Remove the label. Stop.
+            3. Read the cited file:line. Confirm the symptom still exists at HEAD. If not (already fixed): comment "Symptom no longer reproducible at HEAD ${SHORT_SHA}. Closing the issue." then `gh issue close ${{ github.event.issue.number }} --reason completed`. Stop.
+
+            4. Invoke skills (Layer A — in repo `.claude/skills/`):
+               - `systematic-debugging` — confirm the hypothesis maps to the symptom
+               - `root-cause-tracing` — make sure you fix the root cause, not the surface
+               - `defense-in-depth` if it is auth/BOLA/RLS
+               - `verification-before-completion` BEFORE pushing
+               If a skill fails to load, proceed with the explicit logic above (defense in depth fallback).
+
+            5. Apply the MINIMAL correction:
+               - Modify the cited file:line (and only adjacent helpers if strictly needed)
+               - Add ONE regression test that:
+                 (a) reproduces the bug on HEAD WITHOUT the fix (verify with `git stash`)
+                 (b) passes WITH the fix
+               - Do NOT broaden the change to "improve" unrelated code. No `while I'm here`.
+               - FORBIDDEN paths: backend/alembic/versions/ (require a separate migration PR), supabase/migrations/, .env*, lockfiles, .github/workflows/
+
+            6. Verify locally:
+               ```bash
+               # Backend if Python file touched:
+               cd backend && make lint-backend && make test-backend && cd ..
+               # Frontend if TS/TSX touched:
+               cd frontend && npm test && npm run lint && cd ..
+               ```
+               On ANY failure: comment `Tests failed after applying the fix — aborting. See logs.` Remove `auto-fix-approved` label. Stop.
+
+            7. Open draft PR:
+               ```bash
+               git checkout -b autofix/issue-${{ github.event.issue.number }}
+               git add -A
+               git commit -m "fix: <one-line summary>  (closes #${{ github.event.issue.number }})"
+               git push -u origin HEAD
+               gh pr create --draft --base dev \
+                 --title "fix: <one-line summary>" \
+                 --body "Closes #${{ github.event.issue.number }}.\n\n## Root cause\n<from skill output>\n\n## Fix\n<bullets>\n\n## Regression test added\n<file:line + test name>\n\n## Verification\n<paste pytest/vitest output>"
+               ```
+            8. Comment on the issue with the PR URL.
+
+            ## Hard rules
+            - One PR per issue. If the issue was already fixed: close it instead.
+            - Never broaden scope beyond the cited file:line + one regression test.
+            - Severity `low` does NOT get auto-fixed.
+            - Tests must pass before push.
+            - Stay under 15 minutes.
+
+            ## Output
+            Last line MUST be:
+            `bug_watch_write_done issue=#${{ github.event.issue.number }} severity=<high|med|low|n-a> action=<pr-opened|closed-already-fixed|skip|aborted> pr=<#N|none>`

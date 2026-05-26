@@ -1,0 +1,120 @@
+name: Cleanup On Demand
+
+# Event-driven cleanup. Triggered when a human applies the `tech-debt` label to an issue.
+# Reads the issue body to scope the cleanup (module: <path>), then delegates to the
+# code-simplifier plugin via claude-code-action.
+#
+# Requirements:
+#   - Repo secret ANTHROPIC_API_KEY must be set
+#   - Label `tech-debt` exists (created during plan execution)
+# Skip rules: only fires when the label being added is exactly `tech-debt`.
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: cleanup-on-demand-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    if: github.event.label.name == 'tech-debt'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup git author
+        run: |
+          git config user.name "claude-cleanup[bot]"
+          git config user.email "claude-cleanup@users.noreply.github.com"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Cleanup with Claude (code-simplifier plugin)
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          model: claude-sonnet-4-6
+          timeout_minutes: "12"
+          plugin_marketplaces: '["anthropics/claude-plugins-official"]'
+          plugins: '["code-simplifier"]'
+          allowed_tools: "Bash(gh:*),Bash(git:*),Bash(make:*),Bash(npm:*),Bash(npx:*),Bash(python:*),Bash(uv:*),Bash(grep:*),Bash(rg:*),Bash(jq:*),Bash(ls:*),Bash(cat:*),Read,Write,Edit,Grep,Glob,Skill"
+          prompt: |
+            You are handling a `tech-debt`-labeled issue on prumo. Apply scoped cleanup per the issue body.
+
+            Issue: #${{ github.event.issue.number }}
+            Title: ${{ toJSON(github.event.issue.title) }}
+
+            ## Procedure
+
+            1. Read issue: `gh issue view ${{ github.event.issue.number }} --json title,body,labels`
+            2. Extract MODULE path from issue body. Conventions accepted (in order):
+                - Line matching `module:\s*(\S+)`
+                - Line matching `path:\s*(\S+)`
+                - First markdown code-fence containing a path under backend/ or frontend/
+                If no module can be extracted: comment "Cannot extract a `module:` path from this issue body. Please add a line like `module: backend/app/services/foo` and re-apply the label." Then remove the `tech-debt` label and stop.
+
+            3. Anti-conflict gate (MANDATORY):
+               ```bash
+               OPEN_PRS=$(gh pr list -R raphaelfh/prumo --state open --json files \
+                 | jq "[.[] | select(.files != null) | select(.files[].path | startswith(\"$MODULE\"))] | length")
+               ```
+               If $OPEN_PRS > 0: comment on issue `Blocked by N open PR(s) touching $MODULE — try again once they merge.` and stop.
+
+            4. Invoke skill `code-simplifier:code-simplifier` (Layer B) with scope=$MODULE. Constraints:
+               - net LOC delta ≤ 200
+               - files touched ≤ 15
+               - FORBIDDEN paths: backend/alembic/versions/, supabase/migrations/, .env*, .github/workflows/, package.json, package-lock.json, pyproject.toml, uv.lock
+               - FORBIDDEN changes: API contract, SQLAlchemy model field renames, public symbol renames, new abstractions, "while I'm here"
+               - ALLOWED (max 2 categories): dead-code removal (grep proof, 0 callers), unused imports/vars (lint-driven), `ruff format`/`prettier`, consolidate 2 near-identical helpers ≤30 LOC each
+
+            5. Verify locally BEFORE pushing:
+               ```bash
+               cd backend && make lint-backend && make test-backend && cd ..
+               # if frontend touched:
+               cd frontend && npm test && npm run lint && cd ..
+               ```
+               On ANY failure: comment `Tests/lint failed — aborting. See logs.` and stop without pushing.
+
+            6. Push branch + open draft PR:
+               ```bash
+               git checkout -b cleanup/$(basename $MODULE)-issue-${{ github.event.issue.number }}
+               git add -A
+               git commit -m "cleanup($(basename $MODULE)): <summary>  (refs #${{ github.event.issue.number }})"
+               git push -u origin HEAD
+               gh pr create --draft --base dev \
+                 --title "cleanup($(basename $MODULE)): <summary>" \
+                 --body "Closes #${{ github.event.issue.number }} on review/merge.\n\n## What\n<bullets>\n\n## Evidence\n<grep + tests + lint>"
+               ```
+
+            7. Comment on the issue with the PR URL.
+
+            ## Hard rules
+            - One PR per issue. If you opened one, comment it back and stop.
+            - Never bypass the anti-conflict gate.
+            - Never touch forbidden paths.
+            - Stay under 12 minutes; comment progress + abort if you near the limit.
+
+            ## Output
+            Last line MUST be:
+            `cleanup_on_demand_done issue=#${{ github.event.issue.number }} module=<path|none> action=<pr-opened|skip|aborted> pr=<#N|none>`
