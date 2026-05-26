@@ -1,0 +1,53 @@
+name: Bug Watch Write Dispatch
+
+# Thin dispatcher: on issues:labeled with `auto-fix-approved` AND issue already `auto-found`,
+# fire the `bug-watch-write` routine.
+# No Anthropic API consumption — the routine runs on Pro/Max plan quota.
+#
+# Setup (one-time, by repo owner):
+#   1. https://claude.ai/code/routines → edit `bug-watch-write (API-triggered via GH Action, label auto-fix-approved)`
+#   2. Add an API trigger → generate token → copy
+#   3. `gh secret set CLAUDE_ROUTINE_BUGFIX_TOKEN -R raphaelfh/prumo`
+#
+# Routine ID: trig_0157uwfRoXA6RTFvWqg8VKPd
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: none
+
+concurrency:
+  group: bugfix-dispatch-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    if: >-
+      github.event.label.name == 'auto-fix-approved'
+      && contains(github.event.issue.labels.*.name, 'auto-found')
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Fire bug-watch-write routine
+        env:
+          ROUTINE_TOKEN: ${{ secrets.CLAUDE_ROUTINE_BUGFIX_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$ROUTINE_TOKEN" ]; then
+            echo "::error::Missing secret CLAUDE_ROUTINE_BUGFIX_TOKEN. See workflow header for setup." >&2
+            exit 1
+          fi
+          curl -fsSL --max-time 30 -X POST \
+            "https://api.anthropic.com/v1/claude_code/routines/trig_0157uwfRoXA6RTFvWqg8VKPd/fire" \
+            -H "Authorization: Bearer $ROUTINE_TOKEN" \
+            -H "anthropic-beta: experimental-cc-routine-2026-04-01" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -nc --arg t "issue:${ISSUE_NUMBER} repo:${REPO}" '{text:$t}')" \
+            | tee /tmp/routine_response.json
+          echo "Routine fired. Session URL:"
+          jq -r '.claude_code_session_url // "(no URL in response)"' /tmp/routine_response.json

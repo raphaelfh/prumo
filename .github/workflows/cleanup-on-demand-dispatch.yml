@@ -1,0 +1,50 @@
+name: Cleanup On Demand Dispatch
+
+# Thin dispatcher: on issues:labeled with `tech-debt`, fire the `cleanup-on-demand` routine.
+# No Anthropic API consumption — the routine runs on Pro/Max plan quota.
+#
+# Setup (one-time, by repo owner):
+#   1. https://claude.ai/code/routines → edit `cleanup-on-demand (API-triggered via GH Action, label tech-debt)`
+#   2. Add an API trigger → generate token → copy
+#   3. `gh secret set CLAUDE_ROUTINE_CLEANUP_TOKEN -R raphaelfh/prumo`
+#
+# Routine ID: trig_01Jt9AvtB4aN8YXMkVd4jqW1
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: none
+
+concurrency:
+  group: cleanup-dispatch-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    if: github.event.label.name == 'tech-debt'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Fire cleanup-on-demand routine
+        env:
+          ROUTINE_TOKEN: ${{ secrets.CLAUDE_ROUTINE_CLEANUP_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$ROUTINE_TOKEN" ]; then
+            echo "::error::Missing secret CLAUDE_ROUTINE_CLEANUP_TOKEN. See workflow header for setup." >&2
+            exit 1
+          fi
+          curl -fsSL --max-time 30 -X POST \
+            "https://api.anthropic.com/v1/claude_code/routines/trig_01Jt9AvtB4aN8YXMkVd4jqW1/fire" \
+            -H "Authorization: Bearer $ROUTINE_TOKEN" \
+            -H "anthropic-beta: experimental-cc-routine-2026-04-01" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -nc --arg t "issue:${ISSUE_NUMBER} repo:${REPO}" '{text:$t}')" \
+            | tee /tmp/routine_response.json
+          echo "Routine fired. Session URL:"
+          jq -r '.claude_code_session_url // "(no URL in response)"' /tmp/routine_response.json
