@@ -497,9 +497,7 @@ class TestExtractSectionWithExistingRun:
         service._runs.fail_run = AsyncMock()
 
     @pytest.mark.asyncio
-    async def test_existing_run_id_reuses_run_and_skips_lifecycle(
-        self, service, mock_storage
-    ):
+    async def test_existing_run_id_reuses_run_and_skips_lifecycle(self, service, mock_storage):
         """``run_id`` provided → no new run, no start/complete, no advance."""
         from app.models.extraction import ExtractionRunStage
 
@@ -546,9 +544,7 @@ class TestExtractSectionWithExistingRun:
         assert record_call.kwargs["run_id"] == existing_run_id
 
     @pytest.mark.asyncio
-    async def test_existing_run_id_rejects_non_proposal_stage(
-        self, service, mock_storage
-    ):
+    async def test_existing_run_id_rejects_non_proposal_stage(self, service, mock_storage):
         """Run already moved past PROPOSAL → reject (matches extract_for_run)."""
         from app.models.extraction import ExtractionRunStage
 

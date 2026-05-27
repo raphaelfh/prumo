@@ -165,8 +165,7 @@ class SectionExtractionService(LoggerMixin):
                 raise ValueError(f"Run {run_id} not found")
             if existing_run.stage != ExtractionRunStage.PROPOSAL.value:
                 raise ValueError(
-                    f"Run {run_id} stage is {existing_run.stage}; "
-                    "AI extraction requires PROPOSAL",
+                    f"Run {run_id} stage is {existing_run.stage}; AI extraction requires PROPOSAL",
                 )
             run = existing_run
         else:
@@ -178,9 +177,7 @@ class SectionExtractionService(LoggerMixin):
                 parameters={
                     "model": model,
                     "entity_type_id": str(entity_type_id),
-                    "parent_instance_id": (
-                        str(parent_instance_id) if parent_instance_id else None
-                    ),
+                    "parent_instance_id": (str(parent_instance_id) if parent_instance_id else None),
                 },
             )
             run = await self._lifecycle.advance_stage(
