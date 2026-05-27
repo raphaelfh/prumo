@@ -54,6 +54,11 @@ export interface ExtractionFormViewProps {
   articleId: string;
   /** Required for section-scoped AI extraction. */
   templateId: string;
+  /**
+   * Active HITL session run id. Passed to AI extraction so proposals
+   * accumulate on the session run instead of orphan new runs.
+   */
+  runId?: string | null;
   modelsLoading: boolean;
   /** Callback to refresh values/suggestions after AI extraction. */
   onExtractionComplete?: () => void;
@@ -86,6 +91,7 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
             projectId={props.projectId}
             articleId={props.articleId}
             templateId={props.templateId}
+            runId={props.runId}
             otherExtractions={props.otherExtractions}
             aiSuggestions={props.aiSuggestions}
             onAcceptAI={props.acceptSuggestion}
@@ -125,6 +131,7 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
           projectId={props.projectId}
           articleId={props.articleId}
           templateId={props.templateId}
+          runId={props.runId}
           onExtractModels={ai.handleExtractModels}
           extractingModels={ai.extractingModels}
           onExtractAllSections={ai.handleExtractAllSections}

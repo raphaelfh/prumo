@@ -420,19 +420,173 @@ class TestSectionExtractionFullFlow:
         assert result.tokens_total == 150
         service._proposals.record_proposal.assert_awaited()
 
-        # The run lifecycle gets two distinct stage advances: pending → proposal
-        # before the LLM call, and proposal → review after recording proposals
-        # so the form can immediately accept ReviewerDecisions.
+        # The run lifecycle gets exactly one stage advance: pending → proposal.
+        # The run STAYS in PROPOSAL after AI proposing so ``useExtractedValues``
+        # can hydrate from ``runDetail.proposals`` and show the values in the
+        # form. The user advances to REVIEW explicitly via "Submit for review".
+        # Auto-advancing here skipped the proposal-stage hydration and left
+        # the form blank until F5 (#bug: AI extraction values not appearing).
         from app.models.extraction import ExtractionRunStage
 
         advance_calls = service._lifecycle.advance_stage.await_args_list
         target_stages = [call.kwargs.get("target_stage") for call in advance_calls]
         assert ExtractionRunStage.PROPOSAL in target_stages
-        assert ExtractionRunStage.REVIEW in target_stages
-        # And REVIEW comes after PROPOSAL.
-        assert target_stages.index(ExtractionRunStage.REVIEW) > target_stages.index(
-            ExtractionRunStage.PROPOSAL
+        assert ExtractionRunStage.REVIEW not in target_stages
+
+
+class TestExtractSectionWithExistingRun:
+    """``extract_section`` accepts an existing ``run_id`` (extraction-surface
+    path) and appends proposals to that run instead of creating a fresh one.
+
+    Regression: each section-by-section AI click used to create an orphan
+    Run, so the HITL-session run stayed empty and the form never showed the
+    extracted values (#bug: AI extraction values not appearing).
+    """
+
+    @staticmethod
+    def _wire_pipeline(
+        service,
+        mock_storage,
+        existing_run,
+        entity_type_id,
+    ):
+        from app.services.openai_service import OpenAIResponse, OpenAIUsage
+
+        mock_file = MagicMock()
+        mock_file.storage_key = "test.pdf"
+        service._article_files.get_latest_pdf = AsyncMock(return_value=mock_file)
+        mock_storage.download = AsyncMock(return_value=b"%PDF-1.4 test")
+        service.pdf_processor.extract_text = AsyncMock(return_value="text")
+
+        mock_field = MagicMock()
+        mock_field.name = "field_1"
+        mock_field.field_type = "string"
+        mock_field.description = "f"
+        mock_field.is_required = True
+        mock_entity = MagicMock()
+        mock_entity.id = entity_type_id
+        mock_entity.name = "EntityX"
+        mock_entity.description = "d"
+        mock_entity.fields = [mock_field]
+        service._entity_types.get_with_fields = AsyncMock(return_value=mock_entity)
+
+        # ``service.db.get(ExtractionRun, run_id)`` returns the existing run.
+        service.db.get = AsyncMock(return_value=existing_run)
+
+        # Proposals + instances bookkeeping.
+        mock_proposal = MagicMock()
+        mock_proposal.id = uuid4()
+        service._proposals.record_proposal = AsyncMock(return_value=mock_proposal)
+        service._instances.get_by_article = AsyncMock(return_value=[])
+
+        # OpenAI shaped response.
+        service.openai_service.chat_completion_full = AsyncMock(
+            return_value=OpenAIResponse(
+                content=json.dumps({"field_1": "value"}),
+                usage=OpenAIUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
+                model="gpt-4o-mini",
+            )
         )
+
+        # Run-lifecycle bookkeeping methods must exist as AsyncMock so we
+        # can assert they were NOT called.
+        service._lifecycle.create_run = AsyncMock()
+        service._lifecycle.advance_stage = AsyncMock()
+        service._runs.start_run = AsyncMock()
+        service._runs.complete_run = AsyncMock()
+        service._runs.fail_run = AsyncMock()
+
+    @pytest.mark.asyncio
+    async def test_existing_run_id_reuses_run_and_skips_lifecycle(
+        self, service, mock_storage
+    ):
+        """``run_id`` provided → no new run, no start/complete, no advance."""
+        from app.models.extraction import ExtractionRunStage
+
+        project_id = uuid4()
+        article_id = uuid4()
+        template_id = uuid4()
+        entity_type_id = uuid4()
+        existing_run_id = uuid4()
+
+        existing_run = MagicMock()
+        existing_run.id = existing_run_id
+        existing_run.stage = ExtractionRunStage.PROPOSAL.value
+
+        self._wire_pipeline(service, mock_storage, existing_run, entity_type_id)
+
+        with patch(
+            "app.services.section_extraction_service.ExtractionInstance"
+        ) as mock_instance_class:
+            inst = MagicMock()
+            inst.id = uuid4()
+            mock_instance_class.return_value = inst
+            service._instances.create = AsyncMock(return_value=inst)
+
+            result = await service.extract_section(
+                project_id=project_id,
+                article_id=article_id,
+                template_id=template_id,
+                entity_type_id=entity_type_id,
+                run_id=existing_run_id,
+            )
+
+        # Proposals must land on the EXISTING run, not on a freshly-created one.
+        assert result.extraction_run_id == str(existing_run_id)
+
+        # Lifecycle bookkeeping bypassed: the HITL session owns the run.
+        service._lifecycle.create_run.assert_not_awaited()
+        service._lifecycle.advance_stage.assert_not_awaited()
+        service._runs.start_run.assert_not_awaited()
+        service._runs.complete_run.assert_not_awaited()
+        service._runs.fail_run.assert_not_awaited()
+
+        # The proposal recording call must use the existing run's id.
+        record_call = service._proposals.record_proposal.await_args
+        assert record_call.kwargs["run_id"] == existing_run_id
+
+    @pytest.mark.asyncio
+    async def test_existing_run_id_rejects_non_proposal_stage(
+        self, service, mock_storage
+    ):
+        """Run already moved past PROPOSAL → reject (matches extract_for_run)."""
+        from app.models.extraction import ExtractionRunStage
+
+        existing_run = MagicMock()
+        existing_run.id = uuid4()
+        existing_run.stage = ExtractionRunStage.REVIEW.value
+
+        self._wire_pipeline(service, mock_storage, existing_run, uuid4())
+
+        with pytest.raises(ValueError, match="PROPOSAL"):
+            await service.extract_section(
+                project_id=uuid4(),
+                article_id=uuid4(),
+                template_id=uuid4(),
+                entity_type_id=uuid4(),
+                run_id=existing_run.id,
+            )
+
+        # No proposals should have been created when the guard fires.
+        service._proposals.record_proposal.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_existing_run_id_fails_when_run_not_found(self, service, mock_storage):
+        """db.get returning None → ValueError, no side-effects."""
+        existing_run_id = uuid4()
+        self._wire_pipeline(service, mock_storage, None, uuid4())
+
+        with pytest.raises(ValueError, match="not found"):
+            await service.extract_section(
+                project_id=uuid4(),
+                article_id=uuid4(),
+                template_id=uuid4(),
+                entity_type_id=uuid4(),
+                run_id=existing_run_id,
+            )
+
+        service._proposals.record_proposal.assert_not_awaited()
+        service._lifecycle.create_run.assert_not_awaited()
 
 
 class TestExtractWithLLMPrompt:

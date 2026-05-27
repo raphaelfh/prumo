@@ -946,6 +946,25 @@ export default function ExtractionFullScreen() {
         await new Promise(resolve => setTimeout(resolve, 1500));
 
         await preserveScroll(async () => {
+          // AI extraction creates a *new* run in PROPOSAL stage (see
+          // ``SectionExtractionService.extract_section``); the proposals
+          // live on that new run, not on the session run the page was
+          // bound to. Refetch the HITL session first so ``activeRunId``
+          // re-resolves to the most-recent non-terminal run (the AI
+          // run); then refetch its detail so ``runDetail.proposals``
+          // hydrates ``useExtractedValues``. Without the session
+          // refetch, the form keeps reading the original session run
+          // and the extracted values never appear without F5.
+          try {
+            await sessionResult.refetch();
+          } catch (err) {
+            console.error('Error refetching session (non-critical):', err);
+          }
+          try {
+            await refetchRun();
+          } catch (err) {
+            console.error('Error refetching run (non-critical):', err);
+          }
           if (template) {
             try {
               await refreshInstances();
@@ -1144,6 +1163,7 @@ export default function ExtractionFullScreen() {
                 projectId: projectId || '',
                 articleId: articleId || '',
                 templateId: template?.id || '',
+                runId: activeRunId,
                 modelsLoading,
                 onExtractionComplete: handleExtractionComplete,
               }}

@@ -35,6 +35,12 @@ interface SectionAccordionProps {
   articleId: string;
     templateId: string; // Required for section extraction
     parentInstanceId?: string; // Parent instance ID (to filter child entities by model)
+    /**
+     * Active HITL-session run id. When set, AI extraction appends
+     * proposals to that run instead of creating a fresh one — keeps
+     * multiple section extractions accumulating on the same run.
+     */
+    runId?: string | null;
   otherExtractions?: OtherExtraction[];
   aiSuggestions?: Record<string, AISuggestion>;
   onAcceptAI?: (instanceId: string, fieldId: string) => Promise<void>;
@@ -108,7 +114,8 @@ export function SectionAccordion(props: SectionAccordionProps) {
         articleId,
         templateId,
         entityTypeId: entityType.id,
-        parentInstanceId: props.parentInstanceId, // Nova: passar parentInstanceId quando fornecido
+        parentInstanceId: props.parentInstanceId,
+        runId: props.runId ?? undefined,
       });
     } catch (error) {
         // Error already handled by hook with toast
