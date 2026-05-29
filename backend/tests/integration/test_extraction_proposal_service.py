@@ -1,6 +1,6 @@
 """Integration tests for ExtractionProposalService."""
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
@@ -13,12 +13,25 @@ from app.services.extraction_proposal_service import (
     InvalidProposalError,
 )
 from app.services.run_lifecycle_service import RunLifecycleService
+from tests.factories.template_factory import TemplateFactory
 
 
-async def _setup_run_with_instance_field(
+async def _setup_qa_run_with_instance_field(
     db: AsyncSession,
 ) -> tuple[UUID, UUID, UUID, UUID] | None:
-    """Build a run + advance to proposal + return (run_id, instance_id, field_id, profile_id)."""
+    """Build a kind='quality_assessment' run + advance to PROPOSAL.
+
+    Used by tests that need the QA-specific recovery-from-interrupted-publish
+    behaviour, where ``human`` proposals MUST keep being accepted at REVIEW
+    stage (the QA publish flow advances to REVIEW unconditionally; a downstream
+    failure leaves the run parked there, and the user must be able to keep
+    typing). The kind discriminator in the proposal service exempts QA from
+    the Layer 1b extraction-only gate.
+
+    Builds a transient QA template under PRIMARY_PROJECT via ``TemplateFactory``
+    so the test does not depend on a pre-cloned QA project template existing
+    in the seed (the integration seed only ships extraction).
+    """
     project_id = (await db.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
     article_id = (
         await db.execute(
@@ -26,12 +39,112 @@ async def _setup_run_with_instance_field(
             {"pid": project_id},
         )
     ).scalar()
+    profile_id = (await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
+    if not all((project_id, article_id, profile_id)):
+        return None
+
+    factory = TemplateFactory(db, UUID(str(project_id)), UUID(str(profile_id)))
+    qa_template_id = await factory.create(
+        name=f"qa-{uuid4().hex[:8]}",
+        kind="quality_assessment",
+        is_active=True,
+    )
+    et_id = await factory.add_study_section(
+        qa_template_id,
+        name=f"participants-{uuid4().hex[:8]}",
+    )
+
+    # Field + instance (the factory doesn't add these — match the shape
+    # the proposal-service coords check expects).
+    field_id = uuid4()
+    await db.execute(
+        text(
+            "INSERT INTO public.extraction_fields "
+            "(id, entity_type_id, name, label, field_type, is_required) "
+            "VALUES (:id, :etid, 'qa_field', 'QA Field', 'select', false)"
+        ),
+        {"id": str(field_id), "etid": str(et_id)},
+    )
+    instance_id = uuid4()
+    await db.execute(
+        text(
+            "INSERT INTO public.extraction_instances "
+            "(id, project_id, template_id, entity_type_id, article_id, "
+            " label, status, created_by) "
+            "VALUES (:id, :pid, :tid, :etid, :aid, "
+            " 'QA Test Instance', 'pending', :uid)"
+        ),
+        {
+            "id": str(instance_id),
+            "pid": str(project_id),
+            "tid": str(qa_template_id),
+            "etid": str(et_id),
+            "aid": str(article_id),
+            "uid": str(profile_id),
+        },
+    )
+    await db.flush()
+
+    lifecycle = RunLifecycleService(db)
+    run = await lifecycle.create_run(
+        project_id=UUID(str(project_id)),
+        article_id=UUID(str(article_id)),
+        project_template_id=qa_template_id,
+        user_id=UUID(str(profile_id)),
+    )
+    await lifecycle.advance_stage(
+        run_id=run.id,
+        target_stage=ExtractionRunStage.PROPOSAL,
+        user_id=UUID(str(profile_id)),
+    )
+    return run.id, instance_id, field_id, UUID(str(profile_id))
+
+
+async def _setup_run_with_instance_field(
+    db: AsyncSession,
+    *,
+    kind: str | None = None,
+) -> tuple[UUID, UUID, UUID, UUID] | None:
+    """Build a run + advance to proposal + return (run_id, instance_id, field_id, profile_id).
+
+    When ``kind`` is provided the project template lookup filters by it
+    (otherwise picks the lex-first id, which historically happened to be
+    PROBAST/quality_assessment — caused silent kind drift; Layer 1b made
+    that drift visible). Pass ``kind='extraction'`` when the test asserts
+    extraction-specific behaviour.
+    """
+    project_id = (await db.execute(text("SELECT id FROM public.projects LIMIT 1"))).scalar()
+    article_id = (
+        await db.execute(
+            text("SELECT id FROM public.articles WHERE project_id = :pid LIMIT 1"),
+            {"pid": project_id},
+        )
+    ).scalar()
+    # Only consider templates that already have at least one
+    # ``(instance, entity_type, field)`` chain — the subsequent helper
+    # logic requires those joins to succeed. Without the EXISTS guard
+    # the LIMIT 1 pick can land on a structurally-empty template (e.g.
+    # the E2E "Legacy" fixture) and silently make the whole test SKIP.
+    kind_filter = "AND t.kind = :kind" if kind is not None else ""
+    params = {"pid": project_id}
+    if kind is not None:
+        params["kind"] = kind
     template_id = (
         await db.execute(
             text(
-                "SELECT id FROM public.project_extraction_templates WHERE project_id = :pid LIMIT 1"
+                f"""
+                SELECT t.id FROM public.project_extraction_templates t
+                WHERE t.project_id = :pid {kind_filter}
+                  AND EXISTS (
+                    SELECT 1 FROM public.extraction_instances i
+                    JOIN public.extraction_entity_types et ON et.id = i.entity_type_id
+                    JOIN public.extraction_fields f ON f.entity_type_id = et.id
+                    WHERE i.template_id = t.id
+                  )
+                LIMIT 1
+                """
             ),
-            {"pid": project_id},
+            params,
         )
     ).scalar()
     profile_id = (await db.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
@@ -141,15 +254,21 @@ async def test_record_proposal_blocked_outside_proposal_stage(
 
 
 @pytest.mark.asyncio
-async def test_record_human_proposal_accepted_at_review_stage(
+async def test_record_human_proposal_accepted_at_review_for_qa(
     db_session: AsyncSession,
 ) -> None:
     """Quality-Assessment / human flows must keep working when the run has
     already advanced to REVIEW (e.g. after an interrupted publish that
     succeeded the ``proposal -> review`` step but failed downstream).
-    Only AI proposals are gated to PROPOSAL; human/system are allowed at
-    PROPOSAL or REVIEW."""
-    fx = await _setup_run_with_instance_field(db_session)
+
+    Layer 1b: The extraction-only gate added in this layer must NOT block
+    QA's recovery write — QA's publish is a one-shot single-user flow that
+    legitimately needs ``human`` proposals at REVIEW. Coverage of QA's
+    permissiveness is therefore explicit and uses a kind='quality_assessment'
+    template (the sibling extraction-kind rejection lives in
+    ``test_record_human_proposal_rejected_at_review_for_extraction``).
+    """
+    fx = await _setup_qa_run_with_instance_field(db_session)
     if fx is None:
         pytest.skip("Missing fixtures.")
     run_id, instance_id, field_id, profile_id = fx
@@ -170,6 +289,47 @@ async def test_record_human_proposal_accepted_at_review_stage(
     )
     assert record.id is not None
     assert record.source == "human"
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_record_human_proposal_rejected_at_review_for_extraction(
+    db_session: AsyncSession,
+) -> None:
+    """Layer 1b defense-in-depth: ``human`` proposals against an
+    EXTRACTION-kind run in REVIEW stage must be rejected.
+
+    During REVIEW the reviewer's writes must land as per-user
+    ``ReviewerDecision`` rows so the blind-review contract holds
+    (``loadValuesForUser`` filters by ``reviewer_id``). Allowing
+    ``human`` proposals at this stage opened the leak that Layer 1 fixed
+    on the read side; this gate closes the loophole on the write side so
+    a future bypass of the frontend filter (curl, agent client) cannot
+    resurrect the bug.
+
+    QA's publish flow legitimately needs proposals at REVIEW and is
+    therefore exempted (covered by the sibling QA test above).
+    """
+    fx = await _setup_run_with_instance_field(db_session, kind="extraction")
+    if fx is None:
+        pytest.skip("Missing extraction-kind template in test DB.")
+    run_id, instance_id, field_id, profile_id = fx
+    lifecycle = RunLifecycleService(db_session)
+    await lifecycle.advance_stage(
+        run_id=run_id,
+        target_stage=ExtractionRunStage.REVIEW,
+        user_id=profile_id,
+    )
+    service = ExtractionProposalService(db_session)
+    with pytest.raises(InvalidProposalError, match="extraction.*review|review.*extraction"):
+        await service.record_proposal(
+            run_id=run_id,
+            instance_id=instance_id,
+            field_id=field_id,
+            source=ExtractionProposalSource.HUMAN,
+            proposed_value={"value": "leaked"},
+            source_user_id=profile_id,
+        )
     await db_session.rollback()
 
 

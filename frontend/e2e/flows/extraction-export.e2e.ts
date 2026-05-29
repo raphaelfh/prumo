@@ -277,7 +277,7 @@ test.describe("Extraction export — UI flow", () => {
     const env = loadE2EEnv();
     await loginViaUi(page);
     await page.goto(
-      `${env.frontendUrl}/projects/${env.projectId}?tab=data-extraction`,
+      `${env.frontendUrl}/projects/${env.projectId}?tab=extraction`,
     );
 
     const exportBtn = page.getByTestId("extraction-export-button");
@@ -305,7 +305,7 @@ test.describe("Extraction export — UI flow", () => {
     const env = loadE2EEnv();
     await loginViaUi(page);
     await page.goto(
-      `${env.frontendUrl}/projects/${env.projectId}?tab=data-extraction`,
+      `${env.frontendUrl}/projects/${env.projectId}?tab=extraction`,
     );
 
     await page.getByTestId("extraction-export-button").click();
@@ -325,7 +325,7 @@ test.describe("Extraction export — UI flow", () => {
     const env = loadE2EEnv();
     await loginViaUi(page);
     await page.goto(
-      `${env.frontendUrl}/projects/${env.projectId}?tab=data-extraction`,
+      `${env.frontendUrl}/projects/${env.projectId}?tab=extraction`,
     );
 
     await page.getByTestId("extraction-export-button").click();
@@ -349,7 +349,7 @@ test.describe("Extraction export — UI flow", () => {
     const env = loadE2EEnv();
     await loginViaUi(page);
     await page.goto(
-      `${env.frontendUrl}/projects/${env.projectId}?tab=data-extraction`,
+      `${env.frontendUrl}/projects/${env.projectId}?tab=extraction`,
     );
 
     await page.getByTestId("extraction-export-button").click();
@@ -362,7 +362,7 @@ test.describe("Extraction export — UI flow", () => {
     const env = loadE2EEnv();
     await loginViaUi(page);
     await page.goto(
-      `${env.frontendUrl}/projects/${env.projectId}?tab=data-extraction`,
+      `${env.frontendUrl}/projects/${env.projectId}?tab=extraction`,
     );
 
     await page.getByTestId("extraction-export-button").click();

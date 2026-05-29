@@ -25,72 +25,90 @@ export interface PermissionRules {
 }
 
 /**
- * Determines whether user can see other users' extractions/assessments
+ * Determines whether user can see other users' extractions/assessments.
  *
- * Business rules:
- * 1. If blind_mode = ON → Nobody sees others (not even manager)
- * 2. If blind_mode = OFF → Only manager and consensus see others
- * 3. Reviewers and viewers NEVER see others (even without blind mode)
+ * Layer 3 of the multi-reviewer blind fix: the role is the source of
+ * truth for read access, not the project's ``blind_mode`` flag. The
+ * previous rule "blind_mode = ON → nobody sees, not even manager"
+ * stranded the arbitrator: they could never reach consensus on a
+ * blinded project without first manually flipping the flag from a
+ * Settings page they often did not know existed.
+ *
+ * New semantics:
+ *   - manager / consensus: ALWAYS see other reviewers' values. The
+ *     ``isBlindMode`` flag is *informational* for these roles (e.g.
+ *     surfacing a "blind methodology in effect" banner) but does not
+ *     gate visibility.
+ *   - reviewer / viewer: NEVER see other reviewers' values. The flag
+ *     is moot — they never had access.
+ *
+ * The flag still gets persisted on the project (via the Settings
+ * toggle) so external consumers (audit log, exports, downstream
+ * tooling) can know whether the project was run under a blind
+ * methodology. The change here is strictly the in-app gate.
  *
  * @param role - User's role in the project
- * @param isBlindMode - Whether blind mode is active
+ * @param isBlindMode - Whether blind mode is active (informational for
+ *   manager/consensus; ignored for reviewer/viewer because they cannot
+ *   see others either way)
  * @returns true if can see others
  */
 export function canUserSeeOthers(
   role: UserRole,
-  isBlindMode: boolean
+  _isBlindMode: boolean,
 ): boolean {
-    // Blind mode blocks everyone (rule 1)
-  if (isBlindMode) return false;
-
-    // Only manager and consensus (rules 2 and 3)
+  // Role-based gate. Manager and consensus need unblinded read access
+  // to do their arbitration job; reviewer / viewer roles never see
+  // other reviewers regardless of the flag.
   return role === 'manager' || role === 'consensus';
 }
 
 /**
  * Returns all permissions for a role.
- * * Only when blind_mode = OFF for canSeeOthers.
+ *
+ * ``canSeeOthers`` follows the Layer 3 role-based gate (see
+ * ``canUserSeeOthers``). All other permission flags are role-only and
+ * unaffected by ``isBlindMode``.
  *
  * @param role - User role
- * @param isBlindMode - Blind mode state
+ * @param isBlindMode - Blind mode state (informational only for
+ *   manager/consensus; ignored for reviewer/viewer)
  * @returns Object with all permissions
  */
 export function getRolePermissions(
   role: UserRole,
-  isBlindMode: boolean
+  isBlindMode: boolean,
 ): PermissionRules {
-  const basePermissions: Record<UserRole, PermissionRules> = {
-    manager: {
-      canSeeOthers: !isBlindMode,
-      canResolveConflicts: true,
-      canManageBlindMode: true,
-      canExport: true,
-      canEditTemplate: true
-    },
-    consensus: {
-      canSeeOthers: !isBlindMode,
-      canResolveConflicts: true,
-      canManageBlindMode: false,
-      canExport: true,
-      canEditTemplate: false
-    },
-    reviewer: {
-        canSeeOthers: false,  // Never sees others (avoids bias)
-      canResolveConflicts: false,
-      canManageBlindMode: false,
-      canExport: false,
-      canEditTemplate: false
-    },
-    viewer: {
-      canSeeOthers: false,
-      canResolveConflicts: false,
-      canManageBlindMode: false,
-      canExport: false,
-      canEditTemplate: false
-    }
-  };
-
-  return basePermissions[role];
+  const canSeeOthers = canUserSeeOthers(role, isBlindMode);
+  switch (role) {
+    case 'manager':
+      return {
+        canSeeOthers,
+        canResolveConflicts: true,
+        canManageBlindMode: true,
+        canExport: true,
+        canEditTemplate: true,
+      };
+    case 'consensus':
+      return {
+        canSeeOthers,
+        canResolveConflicts: true,
+        canManageBlindMode: false,
+        canExport: true,
+        canEditTemplate: false,
+      };
+    case 'reviewer':
+    case 'viewer':
+      // Neither role ever sees other reviewers (avoids bias for
+      // reviewers; viewers have no edit/decision surface at all).
+      return {
+        canSeeOthers: false,
+        canResolveConflicts: false,
+        canManageBlindMode: false,
+        canExport: false,
+        canEditTemplate: false,
+      };
+  }
 }
 
 /**
