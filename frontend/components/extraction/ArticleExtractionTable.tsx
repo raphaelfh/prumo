@@ -12,6 +12,7 @@ import type {CSSProperties} from 'react';
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {useLocation, useNavigate} from 'react-router-dom';
 import {supabase} from '@/integrations/supabase/client';
+import {ExtractionValueService} from '@/services/extractionValueService';
 import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
 import {Progress} from '@/components/ui/progress';
@@ -255,7 +256,23 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
         throw instancesError;
       }
 
-        // 3. Fetch the user's persisted work in two parallel reads:
+        // 3. Resolve the "form run" per article so the value queries can
+        //    scope to it. Without this filter, the badge silently
+        //    cross-aggregates reviewer_states / proposals from unrelated
+        //    runs sharing the same instance ids (instances persist
+        //    across runs of the same template+article), so a stale
+        //    finalized run can mark a fresh article as "completed". The
+        //    form opens via ``HITLSessionService`` which prefers a
+        //    non-terminal run and falls back to the latest finalized;
+        //    the badge mirrors that.
+      const articleIds = articlesData.map((a) => a.id);
+      const formRunByArticle = await ExtractionValueService.findFormRunsByArticle(
+        articleIds,
+        templateId,
+      );
+      const formRunIds = Array.from(new Set(formRunByArticle.values()));
+
+        // 4. Fetch the user's persisted work in two parallel reads:
         //    - Reviewer decisions (post-publish / explicit accept): the
         //      reviewer_states pointer joined with the decision payload.
         //    - Human proposals (autosave during typing): rows in
@@ -266,7 +283,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
         //    persisted the typed value.
       const instanceIds = (instancesData || []).map((i) => i.id);
       const valuesData: any[] = [];
-      if (instanceIds.length > 0) {
+      if (instanceIds.length > 0 && formRunIds.length > 0) {
         const [statesResult, proposalsResult] = await Promise.all([
           supabase
             .from('extraction_reviewer_states')
@@ -274,11 +291,13 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
               `instance_id, current_decision_id,
                reviewer_decision:extraction_reviewer_decisions!fk_extraction_reviewer_states_decision_run_match(field_id, value, decision, created_at)`,
             )
+            .in('run_id', formRunIds)
             .in('instance_id', instanceIds)
             .eq('reviewer_id', currentUserId),
           supabase
             .from('extraction_proposal_records')
             .select('instance_id, field_id, proposed_value, created_at')
+            .in('run_id', formRunIds)
             .in('instance_id', instanceIds)
             .eq('source', 'human')
             .eq('source_user_id', currentUserId)
