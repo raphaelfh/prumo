@@ -43,3 +43,8 @@ def test_too_many_attachments_rejected() -> None:
     att = {"kind": "image", "storage_key": "k", "content_type": "image/png"}
     with pytest.raises(ValidationError):
         FeedbackCreate(**_payload(attachments=[att] * 6))
+
+
+def test_blank_description_rejected() -> None:
+    with pytest.raises(ValidationError):
+        FeedbackCreate(**_payload(description="          "))  # 10 spaces -> trims to empty

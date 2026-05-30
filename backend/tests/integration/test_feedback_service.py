@@ -40,3 +40,25 @@ async def test_create_report_persists(db_session) -> None:
     assert fetched.route == "/projects/p/extraction"
     assert fetched.forward_status == "pending"
     assert len(fetched.attachments) == 1
+
+
+async def test_rejects_foreign_storage_key(db_session) -> None:
+    uid = "11111111-1111-1111-1111-111111111111"
+    service = FeedbackService(db=db_session, user_id=uid)
+    payload = _payload(attachments=[
+        {"kind": "image", "storage_key": "22222222-2222-2222-2222-222222222222/x.webp",
+         "content_type": "image/webp", "size_bytes": 10},
+    ])
+    with pytest.raises(ValueError):
+        await service.create_report(payload)
+
+
+async def test_rejects_oversized_attachment(db_session) -> None:
+    uid = "11111111-1111-1111-1111-111111111111"
+    service = FeedbackService(db=db_session, user_id=uid)
+    payload = _payload(attachments=[
+        {"kind": "video", "storage_key": f"{uid}/big.webm",
+         "content_type": "video/webm", "size_bytes": 99_999_999},
+    ])
+    with pytest.raises(ValueError):
+        await service.create_report(payload)

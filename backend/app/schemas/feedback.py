@@ -45,9 +45,17 @@ class FeedbackCreate(BaseModel):
     type: FeedbackType
     severity: FeedbackSeverity | None = None
     summary: str | None = Field(default=None, max_length=200)
-    description: str = Field(min_length=10, max_length=5000)
+    description: str = Field(max_length=5000)
     context: FeedbackContextIn = Field(default_factory=FeedbackContextIn)
     attachments: list[FeedbackAttachmentIn] = Field(default_factory=list, max_length=5)
+
+    @field_validator("description")
+    @classmethod
+    def _non_blank_description(cls, v: str) -> str:
+        v = v.strip()
+        if len(v) < 10:
+            raise ValueError("description must be at least 10 non-whitespace characters")
+        return v
 
 
 class FeedbackCreated(BaseModel):

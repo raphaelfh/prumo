@@ -10,8 +10,12 @@
 
 -- Private bucket for feedback screenshots/clips. Browser uploads to its
 -- own auth.uid() prefix; backend reads via service_role.
-insert into storage.buckets (id, name, public)
-values ('feedback-media', 'feedback-media', false)
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'feedback-media', 'feedback-media', false,
+  52428800,  -- 50 MB, matches FEEDBACK_MAX_VIDEO_BYTES
+  array['image/png', 'image/webp', 'image/jpeg', 'video/webm']
+)
 on conflict (id) do nothing;
 
 -- Authenticated users may upload only under their own uid prefix.
