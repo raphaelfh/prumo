@@ -228,27 +228,30 @@ class RunLifecycleService:
         # extraction_proposal_records is append-only and "the latest
         # typed value wins".
         latest_proposals = (
-            await self.db.execute(
-                select(ExtractionProposalRecord)
-                .where(
-                    ExtractionProposalRecord.run_id == run_id,
-                    ExtractionProposalRecord.source
-                    == ExtractionProposalSource.HUMAN.value,
-                    ExtractionProposalRecord.source_user_id.is_not(None),
-                )
-                .order_by(
-                    ExtractionProposalRecord.instance_id,
-                    ExtractionProposalRecord.field_id,
-                    ExtractionProposalRecord.source_user_id,
-                    ExtractionProposalRecord.created_at.desc(),
-                )
-                .distinct(
-                    ExtractionProposalRecord.instance_id,
-                    ExtractionProposalRecord.field_id,
-                    ExtractionProposalRecord.source_user_id,
+            (
+                await self.db.execute(
+                    select(ExtractionProposalRecord)
+                    .where(
+                        ExtractionProposalRecord.run_id == run_id,
+                        ExtractionProposalRecord.source == ExtractionProposalSource.HUMAN.value,
+                        ExtractionProposalRecord.source_user_id.is_not(None),
+                    )
+                    .order_by(
+                        ExtractionProposalRecord.instance_id,
+                        ExtractionProposalRecord.field_id,
+                        ExtractionProposalRecord.source_user_id,
+                        ExtractionProposalRecord.created_at.desc(),
+                    )
+                    .distinct(
+                        ExtractionProposalRecord.instance_id,
+                        ExtractionProposalRecord.field_id,
+                        ExtractionProposalRecord.source_user_id,
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         if not latest_proposals:
             return

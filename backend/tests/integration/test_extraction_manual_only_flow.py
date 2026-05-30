@@ -437,15 +437,18 @@ async def test_advance_to_review_does_not_materialize_ai_proposals(
     )
 
     decision_count = (
-        await db_session.execute(
-            select(ExtractionReviewerDecision).where(
-                ExtractionReviewerDecision.run_id == session.run_id,
+        (
+            await db_session.execute(
+                select(ExtractionReviewerDecision).where(
+                    ExtractionReviewerDecision.run_id == session.run_id,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert decision_count == [], (
-        "AI proposals must remain as proposals — reviewers explicitly "
-        "accept/edit/reject them."
+        "AI proposals must remain as proposals — reviewers explicitly accept/edit/reject them."
     )
 
     await db_session.rollback()

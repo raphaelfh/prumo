@@ -37,9 +37,7 @@ async def _clean_project_clones(db: AsyncSession, project_id: UUID) -> None:
     test starts from a clean slate. CASCADE clears entity_types + fields
     + version snapshots + instances tied to the templates."""
     await db.execute(
-        text(
-            "DELETE FROM public.project_extraction_templates WHERE project_id = :pid"
-        ),
+        text("DELETE FROM public.project_extraction_templates WHERE project_id = :pid"),
         {"pid": str(project_id)},
     )
 
@@ -68,8 +66,7 @@ async def test_clone_creates_full_structure_when_fresh(db_session: AsyncSession)
     )
     assert result.created is True
     assert result.entity_type_count == 14, (
-        f"CHARMS global has 14 entity_types; fresh clone produced "
-        f"{result.entity_type_count}."
+        f"CHARMS global has 14 entity_types; fresh clone produced {result.entity_type_count}."
     )
     assert result.field_count > 0
     await db_session.rollback()
@@ -132,12 +129,16 @@ async def test_clone_heals_partial_structure_drift_against_snapshot(
     await db_session.flush()
 
     live_et_count = (
-        await db_session.execute(
-            select(ExtractionEntityType).where(
-                ExtractionEntityType.project_template_id == project_template_id
+        (
+            await db_session.execute(
+                select(ExtractionEntityType).where(
+                    ExtractionEntityType.project_template_id == project_template_id
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(live_et_count) == 1, "drift simulation expected exactly 1 live entity_type"
 
     # 3. Re-clone with the same (project, global_template_id). Heal must
@@ -162,12 +163,16 @@ async def test_clone_heals_partial_structure_drift_against_snapshot(
 
     # Defence-in-depth: the live table count must also match the report.
     live_after = (
-        await db_session.execute(
-            select(ExtractionEntityType).where(
-                ExtractionEntityType.project_template_id == project_template_id
+        (
+            await db_session.execute(
+                select(ExtractionEntityType).where(
+                    ExtractionEntityType.project_template_id == project_template_id
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(live_after) == snapshot_et_count
 
     await db_session.rollback()
@@ -211,14 +216,17 @@ async def test_clone_is_noop_when_aligned(db_session: AsyncSession) -> None:
     # Snapshot version should not roll forward — heal only updates the
     # snapshot when it actually rebuilt structure.
     version_ids = (
-        await db_session.execute(
-            select(ExtractionTemplateVersion.id).where(
-                ExtractionTemplateVersion.project_template_id
-                == first.project_template_id,
-                ExtractionTemplateVersion.is_active.is_(True),
+        (
+            await db_session.execute(
+                select(ExtractionTemplateVersion.id).where(
+                    ExtractionTemplateVersion.project_template_id == first.project_template_id,
+                    ExtractionTemplateVersion.is_active.is_(True),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(version_ids) == 1
     assert version_ids[0] == first.version_id
 
