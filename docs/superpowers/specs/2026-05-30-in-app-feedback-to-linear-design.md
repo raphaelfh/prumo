@@ -21,8 +21,10 @@ A feedback widget was scaffolded on the frontend but never connected to anything
 
 - [`frontend/components/feedback/FeedbackButton.tsx`](../../../frontend/components/feedback/FeedbackButton.tsx) — icon button wired into the Topbar.
 - [`frontend/components/feedback/FeedbackDialog.tsx`](../../../frontend/components/feedback/FeedbackDialog.tsx) — type (`bug`/`suggestion`/`question`/`other`) + severity + description.
-- [`frontend/hooks/useFeedback.ts`](../../../frontend/hooks/useFeedback.ts) — captures context (URL, project/article ids, viewport, user agent) and writes **directly to Supabase** (`feedback_reports`), bypassing the backend.
-- `feedback_reports` table — exists in `baseline_v1.sql`, RLS-enabled, with **unused** `status` / `priority` / `admin_notes` / `screenshot_url` columns (scaffolding for an in-app triage workflow that was never built). It is a "SQL-only" table today — no ORM model, no `/api/v1` endpoint.
+- [`frontend/hooks/useFeedback.ts`](../../../frontend/hooks/useFeedback.ts) — captures context (URL, project/article ids, viewport, user agent) and writes **directly to Supabase** (`feedback_reports`), bypassing the backend. The hook sent `type`/`description`/… fields that **did not match the actual table columns** (see correction note below) — it was effectively broken.
+- `feedback_reports` table — exists in `baseline_v1.sql`, RLS-enabled, with free-form columns `category` (text), `message` (text), `metadata` (jsonb), and `status` (text). No structured `type`/`severity`/`description`/`url`/etc. columns existed. It is a "SQL-only" table today — no ORM model, no `/api/v1` endpoint.
+
+> **Correction (2026-05-30):** The original draft of this spec incorrectly described `feedback_reports` as having `type`/`description`/`severity`/`url`/etc. columns. That was wrong — the table had `category`/`message`/`metadata`/`status` (confirmed in `backend/alembic/versions/baseline_v1.sql` and the generated Supabase types). The spec was written by trusting the hand-authored TypeScript interface in `useFeedback.ts` rather than the generated types. As a consequence, the committed migration `0020_feedback_outbox.py` differs from the spec's §5.1 "Keep/Add/Drop" assumption: it **adds** all the structured columns (including `type`, `description`, `url`, etc.) from scratch, **backtracks** by migrating `message`→`description` and `category`→`summary`, and **drops** the legacy free-form columns. See §5.1 for the corrected as-built description.
 
 ### 1.2 The gap
 
@@ -94,32 +96,34 @@ Build an **in-house bridge**:
 
 ### 5.1 `feedback_reports` (slimmed to an outbox)
 
+> **As-built note (2026-05-30):** The table did NOT already have `type`/`description`/etc. — the real legacy columns were `category`/`message`/`metadata`/`status`. The committed migration `0020_feedback_outbox.py` therefore **adds** every structured column listed below, **backfills** legacy data (`message`→`description`, `category`→`summary`), and **drops** the legacy columns. The "Keep/Add/Drop" framing in the original draft assumed a different starting schema.
+
 Give it a first-class ORM model ([`backend/app/models/feedback.py`](../../../backend/app/models/feedback.py)) and remove it from the "SQL-only" exclusion list in [`backend/alembic/env.py`](../../../backend/alembic/env.py).
 
 | column | type | notes |
 |---|---|---|
-| `id` | uuid PK | |
+| `id` | uuid PK | keep |
 | `user_id` | uuid FK → `auth.users` | `ON DELETE SET NULL` (keep) |
-| `type` | text/enum | `bug` \| `suggestion` \| `question` \| `other` |
-| `severity` | text, nullable | `low` \| `medium` \| `high` \| `critical` |
-| `summary` | text, nullable | optional one-line title (new) |
-| `description` | text | 10–5000 chars |
-| `url` | text | page URL (keep) |
-| `route` | text, nullable | logical route (new) |
-| `project_id` | uuid FK → `projects`, nullable | validated for membership if present |
-| `article_id` | uuid FK → `articles`, nullable | |
-| `user_agent` | text, nullable | |
-| `viewport` | jsonb, nullable | `{ width, height }` |
-| `app_version` | text, nullable | build SHA if exposed (new) |
-| `linear_issue_id` | text, nullable | idempotency anchor (new) |
-| `linear_identifier` | text, nullable | e.g. `PRU-123` (new) |
-| `linear_url` | text, nullable | (new) |
-| `forward_status` | text | `pending` \| `issue_created` \| `sent` \| `failed`, default `pending` (new) |
-| `forward_error` | text, nullable | (new) |
-| `forwarded_at` | timestamptz, nullable | (new) |
-| `created_at` / `updated_at` | timestamptz | `TimestampMixin` |
+| `type` | text | `bug` \| `suggestion` \| `question` \| `other` — **added** |
+| `severity` | text, nullable | `low` \| `medium` \| `high` \| `critical` — **added** |
+| `summary` | text, nullable | optional one-line title — **added** (backfilled from legacy `category`) |
+| `description` | text | 10–5000 chars — **added** (backfilled from legacy `message`) |
+| `url` | text, nullable | page URL — **added** |
+| `route` | text, nullable | logical route — **added** |
+| `project_id` | uuid FK → `projects`, nullable | validated for membership if present — **added** |
+| `article_id` | uuid FK → `articles`, nullable | **added** |
+| `user_agent` | text, nullable | **added** |
+| `viewport_size` | jsonb, nullable | `{ width, height }` — **added** |
+| `app_version` | text, nullable | build SHA if exposed — **added** |
+| `linear_issue_id` | text, nullable | idempotency anchor — **added** |
+| `linear_identifier` | text, nullable | e.g. `PRU-123` — **added** |
+| `linear_url` | text, nullable | **added** |
+| `forward_status` | text | `pending` \| `issue_created` \| `sent` \| `failed`, default `pending` — **added** |
+| `forward_error` | text, nullable | **added** |
+| `forwarded_at` | timestamptz, nullable | **added** |
+| `created_at` / `updated_at` | timestamptz | `TimestampMixin` (keep) |
 
-**Dropped:** `status`, `priority`, `admin_notes`, `screenshot_url`.
+**Dropped (legacy free-form columns):** `category`, `message`, `metadata`, `status`.
 
 ### 5.2 `feedback_attachments` (new)
 

@@ -224,6 +224,8 @@ git commit -m "feat(feedback): add FeedbackReport + FeedbackAttachment ORM model
 
 ## Task 2: Alembic migration (slim outbox + child table + RLS)
 
+> **Note (as-built):** the real legacy `feedback_reports` had `category`/`message`/`metadata`/`status` (not `type`/`description`/…). The committed migration `0020_feedback_outbox.py` adapts: it ADDS the structured columns, DROPS the legacy ones, and BACKFILLS `message`→`description` / `category`→`summary`. The code block below is the original (pre-discovery) plan and is superseded by the committed migration.
+
 **Files:**
 - Create: `backend/alembic/versions/0020_feedback_outbox.py`
 - Modify: `backend/alembic/env.py`

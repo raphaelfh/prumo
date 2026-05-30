@@ -105,6 +105,14 @@ There is no tracked env template — env files match `.gitignore` line 21 (`.env
 | `web` | `REDIS_URL` | `${{Redis.REDIS_URL}}` (reference variable, resolves to private network) |
 | `worker` | `REDIS_URL` | `${{Redis.REDIS_URL}}` (reference variable) |
 
+### Feedback / Linear
+
+| Key | Purpose | Used by |
+| --- | --- | --- |
+| `LINEAR_API_KEY` | Linear personal/workspace API key (SECRET) — used to create feedback issues via the Linear GraphQL API | `web`, `worker` |
+| `LINEAR_TEAM_ID` | Linear team id for the Prumo team (`9b86c9ed-ede9-4f36-99d1-c2f53fb82370`) | `web`, `worker` |
+| `FEEDBACK_MEDIA_BUCKET` | Supabase Storage bucket for feedback screenshots/clips (default `feedback-media`) | `worker` |
+
 ## Migrations
 
 Alembic runs automatically as part of the web service's Dockerfile `CMD`:
