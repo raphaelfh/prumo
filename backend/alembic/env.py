@@ -120,7 +120,7 @@ def include_object(
         if name in _SUPABASE_INJECTED_TABLES:
             return False
         # Exclude tables that are in the DB but have no corresponding SQLAlchemy model.
-        # These are "SQL-only" tables (e.g., article_annotations, feedback_reports)
+        # These are "SQL-only" tables (e.g., article_annotations)
         # whose lifecycle is managed via op.execute() in migration files.
         if reflected and compare_to is None:
             return False

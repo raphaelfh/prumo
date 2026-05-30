@@ -1651,38 +1651,139 @@ export type Database = {
         }
         Relationships: []
       }
-      feedback_reports: {
+      feedback_attachments: {
         Row: {
-          category: string
+          content_type: string
           created_at: string
+          feedback_report_id: string
+          forward_status: string
           id: string
-          message: string
-          metadata: Json
-          status: string
+          kind: string
+          linear_asset_url: string | null
+          size_bytes: number | null
+          storage_key: string
           updated_at: string
-          user_id: string | null
         }
         Insert: {
-          category: string
+          content_type: string
           created_at?: string
+          feedback_report_id: string
+          forward_status?: string
           id?: string
-          message: string
-          metadata?: Json
-          status?: string
+          kind: string
+          linear_asset_url?: string | null
+          size_bytes?: number | null
+          storage_key: string
           updated_at?: string
-          user_id?: string | null
         }
         Update: {
-          category?: string
+          content_type?: string
           created_at?: string
+          feedback_report_id?: string
+          forward_status?: string
           id?: string
-          message?: string
-          metadata?: Json
-          status?: string
+          kind?: string
+          linear_asset_url?: string | null
+          size_bytes?: number | null
+          storage_key?: string
           updated_at?: string
-          user_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "feedback_attachments_feedback_report_id_fkey"
+            columns: ["feedback_report_id"]
+            isOneToOne: false
+            referencedRelation: "feedback_reports"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      feedback_reports: {
+        Row: {
+          app_version: string | null
+          article_id: string | null
+          created_at: string
+          description: string
+          forward_error: string | null
+          forward_status: string
+          forwarded_at: string | null
+          id: string
+          linear_identifier: string | null
+          linear_issue_id: string | null
+          linear_url: string | null
+          project_id: string | null
+          route: string | null
+          severity: string | null
+          summary: string | null
+          type: string
+          updated_at: string
+          url: string | null
+          user_agent: string | null
+          user_id: string | null
+          viewport_size: Json | null
+        }
+        Insert: {
+          app_version?: string | null
+          article_id?: string | null
+          created_at?: string
+          description: string
+          forward_error?: string | null
+          forward_status?: string
+          forwarded_at?: string | null
+          id?: string
+          linear_identifier?: string | null
+          linear_issue_id?: string | null
+          linear_url?: string | null
+          project_id?: string | null
+          route?: string | null
+          severity?: string | null
+          summary?: string | null
+          type: string
+          updated_at?: string
+          url?: string | null
+          user_agent?: string | null
+          user_id?: string | null
+          viewport_size?: Json | null
+        }
+        Update: {
+          app_version?: string | null
+          article_id?: string | null
+          created_at?: string
+          description?: string
+          forward_error?: string | null
+          forward_status?: string
+          forwarded_at?: string | null
+          id?: string
+          linear_identifier?: string | null
+          linear_issue_id?: string | null
+          linear_url?: string | null
+          project_id?: string | null
+          route?: string | null
+          severity?: string | null
+          summary?: string | null
+          type?: string
+          updated_at?: string
+          url?: string | null
+          user_agent?: string | null
+          user_id?: string | null
+          viewport_size?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "feedback_reports_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
+            referencedRelation: "articles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "feedback_reports_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {

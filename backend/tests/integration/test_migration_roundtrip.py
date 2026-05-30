@@ -104,8 +104,8 @@ async def test_alembic_head_is_expected_revision() -> None:
     out = _run_alembic("current")
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0019_gate_find_user_id_by_email" in out, (
-        f"Expected head revision '0019_gate_find_user_id_by_email', got:\n{out}"
+    assert "0020_feedback_outbox" in out, (
+        f"Expected head revision '0020_feedback_outbox', got:\n{out}"
     )
 
 
