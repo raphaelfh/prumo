@@ -86,6 +86,12 @@ function chain(payload: { data: unknown; error?: { message: string } | null }): 
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // ``loadValuesForUser`` now reads two layers in parallel (reviewer_states
+  // + human proposal_records) and merges by precedence. Most tests only
+  // care about one layer, so anything not explicitly mocked falls through
+  // to an empty chain. ``mockReturnValueOnce`` overrides this for the
+  // first call as before.
+  (supabase.from as any).mockReturnValue(chain({ data: [] }));
 });
 
 describe('ExtractionValueService.findActiveRun', () => {
@@ -164,6 +170,76 @@ describe('ExtractionValueService.findActiveRun', () => {
     await expect(
       ExtractionValueService.findActiveRun('article-1', null),
     ).rejects.toThrow(/boom/);
+  });
+});
+
+describe('ExtractionValueService.findFormRunsByArticle', () => {
+  it('returns the latest non-terminal run per article (H4)', async () => {
+    // Two articles, both with a non-terminal run. The latest per article
+    // wins. Cancelled and finalized rows are ignored when a non-terminal
+    // row exists.
+    (supabase.from as any).mockReturnValueOnce(
+      chain({
+        data: [
+          // article-A: non-terminal latest
+          {
+            id: 'run-A-new',
+            article_id: 'article-A',
+            stage: 'review',
+            created_at: '2026-05-26T10:00:00Z',
+          },
+          {
+            id: 'run-A-old',
+            article_id: 'article-A',
+            stage: 'finalized',
+            created_at: '2026-05-25T10:00:00Z',
+          },
+          // article-B: only finalized
+          {
+            id: 'run-B-final',
+            article_id: 'article-B',
+            stage: 'finalized',
+            created_at: '2026-05-26T09:00:00Z',
+          },
+          // article-C: cancelled only — must be excluded
+          {
+            id: 'run-C-cancel',
+            article_id: 'article-C',
+            stage: 'cancelled',
+            created_at: '2026-05-26T08:00:00Z',
+          },
+        ],
+      }),
+    );
+
+    const result = await ExtractionValueService.findFormRunsByArticle(
+      ['article-A', 'article-B', 'article-C'],
+      'tpl-1',
+    );
+
+    // article-A: non-terminal preferred over older finalized
+    expect(result.get('article-A')).toBe('run-A-new');
+    // article-B: only finalized available — fallback
+    expect(result.get('article-B')).toBe('run-B-final');
+    // article-C: cancelled excluded
+    expect(result.has('article-C')).toBe(false);
+  });
+
+  it('scopes the query to kind=extraction + template_id (H4)', async () => {
+    const c = chain({ data: [] });
+    (supabase.from as any).mockReturnValueOnce(c);
+    await ExtractionValueService.findFormRunsByArticle(['article-A'], 'tpl-1');
+    expect(c.__calls.eqs).toContainEqual(['kind', 'extraction']);
+    expect(c.__calls.eqs).toContainEqual(['template_id', 'tpl-1']);
+    const articleFilter = c.__calls.ins.find(([col]) => col === 'article_id');
+    expect(articleFilter?.[1]).toEqual(['article-A']);
+  });
+
+  it('returns empty map when articleIds is empty (no round trip)', async () => {
+    const result = await ExtractionValueService.findFormRunsByArticle([], 'tpl-1');
+    expect(result.size).toBe(0);
+    // Crucially: no .from() call was issued — short-circuit.
+    expect((supabase.from as any).mock.calls.length).toBe(0);
   });
 });
 
@@ -333,6 +409,47 @@ describe('ExtractionValueService.loadValuesForUser', () => {
     await expect(
       ExtractionValueService.loadValuesForUser('run-1', 'user-1'),
     ).rejects.toThrow(/states down/);
+  });
+
+  it('falls back to the user’s latest human proposal_record when no reviewer_decision exists (H1)', async () => {
+    // Production scenario reproduced from article 5573e7f3 / run 154cd860:
+    // - run is in REVIEW stage (advanced after AI extraction)
+    // - 0 reviewer_decisions for the current user
+    // - 1 human proposal_record (source=human, source_user_id=current user)
+    //
+    // Pre-fix: hook reads ONLY extraction_reviewer_states → empty rows →
+    // form renders blank even though the user typed "Case series".
+    // Post-fix: precedence read falls back to the user's human proposal,
+    // so the form renders the typed value until an explicit decision is
+    // recorded (or auto-materialized on the next stage advance).
+    //
+    // Call order in the new impl: reviewer_states first (empty), then
+    // human proposals (returns 1 row).
+    (supabase.from as any)
+      .mockReturnValueOnce(chain({ data: [] }))
+      .mockReturnValueOnce(
+        chain({
+          data: [
+            {
+              instance_id: 'inst-source-of-data',
+              field_id: 'field-data-source',
+              proposed_value: { value: 'Case series' },
+              created_at: '2026-05-26T19:44:29Z',
+            },
+          ],
+        }),
+      );
+
+    const rows = await ExtractionValueService.loadValuesForUser(
+      'run-154cd860',
+      'user-352ec3f8',
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].instanceId).toBe('inst-source-of-data');
+    expect(rows[0].fieldId).toBe('field-data-source');
+    expect(rows[0].value).toBe('Case series');
+    expect(rows[0].reviewerId).toBe('user-352ec3f8');
   });
 });
 

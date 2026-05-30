@@ -154,42 +154,169 @@ export const ExtractionValueService = {
   },
 
   /**
+   * Resolve the "form run" per article in a batch. The form run is
+   * the one ``HITLSessionService.open_or_resume`` would expose: the
+   * latest non-terminal (pending/proposal/review/consensus) run if any,
+   * otherwise the latest finalized run. Cancelled runs are excluded.
+   *
+   * Used by views that need run-scoped value queries across multiple
+   * articles (e.g. the article extraction badge), so they do not
+   * cross-aggregate values from unrelated runs sharing the same
+   * instance ids.
+   *
+   * Short-circuits on empty ``articleIds`` to avoid an unconstrained
+   * round trip.
+   */
+  async findFormRunsByArticle(
+    articleIds: string[],
+    projectTemplateId: string,
+  ): Promise<Map<string, string>> {
+    const result = new Map<string, string>();
+    if (articleIds.length === 0) return result;
+
+    const { data, error } = await supabase
+      .from('extraction_runs')
+      .select('id, article_id, stage, created_at')
+      .in('article_id', articleIds)
+      .eq('kind', 'extraction')
+      .eq('template_id', projectTemplateId)
+      .order('created_at', { ascending: false });
+    if (error) {
+      throw new APIError(
+        `Failed to load form runs by article: ${error.message}`,
+        undefined,
+        { error },
+      );
+    }
+
+    type RunRow = {
+      id: string;
+      article_id: string;
+      stage: string;
+      created_at: string;
+    };
+    const nonTerminal = new Set<string>(NON_TERMINAL_STAGES);
+    // Latest-first sort means: for each article, scan rows in order and
+    // prefer a non-terminal hit; fall back to the first finalized seen.
+    const finalizedFallback = new Map<string, string>();
+    for (const row of (data ?? []) as RunRow[]) {
+      if (result.has(row.article_id)) continue;
+      if (nonTerminal.has(row.stage)) {
+        result.set(row.article_id, row.id);
+      } else if (row.stage === 'finalized' && !finalizedFallback.has(row.article_id)) {
+        finalizedFallback.set(row.article_id, row.id);
+      }
+      // cancelled is excluded by design.
+    }
+    for (const [articleId, runId] of finalizedFallback) {
+      if (!result.has(articleId)) result.set(articleId, runId);
+    }
+    return result;
+  },
+
+  /**
    * Load the current value per (instance, field) for the given user
-   * within a run. Latest decision wins via the materialized
-   * reviewer_states pointer.
+   * within a run.
+   *
+   * Two layers are read in parallel and merged by precedence:
+   * 1. ``extraction_reviewer_states`` (joined to
+   *    ``extraction_reviewer_decisions``) — the user's formal review
+   *    decisions (latest per coord via the materialized pointer).
+   * 2. ``extraction_proposal_records`` (source=human, source_user_id=user)
+   *    — the user's autosaved input, the raw layer that always reflects
+   *    what they typed.
+   *
+   * Precedence: reviewer_decision wins where it exists; otherwise the
+   * latest human proposal_record fills in. Reject decisions clear the
+   * coord (the row stays in the output with ``decision='reject'`` so
+   * the consumer can distinguish "explicitly rejected" from "never set").
+   *
+   * Why fallback matters: ``useAutoSaveProposals`` writes proposals
+   * regardless of run stage. When a run advances PROPOSAL→REVIEW (via
+   * AI extraction or explicit "Submit for review") before any
+   * ``reviewer_decision`` exists for the user's typed values, the form
+   * would otherwise render blank — even though the proposal is alive.
    */
   async loadValuesForUser(
     runId: string,
     reviewerId: string,
   ): Promise<DecisionValueRow[]> {
-    const { data, error } = await supabase
-      .from('extraction_reviewer_states')
-      .select(
-        `run_id, reviewer_id, instance_id, field_id, current_decision_id,
-         reviewer_decision:extraction_reviewer_decisions!fk_extraction_reviewer_states_decision_run_match (
-           decision, value, created_at
-         )`,
-      )
-      .eq('run_id', runId)
-      .eq('reviewer_id', reviewerId);
-    if (error) {
+    const [decisionsResult, proposalsResult] = await Promise.all([
+      supabase
+        .from('extraction_reviewer_states')
+        .select(
+          `run_id, reviewer_id, instance_id, field_id, current_decision_id,
+           reviewer_decision:extraction_reviewer_decisions!fk_extraction_reviewer_states_decision_run_match (
+             decision, value, created_at
+           )`,
+        )
+        .eq('run_id', runId)
+        .eq('reviewer_id', reviewerId),
+      supabase
+        .from('extraction_proposal_records')
+        .select('instance_id, field_id, proposed_value, created_at')
+        .eq('run_id', runId)
+        .eq('source', 'human')
+        .eq('source_user_id', reviewerId)
+        .order('created_at', { ascending: false }),
+    ]);
+
+    if (decisionsResult.error) {
       throw new APIError(
-        `Failed to load reviewer values: ${error.message}`,
+        `Failed to load reviewer values: ${decisionsResult.error.message}`,
         undefined,
-        { error },
+        { error: decisionsResult.error },
       );
     }
-    const rows = (data ?? []) as unknown as ReviewerStateRow[];
-    return rows
-      .filter((r) => r.reviewer_decision !== null)
-      .map((r) => ({
+    if (proposalsResult.error) {
+      throw new APIError(
+        `Failed to load reviewer values: ${proposalsResult.error.message}`,
+        undefined,
+        { error: proposalsResult.error },
+      );
+    }
+
+    const merged = new Map<string, DecisionValueRow>();
+    const key = (instanceId: string, fieldId: string) => `${instanceId}_${fieldId}`;
+
+    // Layer 1 — human proposals (lowest precedence). Latest-first sort
+    // means the first occurrence per (instance, field) is the latest.
+    const proposalRows = (proposalsResult.data ?? []) as Array<{
+      instance_id: string;
+      field_id: string;
+      proposed_value: unknown;
+      created_at: string | null;
+    }>;
+    for (const p of proposalRows) {
+      const k = key(p.instance_id, p.field_id);
+      if (merged.has(k)) continue;
+      merged.set(k, {
+        instanceId: p.instance_id,
+        fieldId: p.field_id,
+        value: unwrapValue(p.proposed_value),
+        decision: 'human_proposal',
+        reviewerId,
+        decidedAt: p.created_at ?? '',
+      });
+    }
+
+    // Layer 2 — reviewer decisions (overrides proposals). Non-null
+    // decisions only — null reviewer_decision means the state row exists
+    // but no decision is current (cleared / never set).
+    const decisionRows = (decisionsResult.data ?? []) as unknown as ReviewerStateRow[];
+    for (const r of decisionRows) {
+      if (r.reviewer_decision === null) continue;
+      merged.set(key(r.instance_id, r.field_id), {
         instanceId: r.instance_id,
         fieldId: r.field_id,
-        value: unwrapValue(r.reviewer_decision?.value ?? null),
-        decision: r.reviewer_decision?.decision ?? 'edit',
+        value: unwrapValue(r.reviewer_decision.value),
+        decision: r.reviewer_decision.decision ?? 'edit',
         reviewerId: r.reviewer_id,
-        decidedAt: r.reviewer_decision?.created_at ?? '',
-      }));
+        decidedAt: r.reviewer_decision.created_at ?? '',
+      });
+    }
+
+    return [...merged.values()];
   },
 
   /**
