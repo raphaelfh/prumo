@@ -324,7 +324,7 @@ export default function QualityAssessmentFullScreen() {
     if (!session) return;
     await advanceMutation.mutateAsync({ target_stage: "finalized" });
     await refetchRun();
-    toast.success("Run finalized.");
+    toast.success("Assessment finalized.");
   }, [session, advanceMutation, refetchRun]);
 
   const handleReopen = useCallback(async () => {
