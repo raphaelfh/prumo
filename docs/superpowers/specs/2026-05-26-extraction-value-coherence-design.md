@@ -11,6 +11,31 @@ owner: '@raphaelfh'
 > badge says "completed" — re-establishes coherence between
 > `proposal_records`, `reviewer_decisions`, and `published_states`.
 
+## 0. Implementation status (2026-05-27)
+
+What actually shipped is a deliberate subset of the design below. Recorded
+here so the document does not overstate the code:
+
+- **H1 — shipped, narrowed.** `loadValuesForUser` merges **two** layers:
+  the user's `reviewer_decisions` over their own `human` `proposal_records`
+  (decision wins; `reject` clears; else the latest human proposal fills in).
+  The `published_states` and `ai`-proposal precedence layers in §4.1 / §6.1
+  are **deferred** — not needed for the reported bug (REVIEW-stage human
+  value rendering blank) and a no-regression change vs the old
+  reviewer-states-only read.
+- **H1 — `useExtractedValues` unchanged.** §6.2's "collapse the stage
+  branches onto one read" was **not done**. The hook keeps its existing
+  `proposal` / REVIEW+ / pending branching and simply consumes the richer
+  `loadValuesForUser` return in the REVIEW+ branch.
+- **H2 — shipped as designed** (`run_lifecycle_service`, §5.1).
+- **H3 — shipped as designed** (`template_clone_service`, §5.2).
+- **H4 — shipped as designed** (`ArticleExtractionTable` +
+  `findFormRunsByArticle`, §6.3).
+
+Deferred follow-up: extend `loadValuesForUser` to the full 4-layer
+precedence (`published > decision > human > ai`) and fold the hook's
+branches onto it, with the 4-layer precedence tests in §7.
+
 ## 1. Context
 
 A user reported: the article extraction list shows article `5573e7f3` as
