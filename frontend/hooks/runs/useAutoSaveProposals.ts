@@ -54,6 +54,22 @@ export interface UseAutoSaveProposalsProps {
   enabled?: boolean;
   /** Debounce delay in ms (default 600). */
   debounceMs?: number;
+  /**
+   * Active run stage. Drives the write target:
+   *   - ``'review'`` → POST ``/decisions`` with decision='edit' so each
+   *     reviewer's typing lands as a per-user ReviewerDecision (the
+   *     blind-review contract). The read path (``loadValuesForUser``)
+   *     reads these back, scoped to the active reviewer.
+   *   - any other value (``'proposal'``, ``undefined``, …) → POST
+   *     ``/proposals`` with source='human'. Preserves the existing QA
+   *     single-user publish flow and the extraction PROPOSAL stage
+   *     where the AI/proposer fills in initial values.
+   *
+   * Layer 2 of the multi-reviewer-blind fix. Omitting it keeps the
+   * legacy behaviour (proposal write) so callers that don't yet care
+   * about the stage discriminator (QA today) are unaffected.
+   */
+  stage?: string | null;
 }
 
 export interface UseAutoSaveProposalsReturn {
@@ -68,7 +84,7 @@ export interface UseAutoSaveProposalsReturn {
 export function useAutoSaveProposals(
   props: UseAutoSaveProposalsProps,
 ): UseAutoSaveProposalsReturn {
-  const { runId, values, enabled = true, debounceMs = 600 } = props;
+  const { runId, values, enabled = true, debounceMs = 600, stage } = props;
 
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
@@ -80,9 +96,11 @@ export function useAutoSaveProposals(
   const valuesRef = useRef(values);
   const runIdRef = useRef(runId);
   const enabledRef = useRef(enabled);
+  const stageRef = useRef(stage);
   valuesRef.current = values;
   runIdRef.current = runId;
   enabledRef.current = enabled;
+  stageRef.current = stage;
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>();
   // Stringified last successful write per `${instanceId}_${fieldId}` —
@@ -146,18 +164,39 @@ export function useAutoSaveProposals(
               : actualValue;
           const normalized =
             writeValue === '' || writeValue === undefined ? null : writeValue;
-          await apiClient(`/api/v1/runs/${currentRunId}/proposals`, {
+          // Stage-aware write target (Layer 2 of the multi-reviewer
+          // blind fix). ``stage='review'`` means every reviewer is
+          // making per-user decisions on top of the same Run — the
+          // write must be a ReviewerDecision so the read path's
+          // ``loadValuesForUser`` filter holds. Any other stage
+          // (proposal, undefined) keeps writing ``human`` proposals,
+          // preserving the QA publish flow and the extraction
+          // PROPOSAL stage where one user (or AI) builds the initial
+          // value set.
+          const useDecisionEndpoint = stageRef.current === 'review';
+          const endpoint = useDecisionEndpoint
+            ? `/api/v1/runs/${currentRunId}/decisions`
+            : `/api/v1/runs/${currentRunId}/proposals`;
+          const body = useDecisionEndpoint
+            ? {
+                instance_id: instanceId,
+                field_id: fieldId,
+                decision: 'edit' as const,
+                value: { value: normalized },
+              }
+            : {
+                instance_id: instanceId,
+                field_id: fieldId,
+                source: 'human' as const,
+                proposed_value: { value: normalized },
+              };
+          await apiClient(endpoint, {
             method: 'POST',
-            body: {
-              instance_id: instanceId,
-              field_id: fieldId,
-              source: 'human',
-              proposed_value: { value: normalized },
-            },
+            body,
             // Keepalive lets the OS deliver the request even if the
             // page is in the process of unloading (route change, tab
             // close, mobile background). Capped at 64KB body — a single
-            // proposal write is well under that.
+            // proposal/decision write is well under that.
             keepalive: true,
           });
           lastSavedByKeyRef.current[key] = JSON.stringify(valueData ?? null);

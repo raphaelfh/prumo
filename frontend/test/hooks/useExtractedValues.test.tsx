@@ -118,6 +118,161 @@ describe('useExtractedValues — stage=proposal', () => {
   });
 });
 
+describe('useExtractedValues — stage=proposal blinding (multi-reviewer)', () => {
+  // Bug A (multi-reviewer blind leak): the PROPOSAL stage hydration
+  // used to take the newest proposal per coord regardless of source,
+  // which meant a `human` proposal written by reviewer A appeared in
+  // reviewer B's form as soon as B opened the same article — silently
+  // breaking the blind-review contract. Fix: filter `human` proposals
+  // by `source_user_id === current_user_id`. AI / system proposals are
+  // always visible (they are not reviewer-attributable opinions).
+  it("does NOT hydrate another reviewer's human proposal (the leak)", async () => {
+    const { result } = renderHook(() =>
+      useExtractedValues({
+        runId: 'run-1',
+        stage: 'proposal',
+        proposals: [
+          {
+            id: 'p-other-human',
+            run_id: 'run-1',
+            instance_id: 'inst-1',
+            field_id: 'field-1',
+            source: 'human',
+            source_user_id: 'user-2', // a different reviewer
+            proposed_value: { value: "leaked-from-A" },
+            confidence_score: null,
+            rationale: null,
+            created_at: '2026-04-28T10:00:00Z',
+          },
+        ],
+      }),
+    );
+
+    await waitFor(() => expect(result.current.initialized).toBe(true));
+    // user-1 is the auth user (mock). user-2's human proposal must be
+    // invisible — blind-review contract.
+    expect(result.current.values['inst-1_field-1']).toBeUndefined();
+  });
+
+  it("DOES hydrate the current reviewer's own human proposal", async () => {
+    const { result } = renderHook(() =>
+      useExtractedValues({
+        runId: 'run-1',
+        stage: 'proposal',
+        proposals: [
+          {
+            id: 'p-mine',
+            run_id: 'run-1',
+            instance_id: 'inst-1',
+            field_id: 'field-1',
+            source: 'human',
+            source_user_id: 'user-1', // matches the mocked auth user
+            proposed_value: { value: 'mine' },
+            confidence_score: null,
+            rationale: null,
+            created_at: '2026-04-28T10:00:00Z',
+          },
+        ],
+      }),
+    );
+
+    await waitFor(() => expect(result.current.initialized).toBe(true));
+    expect(result.current.values['inst-1_field-1']).toBe('mine');
+  });
+
+  it('always hydrates AI proposals (not reviewer-attributable)', async () => {
+    const { result } = renderHook(() =>
+      useExtractedValues({
+        runId: 'run-1',
+        stage: 'proposal',
+        proposals: [
+          {
+            id: 'p-ai',
+            run_id: 'run-1',
+            instance_id: 'inst-1',
+            field_id: 'field-1',
+            source: 'ai',
+            source_user_id: null,
+            proposed_value: { value: 'ai-extracted' },
+            confidence_score: 0.9,
+            rationale: null,
+            created_at: '2026-04-28T10:00:00Z',
+          },
+        ],
+      }),
+    );
+
+    await waitFor(() => expect(result.current.initialized).toBe(true));
+    expect(result.current.values['inst-1_field-1']).toBe('ai-extracted');
+  });
+
+  it('always hydrates system proposals (e.g. reopen seed)', async () => {
+    const { result } = renderHook(() =>
+      useExtractedValues({
+        runId: 'run-1',
+        stage: 'proposal',
+        proposals: [
+          {
+            id: 'p-system',
+            run_id: 'run-1',
+            instance_id: 'inst-1',
+            field_id: 'field-1',
+            source: 'system',
+            source_user_id: null,
+            proposed_value: { value: 'carried-over' },
+            confidence_score: null,
+            rationale: null,
+            created_at: '2026-04-28T10:00:00Z',
+          },
+        ],
+      }),
+    );
+
+    await waitFor(() => expect(result.current.initialized).toBe(true));
+    expect(result.current.values['inst-1_field-1']).toBe('carried-over');
+  });
+
+  it('newest-per-coord wins ONLY among visible proposals (other reviewer is skipped, not picked)', async () => {
+    // Two proposals for the same coord. Newest is from another reviewer
+    // (must be filtered). Older AI proposal should remain visible.
+    const { result } = renderHook(() =>
+      useExtractedValues({
+        runId: 'run-1',
+        stage: 'proposal',
+        proposals: [
+          {
+            id: 'p-other-newest',
+            run_id: 'run-1',
+            instance_id: 'inst-1',
+            field_id: 'field-1',
+            source: 'human',
+            source_user_id: 'user-2',
+            proposed_value: { value: 'leaked-from-A' },
+            confidence_score: null,
+            rationale: null,
+            created_at: '2026-04-28T11:00:00Z',
+          },
+          {
+            id: 'p-ai-older',
+            run_id: 'run-1',
+            instance_id: 'inst-1',
+            field_id: 'field-1',
+            source: 'ai',
+            source_user_id: null,
+            proposed_value: { value: 'ai-extracted' },
+            confidence_score: 0.9,
+            rationale: null,
+            created_at: '2026-04-28T10:00:00Z',
+          },
+        ],
+      }),
+    );
+
+    await waitFor(() => expect(result.current.initialized).toBe(true));
+    expect(result.current.values['inst-1_field-1']).toBe('ai-extracted');
+  });
+});
+
 describe('useExtractedValues — stage=review and beyond', () => {
   it('routes through loadValuesForUser and skips reject decisions', async () => {
     (ExtractionValueService.loadValuesForUser as any).mockResolvedValueOnce([

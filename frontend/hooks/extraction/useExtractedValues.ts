@@ -154,10 +154,32 @@ export function useExtractedValues(
         }
 
         if (stage === 'proposal') {
+          // Bug A (multi-reviewer blind leak): the previous logic took
+          // newest-per-coord regardless of source, which surfaced one
+          // reviewer's ``human`` proposals in another reviewer's form
+          // the moment they opened the same shared Run (sessions are
+          // intentionally shared per (article × template); see
+          // ``hitl_session_service._reuse_or_create_run``). To preserve
+          // the blind-review contract we filter ``human`` proposals by
+          // ``source_user_id``: the current reviewer sees only their
+          // own human edits, plus all AI / system proposals (which are
+          // not reviewer-attributable opinions).
+          const userRes = await supabase.auth.getUser();
+          if (userRes.error) throw userRes.error;
+          const currentUserId = userRes.data.user?.id ?? null;
+
           const valuesMap: Record<string, any> = {};
-          // ``proposals`` is sorted newest-first by the API; first hit per
-          // coord wins, regardless of source — mirrors QA's hydration.
+          // ``proposals`` is sorted newest-first by the API; first
+          // visible hit per coord wins.
           for (const p of proposals ?? []) {
+            // Another reviewer's edit — skip to keep the blind
+            // contract. ``source_user_id`` is guaranteed non-null for
+            // ``source='human'`` (backend CHECK), so a missing current
+            // user id (signed out) skips every human proposal too —
+            // fail closed.
+            if (p.source === 'human' && p.source_user_id !== currentUserId) {
+              continue;
+            }
             const key = `${p.instance_id}_${p.field_id}`;
             if (key in valuesMap) continue;
             const unwrapped = unwrapProposalValue(p.proposed_value);

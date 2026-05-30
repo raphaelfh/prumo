@@ -45,18 +45,25 @@ class ExtractionProposalService:
             raise InvalidProposalError(f"Run {run_id} not found")
 
         source_value = source.value if isinstance(source, ExtractionProposalSource) else source
-        # Stage gate is source-specific:
+        # Stage gate is source-specific AND kind-aware:
         #
         # * ``ai`` proposals only make sense in PROPOSAL — once the run
         #   has advanced past it the AI phase is conceptually closed.
-        # * ``human`` / ``system`` proposals can be appended in PROPOSAL
-        #   *or* REVIEW. The Quality-Assessment flow treats every field
-        #   change as a ``human`` proposal, and an interrupted publish
-        #   (``proposal -> review`` advance succeeds, downstream consensus
-        #   call fails) leaves the run parked at REVIEW. Without this,
-        #   the user can no longer type into the form.
-        allowed_stages: set[str]
-        if source_value == "ai":
+        # * ``human`` / ``system`` proposals at REVIEW are kind-gated
+        #   (Layer 1b of the multi-reviewer blind fix):
+        #     - kind='quality_assessment': allowed. QA's publish flow
+        #       advances proposal -> review unconditionally; an
+        #       interrupted downstream consensus call leaves the run
+        #       parked at REVIEW and the user must be able to keep
+        #       typing for the retry.
+        #     - kind='extraction': REJECTED. Reviewer writes during
+        #       REVIEW must land as per-user ``ReviewerDecision`` rows
+        #       so the blind-review contract holds (``loadValuesForUser``
+        #       filters by reviewer_id). Allowing ``human`` proposals
+        #       here opens the leak Layer 1 patched on the read side;
+        #       this gate closes it on the write side so a frontend
+        #       bypass (curl, agent client) cannot resurrect the bug.
+        if source_value == "ai" or run.kind == "extraction":
             allowed_stages = {ExtractionRunStage.PROPOSAL.value}
         else:
             allowed_stages = {
@@ -65,7 +72,10 @@ class ExtractionProposalService:
             }
         if run.stage not in allowed_stages:
             raise InvalidProposalError(
-                f"Cannot record proposal: run stage is {run.stage}, not in {sorted(allowed_stages)}"
+                f"Cannot record proposal: kind={run.kind} run stage is "
+                f"{run.stage}, not in {sorted(allowed_stages)}. "
+                f"For kind='extraction', writes at REVIEW must go through "
+                f"/decisions (ReviewerDecision), not /proposals."
             )
 
         await assert_coords_coherent(
