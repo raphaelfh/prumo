@@ -1,106 +1,85 @@
 /**
- * Hook to manage user feedback submission
- * Automatically captures technical and application context
+ * Hook to submit user feedback to the backend (which forwards to Linear).
+ * Captures technical + application context automatically.
  */
+import { useMutation } from '@tanstack/react-query';
 
-import {useState} from 'react';
-import {supabase} from '@/integrations/supabase/client';
-import {useAuth} from '@/contexts/AuthContext';
-import {useToast} from '@/hooks/use-toast';
-import {t} from '@/lib/copy';
-import type {FeedbackContext, FeedbackFormData} from '@/types/feedback';
+import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
+import { t } from '@/lib/copy';
+import { FeedbackService } from '@/services/feedbackService';
+import type {
+  FeedbackAttachmentInput,
+  FeedbackContext,
+  FeedbackFormData,
+  SubmitFeedbackPayload,
+} from '@/types/feedback';
 
-/**
- * Captures technical and application context automatically
- */
+declare const __APP_VERSION__: string | undefined;
+
 function getCurrentContext(): FeedbackContext {
-  const url = window.location.href;
   const pathname = window.location.pathname;
-
-    // Extract project_id from URL if on /projects/:id
   const projectMatch = pathname.match(/\/projects\/([a-f0-9-]+)/);
-  const project_id = projectMatch ? projectMatch[1] : null;
-
-    // Extract article_id from URL (query params or path)
   const urlParams = new URLSearchParams(window.location.search);
   const articleFromQuery = urlParams.get('article');
   const articleMatch = pathname.match(/\/articles\/([a-f0-9-]+)/);
-  const article_id = articleFromQuery || (articleMatch ? articleMatch[1] : null);
-  
+
   return {
-    url,
+    url: window.location.href,
+    route: pathname,
     user_agent: navigator.userAgent,
-    viewport_size: {
-      width: window.innerWidth,
-      height: window.innerHeight,
-    },
-    project_id,
-    article_id,
+    viewport_size: { width: window.innerWidth, height: window.innerHeight },
+    project_id: projectMatch ? projectMatch[1] : null,
+    article_id: articleFromQuery || (articleMatch ? articleMatch[1] : null),
+    app_version: typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : null,
   };
 }
 
 export function useFeedback() {
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const { user } = useAuth();
+  const { user: _user } = useAuth();
   const { toast } = useToast();
 
-  const submitFeedback = async (data: FeedbackFormData): Promise<boolean> => {
-    setSubmitting(true);
-    setError(null);
+  const mutation = useMutation({
+    mutationFn: (payload: SubmitFeedbackPayload) => FeedbackService.submit(payload),
+  });
 
-    try {
-        // Basic validation
-      if (!data.description || data.description.trim().length < 10) {
-          throw new Error(t('common', 'feedbackDescriptionMinLength'));
-      }
-
-      const context = getCurrentContext();
-      
-      const { error: insertError } = await supabase
-        .from('feedback_reports')
-        .insert({
-          user_id: user?.id || null,
-          type: data.type,
-          description: data.description.trim(),
-          severity: data.type === 'bug' && data.severity ? data.severity : null,
-          url: context.url,
-          user_agent: context.user_agent,
-          viewport_size: context.viewport_size,
-          project_id: context.project_id,
-          article_id: context.article_id,
-        });
-
-      if (insertError) {
-        throw insertError;
-      }
-
+  const submitFeedback = async (
+    data: FeedbackFormData,
+    attachments: FeedbackAttachmentInput[] = [],
+  ): Promise<boolean> => {
+    if (!data.description || data.description.trim().length < 10) {
       toast({
-          title: t('common', 'feedbackSuccessTitle'),
-          description: t('common', 'feedbackSuccessDesc'),
-      });
-
-      return true;
-    } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : t('common', 'errors_sendFeedbackFailed');
-      setError(errorMessage);
-      
-      toast({
-          title: t('common', 'errors_sendFeedbackFailed'),
-        description: errorMessage,
+        title: t('common', 'errors_sendFeedbackFailed'),
+        description: t('common', 'feedbackDescriptionMinLength'),
         variant: 'destructive',
       });
-      
       return false;
-    } finally {
-      setSubmitting(false);
+    }
+
+    try {
+      await mutation.mutateAsync({
+        type: data.type,
+        description: data.description.trim(),
+        severity: data.type === 'bug' ? data.severity : undefined,
+        summary: data.summary,
+        context: getCurrentContext(),
+        attachments,
+      });
+      toast({
+        title: t('common', 'feedbackSuccessTitle'),
+        description: t('navigation', 'feedbackSuccessSent'),
+      });
+      return true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : t('common', 'errors_sendFeedbackFailed');
+      toast({
+        title: t('common', 'errors_sendFeedbackFailed'),
+        description: msg,
+        variant: 'destructive',
+      });
+      return false;
     }
   };
 
-  return { 
-    submitFeedback, 
-    submitting, 
-    error 
-  };
+  return { submitFeedback, submitting: mutation.isPending, error: mutation.error?.message ?? null };
 }
-
