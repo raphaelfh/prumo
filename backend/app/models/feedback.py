@@ -24,9 +24,7 @@ class FeedbackReport(BaseModel):
     # No ORM-level ForeignKey: user_id references the Supabase-managed
     # auth.users table, which the app intentionally does not map in
     # SQLAlchemy. The FK is enforced at the DB level (baseline migration).
-    user_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True), nullable=True
-    )
+    user_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
     # Column name mirrors the existing DB column; intentionally shadows
     # the `type` builtin (required for schema parity).
     type: Mapped[str] = mapped_column(String(32), nullable=False)

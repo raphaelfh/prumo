@@ -33,9 +33,7 @@ async def test_persist_report_with_defaults(db_session) -> None:
     await db_session.flush()
 
     fetched = (
-        await db_session.execute(
-            select(FeedbackReport).where(FeedbackReport.id == report.id)
-        )
+        await db_session.execute(select(FeedbackReport).where(FeedbackReport.id == report.id))
     ).scalar_one()
     assert fetched.forward_status == "pending"
     assert len(fetched.attachments) == 1

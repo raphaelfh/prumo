@@ -71,7 +71,9 @@ def test_issue_body_contains_context() -> None:
 def test_attachments_markdown_image_vs_video() -> None:
     atts = [
         SimpleNamespace(kind="image", linear_asset_url="https://a/img.webp", forward_status="sent"),
-        SimpleNamespace(kind="video", linear_asset_url="https://a/clip.webm", forward_status="sent"),
+        SimpleNamespace(
+            kind="video", linear_asset_url="https://a/clip.webm", forward_status="sent"
+        ),
         SimpleNamespace(kind="image", linear_asset_url=None, forward_status="pending"),
     ]
     md = attachments_markdown(atts)

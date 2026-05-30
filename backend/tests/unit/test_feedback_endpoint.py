@@ -28,9 +28,7 @@ async def test_post_feedback_returns_202_and_report_id(client) -> None:
             "app.api.v1.endpoints.feedback.FeedbackService.create_report",
             new=AsyncMock(return_value=fake_report),
         ),
-        patch(
-            "app.api.v1.endpoints.feedback.forward_feedback_to_linear_task.delay"
-        ) as delay,
+        patch("app.api.v1.endpoints.feedback.forward_feedback_to_linear_task.delay") as delay,
     ):
         res = await client.post("/api/v1/feedback", json=_body())
     assert res.status_code == 202, res.text

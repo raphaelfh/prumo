@@ -14,9 +14,10 @@ Create Date: 2026-05-30
 """
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+
+from alembic import op
 
 revision = "0020_feedback_outbox"
 down_revision = "0019_gate_find_user_id_by_email"
@@ -26,34 +27,72 @@ depends_on = None
 
 def upgrade() -> None:
     # --- new structured columns on feedback_reports ---
-    op.add_column("feedback_reports", sa.Column("type", sa.String(32), nullable=False, server_default="bug"), schema="public")
-    op.add_column("feedback_reports", sa.Column("severity", sa.String(16), nullable=True), schema="public")
-    op.add_column("feedback_reports", sa.Column("summary", sa.Text(), nullable=True), schema="public")
-    op.add_column("feedback_reports", sa.Column("description", sa.Text(), nullable=False, server_default=""), schema="public")
+    op.add_column(
+        "feedback_reports",
+        sa.Column("type", sa.String(32), nullable=False, server_default="bug"),
+        schema="public",
+    )
+    op.add_column(
+        "feedback_reports", sa.Column("severity", sa.String(16), nullable=True), schema="public"
+    )
+    op.add_column(
+        "feedback_reports", sa.Column("summary", sa.Text(), nullable=True), schema="public"
+    )
+    op.add_column(
+        "feedback_reports",
+        sa.Column("description", sa.Text(), nullable=False, server_default=""),
+        schema="public",
+    )
     op.add_column("feedback_reports", sa.Column("url", sa.Text(), nullable=True), schema="public")
     op.add_column("feedback_reports", sa.Column("route", sa.Text(), nullable=True), schema="public")
-    op.add_column("feedback_reports", sa.Column("user_agent", sa.Text(), nullable=True), schema="public")
-    op.add_column("feedback_reports", sa.Column("viewport_size", JSONB(), nullable=True), schema="public")
+    op.add_column(
+        "feedback_reports", sa.Column("user_agent", sa.Text(), nullable=True), schema="public"
+    )
+    op.add_column(
+        "feedback_reports", sa.Column("viewport_size", JSONB(), nullable=True), schema="public"
+    )
     op.add_column(
         "feedback_reports",
-        sa.Column("project_id", PG_UUID(as_uuid=True), sa.ForeignKey("public.projects.id", ondelete="SET NULL"), nullable=True),
+        sa.Column(
+            "project_id",
+            PG_UUID(as_uuid=True),
+            sa.ForeignKey("public.projects.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
         schema="public",
     )
     op.add_column(
         "feedback_reports",
-        sa.Column("article_id", PG_UUID(as_uuid=True), sa.ForeignKey("public.articles.id", ondelete="SET NULL"), nullable=True),
+        sa.Column(
+            "article_id",
+            PG_UUID(as_uuid=True),
+            sa.ForeignKey("public.articles.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
         schema="public",
     )
-    op.add_column("feedback_reports", sa.Column("app_version", sa.String(64), nullable=True), schema="public")
-    op.add_column("feedback_reports", sa.Column("linear_issue_id", sa.Text(), nullable=True), schema="public")
-    op.add_column("feedback_reports", sa.Column("linear_identifier", sa.String(32), nullable=True), schema="public")
-    op.add_column("feedback_reports", sa.Column("linear_url", sa.Text(), nullable=True), schema="public")
+    op.add_column(
+        "feedback_reports", sa.Column("app_version", sa.String(64), nullable=True), schema="public"
+    )
+    op.add_column(
+        "feedback_reports", sa.Column("linear_issue_id", sa.Text(), nullable=True), schema="public"
+    )
+    op.add_column(
+        "feedback_reports",
+        sa.Column("linear_identifier", sa.String(32), nullable=True),
+        schema="public",
+    )
+    op.add_column(
+        "feedback_reports", sa.Column("linear_url", sa.Text(), nullable=True), schema="public"
+    )
     op.add_column(
         "feedback_reports",
         sa.Column("forward_status", sa.String(16), nullable=False, server_default="pending"),
         schema="public",
     )
-    op.add_column("feedback_reports", sa.Column("forward_error", sa.Text(), nullable=True), schema="public")
+    op.add_column(
+        "feedback_reports", sa.Column("forward_error", sa.Text(), nullable=True), schema="public"
+    )
     op.add_column(
         "feedback_reports",
         sa.Column("forwarded_at", sa.DateTime(timezone=True), nullable=True),
@@ -93,7 +132,9 @@ def upgrade() -> None:
     # --- child table ---
     op.create_table(
         "feedback_attachments",
-        sa.Column("id", PG_UUID(as_uuid=True), primary_key=True, server_default=sa.func.gen_random_uuid()),
+        sa.Column(
+            "id", PG_UUID(as_uuid=True), primary_key=True, server_default=sa.func.gen_random_uuid()
+        ),
         sa.Column(
             "feedback_report_id",
             PG_UUID(as_uuid=True),
@@ -106,8 +147,12 @@ def upgrade() -> None:
         sa.Column("size_bytes", sa.Integer(), nullable=True),
         sa.Column("linear_asset_url", sa.Text(), nullable=True),
         sa.Column("forward_status", sa.String(16), nullable=False, server_default="pending"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.CheckConstraint("kind IN ('image','video')", name="feedback_attachments_kind_check"),
         sa.CheckConstraint(
             "forward_status IN ('pending','sent','failed')",
@@ -141,7 +186,9 @@ def downgrade() -> None:
         "FOR INSERT WITH CHECK ((user_id = auth.uid()) OR (auth.role() = 'service_role'::text));"
     )
 
-    op.drop_index("ix_feedback_attachments_report_id", table_name="feedback_attachments", schema="public")
+    op.drop_index(
+        "ix_feedback_attachments_report_id", table_name="feedback_attachments", schema="public"
+    )
     op.drop_table("feedback_attachments", schema="public")
 
     op.add_column(
@@ -170,11 +217,28 @@ def downgrade() -> None:
     op.alter_column("feedback_reports", "category", server_default=None, schema="public")
     op.alter_column("feedback_reports", "status", server_default=None, schema="public")
 
-    op.drop_constraint("ck_feedback_reports_feedback_reports_forward_status_check", "feedback_reports", schema="public")
+    op.drop_constraint(
+        "ck_feedback_reports_feedback_reports_forward_status_check",
+        "feedback_reports",
+        schema="public",
+    )
     for col in (
-        "forwarded_at", "forward_error", "forward_status", "linear_url",
-        "linear_identifier", "linear_issue_id", "app_version", "article_id",
-        "project_id", "viewport_size", "user_agent", "route", "url",
-        "description", "summary", "severity", "type",
+        "forwarded_at",
+        "forward_error",
+        "forward_status",
+        "linear_url",
+        "linear_identifier",
+        "linear_issue_id",
+        "app_version",
+        "article_id",
+        "project_id",
+        "viewport_size",
+        "user_agent",
+        "route",
+        "url",
+        "description",
+        "summary",
+        "severity",
+        "type",
     ):
         op.drop_column("feedback_reports", col, schema="public")

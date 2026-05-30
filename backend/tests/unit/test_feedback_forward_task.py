@@ -57,8 +57,13 @@ def linear():
 
 
 async def test_creates_issue_and_marks_sent(linear) -> None:
-    att = SimpleNamespace(kind="image", storage_key="u/x.webp", content_type="image/webp",
-                          linear_asset_url=None, forward_status="pending")
+    att = SimpleNamespace(
+        kind="image",
+        storage_key="u/x.webp",
+        content_type="image/webp",
+        linear_asset_url=None,
+        forward_status="pending",
+    )
     report = _report(attachments=[att])
     session = _session_with(report)
     storage = MagicMock()
@@ -84,8 +89,12 @@ async def test_creates_issue_and_marks_sent(linear) -> None:
 
 
 async def test_idempotent_when_issue_already_created(linear) -> None:
-    report = _report(linear_issue_id="i1", linear_identifier="PRU-9",
-                     forward_status="issue_created", attachments=[])
+    report = _report(
+        linear_issue_id="i1",
+        linear_identifier="PRU-9",
+        forward_status="issue_created",
+        attachments=[],
+    )
     session = _session_with(report)
     storage = MagicMock()
 
@@ -133,10 +142,20 @@ async def test_unconfigured_linear_is_noop_and_leaves_pending(linear) -> None:
 
 
 async def test_partial_attachment_failure_resumes_on_retry(linear) -> None:
-    att1 = SimpleNamespace(kind="image", storage_key="u/1.webp", content_type="image/webp",
-                           linear_asset_url=None, forward_status="pending")
-    att2 = SimpleNamespace(kind="image", storage_key="u/2.webp", content_type="image/webp",
-                           linear_asset_url=None, forward_status="pending")
+    att1 = SimpleNamespace(
+        kind="image",
+        storage_key="u/1.webp",
+        content_type="image/webp",
+        linear_asset_url=None,
+        forward_status="pending",
+    )
+    att2 = SimpleNamespace(
+        kind="image",
+        storage_key="u/2.webp",
+        content_type="image/webp",
+        linear_asset_url=None,
+        forward_status="pending",
+    )
     report = _report(attachments=[att1, att2])
     session = _session_with(report)
     storage = MagicMock()

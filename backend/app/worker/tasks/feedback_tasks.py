@@ -40,9 +40,7 @@ def _filename_for(att: Any) -> str:
 
 async def _forward(session: AsyncSession, report_id: str) -> None:
     report = (
-        await session.execute(
-            select(FeedbackReport).where(FeedbackReport.id == UUID(report_id))
-        )
+        await session.execute(select(FeedbackReport).where(FeedbackReport.id == UUID(report_id)))
     ).scalar_one_or_none()
     if report is None:
         logger.warning("feedback_forward_report_missing", report_id=report_id)
