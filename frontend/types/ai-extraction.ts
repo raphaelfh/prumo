@@ -63,6 +63,14 @@ export interface SectionExtractionRequest {
   templateId: string;
   entityTypeId: string;
   parentInstanceId?: string; // To filter child entities by model
+  /**
+   * Existing run to append proposals to. When provided (the extraction
+   * surface path), the backend routes to ``extract_section(run_id=...)``
+   * so multiple section-by-section AI extractions accumulate on the
+   * same HITL-session run instead of each one creating an orphan run.
+   * Omit for callers without an active session.
+   */
+  runId?: string;
   options?: {
     model?: SupportedAIModel;
   };

@@ -72,10 +72,36 @@ class TemplateCloneService:
         existing = await self._find_existing_clone(project_id, global_template_id)
         if existing is not None:
             entity_types, fields = await self._project_template_structure_counts(existing.id)
+            global_et, global_field = await self._global_template_structure_counts(
+                global_template_id
+            )
             version = await self._active_version(existing.id)
-            # Heal legacy/partial clones: if the template row exists but has no
-            # structure, repopulate from the global template before returning.
-            if entity_types == 0 or fields == 0:
+            # Heal partial / drifted clones. Two cases bring us here:
+            #   1. Zero-state — the clone row exists but its live structure
+            #      was never inserted (legacy data, aborted clone).
+            #   2. Partial drift — the live structure exists but is smaller
+            #      than the global (some entity_types / fields were deleted
+            #      out-of-band, or a previous clone aborted mid-way). The
+            #      production CHARMS bug (project bc055915, live=1 vs
+            #      snapshot=14) is the canonical example.
+            # In both cases we wipe the partial state and re-insert from
+            # the global template. The snapshot is then re-emitted to
+            # match the freshly inserted live structure. CASCADE on
+            # ``extraction_entity_types`` clears any orphan
+            # ``extraction_instances`` / proposals tied to the partial rows
+            # — acceptable since those instances pointed at a structure
+            # that no longer reflects user intent.
+            drifted = entity_types != global_et or fields != global_field
+            if drifted:
+                if entity_types > 0 or fields > 0:
+                    await self.db.execute(
+                        text(
+                            "DELETE FROM public.extraction_entity_types "
+                            "WHERE project_template_id = CAST(:tid AS uuid)"
+                        ),
+                        {"tid": str(existing.id)},
+                    )
+                    await self.db.flush()
                 global_entity_types = await self._global_entity_types(global_template_id)
                 field_count = await self._insert_project_structure_from_global(
                     project_template_id=existing.id,
@@ -379,6 +405,38 @@ class TemplateCloneService:
         for f in rows:
             buckets[f.entity_type_id].append(f)
         return buckets
+
+    async def _global_template_structure_counts(
+        self,
+        global_template_id: UUID,
+    ) -> tuple[int, int]:
+        """Entity-type and field counts for a global template in one round
+        trip. Used as the canonical reference for heal drift detection —
+        if a clone's live counts don't match these, structure was lost.
+        """
+        row = (
+            await self.db.execute(
+                text(
+                    """
+                    SELECT
+                        (
+                            SELECT COUNT(*)::bigint
+                            FROM public.extraction_entity_types et
+                            WHERE et.template_id = CAST(:gid AS uuid)
+                        ) AS entity_type_count,
+                        (
+                            SELECT COUNT(*)::bigint
+                            FROM public.extraction_fields f
+                            INNER JOIN public.extraction_entity_types et
+                                ON et.id = f.entity_type_id
+                            WHERE et.template_id = CAST(:gid AS uuid)
+                        ) AS field_count
+                    """
+                ),
+                {"gid": str(global_template_id)},
+            )
+        ).one()
+        return int(row[0]), int(row[1])
 
     async def _project_template_structure_counts(
         self,

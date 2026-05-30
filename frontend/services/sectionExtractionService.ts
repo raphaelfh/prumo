@@ -82,6 +82,7 @@ export class SectionExtractionService {
         templateId: request.templateId,
         entityTypeId: request.entityTypeId,
         parentInstanceId: request.parentInstanceId,
+        runId: request.runId,
         model: request.options?.model,
       });
 

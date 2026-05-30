@@ -184,6 +184,132 @@ describe('useAutoSaveProposals — basic write semantics', () => {
   });
 });
 
+describe('useAutoSaveProposals — stage-aware write target (Layer 2 fix)', () => {
+  // Bug B (multi-reviewer blind review): during stage='review' every
+  // reviewer's edit must land as a per-user ``ReviewerDecision`` so the
+  // load path (``loadValuesForUser``) keeps them blinded from each
+  // other. The previous unified write to /proposals appended the value
+  // as a shared ProposalRecord, which broke the per-user contract and
+  // also wasted writes that ``useExtractedValues``' review branch would
+  // never read back. Fix: when the caller passes ``stage='review'``,
+  // POST to /decisions with decision='edit'.
+
+  it("writes an 'edit' ReviewerDecision per dirty coord when stage='review'", async () => {
+    apiClientMock.mockResolvedValue({ ok: true });
+
+    const { result } = renderHook(() =>
+      useAutoSaveProposals({
+        runId: 'run-1',
+        stage: 'review',
+        values: { 'inst-1_field-1': 'reviewer-typed' },
+      }),
+    );
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+
+    expect(apiClientMock).toHaveBeenCalledTimes(1);
+    expect(apiClientMock).toHaveBeenCalledWith(
+      '/api/v1/runs/run-1/decisions',
+      expect.objectContaining({
+        method: 'POST',
+        keepalive: true,
+        body: {
+          instance_id: 'inst-1',
+          field_id: 'field-1',
+          decision: 'edit',
+          value: { value: 'reviewer-typed' },
+        },
+      }),
+    );
+  });
+
+  it("does NOT post a /proposals write when stage='review' (no double write)", async () => {
+    apiClientMock.mockResolvedValue({ ok: true });
+
+    const { result } = renderHook(() =>
+      useAutoSaveProposals({
+        runId: 'run-1',
+        stage: 'review',
+        values: { 'inst-1_field-1': 'x' },
+      }),
+    );
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+
+    for (const call of apiClientMock.mock.calls) {
+      expect(call[0]).not.toMatch(/\/proposals$/);
+    }
+  });
+
+  it("preserves null/empty as deliberate clears (decision='edit' with value=null)", async () => {
+    apiClientMock.mockResolvedValue({ ok: true });
+
+    const { result } = renderHook(() =>
+      useAutoSaveProposals({
+        runId: 'run-1',
+        stage: 'review',
+        values: { 'inst-1_field-1': '' },
+      }),
+    );
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+
+    expect(apiClientMock).toHaveBeenCalledTimes(1);
+    const [, opts] = apiClientMock.mock.calls[0];
+    expect((opts as { body: { value: unknown } }).body.value).toEqual({
+      value: null,
+    });
+  });
+
+  it("falls back to /proposals when stage is undefined (QA backwards compat)", async () => {
+    apiClientMock.mockResolvedValue(PROPOSAL_RESPONSE);
+
+    const { result } = renderHook(() =>
+      useAutoSaveProposals({
+        runId: 'run-1',
+        values: { 'inst-1_field-1': 'hello' },
+        // stage omitted on purpose — QA never passes it
+      }),
+    );
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+
+    expect(apiClientMock).toHaveBeenCalledWith(
+      '/api/v1/runs/run-1/proposals',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
+  it("writes to /proposals when stage='proposal' explicitly (extraction PROPOSAL stage)", async () => {
+    apiClientMock.mockResolvedValue(PROPOSAL_RESPONSE);
+
+    const { result } = renderHook(() =>
+      useAutoSaveProposals({
+        runId: 'run-1',
+        stage: 'proposal',
+        values: { 'inst-1_field-1': 'hello' },
+      }),
+    );
+
+    await act(async () => {
+      await result.current.saveNow();
+    });
+
+    expect(apiClientMock).toHaveBeenCalledWith(
+      '/api/v1/runs/run-1/proposals',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+});
+
 describe('useAutoSaveProposals — mutex + error handling', () => {
   it('concurrent saveNow invocations do not double-write unchanged values', async () => {
     let release!: () => void;

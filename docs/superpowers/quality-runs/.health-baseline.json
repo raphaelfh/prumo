@@ -1,0 +1,50 @@
+{
+  "recorded_at": "2026-05-27T12:16:52Z",
+  "note": "First run baseline — no alerts fired for these pre-existing advisors or slow queries.",
+  "supabase_project_id": "gdfslcfeobjdxihqtcsk",
+  "security_advisor_cache_keys": [
+    "rls_enabled_no_policy_public_alembic_version",
+    "function_search_path_mutable_public_check_model_section_parent_role_01a2be07438221ed4f70a1447c6774f7",
+    "extension_in_public_pg_trgm",
+    "authenticated_security_definer_function_executable_public_calculate_model_progress_p_article_id uuid, p_model_id uuid",
+    "authenticated_security_definer_function_executable_public_check_cardinality_one_p_article_id uuid, p_entity_type_id uuid, p_parent_instance_id uuid",
+    "authenticated_security_definer_function_executable_public_create_project_with_member_p_name text, p_description text, p_review_type public.review_type, p_created_by uuid",
+    "authenticated_security_definer_function_executable_public_find_user_id_by_email_p_email text, p_project_id uuid",
+    "authenticated_security_definer_function_executable_public_get_project_members_p_project_id uuid",
+    "authenticated_security_definer_function_executable_public_is_project_manager_p_project_id uuid, p_user_id uuid",
+    "authenticated_security_definer_function_executable_public_is_project_member_p_project_id uuid, p_user_id uuid",
+    "authenticated_security_definer_function_executable_public_is_project_reviewer_p_project_id uuid, p_user_id uuid",
+    "auth_leaked_password_protection"
+  ],
+  "performance_advisor_cache_keys_sample": [
+    "unindexed_foreign_keys_public_article_annotations_article_annotations_article_file_id_fkey",
+    "unindexed_foreign_keys_public_article_annotations_article_annotations_article_id_fkey",
+    "unindexed_foreign_keys_public_article_annotations_article_annotations_user_id_fkey",
+    "unindexed_foreign_keys_public_article_boxes_article_boxes_article_file_id_fkey",
+    "unindexed_foreign_keys_public_article_boxes_article_boxes_article_id_fkey",
+    "unindexed_foreign_keys_public_article_boxes_article_boxes_user_id_fkey",
+    "unindexed_foreign_keys_public_article_highlights_article_highlights_article_file_id_fkey",
+    "unindexed_foreign_keys_public_article_highlights_article_highlights_article_id_fkey",
+    "unindexed_foreign_keys_public_article_highlights_article_highlights_user_id_fkey",
+    "unindexed_foreign_keys_public_article_sync_events_article_sync_events_article_id_fkey"
+  ],
+  "performance_advisor_total_count": 195,
+  "slow_queries_baseline": [
+    {
+      "mean_exec_time_ms": 636.73,
+      "calls": 1,
+      "source": "MCP introspection (pg tables+columns)"
+    },
+    {
+      "mean_exec_time_ms": 523.66,
+      "calls": 8,
+      "source": "SELECT name FROM pg_timezone_names"
+    }
+  ],
+  "pg_stat_activity_baseline": {
+    "null": 8,
+    "active": 1,
+    "idle": 14,
+    "idle_in_transaction": 0
+  }
+}

@@ -126,10 +126,53 @@ async def extract_section(
             openai_api_key=user_openai_key,
         )
 
-        if payload.run_id is not None:
-            # Pre-opened run path. Used by Quality-Assessment (the HITL
-            # session service opens the Run + parks it at PROPOSAL, then
-            # the UI fires this endpoint to fill the fields).
+        # Dispatch table (ordered — earlier branches win on overlapping
+        # payloads, matching the pre-refactor priority):
+        # 1. ``entity_type_id`` present → single-section path. Covers both
+        #    the existing-run append (extraction surface; ``run_id`` set)
+        #    and the legacy standalone caller (``run_id`` None). The
+        #    service routes internally based on ``run_id``.
+        # 2. ``run_id`` alone → ``extract_for_run`` iterates every top-level
+        #    entity_type of the run's template. Used by Quality Assessment.
+        # 3. ``extract_all_sections`` → batch sweep of child sections under
+        #    ``parent_instance_id`` (per-model CHARMS batch).
+        if payload.entity_type_id is not None:
+            single_result = await service.extract_section(
+                project_id=payload.project_id,
+                article_id=payload.article_id,
+                template_id=payload.template_id,
+                entity_type_id=payload.entity_type_id,
+                parent_instance_id=payload.parent_instance_id,
+                model=payload.model or "gpt-4o-mini",
+                run_id=payload.run_id,
+            )
+
+            db_commit_start = perf_counter()
+            await db.commit()
+            db_commit_duration_ms = (perf_counter() - db_commit_start) * 1000
+
+            logger.info(
+                "section_extraction_success",
+                trace_id=trace_id,
+                run_id=single_result.extraction_run_id,
+                entity_type_id=str(payload.entity_type_id),
+                suggestions_created=single_result.suggestions_created,
+                tokens_total=single_result.tokens_total,
+                existing_run=payload.run_id is not None,
+                db_commit_duration_ms=db_commit_duration_ms,
+                endpoint_duration_ms=(perf_counter() - endpoint_start) * 1000,
+            )
+
+            response_data = SingleSectionResult(
+                extraction_run_id=single_result.extraction_run_id,
+                entity_type_id=single_result.entity_type_id,
+                suggestions_created=single_result.suggestions_created,
+                tokens_prompt=single_result.tokens_prompt,
+                tokens_completion=single_result.tokens_completion,
+                tokens_total=single_result.tokens_total,
+                duration_ms=single_result.duration_ms,
+            ).model_dump(by_alias=True)
+        elif payload.run_id is not None:
             qa_result = await service.extract_for_run(
                 run_id=payload.run_id,
                 skip_fields_with_human_proposals=payload.skip_fields_with_human_proposals,
@@ -163,9 +206,9 @@ async def extract_section(
                 duration_ms=qa_result.duration_ms,
                 sections=qa_result.sections,
             ).model_dump(by_alias=True)
-        elif payload.extract_all_sections:
-            # Extracao em batch de todas as sections
-            result = await service.extract_all_sections(
+        else:
+            # ``extract_all_sections`` (validator forces parent_instance_id).
+            batch_result = await service.extract_all_sections(
                 project_id=payload.project_id,
                 article_id=payload.article_id,
                 template_id=payload.template_id,
@@ -182,60 +225,24 @@ async def extract_section(
             logger.info(
                 "batch_section_extraction_success",
                 trace_id=trace_id,
-                run_id=result.extraction_run_id,
-                total_sections=result.total_sections,
-                successful=result.successful_sections,
-                failed=result.failed_sections,
-                tokens_total=result.total_tokens_used,
+                run_id=batch_result.extraction_run_id,
+                total_sections=batch_result.total_sections,
+                successful=batch_result.successful_sections,
+                failed=batch_result.failed_sections,
+                tokens_total=batch_result.total_tokens_used,
                 db_commit_duration_ms=db_commit_duration_ms,
                 endpoint_duration_ms=(perf_counter() - endpoint_start) * 1000,
             )
 
-            # Formatar resposta in the formato camelCase for o frontend
             response_data = BatchSectionResult(
-                extraction_run_id=result.extraction_run_id,
-                total_sections=result.total_sections,
-                successful_sections=result.successful_sections,
-                failed_sections=result.failed_sections,
-                total_suggestions_created=result.total_suggestions_created,
-                total_tokens_used=result.total_tokens_used,
-                duration_ms=result.duration_ms,
-                sections=result.sections,
-            ).model_dump(by_alias=True)
-        else:
-            # Extracao de section unica
-            result = await service.extract_section(
-                project_id=payload.project_id,
-                article_id=payload.article_id,
-                template_id=payload.template_id,
-                entity_type_id=payload.entity_type_id,  # type: ignore
-                parent_instance_id=payload.parent_instance_id,
-                model=payload.model or "gpt-4o-mini",
-            )
-
-            db_commit_start = perf_counter()
-            await db.commit()
-            db_commit_duration_ms = (perf_counter() - db_commit_start) * 1000
-
-            logger.info(
-                "section_extraction_success",
-                trace_id=trace_id,
-                run_id=result.extraction_run_id,
-                suggestions_created=result.suggestions_created,
-                tokens_total=result.tokens_total,
-                db_commit_duration_ms=db_commit_duration_ms,
-                endpoint_duration_ms=(perf_counter() - endpoint_start) * 1000,
-            )
-
-            # Formatar resposta in the formato camelCase for o frontend
-            response_data = SingleSectionResult(
-                extraction_run_id=result.extraction_run_id,
-                entity_type_id=result.entity_type_id,
-                suggestions_created=result.suggestions_created,
-                tokens_prompt=result.tokens_prompt,
-                tokens_completion=result.tokens_completion,
-                tokens_total=result.tokens_total,
-                duration_ms=result.duration_ms,
+                extraction_run_id=batch_result.extraction_run_id,
+                total_sections=batch_result.total_sections,
+                successful_sections=batch_result.successful_sections,
+                failed_sections=batch_result.failed_sections,
+                total_suggestions_created=batch_result.total_suggestions_created,
+                total_tokens_used=batch_result.total_tokens_used,
+                duration_ms=batch_result.duration_ms,
+                sections=batch_result.sections,
             ).model_dump(by_alias=True)
 
         return ApiResponse(ok=True, data=response_data, trace_id=trace_id)

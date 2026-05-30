@@ -21,6 +21,9 @@ from app.models.extraction_workflow import (
     ExtractionProposalRecord,
     ExtractionProposalSource,
     ExtractionPublishedState,
+    ExtractionReviewerDecision,
+    ExtractionReviewerDecisionType,
+    ExtractionReviewerState,
 )
 from app.services.hitl_config_service import HitlConfigService
 
@@ -190,8 +193,122 @@ class RunLifecycleService:
         elif target == ExtractionRunStage.FINALIZED.value:
             run.status = ExtractionRunStatus.COMPLETED.value
         await self.db.flush()
+
+        # Invariant I-1: in REVIEW+, every human proposal must have a
+        # corresponding reviewer_decision so the form's per-user read can
+        # render the typed value. The autosave path writes proposals
+        # regardless of stage, and AI-extraction services advance to
+        # REVIEW without round-tripping through a "confirm" step — so
+        # any human input the user typed before the advance would be
+        # orphaned without this materialization step.
+        if target == ExtractionRunStage.REVIEW.value:
+            await self._materialize_human_decisions(run_id)
+
         await self.db.refresh(run)
         return run
+
+    async def _materialize_human_decisions(self, run_id: UUID) -> None:
+        """For each (instance, field) on this run that has a human
+        ``ProposalRecord`` (``source='human'``, ``source_user_id`` set)
+        but no existing ``ReviewerDecision`` for that source user,
+        insert a ``decision='accept_proposal'`` row pointing at the
+        latest proposal and upsert the matching ``ReviewerState``.
+
+        Idempotent: skips any (run, instance, field, reviewer) triple
+        that already has a decision row, so retries / re-advances do
+        not duplicate.
+
+        AI proposals are NOT materialized — reviewers must explicitly
+        accept/edit/reject them. The premise of the auto-materialize is
+        "user typed = user committed"; AI output has no analogous
+        commitment.
+        """
+        # Latest human proposal per (instance, field, source_user_id).
+        # DISTINCT ON keeps the newest row per coord, since
+        # extraction_proposal_records is append-only and "the latest
+        # typed value wins".
+        latest_proposals = (
+            (
+                await self.db.execute(
+                    select(ExtractionProposalRecord)
+                    .where(
+                        ExtractionProposalRecord.run_id == run_id,
+                        ExtractionProposalRecord.source == ExtractionProposalSource.HUMAN.value,
+                        ExtractionProposalRecord.source_user_id.is_not(None),
+                    )
+                    .order_by(
+                        ExtractionProposalRecord.instance_id,
+                        ExtractionProposalRecord.field_id,
+                        ExtractionProposalRecord.source_user_id,
+                        ExtractionProposalRecord.created_at.desc(),
+                    )
+                    .distinct(
+                        ExtractionProposalRecord.instance_id,
+                        ExtractionProposalRecord.field_id,
+                        ExtractionProposalRecord.source_user_id,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        if not latest_proposals:
+            return
+
+        for proposal in latest_proposals:
+            existing = (
+                await self.db.execute(
+                    select(ExtractionReviewerDecision.id)
+                    .where(
+                        ExtractionReviewerDecision.run_id == run_id,
+                        ExtractionReviewerDecision.instance_id == proposal.instance_id,
+                        ExtractionReviewerDecision.field_id == proposal.field_id,
+                        ExtractionReviewerDecision.reviewer_id == proposal.source_user_id,
+                    )
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if existing is not None:
+                continue
+
+            decision = ExtractionReviewerDecision(
+                run_id=run_id,
+                reviewer_id=proposal.source_user_id,
+                instance_id=proposal.instance_id,
+                field_id=proposal.field_id,
+                decision=ExtractionReviewerDecisionType.ACCEPT_PROPOSAL.value,
+                proposal_record_id=proposal.id,
+                value=proposal.proposed_value,
+            )
+            self.db.add(decision)
+            await self.db.flush()
+
+            # Upsert the materialized reviewer_state pointer so subsequent
+            # reads (including the form's loadValuesForUser) see this
+            # decision as current. The unique key is
+            # (run_id, reviewer_id, instance_id, field_id).
+            stmt = (
+                pg_insert(ExtractionReviewerState)
+                .values(
+                    run_id=run_id,
+                    reviewer_id=proposal.source_user_id,
+                    instance_id=proposal.instance_id,
+                    field_id=proposal.field_id,
+                    current_decision_id=decision.id,
+                )
+                .on_conflict_do_update(
+                    index_elements=[
+                        "run_id",
+                        "reviewer_id",
+                        "instance_id",
+                        "field_id",
+                    ],
+                    set_={"current_decision_id": decision.id},
+                )
+            )
+            await self.db.execute(stmt)
+        await self.db.flush()
 
     async def reopen_run(
         self,

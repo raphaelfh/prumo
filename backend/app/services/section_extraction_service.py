@@ -126,6 +126,7 @@ class SectionExtractionService(LoggerMixin):
         entity_type_id: UUID,
         parent_instance_id: UUID | None = None,
         model: str = "gpt-4o-mini",
+        run_id: UUID | None = None,
     ) -> SectionExtractionResult:
         """
         Extract a specific section from a template.
@@ -137,6 +138,12 @@ class SectionExtractionService(LoggerMixin):
             entity_type_id: Entity type ID to extract.
             parent_instance_id: Parent instance ID (optional).
             model: Modelo OpenAI.
+            run_id: Existing run to append proposals to. When provided
+                (the extraction surface path), the proposals are added
+                to that run instead of creating a fresh one — so the
+                HITL session's run stays the single source of truth and
+                multiple section-by-section AI extractions accumulate
+                on the same run.
 
         Returns:
             SectionExtractionResult with extraction_run_id, suggestions, and tokens.
@@ -144,28 +151,41 @@ class SectionExtractionService(LoggerMixin):
         start_time = perf_counter()
         phase_durations_ms: dict[str, float] = {}
 
-        # 1. Create extraction_run via the unified lifecycle service so the
-        # NOT NULL columns (version_id, hitl_config_snapshot) and kind
-        # discriminator are populated. Then advance pending → proposal.
-        run = await self._lifecycle.create_run(
-            project_id=project_id,
-            article_id=article_id,
-            project_template_id=template_id,
-            user_id=UUID(self.user_id),
-            parameters={
-                "model": model,
-                "entity_type_id": str(entity_type_id),
-                "parent_instance_id": str(parent_instance_id) if parent_instance_id else None,
-            },
-        )
-        run = await self._lifecycle.advance_stage(
-            run_id=run.id,
-            target_stage=ExtractionRunStage.PROPOSAL,
-            user_id=UUID(self.user_id),
-        )
+        # When the caller passes a ``run_id`` (extraction surface via the
+        # HITL session service), append proposals to that run and skip the
+        # lifecycle bookkeeping the standalone path needs. The session
+        # owns ``start_run`` / ``complete_run`` / ``fail_run`` and the
+        # stage advance — calling them here would close the run after one
+        # section, breaking subsequent section-by-section AI clicks.
+        manage_lifecycle = run_id is None
 
-        # Mark as running
-        await self._runs.start_run(run.id)
+        if not manage_lifecycle:
+            existing_run = await self.db.get(ExtractionRun, run_id)
+            if existing_run is None:
+                raise ValueError(f"Run {run_id} not found")
+            if existing_run.stage != ExtractionRunStage.PROPOSAL.value:
+                raise ValueError(
+                    f"Run {run_id} stage is {existing_run.stage}; AI extraction requires PROPOSAL",
+                )
+            run = existing_run
+        else:
+            run = await self._lifecycle.create_run(
+                project_id=project_id,
+                article_id=article_id,
+                project_template_id=template_id,
+                user_id=UUID(self.user_id),
+                parameters={
+                    "model": model,
+                    "entity_type_id": str(entity_type_id),
+                    "parent_instance_id": (str(parent_instance_id) if parent_instance_id else None),
+                },
+            )
+            run = await self._lifecycle.advance_stage(
+                run_id=run.id,
+                target_stage=ExtractionRunStage.PROPOSAL,
+                user_id=UUID(self.user_id),
+            )
+            await self._runs.start_run(run.id)
 
         self.logger.info(
             "section_extraction_start",
@@ -218,33 +238,35 @@ class SectionExtractionService(LoggerMixin):
             )
             phase_durations_ms["create_suggestions"] = (perf_counter() - phase_start) * 1000
 
-            # 7b. Advance proposal → review so the extraction UI can record
-            #     ReviewerDecisions (edit / accept_proposal) without an extra
-            #     UX gesture. Equivalent of "AI is done proposing; humans now
-            #     review and decide".
-            await self._lifecycle.advance_stage(
-                run_id=run.id,
-                target_stage=ExtractionRunStage.REVIEW,
-                user_id=UUID(self.user_id),
-            )
+            # Run stays in PROPOSAL. The HITL session service's
+            # ``_reuse_or_create_run`` returns this run on next session
+            # open (most-recent non-terminal), so ``useExtractedValues``
+            # hydrates from ``runDetail.proposals`` and the AI values
+            # show in the form immediately. The user advances to REVIEW
+            # explicitly via "Submit for review" — auto-advancing here
+            # would skip the proposal-stage hydration and leave the
+            # form empty (#bug: AI extraction values not appearing).
 
             duration = (perf_counter() - start_time) * 1000
 
-            # 8. Complete run with results
-            phase_start = perf_counter()
-            await self._runs.complete_run(
-                run_id=run.id,
-                results={
-                    "suggestions_created": suggestions_created,
-                    "tokens_prompt": llm_response.usage.prompt_tokens,
-                    "tokens_completion": llm_response.usage.completion_tokens,
-                    "tokens_total": llm_response.usage.total_tokens,
-                    "duration_ms": duration,
-                    "fields_extracted": len(extracted_data) if extracted_data else 0,
-                    "phase_durations_ms": phase_durations_ms,
-                },
-            )
-            phase_durations_ms["complete_run"] = (perf_counter() - phase_start) * 1000
+            # 8. Complete run with results (standalone-run path only).
+            # The session-run path leaves the run alive so the user can
+            # keep extracting section-by-section on the same run.
+            if manage_lifecycle:
+                phase_start = perf_counter()
+                await self._runs.complete_run(
+                    run_id=run.id,
+                    results={
+                        "suggestions_created": suggestions_created,
+                        "tokens_prompt": llm_response.usage.prompt_tokens,
+                        "tokens_completion": llm_response.usage.completion_tokens,
+                        "tokens_total": llm_response.usage.total_tokens,
+                        "duration_ms": duration,
+                        "fields_extracted": len(extracted_data) if extracted_data else 0,
+                        "phase_durations_ms": phase_durations_ms,
+                    },
+                )
+                phase_durations_ms["complete_run"] = (perf_counter() - phase_start) * 1000
 
             self.logger.info(
                 "section_extraction_complete",
@@ -268,8 +290,12 @@ class SectionExtractionService(LoggerMixin):
             )
 
         except Exception as e:
-            # Mark run as failed
-            await self._runs.fail_run(run.id, str(e))
+            # Only mark run as failed in the standalone-run path. In the
+            # session-run path the run lifecycle is owned by the HITL
+            # session, not by a single AI call — failing it here would
+            # break subsequent section extractions on the same run.
+            if manage_lifecycle:
+                await self._runs.fail_run(run.id, str(e))
             self.logger.error(
                 "section_extraction_failed",
                 trace_id=self.trace_id,
@@ -705,13 +731,9 @@ class SectionExtractionService(LoggerMixin):
                         }
                     )
 
-            # Advance the primary batch run proposal → review now that all
-            # AI proposals have been written across child sections.
-            await self._lifecycle.advance_stage(
-                run_id=run.id,
-                target_stage=ExtractionRunStage.REVIEW,
-                user_id=UUID(self.user_id),
-            )
+            # Run stays in PROPOSAL — see ``extract_section`` for the
+            # rationale. The user advances to REVIEW via "Submit for
+            # review" after inspecting the AI-proposed values.
 
             duration = (perf_counter() - start_time) * 1000
 
@@ -843,12 +865,9 @@ class SectionExtractionService(LoggerMixin):
             # Generate memory summary (max 200 chars)
             summary = self._generate_extraction_summary(entity_type, extracted_data)
 
-            # Advance proposal → review now that AI proposing is done.
-            await self._lifecycle.advance_stage(
-                run_id=run.id,
-                target_stage=ExtractionRunStage.REVIEW,
-                user_id=UUID(self.user_id),
-            )
+            # Run stays in PROPOSAL — see ``extract_section`` for the
+            # rationale. The user advances to REVIEW via "Submit for
+            # review" after inspecting the AI-proposed values.
 
             # Complete run
             phase_start = perf_counter()

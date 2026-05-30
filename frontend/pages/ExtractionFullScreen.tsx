@@ -309,12 +309,21 @@ export default function ExtractionFullScreen() {
   // extraction completes. See usePreserveScroll for the rAF dance.
   const preserveScroll = usePreserveScroll(SCROLL_CONTAINERS_TO_PRESERVE);
 
-    // Auto-save hook — writes `human` proposals on the active run; no-op
-    // until the session is open and the run is in a writable stage.
-    // The hook flushes pending edits on unmount, ``pagehide``, and
-    // visibility changes so navigating mid-debounce never drops a save.
+    // Auto-save hook — writes `human` proposals during PROPOSAL stage
+    // and per-user ``ReviewerDecision`` rows (decision='edit') during
+    // REVIEW stage. The stage-aware target preserves the blind-review
+    // contract for multi-reviewer runs: each reviewer's typing during
+    // REVIEW lands in their own decision stream and the read path
+    // (``loadValuesForUser``) filters by reviewer_id (Layer 2 of the
+    // multi-reviewer blind fix).
+    //
+    // No-op until the session is open and the run is in a writable
+    // stage. The hook flushes pending edits on unmount, ``pagehide``,
+    // and visibility changes so navigating mid-debounce never drops a
+    // save.
   const { saveState, lastSavedAt, hasUnsavedChanges, saveNow } = useAutoSaveProposals({
     runId: activeRunId,
+    stage,
     values,
     enabled: !!activeRunId && !loading && valuesInitialized && !isFinalized,
   });
@@ -332,6 +341,21 @@ export default function ExtractionFullScreen() {
     await advanceMutation.mutateAsync({ target_stage: 'review' });
     await Promise.all([refetchRun(), refreshValues()]);
     toast.success('Submitted for review.');
+  }, [activeRunId, saveNow, advanceMutation, refetchRun, refreshValues]);
+
+    // "Reconcile" — flush any pending edits and advance REVIEW →
+    // CONSENSUS so the ``ConsensusPanel`` becomes reachable. This
+    // closes the Layer 2 gap where the extraction page had no UI to
+    // hand the run over to the consensus phase (previously only QA's
+    // ``handlePublish`` advanced past REVIEW). Gate at the call site
+    // on ``permissions.canResolveConflicts`` (manager / consensus
+    // roles) so reviewers don't accidentally trigger it.
+  const handleReconcile = useCallback(async () => {
+    if (!activeRunId) return;
+    await saveNow();
+    await advanceMutation.mutateAsync({ target_stage: 'consensus' });
+    await Promise.all([refetchRun(), refreshValues()]);
+    toast.success('Reviewers reconciled. Resolve any divergences below.');
   }, [activeRunId, saveNow, advanceMutation, refetchRun, refreshValues]);
 
     // Permissions hook (controls comparison access)
@@ -946,6 +970,25 @@ export default function ExtractionFullScreen() {
         await new Promise(resolve => setTimeout(resolve, 1500));
 
         await preserveScroll(async () => {
+          // AI extraction creates a *new* run in PROPOSAL stage (see
+          // ``SectionExtractionService.extract_section``); the proposals
+          // live on that new run, not on the session run the page was
+          // bound to. Refetch the HITL session first so ``activeRunId``
+          // re-resolves to the most-recent non-terminal run (the AI
+          // run); then refetch its detail so ``runDetail.proposals``
+          // hydrates ``useExtractedValues``. Without the session
+          // refetch, the form keeps reading the original session run
+          // and the extracted values never appear without F5.
+          try {
+            await sessionResult.refetch();
+          } catch (err) {
+            console.error('Error refetching session (non-critical):', err);
+          }
+          try {
+            await refetchRun();
+          } catch (err) {
+            console.error('Error refetching run (non-critical):', err);
+          }
           if (template) {
             try {
               await refreshInstances();
@@ -988,6 +1031,21 @@ export default function ExtractionFullScreen() {
     })();
   };
 
+  // Stage-driven primary action shown in the header. PROPOSAL submits
+  // for review; REVIEW lets manager/consensus reconcile + advance to
+  // CONSENSUS (Layer 2 of the multi-reviewer blind fix — without this
+  // the run had no UI path past REVIEW); everything else falls back to
+  // the legacy finalize handler.
+  let onFinalize: () => void | Promise<void> = handleFinalize;
+  let finalizeLabel: string | undefined;
+  if (stage === 'proposal') {
+    onFinalize = handleSubmitForReview;
+    finalizeLabel = 'Submit for review';
+  } else if (stage === 'review' && permissions.canResolveConflicts) {
+    onFinalize = handleReconcile;
+    finalizeLabel = 'Reconcile (advance to consensus)';
+  }
+
   return (
     <div className="h-screen flex flex-col bg-background">
       {/* Header Unificado */}
@@ -1013,8 +1071,8 @@ export default function ExtractionFullScreen() {
         lastSavedAt={lastSavedAt}
         hasUnsavedChanges={hasUnsavedChanges}
         isComplete={isComplete}
-        onFinalize={stage === 'proposal' ? handleSubmitForReview : handleFinalize}
-        finalizeLabel={stage === 'proposal' ? 'Submit for review' : undefined}
+        onFinalize={onFinalize}
+        finalizeLabel={finalizeLabel}
         submitting={submitting}
         templateId={template?.id}
         templateName={template?.name}
@@ -1144,6 +1202,7 @@ export default function ExtractionFullScreen() {
                 projectId: projectId || '',
                 articleId: articleId || '',
                 templateId: template?.id || '',
+                runId: activeRunId,
                 modelsLoading,
                 onExtractionComplete: handleExtractionComplete,
               }}
