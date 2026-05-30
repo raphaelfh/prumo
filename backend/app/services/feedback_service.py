@@ -1,14 +1,17 @@
-"""Persist a feedback report (outbox) and enqueue Linear forwarding."""
+"""Persist a feedback report (outbox).
+
+Forwarding to Linear is enqueued by the caller (the API layer) AFTER the
+row is committed — this keeps the service free of any api/worker-layer
+imports and guarantees the worker never races an uncommitted row.
+"""
 
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps.security import ensure_project_member
 from app.core.logging import get_logger
 from app.models.feedback import FeedbackAttachment, FeedbackReport
 from app.schemas.feedback import FeedbackCreate
-from app.worker.tasks.feedback_tasks import forward_feedback_to_linear_task
 
 logger = get_logger(__name__)
 
@@ -27,12 +30,6 @@ class FeedbackService:
 
     async def create_report(self, payload: FeedbackCreate) -> FeedbackReport:
         ctx = payload.context
-
-        project_id = ctx.project_id
-        if project_id is not None and self._user_uuid is not None:
-            # Only store a project reference the caller is actually a member of.
-            await ensure_project_member(self.db, project_id, self._user_uuid)
-
         report = FeedbackReport(
             user_id=self._user_uuid,
             type=payload.type,
@@ -43,7 +40,7 @@ class FeedbackService:
             route=ctx.route,
             user_agent=ctx.user_agent,
             viewport_size=ctx.viewport_size,
-            project_id=project_id,
+            project_id=ctx.project_id,
             article_id=ctx.article_id,
             app_version=ctx.app_version,
             forward_status="pending",
@@ -58,11 +55,8 @@ class FeedbackService:
                     forward_status="pending",
                 )
             )
-
         self.db.add(report)
         await self.db.flush()  # populate report.id
-
-        forward_feedback_to_linear_task.delay(str(report.id))
         logger.info(
             "feedback_report_created",
             report_id=str(report.id),

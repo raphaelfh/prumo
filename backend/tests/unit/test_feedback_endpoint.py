@@ -23,15 +23,21 @@ def _body(**kw):
 @pytest.mark.asyncio
 async def test_post_feedback_returns_202_and_report_id(client) -> None:
     fake_report = SimpleNamespace(id=UUID("11111111-1111-1111-1111-111111111111"))
-    with patch(
-        "app.api.v1.endpoints.feedback.FeedbackService.create_report",
-        new=AsyncMock(return_value=fake_report),
+    with (
+        patch(
+            "app.api.v1.endpoints.feedback.FeedbackService.create_report",
+            new=AsyncMock(return_value=fake_report),
+        ),
+        patch(
+            "app.api.v1.endpoints.feedback.forward_feedback_to_linear_task.delay"
+        ) as delay,
     ):
         res = await client.post("/api/v1/feedback", json=_body())
     assert res.status_code == 202, res.text
     body = res.json()
     assert body["ok"] is True
     assert body["data"]["report_id"] == "11111111-1111-1111-1111-111111111111"
+    delay.assert_called_once_with("11111111-1111-1111-1111-111111111111")
 
 
 @pytest.mark.asyncio
