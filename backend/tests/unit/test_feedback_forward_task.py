@@ -115,3 +115,68 @@ async def test_already_sent_is_noop(linear) -> None:
         s.LINEAR_TEAM_ID = "t"
         await _forward(session, "11111111-1111-1111-1111-111111111111")
     linear.create_issue.assert_not_awaited()
+
+
+async def test_unconfigured_linear_is_noop_and_leaves_pending(linear) -> None:
+    report = _report(forward_status="pending")
+    session = _session_with(report)
+    with (
+        patch("app.worker.tasks.feedback_tasks.LinearClient", return_value=linear),
+        patch("app.worker.tasks.feedback_tasks._build_storage", return_value=MagicMock()),
+        patch("app.worker.tasks.feedback_tasks.settings") as s,
+    ):
+        s.LINEAR_API_KEY = None
+        s.LINEAR_TEAM_ID = None
+        await _forward(session, "11111111-1111-1111-1111-111111111111")
+    linear.create_issue.assert_not_awaited()
+    assert report.forward_status == "pending"
+
+
+async def test_partial_attachment_failure_resumes_on_retry(linear) -> None:
+    att1 = SimpleNamespace(kind="image", storage_key="u/1.webp", content_type="image/webp",
+                           linear_asset_url=None, forward_status="pending")
+    att2 = SimpleNamespace(kind="image", storage_key="u/2.webp", content_type="image/webp",
+                           linear_asset_url=None, forward_status="pending")
+    report = _report(attachments=[att1, att2])
+    session = _session_with(report)
+    storage = MagicMock()
+    storage.download = AsyncMock(return_value=b"bytes")
+    # First pass: att1 uploads ok, att2 raises.
+    linear.upload_file = AsyncMock(side_effect=["https://asset/1.webp", RuntimeError("boom")])
+
+    with (
+        patch("app.worker.tasks.feedback_tasks.LinearClient", return_value=linear),
+        patch("app.worker.tasks.feedback_tasks._build_storage", return_value=storage),
+        patch("app.worker.tasks.feedback_tasks.settings") as s,
+    ):
+        s.LINEAR_API_KEY = "k"
+        s.LINEAR_TEAM_ID = "t"
+        s.FEEDBACK_MEDIA_BUCKET = "b"
+        with pytest.raises(RuntimeError):
+            await _forward(session, "11111111-1111-1111-1111-111111111111")
+
+    assert report.linear_issue_id == "i1"
+    assert report.forward_status == "issue_created"
+    assert att1.forward_status == "sent"
+    assert att1.linear_asset_url == "https://asset/1.webp"
+    assert att2.forward_status == "pending"
+    assert linear.create_issue.await_count == 1
+
+    # Retry: att2 now succeeds; issue not recreated, att1 not re-uploaded.
+    linear.upload_file = AsyncMock(return_value="https://asset/2.webp")
+    with (
+        patch("app.worker.tasks.feedback_tasks.LinearClient", return_value=linear),
+        patch("app.worker.tasks.feedback_tasks._build_storage", return_value=storage),
+        patch("app.worker.tasks.feedback_tasks.settings") as s,
+    ):
+        s.LINEAR_API_KEY = "k"
+        s.LINEAR_TEAM_ID = "t"
+        s.FEEDBACK_MEDIA_BUCKET = "b"
+        await _forward(session, "11111111-1111-1111-1111-111111111111")
+
+    assert linear.create_issue.await_count == 1  # not recreated
+    assert att2.forward_status == "sent"
+    assert att2.linear_asset_url == "https://asset/2.webp"
+    assert report.forward_status == "sent"
+    assert report.forwarded_at is not None
+    linear.upload_file.assert_awaited_once()  # only att2 on the retry pass

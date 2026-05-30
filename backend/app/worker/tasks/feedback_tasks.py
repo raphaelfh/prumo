@@ -50,6 +50,14 @@ async def _forward(session: AsyncSession, report_id: str) -> None:
     if report.forward_status == "sent":
         return
 
+    if not settings.LINEAR_API_KEY or not settings.LINEAR_TEAM_ID:
+        logger.warning(
+            "feedback_forward_skipped_unconfigured",
+            report_id=report_id,
+            detail="LINEAR_API_KEY / LINEAR_TEAM_ID not set; leaving report pending.",
+        )
+        return
+
     client = LinearClient(api_key=settings.LINEAR_API_KEY, team_id=settings.LINEAR_TEAM_ID)
 
     # 1. Create the issue (idempotent: only if not already created).
@@ -101,16 +109,19 @@ def forward_feedback_to_linear_task(self: Task, report_id: str) -> dict[str, str
             try:
                 await _forward(session, report_id)
                 return {"report_id": report_id, "status": "sent"}
-            except Exception:
+            except Exception as exc:
                 await session.rollback()
+                logger.exception("feedback_forward_failed", report_id=report_id)
                 # Best-effort: record the error on the row in a fresh tx.
+                # NOTE: `failed` means "last attempt errored" — the task may
+                # still retry (a row is re-processed unless already `sent`).
                 try:
                     from sqlalchemy import update
 
                     await session.execute(
                         update(FeedbackReport)
                         .where(FeedbackReport.id == UUID(report_id))
-                        .values(forward_status="failed")
+                        .values(forward_status="failed", forward_error=str(exc)[:2000])
                     )
                     await session.commit()
                 except Exception:
