@@ -1,5 +1,13 @@
 import {describe, expect, it, vi} from 'vitest';
 
+// zoteroImportService.ts imports the Supabase client at module load, which
+// calls createClient() and throws "supabaseUrl is required" without env vars.
+// Stub the module so importing the service is side-effect free in tests.
+vi.mock('@/integrations/supabase/client', () => {
+    const mock = {from: vi.fn(), auth: {getUser: vi.fn()}};
+    return {supabase: mock};
+});
+
 import {ZoteroImportService} from '@/services/zoteroImportService';
 
 describe('ZoteroImportService sync methods', () => {
