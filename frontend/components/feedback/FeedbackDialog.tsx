@@ -2,7 +2,7 @@
  * Feedback dialog — bugs, suggestions, questions, with optional
  * getDisplayMedia screenshot/clip uploaded to Supabase Storage.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { MessageSquare, Camera, Video, X } from 'lucide-react';
 
 import {
@@ -41,6 +41,13 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
   const [description, setDescription] = useState('');
   const [severity, setSeverity] = useState<FeedbackSeverity | undefined>();
   const [capture, setCapture] = useState<PendingCapture | null>(null);
+
+  // Revoke the preview object URL when the capture is replaced or the
+  // dialog unmounts, so blob URLs don't leak.
+  useEffect(() => {
+    if (!capture) return;
+    return () => URL.revokeObjectURL(capture.previewUrl);
+  }, [capture]);
 
   const { submitFeedback, submitting } = useFeedback();
   const { isSupported, capturing, captureStill, recordClip } = useScreenCapture();

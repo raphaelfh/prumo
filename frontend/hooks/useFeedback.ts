@@ -4,7 +4,6 @@
  */
 import { useMutation } from '@tanstack/react-query';
 
-import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { t } from '@/lib/copy';
 import { FeedbackService } from '@/services/feedbackService';
@@ -36,7 +35,6 @@ function getCurrentContext(): FeedbackContext {
 }
 
 export function useFeedback() {
-  const { user: _user } = useAuth();
   const { toast } = useToast();
 
   const mutation = useMutation({
