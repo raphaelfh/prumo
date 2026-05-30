@@ -11,7 +11,10 @@ def test_feedback_report_tablename_is_plural() -> None:
 
 
 def test_feedback_attachment_tablename() -> None:
+    # BaseModel auto-derives a SINGULAR name (feedback_attachment); the
+    # model overrides __tablename__ to match the migration's table.
     assert FeedbackAttachment.__tablename__ == "feedback_attachments"
+    assert FeedbackAttachment.__table__.schema == "public"
 
 
 def test_feedback_report_has_outbox_columns() -> None:

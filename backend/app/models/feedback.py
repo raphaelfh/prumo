@@ -8,7 +8,7 @@ retries. `feedback_attachments` holds optional screenshots/clips.
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -21,9 +21,14 @@ class FeedbackReport(BaseModel):
 
     __tablename__ = "feedback_reports"
 
+    # No ORM-level ForeignKey: user_id references the Supabase-managed
+    # auth.users table, which the app intentionally does not map in
+    # SQLAlchemy. The FK is enforced at the DB level (baseline migration).
     user_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), nullable=True
     )
+    # Column name mirrors the existing DB column; intentionally shadows
+    # the `type` builtin (required for schema parity).
     type: Mapped[str] = mapped_column(String(32), nullable=False)
     severity: Mapped[str | None] = mapped_column(String(16), nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -52,7 +57,7 @@ class FeedbackReport(BaseModel):
         String(16), nullable=False, server_default="pending"
     )
     forward_error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    forwarded_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    forwarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     attachments: Mapped[list["FeedbackAttachment"]] = relationship(
         back_populates="report",
