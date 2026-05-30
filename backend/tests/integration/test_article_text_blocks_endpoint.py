@@ -285,7 +285,9 @@ async def test_list_text_blocks_returns_404_for_unknown_file(
     res = await db_client.get(f"/api/v1/article-files/{unknown_id}/text-blocks")
 
     assert res.status_code == 404, res.text
-    assert str(unknown_id) in res.json()["detail"]
+    body = res.json()
+    assert body["ok"] is False
+    assert str(unknown_id) in body["error"]["message"]
 
 
 @pytest.mark.asyncio
