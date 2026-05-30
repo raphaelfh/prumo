@@ -1,48 +1,41 @@
-/**
- * Types for the user feedback system
- */
-
 export type FeedbackType = 'bug' | 'suggestion' | 'question' | 'other';
-
 export type FeedbackSeverity = 'low' | 'medium' | 'high' | 'critical';
-
-export type FeedbackStatus = 'open' | 'in_progress' | 'resolved' | 'wont_fix' | 'duplicate';
+export type FeedbackAttachmentKind = 'image' | 'video';
 
 export interface ViewportSize {
   width: number;
   height: number;
 }
 
-export interface FeedbackReport {
-  id: string;
-  user_id: string | null;
-  type: FeedbackType;
-  description: string;
-  severity: FeedbackSeverity | null;
-  url: string;
+export interface FeedbackContext {
+  url: string | null;
+  route: string | null;
   user_agent: string | null;
   viewport_size: ViewportSize | null;
   project_id: string | null;
   article_id: string | null;
-  screenshot_url: string | null;
-  status: FeedbackStatus;
-  priority: number;
-  admin_notes: string | null;
-  created_at: string;
-  updated_at: string;
+  app_version: string | null;
+}
+
+export interface FeedbackAttachmentInput {
+  kind: FeedbackAttachmentKind;
+  storage_key: string;
+  content_type: string;
+  size_bytes: number;
 }
 
 export interface FeedbackFormData {
   type: FeedbackType;
   description: string;
   severity?: FeedbackSeverity;
+  summary?: string;
 }
 
-export interface FeedbackContext {
-  url: string;
-  user_agent: string;
-  viewport_size: ViewportSize;
-  project_id: string | null;
-  article_id: string | null;
+export interface SubmitFeedbackPayload extends FeedbackFormData {
+  context: FeedbackContext;
+  attachments: FeedbackAttachmentInput[];
 }
 
+export interface FeedbackCreated {
+  report_id: string;
+}
