@@ -12,6 +12,7 @@ from app.api.v1.endpoints import (
     citations,
     extraction_export,
     extraction_runs,
+    feedback,
     hitl_configs,
     hitl_sessions,
     model_extraction,
@@ -94,4 +95,10 @@ api_router.include_router(
     extraction_export.router,
     prefix="/projects",
     tags=["extraction-export"],
+)
+
+api_router.include_router(
+    feedback.router,
+    prefix="/feedback",
+    tags=["Feedback"],
 )
