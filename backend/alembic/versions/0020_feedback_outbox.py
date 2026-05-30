@@ -2,6 +2,7 @@
 
 - Replace old free-form columns (category/message/metadata) with structured
   outbox fields; add `feedback_attachments`.
+- Backfill: legacy `message`→`description`, `category`→`summary` before dropping.
 - Drop the dead in-app-triage columns (status / category / message / metadata)
   — Linear's Triage owns triage now.
 - Tighten RLS to service-role only (the client no longer writes this
@@ -68,6 +69,22 @@ def upgrade() -> None:
     # Remove server defaults used only to satisfy NOT NULL during backfill
     op.alter_column("feedback_reports", "type", server_default=None, schema="public")
     op.alter_column("feedback_reports", "description", server_default=None, schema="public")
+
+    # Preserve any existing free-form feedback before dropping the legacy
+    # columns: the old `message` body becomes `description`, the old
+    # `category` label becomes `summary`. (`status`/`metadata` are not
+    # carried over — triage now lives in Linear, and `metadata` is
+    # superseded by the structured context columns.)
+    op.execute(
+        "UPDATE public.feedback_reports "
+        "SET description = NULLIF(message, '') "
+        "WHERE NULLIF(message, '') IS NOT NULL;"
+    )
+    op.execute(
+        "UPDATE public.feedback_reports "
+        "SET summary = NULLIF(category, '') "
+        "WHERE summary IS NULL AND NULLIF(category, '') IS NOT NULL;"
+    )
 
     # --- drop dead triage columns ---
     for col in ("status", "category", "message", "metadata"):
