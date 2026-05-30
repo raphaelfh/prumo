@@ -22,6 +22,7 @@ celery_app = Celery(
         "app.worker.tasks.import_tasks",
         "app.worker.tasks.export_tasks",
         "app.worker.tasks.extraction_export_tasks",
+        "app.worker.tasks.feedback_tasks",
     ],
 )
 
@@ -64,6 +65,9 @@ celery_app.conf.update(
         # the drift guard has a clean baseline. The Railway worker
         # consumes `celery` alongside the three named queues.
         "app.worker.tasks.export_tasks.*": {"queue": "celery"},
+        # Feedback forwarding to Linear — low-volume, no special resource
+        # requirements, routed to the already-consumed `celery` queue.
+        "app.worker.tasks.feedback_tasks.*": {"queue": "celery"},
     },
 )
 
