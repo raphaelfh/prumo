@@ -81,6 +81,8 @@ export interface ModelSectionProps {
   projectId: string;
   articleId: string;
   templateId: string;
+  /** Active HITL-session run id. Passed to SectionAccordion. */
+  runId?: string | null;
 
   /** AI extraction wiring. */
   onExtractModels: () => Promise<void> | void;
@@ -123,6 +125,7 @@ export function ModelSection(props: ModelSectionProps): JSX.Element {
     projectId,
     articleId,
     templateId,
+    runId,
     onExtractModels,
     extractingModels,
     onExtractAllSections,
@@ -191,6 +194,7 @@ export function ModelSection(props: ModelSectionProps): JSX.Element {
               projectId={projectId}
               articleId={articleId}
               templateId={templateId}
+              runId={runId}
               otherExtractions={otherExtractions}
               aiSuggestions={aiSuggestions}
               onAcceptAI={acceptSuggestion}
@@ -215,6 +219,7 @@ export function ModelSection(props: ModelSectionProps): JSX.Element {
               projectId={projectId}
               articleId={articleId}
               templateId={templateId}
+              runId={runId}
               parentInstanceId={activeModelId}
               otherExtractions={otherExtractions}
               aiSuggestions={aiSuggestions}

@@ -5,6 +5,16 @@ import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
+  // Vite 8 denies serving files outside the workspace root by default; tests
+  // that import pdfjs-dist's worker via `?url` (frontend/lib/pdf-worker.ts)
+  // hit that gate because the worker mjs lives under node_modules. Relaxing
+  // strict here lets vitest resolve the asset URL the same way the browser
+  // build does.
+  server: {
+    fs: {
+      strict: false,
+    },
+  },
   test: {
     globals: true,
     environment: 'jsdom',
