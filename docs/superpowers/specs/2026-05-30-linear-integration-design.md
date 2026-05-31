@@ -224,8 +224,15 @@ routines don't count. Fits Pro (5/day) with headroom.
   **untouched** by enrich.
 - Test issues #166/#167/#169 closed; `source:in-app` Linear label created
   (id `726332cb`, #164 reuses by name).
-- Pending re-validation after Feedback-team switch: confirm a feedback submit
-  lands in the Feedback team (after `LINEAR_TEAM_ID` is updated on Railway).
+- **Feedback-team isolation**: a `source:in-app` issue created in the Feedback
+  team (`FEE-1`) produced **no GitHub mirror** (Feedback team has no sync) — unlike
+  the Prumo team, where a native ticket spawns a GitHub issue. Confirms zero
+  feedback leak to the public repo.
+- **Prod feedback forward — BLOCKED (open)**: `#164` is deployed to prod
+  (`POST /api/v1/feedback` → 202), but a test report (`c399b128`) is stuck
+  `forward_status=pending, forward_error=null` — the unconfigured-guard no-op in
+  `feedback_tasks.py:51`. The Railway **worker** service is missing
+  `LINEAR_API_KEY` and/or `LINEAR_TEAM_ID`. See Open risks #1.
 
 ## Rollout (all reversible)
 
@@ -234,15 +241,21 @@ routines don't count. Fits Pro (5/day) with headroom.
 | 0 — Labels | Claude | 4 GitHub mirror labels + `meta:heartbeat` | delete labels |
 | 1a — Prompts | Claude | 5 proactive + enrich gain `source:automation`/`area:*`/heartbeat; health-check gains inline Urgent | revert prompt |
 | 1b — Sync | User | Linear GitHub **Issues** sync, Prumo, one-way | disconnect |
-| 1c — Team split | User | `LINEAR_TEAM_ID` → Feedback team on Railway + `.env` | revert env var |
+| 1c — Team split | User | Set `LINEAR_API_KEY` + `LINEAR_TEAM_ID` (Feedback) on the Railway **worker** service (separate env from web) + `.env` | revert env vars |
 | 2 — Routines | Claude | `linear-enrich` + `routine-watchdog` + heartbeat #171 | disable in UI |
 | 3 — Adoption | User | triage in Linear, approve in GitHub Mobile | stop using |
 
 ## Open risks
 
-1. **Feedback-team env not yet switched** (highest open item): until
-   `LINEAR_TEAM_ID` is updated on Railway, feedback still posts to Prumo. Action:
-   set `LINEAR_TEAM_ID=23d83039-4f9a-444f-905a-9a4cb9fea2b6` on Railway + `.env`.
+1. **Prod feedback forward is unconfigured on the Railway worker** (highest open
+   item): the forward task runs on the **worker** service, which has its **own**
+   env (separate from `web`). Verified 2026-05-31 — report `c399b128` is stuck
+   `forward_status=pending` with no error, i.e. `LINEAR_API_KEY` and/or
+   `LINEAR_TEAM_ID` are missing on the worker. Action: set **both** on the Railway
+   **worker** service — `LINEAR_TEAM_ID=23d83039-4f9a-444f-905a-9a4cb9fea2b6`
+   (Feedback team) and `LINEAR_API_KEY=<key>` — then submit a test feedback and
+   confirm a ticket lands in the Feedback team. (Setting them only on `web` is the
+   trap that left this pending — `web` accepts/persists, but the worker forwards.)
 2. **Heartbeat issue syncs to Linear** as one Prumo ticket (noise). It lacks
    `source:automation` so enrich ignores it; archive the Linear mirror once.
 3. **Label-name drift**: sync matches `area:*` by name; a rename in #164's Linear
