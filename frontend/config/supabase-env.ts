@@ -1,10 +1,11 @@
 /**
  * Supabase Environment Configuration
  *
- * Centralizes Supabase environment variable resolution with support for:
- * - Local dev (VITE_SUPABASE_*)
- * - Vercel (SUPABASE_*)
- * - Next.js (NEXT_PUBLIC_SUPABASE_*)
+ * Resolves Supabase config from `VITE_`-prefixed env vars only — that is the
+ * sole prefix Vite exposes to the client bundle (default `envPrefix`). The
+ * Supabase↔Vercel integration's `SUPABASE_*` / `NEXT_PUBLIC_*` vars are not
+ * visible to the build, so they are intentionally not read here.
+ * See docs/reference/deployment.md → "Vercel (frontend)".
  */
 
 const normalizeEnv = (value?: string): string => (value || "").trim();
@@ -21,33 +22,12 @@ const resolveSupabaseEnv = (): "local" | "production" => {
 export const SUPABASE_ENV: "local" | "production" = resolveSupabaseEnv();
 export const IS_LOCAL_SUPABASE: boolean = SUPABASE_ENV === "local";
 
-const resolveSupabaseUrl = (): string => {
-  if (IS_LOCAL_SUPABASE) {
-    return normalizeEnv(import.meta.env.VITE_SUPABASE_URL);
-  }
+const resolveSupabaseUrl = (): string =>
+  normalizeEnv(import.meta.env.VITE_SUPABASE_URL);
 
-  return (
-    normalizeEnv(import.meta.env.VITE_SUPABASE_URL) ||
-    normalizeEnv(import.meta.env.SUPABASE_URL) ||
-    normalizeEnv(import.meta.env.NEXT_PUBLIC_SUPABASE_URL)
-  );
-};
-
-const resolveSupabasePublishableKey = (): string => {
-  if (IS_LOCAL_SUPABASE) {
-    return (
-      normalizeEnv(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) ||
-      normalizeEnv(import.meta.env.VITE_SUPABASE_ANON_KEY)
-    );
-  }
-
-  return (
-    normalizeEnv(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) ||
-    normalizeEnv(import.meta.env.VITE_SUPABASE_ANON_KEY) ||
-    normalizeEnv(import.meta.env.SUPABASE_ANON_KEY) ||
-    normalizeEnv(import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
-  );
-};
+const resolveSupabasePublishableKey = (): string =>
+  normalizeEnv(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) ||
+  normalizeEnv(import.meta.env.VITE_SUPABASE_ANON_KEY);
 
 export const SUPABASE_URL: string = resolveSupabaseUrl();
 export const SUPABASE_PUBLISHABLE_KEY: string = resolveSupabasePublishableKey();

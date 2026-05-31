@@ -1,14 +1,14 @@
 ---
 status: stable
-last_reviewed: 2026-05-24
+last_reviewed: 2026-05-31
 owner: '@raphaelfh'
 ---
 
-> **Status:** Stable · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-05-31 · Owner: @raphaelfh
 
 # Deployment
 
-Last updated: 2026-05-24 (post GitHub auto-deploy wiring).
+Last updated: 2026-05-31 (Vercel ↔ Supabase integration + frontend env-var rules).
 
 ## Topology
 
@@ -77,7 +77,7 @@ prevents this in CI, but the log event is the runtime safety net.
 
 ## Environment variables
 
-There is no tracked env template — env files match `.gitignore` line 21 (`.env.*`). This table is the canonical reference; paste the values into the Railway dashboard or use the Railway CLI to set them.
+There is no tracked env template — env files match `.gitignore` line 21 (`.env.*`). Two hosts, two requirement sets: the **Railway (backend)** tables immediately below, and the **Vercel (frontend)** subsection further down (the `VITE_` prefix rule makes them genuinely different). These tables are the canonical reference; paste the values into the Railway dashboard or use the Railway CLI to set them.
 
 ### Shared across all services
 
@@ -112,6 +112,63 @@ There is no tracked env template — env files match `.gitignore` line 21 (`.env
 | `LINEAR_API_KEY` | Linear personal/workspace API key (SECRET) — used to create feedback issues via the Linear GraphQL API | `web`, `worker` |
 | `LINEAR_TEAM_ID` | Linear team id for the Prumo team (`9b86c9ed-ede9-4f36-99d1-c2f53fb82370`) | `web`, `worker` |
 | `FEEDBACK_MEDIA_BUCKET` | Supabase Storage bucket for feedback screenshots/clips (default `feedback-media`) | `worker` |
+
+### Vercel (frontend) — only `VITE_*` reaches the browser
+
+The frontend is a **Vite** SPA (not Next.js). Vite exposes **only** variables prefixed
+with `VITE_` to the client bundle — `vite.config.ts` does not override the default
+`envPrefix`. Every other variable (`SUPABASE_URL`, `NEXT_PUBLIC_*`, `POSTGRES_*`, …) is
+absent from `import.meta.env` at build time and resolves to `undefined` in the browser.
+
+Canonical frontend vars (set in the Vercel project for Production + Preview):
+
+| Key | Required | Notes |
+| --- | --- | --- |
+| `VITE_API_URL` | yes | Railway backend base URL (`https://web-production-48b398.up.railway.app`). |
+| `VITE_SUPABASE_URL` | yes | Supabase project URL — same value as the integration's `SUPABASE_URL`, but it must carry the `VITE_` prefix. |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | yes | Supabase publishable (anon) key. `VITE_SUPABASE_ANON_KEY` is accepted as a fallback. |
+| `VITE_SITE_URL` | recommended | Auth redirect base for magic-link / password-reset emails (`frontend/pages/Auth.tsx`). |
+| `VITE_SUPABASE_ENV` | optional | `local` points the client at the local Supabase URL; anything else (or unset) means `production`. |
+
+#### The Supabase ↔ Vercel integration does not feed the Vite build
+
+Installing the integration auto-syncs (and keeps fresh) these into the Vercel project:
+
+```text
+POSTGRES_URL, POSTGRES_PRISMA_URL, POSTGRES_URL_NON_POOLING, POSTGRES_USER,
+POSTGRES_HOST, POSTGRES_PASSWORD, POSTGRES_DATABASE,
+SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, SUPABASE_SECRET_KEY (or SUPABASE_SERVICE_ROLE_KEY), SUPABASE_JWT_SECRET,
+NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+```
+
+None of them carry the `VITE_` prefix, so the Vite build ignores all of them; the app
+keeps reading the manually-set `VITE_SUPABASE_*` copies. The integration is handy as a
+value source and for the Studio link, but it is **not** what makes the frontend work and
+it does **not** replace the `VITE_*` vars. (`frontend/config/supabase-env.ts` resolves
+only `VITE_SUPABASE_*` for exactly this reason — it deliberately does not read the
+non-`VITE_` names, since they are invisible to the build.)
+
+> **Key-rotation drift — the one thing to remember.** If you rotate the Supabase
+> anon/publishable key, the integration refreshes `SUPABASE_PUBLISHABLE_KEY` /
+> `NEXT_PUBLIC_*` automatically but **not** `VITE_SUPABASE_PUBLISHABLE_KEY`. Update the
+> `VITE_` copy by hand, or production login breaks while the integration-managed vars
+> still look current.
+>
+> **Security trap — never widen `envPrefix`.** Do not "activate" the integration vars by
+> adding `SUPABASE_`, `POSTGRES_`, or `NEXT_PUBLIC_` to `envPrefix` in `vite.config.ts`.
+> That would inline `SUPABASE_SECRET_KEY` / `SUPABASE_SERVICE_ROLE_KEY` /
+> `SUPABASE_JWT_SECRET` / `POSTGRES_PASSWORD` into the public JS bundle — a credential
+> leak (the secret / service-role key bypasses RLS). Keep `VITE_` as the only prefix and
+> re-expose just the two public values (`VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`).
+
+#### Backend secrets do not belong in the Vercel project
+
+The Vercel project currently also holds backend-only vars (`SUPABASE_SERVICE_ROLE_KEY`,
+`SUPABASE_SECRET_KEY`, `DATABASE_URL`, `DIRECT_DATABASE_URL`, `ENCRYPTION_KEY`,
+`OPENAI_API_KEY`, `REDIS_*`, `RAILWAY_RUN_COMMAND`, …). FastAPI runs on **Railway**, not
+Vercel, so these are unused by the static build (no `VITE_` prefix → never bundled) but
+are needless secret surface on a second platform. They are safe to delete from Vercel;
+keep them only on Railway.
 
 ## Migrations
 

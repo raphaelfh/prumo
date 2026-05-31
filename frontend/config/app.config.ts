@@ -100,15 +100,11 @@ export const validateConfig = (): void => {
   const missing: string[] = [];
 
   if (!SUPABASE_URL) {
-    missing.push(
-      'VITE_SUPABASE_URL (or SUPABASE_URL / NEXT_PUBLIC_SUPABASE_URL)'
-    );
+    missing.push('VITE_SUPABASE_URL');
   }
 
   if (!SUPABASE_PUBLISHABLE_KEY) {
-    missing.push(
-      'VITE_SUPABASE_PUBLISHABLE_KEY (or VITE_SUPABASE_ANON_KEY / SUPABASE_ANON_KEY / NEXT_PUBLIC_SUPABASE_ANON_KEY)'
-    );
+    missing.push('VITE_SUPABASE_PUBLISHABLE_KEY (or VITE_SUPABASE_ANON_KEY)');
   }
 
   if (missing.length > 0) {
