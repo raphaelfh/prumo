@@ -96,6 +96,13 @@ class Settings(BaseSettings):
     # Chave for criptografia de data sensiveis (ex: Zotero API key)
     ENCRYPTION_KEY: str = "review_hub_default_key_change_me_in_production"
 
+    # =================== FEEDBACK / LINEAR ===================
+    LINEAR_API_KEY: str | None = None
+    LINEAR_TEAM_ID: str | None = None
+    FEEDBACK_MEDIA_BUCKET: str = "feedback-media"
+    FEEDBACK_MAX_IMAGE_BYTES: int = 10 * 1024 * 1024
+    FEEDBACK_MAX_VIDEO_BYTES: int = 50 * 1024 * 1024
+
     # =================== LANGSMITH (OPCIONAL) ===================
     LANGCHAIN_TRACING_V2: bool = False
     LANGCHAIN_API_KEY: str | None = None

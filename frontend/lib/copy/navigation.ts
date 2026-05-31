@@ -56,6 +56,15 @@ export const navigation = {
     feedbackDescriptionValid: 'Description valid. Technical context will be captured automatically.',
     feedbackSubmit: 'Send Feedback',
     feedbackSubmitting: 'Sending…',
+    feedbackSummaryLabel: 'Summary (optional)',
+    feedbackSummaryPlaceholder: 'One-line title',
+    feedbackAttachScreenshot: 'Attach screenshot',
+    feedbackRecordClip: 'Record clip',
+    feedbackCaptureRemove: 'Remove',
+    feedbackCaptureNotice: 'Captures are shared with the Prumo team in Linear.',
+    feedbackCaptureFailed: 'Capture was cancelled or failed.',
+    feedbackCaptureUnsupported: 'Screen capture is not supported in this browser.',
+    feedbackSuccessSent: 'Thanks — your report was sent.',
 } as const;
 
 export type NavigationCopy = typeof navigation;

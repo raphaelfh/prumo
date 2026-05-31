@@ -2,6 +2,7 @@ import type { FullConfig } from "@playwright/test";
 
 import { loadE2EEnv } from "./env";
 import { clearRegistry } from "./registry";
+import { ensureFixtures } from "./ensure-fixtures";
 
 async function waitForHealthcheck(url: string, timeoutMs: number): Promise<void> {
   const start = Date.now();
@@ -52,6 +53,9 @@ export default async function globalSetup(_config: FullConfig): Promise<void> {
   const env = loadE2EEnv();
   await waitForHealthcheck(`${env.apiUrl}/health`, 60_000);
   await waitForHealthcheck(env.frontendUrl, 60_000);
+
+  // Ensure all fixtures exist before resolving tokens (which log users in).
+  await ensureFixtures();
 
   // Auto-resolve the primary E2E_AUTH_TOKEN + E2E_USER_ID from email/password
   // when needed, so API-only tests do not skip and admin seeds have a created_by.

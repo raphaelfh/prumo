@@ -8,9 +8,9 @@ export const consensus = {
     sectionTitle: 'Review consensus',
     sectionDesc:
         'Configure how many reviewers an article needs and how disagreements are resolved.',
-    runsBannerTitle: 'These settings only affect new Runs',
+    runsBannerTitle: 'These settings only affect articles started from now on',
     runsBannerBody:
-        'Runs already in progress keep the snapshot they were created with. Changes here apply to the next Run created for an article.',
+        'Articles already in progress keep the settings they started with. Changes here apply the next time an article is opened for extraction or assessment.',
 
     // Project default card
     projectDefaultTitle: 'Project default',

@@ -51,6 +51,7 @@ from app.models.extraction_workflow import (
     ExtractionReviewerDecisionType,
     ExtractionReviewerState,
 )
+from app.models.feedback import FeedbackAttachment, FeedbackReport  # noqa: F401
 from app.models.integration import ZoteroIntegration
 from app.models.project import Project, ProjectMember, ProjectMemberRole, ReviewType
 
@@ -147,6 +148,9 @@ __all__ = [
     "ExtractionReviewerDecision",
     "ExtractionReviewerDecisionType",
     "ExtractionReviewerState",
+    # Feedback
+    "FeedbackReport",
+    "FeedbackAttachment",
     # Integration
     "ZoteroIntegration",
     # User API Keys
