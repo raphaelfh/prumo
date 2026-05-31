@@ -7,8 +7,10 @@ import { loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
 const CHARMS_GLOBAL_TEMPLATE_ID = "000c0000-0000-0000-0000-000000000001";
 
 /**
- * Requires E2E_USER_* and E2E_PROJECT_ID. The user must be a **manager** on
- * that project so the Configuration tab and import controls are available.
+ * Runs against E2E_IMPORT_PROJECT_ID — a dedicated, CHARMS-free project so
+ * this test can import CHARMS fresh (the shared E2E_PROJECT_ID already has it).
+ * The user must be a **manager** on that project so the Configuration tab and
+ * import controls are available. Both are auto-provisioned by global-setup.
  */
 test.describe("Extraction template import (global → project)", () => {
   test("imports CHARMS from configuration and shows success", async ({ page }) => {
