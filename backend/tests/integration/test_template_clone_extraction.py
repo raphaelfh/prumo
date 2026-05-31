@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
+from tests.integration.conftest import SEED
 
 CHARMS_GLOBAL_ID = UUID("000c0000-0000-0000-0000-000000000001")
 
@@ -24,10 +25,8 @@ async def auth_as_profile(
     db_session: AsyncSession,
 ) -> AsyncGenerator[UUID, None]:
     """JWT sub must be a real profile id (FK on project_extraction_templates)."""
-    raw = (await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
-    if raw is None:
-        pytest.skip("No profile rows available in test database")
-    profile_id = UUID(str(raw))
+    del db_session  # kept for fixture-dependency ordering; the seed runs first
+    profile_id = SEED.primary_profile
 
     async def override_get_current_user() -> TokenPayload:
         return TokenPayload(

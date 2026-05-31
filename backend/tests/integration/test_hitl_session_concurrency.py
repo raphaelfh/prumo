@@ -32,6 +32,7 @@ from app.services.run_lifecycle_service import (
     InvalidStageTransitionError,
     RunLifecycleService,
 )
+from tests.integration.conftest import SEED
 
 
 @pytest_asyncio.fixture
@@ -394,23 +395,13 @@ async def test_endpoint_translates_invalid_stage_transition_to_409(
     from app.core.security import TokenPayload, get_current_user
     from app.main import app
 
-    article = (
-        await db_session.execute(text("SELECT id, project_id FROM public.articles LIMIT 1"))
-    ).first()
-    template_id = (
-        await db_session.execute(
-            text(
-                "SELECT id FROM public.project_extraction_templates "
-                "WHERE kind = 'extraction' LIMIT 1"
-            )
-        )
-    ).scalar()
-    profile_id = (await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
-    if article is None or template_id is None or profile_id is None:
-        pytest.skip("Missing fixtures")
-    article_id = UUID(str(article[0]))
-    project_id = UUID(str(article[1]))
-    profile_id = UUID(str(profile_id))
+    # Pin to the seeded sentinel graph so the endpoint's membership check
+    # passes deterministically (primary_profile manages primary_project).
+    # The service is mocked below, so only project membership matters here.
+    project_id = SEED.primary_project
+    article_id = SEED.primary_article
+    template_id = SEED.primary_template
+    profile_id = SEED.primary_profile
 
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
         yield db_session

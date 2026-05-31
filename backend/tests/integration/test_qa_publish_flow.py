@@ -31,16 +31,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
+from tests.integration.conftest import SEED
 
 _SESSION_URL = "/api/v1/hitl/sessions"
 
 
 @pytest_asyncio.fixture
 async def auth_as_profile(db_session: AsyncSession) -> AsyncGenerator[UUID, None]:
-    raw = (await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
-    if raw is None:
-        pytest.skip("No profile rows available")
-    profile_id = UUID(str(raw))
+    del db_session  # kept for fixture-dependency ordering; the seed runs first
+    profile_id = SEED.primary_profile
 
     async def override() -> TokenPayload:
         return TokenPayload(
