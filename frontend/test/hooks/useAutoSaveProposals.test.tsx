@@ -310,6 +310,37 @@ describe('useAutoSaveProposals — stage-aware write target (Layer 2 fix)', () =
   });
 });
 
+describe('useAutoSaveProposals — non-writable stages are inert', () => {
+  // Regression: opening a run parked at ``consensus`` (or ``finalized``)
+  // fired a doomed POST /proposals on load, which the backend rejects
+  // (HTTP 400 "run stage is consensus, not in ['proposal']") and the UI
+  // surfaced as a spurious "Error saving data automatically" toast. Past
+  // the proposal/review stages, autosave must not write at all. ``review``
+  // routes to /decisions and ``proposal``/undefined to /proposals — those
+  // remain writable (covered by the stage-aware suite above).
+  it.each(['consensus', 'finalized', 'pending'])(
+    'does NOT POST and stays idle when stage=%s',
+    async (stage) => {
+      apiClientMock.mockResolvedValue(PROPOSAL_RESPONSE);
+
+      const { result } = renderHook(() =>
+        useAutoSaveProposals({
+          runId: 'run-1',
+          stage,
+          values: { 'inst-1_field-1': 'hello' },
+        }),
+      );
+
+      await act(async () => {
+        await result.current.saveNow();
+      });
+
+      expect(apiClientMock).not.toHaveBeenCalled();
+      expect(result.current.saveState).toBe('idle');
+    },
+  );
+});
+
 describe('useAutoSaveProposals — mutex + error handling', () => {
   it('concurrent saveNow invocations do not double-write unchanged values', async () => {
     let release!: () => void;

@@ -1,10 +1,10 @@
 /**
  * Supabase Client Configuration
  *
- * Supports multiple env var sources for compatibility with:
- * - Local dev (VITE_SUPABASE_*)
- * - Vercel + Supabase Integration (SUPABASE_*, NEXT_PUBLIC_SUPABASE_*)
- * - Preview branches (env vars injected automatically)
+ * Config comes from `@/config/supabase-env`, which reads only `VITE_`-prefixed
+ * vars (the sole prefix Vite exposes to the client bundle). The Supabase↔Vercel
+ * integration's `SUPABASE_*` / `NEXT_PUBLIC_*` vars are not consumed here.
+ * See docs/reference/deployment.md → "Vercel (frontend)".
  */
 import {createClient} from '@supabase/supabase-js';
 import type {Database} from './types';
@@ -19,9 +19,9 @@ import {
 // Dev validation to aid debugging
 if (import.meta.env.DEV && (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY)) {
   console.warn(
-    '[Supabase] Missing environment variables. Expected one of:\n' +
-    '  URL: VITE_SUPABASE_URL, SUPABASE_URL, or NEXT_PUBLIC_SUPABASE_URL\n' +
-    '  KEY: VITE_SUPABASE_PUBLISHABLE_KEY, VITE_SUPABASE_ANON_KEY, SUPABASE_ANON_KEY, or NEXT_PUBLIC_SUPABASE_ANON_KEY'
+    '[Supabase] Missing environment variables. Expected:\n' +
+    '  URL: VITE_SUPABASE_URL\n' +
+    '  KEY: VITE_SUPABASE_PUBLISHABLE_KEY (or VITE_SUPABASE_ANON_KEY)'
   );
 }
 

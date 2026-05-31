@@ -96,12 +96,15 @@ function primeSupabaseQueries(opts: {
   const entityTypesChain = makeChain(opts.entityTypes ?? []);
   const articlesChain = makeChain(opts.articles ?? []);
 
+  // Call order mirrors loadData's two parallel phases:
+  //   Phase 1 (Promise.all): articles(by id), projects, templates, articles(list)
+  //   Phase 2 (Promise.all): extraction_entity_types
   (supabase.from as any)
     .mockReturnValueOnce(articleChain)
     .mockReturnValueOnce(projectChain)
     .mockReturnValueOnce(templateChain)
-    .mockReturnValueOnce(entityTypesChain)
-    .mockReturnValueOnce(articlesChain);
+    .mockReturnValueOnce(articlesChain)
+    .mockReturnValueOnce(entityTypesChain);
 
   return { articleChain, projectChain, templateChain, entityTypesChain, articlesChain };
 }
