@@ -1,3 +1,9 @@
+---
+status: draft
+last_reviewed: 2026-05-31
+owner: '@raphaelfh'
+---
+
 # Linear Integration Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -17,7 +23,7 @@
 ## Reference: routine IDs (from glittery-crafting-river.md)
 
 | Routine | ID | Role in this plan |
-|---|---|---|
+| --- | --- | --- |
 | system-health-check | `trig_01FhDpFrJJtvz43qh9EY9NQB` | prompt update (Phase 1a) |
 | dep-vuln-sweep | `trig_01QL2qyan1t6pBqJRdwneg8X` | prompt update (Phase 1a) |
 | migration-drift-detector | `trig_01HHfcKmJTnjn2AiqrUrSqzF` | prompt update (Phase 1a) |
@@ -72,9 +78,11 @@ is fine — continue.
 - [ ] **Step 2: Verify all 4 exist**
 
 Run:
+
 ```bash
 gh label list -R raphaelfh/prumo --limit 100 | grep -E "source:automation|area:extraction|area:ui-ux|area:database"
 ```
+
 Expected: 4 lines, one per label.
 
 > Note: the `area:*` labels intentionally mirror names that already exist in the
@@ -99,13 +107,17 @@ Each task uses the fetch → surgical replace → update → verify pattern abov
 - [ ] **Step 2: In `events[0].data.message.content`, replace this exact line**
 
 Find:
-```
+
+```text
 Labels: prod-incident, auto-found, priority:P1
 ```
+
 Replace with:
-```
+
+```text
 Labels: prod-incident, auto-found, priority:P1, source:automation
 ```
+
 (prod-incident is cross-cutting infra — no `area:*` label.)
 
 - [ ] **Step 3: Send the full updated ccr**
@@ -130,13 +142,17 @@ Expected: content now contains `priority:P1, source:automation`;
 - [ ] **Step 2: Replace this exact line in the content**
 
 Find:
-```
+
+```text
   Labels: dep-vuln, auto-found, priority:P1, security
 ```
+
 Replace with:
-```
+
+```text
   Labels: dep-vuln, auto-found, priority:P1, security, source:automation
 ```
+
 (A CVE is not a code area — no `area:*` label.)
 
 - [ ] **Step 3: Update with full ccr**
@@ -159,13 +175,17 @@ Expected: content contains `security, source:automation`; `mcp_connections` empt
 - [ ] **Step 2: Replace this exact line in the content**
 
 Find:
-```
+
+```text
 Labels: migration-drift, auto-found, priority:P0 if VERSION_MISMATCH else priority:P1
 ```
+
 Replace with:
-```
+
+```text
 Labels: migration-drift, auto-found, priority:P0 if VERSION_MISMATCH else priority:P1, source:automation, area:database
 ```
+
 (Drift is always a schema/database concern → confident `area:database`.)
 
 - [ ] **Step 3: Update with full ccr**
@@ -189,11 +209,14 @@ still Supabase only.
 - [ ] **Step 2: Replace this exact line in the content**
 
 Find:
-```
+
+```text
 Labels: bug, auto-found, scope:<area> where area in {services, api, models, schemas, migrations, hooks, services-frontend, components, pages}
 ```
+
 Replace with:
-```
+
+```text
 Labels: bug, auto-found, source:automation, scope:<area> where area in {services, api, models, schemas, migrations, hooks, services-frontend, components, pages}. ALSO add a best-effort area:* label (skip if not confident): scope:models|migrations -> area:database; scope:components|hooks|pages|services-frontend -> area:ui-ux; scope:services -> area:extraction ONLY if the cited file path matches extraction_*; scope:api|schemas -> skip area.
 ```
 
@@ -218,11 +241,14 @@ Expected: content contains `source:automation` and the `area:*` mapping note;
 - [ ] **Step 2: Replace this exact line in the content**
 
 Find:
-```
+
+```text
   Labels: flaky-test, auto-found, priority:P1, scope:services (or scope:components / scope:hooks per path)
 ```
+
 Replace with:
-```
+
+```text
   Labels: flaky-test, auto-found, priority:P1, source:automation, scope:services (or scope:components / scope:hooks per path). ALSO add best-effort area:* (skip if unsure): scope:components|hooks -> area:ui-ux; scope:services -> area:extraction only if path matches extraction_*; else skip.
 ```
 
@@ -252,6 +278,7 @@ In Linear: Settings → Integrations → GitHub → **Connect** → authorize th
 - [ ] **Step 2: Configure sync direction**
 
 Enable:
+
 - `GitHub Issues → Linear Issues` (1-way intake)
 - `Pull requests` (link PRs to tickets)
 - `Comments` (bidirectional)
@@ -272,6 +299,7 @@ gh issue create -R raphaelfh/prumo --title "test: linear sync smoke" \
   --label auto-found,source:automation,area:database \
   --body "Sync smoke test. Safe to close."
 ```
+
 Wait ~60s, open Linear PRU Triage. Expected: a ticket "test: linear sync smoke"
 with labels `auto-found`, `source:automation`, `area:database` mapped to the
 existing Linear labels (no duplicate `area:database` created).
@@ -335,6 +363,7 @@ then
 
 `RemoteTrigger {action: "get", trigger_id: "<LINEAR_ENRICH_ID>"}`
 Expected:
+
 - `cron_expression == "0 14 * * *"`
 - `enabled == true`
 - `session_context.allowed_tools == ["Bash","Read","Glob","Grep"]`
@@ -362,6 +391,7 @@ gh issue create -R raphaelfh/prumo --title "bug(test_enrich): native priority va
   --label bug,auto-found,source:automation,scope:services,area:extraction,priority:P1 \
   --body $'## Summary\nValidation issue for linear-enrich. Safe to close.\n\n## File & Lines\nbackend/app/services/extraction_proposal_service.py:1\n\n## Severity\nhigh'
 ```
+
 Record the issue number as `<TEST_ISSUE>`.
 
 - [ ] **Step 2: Wait for sync, confirm ticket in Linear**
@@ -378,6 +408,7 @@ Open the returned session URL on claude.ai/code and watch it run.
 - [ ] **Step 4: Confirm enrichment**
 
 In Linear, reload the test ticket. Expected:
+
 - Native priority field is now **High (2)** (from `priority:P1`).
 - A comment starting `AI Summary (linear-enrich):` with a TL;DR and
   `| Priority: High from priority:P1`.
@@ -393,6 +424,7 @@ This is the highest-risk behavior — prove `linear-enrich` never touches feedba
 - [ ] **Step 1: Create a fake feedback-style ticket directly in Linear**
 
 In the Linear PRU team, manually create an issue:
+
 - Title: `[Bug] test feedback skip guard`
 - Label: `source:in-app` (+ `Bug` if convenient)
 - Set native priority to **Urgent** manually (simulating the backend having set it).
@@ -410,6 +442,7 @@ Watch the session.
 - [ ] **Step 3: Confirm the feedback ticket is untouched**
 
 In Linear, reload `[Bug] test feedback skip guard`. Expected:
+
 - NO `AI Summary (linear-enrich):` comment.
 - Native priority still **Urgent** (unchanged).
 - Session output shows `skipped_feedback>=1` OR the ticket was never analyzed
@@ -420,6 +453,7 @@ In Linear, reload `[Bug] test feedback skip guard`. Expected:
 ```bash
 gh issue close <TEST_ISSUE> -R raphaelfh/prumo --reason "not planned" --comment "enrich validation done"
 ```
+
 Delete the `[Bug] test feedback skip guard` ticket in Linear manually.
 
 ### Task 11: Confirm quota and final portfolio state
@@ -432,7 +466,7 @@ Expected: `data.length == 8` (7 original + linear-enrich). Names include
 
 - [ ] **Step 2: Confirm quota headroom**
 
-Open https://claude.ai/code/routines. Expected: the daily-runs banner shows the
+Open <https://claude.ai/code/routines>. Expected: the daily-runs banner shows the
 cron baseline around **3/15** on a normal day (5 old cron averaging ~1.7 +
 linear-enrich 1.0 ≈ 2.7), well under Pro's 5/day. Event-driven routines
 (`bug-watch-write`, `cleanup` label trigger) do not count against the cron cap.
@@ -448,7 +482,7 @@ integration pendências as done and note `<LINEAR_ENRICH_ID>`. No repo commit
 ## Rollback (per phase, all reversible)
 
 | Undo | How |
-|---|---|
+| --- | --- |
 | Phase 2 routine | `RemoteTrigger {action: "update", trigger_id: "<LINEAR_ENRICH_ID>", body: {enabled: false}}` (or delete in claude.ai UI) |
 | Phase 1a prompts | Re-run each Task's fetch → restore the original label line → update |
 | Phase 1b sync | Linear → Settings → Integrations → GitHub → Disconnect |
