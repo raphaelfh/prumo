@@ -325,7 +325,17 @@ export default function ExtractionFullScreen() {
     runId: activeRunId,
     stage,
     values,
-    enabled: !!activeRunId && !loading && valuesInitialized && !isFinalized,
+    // Only PROPOSAL and REVIEW accept autosave writes. Past that
+    // (consensus, finalized, pending) the backend rejects proposal
+    // writes, which surfaced as a spurious "Error saving data
+    // automatically" toast on opening a consolidated run. Mirrors the
+    // QA full-screen gate; ``!isFinalized`` alone let ``consensus``
+    // through.
+    enabled:
+      !!activeRunId &&
+      !loading &&
+      valuesInitialized &&
+      (stage === 'proposal' || stage === 'review'),
   });
 
   // "Submit for review" — flush pending edits and advance the run from

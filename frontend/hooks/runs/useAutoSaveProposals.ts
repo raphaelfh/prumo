@@ -81,6 +81,28 @@ export interface UseAutoSaveProposalsReturn {
   saveNow: () => Promise<void>;
 }
 
+/**
+ * Stages at which autosave is allowed to write.
+ *
+ *   - ``null`` / ``undefined`` — legacy QA single-user flow (writes
+ *     ``human`` proposals); callers that omit ``stage`` keep their
+ *     behaviour.
+ *   - ``'proposal'`` — extraction PROPOSAL stage; the proposer (or AI)
+ *     fills initial values as ``human`` proposals.
+ *   - ``'review'`` — per-reviewer ``ReviewerDecision`` writes (see
+ *     ``performSave``).
+ *
+ * Any other stage (``'consensus'``, ``'finalized'``, ``'pending'``, …) is
+ * read-only or terminal for autosave: the backend rejects a proposal
+ * write past PROPOSAL (HTTP 400 ``run stage is consensus, not in
+ * ['proposal']``), which used to surface as a spurious "Error saving
+ * data automatically" toast the moment a consolidated run was opened.
+ */
+const WRITABLE_STAGES = new Set(['proposal', 'review']);
+function isWritableStage(stage?: string | null): boolean {
+  return stage == null || WRITABLE_STAGES.has(stage);
+}
+
 export function useAutoSaveProposals(
   props: UseAutoSaveProposalsProps,
 ): UseAutoSaveProposalsReturn {
@@ -136,7 +158,16 @@ export function useAutoSaveProposals(
     }
 
     const currentRunId = runIdRef.current;
-    if (!currentRunId || !enabledRef.current) return;
+    // Skip when there's no run, autosave is disabled, or the run stage
+    // does not accept writes (consensus/finalized/pending). The stage
+    // guard here also protects the flush paths (unmount, pagehide,
+    // visibilitychange) so a consolidated run never fires a doomed POST.
+    if (
+      !currentRunId ||
+      !enabledRef.current ||
+      !isWritableStage(stageRef.current)
+    )
+      return;
 
     const dirty = computeDirtyEntries();
     if (dirty.length === 0) return;
@@ -242,7 +273,7 @@ export function useAutoSaveProposals(
   // countdown; the dedicated unmount-flush effect below handles the
   // route-change case.
   useEffect(() => {
-    if (!enabled || !runId) return;
+    if (!enabled || !runId || !isWritableStage(stage)) return;
 
     const dirty = computeDirtyEntries();
     if (dirty.length === 0) return;
@@ -257,7 +288,15 @@ export function useAutoSaveProposals(
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [values, enabled, runId, debounceMs, performSave, computeDirtyEntries]);
+  }, [
+    values,
+    enabled,
+    runId,
+    stage,
+    debounceMs,
+    performSave,
+    computeDirtyEntries,
+  ]);
 
   // (2) Flush pending edits on UNMOUNT. Separate effect with stable
   // deps so the cleanup only fires when the component truly unmounts —
