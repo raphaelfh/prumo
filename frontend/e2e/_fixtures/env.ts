@@ -1,3 +1,5 @@
+import * as F from "./fixture-ids";
+
 export type E2EEnvConfig = {
   frontendUrl: string;
   apiUrl: string;
@@ -11,6 +13,7 @@ export type E2EEnvConfig = {
   reviewerCEmail?: string;
   reviewerCPassword?: string;
   projectId?: string;
+  importProjectId?: string;
   articleId?: string;
   templateId?: string;
   entityTypeId?: string;
@@ -28,16 +31,17 @@ export function loadE2EEnv(): E2EEnvConfig {
     frontendUrl: process.env.E2E_FRONTEND_URL || "http://127.0.0.1:8080",
     apiUrl: process.env.E2E_API_URL || "http://127.0.0.1:8000",
     authToken: process.env.E2E_AUTH_TOKEN,
-    userEmail: process.env.E2E_USER_EMAIL,
-    userPassword: process.env.E2E_USER_PASSWORD,
+    userEmail: process.env.E2E_USER_EMAIL || F.OWNER_EMAIL,
+    userPassword: process.env.E2E_USER_PASSWORD || F.FIXTURE_PASSWORD,
     rateLimitToken: process.env.E2E_RATE_LIMIT_TOKEN,
-    rateLimitEmail: process.env.E2E_RATE_LIMIT_EMAIL,
-    rateLimitPassword: process.env.E2E_RATE_LIMIT_PASSWORD,
+    rateLimitEmail: process.env.E2E_RATE_LIMIT_EMAIL || F.REVIEWER_B_EMAIL,
+    rateLimitPassword: process.env.E2E_RATE_LIMIT_PASSWORD || F.FIXTURE_PASSWORD,
     reviewerCToken: process.env.E2E_REVIEWER_C_TOKEN,
-    reviewerCEmail: process.env.E2E_REVIEWER_C_EMAIL,
-    reviewerCPassword: process.env.E2E_REVIEWER_C_PASSWORD,
-    projectId: process.env.E2E_PROJECT_ID,
-    articleId: process.env.E2E_ARTICLE_ID,
+    reviewerCEmail: process.env.E2E_REVIEWER_C_EMAIL || F.REVIEWER_C_EMAIL,
+    reviewerCPassword: process.env.E2E_REVIEWER_C_PASSWORD || F.FIXTURE_PASSWORD,
+    projectId: process.env.E2E_PROJECT_ID || F.PROJECT_ID,
+    importProjectId: process.env.E2E_IMPORT_PROJECT_ID || F.IMPORT_PROJECT_ID,
+    articleId: process.env.E2E_ARTICLE_ID || F.ARTICLE_ID,
     templateId: process.env.E2E_TEMPLATE_ID,
     entityTypeId: process.env.E2E_ENTITY_TYPE_ID,
     schemaId: process.env.E2E_SCHEMA_ID,
