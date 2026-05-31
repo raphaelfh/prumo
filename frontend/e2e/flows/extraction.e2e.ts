@@ -25,6 +25,7 @@ test.describe("Extraction flow (UI + API)", () => {
   });
 
   test("runs model and section extraction through API", async ({ request, page }) => {
+    test.skip(!process.env.E2E_RUN_LLM_TESTS, "LLM extraction is opt-in: set E2E_RUN_LLM_TESTS=1 (and OPENAI_API_KEY) to run.");
     const env = loadE2EEnv();
     const required = missingEnvKeys(["E2E_PROJECT_ID", "E2E_ARTICLE_ID"]);
     test.skip(required.length > 0, `Missing required env: ${required.join(", ")}`);
