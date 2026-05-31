@@ -17,7 +17,6 @@ test.describe("Extraction template import (global → project)", () => {
     const required = missingEnvKeys([
       "E2E_USER_EMAIL",
       "E2E_USER_PASSWORD",
-      "E2E_PROJECT_ID",
     ]);
     test.skip(required.length > 0, `Missing required env: ${required.join(", ")}`);
 
@@ -25,7 +24,7 @@ test.describe("Extraction template import (global → project)", () => {
     await loginViaUi(page);
 
     await page.goto(
-      `${env.frontendUrl}/projects/${env.projectId}?tab=extraction&extractionTab=configuration`,
+      `${env.frontendUrl}/projects/${env.importProjectId}?tab=extraction&extractionTab=configuration`,
       { waitUntil: "domcontentloaded" },
     );
 
