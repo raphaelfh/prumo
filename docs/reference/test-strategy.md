@@ -232,7 +232,16 @@ Run all four before opening a PR for anything in `backend/app/services/`,
 `backend/alembic/versions/`, `frontend/hooks/extraction/`, or
 `frontend/components/extraction/`.
 
-## 6. Coverage gaps (deliberate)
+## 6. Local E2E fixtures (auto-provisioned)
+
+`frontend/e2e/_fixtures/global-setup.ts` calls `ensureFixtures()`, which
+idempotently creates the test users, project, article (+ seeded text), and
+clones CHARMS — so a fresh clone or `make db-fresh` runs `npm run test:e2e:local`
+with no manual setup. Identities are committed in `fixture-ids.ts`; only the
+local Supabase keys are read from env (`.env`/`.env.e2e`, see `.env.e2e.example`).
+The AI-extraction tests are opt-in: set `E2E_RUN_LLM_TESTS=1` + `OPENAI_API_KEY`.
+
+## 7. Coverage gaps (deliberate)
 
 These remain manual / Playwright-only by choice:
 
