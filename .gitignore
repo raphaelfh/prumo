@@ -21,6 +21,7 @@ build/
 .env.*
 !.env.example
 !.env.template
+!.env.e2e.example
 
 # Supabase Edge Functions - variáveis de ambiente
 supabase/functions/.env
@@ -166,6 +167,7 @@ supabase/.branches/*
 **/.env
 **/.env.*
 !**/.env.example
+!**/.env.e2e.example
 
 /.ai/mcp/mcp.json
 .playwright-mcp/

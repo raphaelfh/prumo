@@ -1,12 +1,12 @@
 ---
 status: stable
-last_reviewed: 2026-05-24
+last_reviewed: 2026-05-30
 owner: '@raphaelfh'
 ---
 
 # Extraction-Centric HITL Architecture
 
-> **Status:** Stable · Last reviewed: 2026-05-24 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-05-30 · Owner: @raphaelfh
 > Canonical reference for the data-extraction and quality-assessment stack post the 2026-04-27 unification. Read this before touching anything in `extraction_*`, `extraction_runs`, the workflow tables, or the Quality-Assessment flow.
 
 ## 1. Why this exists
@@ -47,6 +47,29 @@ When a Run is created it captures two immutable snapshots: `version_id`
 tree) and `hitl_config_snapshot` (a JSONB copy of the resolved
 `reviewer_count` / `consensus_rule` / `arbitrator_id`). Editing the
 template afterwards never affects existing runs.
+
+### 2.1 User-facing vocabulary (do not leak "Run")
+
+"Run" is internal ubiquitous language. It is correct in code, the schema,
+the API (`/api/v1/runs/...`), and these docs — but it MUST NOT appear as a
+**noun** in user-facing copy or toasts. End users are systematic-review
+researchers; "Run" means nothing to them, whereas the tools they already
+use (Covidence, DistillerSR) speak of *extraction* and *assessment*.
+
+User-facing vocabulary is context-specific:
+
+| Surface | Say | Not |
+| --- | --- | --- |
+| Quality-assessment screens | "assessment" | "Run" |
+| AI suggestions panel | "AI extraction" | "Run" / "AI runs" |
+| Shared (e.g. consensus settings) | phrase around "article" | "Run" |
+
+The **verb** "to run" ("Run AI", "run assessments") is fine — only the
+entity *noun* is banned. A copy regression guard
+(`frontend/test/copy-run-vocabulary.test.ts`) fails if the plural noun
+"Runs" reappears in any copy value. Rationale and the full string-level
+change set live in
+`docs/superpowers/specs/2026-05-30-run-user-facing-vocabulary-design.md`.
 
 ## 3. Database — final schema
 

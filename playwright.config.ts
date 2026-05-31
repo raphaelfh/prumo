@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { defineConfig, devices } from "@playwright/test";
+import * as FixtureIds from "./frontend/e2e/_fixtures/fixture-ids";
 
 // Lightweight .env loader so E2E_*, OPENAI_API_KEY, etc. defined at the project
 // root flow into the Playwright runner without requiring an extra dependency.
@@ -30,6 +31,19 @@ function loadDotEnv(path: string): void {
 
 loadDotEnv(resolve(process.cwd(), ".env.e2e"));
 loadDotEnv(resolve(process.cwd(), ".env"));
+
+// Canonical fixture identities (zero-config). Applied after dotenv so an
+// explicit .env/.env.e2e still wins. Mirrors loadE2EEnv()'s defaults so the
+// tests' missingEnvKeys(process.env) guards pass without manual setup.
+process.env.E2E_USER_EMAIL ??= FixtureIds.OWNER_EMAIL;
+process.env.E2E_USER_PASSWORD ??= FixtureIds.FIXTURE_PASSWORD;
+process.env.E2E_RATE_LIMIT_EMAIL ??= FixtureIds.REVIEWER_B_EMAIL;
+process.env.E2E_RATE_LIMIT_PASSWORD ??= FixtureIds.FIXTURE_PASSWORD;
+process.env.E2E_REVIEWER_C_EMAIL ??= FixtureIds.REVIEWER_C_EMAIL;
+process.env.E2E_REVIEWER_C_PASSWORD ??= FixtureIds.FIXTURE_PASSWORD;
+process.env.E2E_PROJECT_ID ??= FixtureIds.PROJECT_ID;
+process.env.E2E_ARTICLE_ID ??= FixtureIds.ARTICLE_ID;
+process.env.E2E_IMPORT_PROJECT_ID ??= FixtureIds.IMPORT_PROJECT_ID;
 
 const baseURL = process.env.E2E_FRONTEND_URL || "http://127.0.0.1:8080";
 
