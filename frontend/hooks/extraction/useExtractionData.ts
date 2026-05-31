@@ -158,59 +158,72 @@ export function useExtractionData({
       setLoading(true);
       setError(null);
 
-        // 1. Load article
-      const { data: articleData, error: articleError } = await supabase
-        .from('articles')
-        .select('*')
-        .eq('id', articleId)
-        .single();
+      // Phase 1 — independent reads in parallel. Article, project, the
+      // active extraction template, and the navigation article list don't
+      // depend on one another, so awaiting them sequentially only stacked
+      // latency. Resolving the template ASAP matters most: the HITL session
+      // open (the single slowest critical-path call) is gated on
+      // ``template.id``, and the strictly-sequential version parked the
+      // template 3rd in line, stalling the whole extracted-values waterfall
+      // behind two unrelated round-trips.
+      //
+      // Template selection: newest active wins (``created_at`` DESC) so this
+      // matches ``ExtractionInterface``'s active picker and Configuration and
+      // Extraction views converge on the same template (BUG #1 — split
+      // picker). Defensive against legacy projects with multiple actives.
+      const [
+        { data: articleData, error: articleError },
+        { data: projectData, error: projectError },
+        { data: templateData, error: templateError },
+        { data: articlesData, error: articlesError },
+      ] = await Promise.all([
+        supabase.from('articles').select('*').eq('id', articleId).single(),
+        supabase.from('projects').select('*').eq('id', projectId).single(),
+        supabase
+          .from('project_extraction_templates')
+          .select('*')
+          .eq('project_id', projectId)
+          .eq('is_active', true)
+          .eq('kind', 'extraction')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from('articles')
+          .select('id, title')
+          .eq('project_id', projectId)
+          .order('created_at', { ascending: false }),
+      ]);
 
       if (articleError) throw articleError;
-      setArticle(articleData);
-
-        // 2. Load project
-      const { data: projectData, error: projectError } = await supabase
-        .from('projects')
-        .select('*')
-        .eq('id', projectId)
-        .single();
-
       if (projectError) throw projectError;
-      setProject(projectData);
-
-      // 3. Load active extraction template. The backend enforces a single
-      // active extraction template per project (clone deactivates siblings,
-      // PATCH refuses to deactivate the last one). Order DESC so the
-      // selection matches ``ExtractionInterface``'s active picker (which
-      // also picks the newest active from a DESC-sorted list) — keeping
-      // Configuration and Extraction views on the same template. Defensive:
-      // if a legacy project still carries multiple actives (pre-fix data),
-      // both readers will agree on the newest, which is the one the user
-      // most recently imported and is therefore actively configuring.
-      const { data: templateData, error: templateError } = await supabase
-        .from('project_extraction_templates')
-        .select('*')
-        .eq('project_id', projectId)
-        .eq('is_active', true)
-        .eq('kind', 'extraction')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
       if (templateError) throw templateError;
-        if (!templateData) throw new Error(t('common', 'errors_templateNotFound'));
-      
-      setTemplate(templateData as ProjectExtractionTemplate);
+      if (articlesError) throw articlesError;
+      if (!templateData) throw new Error(t('common', 'errors_templateNotFound'));
 
-        // 4. Load entity types with fields
-      const { data: entityTypesData, error: entityTypesError } = await supabase
-        .from('extraction_entity_types')
-        .select(`
+      setArticle(articleData);
+      setProject(projectData);
+      setTemplate(templateData as ProjectExtractionTemplate);
+      setArticles((articlesData ?? []) as Article[]);
+
+      // Phase 2 — entity types (with fields) and the already-materialised
+      // instances both depend only on the resolved template id, so load
+      // them together. Instances are seeded by the backend
+      // ``hitl_session_service._ensure_instances`` on session open;
+      // ``ExtractionFullScreen`` re-triggers ``refreshInstances`` once the
+      // session ``activeRunId`` is available, so we don't race the session.
+      const [{ data: entityTypesData, error: entityTypesError }] =
+        await Promise.all([
+          supabase
+            .from('extraction_entity_types')
+            .select(`
           *,
           fields:extraction_fields(*)
         `)
-        .eq('project_template_id', templateData.id)
-        .order('sort_order', { ascending: true });
+            .eq('project_template_id', templateData.id)
+            .order('sort_order', { ascending: true }),
+          loadInstances(templateData.id),
+        ]);
 
       if (entityTypesError) throw entityTypesError;
 
@@ -226,23 +239,6 @@ export function useExtractionData({
       }));
 
       setEntityTypes(typesWithFields);
-
-        // 5. Load instances already materialised by the backend
-        // ``hitl_session_service._ensure_instances`` on session open.
-        // ``ExtractionFullScreen`` re-triggers ``refreshInstances`` once
-        // the session ``activeRunId`` is available, so we don't have to
-        // race the session here.
-      await loadInstances(templateData.id);
-
-        // 6. Load article list (for navigation)
-      const { data: articlesData, error: articlesError } = await supabase
-        .from('articles')
-        .select('id, title')
-        .eq('project_id', projectId)
-        .order('created_at', { ascending: false });
-
-      if (articlesError) throw articlesError;
-      setArticles(articlesData as Article[]);
 
     } catch (err: unknown) {
         const message = err instanceof Error ? err.message : t('extraction', 'errors_loadExtractionData');
