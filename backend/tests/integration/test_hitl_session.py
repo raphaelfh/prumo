@@ -60,10 +60,8 @@ async def auth_as_profile(
     db_session: AsyncSession,
 ) -> AsyncGenerator[UUID, None]:
     """Override auth so the JWT sub points at a real profile."""
-    raw = (await db_session.execute(text("SELECT id FROM public.profiles LIMIT 1"))).scalar()
-    if raw is None:
-        pytest.skip("No profile rows available in test database")
-    profile_id = UUID(str(raw))
+    del db_session  # kept for fixture-dependency ordering; the seed runs first
+    profile_id = SEED.primary_profile
 
     async def override_get_current_user() -> TokenPayload:
         return TokenPayload(
