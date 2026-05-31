@@ -1,3 +1,9 @@
+---
+status: draft
+last_reviewed: 2026-05-30
+owner: '@raphaelfh'
+---
+
 # User-Facing Vocabulary for the HITL "Run" — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -42,6 +48,7 @@
 ## Task 1: Write the failing regression guard test
 
 **Files:**
+
 - Create: `frontend/test/copy-run-vocabulary.test.ts`
 
 - [ ] **Step 1: Create the test file**
@@ -124,6 +131,7 @@ Do **not** commit yet (red test).
 ## Task 2: Rephrase the consensus banner around "article"
 
 **Files:**
+
 - Modify: `frontend/lib/copy/consensus.ts:11-13`
 
 - [ ] **Step 1: Replace the banner title**
@@ -163,6 +171,7 @@ to:
 ## Task 3: Switch the AI panel to "AI extraction" vocabulary
 
 **Files:**
+
 - Modify: `frontend/lib/copy/extraction.ts` (lines 114, 129, 130, 131, 460)
 
 - [ ] **Step 1: Status label (line ~114)**
@@ -242,6 +251,7 @@ to:
 ## Task 4: Fix the hardcoded QA finalize toast, go green, and commit
 
 **Files:**
+
 - Modify: `frontend/pages/QualityAssessmentFullScreen.tsx:327`
 
 - [ ] **Step 1: Align the outlier toast with its siblings**
@@ -289,6 +299,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>'
 ## Task 5: Document the rule for future devs
 
 **Files:**
+
 - Modify: `docs/reference/extraction-hitl-architecture.md` (frontmatter + status line + insert §2.1)
 
 - [ ] **Step 1: Bump the review date (frontmatter, line ~3)**
@@ -371,6 +382,7 @@ Expected: all three show the new wording; no "Run"/"Runs" entity-noun visible.
 ## Self-Review
 
 **1. Spec coverage** — every spec section maps to a task:
+
 - §3 Bucket 1 (consensus 2 + toast) → Tasks 2 & 4. ✅
 - §3 Bucket 3 (AI panel 5 values) → Task 3. ✅
 - §3 "kept as-is" (verbs) → explicit "leave untouched" notes in Tasks 2 & 3. ✅

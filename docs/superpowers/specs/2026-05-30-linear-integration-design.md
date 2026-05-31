@@ -1,3 +1,9 @@
+---
+status: draft
+last_reviewed: 2026-05-30
+owner: '@raphaelfh'
+---
+
 # Linear Integration for prumo Automation Portfolio
 
 **Status**: Design — awaiting user review (revised post-#164-merge)

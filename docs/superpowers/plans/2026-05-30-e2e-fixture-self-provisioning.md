@@ -1,3 +1,9 @@
+---
+status: draft
+last_reviewed: 2026-05-30
+owner: '@raphaelfh'
+---
+
 # Self-Provisioning E2E Fixtures Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -34,6 +40,7 @@
 ## Task 1: Canonical fixture identities
 
 **Files:**
+
 - Create: `frontend/e2e/_fixtures/fixture-ids.ts`
 
 - [ ] **Step 1: Create the constants file**
@@ -88,6 +95,7 @@ git commit -m "test(e2e): canonical fixture identities module"
 ## Task 2: Default env to the canonical identities
 
 **Files:**
+
 - Modify: `frontend/e2e/_fixtures/env.ts`
 
 - [ ] **Step 1: Import the constants and add defaults**
@@ -138,6 +146,7 @@ git commit -m "test(e2e): default identity env to canonical fixtures + importPro
 ## Task 3: The idempotent provisioner
 
 **Files:**
+
 - Create: `frontend/e2e/_fixtures/ensure-fixtures.ts`
 
 - [ ] **Step 1: Create the provisioner**
@@ -314,6 +323,7 @@ git commit -m "test(e2e): idempotent fixture provisioner (ensure-fixtures)"
 ## Task 4: Hook the provisioner into global-setup + verify against a clean DB
 
 **Files:**
+
 - Modify: `frontend/e2e/_fixtures/global-setup.ts`
 
 - [ ] **Step 1: Import and call `ensureFixtures`**
@@ -366,6 +376,7 @@ git commit -m "test(e2e): self-provision fixtures in global-setup"
 ## Task 5: Gate the LLM extraction tests behind an opt-in
 
 **Files:**
+
 - Modify: `frontend/e2e/flows/extraction.e2e.ts`
 
 - [ ] **Step 1: Skip the two LLM tests unless `E2E_RUN_LLM_TESTS` is set**
@@ -395,6 +406,7 @@ git commit -m "test(e2e): gate LLM extraction tests behind E2E_RUN_LLM_TESTS"
 ## Task 6: Point template-import at its own project
 
 **Files:**
+
 - Modify: `frontend/e2e/flows/template-import.ui.e2e.ts`
 
 - [ ] **Step 1: Use `env.importProjectId`**
@@ -429,6 +441,7 @@ git commit -m "test(e2e): template-import uses its own CHARMS-free project"
 ## Task 7: Committed example env + docs + memory
 
 **Files:**
+
 - Create: `.env.e2e.example`
 - Modify: the testing reference under `docs/reference/` (e.g. `docs/reference/tests.md`)
 - Modify: `~/.claude/projects/-Users-raphael-PycharmProjects-prumo/memory/project_local_e2e_fixtures_not_seeded.md`
@@ -524,6 +537,7 @@ Expected: exit 0.
 ## Self-Review
 
 **1. Spec coverage:**
+
 - §3.1 fixture-ids → Task 1. ✅
 - §3.2 ensure-fixtures (all six ensure* + ensureFixtures, FK order, article_files→text_blocks) → Task 3. ✅
 - §3.3 global-setup hook (after healthchecks, before token resolution) → Task 4 Step 1. ✅
