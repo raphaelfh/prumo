@@ -77,6 +77,10 @@ class FeedbackService:
             "feedback_report_created",
             report_id=str(report.id),
             type=report.type,
-            attachments=len(report.attachments),
+            # Count the input payload, not report.attachments: the latter is a
+            # lazy relationship and reading it post-flush triggers a sync IO
+            # load that raises MissingGreenlet under the async session when the
+            # collection wasn't initialized (i.e. no attachments).
+            attachments=len(payload.attachments),
         )
         return report

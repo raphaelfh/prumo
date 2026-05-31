@@ -47,6 +47,25 @@ async def test_create_report_persists(db_session) -> None:
     assert len(fetched.attachments) == 1
 
 
+async def test_create_report_persists_without_attachments(db_session) -> None:
+    """Regression: a report with no attachments must not trigger a post-flush
+    lazy-load of the ``attachments`` relationship (raises MissingGreenlet under
+    the async session). Reproduces the prod 500 caught by the post-deploy smoke
+    test — the common case (text-only feedback) had no test coverage because
+    ``_payload`` always carried one attachment.
+    """
+    service = FeedbackService(db=db_session, user_id="not-a-uuid")
+    report = await service.create_report(_payload(attachments=[]))
+    await db_session.flush()
+
+    fetched = (
+        await db_session.execute(select(FeedbackReport).where(FeedbackReport.id == report.id))
+    ).scalar_one()
+    assert fetched.type == "bug"
+    assert fetched.forward_status == "pending"
+    assert len(fetched.attachments) == 0
+
+
 async def test_rejects_foreign_storage_key(db_session) -> None:
     uid = "11111111-1111-1111-1111-111111111111"
     service = FeedbackService(db=db_session, user_id=uid)
