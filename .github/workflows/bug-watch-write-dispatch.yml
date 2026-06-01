@@ -1,0 +1,34 @@
+name: Bug Watch Write Dispatch
+
+# Reliable label-trigger for the `bug-watch-write` routine (native routine
+# issue-label triggers did not fire in testing). On `issues: labeled` with
+# `auto-fix-approved` AND the issue already carrying `auto-found`, this thin
+# caller fires the shared _routine-label-dispatch worker.
+# Runs on the routine's own bearer token — Pro/Max plan quota, NOT ANTHROPIC_API_KEY.
+#
+# One-time setup by repo owner:
+#   1. claude.ai/code/routines → edit `bug-watch-write` → API trigger → generate token → copy
+#   2. gh secret set CLAUDE_ROUTINE_BUGFIX_TOKEN -R raphaelfh/prumo   # paste token
+#   3. If routine is recreated: update routine_trigger_id in the `with:` block below.
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: none
+
+concurrency:
+  group: bugfix-dispatch-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  dispatch:
+    if: >-
+      github.event.label.name == 'auto-fix-approved'
+      && contains(github.event.issue.labels.*.name, 'auto-found')
+    uses: ./.github/workflows/_routine-label-dispatch.yml
+    with:
+      routine_trigger_id: trig_01T8PF56S19cJ5iKusnQwuZF
+    secrets:
+      ROUTINE_TOKEN: ${{ secrets.CLAUDE_ROUTINE_BUGFIX_TOKEN }}
