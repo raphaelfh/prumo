@@ -3,15 +3,13 @@ name: Bug Watch Write Dispatch
 # Reliable label-trigger for the `bug-watch-write` routine (native routine
 # issue-label triggers did not fire in testing). On `issues: labeled` with
 # `auto-fix-approved` AND the issue already carrying `auto-found`, this thin
-# workflow POSTs the routine's /fire endpoint. Runs on the routine's own bearer
-# token — Pro/Max plan quota, NOT ANTHROPIC_API_KEY (no API billing).
+# caller fires the shared _routine-label-dispatch worker.
+# Runs on the routine's own bearer token — Pro/Max plan quota, NOT ANTHROPIC_API_KEY.
 #
 # One-time setup by repo owner:
-#   1. claude.ai/code/routines → edit `bug-watch-write` → Select a trigger →
-#      Add another trigger → API → Generate token → copy
+#   1. claude.ai/code/routines → edit `bug-watch-write` → API trigger → generate token → copy
 #   2. gh secret set CLAUDE_ROUTINE_BUGFIX_TOKEN -R raphaelfh/prumo   # paste token
-#
-# Routine: bug-watch-write  (trig_01T8PF56S19cJ5iKusnQwuZF)
+#   3. If routine is recreated: update routine_trigger_id in the `with:` block below.
 
 on:
   issues:
@@ -22,32 +20,15 @@ permissions:
 
 concurrency:
   group: bugfix-dispatch-${{ github.event.issue.number }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   dispatch:
     if: >-
       github.event.label.name == 'auto-fix-approved'
       && contains(github.event.issue.labels.*.name, 'auto-found')
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    steps:
-      - name: Fire bug-watch-write routine
-        env:
-          TOKEN: ${{ secrets.CLAUDE_ROUTINE_BUGFIX_TOKEN }}
-          ISSUE: ${{ github.event.issue.number }}
-          REPO: ${{ github.repository }}
-        run: |
-          if [ -z "$TOKEN" ]; then
-            echo "::error::Missing secret CLAUDE_ROUTINE_BUGFIX_TOKEN — add the routine's API-trigger token (see workflow header)." >&2
-            exit 1
-          fi
-          curl -fsSL --max-time 30 -X POST \
-            "https://api.anthropic.com/v1/claude_code/routines/trig_01T8PF56S19cJ5iKusnQwuZF/fire" \
-            -H "Authorization: Bearer $TOKEN" \
-            -H "anthropic-beta: experimental-cc-routine-2026-04-01" \
-            -H "anthropic-version: 2023-06-01" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -nc --arg t "issue:${ISSUE} repo:${REPO}" '{text:$t}')" \
-            | tee /tmp/resp.json
-          echo "Fired. Session: $(jq -r '.claude_code_session_url // "(none)"' /tmp/resp.json)"
+    uses: ./.github/workflows/_routine-label-dispatch.yml
+    with:
+      routine_trigger_id: trig_01T8PF56S19cJ5iKusnQwuZF
+    secrets:
+      ROUTINE_TOKEN: ${{ secrets.CLAUDE_ROUTINE_BUGFIX_TOKEN }}
