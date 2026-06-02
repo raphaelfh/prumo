@@ -49,6 +49,14 @@ def normalize_author_display_name(creator: dict[str, Any]) -> str:
     return first or last or "Unknown"
 
 
+def _author_creator_rows(names: Any) -> list[dict[str, Any]]:
+    return [
+        {"creator_type": "author", "display_name": str(name).strip(), "raw": {"name": name}}
+        for name in (names or [])
+        if str(name).strip()
+    ]
+
+
 @dataclass(slots=True)
 class CanonicalArticlePayload:
     canonical_identity: dict[str, str | None]
@@ -115,16 +123,7 @@ def normalize_zotero_item(
 def normalize_ris_entry(entry: dict[str, Any]) -> CanonicalArticlePayload:
     doi = normalize_doi(entry.get("doi"))
     url_landing = normalize_url(entry.get("url"))
-    creators = entry.get("authors") or []
-    creator_rows = [
-        {
-            "creator_type": "author",
-            "display_name": str(name).strip(),
-            "raw": {"name": name},
-        }
-        for name in creators
-        if str(name).strip()
-    ]
+    creator_rows = _author_creator_rows(entry.get("authors"))
     article_fields: dict[str, Any] = {
         "title": entry.get("title") or "Untitled",
         "abstract": entry.get("abstract"),
@@ -150,12 +149,7 @@ def normalize_ris_entry(entry: dict[str, Any]) -> CanonicalArticlePayload:
 def normalize_manual_entry(entry: dict[str, Any]) -> CanonicalArticlePayload:
     doi = normalize_doi(entry.get("doi"))
     url_landing = normalize_url(entry.get("url_landing"))
-    authors = entry.get("authors") or []
-    creator_rows = [
-        {"creator_type": "author", "display_name": str(name).strip(), "raw": {"name": name}}
-        for name in authors
-        if str(name).strip()
-    ]
+    creator_rows = _author_creator_rows(entry.get("authors"))
     article_fields: dict[str, Any] = {
         "title": entry.get("title") or "Untitled",
         "abstract": entry.get("abstract"),
