@@ -350,10 +350,15 @@ class RunLifecycleService:
                 f"Run {run_id} is in stage {old_run.stage}; only finalized runs can be reopened."
             )
 
-        # Idempotency: if a live (non-cancelled) child already exists for
-        # this parent, return it instead of forking a second revision. A
-        # cancelled child is NOT a blocker — the user abandoned that attempt
-        # and must be able to start a fresh revision from the original parent.
+        # Idempotency: if a live (non-cancelled, non-finalized) child already
+        # exists for this parent, return it instead of forking a second
+        # revision. Two stages do NOT count as a blocking live child:
+        #   - cancelled: the user abandoned that attempt and must be able to
+        #     start a fresh revision from the original parent.
+        #   - finalized: the previous reopen was completed and re-finalized, so
+        #     the caller is asking for a NEW editable revision. Returning the
+        #     finalized child here would hand back a read-only run (the reopen
+        #     button would appear to do nothing).
         existing_child = (
             await self.db.execute(
                 select(ExtractionRun)
@@ -361,7 +366,12 @@ class RunLifecycleService:
                     ExtractionRun.template_id == old_run.template_id,
                     ExtractionRun.article_id == old_run.article_id,
                     ExtractionRun.parameters["parent_run_id"].astext == str(old_run.id),
-                    ExtractionRun.stage != ExtractionRunStage.CANCELLED.value,
+                    ExtractionRun.stage.not_in(
+                        [
+                            ExtractionRunStage.CANCELLED.value,
+                            ExtractionRunStage.FINALIZED.value,
+                        ]
+                    ),
                 )
                 .order_by(ExtractionRun.created_at.desc())
                 .limit(1)
