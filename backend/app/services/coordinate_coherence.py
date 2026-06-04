@@ -22,6 +22,10 @@ async def assert_coords_coherent(
     Coherent means:
     - The run exists.
     - instance_id belongs to the run's template.
+    - instance_id belongs to the run's article. Runs are per-article and so
+      are instances, so a template-coherent instance from a *different*
+      article must still be rejected; otherwise a proposal/decision/consensus
+      row could be written against the wrong article's run (#79).
     - field_id belongs to instance_id's entity_type.
     """
     result = await db.execute(
@@ -30,7 +34,9 @@ async def assert_coords_coherent(
             SELECT 1
             FROM public.extraction_runs r
             JOIN public.extraction_instances i
-              ON i.id = :instance_id AND i.template_id = r.template_id
+              ON i.id = :instance_id
+             AND i.template_id = r.template_id
+             AND i.article_id = r.article_id
             JOIN public.extraction_entity_types et
               ON et.id = i.entity_type_id
             JOIN public.extraction_fields f

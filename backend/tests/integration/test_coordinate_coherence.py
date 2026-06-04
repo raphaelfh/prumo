@@ -11,6 +11,7 @@ from app.services.coordinate_coherence import (
     assert_coords_coherent,
 )
 from app.services.run_lifecycle_service import RunLifecycleService
+from tests.integration.conftest import SEED
 
 
 async def _coherent_triplet(db: AsyncSession):
@@ -121,5 +122,41 @@ async def test_field_from_different_entity_type_raises(db_session: AsyncSession)
     with pytest.raises(CoordinateMismatchError):
         await assert_coords_coherent(
             db_session, run_id=run_id, instance_id=instance_id, field_id=other_field_id
+        )
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_cross_article_instance_raises(db_session: AsyncSession) -> None:
+    """Regression for #79: an instance from article A must not validate against
+    a run for article B that shares the same template (only article_id differs)."""
+    # Article B: same project + same template as the seeded instance, so the
+    # article_id mismatch is the only variable under test.
+    article_b_id = uuid4()
+    await db_session.execute(
+        text(
+            "INSERT INTO public.articles (id, project_id, title, row_version) "
+            "VALUES (:id, :pid, :title, 1)"
+        ),
+        {
+            "id": article_b_id,
+            "pid": SEED.primary_project,
+            "title": "Integration Test Article B (#79 cross-article repro)",
+        },
+    )
+
+    run_b = await RunLifecycleService(db_session).create_run(
+        project_id=SEED.primary_project,
+        article_id=article_b_id,
+        project_template_id=SEED.primary_template,
+        user_id=SEED.primary_profile,
+    )
+
+    with pytest.raises(CoordinateMismatchError):
+        await assert_coords_coherent(
+            db_session,
+            run_id=run_b.id,
+            instance_id=SEED.primary_instance,
+            field_id=SEED.primary_field,
         )
     await db_session.rollback()
