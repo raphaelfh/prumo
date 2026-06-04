@@ -122,10 +122,10 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     loadSuggestions();
   }, [articleId, enabled, loadSuggestions]);
 
-  const acceptSuggestion = useCallback(async (instanceId: string, fieldId: string) => {
+  const acceptSuggestionCore = useCallback(async (instanceId: string, fieldId: string, silent: boolean): Promise<boolean> => {
     const key = getSuggestionKey(instanceId, fieldId);
     const suggestion = suggestions[key];
-    if (!suggestion) return;
+    if (!suggestion) return false;
 
     // Feedback visual imediato
     setActionLoading(prev => ({ ...prev, [key]: 'accept' }));
@@ -181,12 +181,14 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
         });
       }
 
-        toast.success(t('extraction', 'toastSuggestionAcceptedSuccess'));
+        if (!silent) toast.success(t('extraction', 'toastSuggestionAcceptedSuccess'));
+        return true;
 
     } catch (err: any) {
         console.error('Error accepting suggestion:', err);
       const message = getErrorMessage(err);
-        toast.error(`${t('extraction', 'errors_acceptSuggestion')}: ${message}`);
+        if (!silent) toast.error(`${t('extraction', 'errors_acceptSuggestion')}: ${message}`);
+        return false;
     } finally {
         // Clear loading after operation
       setActionLoading(prev => {
@@ -196,6 +198,15 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
       });
     }
   }, [suggestions, projectId, articleId, runId, acceptStrategy, onSuggestionAccepted]);
+
+  // Public accept: surfaces its own toasts (silent=false) and keeps the
+  // Promise<void> contract — only the batch path needs the success flag.
+  const acceptSuggestion = useCallback(
+    async (instanceId: string, fieldId: string): Promise<void> => {
+      await acceptSuggestionCore(instanceId, fieldId, false);
+    },
+    [acceptSuggestionCore],
+  );
 
   const rejectSuggestion = useCallback(async (instanceId: string, fieldId: string) => {
     const key = getSuggestionKey(instanceId, fieldId);
@@ -278,23 +289,31 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
         return;
       }
 
-      await Promise.all(
+      // Accept each in silent mode so we fire ONE batch toast instead of N+1,
+      // and count real successes so the batch toast can't claim success when
+      // every accept actually failed (#160).
+      const results = await Promise.all(
         filtered.map(([key]) => {
           // key format: `${instanceId}_${fieldId}`
           const [instanceId, ...fieldIdParts] = key.split('_');
           const fieldId = fieldIdParts.join('_'); // Caso field_id tenha underscores
-          return acceptSuggestion(instanceId, fieldId);
+          return acceptSuggestionCore(instanceId, fieldId, /* silent */ true);
         })
       );
 
-        toast.success(t('extraction', 'batchAcceptCountToast').replace('{{n}}', String(filtered.length)));
+      const accepted = results.filter(Boolean).length;
+      if (accepted === 0) {
+          toast.error(t('extraction', 'errors_batchAcceptSuggestions'));
+        return;
+      }
+        toast.success(t('extraction', 'batchAcceptCountToast').replace('{{n}}', String(accepted)));
 
     } catch (err: any) {
       console.error('❌ Erro no batch accept:', err);
       const message = getErrorMessage(err);
         toast.error(`${t('extraction', 'errors_batchAcceptSuggestions')}: ${message}`);
     }
-  }, [suggestions, acceptSuggestion]);
+  }, [suggestions, acceptSuggestionCore]);
 
   /**
    * Fetches full suggestion history for a specific field

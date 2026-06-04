@@ -43,6 +43,8 @@ vi.mock('@/lib/copy', () => ({
   t: (_ns: string, key: string) => key,
 }));
 
+import { toast } from 'sonner';
+
 import { AISuggestionService } from '@/services/aiSuggestionService';
 import { useAISuggestions } from '@/hooks/extraction/ai/useAISuggestions';
 import type { AISuggestion } from '@/types/ai-extraction';
@@ -324,6 +326,64 @@ describe('useAISuggestions — reviewer-decision strategy (Data Extraction)', ()
     expect(
       (AISuggestionService.acceptSuggestion as any).mock.calls[0][0].fieldId,
     ).toBe('f-1');
+  });
+
+  it('batchAccept fires ONE success toast, not one per item (#160)', async () => {
+    (AISuggestionService.loadSuggestions as any).mockResolvedValue({
+      suggestions: {
+        [getSuggestionKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1', { confidence: 0.95 }),
+        [getSuggestionKey('inst-1', 'f-2')]: makeSuggestion('inst-1', 'f-2', { confidence: 0.92 }),
+        [getSuggestionKey('inst-1', 'f-3')]: makeSuggestion('inst-1', 'f-3', { confidence: 0.9 }),
+      },
+      count: 3,
+    });
+    const { result } = renderHook(() =>
+      useAISuggestions({
+        articleId: 'art-1',
+        projectId: 'proj-1',
+        instanceIds: ['inst-1'],
+        runId: 'run-active',
+      }),
+    );
+    await waitFor(() => expect(Object.keys(result.current.suggestions)).toHaveLength(3));
+
+    await act(async () => {
+      await result.current.batchAccept(0.8);
+    });
+
+    expect(AISuggestionService.acceptSuggestion).toHaveBeenCalledTimes(3);
+    // The per-item accepts run silently; only the batch summary toasts.
+    expect(toast.success).toHaveBeenCalledTimes(1);
+  });
+
+  it('batchAccept reports an error (no false success) when every accept fails (#160)', async () => {
+    (AISuggestionService.loadSuggestions as any).mockResolvedValue({
+      suggestions: {
+        [getSuggestionKey('inst-1', 'f-1')]: makeSuggestion('inst-1', 'f-1', { confidence: 0.95 }),
+        [getSuggestionKey('inst-1', 'f-2')]: makeSuggestion('inst-1', 'f-2', { confidence: 0.92 }),
+      },
+      count: 2,
+    });
+    (AISuggestionService.acceptSuggestion as any)
+      .mockRejectedValueOnce(new Error('backend down'))
+      .mockRejectedValueOnce(new Error('backend down'));
+
+    const { result } = renderHook(() =>
+      useAISuggestions({
+        articleId: 'art-1',
+        projectId: 'proj-1',
+        instanceIds: ['inst-1'],
+        runId: 'run-active',
+      }),
+    );
+    await waitFor(() => expect(Object.keys(result.current.suggestions)).toHaveLength(2));
+
+    await act(async () => {
+      await result.current.batchAccept(0.8);
+    });
+
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalled();
   });
 });
 

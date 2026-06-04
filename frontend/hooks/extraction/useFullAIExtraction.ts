@@ -178,34 +178,45 @@ export function useFullAIExtraction(options?: {
           stage: 'extracting_models',
         });
 
-          // Run both extractions in parallel
-          const [_modelsResult, topLevelSectionsResult] = await Promise.all([
-          extractModelsHook({
-            projectId,
-            articleId,
-            templateId,
-          }),
-          extractTopLevelSections({
-            projectId,
-            articleId,
-            templateId,
-          }),
+        // Run both extractions in parallel. allSettled (not all) so a
+        // rejection in one branch does not orphan the other still-running
+        // request. Each sub-hook surfaces its OWN error toast, so a Phase-1
+        // failure is handled here and never reaches the catch below — that is
+        // what removes the double error toast (#102).
+        const [modelsSettled, topLevelSettled] = await Promise.allSettled([
+          extractModelsHook({ projectId, articleId, templateId }),
+          extractTopLevelSections({ projectId, articleId, templateId }),
         ]);
 
-          console.warn('[useFullAIExtraction] Models and top-level sections extracted successfully', {
-          modelsExtracted: true,
-          topLevelSectionsExtracted: topLevelSectionsResult.totalSections > 0,
-        });
+        const topLevelSectionsResult =
+          topLevelSettled.status === 'fulfilled' ? topLevelSettled.value : null;
 
-          // PHASE 2: Fetch extracted models
-          console.warn('[useFullAIExtraction] Phase 2: Fetching extracted models...');
+        if (modelsSettled.status === 'rejected') {
+          // Model extraction gates phases 2-3 and already toasted its own
+          // error. Refresh whatever the top-level phase produced, then stop —
+          // no second toast.
+          setError(
+            modelsSettled.reason instanceof Error
+              ? modelsSettled.reason.message
+              : String(modelsSettled.reason),
+          );
+          if (options?.onSuccess) await options.onSuccess();
+          setProgress(null);
+          return;
+        }
+
+        // PHASE 2: Fetch extracted models
         const modelParentEntityTypeId = await fetchModelParentEntityTypeId(templateId);
         const models = await fetchExtractedModels(articleId, modelParentEntityTypeId);
 
         if (models.length === 0) {
-            toast.warning(t('extraction', 'noModelsFoundTitle'), {
-                description: t('extraction', 'noModelsExtractionComplete'),
+          toast.warning(t('extraction', 'noModelsFoundTitle'), {
+            description: t('extraction', 'noModelsExtractionComplete'),
           });
+          // Top-level (study-level) proposals were still created in Phase 1 —
+          // refresh so they appear instead of leaving the UI stale (#159).
+          if (options?.onSuccess) await options.onSuccess();
+          setProgress(null);
           return;
         }
 
