@@ -562,3 +562,86 @@ async def test_progress_is_independent_of_caller_user(
         model_id=project_with_run["parent_inst"],
     )
     assert completed == 1
+
+
+async def test_prior_run_decisions_do_not_inflate_active_progress(
+    db_session: AsyncSession, project_with_run: dict
+) -> None:
+    """Regression for #97.
+
+    For an article re-extracted across runs (finalize -> reopen), a non-reject
+    decision recorded on a *prior* run must NOT count toward the current
+    (active) run's progress. The active run is the most recent non-cancelled
+    run for the ``(article, template)``; the fixture's review run is newer than
+    the finalized run we insert here, so it is the active one.
+    """
+    fx = project_with_run
+    version_id = (
+        await db_session.execute(
+            text(
+                "SELECT id FROM public.extraction_template_versions "
+                "WHERE project_template_id = :tid AND is_active = true"
+            ),
+            {"tid": str(fx["template_id"])},
+        )
+    ).scalar()
+
+    # An OLDER (finalized) run for the same article+template.
+    old_run_id = uuid4()
+    await db_session.execute(
+        text(
+            """
+            INSERT INTO public.extraction_runs
+                (id, project_id, article_id, template_id, version_id, kind,
+                 stage, status, parameters, results, hitl_config_snapshot,
+                 created_by, created_at)
+            VALUES (:rid, :proj, :art, :tid, :vid, 'extraction',
+                    'finalized'::extraction_run_stage,
+                    'completed'::extraction_run_status,
+                    '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, :uid,
+                    NOW() - INTERVAL '1 day')
+            """
+        ),
+        {
+            "rid": str(old_run_id),
+            "proj": str(fx["project_id"]),
+            "art": str(fx["article_id"]),
+            "tid": str(fx["template_id"]),
+            "vid": str(version_id),
+            "uid": str(fx["user_id"]),
+        },
+    )
+    # A non-reject decision recorded ONLY on the old run.
+    await _record_decision(
+        db_session,
+        run_id=old_run_id,
+        instance_id=fx["parent_inst"],
+        field_id=fx["parent_field"],
+        user_id=fx["user_id"],
+        decision="edit",
+        value="STALE-from-prior-run",
+    )
+    await db_session.commit()
+
+    # The prior-run decision must not leak into the active run's count.
+    completed, total, _ = await _call_progress(
+        db_session, article_id=fx["article_id"], model_id=fx["parent_inst"]
+    )
+    assert completed == 0, "prior-run decision leaked into active-run progress (#97)"
+    assert total == 3
+
+    # Sanity: the SAME field decided on the ACTIVE (fixture) run does count.
+    await _record_decision(
+        db_session,
+        run_id=fx["run_id"],
+        instance_id=fx["parent_inst"],
+        field_id=fx["parent_field"],
+        user_id=fx["user_id"],
+        decision="edit",
+        value="LIVE",
+    )
+    await db_session.commit()
+    completed_after, _, _ = await _call_progress(
+        db_session, article_id=fx["article_id"], model_id=fx["parent_inst"]
+    )
+    assert completed_after == 1

@@ -104,8 +104,8 @@ async def test_alembic_head_is_expected_revision() -> None:
     out = _run_alembic("current")
     # ``alembic current`` prints either ``<revision> (head)`` or just the id;
     # match the revision we expect to live at head.
-    assert "0021_reconcile_feedback_rls" in out, (
-        f"Expected head revision '0021_reconcile_feedback_rls', got:\n{out}"
+    assert "0022_scope_model_progress_run" in out, (
+        f"Expected head revision '0022_scope_model_progress_run', got:\n{out}"
     )
 
 

@@ -241,3 +241,68 @@ async def test_reopen_creates_new_run_seeded_from_published_states(
         )
     ).scalar()
     assert old_published_count == 1
+
+
+@pytest.mark.asyncio
+async def test_reopen_again_after_child_finalized_forks_fresh_run(
+    db_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_as_profile: UUID,  # noqa: ARG001
+) -> None:
+    """Regression for #152.
+
+    Reopen → drive the child to finalized → reopen the SAME parent again. The
+    idempotency guard must NOT return the now-finalized child (a read-only run);
+    it must fork a fresh editable revision. Before the fix the guard only
+    excluded ``cancelled`` children, so the finalized child was handed back and
+    the reopen button appeared to do nothing.
+    """
+    fx = await _pick_fixtures(db_session)
+    if fx is None:
+        pytest.skip("Need projects + articles + template + instance/field fixture")
+    project_id, article_id, template_id, instance_id, field_id = fx
+
+    old_run_id = await _drive_run_to_finalized(
+        db_client, project_id, article_id, template_id, instance_id, field_id
+    )
+
+    # First reopen → child lands in REVIEW.
+    first = await db_client.post(f"/api/v1/runs/{old_run_id}/reopen")
+    assert first.status_code == 201, first.text
+    child_id = first.json()["data"]["id"]
+    assert child_id != old_run_id
+
+    # A second reopen *before* the child is finalized is idempotent — same child.
+    again = await db_client.post(f"/api/v1/runs/{old_run_id}/reopen")
+    assert again.status_code == 201, again.text
+    assert again.json()["data"]["id"] == child_id, "live child must be returned idempotently"
+
+    # Drive the child (REVIEW) all the way to finalized.
+    adv = await db_client.post(
+        f"/api/v1/runs/{child_id}/advance", json={"target_stage": "consensus"}
+    )
+    assert adv.status_code == 200, adv.text
+    cons = await db_client.post(
+        f"/api/v1/runs/{child_id}/consensus",
+        json={
+            "instance_id": instance_id,
+            "field_id": field_id,
+            "mode": "manual_override",
+            "value": {"text": "v2"},
+            "rationale": "second publish",
+        },
+    )
+    assert cons.status_code == 201, cons.text
+    fin = await db_client.post(
+        f"/api/v1/runs/{child_id}/advance", json={"target_stage": "finalized"}
+    )
+    assert fin.status_code == 200, fin.text
+
+    # Reopen the ORIGINAL parent again: the finalized child is no longer a live
+    # child, so a NEW editable revision must be forked.
+    second = await db_client.post(f"/api/v1/runs/{old_run_id}/reopen")
+    assert second.status_code == 201, second.text
+    grandchild = second.json()["data"]
+    assert grandchild["id"] != child_id, "must not return the finalized child"
+    assert grandchild["stage"] == "review", "the forked revision must be editable"
+    assert grandchild["parameters"]["parent_run_id"] == old_run_id
