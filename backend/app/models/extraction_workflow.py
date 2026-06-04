@@ -289,7 +289,10 @@ class ExtractionConsensusDecision(BaseModel):
                 "public.extraction_reviewer_decisions.id",
             ],
             name="fk_extraction_consensus_decisions_selected_run_match",
-            ondelete="SET NULL",
+            # RESTRICT, not SET NULL: run_id is NOT NULL, so a composite SET NULL
+            # would try to null run_id too and abort with a not-null violation.
+            # (SET NULL was also incoherent with the select_existing CHECK.) (#81)
+            ondelete="RESTRICT",
         ),
         CheckConstraint(
             "mode <> 'select_existing' OR selected_decision_id IS NOT NULL",

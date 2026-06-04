@@ -272,9 +272,10 @@ async def test_reopen_again_after_child_finalized_forks_fresh_run(
     child_id = first.json()["data"]["id"]
     assert child_id != old_run_id
 
-    # A second reopen *before* the child is finalized is idempotent — same child.
+    # A second reopen *before* the child is finalized resumes the same live
+    # child idempotently — HTTP 200, not a fresh 201 (#153).
     again = await db_client.post(f"/api/v1/runs/{old_run_id}/reopen")
-    assert again.status_code == 201, again.text
+    assert again.status_code == 200, again.text
     assert again.json()["data"]["id"] == child_id, "live child must be returned idempotently"
 
     # Drive the child (REVIEW) all the way to finalized.

@@ -315,9 +315,13 @@ class RunLifecycleService:
         *,
         run_id: UUID,
         user_id: UUID,
-    ) -> ExtractionRun:
+    ) -> tuple[ExtractionRun, bool]:
         """Create a new Run derived from a finalized one, pre-populated with
         the previous published values as ``source='system'`` proposals.
+
+        Returns ``(run, created)``: ``created`` is False when an existing live
+        child is resumed idempotently (the endpoint maps that to HTTP 200) and
+        True when a fresh revision is forked (HTTP 201).
 
         Implements the "Option C" reopen UX: each revision is its own
         immutable Run, linked to the parent via
@@ -378,7 +382,7 @@ class RunLifecycleService:
             )
         ).scalar_one_or_none()
         if existing_child is not None:
-            return existing_child
+            return existing_child, False
 
         # 1. Resolve the active version (lazy-create if the template was
         #    born outside the backfill path).
@@ -456,7 +460,7 @@ class RunLifecycleService:
         new_run.stage = ExtractionRunStage.REVIEW.value
         await self.db.flush()
         await self.db.refresh(new_run)
-        return new_run
+        return new_run, True
 
     async def _snapshot_initial_version(
         self,

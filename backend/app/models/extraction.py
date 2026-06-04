@@ -22,6 +22,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -278,7 +279,9 @@ class ExtractionEntityType(BaseModel):
     role: Mapped[str] = mapped_column(
         PostgreSQLEnumType("extraction_entity_role"),
         default=ExtractionEntityRole.STUDY_SECTION.value,
-        server_default=ExtractionEntityRole.STUDY_SECTION.value,
+        # No server_default: migration 0016 step 4 removed it so an INSERT that
+        # omits `role` fails loudly rather than silently defaulting to
+        # study_section. Keep the Python-side `default` for ORM inserts.
         nullable=False,
     )
 
@@ -305,6 +308,37 @@ class ExtractionEntityType(BaseModel):
         "ExtractionEntityType",
         remote_side="ExtractionEntityType.id",
         foreign_keys=[parent_entity_type_id],
+    )
+
+    # These four DB invariants exist in the schema (baseline + 0016) but were
+    # absent from the ORM, so `alembic revision --autogenerate` would emit DROPs
+    # for them (silently un-guarding the role model). Declaring them here keeps
+    # the model the source of truth. The deferred `model_section`-under-
+    # `model_container` trigger (0016 step 7) can't live in __table_args__ and
+    # stays migration-only. (#93)
+    __table_args__ = (
+        CheckConstraint(
+            "(template_id IS NULL) <> (project_template_id IS NULL)",
+            name="ck_extraction_entity_types_template_xor",
+        ),
+        CheckConstraint(
+            "(role IN ('study_section', 'model_container') AND parent_entity_type_id IS NULL)"
+            " OR (role = 'model_section' AND parent_entity_type_id IS NOT NULL)",
+            name="ck_extraction_entity_types_role_parent",
+        ),
+        Index(
+            "uq_extraction_entity_types_one_container_per_global",
+            "template_id",
+            unique=True,
+            postgresql_where=text("role = 'model_container' AND template_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_extraction_entity_types_one_container_per_project",
+            "project_template_id",
+            unique=True,
+            postgresql_where=text("role = 'model_container' AND project_template_id IS NOT NULL"),
+        ),
+        {"schema": "public"},
     )
 
     def __repr__(self) -> str:
@@ -334,7 +368,9 @@ class ExtractionField(BaseModel):
     )
 
     is_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    validation_schema: Mapped[dict[str, Any]] = mapped_column(JSONB, default={}, nullable=True)
+    validation_schema: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, default={}, nullable=True
+    )
     allowed_values: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     unit: Mapped[str | None] = mapped_column(String, nullable=True)
     allowed_units: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
@@ -419,7 +455,7 @@ class ExtractionInstance(BaseModel):
         default=ExtractionInstanceStatus.PENDING.value,
         nullable=False,
     )
-    is_template: Mapped[bool] = mapped_column(Boolean, default=False, nullable=True)
+    is_template: Mapped[bool | None] = mapped_column(Boolean, default=False, nullable=True)
 
     # Relationships
     template: Mapped["ProjectExtractionTemplate"] = relationship(
@@ -498,7 +534,7 @@ class ExtractionEvidence(BaseModel):
     )
 
     page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    position: Mapped[dict[str, Any]] = mapped_column(JSONB, default={}, nullable=True)
+    position: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default={}, nullable=True)
     text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_by: Mapped[UUID] = mapped_column(
