@@ -58,4 +58,15 @@ describe('user-facing copy does not leak the internal "Run" entity', () => {
     expect(src).not.toContain('Run finalized');
     expect(src).toContain('Assessment finalized.');
   });
+
+  it('no longer ships the "Finalize run" labels in the shared consensus panel', () => {
+    const src = readFileSync(
+      resolve(here, '../components/runs/ConsensusPanel.tsx'),
+      'utf8',
+    );
+    // The panel is shared by extraction + QA, so the finalize affordance is
+    // phrased neutrally ("Finalize") rather than leaking the internal "run".
+    expect(src).not.toMatch(/Finalize run/);
+    expect(src).not.toMatch(/finalize the run/);
+  });
 });

@@ -7,7 +7,7 @@
  * `profiles` (display name + avatar). Used by the comparison UI.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { ExtractionValueService } from '@/services/extractionValueService';
 import { t } from '@/lib/copy';
@@ -49,6 +49,7 @@ export function useOtherExtractions(
   const [otherExtractions, setOtherExtractions] = useState<OtherExtraction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const generationRef = useRef(0);
 
   useEffect(() => {
     if (!enabled || !articleId || !currentUserId) {
@@ -56,21 +57,26 @@ export function useOtherExtractions(
       return;
     }
     void loadOtherExtractions();
+    return () => {
+      generationRef.current += 1;
+    };
   }, [articleId, currentUserId, enabled, templateId]);
 
   const loadOtherExtractions = async () => {
+    const myGeneration = ++generationRef.current;
     setLoading(true);
     setError(null);
 
     try {
       if (!templateId) {
-        setOtherExtractions([]);
+        if (myGeneration === generationRef.current) setOtherExtractions([]);
         return;
       }
       const run = await ExtractionValueService.findActiveRun(
         articleId,
         templateId,
       );
+      if (myGeneration !== generationRef.current) return;
       if (!run) {
         setOtherExtractions([]);
         return;
@@ -81,6 +87,7 @@ export function useOtherExtractions(
         currentUserId,
       );
 
+      if (myGeneration !== generationRef.current) return;
       setOtherExtractions(
         others.map((o) => ({
           userId: o.reviewerId,
@@ -91,10 +98,11 @@ export function useOtherExtractions(
         })),
       );
     } catch (err: any) {
+      if (myGeneration !== generationRef.current) return;
       console.error('Error loading other extractions:', err);
       setError(err.message || t('extraction', 'errors_loadOtherExtractions'));
     } finally {
-      setLoading(false);
+      if (myGeneration === generationRef.current) setLoading(false);
     }
   };
 

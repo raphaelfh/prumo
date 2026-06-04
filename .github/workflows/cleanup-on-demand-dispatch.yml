@@ -1,0 +1,31 @@
+name: Cleanup On Demand Dispatch
+
+# Reliable label-trigger for the `cleanup` routine (native routine issue-label
+# triggers did not fire in testing). On `issues: labeled` with `tech-debt`, this
+# thin caller fires the shared _routine-label-dispatch worker.
+# Runs on the routine's own bearer token — Pro/Max plan quota, NOT ANTHROPIC_API_KEY.
+#
+# One-time setup by repo owner:
+#   1. claude.ai/code/routines → edit `cleanup` → API trigger → generate token → copy
+#   2. gh secret set CLAUDE_ROUTINE_CLEANUP_TOKEN -R raphaelfh/prumo   # paste token
+#   3. If routine is recreated: update routine_trigger_id in the `with:` block below.
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: none
+
+concurrency:
+  group: cleanup-dispatch-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  dispatch:
+    if: github.event.label.name == 'tech-debt'
+    uses: ./.github/workflows/_routine-label-dispatch.yml
+    with:
+      routine_trigger_id: trig_01YBm1YjAd18JdZDe8thsPCd
+    secrets:
+      ROUTINE_TOKEN: ${{ secrets.CLAUDE_ROUTINE_CLEANUP_TOKEN }}
