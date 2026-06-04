@@ -9,7 +9,7 @@
  *      the arbitrator to publish something nobody picked).
  *
  * Once every divergent coord has a corresponding ConsensusDecision in
- * the run aggregate, "Finalize run" advances stage → finalized which
+ * the run aggregate, finalizing advances stage → finalized which
  * also flips status → completed and materializes the final published
  * state per coord.
  *
@@ -336,7 +336,7 @@ export function ConsensusPanel({
       >
         <p className="font-medium">No conflicts to resolve.</p>
         <p className="mt-1">
-          Every reviewer agreed on every field. You can finalize the run.
+          Every reviewer agreed on every field. You can finalize now.
         </p>
         <Button
           size="sm"
@@ -345,7 +345,7 @@ export function ConsensusPanel({
           disabled={isFinalizing}
           data-testid="consensus-finalize-empty"
         >
-          {isFinalizing ? "Finalizing…" : "Finalize run"}
+          {isFinalizing ? "Finalizing…" : "Finalize"}
         </Button>
       </div>
     );
@@ -371,7 +371,7 @@ export function ConsensusPanel({
             {isFinalizing
               ? "Finalizing…"
               : allResolved
-                ? "Finalize run"
+                ? "Finalize"
                 : `${totalCount - resolvedCount} left`}
           </Button>
         </div>
