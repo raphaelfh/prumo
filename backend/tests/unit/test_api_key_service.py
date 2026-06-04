@@ -603,6 +603,26 @@ class TestValidateGemini:
             result = await svc._validate_gemini("bad-key")
         assert result["status"] == "invalid"
 
+    @pytest.mark.asyncio
+    async def test_key_sent_as_header_never_in_url(self) -> None:
+        """Regression for #91: the Gemini key must travel in the x-goog-api-key
+        header, never in the URL query string. httpx embeds the request URL in
+        transport-error messages, so a key in the URL leaks into the logs and the
+        validation response on any timeout/network error."""
+        svc = make_service()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        get_mock = AsyncMock(return_value=mock_response)
+        with patch("httpx.AsyncClient") as MockClient:
+            MockClient.return_value.__aenter__.return_value.get = get_mock
+            await svc._validate_gemini("SECRET-KEY")
+
+        args, kwargs = get_mock.call_args
+        url = args[0] if args else kwargs.get("url", "")
+        assert "SECRET-KEY" not in url
+        assert "key=" not in url
+        assert kwargs.get("headers") == {"x-goog-api-key": "SECRET-KEY"}
+
 
 class TestValidateGrok:
     @pytest.mark.asyncio

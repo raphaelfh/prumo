@@ -576,3 +576,99 @@ async def test_cancel_export_rejects_non_owner(
     assert body["ok"] is False
     assert body["error"]["code"] == "FORBIDDEN"
     assert revoked == []
+
+
+# =================== #86: Zotero sync membership-revocation gap ===================
+#
+# SYNC_STATUS / SYNC_RETRY_FAILED / SYNC_ITEM_RESULT load the run via
+# ``get_owned_run`` (scoped to ``requested_by_user_id``), so they are not the
+# "any user with a sync_run_id" BOLA originally reported. The real gap: they did
+# NOT re-check *project membership* the way SYNC_COLLECTION does, so the user who
+# created a run could still read it / re-enqueue an import into that project AFTER
+# being removed from it. We model that by owning the run but not being a member.
+
+
+@pytest_asyncio.fixture
+async def outsider_sync_run(
+    db_session: AsyncSession,
+    outsider_user: UUID,
+) -> AsyncGenerator[str | None, None]:
+    """A run OWNED by the outsider, in a project they are NOT a member of."""
+    project_id = (
+        await db_session.execute(
+            text(
+                "SELECT id FROM public.projects "
+                "WHERE NOT public.is_project_member(id, :uid) LIMIT 1"
+            ),
+            {"uid": str(outsider_user)},
+        )
+    ).scalar()
+    if project_id is None:
+        yield None
+        return
+
+    sync_run_id = uuid.uuid4()
+    await db_session.execute(
+        text(
+            "INSERT INTO public.article_sync_runs "
+            "(id, project_id, requested_by_user_id, started_at, status, source, failed) "
+            "VALUES (:id, :pid, :requester, now(), 'completed', 'zotero', 1)"
+        ),
+        # requested_by = the outsider so the run passes the get_owned_run ownership
+        # filter and execution reaches the new project-membership guard.
+        {"id": str(sync_run_id), "pid": str(project_id), "requester": str(outsider_user)},
+    )
+    await db_session.commit()
+    try:
+        yield str(sync_run_id)
+    finally:
+        await db_session.execute(
+            text("DELETE FROM public.article_sync_runs WHERE id = :id"),
+            {"id": str(sync_run_id)},
+        )
+        await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_zotero_sync_status_403_for_non_member(
+    db_client: AsyncClient,
+    outsider_sync_run: str | None,
+) -> None:
+    if outsider_sync_run is None:
+        pytest.skip("Need a project the outsider does not belong to")
+    res = await db_client.post(
+        "/api/v1/zotero/sync-status",
+        json={"syncRunId": outsider_sync_run},
+    )
+    assert res.status_code == 403, res.text
+
+
+@pytest.mark.asyncio
+async def test_zotero_sync_retry_failed_403_for_non_member(
+    db_client: AsyncClient,
+    outsider_sync_run: str | None,
+) -> None:
+    """The most dangerous of the three: a non-member could enqueue a re-import
+    (a write + Celery task) into someone else's project. The guard must fire
+    before ``create_sync_run`` runs."""
+    if outsider_sync_run is None:
+        pytest.skip("Need a project the outsider does not belong to")
+    res = await db_client.post(
+        "/api/v1/zotero/sync-retry-failed",
+        json={"syncRunId": outsider_sync_run},
+    )
+    assert res.status_code == 403, res.text
+
+
+@pytest.mark.asyncio
+async def test_zotero_sync_item_result_403_for_non_member(
+    db_client: AsyncClient,
+    outsider_sync_run: str | None,
+) -> None:
+    if outsider_sync_run is None:
+        pytest.skip("Need a project the outsider does not belong to")
+    res = await db_client.post(
+        "/api/v1/zotero/sync-item-result",
+        json={"syncRunId": outsider_sync_run},
+    )
+    assert res.status_code == 403, res.text

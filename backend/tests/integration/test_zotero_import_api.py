@@ -37,6 +37,7 @@ async def test_sync_status_returns_404_for_unknown_run(client: AsyncClient) -> N
 async def test_sync_item_result_returns_items(client: AsyncClient) -> None:
     run = MagicMock()
     run.id = uuid4()
+    run.project_id = uuid4()
     run.status = "completed"
     run.total_received = 1
     run.persisted = 1
@@ -57,11 +58,19 @@ async def test_sync_item_result_returns_items(client: AsyncClient) -> None:
     event.authority_rule_applied = "source_parity_wins"
     event.processed_at = "2026-03-28T00:00:00Z"
 
-    with patch("app.api.v1.endpoints.zotero_import.ZoteroImportService") as service_cls:
+    with (
+        patch("app.api.v1.endpoints.zotero_import.ZoteroImportService") as service_cls,
+        patch("app.api.v1.endpoints.zotero_import.UnitOfWork") as uow_cls,
+    ):
         service = MagicMock()
         service.get_sync_status = AsyncMock(return_value=run)
         service.get_sync_item_results = AsyncMock(return_value=([event], 1))
         service_cls.return_value = service
+
+        # The endpoint now re-checks project membership before returning results.
+        uow = AsyncMock()
+        uow.project_members.is_member = AsyncMock(return_value=True)
+        uow_cls.return_value.__aenter__.return_value = uow
 
         response = await client.post(
             "/api/v1/zotero/sync-item-result",

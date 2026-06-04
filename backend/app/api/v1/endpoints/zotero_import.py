@@ -15,6 +15,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser, DbSession, SupabaseClient
 from app.core.error_handler import AppError, AuthorizationError, NotFoundError
@@ -63,6 +64,21 @@ class ZoteroAction(StrEnum):
     SYNC_STATUS = "sync-status"
     SYNC_RETRY_FAILED = "sync-retry-failed"
     SYNC_ITEM_RESULT = "sync-item-result"
+
+
+async def _assert_project_member(db: AsyncSession, project_id: UUID, user_sub: str) -> None:
+    """Authorize the caller against a project.
+
+    The API runs as service role and bypasses RLS, so every project-scoped action
+    must gate membership in code (mirrors the ``is_project_member`` RLS helper).
+
+    Raises:
+        AuthorizationError: if the user is not a member of the project.
+    """
+    async with UnitOfWork(db) as uow:
+        is_member = await uow.project_members.is_member(project_id, user_sub)
+    if not is_member:
+        raise AuthorizationError("User is not authorized for this project")
 
 
 @router.post(
@@ -139,10 +155,7 @@ async def zotero_action(
             case ZoteroAction.SYNC_COLLECTION:
                 sync_req = SyncCollectionRequest(**body)
                 project_id = UUID(sync_req.project_id)
-                async with UnitOfWork(db) as uow:
-                    is_member = await uow.project_members.is_member(project_id, user.sub)
-                    if not is_member:
-                        raise AuthorizationError("User is not authorized for this project")
+                await _assert_project_member(db, project_id, user.sub)
                 import_service = ZoteroImportService(
                     db=db,
                     user_id=user.sub,
@@ -187,6 +200,7 @@ async def zotero_action(
                 run = await import_service.get_sync_status(UUID(status_req.sync_run_id))
                 if not run:
                     raise NotFoundError(resource="sync_run", resource_id=status_req.sync_run_id)
+                await _assert_project_member(db, run.project_id, user.sub)
                 result = SyncStatusResponse(
                     syncRunId=str(run.id),
                     status=run.status,
@@ -215,6 +229,7 @@ async def zotero_action(
                 run = await import_service.get_sync_status(UUID(retry_req.sync_run_id))
                 if not run:
                     raise NotFoundError(resource="sync_run", resource_id=retry_req.sync_run_id)
+                await _assert_project_member(db, run.project_id, user.sub)
                 retry_run = await import_service.create_sync_run(
                     project_id=run.project_id,
                     collection_key=run.source_collection_key,
@@ -251,6 +266,7 @@ async def zotero_action(
                 run = await import_service.get_sync_status(UUID(result_req.sync_run_id))
                 if not run:
                     raise NotFoundError(resource="sync_run", resource_id=result_req.sync_run_id)
+                await _assert_project_member(db, run.project_id, user.sub)
                 events, total = await import_service.get_sync_item_results(
                     sync_run_id=UUID(result_req.sync_run_id),
                     status_filter=result_req.status_filter,
