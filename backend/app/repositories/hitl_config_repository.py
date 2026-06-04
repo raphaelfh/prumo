@@ -3,6 +3,7 @@
 from uuid import UUID
 
 from sqlalchemy import delete, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.extraction_versioning import (
@@ -41,24 +42,34 @@ class HitlConfigRepository:
         consensus_rule: str,
         arbitrator_id: UUID | None,
     ) -> ExtractionHitlConfig:
-        existing = await self.get_by_scope(scope_kind, scope_id)
-        if existing is None:
-            config = ExtractionHitlConfig(
+        # Atomic upsert: a plain SELECT-then-INSERT races two concurrent
+        # first-time creates into a unique-violation IntegrityError (HTTP 500).
+        # ON CONFLICT collapses both paths into one statement (#83).
+        mutable = {
+            "reviewer_count": reviewer_count,
+            "consensus_rule": consensus_rule,
+            "arbitrator_id": arbitrator_id,
+        }
+        stmt = (
+            pg_insert(ExtractionHitlConfig)
+            .values(
                 scope_kind=_scope_value(scope_kind),
                 scope_id=scope_id,
-                reviewer_count=reviewer_count,
-                consensus_rule=consensus_rule,
-                arbitrator_id=arbitrator_id,
+                **mutable,
             )
-            self.db.add(config)
-            await self.db.flush()
-            return config
-
-        existing.reviewer_count = reviewer_count
-        existing.consensus_rule = consensus_rule
-        existing.arbitrator_id = arbitrator_id
+            .on_conflict_do_update(
+                constraint="uq_extraction_hitl_configs_scope",
+                set_=mutable,
+            )
+            .returning(ExtractionHitlConfig.id)
+        )
+        config_id = (await self.db.execute(stmt)).scalar_one()
         await self.db.flush()
-        return existing
+        # populate_existing refreshes any stale identity-map copy, since the
+        # Core upsert bypassed the ORM.
+        config = await self.db.get(ExtractionHitlConfig, config_id, populate_existing=True)
+        assert config is not None  # just upserted
+        return config
 
     async def delete_by_scope(
         self,

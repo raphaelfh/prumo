@@ -1805,3 +1805,33 @@ class TestExtractForRunErrorPath:
         assert result.failed_sections == 1
         assert result.sections[0]["success"] is False
         assert "type fetch error" in result.sections[0]["error"]
+
+
+class TestRollbackThenFailRun:
+    """#88: a DB error during suggestion creation leaves the asyncpg session in a
+    failed-transaction state, so an unguarded ``fail_run`` raises and the run is
+    left stuck at ``status='running'``. The helper rolls back first."""
+
+    @pytest.mark.asyncio
+    async def test_rolls_back_before_marking_failed(self, service) -> None:
+        order: list[str] = []
+        service.db.rollback = AsyncMock(side_effect=lambda: order.append("rollback"))
+        service._runs.fail_run = AsyncMock(
+            side_effect=lambda *_a, **_k: order.append("fail_run")
+        )
+
+        await service._rollback_then_fail_run(uuid4(), "boom")
+
+        assert order == ["rollback", "fail_run"]
+
+    @pytest.mark.asyncio
+    async def test_swallows_fail_run_error(self, service) -> None:
+        # Even if marking the run failed itself errors, the helper must not raise
+        # (the original error has already been surfaced by the caller).
+        service.db.rollback = AsyncMock()
+        service._runs.fail_run = AsyncMock(side_effect=RuntimeError("still broken"))
+
+        await service._rollback_then_fail_run(uuid4(), "boom")
+
+        service.db.rollback.assert_awaited_once()
+        service._runs.fail_run.assert_awaited_once()
