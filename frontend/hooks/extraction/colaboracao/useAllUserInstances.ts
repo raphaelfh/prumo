@@ -5,7 +5,7 @@
  * Used to group correctly by label in comparison.
  */
 
-import {useEffect, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {supabase} from '@/integrations/supabase/client';
 import {t} from '@/lib/copy';
 import type {ExtractionInstance} from '@/types/extraction';
@@ -32,6 +32,7 @@ export function useAllUserInstances(props: UseAllUserInstancesProps): UseAllUser
   const [instances, setInstances] = useState<InstanceWithCreator[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const generationRef = useRef(0);
 
   useEffect(() => {
     if (!enabled || !articleId) {
@@ -40,9 +41,13 @@ export function useAllUserInstances(props: UseAllUserInstancesProps): UseAllUser
     }
 
     loadInstances();
+    return () => {
+      generationRef.current += 1;
+    };
   }, [articleId, enabled]);
 
   const loadInstances = async () => {
+    const myGeneration = ++generationRef.current;
     setLoading(true);
     setError(null);
 
@@ -55,16 +60,18 @@ export function useAllUserInstances(props: UseAllUserInstancesProps): UseAllUser
         .eq('article_id', articleId)
         .order('created_at', { ascending: true });
 
+      if (myGeneration !== generationRef.current) return;
       if (queryError) throw queryError;
 
       setInstances((data || []) as InstanceWithCreator[]);
         console.warn(`✅ Loaded ${(data || []).length} instances from all users`);
 
     } catch (err: any) {
+      if (myGeneration !== generationRef.current) return;
         console.error('❌ Error loading instances:', err);
         setError(err.message || t('extraction', 'errors_loadInstances'));
     } finally {
-      setLoading(false);
+      if (myGeneration === generationRef.current) setLoading(false);
     }
   };
 
