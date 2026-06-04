@@ -430,8 +430,15 @@ jobs:
       - name: Run ESLint
         run: npm run lint || true
 
-      - name: Type check
-        run: npm run typecheck || npx tsc --noEmit
+      # Runs the REAL frontend typecheck. The previous
+      # `npm run typecheck || npx tsc --noEmit` was a silent no-op: there was no
+      # `typecheck` script, and plain `tsc --noEmit` against the references-mode
+      # root tsconfig (files: []) checks nothing. The frontend carries ~186
+      # pre-existing type errors (tracked in #197), so this is non-blocking for
+      # now — flip `continue-on-error` to false once `npm run typecheck` is clean.
+      - name: Type check (frontend)
+        run: npm run typecheck
+        continue-on-error: true
 
   # =================== FRONTEND BUILD ===================
   frontend-build:
