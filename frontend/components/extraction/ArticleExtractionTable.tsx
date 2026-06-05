@@ -445,12 +445,6 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
   const calculateExtractionProgress = (article: ArticleWithExtraction) => {
     if (article.instances.length === 0) return 0;
 
-      // Check if all instances have status 'completed'
-    const allCompleted = article.instances.every(instance => instance.status === 'completed');
-    if (allCompleted && article.instances.length > 0) {
-      return 100;
-    }
-
       // Count instances with at least one extracted value
     const instancesWithValues = article.instances.filter(instance =>
       article.extractedValues.some(value => value.instance_id === instance.id)
