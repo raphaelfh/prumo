@@ -199,6 +199,8 @@ export const extraction = {
     fullAICompleteSuccessTitle: 'Full AI extraction complete!',
     fullAISuccessDescription: '{{n}} model(s) processed with all sections extracted.',
     fullAITopLevelSections: '{{n}} top-level section(s) extracted.',
+    fullAIPartialTitle: 'Extraction partially complete',
+    fullAIPartialTopLevelFailed: 'Prediction models were extracted, but study-level sections failed and were not saved. Re-run extraction to retry them.',
     fullAIErrorPrefix: 'Error in full AI extraction',
     modelExtractionCompleteNoModels: 'Model extraction completed but no prediction models were found.',
     modelExtractionSuccessTitle: 'Extraction complete! {{n}} model(s) found and created.',
@@ -313,7 +315,6 @@ export const extraction = {
     aiSuggestionsPending: 'AI suggestions pending',
     aiClickToView: ' — Click to view',
     // ArticleExtractionTable (toast)
-    tableExtractionSuccess: 'Extraction completed successfully!',
     tableErrorLoadArticles: 'Error loading articles',
     tableSelectAtLeastOne: 'Select at least one article',
     tableErrorProcessAI: 'Error processing AI extraction',

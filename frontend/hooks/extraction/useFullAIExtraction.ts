@@ -239,18 +239,28 @@ export function useFullAIExtraction(options?: {
 
           console.warn('[useFullAIExtraction] Full AI extraction completed successfully');
 
-          // Final success toast
+          // Final toast. If the study-level (top-level) branch rejected, the
+          // models still succeeded but study-level sections were not saved —
+          // the sub-hook already toasted the specific error, so surface a
+          // partial-success WARNING here, never an unqualified success (#159).
         const topLevelSectionsCount = topLevelSectionsResult?.totalSections || 0;
         const topLevelSectionsSuccess = topLevelSectionsResult?.successfulSections || 0;
 
-          let description = t('extraction', 'fullAISuccessDescription').replace('{{n}}', String(models.length));
-        if (topLevelSectionsCount > 0) {
-            description += ' ' + t('extraction', 'fullAITopLevelSections').replace('{{n}}', String(topLevelSectionsSuccess));
-        }
-          toast.success(t('extraction', 'fullAICompleteSuccessTitle'), {
-              description,
-              duration: 8000,
+        if (topLevelSettled.status === 'rejected') {
+          toast.warning(t('extraction', 'fullAIPartialTitle'), {
+            description: t('extraction', 'fullAIPartialTopLevelFailed'),
+            duration: 8000,
           });
+        } else {
+          let description = t('extraction', 'fullAISuccessDescription').replace('{{n}}', String(models.length));
+          if (topLevelSectionsCount > 0) {
+            description += ' ' + t('extraction', 'fullAITopLevelSections').replace('{{n}}', String(topLevelSectionsSuccess));
+          }
+          toast.success(t('extraction', 'fullAICompleteSuccessTitle'), {
+            description,
+            duration: 8000,
+          });
+        }
 
           // Call success callback if provided
         if (options?.onSuccess) {
