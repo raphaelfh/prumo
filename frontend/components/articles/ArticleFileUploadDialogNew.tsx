@@ -344,7 +344,7 @@ export function ArticleFileUploadDialogNew({
             .filter(f => f.status === 'error' && f.error)
             .map(f => f.error)
             .join('; ');
-            toast.error(t('articles', 'uploadFilesError') + ': ' + (errorMessages || error.message || t('articles', 'errorUnknown')));
+            toast.error(t('articles', 'uploadFilesError') + ': ' + (errorMessages || t('articles', 'errorUnknown')));
         } else if (failedFiles > 0) {
           // Alguns falharam, alguns sucederam
             toast.warning(t('articles', 'uploadPartialCount').replace('{{completed}}', String(completedFiles)).replace('{{failed}}', String(failedFiles)));

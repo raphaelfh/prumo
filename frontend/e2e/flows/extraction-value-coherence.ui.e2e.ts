@@ -75,6 +75,9 @@ test.describe("Extraction value coherence (H1+H2 end-to-end)", () => {
     await loginViaUi(page);
     const token = await resolveAuthToken(page);
     const userId = await page.evaluate(async () => {
+      // @ts-expect-error — runtime browser import served by the Vite dev server
+      // at the repo root; the "@/" alias is build-time only and does not resolve
+      // inside page.evaluate().
       const { supabase } = await import("/frontend/integrations/supabase/client.ts");
       const { data } = await supabase.auth.getUser();
       return data.user?.id ?? null;
