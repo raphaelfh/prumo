@@ -430,15 +430,13 @@ jobs:
       - name: Run ESLint
         run: npm run lint || true
 
-      # Runs the REAL frontend typecheck. The previous
-      # `npm run typecheck || npx tsc --noEmit` was a silent no-op: there was no
-      # `typecheck` script, and plain `tsc --noEmit` against the references-mode
-      # root tsconfig (files: []) checks nothing. The frontend carries ~186
-      # pre-existing type errors (tracked in #197), so this is non-blocking for
-      # now — flip `continue-on-error` to false once `npm run typecheck` is clean.
-      - name: Type check (frontend)
-        run: npm run typecheck
-        continue-on-error: true
+      # Frontend typecheck RATCHET. The error budget lives in
+      # scripts/typecheck-budget.txt and is lowered by each burn-down PR
+      # (#197). This step is BLOCKING: it fails if errors exceed budget,
+      # so no new type errors can land while we burn down. The final #197
+      # PR sets the budget to 0 and replaces this with a plain `tsc`.
+      - name: Type check ratchet (frontend)
+        run: npm run typecheck:ratchet
 
   # =================== FRONTEND BUILD ===================
   frontend-build:
