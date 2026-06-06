@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,6 +50,11 @@ class HitlConfigRepository:
             "consensus_rule": consensus_rule,
             "arbitrator_id": arbitrator_id,
         }
+        # On the conflict (update) path, bump updated_at explicitly: the
+        # Python-side onupdate=func.now() does not fire for a Core
+        # ON CONFLICT DO UPDATE. On first insert, server_default covers it,
+        # so updated_at is only added to the update set.
+        update_set = {**mutable, "updated_at": func.now()}
         stmt = (
             pg_insert(ExtractionHitlConfig)
             .values(
@@ -59,7 +64,7 @@ class HitlConfigRepository:
             )
             .on_conflict_do_update(
                 constraint="uq_extraction_hitl_configs_scope",
-                set_=mutable,
+                set_=update_set,
             )
             .returning(ExtractionHitlConfig.id)
         )

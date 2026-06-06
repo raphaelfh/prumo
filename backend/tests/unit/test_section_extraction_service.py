@@ -1816,9 +1816,7 @@ class TestRollbackThenFailRun:
     async def test_rolls_back_before_marking_failed(self, service) -> None:
         order: list[str] = []
         service.db.rollback = AsyncMock(side_effect=lambda: order.append("rollback"))
-        service._runs.fail_run = AsyncMock(
-            side_effect=lambda *_a, **_k: order.append("fail_run")
-        )
+        service._runs.fail_run = AsyncMock(side_effect=lambda *_a, **_k: order.append("fail_run"))
 
         await service._rollback_then_fail_run(uuid4(), "boom")
 
