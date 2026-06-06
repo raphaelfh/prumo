@@ -92,10 +92,10 @@ export function EntitySelectorComparison(props: ComparisonSectionViewProps) {
     // Prepare user list (only those who have this entity)
   const usersWithEntity = useMemo<ComparisonUser[]>(() => {
     if (!activeEntity) return [];
-    
+
     const users: ComparisonUser[] = [];
-    
-    activeEntity.instancesByUser.forEach((instanceId, userId) => {
+
+    activeEntity.instancesByUser.forEach((_instanceId, userId) => {
       if (userId === props.currentUser.userId) {
         users.push(props.currentUser);
       } else {

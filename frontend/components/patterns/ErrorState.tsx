@@ -3,7 +3,6 @@
  * Use: <ErrorState message="..." onRetry={refetch} /> or pass title.
  */
 
-import React from 'react';
 import {AlertCircle, RefreshCw} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {cn} from '@/lib/utils';

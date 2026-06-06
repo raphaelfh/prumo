@@ -1,4 +1,3 @@
-import * as React from 'react';
 import {Button} from '@/components/ui/button';
 import {t} from '@/lib/copy';
 import type {FilterFieldConfig, FilterValues} from './filter-types';
