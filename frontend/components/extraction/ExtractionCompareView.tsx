@@ -10,13 +10,13 @@ import type {ComparisonUser} from '@/components/shared/comparison';
 import {ComparisonSectionView} from '@/components/shared/comparison';
 import {Separator} from '@/components/ui/separator';
 import {useAllUserInstances} from '@/hooks/extraction/colaboracao/useAllUserInstances';
-import type {ExtractionEntityType, ExtractionInstance} from '@/types/extraction';
+import type {ExtractionEntityTypeWithFields, ExtractionInstance} from '@/types/extraction';
 import type {OtherExtraction} from '@/hooks/extraction/colaboracao/useOtherExtractions';
 
 export interface ExtractionCompareViewProps {
-  studyLevelSections: ExtractionEntityType[];
-  modelParentEntityType: ExtractionEntityType | undefined;
-  modelChildSections: ExtractionEntityType[];
+  studyLevelSections: ExtractionEntityTypeWithFields[];
+  modelParentEntityType: ExtractionEntityTypeWithFields | undefined;
+  modelChildSections: ExtractionEntityTypeWithFields[];
   instances: ExtractionInstance[];
   values: Record<string, any>;
   updateValue: (instanceId: string, fieldId: string, value: any) => void;
