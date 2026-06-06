@@ -498,26 +498,23 @@ export function ArticleForm({
           sync_state: mode === 'add' ? "active" : undefined,
       };
 
-        let _result;
       if (mode === 'add') {
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from("articles")
           .insert([articleData])
           .select()
           .single();
-        
+
         if (error) throw error;
-          _result = data;
       } else {
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from("articles")
           .update(articleData)
           .eq("id", articleId)
           .select()
           .single();
-        
+
         if (error) throw error;
-          _result = data;
       }
 
         toast.success(mode === 'add' ? t('articles', 'articleCreatedSuccess') : t('articles', 'articleUpdatedSuccess'));

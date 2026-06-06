@@ -144,18 +144,6 @@ export function ApiKeysSection() {
     }
   };
 
-    const _handleDeactivate = async (keyId: string) => {
-    try {
-      const token = await getAccessToken();
-      await apiKeysService.updateKey(token, keyId, { isActive: false });
-        toast.success(t('user', 'apiKeysDeactivated'));
-      await loadData();
-    } catch (error: any) {
-        console.error('Error deactivating:', error);
-        toast.error(error.message || t('user', 'apiKeysErrorDeactivating'));
-    }
-  };
-
   const handleDelete = async (keyId: string) => {
     try {
       const token = await getAccessToken();
