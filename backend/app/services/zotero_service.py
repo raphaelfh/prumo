@@ -325,8 +325,12 @@ class ZoteroService(LoggerMixin):
 
         url = f"{ZOTERO_API_BASE}{library_prefix}/items/{attachment_key}/file"
 
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
+        max_bytes = 50 * 1024 * 1024  # 50 MB
+
+        async with (
+            httpx.AsyncClient() as client,
+            client.stream(
+                "GET",
                 url,
                 headers={
                     "Zotero-API-Key": credentials["api_key"],
@@ -334,16 +338,30 @@ class ZoteroService(LoggerMixin):
                 },
                 timeout=60.0,
                 follow_redirects=True,
-            )
-
+            ) as response,
+        ):
             if not response.is_success:
                 raise ValueError(f"Download failed: {response.status_code}")
 
-            content = response.content
-            size_mb = len(content) / (1024 * 1024)
+            # Reject early when the server advertises an oversize body, before
+            # streaming a single byte.
+            declared = response.headers.get("Content-Length")
+            if declared and declared.isdigit() and int(declared) > max_bytes:
+                raise ValueError(
+                    f"Arquivo muito grande: {int(declared) / (1024 * 1024):.1f}MB. Maximo: 50MB"
+                )
 
-            if size_mb > 50:
-                raise ValueError(f"Arquivo muito grande: {size_mb:.1f}MB. Maximo: 50MB")
+            # Stream with a running-total cap so a missing/dishonest
+            # Content-Length can't OOM the worker — abort the moment we cross
+            # the limit instead of buffering the whole body first (#90).
+            chunks: list[bytes] = []
+            total = 0
+            async for chunk in response.aiter_bytes():
+                total += len(chunk)
+                if total > max_bytes:
+                    raise ValueError("Arquivo muito grande: maior que 50MB. Maximo: 50MB")
+                chunks.append(chunk)
+            content = b"".join(chunks)
 
             # Extrair filename do header
             content_disposition = response.headers.get("Content-Disposition", "")
