@@ -295,7 +295,7 @@ class SectionExtractionService(LoggerMixin):
             # session, not by a single AI call — failing it here would
             # break subsequent section extractions on the same run.
             if manage_lifecycle:
-                await self._runs.fail_run(run.id, str(e))
+                await self._rollback_then_fail_run(run.id, str(e))
             self.logger.error(
                 "section_extraction_failed",
                 trace_id=self.trace_id,
@@ -446,7 +446,7 @@ class SectionExtractionService(LoggerMixin):
                 sections=section_results,
             )
         except Exception as e:
-            await self._runs.fail_run(run.id, str(e))
+            await self._rollback_then_fail_run(run.id, str(e))
             self.logger.error(
                 "qa_extraction_failed",
                 trace_id=self.trace_id,
@@ -778,8 +778,35 @@ class SectionExtractionService(LoggerMixin):
             )
 
         except Exception as e:
-            await self._runs.fail_run(run.id, str(e))
+            await self._rollback_then_fail_run(run.id, str(e))
             raise
+
+    async def _rollback_then_fail_run(self, run_id: UUID, error: str) -> None:
+        """Mark a run failed after an error, rolling back the session first.
+
+        A DB-level error leaves the asyncpg session in a failed-transaction
+        state, so every subsequent statement raises ``InFailedSQLTransactionError``
+        — including ``fail_run`` itself, which would then leave the run stuck at
+        ``status='running'``. Roll back first so ``fail_run`` runs on a clean
+        session. Both calls are defensively guarded so neither masks the original
+        error. Mirrors ``ModelExtractionService`` (#88).
+        """
+        try:
+            await self.db.rollback()
+        except Exception:
+            self.logger.warning(
+                "section_extraction_rollback_failed",
+                trace_id=self.trace_id,
+                run_id=str(run_id),
+            )
+        try:
+            await self._runs.fail_run(run_id, error)
+        except Exception:
+            self.logger.error(
+                "section_extraction_mark_failed_error",
+                trace_id=self.trace_id,
+                run_id=str(run_id),
+            )
 
     async def _extract_section_with_memory(
         self,
@@ -893,7 +920,7 @@ class SectionExtractionService(LoggerMixin):
             }
 
         except Exception as e:
-            await self._runs.fail_run(run.id, str(e))
+            await self._rollback_then_fail_run(run.id, str(e))
             raise
 
     def _generate_extraction_summary(

@@ -16,6 +16,34 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.zotero_service import ZoteroService
 
 
+def _streaming_response(chunks, headers, counter=None):
+    """Build a mock httpx streaming response whose ``aiter_bytes`` yields ``chunks``.
+
+    ``counter['count']`` (when provided) is bumped per chunk consumed, so a test
+    can assert the body was aborted early instead of fully buffered.
+    """
+    resp = MagicMock()
+    resp.is_success = True
+    resp.headers = headers
+
+    async def _aiter():
+        for chunk in chunks:
+            if counter is not None:
+                counter["count"] += 1
+            yield chunk
+
+    resp.aiter_bytes = _aiter
+    return resp
+
+
+def _wire_stream(mock_client, mock_response):
+    """Wire ``patch('httpx.AsyncClient')`` so ``client.stream(...)`` yields the response."""
+    stream_cm = MagicMock()
+    stream_cm.__aenter__ = AsyncMock(return_value=mock_response)
+    stream_cm.__aexit__ = AsyncMock(return_value=False)
+    mock_client.return_value.__aenter__.return_value.stream = MagicMock(return_value=stream_cm)
+
+
 @pytest.fixture
 def mock_db():
     """Mock da sessão de banco."""
@@ -281,17 +309,14 @@ class TestZoteroServiceDownload:
         pdf_content = b"%PDF-1.4 fake pdf content"
 
         with patch("httpx.AsyncClient") as mock_client:
-            mock_response = MagicMock()
-            mock_response.is_success = True
-            mock_response.content = pdf_content
-            mock_response.headers = {
-                "Content-Type": "application/pdf",
-                "Content-Disposition": 'attachment; filename="paper.pdf"',
-            }
-
-            mock_client.return_value.__aenter__.return_value.get = AsyncMock(
-                return_value=mock_response
+            mock_response = _streaming_response(
+                chunks=[pdf_content],
+                headers={
+                    "Content-Type": "application/pdf",
+                    "Content-Disposition": 'attachment; filename="paper.pdf"',
+                },
             )
+            _wire_stream(mock_client, mock_response)
 
             result = await zotero_service.download_attachment("ATT123")
 
@@ -304,8 +329,9 @@ class TestZoteroServiceDownload:
         assert decoded == pdf_content
 
     @pytest.mark.asyncio
-    async def test_download_attachment_too_large(self, zotero_service, mock_repo):
-        """Testa erro com arquivo muito grande."""
+    async def test_download_attachment_too_large_aborts_early(self, zotero_service, mock_repo):
+        """#90: a body without a trustworthy Content-Length must abort the moment
+        the running total crosses 50MB — not after buffering the whole thing."""
         encrypted_key = zotero_service._encrypt("api-key")
 
         mock_integration = MagicMock()
@@ -314,18 +340,55 @@ class TestZoteroServiceDownload:
         mock_integration.library_type = "user"
         mock_repo.get_by_user = AsyncMock(return_value=mock_integration)
 
-        # Criar conteúdo maior que 50MB
-        large_content = b"x" * (51 * 1024 * 1024)
+        # A lazy generator of 10MB chunks; if fully drained it would be 1GB.
+        def chunk_stream():
+            for _ in range(100):
+                yield b"x" * (10 * 1024 * 1024)
+
+        counter = {"count": 0}
 
         with patch("httpx.AsyncClient") as mock_client:
-            mock_response = MagicMock()
-            mock_response.is_success = True
-            mock_response.content = large_content
-            mock_response.headers = {"Content-Type": "application/pdf"}
-
-            mock_client.return_value.__aenter__.return_value.get = AsyncMock(
-                return_value=mock_response
+            mock_response = _streaming_response(
+                chunks=chunk_stream(),
+                headers={"Content-Type": "application/pdf"},  # no Content-Length
+                counter=counter,
             )
+            _wire_stream(mock_client, mock_response)
 
             with pytest.raises(ValueError, match="muito grande"):
                 await zotero_service.download_attachment("ATT123")
+
+        # Crossed 50MB after the 6th 10MB chunk; must not have drained all 100.
+        assert counter["count"] <= 7
+
+    @pytest.mark.asyncio
+    async def test_download_attachment_rejects_oversize_content_length(
+        self, zotero_service, mock_repo
+    ):
+        """#90: an advertised oversize Content-Length is rejected before a single
+        byte of the body is streamed."""
+        encrypted_key = zotero_service._encrypt("api-key")
+
+        mock_integration = MagicMock()
+        mock_integration.zotero_user_id = "12345"
+        mock_integration.encrypted_api_key = encrypted_key
+        mock_integration.library_type = "user"
+        mock_repo.get_by_user = AsyncMock(return_value=mock_integration)
+
+        counter = {"count": 0}
+
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_response = _streaming_response(
+                chunks=[b"x"],
+                headers={
+                    "Content-Type": "application/pdf",
+                    "Content-Length": str(60 * 1024 * 1024),
+                },
+                counter=counter,
+            )
+            _wire_stream(mock_client, mock_response)
+
+            with pytest.raises(ValueError, match="muito grande"):
+                await zotero_service.download_attachment("ATT123")
+
+        assert counter["count"] == 0  # rejected before streaming the body
