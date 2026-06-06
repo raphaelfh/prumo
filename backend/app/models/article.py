@@ -105,7 +105,7 @@ class Article(BaseModel):
     # Metadata adicionais
     study_design: Mapped[str | None] = mapped_column(String, nullable=True)
     registration: Mapped[dict[str, Any]] = mapped_column(JSONB, default={}, nullable=True)
-    funding: Mapped[dict[str, Any]] = mapped_column(JSONB, default=[], nullable=True)
+    funding: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=True)
     conflicts_of_interest: Mapped[str | None] = mapped_column(Text, nullable=True)
     data_availability: Mapped[str | None] = mapped_column(Text, nullable=True)
 

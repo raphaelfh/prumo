@@ -78,7 +78,7 @@ class Project(BaseModel):
     review_title: Mapped[str | None] = mapped_column(Text, nullable=True)
     condition_studied: Mapped[str | None] = mapped_column(String, nullable=True)
     review_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
-    review_keywords: Mapped[dict[str, Any]] = mapped_column(JSONB, default=[], nullable=False)
+    review_keywords: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     eligibility_criteria: Mapped[dict[str, Any]] = mapped_column(JSONB, default={}, nullable=False)
     study_design: Mapped[dict[str, Any]] = mapped_column(JSONB, default={}, nullable=False)
     review_context: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -98,7 +98,7 @@ class Project(BaseModel):
         },
     )
 
-    review_type: Mapped[str] = mapped_column(
+    review_type: Mapped[str | None] = mapped_column(
         PostgreSQLEnumType("review_type"),
         default="interventional",
         nullable=True,
