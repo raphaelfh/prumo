@@ -9,6 +9,15 @@ Five tables back the proposal -> review -> consensus -> published lifecycle:
 
 All five share the (run_id, instance_id, field_id) coordinate system that
 identifies a single field on a single instance under a single Run.
+
+DB-level invariant (no ORM representation): migration
+``0023_workflow_article_coherence`` attaches a deferred ``CONSTRAINT
+TRIGGER`` (``trg_<table>_article_coherent``) to each of the five tables
+that rejects any row whose ``instance.article_id`` differs from its
+``run.article_id``. This is the defense-in-depth backstop for the
+service-layer ``assert_coords_coherent`` guard (issue #79, PR #189) —
+a direct SQL write or future writer that skips that helper still cannot
+land a cross-article workflow row.
 """
 
 from datetime import datetime
