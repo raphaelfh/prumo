@@ -9,13 +9,13 @@
 import {getComparisonStrategy} from '@/lib/comparison/orchestration';
 import {SingleInstanceComparison} from './SingleInstanceComparison';
 import {EntitySelectorComparison} from './EntitySelectorComparison';
-import type {ExtractionEntityType, ExtractionInstance} from '@/types/extraction';
+import type {ExtractionEntityTypeWithFields, ExtractionInstance} from '@/types/extraction';
 import type {OtherExtraction} from '@/hooks/extraction/colaboracao/useOtherExtractions';
 import type {ComparisonUser} from './ComparisonTable';
 import type {InstanceWithCreator} from '@/lib/comparison/grouping';
 
 export interface ComparisonSectionViewProps {
-  entityType: ExtractionEntityType;
+  entityType: ExtractionEntityTypeWithFields;
     instances: ExtractionInstance[]; // My instances
   myValues: Record<string, any>;
   otherExtractions: OtherExtraction[];

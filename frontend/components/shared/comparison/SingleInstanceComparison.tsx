@@ -10,6 +10,7 @@ import {useCallback, useMemo} from 'react';
 import {type ComparisonColumn, ComparisonTable, type ComparisonUser} from './ComparisonTable';
 import {extractInstanceValuesForUser} from '@/lib/comparison/grouping';
 import type {ComparisonSectionViewProps} from './ComparisonSectionView';
+import type {ExtractionField} from '@/types/extraction';
 import {t} from '@/lib/copy';
 
 export function SingleInstanceComparison(props: ComparisonSectionViewProps) {
@@ -17,8 +18,8 @@ export function SingleInstanceComparison(props: ComparisonSectionViewProps) {
 
     // IMPORTANT: All hooks must be called BEFORE any early return
     // Prepare columns (each field is a row)
-  const columns = useMemo<ComparisonColumn[]>(() => 
-    props.entityType.fields.map(field => ({
+  const columns = useMemo<ComparisonColumn[]>(() =>
+    props.entityType.fields.map((field: ExtractionField) => ({
       id: field.id,
       label: field.label,
       getValue: (fieldId: string, userData: Record<string, any>) => userData[fieldId],
@@ -83,7 +84,7 @@ export function SingleInstanceComparison(props: ComparisonSectionViewProps) {
   return (
     <ComparisonTable
       columns={columns}
-      rows={props.entityType.fields.map(f => f.id)}
+      rows={props.entityType.fields.map((f: ExtractionField) => f.id)}
       currentUser={props.currentUser}
       otherUsers={otherUsers}
       data={comparisonData}
