@@ -13,15 +13,15 @@ reviewer-states composite FK). Normal run/project deletion still CASCADE-drops
 both sides in one statement; RESTRICT only blocks a *direct* delete of a
 referenced reviewer decision, which is the correct, fail-loud behaviour.
 
-Revision ID: 0023_consensus_fk_restrict
-Revises: 0022_scope_model_progress_run
+Revision ID: 0024_consensus_fk_restrict
+Revises: 0023_workflow_article_coherence
 Create Date: 2026-06-04
 """
 
 from alembic import op
 
-revision = "0023_consensus_fk_restrict"
-down_revision = "0022_scope_model_progress_run"
+revision = "0024_consensus_fk_restrict"
+down_revision = "0023_workflow_article_coherence"
 branch_labels = None
 depends_on = None
 
