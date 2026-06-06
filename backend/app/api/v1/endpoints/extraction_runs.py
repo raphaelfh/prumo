@@ -9,7 +9,7 @@ the ones that drive consensus + publish later.
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps.security import ensure_project_member, get_current_user_sub
@@ -407,6 +407,7 @@ async def list_run_reviewers(
 async def reopen_run(
     run_id: UUID,
     request: Request,
+    response: Response,
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[RunSummaryResponse]:
@@ -421,7 +422,7 @@ async def reopen_run(
     service = RunLifecycleService(db)
     trace_id = _trace(request)
     try:
-        new_run = await service.reopen_run(run_id=run_id, user_id=current_user_sub)
+        new_run, created = await service.reopen_run(run_id=run_id, user_id=current_user_sub)
     except CannotReopenRunError as e:
         logger.warning(
             "hitl_reopen_rejected",
@@ -439,12 +440,17 @@ async def reopen_run(
         )
         raise HTTPException(status_code=404, detail=str(e)) from e
     await db.commit()
+    # 201 when a fresh revision was forked; 200 when an existing live child was
+    # resumed idempotently (mirrors POST /hitl/sessions). (#153)
+    if not created:
+        response.status_code = status.HTTP_200_OK
     logger.info(
         "hitl_run_reopened",
         trace_id=trace_id,
         old_run_id=str(run_id),
         new_run_id=str(new_run.id),
         new_stage=new_run.stage,
+        created=created,
     )
     return ApiResponse.success(
         RunSummaryResponse.model_validate(new_run),

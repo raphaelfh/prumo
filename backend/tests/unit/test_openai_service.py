@@ -103,6 +103,16 @@ class TestOpenAIService:
             assert result.usage.prompt_tokens == 100
             assert result.usage.completion_tokens == 50
 
+    def test_retry_decorator_lives_on_chat_completion_full(self) -> None:
+        """#89: the transient-error retry must sit on chat_completion_full so the
+        extraction services (which call it directly) get resilience — and NOT
+        also on chat_completion, which would double-retry (3x3=9 attempts).
+
+        tenacity attaches a ``retry`` attribute to the function it decorates.
+        """
+        assert hasattr(OpenAIService.chat_completion_full, "retry")
+        assert not hasattr(OpenAIService.chat_completion, "retry")
+
     @pytest.mark.asyncio
     async def test_chat_completion_handles_error(
         self,
