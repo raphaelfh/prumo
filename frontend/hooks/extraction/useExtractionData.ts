@@ -18,6 +18,7 @@ import type {Article} from '@/types/article';
 import type {Project} from '@/types/project';
 import type {
     ExtractionEntityTypeWithFields,
+    ExtractionField,
     ExtractionInstance,
     ProjectExtractionTemplate
 } from '@/types/extraction';

@@ -41,7 +41,7 @@ async function readFormViewportScroll(page: Page): Promise<number> {
 async function dispatchValueUpdate(page: Page, key: string): Promise<void> {
   await page.evaluate(async (entryKey) => {
     const mod = await import(
-      "/frontend/lib/extraction/valueUpdates.ts"
+      "@/lib/extraction/valueUpdates"
     );
     mod.dispatchValueUpdates([entryKey]);
   }, key);

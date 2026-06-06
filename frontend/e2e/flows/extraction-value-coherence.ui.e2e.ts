@@ -75,7 +75,7 @@ test.describe("Extraction value coherence (H1+H2 end-to-end)", () => {
     await loginViaUi(page);
     const token = await resolveAuthToken(page);
     const userId = await page.evaluate(async () => {
-      const { supabase } = await import("/frontend/integrations/supabase/client.ts");
+      const { supabase } = await import("@/integrations/supabase/client");
       const { data } = await supabase.auth.getUser();
       return data.user?.id ?? null;
     });
