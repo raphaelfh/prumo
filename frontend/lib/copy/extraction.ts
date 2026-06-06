@@ -729,7 +729,6 @@ export const extraction = {
     fieldEditorTitle: 'Field editor',
     fieldEditorDesc: 'Fill in values for the selected instance',
     // ExtractionExportDialog (009-extraction-excel-export)
-    exportButton: 'Export',
     exportDialogTitle: 'Export extraction data',
     exportDialogSubtitle: 'Export extracted data from the active template as an Excel workbook (.xlsx).',
     exportSourceLabel: 'Source of values',
