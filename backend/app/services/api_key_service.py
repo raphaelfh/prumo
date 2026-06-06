@@ -397,7 +397,9 @@ class APIKeyService(LoggerMixin):
                 provider=provider,
                 error=str(e),
             )
-            return {"status": "pending", "message": f"Validation error: {str(e)}"}
+            # Defense-in-depth: never echo the raw exception to the client. Transport
+            # errors can embed request details; the full error is in the log above.
+            return {"status": "pending", "message": "Validation error: could not reach provider"}
 
     async def _validate_openai(self, api_key: str) -> dict[str, Any]:
         """Validate OpenAI API key by listing models."""
@@ -450,8 +452,12 @@ class APIKeyService(LoggerMixin):
     async def _validate_gemini(self, api_key: str) -> dict[str, Any]:
         """Validate Google Gemini API key."""
         async with httpx.AsyncClient() as client:
+            # Pass the key as a header, never in the URL query string: httpx embeds
+            # the full URL in transport-error messages, which would leak the secret
+            # into logs and the validation response. Mirrors the other providers.
             response = await client.get(
-                f"https://generativelanguage.googleapis.com/v1/models?key={api_key}",
+                "https://generativelanguage.googleapis.com/v1/models",
+                headers={"x-goog-api-key": api_key},
                 timeout=10.0,
             )
 
