@@ -199,9 +199,10 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     // Hook for batch AI extraction
   const { extractFullAI, loading: isExtracting } = useFullAIExtraction({
     onSuccess: async () => {
-        // Reload articles after extraction
+        // Refresh only — useFullAIExtraction owns every user-facing toast
+        // (success / no-models warning / partial-failure), so firing one here
+        // produced a false-success toast on the failure and no-models paths.
       await loadArticles();
-        toast.success(t('extraction', 'tableExtractionSuccess'));
     },
   });
 

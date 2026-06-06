@@ -122,6 +122,10 @@ export default function ProjectView() {
 
     const [articles, setArticles] = useState<ProjectArticle[]>([]);
   const [loading, setLoading] = useState(true);
+  // Generation counter: a project navigation bumps it so an in-flight load for
+  // the previous projectId resolves into a no-op instead of overwriting the
+  // current project's data (#110).
+  const projectLoadRef = useRef(0);
     const [zoteroDialogOpen, setZoteroDialogOpen] = useState(false);
     const [risDialogOpen, setRisDialogOpen] = useState(false);
     const articlesListRef = useRef<ArticlesListHandle>(null);
@@ -206,15 +210,26 @@ export default function ProjectView() {
     }, [activeTab, searchParams, setSearchParams]);
 
   useEffect(() => {
-    if (projectId) {
-      loadProject();
-      loadArticles();
-    }
+    if (!projectId) return;
+    // New project selected: bump the generation so any in-flight load for the
+    // previous project resolves into a no-op, and show the spinner again
+    // instead of leaving the old project's data on screen (#110).
+    projectLoadRef.current += 1;
+    setLoading(true);
+    void loadProject();
+    void loadArticles();
+    return () => {
+      // Invalidate in-flight loads on projectId change / unmount.
+      projectLoadRef.current += 1;
+    };
   }, [projectId]);
 
   const loadProject = async () => {
     if (!projectId) return;
-    
+    // Captured synchronously before the first await; both loaders read the same
+    // post-bump value because the effect bumps once before calling them.
+    const generation = projectLoadRef.current;
+
     try {
       const { data, error } = await supabase
         .from("projects")
@@ -228,18 +243,21 @@ export default function ProjectView() {
         .single();
 
       if (error) throw error;
+      if (generation !== projectLoadRef.current) return;
       setContextProject(data);
     } catch (error: any) {
+      if (generation !== projectLoadRef.current) return;
         toast.error("Error loading project");
       console.error(error);
     } finally {
-      setLoading(false);
+      if (generation === projectLoadRef.current) setLoading(false);
     }
   };
 
   const loadArticles = async () => {
     if (!projectId) return;
-    
+    const generation = projectLoadRef.current;
+
     try {
       const { data, error } = await supabase
         .from("articles")
@@ -248,6 +266,7 @@ export default function ProjectView() {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
+      if (generation !== projectLoadRef.current) return;
       setArticles(data || []);
     } catch (error: any) {
       console.error(error);
