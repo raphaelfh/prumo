@@ -149,7 +149,8 @@ export function AddSectionDialog({
           cardinality: data.cardinality,
           sort_order: nextSortOrder,
           is_required: data.is_required,
-            parent_entity_type_id: null // New section is always ROOT
+          parent_entity_type_id: null, // New section is always ROOT
+          role: 'study_section' as const,
         })
         .select()
         .single();
@@ -232,7 +233,6 @@ export function AddSectionDialog({
                       <Switch
                         checked={autoGenerateName}
                         onCheckedChange={setAutoGenerateName}
-                        size="sm"
                       />
                       <span className="text-xs text-muted-foreground">Auto</span>
                     </div>

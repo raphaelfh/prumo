@@ -48,7 +48,7 @@ export interface ComparisonColumn<T = any> {
 export interface ComparisonUser {
   userId: string;
   userName: string;
-  userAvatar?: string;
+  userAvatar?: string | null;
   isCurrentUser?: boolean;
 }
 

@@ -2,6 +2,7 @@ import {useState} from 'react';
 import {supabase} from '@/integrations/supabase/client';
 import {detectFileFormat, generateStorageKey, validateFile} from '@/lib/file-validation';
 import {FILE_ERROR_MESSAGES} from '@/lib/file-constants';
+import type {FileRole} from '@/lib/file-constants';
 import type {ArticleFileInsert, FileUploadProgress, FileUploadResult} from '@/types/article-files';
 
 /**
@@ -27,7 +28,7 @@ export function useFileUpload() {
     file: File,
     projectId: string,
     articleId: string,
-    fileRole: string
+    fileRole: FileRole
   ): Promise<FileUploadResult> => {
       // Validate file and detect format automatically
     const validation = validateFile(file);
@@ -102,7 +103,7 @@ export function useFileUpload() {
     files: File[],
     projectId: string,
     articleId: string,
-    fileRole: string
+    fileRole: FileRole
   ) => {
     setUploading(true);
     

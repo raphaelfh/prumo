@@ -31,14 +31,14 @@ import {toast} from "sonner";
 import {AlertCircle, CheckCircle, Clock, FileCheck, FileText, Loader2, Plus, Upload, X} from "lucide-react";
 import {useAuth} from "@/contexts/AuthContext";
 import {supabase} from "@/integrations/supabase/client";
-import {FILE_ROLE_DESCRIPTIONS, FILE_ROLE_LABELS, FILE_ROLES, FILE_UPLOAD_CONFIG} from "@/lib/file-constants";
+import {FILE_ROLE_DESCRIPTIONS, FILE_ROLE_LABELS, FILE_ROLES, FILE_UPLOAD_CONFIG, type FileRole} from "@/lib/file-constants";
 import {detectFileFormat, formatFileSize, generateStorageKey, validateFile} from "@/lib/file-validation";
 import {t} from "@/lib/copy";
 
 interface FileWithRole {
   id: string;
   file: File;
-  role: string;
+  role: FileRole;
   preview?: string;
   status: 'pending' | 'uploading' | 'completed' | 'error';
   progress: number;
@@ -175,7 +175,7 @@ export function ArticleFileUploadDialogNew({
   }, [updateStats]);
 
     // Update file role
-  const updateFileRole = useCallback((fileId: string, role: string) => {
+  const updateFileRole = useCallback((fileId: string, role: FileRole) => {
     setFiles(prev => prev.map(f => 
       f.id === fileId ? { ...f, role } : f
     ));
@@ -344,7 +344,7 @@ export function ArticleFileUploadDialogNew({
             .filter(f => f.status === 'error' && f.error)
             .map(f => f.error)
             .join('; ');
-            toast.error(t('articles', 'uploadFilesError') + ': ' + (errorMessages || error.message || t('articles', 'errorUnknown')));
+            toast.error(t('articles', 'uploadFilesError') + ': ' + (errorMessages || t('articles', 'errorUnknown')));
         } else if (failedFiles > 0) {
           // Alguns falharam, alguns sucederam
             toast.warning(t('articles', 'uploadPartialCount').replace('{{completed}}', String(completedFiles)).replace('{{failed}}', String(failedFiles)));
@@ -529,7 +529,7 @@ export function ArticleFileUploadDialogNew({
                                   </Label>
                                   <Select
                                     value={fileWithRole.role}
-                                    onValueChange={(value) => updateFileRole(fileWithRole.id, value)}
+                                    onValueChange={(value) => updateFileRole(fileWithRole.id, value as FileRole)}
                                     disabled={isUploading}
                                   >
                                     <SelectTrigger className="w-full sm:w-48 h-8 text-xs">

@@ -244,28 +244,17 @@ class ModelExtractionService(LoggerMixin):
             )
 
         except Exception as e:
-            # Issue #21: any DB-level error during instance creation aborts
-            # the session — every subsequent statement on `self.db` will
-            # raise InFailedSQLTransactionError. Rollback once so the
-            # follow-up `fail_run()` runs on a clean session and the run is
-            # actually marked as failed in the DB (no more orphaned
-            # status='running' rows).
-            try:
-                await self.db.rollback()
-            except Exception:
-                self.logger.warning(
-                    "model_extraction_rollback_failed",
-                    trace_id=self.trace_id,
-                    run_id=str(run.id),
-                )
-            try:
-                await self._runs.fail_run(run.id, str(e))
-            except Exception:
-                self.logger.error(
-                    "model_extraction_mark_failed_error",
-                    trace_id=self.trace_id,
-                    run_id=str(run.id),
-                )
+            # Issue #21: a DB-level error during instance creation aborts the
+            # session, so roll back before marking the run failed (otherwise
+            # fail_run hits InFailedSQLTransactionError and leaves an orphaned
+            # status='running' row). Shared with SectionExtractionService.
+            await self._runs.rollback_and_fail(
+                run.id,
+                str(e),
+                logger=self.logger,
+                trace_id=self.trace_id,
+                log_prefix="model_extraction",
+            )
             self.logger.error(
                 "model_extraction_failed",
                 trace_id=self.trace_id,

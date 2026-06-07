@@ -1096,7 +1096,6 @@ export default function ExtractionFullScreen() {
         }}
         template={template}
         instances={instances}
-        values={values}
         onRefreshInstances={handleRefreshInstances}
         onExtractionStateChange={setAiExtractionState}
       />

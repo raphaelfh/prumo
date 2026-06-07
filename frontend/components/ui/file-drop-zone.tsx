@@ -12,7 +12,7 @@
 import React, {useCallback, useRef, useState} from 'react';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
-import {AlertCircle, File, FileIcon, Upload, X} from 'lucide-react';
+import {AlertCircle, FileIcon, Upload, X} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Alert, AlertDescription} from '@/components/ui/alert';
 

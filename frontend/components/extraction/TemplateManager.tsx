@@ -5,7 +5,7 @@
  * e gerenciar templates ativos do projeto.
  */
 
-import React, {useState} from 'react';
+import {useState} from 'react';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
@@ -39,7 +39,7 @@ export function TemplateManager({
   activeTemplate,
   onTemplateSelect,
   onTemplateClone,
-  onTemplateCreate,
+  onTemplateCreate: _onTemplateCreate,
   loading
 }: TemplateManagerProps) {
   const [showCloneDialog, setShowCloneDialog] = useState(false);
@@ -58,14 +58,6 @@ export function TemplateManager({
       onTemplateSelect(result);
     } else {
         toast.error(t('extraction', 'cloneError'));
-    }
-  };
-
-    const _handleCreateTemplate = async (name: string, description: string, framework: 'CHARMS' | 'PICOS' | 'CUSTOM') => {
-    const result = await onTemplateCreate(name, description, framework);
-    if (result) {
-      setShowCreateDialog(false);
-      onTemplateSelect(result);
     }
   };
 

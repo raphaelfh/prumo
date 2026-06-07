@@ -121,11 +121,6 @@ class OpenAIService(LoggerMixin):
             await self._client.aclose()
             self._client = None
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type((httpx.TimeoutException, httpx.NetworkError)),
-    )
     async def chat_completion(
         self,
         messages: list[dict[str, Any]],
@@ -156,6 +151,11 @@ class OpenAIService(LoggerMixin):
         )
         return response.content
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type((httpx.TimeoutException, httpx.NetworkError)),
+    )
     async def chat_completion_full(
         self,
         messages: list[dict[str, Any]],
@@ -168,6 +168,11 @@ class OpenAIService(LoggerMixin):
         Execute chat completion with full metadata.
 
         Returns object with content, usage, and metadata.
+
+        The transient-error retry lives here (not on ``chat_completion``) so that
+        callers hitting this method directly — the extraction services — get the
+        same resilience. ``chat_completion`` / ``chat_completion_structured``
+        delegate here, so the retry applies once across every path (#89).
         """
         start_time = time.time()
 

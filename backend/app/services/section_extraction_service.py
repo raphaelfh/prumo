@@ -295,7 +295,13 @@ class SectionExtractionService(LoggerMixin):
             # session, not by a single AI call — failing it here would
             # break subsequent section extractions on the same run.
             if manage_lifecycle:
-                await self._runs.fail_run(run.id, str(e))
+                await self._runs.rollback_and_fail(
+                    run.id,
+                    str(e),
+                    logger=self.logger,
+                    trace_id=self.trace_id,
+                    log_prefix="section_extraction",
+                )
             self.logger.error(
                 "section_extraction_failed",
                 trace_id=self.trace_id,
@@ -446,7 +452,13 @@ class SectionExtractionService(LoggerMixin):
                 sections=section_results,
             )
         except Exception as e:
-            await self._runs.fail_run(run.id, str(e))
+            await self._runs.rollback_and_fail(
+                run.id,
+                str(e),
+                logger=self.logger,
+                trace_id=self.trace_id,
+                log_prefix="section_extraction",
+            )
             self.logger.error(
                 "qa_extraction_failed",
                 trace_id=self.trace_id,
@@ -778,7 +790,13 @@ class SectionExtractionService(LoggerMixin):
             )
 
         except Exception as e:
-            await self._runs.fail_run(run.id, str(e))
+            await self._runs.rollback_and_fail(
+                run.id,
+                str(e),
+                logger=self.logger,
+                trace_id=self.trace_id,
+                log_prefix="section_extraction",
+            )
             raise
 
     async def _extract_section_with_memory(
@@ -893,7 +911,13 @@ class SectionExtractionService(LoggerMixin):
             }
 
         except Exception as e:
-            await self._runs.fail_run(run.id, str(e))
+            await self._runs.rollback_and_fail(
+                run.id,
+                str(e),
+                logger=self.logger,
+                trace_id=self.trace_id,
+                log_prefix="section_extraction",
+            )
             raise
 
     def _generate_extraction_summary(

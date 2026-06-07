@@ -143,6 +143,7 @@ export interface ExtractionInstance {
   parent_instance_id: string | null;
   label: string;
   sort_order: number;
+  status: 'pending' | 'in_progress' | 'completed' | 'reviewed' | 'archived';
   metadata: any;
   created_by: string;
   created_at: string;

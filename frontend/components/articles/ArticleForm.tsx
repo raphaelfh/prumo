@@ -102,7 +102,7 @@ interface Article {
 interface ArticleFile {
   id: string;
   file_type: string;
-  file_role: string;
+  file_role: string | null;
   storage_key: string;
   original_filename: string | null;
   bytes: number | null;
@@ -498,26 +498,24 @@ export function ArticleForm({
           sync_state: mode === 'add' ? "active" : undefined,
       };
 
-        let _result;
       if (mode === 'add') {
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from("articles")
           .insert([articleData])
           .select()
           .single();
-        
+
         if (error) throw error;
-          _result = data;
       } else {
-        const { data, error } = await supabase
+        if (!articleId) throw new Error("articleId is required for edit mode");
+        const { error } = await supabase
           .from("articles")
           .update(articleData)
           .eq("id", articleId)
           .select()
           .single();
-        
+
         if (error) throw error;
-          _result = data;
       }
 
         toast.success(mode === 'add' ? t('articles', 'articleCreatedSuccess') : t('articles', 'articleUpdatedSuccess'));

@@ -32,7 +32,7 @@ import type {
     ZoteroImportJob,
 } from '@/types/background-jobs';
 import {t} from '@/lib/copy';
-import {getExportStatus as getArticlesExportStatus} from '@/services/articlesExportService';
+import {getExportStatus as getArticlesExportStatus, type ExportStatusResponse} from '@/services/articlesExportService';
 import {getExportStatus as getExtractionExportStatus} from '@/services/extractionExportService';
 
 export function NotificationCenter() {
@@ -71,6 +71,7 @@ export function NotificationCenter() {
                                         job.metadata.backendJobId,
                                     );
                             const nextStatus = status.status === 'pending' ? 'running' : status.status;
+                            const exportStatus = status as ExportStatusResponse;
                             updateJob(job.id, {
                                 status: nextStatus,
                                 startedAt: job.startedAt ?? Date.now(),
@@ -81,12 +82,12 @@ export function NotificationCenter() {
                                         ? Date.now()
                                         : undefined,
                                 error: status.error,
-                                progress: 'progress' in status && status.progress
+                                progress: exportStatus.progress
                                     ? {
-                                        phase: status.progress.stage,
-                                        current: status.progress.current,
-                                        total: status.progress.total,
-                                        message: status.progress.stage,
+                                        phase: exportStatus.progress.stage,
+                                        current: exportStatus.progress.current,
+                                        total: exportStatus.progress.total,
+                                        message: exportStatus.progress.stage,
                                     }
                                     : undefined,
                                 metadata: {
@@ -94,10 +95,8 @@ export function NotificationCenter() {
                                     downloadUrl: status.download_url ?? job.metadata.downloadUrl,
                                 },
                                 stats:
-                                    'skipped_files' in status &&
-                                    status.skipped_files &&
-                                    status.skipped_files.length > 0
-                                        ? {skipped: status.skipped_files.length}
+                                    exportStatus.skipped_files && exportStatus.skipped_files.length > 0
+                                        ? {skipped: exportStatus.skipped_files.length}
                                         : undefined,
                             });
                         } catch (error) {

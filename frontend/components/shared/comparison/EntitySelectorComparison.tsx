@@ -27,6 +27,7 @@ import {type ComparisonColumn, ComparisonTable, type ComparisonUser} from './Com
 import {extractInstanceValuesForUser, groupInstancesByLabel} from '@/lib/comparison/grouping';
 import {t} from '@/lib/copy';
 import type {ComparisonSectionViewProps} from './ComparisonSectionView';
+import type {ExtractionField} from '@/types/extraction';
 
 export function EntitySelectorComparison(props: ComparisonSectionViewProps) {
     // Group instances by label (use real DB instances)
@@ -57,8 +58,8 @@ export function EntitySelectorComparison(props: ComparisonSectionViewProps) {
   );
 
     // Prepare columns
-  const columns = useMemo<ComparisonColumn[]>(() => 
-    props.entityType.fields.map(field => ({
+  const columns = useMemo<ComparisonColumn[]>(() =>
+    props.entityType.fields.map((field: ExtractionField) => ({
       id: field.id,
       label: field.label,
       getValue: (fieldId: string, userData: Record<string, any>) => userData[fieldId],
@@ -92,10 +93,10 @@ export function EntitySelectorComparison(props: ComparisonSectionViewProps) {
     // Prepare user list (only those who have this entity)
   const usersWithEntity = useMemo<ComparisonUser[]>(() => {
     if (!activeEntity) return [];
-    
+
     const users: ComparisonUser[] = [];
-    
-    activeEntity.instancesByUser.forEach((instanceId, userId) => {
+
+    activeEntity.instancesByUser.forEach((_instanceId, userId) => {
       if (userId === props.currentUser.userId) {
         users.push(props.currentUser);
       } else {
@@ -194,7 +195,7 @@ export function EntitySelectorComparison(props: ComparisonSectionViewProps) {
       {activeEntity && (
         <ComparisonTable
           columns={columns}
-          rows={props.entityType.fields.map(f => f.id)}
+          rows={props.entityType.fields.map((f: ExtractionField) => f.id)}
           currentUser={props.currentUser}
           otherUsers={usersWithEntity.filter(u => !u.isCurrentUser)}
           data={comparisonData}

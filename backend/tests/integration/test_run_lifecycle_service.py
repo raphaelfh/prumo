@@ -306,7 +306,8 @@ async def test_reopen_after_cancelled_child_creates_fresh_run(
     await db_session.refresh(parent)
 
     # Step 2: Reopen → child B in REVIEW.
-    child_b = await service.reopen_run(run_id=parent.id, user_id=profile_id)
+    child_b, created_b = await service.reopen_run(run_id=parent.id, user_id=profile_id)
+    assert created_b is True  # fresh fork
     assert child_b.stage == ExtractionRunStage.REVIEW.value
     child_b_id = child_b.id
 
@@ -318,7 +319,8 @@ async def test_reopen_after_cancelled_child_creates_fresh_run(
     )
 
     # Step 4: Reopen A again — must produce a NEW child C, not return B.
-    child_c = await service.reopen_run(run_id=parent.id, user_id=profile_id)
+    child_c, created_c = await service.reopen_run(run_id=parent.id, user_id=profile_id)
+    assert created_c is True  # the cancelled child is not reused → a new fork
     assert child_c.id != child_b_id, "reopen_run returned the cancelled child instead of a new run"
     assert child_c.stage == ExtractionRunStage.REVIEW.value
 

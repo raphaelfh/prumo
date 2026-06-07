@@ -165,6 +165,46 @@ class ExtractionRunRepository(BaseRepository[ExtractionRun]):
         )
         return await self.get_by_id(run_id)
 
+    async def rollback_and_fail(
+        self,
+        run_id: UUID,
+        error_message: str,
+        *,
+        logger: Any,
+        trace_id: str | None,
+        log_prefix: str,
+    ) -> None:
+        """Roll back a failed transaction, then mark the run failed.
+
+        A DB-level error leaves the asyncpg session in a failed-transaction
+        state, so every subsequent statement raises
+        ``InFailedSQLTransactionError`` — including ``fail_run`` itself, which
+        would then leave the run stuck at ``status='running'``. Roll back first
+        so ``fail_run`` runs on a clean session. Both calls are defensively
+        guarded so neither masks the original error.
+
+        ``logger``/``trace_id``/``log_prefix`` are supplied by the calling
+        service so the guard-failure events keep their service-specific names
+        and bound context (e.g. ``log_prefix='section_extraction'`` →
+        ``section_extraction_rollback_failed``).
+        """
+        try:
+            await self.db.rollback()
+        except Exception:
+            logger.warning(
+                f"{log_prefix}_rollback_failed",
+                trace_id=trace_id,
+                run_id=str(run_id),
+            )
+        try:
+            await self.fail_run(run_id, error_message)
+        except Exception:
+            logger.error(
+                f"{log_prefix}_mark_failed_error",
+                trace_id=trace_id,
+                run_id=str(run_id),
+            )
+
     async def get_by_article(
         self,
         article_id: UUID,

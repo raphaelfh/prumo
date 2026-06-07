@@ -372,7 +372,9 @@ async def test_concurrent_reopen_does_not_fork_multiple_children(
         parent_id = run.id
 
     async def _reopen(session: AsyncSession) -> UUID:
-        child = await RunLifecycleService(session).reopen_run(run_id=parent_id, user_id=profile_id)
+        child, _ = await RunLifecycleService(session).reopen_run(
+            run_id=parent_id, user_id=profile_id
+        )
         await session.commit()
         return child.id
 

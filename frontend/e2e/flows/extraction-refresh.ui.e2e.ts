@@ -41,6 +41,9 @@ async function readFormViewportScroll(page: Page): Promise<number> {
 async function dispatchValueUpdate(page: Page, key: string): Promise<void> {
   await page.evaluate(async (entryKey) => {
     const mod = await import(
+      // @ts-expect-error — runtime browser import served by the Vite dev server
+      // at the repo root; the "@/" alias is build-time only and does not resolve
+      // inside page.evaluate().
       "/frontend/lib/extraction/valueUpdates.ts"
     );
     mod.dispatchValueUpdates([entryKey]);

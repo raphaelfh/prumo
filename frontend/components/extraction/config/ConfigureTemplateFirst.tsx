@@ -4,7 +4,6 @@
  * a template before starting extractions.
  */
 
-import React from 'react';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {ArrowRight, Download, FileStack, PlusCircle, Settings} from 'lucide-react';

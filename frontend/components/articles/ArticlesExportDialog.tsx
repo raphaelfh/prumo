@@ -21,6 +21,7 @@ import {RadioGroup, RadioGroupItem} from "@/components/ui/radio-group";
 import {toast} from "sonner";
 import {Loader2} from "lucide-react";
 import {t} from "@/lib/copy";
+import type {ArticlesCopy} from "@/lib/copy/articles";
 import {
     startExport,
     type ExportFormat,
@@ -30,13 +31,13 @@ import {
 import {useBackgroundJobs} from "@/stores/useBackgroundJobs";
 import {createArticlesExportJob} from "@/types/background-jobs";
 
-const FORMATS: { id: ExportFormat; labelKey: string }[] = [
+const FORMATS: { id: ExportFormat; labelKey: keyof ArticlesCopy }[] = [
     {id: "csv", labelKey: "exportFormatCsv"},
     {id: "ris", labelKey: "exportFormatRis"},
     {id: "rdf", labelKey: "exportFormatRdf"},
 ];
 
-const FILE_SCOPES: { id: FileScope; labelKey: string }[] = [
+const FILE_SCOPES: { id: FileScope; labelKey: keyof ArticlesCopy }[] = [
     {id: "none", labelKey: "exportFileScopeNone"},
     {id: "main_only", labelKey: "exportFileScopeMainOnly"},
     {id: "all", labelKey: "exportFileScopeAll"},

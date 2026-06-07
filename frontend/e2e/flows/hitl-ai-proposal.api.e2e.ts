@@ -116,6 +116,7 @@ test.describe("HITL AI proposal pipeline", () => {
       }
     }
     test.skip(!instance || !field, "No (instance, field) coordinate available");
+    if (!instance || !field) throw new Error("No (instance, field) coordinate — test.skip should have exited");
 
     // 1. Create a fresh run.
     const createRes = await request.post(`${env.apiUrl}/api/v1/runs`, {

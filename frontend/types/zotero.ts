@@ -15,7 +15,7 @@ export interface ZoteroIntegration {
   id: string;
   user_id: string;
   zotero_user_id: string;
-  library_type: 'user' | 'group';
+  library_type: string;
   is_active: boolean;
   last_sync_at: string | null;
   created_at: string;

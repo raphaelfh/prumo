@@ -24,8 +24,8 @@ export interface GroupedEntity {
  * Uses real DB instances instead of inferring
  */
 export function groupInstancesByLabel(
-  myInstances: ExtractionInstance[],
-  myUserId: string,
+  _myInstances: ExtractionInstance[],
+  _myUserId: string,
   allUserInstances: InstanceWithCreator[], // Real instances from DB
   entityTypeId: string
 ): GroupedEntity[] {

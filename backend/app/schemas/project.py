@@ -147,7 +147,7 @@ class ProjectResponse(BaseModel):
     eligibility_criteria: dict[str, Any] = Field(default={}, alias="eligibilityCriteria")
     study_design: dict[str, Any] = Field(default={}, alias="studyDesign")
 
-    review_type: str = Field(default="interventional", alias="reviewType")
+    review_type: str | None = Field(default="interventional", alias="reviewType")
     picots_config_ai_review: PICOTSConfig | None = Field(
         default=None,
         alias="picotsConfigAiReview",
@@ -225,7 +225,7 @@ class ProjectListItem(BaseModel):
     name: str
     description: str | None = None
     is_active: bool = Field(..., alias="isActive")
-    review_type: str = Field(default="interventional", alias="reviewType")
+    review_type: str | None = Field(default="interventional", alias="reviewType")
 
     articles_count: int = Field(default=0, alias="articlesCount")
     members_count: int = Field(default=0, alias="membersCount")

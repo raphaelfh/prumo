@@ -9,7 +9,7 @@ Testa funcionalidades de extração de seções:
 """
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -1583,7 +1583,7 @@ class TestExtractSectionException:
         service._lifecycle.create_run = AsyncMock(return_value=run)
         service._lifecycle.advance_stage = AsyncMock(return_value=run)
         service._runs.start_run = AsyncMock()
-        service._runs.fail_run = AsyncMock()
+        service._runs.rollback_and_fail = AsyncMock()
 
         service._article_files.get_latest_pdf = AsyncMock(
             side_effect=RuntimeError("pdf fetch failed")
@@ -1597,7 +1597,15 @@ class TestExtractSectionException:
                 entity_type_id=uuid4(),
             )
 
-        service._runs.fail_run.assert_awaited_once_with(run.id, "pdf fetch failed")
+        # The service delegates rollback-then-fail to the repository (mechanics
+        # covered by test_extraction_run_repository).
+        service._runs.rollback_and_fail.assert_awaited_once_with(
+            run.id,
+            "pdf fetch failed",
+            logger=ANY,
+            trace_id=service.trace_id,
+            log_prefix="section_extraction",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1733,7 +1741,7 @@ class TestExtractAllSections:
         service._lifecycle.create_run = AsyncMock(return_value=run)
         service._lifecycle.advance_stage = AsyncMock(return_value=run)
         service._runs.start_run = AsyncMock()
-        service._runs.fail_run = AsyncMock()
+        service._runs.rollback_and_fail = AsyncMock()
 
         # Make the PDF fetch explode unexpectedly (before any section loops)
         service._instances.get_by_id = AsyncMock(side_effect=RuntimeError("db exploded"))
@@ -1747,7 +1755,7 @@ class TestExtractAllSections:
                 pdf_text="text",
             )
 
-        service._runs.fail_run.assert_awaited_once()
+        service._runs.rollback_and_fail.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
