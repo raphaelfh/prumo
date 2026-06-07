@@ -237,7 +237,6 @@ export class ExtractionInstanceService {
         if (isValidationError) {
           throw new SupabaseRepositoryError(
               `Validation error: ${errorMessage}. Check the template hierarchy and entity cardinality.`,
-            error.code,
             error.originalError
           );
         }

@@ -5,6 +5,14 @@
  */
 import { useCallback, useMemo, useState } from 'react';
 
+/** Minimal interface for the ImageCapture Web API (not in all TS DOM lib versions). */
+interface ImageCaptureApi {
+  grabFrame(): Promise<ImageBitmap>;
+}
+interface ImageCaptureCtor {
+  new (track: MediaStreamTrack): ImageCaptureApi;
+}
+
 function stopStream(stream: MediaStream) {
   for (const track of stream.getTracks()) track.stop();
 }
@@ -36,7 +44,7 @@ export function useScreenCapture(): ScreenCapture {
       // Grab one frame. ImageCapture is the modern path; fall back to a
       // <video>+<canvas> draw when unavailable.
       const track = stream.getVideoTracks()[0];
-      const ImageCaptureCtor = (window as unknown as { ImageCapture?: typeof ImageCapture }).ImageCapture;
+      const ImageCaptureCtor = (window as unknown as { ImageCapture?: ImageCaptureCtor }).ImageCapture;
       if (ImageCaptureCtor && track) {
         const bitmap = await new ImageCaptureCtor(track).grabFrame();
         const canvas = document.createElement('canvas');

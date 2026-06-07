@@ -32,7 +32,7 @@ import type {
     ZoteroImportJob,
 } from '@/types/background-jobs';
 import {t} from '@/lib/copy';
-import {getExportStatus as getArticlesExportStatus} from '@/services/articlesExportService';
+import {getExportStatus as getArticlesExportStatus, type ExportStatusResponse} from '@/services/articlesExportService';
 import {getExportStatus as getExtractionExportStatus} from '@/services/extractionExportService';
 
 export function NotificationCenter() {
@@ -81,12 +81,12 @@ export function NotificationCenter() {
                                         ? Date.now()
                                         : undefined,
                                 error: status.error,
-                                progress: 'progress' in status && status.progress
+                                progress: 'progress' in status && (status as ExportStatusResponse).progress
                                     ? {
-                                        phase: status.progress.stage,
-                                        current: status.progress.current,
-                                        total: status.progress.total,
-                                        message: status.progress.stage,
+                                        phase: (status as ExportStatusResponse).progress!.stage,
+                                        current: (status as ExportStatusResponse).progress!.current,
+                                        total: (status as ExportStatusResponse).progress!.total,
+                                        message: (status as ExportStatusResponse).progress!.stage,
                                     }
                                     : undefined,
                                 metadata: {
@@ -95,9 +95,9 @@ export function NotificationCenter() {
                                 },
                                 stats:
                                     'skipped_files' in status &&
-                                    status.skipped_files &&
-                                    status.skipped_files.length > 0
-                                        ? {skipped: status.skipped_files.length}
+                                    (status as ExportStatusResponse).skipped_files &&
+                                    (status as ExportStatusResponse).skipped_files!.length > 0
+                                        ? {skipped: (status as ExportStatusResponse).skipped_files!.length}
                                         : undefined,
                             });
                         } catch (error) {
