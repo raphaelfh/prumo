@@ -9,18 +9,25 @@
  */
 
 import {supabase} from '@/integrations/supabase/client';
-import type {PostgrestFilterBuilder} from '@supabase/postgrest-js';
+
+// Helper function — used only to derive the PostgrestFilterBuilder type for
+// extraction_entity_types. The runtime-string overload matches what buildQuery
+// uses internally (supabase.from(...).select(string_var)).
+function _eetQueryFactory(col: string) {
+  return supabase.from('extraction_entity_types').select(col);
+}
+type EETQuery = ReturnType<typeof _eetQueryFactory>;
 
 /**
  * Options for entity_types query
  */
-export interface QueryEntityTypesOptions<T> {
+export interface QueryEntityTypesOptions {
     /** Template ID (may be project_template_id or template_id) */
   templateId: string;
     /** Field selection (e.g. 'id, name, label, sort_order') */
   select: string;
     /** Additional filters to apply to the query */
-  filters?: (query: PostgrestFilterBuilder<any, any, any, T>) => PostgrestFilterBuilder<any, any, any, T>;
+  filters?: (query: EETQuery) => EETQuery;
     /** Order (default: sort_order asc) */
   orderBy?: { column: string; ascending?: boolean };
 }
@@ -32,8 +39,8 @@ export interface QueryEntityTypesOptions<T> {
  * @returns Array of entity_types found
  * @throws Error on query failure
  */
-export async function queryEntityTypesWithFallback<T = any>(
-  options: QueryEntityTypesOptions<T>
+export async function queryEntityTypesWithFallback<T = unknown>(
+  options: QueryEntityTypesOptions
 ): Promise<T[]> {
   const { templateId, select, filters, orderBy } = options;
 

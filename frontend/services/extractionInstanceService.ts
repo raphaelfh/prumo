@@ -104,11 +104,12 @@ export class ExtractionInstanceService {
           .rpc('check_cardinality_one', {
             p_article_id: articleId,
             p_entity_type_id: entityTypeId,
-            p_parent_instance_id: parentInstanceId || null
+            p_parent_instance_id: parentInstanceId || undefined
           });
 
         if (cardinalityError) {
-            extractionLogger.warn('createInstance', 'Cardinality validation error', cardinalityError, {
+            extractionLogger.warn('createInstance', 'Cardinality validation error', {
+            error: cardinalityError,
             entityType: entityType.name,
             articleId
           });

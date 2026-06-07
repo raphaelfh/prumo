@@ -5,6 +5,7 @@
  */
 
 import {t} from '@/lib/copy';
+import type {Json} from '@/integrations/supabase/types';
 
 export interface ParsedRisRecord {
     /** Tag → list of values (repeating tags like AU, KW accumulate) */
@@ -42,7 +43,7 @@ export interface ArticleInsertPayload {
     url_landing: string | null;
     url_pdf: string | null;
     ingestion_source: string;
-    source_payload: Record<string, unknown>;
+    source_payload: Json;
 }
 
 const RIS_TAG_REGEX = /^([A-Z0-9]{2})\s{2}-\s(.*)$/;

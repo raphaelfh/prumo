@@ -220,9 +220,6 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
         onSave={updateField}
         onValidate={validateField}
         sectionName={sectionName}
-        entityTypeId={entityTypeId}
-        createOtherSpecifyField={createOtherSpecifyField}
-        removeOtherSpecifyField={removeOtherSpecifyField}
       />
 
       <DeleteFieldConfirm

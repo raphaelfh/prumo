@@ -23,27 +23,45 @@ import {AlertTriangle as _AlertTriangle, Trash2} from 'lucide-react';
 import {supabase} from '@/integrations/supabase/client';
 import {toast} from 'sonner';
 import {SettingsSection, SettingsCard, TagInput} from '@/components/settings';
-import type {Project, EligibilityCriteria, StudyDesign} from '@/types/project';
+import type {EligibilityCriteria, StudyDesign} from '@/types/project';
+import type {Json} from '@/integrations/supabase/types';
 import {t} from '@/lib/copy';
 
-type ProjectSettingsShape = Project['settings'] extends infer S
-    ? S extends Record<string, unknown>
-        ? { blind_mode?: boolean }
-        : { blind_mode?: boolean }
-    : { blind_mode?: boolean };
-
+// AdvancedProjectShape mirrors the JSON columns of Project using Json (not narrower
+// domain types) so that Project is assignable here without narrowing casts.
 interface AdvancedProjectShape {
   name?: string;
-    settings: ProjectSettingsShape | null;
-    eligibility_criteria: EligibilityCriteria | null;
-    study_design: StudyDesign | null;
-    review_keywords: string[] | unknown;
+  settings: Json;
+  eligibility_criteria: Json;
+  study_design: Json;
+  review_keywords: Json;
 }
 
 interface AdvancedSettingsSectionProps {
     project: AdvancedProjectShape;
     onChange: (updates: Partial<AdvancedProjectShape>) => void;
   projectId: string;
+}
+
+function ensureSettings(v: Json | null): { blind_mode?: boolean } {
+    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+        return v as { blind_mode?: boolean };
+    }
+    return {};
+}
+
+function ensureEligibility(v: Json | null): EligibilityCriteria {
+    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+        return v as unknown as EligibilityCriteria;
+    }
+    return { inclusion: [], exclusion: [], notes: '' };
+}
+
+function ensureStudyDesign(v: Json | null): StudyDesign {
+    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+        return v as unknown as StudyDesign;
+    }
+    return { types: [], notes: '' };
 }
 
 function ensureStringArray(v: unknown): string[] {
@@ -59,13 +77,9 @@ export function AdvancedSettingsSection({
   const [isDeleting, setIsDeleting] = useState(false);
   const navigate = useNavigate();
 
-  const settings = project.settings || { blind_mode: false };
-    const eligibility = project.eligibility_criteria || {
-        inclusion: [],
-        exclusion: [],
-        notes: '',
-    };
-    const studyDesign = project.study_design || {types: [], notes: ''};
+  const settings = ensureSettings(project.settings);
+    const eligibility = ensureEligibility(project.eligibility_criteria);
+    const studyDesign = ensureStudyDesign(project.study_design);
     const keywords = ensureStringArray(project.review_keywords);
     const inclusion = eligibility.inclusion || [];
     const exclusion = eligibility.exclusion || [];

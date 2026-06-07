@@ -267,7 +267,7 @@ export default function ProjectView() {
 
       if (error) throw error;
       if (generation !== projectLoadRef.current) return;
-      setArticles(data || []);
+      setArticles((data as unknown as Article[]) || []);
     } catch (error: any) {
       console.error(error);
     }

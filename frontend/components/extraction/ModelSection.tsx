@@ -24,21 +24,8 @@ import type {
 } from '@/types/extraction';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
 import type {OtherExtraction} from '@/hooks/extraction/colaboracao/useOtherExtractions';
-
-interface BatchExtractionProgressData {
-  current: number;
-  total: number;
-  sectionName: string;
-}
-
-interface AllModelsProgressData {
-  currentModel: number;
-  totalModels: number;
-  currentSection: number;
-  totalSections: number;
-  modelName: string;
-  sectionName: string;
-}
+import type {ExtractionProgress} from '@/hooks/extraction/useBatchSectionExtractionChunked';
+import type {AllModelsSectionsProgress} from '@/hooks/extraction/useBatchAllModelsSectionsExtraction';
 
 export interface ModelSectionProps {
   /** The model container entity type (cardinality='many'). */
@@ -85,16 +72,16 @@ export interface ModelSectionProps {
   runId?: string | null;
 
   /** AI extraction wiring. */
-  onExtractModels: () => Promise<void> | void;
+  onExtractModels: () => Promise<void>;
   extractingModels: boolean;
 
-  onExtractAllSections?: () => Promise<void> | void;
+  onExtractAllSections?: () => Promise<void>;
   extractingAllSections: boolean;
-  extractionProgress: BatchExtractionProgressData | null;
+  extractionProgress: ExtractionProgress | null;
 
-  onExtractAllSectionsForAllModels: () => Promise<void> | void;
+  onExtractAllSectionsForAllModels: () => Promise<void>;
   extractingAllSectionsForAllModels: boolean;
-  allModelsProgress: AllModelsProgressData | null;
+  allModelsProgress: AllModelsSectionsProgress | null;
 
   /** Bubbled up after any AI section extraction completes. */
   onExtractionComplete?: () => void;

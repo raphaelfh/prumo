@@ -105,7 +105,7 @@ export function OtherExtractionsPopover(props: OtherExtractionsPopoverProps) {
                   >
                     <div className="flex items-start gap-3">
                       <Avatar className="h-8 w-8 shrink-0">
-                        <AvatarImage src={ext.userAvatar} />
+                        <AvatarImage src={ext.userAvatar ?? undefined} />
                         <AvatarFallback>
                           {ext.userName.slice(0, 2).toUpperCase()}
                         </AvatarFallback>

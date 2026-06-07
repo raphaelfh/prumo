@@ -100,7 +100,7 @@ const ChartTooltipContent = React.forwardRef<
       nameKey?: string;
       labelKey?: string;
       /** Injected by Recharts when used as tooltip content renderer. */
-      payload?: TooltipPayload<number | string, string>;
+      payload?: TooltipPayload;
       label?: string | number;
     }
 >(
@@ -171,7 +171,7 @@ const ChartTooltipContent = React.forwardRef<
 
             return (
               <div
-                key={item.dataKey}
+                key={`${item.dataKey ?? ""}-${index}`}
                 className={cn(
                   "flex w-full flex-wrap items-stretch gap-2 [&>svg]:h-2.5 [&>svg]:w-2.5 [&>svg]:text-muted-foreground",
                   indicator === "dot" && "items-center",
