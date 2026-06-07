@@ -430,13 +430,10 @@ jobs:
       - name: Run ESLint
         run: npm run lint || true
 
-      # Frontend typecheck RATCHET. The error budget lives in
-      # scripts/typecheck-budget.txt and is lowered by each burn-down PR
-      # (#197). This step is BLOCKING: it fails if errors exceed budget,
-      # so no new type errors can land while we burn down. The final #197
-      # PR sets the budget to 0 and replaces this with a plain `tsc`.
-      - name: Type check ratchet (frontend)
-        run: npm run typecheck:ratchet
+      # Frontend typecheck is clean (#197 burned down from 183 → 0). Now
+      # blocking: any new type error fails CI.
+      - name: Type check (frontend)
+        run: npm run typecheck
 
   # =================== FRONTEND BUILD ===================
   frontend-build:
