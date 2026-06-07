@@ -1,8 +1,18 @@
 import * as React from "react";
 import * as RechartsPrimitive from "recharts";
-import type {LegendPayload, TooltipPayload, TooltipPayloadEntry} from "recharts";
 
 import {cn} from "@/lib/utils";
+
+// Recharts renames its payload exports across patch versions, so derive the
+// shapes from the actual component props instead of importing named types.
+type ChartTooltipPayload = NonNullable<
+  React.ComponentProps<typeof RechartsPrimitive.Tooltip>["payload"]
+>;
+type ChartTooltipItem = ChartTooltipPayload[number];
+type ChartLegendPayload = NonNullable<
+  React.ComponentProps<typeof RechartsPrimitive.Legend>["payload"]
+>;
+type ChartLegendItem = ChartLegendPayload[number];
 
 // Format: { THEME_NAME: CSS_SELECTOR }
 const THEMES = { light: "", dark: ".dark" } as const;
@@ -100,7 +110,7 @@ const ChartTooltipContent = React.forwardRef<
       nameKey?: string;
       labelKey?: string;
       /** Injected by Recharts when used as tooltip content renderer. */
-      payload?: TooltipPayload;
+      payload?: ChartTooltipPayload;
       label?: string | number;
     }
 >(
@@ -164,7 +174,7 @@ const ChartTooltipContent = React.forwardRef<
       >
         {!nestLabel ? tooltipLabel : null}
         <div className="grid gap-1.5">
-          {payload.map((item: TooltipPayloadEntry, index: number) => {
+          {payload.map((item: ChartTooltipItem, index: number) => {
             const key = `${nameKey || item.name || item.dataKey || "value"}`;
             const itemConfig = getPayloadConfigFromPayload(config, item, key);
             const indicatorColor = color || item.payload.fill || item.color;
@@ -250,7 +260,7 @@ const ChartLegendContent = React.forwardRef<
       ref={ref}
       className={cn("flex items-center justify-center gap-4", verticalAlign === "top" ? "pb-3" : "pt-3", className)}
     >
-      {payload.map((item: LegendPayload) => {
+      {payload.map((item: ChartLegendItem) => {
         const key = `${nameKey || item.dataKey || "value"}`;
         const itemConfig = getPayloadConfigFromPayload(config, item, key);
 
