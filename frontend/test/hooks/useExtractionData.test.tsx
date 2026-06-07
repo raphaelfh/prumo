@@ -187,7 +187,7 @@ describe('useExtractionData → instance loading', () => {
     // Regression guard: ``initializeArticleInstances`` was removed; the
     // backend's hitl_session_service._ensure_instances is the sole writer.
     expect(
-      (extractionInstanceService as Record<string, unknown>).initializeArticleInstances,
+      (extractionInstanceService as unknown as Record<string, unknown>).initializeArticleInstances,
     ).toBeUndefined();
     expect(extractionInstanceService.getInstances).toHaveBeenCalledWith({
       articleId: ARTICLE_ID,
