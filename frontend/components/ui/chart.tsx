@@ -1,6 +1,6 @@
 import * as React from "react";
 import * as RechartsPrimitive from "recharts";
-import type {LegendPayload, TooltipPayloadEntry} from "recharts";
+import type {LegendPayload, TooltipPayload, TooltipPayloadEntry} from "recharts";
 
 import {cn} from "@/lib/utils";
 
@@ -99,6 +99,9 @@ const ChartTooltipContent = React.forwardRef<
       indicator?: "line" | "dot" | "dashed";
       nameKey?: string;
       labelKey?: string;
+      /** Injected by Recharts when used as tooltip content renderer. */
+      payload?: TooltipPayload<number | string, string>;
+      label?: string | number;
     }
 >(
   (
@@ -231,7 +234,7 @@ const ChartLegend = RechartsPrimitive.Legend;
 const ChartLegendContent = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"div"> &
-    Pick<RechartsPrimitive.LegendProps, "payload" | "verticalAlign"> & {
+    Pick<RechartsPrimitive.DefaultLegendContentProps, "payload" | "verticalAlign"> & {
       hideIcon?: boolean;
       nameKey?: string;
     }

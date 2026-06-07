@@ -95,7 +95,7 @@ export function useComparisonPermissions(
       }
 
         // Extract blind_mode (with safe fallback)
-      const isBlindMode = project?.settings?.blind_mode === true;
+      const isBlindMode = (project?.settings as { blind_mode?: boolean } | null)?.blind_mode === true;
 
         // Compute permissions using centralized rules
       const rolePermissions = getRolePermissions(role, isBlindMode);
