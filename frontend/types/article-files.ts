@@ -12,8 +12,8 @@ export interface ArticleFile {
   id: string;
   project_id: string;
   article_id: string;
-    file_type: string;   // Format: PDF, DOC, DOCX, etc.
-    file_role?: string;  // Role: MAIN, SUPPLEMENT, etc.
+    file_type: string;           // Format: PDF, DOC, DOCX, etc.
+    file_role?: FileRole | null; // Role: MAIN, SUPPLEMENT, etc.
   storage_key: string;
   original_filename: string | null;
   bytes: number | null;
@@ -32,7 +32,7 @@ export interface ArticleFileInsert {
   project_id: string;
   article_id: string;
     file_type: FileFormat | string; // Format detected automatically
-    file_role: FileRole | string;   // Role selected by the user
+    file_role: FileRole;            // Role selected by the user
   storage_key: string;
   original_filename: string;
   bytes: number;

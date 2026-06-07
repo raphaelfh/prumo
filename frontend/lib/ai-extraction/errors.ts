@@ -111,7 +111,7 @@ export class ValidationError extends AIExtractionError {
  * Erro de rede/API
  */
 export class APIError extends AIExtractionError {
-  constructor(message: string, statusCode?: number, details?: unknown) {
+  constructor(message: string, statusCode?: number, details?: Record<string, unknown>) {
     super(
       message,
       'API_ERROR',

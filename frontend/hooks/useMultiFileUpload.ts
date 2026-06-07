@@ -14,14 +14,14 @@ import {useCallback, useRef, useState} from 'react';
 import {supabase} from '@/integrations/supabase/client';
 import {toast} from 'sonner';
 import {detectFileFormat, generateStorageKey, validateFile} from '@/lib/file-validation';
-import {FILE_ERROR_MESSAGES} from '@/lib/file-constants';
+import {FILE_ERROR_MESSAGES, type FileRole} from '@/lib/file-constants';
 import {t} from '@/lib/copy';
 import type {ArticleFile} from '@/types/article-files';
 
 export interface UploadQueueItem {
   id: string;
   file: File;
-  fileRole: string;
+  fileRole: FileRole;
   status: 'pending' | 'uploading' | 'success' | 'error';
   progress: number;
   error?: string;
@@ -80,7 +80,7 @@ export function useMultiFileUpload(
   /**
    * Adds files to the queue
    */
-  const addFiles = useCallback((files: File[], fileRole: string) => {
+  const addFiles = useCallback((files: File[], fileRole: FileRole) => {
     const newItems: UploadQueueItem[] = files.map(file => ({
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       file,

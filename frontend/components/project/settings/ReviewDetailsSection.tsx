@@ -15,6 +15,7 @@ import {
 import {SettingsSection, SettingsField, SettingsCard} from '@/components/settings';
 import {PICOTSItemEditor} from './PICOTSItemEditor';
 import type {Project} from '@/types/project';
+import type {Json} from '@/integrations/supabase/types';
 import {t} from '@/lib/copy';
 
 export interface PICOTSItem {
@@ -127,7 +128,7 @@ export function ReviewDetailsSection({ project, onChange }: ReviewDetailsSection
             [subField]: value,
       };
     }
-    onChange({ picots_config_ai_review: newPicots });
+    onChange({ picots_config_ai_review: newPicots as unknown as Json });
   };
 
   const addArrayItem = (mainField: string, arrayField: 'inclusion' | 'exclusion', value: string) => {

@@ -102,7 +102,7 @@ interface Article {
 interface ArticleFile {
   id: string;
   file_type: string;
-  file_role: string;
+  file_role: string | null;
   storage_key: string;
   original_filename: string | null;
   bytes: number | null;
@@ -507,6 +507,7 @@ export function ArticleForm({
 
         if (error) throw error;
       } else {
+        if (!articleId) throw new Error("articleId is required for edit mode");
         const { error } = await supabase
           .from("articles")
           .update(articleData)
