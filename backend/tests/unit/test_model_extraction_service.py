@@ -8,7 +8,7 @@ Tests model extraction features:
 """
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -437,8 +437,9 @@ class TestFullExtractionFlow:
         self, service, mock_storage
     ):
         """Issue #21: a DB-level error during instance creation must trigger
-        rollback + fail_run on the outer handler, not be silently swallowed
-        (which previously left the run stuck in status='running').
+        the rollback-then-fail recovery (delegated to the repository's
+        rollback_and_fail), not be silently swallowed (which previously left
+        the run stuck in status='running').
         """
         project_id = uuid4()
         article_id = uuid4()
@@ -471,14 +472,12 @@ class TestFullExtractionFlow:
         service._lifecycle.advance_stage = AsyncMock(return_value=mock_run)
         service._runs.start_run = AsyncMock()
         service._runs.complete_run = AsyncMock()
-        service._runs.fail_run = AsyncMock()
+        # The service delegates rollback-then-fail to the repository's
+        # rollback_and_fail (mechanics covered by test_extraction_run_repository).
+        service._runs.rollback_and_fail = AsyncMock()
 
         # Inject a DB-style failure on instance creation.
         service._instances.create = AsyncMock(side_effect=RuntimeError("FK violation"))
-
-        # The async session rollback must be called once so the next
-        # `fail_run` runs on a clean transaction.
-        service.db.rollback = AsyncMock()
 
         from app.services.openai_service import OpenAIResponse, OpenAIUsage
 
@@ -501,11 +500,13 @@ class TestFullExtractionFlow:
                 template_id=template_id,
             )
 
-        service.db.rollback.assert_awaited_once()
-        service._runs.fail_run.assert_awaited_once()
-        called_run_id, called_msg = service._runs.fail_run.call_args.args
-        assert called_run_id == run_id
-        assert "FK violation" in called_msg
+        service._runs.rollback_and_fail.assert_awaited_once_with(
+            run_id,
+            "FK violation",
+            logger=ANY,
+            trace_id=service.trace_id,
+            log_prefix="model_extraction",
+        )
 
     @pytest.mark.asyncio
     async def test_extract_no_models_found(self, service, mock_storage):
