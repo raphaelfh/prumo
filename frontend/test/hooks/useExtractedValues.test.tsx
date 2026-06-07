@@ -40,6 +40,7 @@ vi.mock('@/lib/copy', () => ({
 
 import { ExtractionValueService } from '@/services/extractionValueService';
 import { useExtractedValues } from '@/hooks/extraction/useExtractedValues';
+import type { ProposalRecordResponse } from '@/hooks/runs/types';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -499,7 +500,10 @@ describe('useExtractedValues — local-edits-win on backend refetch', () => {
   });
 
   it('still picks up newly-introduced keys (e.g. AI-extracted fields) on refetch', async () => {
-    const { result, rerender } = renderHook(
+    const { result, rerender } = renderHook<
+      ReturnType<typeof useExtractedValues>,
+      { proposals: ProposalRecordResponse[] }
+    >(
       ({ proposals }) =>
         useExtractedValues({
           runId: 'run-1',
