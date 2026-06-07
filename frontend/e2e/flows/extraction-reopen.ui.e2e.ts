@@ -100,6 +100,7 @@ test.describe("Extraction reopen UI flow", () => {
       }
     }
     test.skip(!instance || !field, "No (instance, field) coordinate available");
+    if (!instance || !field) throw new Error("No (instance, field) coordinate — test.skip should have exited");
 
     // Build a run, drive it to FINALIZED so the page lands in the
     // "no active run, but a finalized one exists" state.
