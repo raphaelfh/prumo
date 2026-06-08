@@ -39,8 +39,8 @@ import { extractValueFromDb } from '@/lib/validations/selectOther';
 import { dispatchValueUpdates } from '@/lib/extraction/valueUpdates';
 import { pickLatestProposalPerCoord } from '@/lib/extraction/proposalValues';
 import { t } from '@/lib/copy';
-import { ExtractionValueService } from '@/services/extractionValueService';
-import type { ProposalRecordResponse } from '@/hooks/runs/types';
+import { unwrapValue } from '@/services/extractionValueService';
+import type { ProposalRecordResponse, RunViewCurrentValue } from '@/hooks/runs/types';
 
 export interface ExtractedValueData {
   id?: string;
@@ -55,6 +55,13 @@ interface UseExtractedValuesProps {
   runId: string | null | undefined;
   stage: string | null | undefined;
   proposals?: ProposalRecordResponse[];
+  /**
+   * Pre-computed reviewer values embedded in the run view (review /
+   * consensus / finalized stages). When present, the hook reads directly
+   * from this array instead of firing a separate PostgREST query via
+   * ``ExtractionValueService.loadValuesForUser``.
+   */
+  currentValues?: RunViewCurrentValue[];
   /**
    * Current reviewer id, supplied by the caller (from AuthContext via
    * ``useCurrentUser``) so this hook never fires its own ``auth.getUser``
@@ -128,7 +135,7 @@ function mergeValuesById(
 export function useExtractedValues(
   props: UseExtractedValuesProps,
 ): UseExtractedValuesReturn {
-  const { runId, stage, proposals, currentUserId, enabled = true } = props;
+  const { runId, stage, proposals, currentValues, currentUserId, enabled = true } = props;
 
   const [values, setValues] = useState<Record<string, any>>({});
   // Raw server map the hook hydrated from — the autosave baseline.
@@ -228,21 +235,18 @@ export function useExtractedValues(
             return;
           }
 
-          const rows = await ExtractionValueService.loadValuesForUser(
-            runId,
-            currentUserId,
-          );
           const valuesMap: Record<string, any> = {};
-          for (const row of rows) {
-            if (row.decision === 'reject') continue;
-            const key = `${row.instanceId}_${row.fieldId}`;
+          for (const cv of currentValues ?? []) {
+            if (cv.decision === 'reject') continue;
+            const key = `${cv.instance_id}_${cv.field_id}`;
+            const unwrapped = unwrapValue(cv.value);
             const unit =
-              typeof row.value === 'object' &&
-              row.value !== null &&
-              'unit' in (row.value as Record<string, unknown>)
-                ? ((row.value as { unit: string | null }).unit ?? null)
+              typeof unwrapped === 'object' &&
+              unwrapped !== null &&
+              'unit' in (unwrapped as Record<string, unknown>)
+                ? ((unwrapped as { unit: string | null }).unit ?? null)
                 : null;
-            valuesMap[key] = extractValueFromDb({ value: row.value, unit });
+            valuesMap[key] = extractValueFromDb({ value: unwrapped, unit });
           }
           applyLoadedValues(valuesMap);
           setInitialized(true);
@@ -261,7 +265,7 @@ export function useExtractedValues(
         if (!silent) setLoading(false);
       }
     },
-    [runId, stage, proposals, currentUserId, applyLoadedValues],
+    [runId, stage, proposals, currentValues, currentUserId, applyLoadedValues],
   );
 
   useEffect(() => {

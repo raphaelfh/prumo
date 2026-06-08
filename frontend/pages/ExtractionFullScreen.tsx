@@ -168,6 +168,7 @@ export default function ExtractionFullScreen() {
     runId: activeRunId,
     stage,
     proposals,
+    currentValues: runDetail?.current_values,
     currentUserId,
     enabled: !!activeRunId,
   });

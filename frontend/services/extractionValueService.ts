@@ -62,7 +62,7 @@ interface ReviewerStateRow {
   } | null;
 }
 
-function unwrapValue(raw: unknown): unknown {
+export function unwrapValue(raw: unknown): unknown {
   if (raw === null || raw === undefined) return null;
   if (typeof raw === 'object' && raw !== null && 'value' in raw) {
     return (raw as { value: unknown }).value ?? null;
