@@ -8,9 +8,9 @@ owner: '@raphaelfh'
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Collapse the ~4 serial waves that fire when `ExtractionFullScreen` opens a saved run (template → session → `useRun` → values + entity_types + instances) into a single server-composed `RunViewResponse`, embedded in the `POST /hitl/sessions` open response and served by a new read-only `GET /api/v1/runs/{id}/view`, so the form renders from one round-trip.
+**Goal:** Collapse the serial waves that fire when `ExtractionFullScreen` opens a saved run (session → `useRun` → values) into a single server-composed `RunViewResponse`, embedded in the `POST /hitl/sessions` open response and served by a new read-only `GET /api/v1/runs/{id}/view`, so the run + values render from one round-trip. (The view also serves the frozen entity_types tree; folding the still-parallel entity_types/instances Supabase reads into it is the deferred Task 12.)
 
-**Architecture:** Add a server read-side composer `build_run_view()` that **composes** (never re-queries) `get_run_with_workflow_history` (the item-3 blind filter stays the single source) plus three new pieces: the frozen template **entity_types tree** (read from the run's version snapshot, with a live-read fallback for legacy "narrow" snapshots), the seeded **instances**, and the caller-scoped **current_values** (review/consensus/finalized only). Two prerequisites guard correctness: the template-version snapshot is **lossy** today (omits `role`, `description`, and 8 field columns), so we first unify both snapshot builders behind one widened SQL fragment and backfill old snapshots; and the new `current_values` resolver becomes a 4th lockstep copy of the blind predicate, so it must reuse the exact `reviewer_id == caller` / `source_user_id == caller` scope. `POST /hitl/sessions` stays the **only** mutating entry point — no GET ever seeds.
+**Architecture:** Add a server read-side composer `build_run_view()` that **composes** (never re-queries) `get_run_with_workflow_history` (the item-3 blind filter stays the single source) plus two new pieces: the frozen template **entity_types tree** (read from the run's version snapshot, with a live-read fallback for legacy "narrow" snapshots) and the caller-scoped **current_values** (review/consensus/finalized only). (Seeded **instances** are part of the same read-model but are deferred to Task 12 — see the Task 3 scope note — because their only consumer needs a wider shape than Phase 2 would ship.) Two prerequisites guard correctness: the template-version snapshot is **lossy** today (omits `role`, `description`, and 8 field columns), so we first unify both snapshot builders behind one widened SQL fragment and backfill old snapshots; and the new `current_values` resolver becomes a 4th lockstep copy of the blind predicate, so it must reuse the exact `reviewer_id == caller` / `source_user_id == caller` scope. `POST /hitl/sessions` stays the **only** mutating entry point — no GET ever seeds.
 
 **Tech Stack:** Backend: FastAPI, SQLAlchemy 2.0 async, Alembic (raw-SQL migrations), Pydantic v2, pytest integration tests against local Supabase. Frontend: React 18 + TS strict, TanStack Query, vitest. Branch `feat/runopen-slowload-phase2-runview` (based on `fix/extraction-stale-blind-progress`, which carries RLS `0025` + the item-3 blind filter). Verify with `cd backend && uv run pytest`, `make lint-backend`, `npm run typecheck`, `npx vitest run`, `npx eslint`.
 
@@ -44,8 +44,8 @@ These are non-negotiable. Violating any one re-opens a documented incident class
 
 - `backend/app/services/run_lifecycle_service.py` — `_snapshot_initial_version` (lines 465–557) delegates to `build_template_version_snapshot`.
 - `backend/app/services/template_clone_service.py` — `_snapshot` (lines 477–524) delegates to `build_template_version_snapshot`.
-- `backend/app/schemas/extraction_run.py` — add `RunViewEntityType`, `RunViewField`, `RunViewInstance`, `RunViewCurrentValue`, `RunViewResponse` (after `RunDetailResponse`, ~line 142).
-- `backend/app/services/extraction_run_read_service.py` — add `resolve_caller_current_values`, `_entity_types_for_run` (snapshot + live fallback), `_instances_for_run`, and `build_run_view` (composes `get_run_with_workflow_history`).
+- `backend/app/schemas/extraction_run.py` — add `RunViewField`, `RunViewEntityType`, `RunViewCurrentValue`, `RunViewResponse` (after `RunDetailResponse`, ~line 142). (`RunViewInstance` lands in Task 12.)
+- `backend/app/services/extraction_run_read_service.py` — add `resolve_caller_current_values`, `_entity_types_for_run` (snapshot + live fallback), and `build_run_view` (composes `get_run_with_workflow_history`). (`_instances_for_run` lands in Task 12.)
 - `backend/app/api/v1/endpoints/extraction_runs.py` — add `GET /{run_id}/view`.
 - `backend/app/schemas/hitl_session.py` — add `run_view: RunViewResponse | None` to `OpenHITLSessionResponse`.
 - `backend/app/api/v1/endpoints/hitl_sessions.py` — build + embed the run view (extraction only) between `open_or_resume` and `commit`.
@@ -53,7 +53,7 @@ These are non-negotiable. Violating any one re-opens a documented incident class
 
 **Frontend — modified files**
 
-- `frontend/hooks/runs/types.ts` — add `RunViewEntityType`, `RunViewFieldResponse`, `RunViewInstance`, `RunViewCurrentValue`, `RunViewResponse` (extends `RunDetailResponse`).
+- `frontend/hooks/runs/types.ts` — add `RunViewFieldResponse`, `RunViewEntityType`, `RunViewCurrentValue`, `RunViewResponse` (extends `RunDetailResponse`). (`RunViewInstance` lands in Task 12.)
 - `frontend/hooks/runs/useRun.ts` — re-point GET to `/api/v1/runs/${runId}/view`; return `RunViewResponse`.
 - `frontend/hooks/extraction/useExtractionSession.ts` — add `run_detail` to `OpenResponse`; inject `useQueryClient`; seed `runsKeys.detail(run_id)` inside the generation guard.
 - `frontend/hooks/qa/useQAAssessmentSession.ts` — mirror the optional `run_detail` field (QA ignores it).
@@ -433,22 +433,26 @@ git commit -m "feat(migrations): 0026 backfill widened template-version snapshot
 
 ## Phase B — Backend: the RunView composer + endpoint + embed
 
-### Task 3: `RunViewResponse` schema + entity_types/instances readers
+### Task 3: `RunViewResponse` schema + entity_types reader
 
-`build_run_view` returns a superset of `RunDetailResponse`: the run + workflow rows (blind-filtered, composed from `get_run_with_workflow_history`) plus `entity_types`, `instances`, `current_values`. This task adds the schema and the entity_types/instances readers; current_values is Task 4; the composer is Task 5.
+`build_run_view` returns a superset of `RunDetailResponse`: the run + workflow rows (blind-filtered, composed from `get_run_with_workflow_history`) plus `entity_types` and `current_values`. This task adds the schema and the entity_types reader; current_values is Task 4; the composer is Task 5.
+
+> **Scope note (from the `/simplify` pass):** Phase 2's frontend consumes only `current_values` (Task 11) and keeps reading `entity_types`/`instances` from `useExtractionData` (the deferred Task 12). `entity_types` is still built + returned server-side here because it is the *reason Phase A exists* — the snapshot-widening is only provably correct if the view serves the frozen tree, and the tests below exercise it. **`instances` is intentionally NOT included in Phase 2:** it has no Phase-2 consumer, and its only future consumer (Task 12) needs a wider shape (`project_id`/`created_by`/`created_at`/`updated_at`, which `RunViewInstance` would omit) — so it is added in the Task 12 PR where its required-field set is known, rather than shipped now in a shape that would be rewritten.
 
 **Files:**
 - Modify: `backend/app/schemas/extraction_run.py` (add after `RunDetailResponse`, ~line 142)
-- Modify: `backend/app/services/extraction_run_read_service.py` (imports + `_entity_types_for_run` + `_instances_for_run`)
+- Modify: `backend/app/services/extraction_run_read_service.py` (imports + `_entity_types_for_run`)
 - Test: `backend/tests/integration/test_run_view_entity_types.py` (new)
 
-- [ ] **Step 1: Add the response schemas.** In `backend/app/schemas/extraction_run.py`, after `RunDetailResponse` (line ~142), add:
+- [ ] **Step 1: Add the response schemas.** In `backend/app/schemas/extraction_run.py`, after `RunDetailResponse` (line ~142), add. `RunViewField`/`RunViewEntityType` carry `from_attributes=True` so the live fallback can `model_validate` straight off ORM rows (matching the four sibling response models in this file):
 
 ```python
 class RunViewField(BaseModel):
     """A field in the frozen template snapshot, widened to every column the
     run-open form renders from. Sourced from the version snapshot (or the live
     table when the snapshot is a pre-0026 narrow one)."""
+
+    model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     name: str
@@ -472,6 +476,8 @@ class RunViewEntityType(BaseModel):
     ``role`` drives the study/model partition; the tree hierarchy is conveyed by
     ``parent_entity_type_id`` (flat array, ordered by ``sort_order``)."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     name: str
     label: str
@@ -482,22 +488,6 @@ class RunViewEntityType(BaseModel):
     sort_order: int
     is_required: bool
     fields: list[RunViewField]
-
-
-class RunViewInstance(BaseModel):
-    """A seeded extraction instance (study-level + per-model singletons)."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    entity_type_id: UUID
-    parent_instance_id: UUID | None
-    label: str
-    sort_order: int
-    status: str
-    # ORM attribute is ``metadata_`` (DB column ``metadata``). Validate from the
-    # ORM by field name; serialize as ``metadata`` so the frontend type matches.
-    metadata_: dict[str, Any] = Field(serialization_alias="metadata")
 
 
 class RunViewCurrentValue(BaseModel):
@@ -513,16 +503,14 @@ class RunViewCurrentValue(BaseModel):
 
 
 class RunViewResponse(RunDetailResponse):
-    """``RunDetailResponse`` (run + blind-filtered workflow rows) plus the three
-    pieces the run-open form needs in one round-trip: the frozen entity_types
-    tree, the seeded instances, and the caller's current_values."""
+    """``RunDetailResponse`` (run + blind-filtered workflow rows) plus the two
+    pieces the run-open form needs server-side: the frozen entity_types tree and
+    the caller's current_values. (``instances`` is added in Task 12 — see the
+    scope note above.)"""
 
     entity_types: list[RunViewEntityType]
-    instances: list[RunViewInstance]
     current_values: list[RunViewCurrentValue]
 ```
-
-> Note on `metadata`: SQLAlchemy maps the column to the Python attribute `metadata_` (the DB column is `metadata`). `RunViewInstance.model_config = ConfigDict(from_attributes=True)` validates `metadata_` straight off the ORM row, and `serialization_alias="metadata"` emits `metadata` on the wire so the frontend `ExtractionInstance` type (which reads `metadata`) is satisfied. Verify the wire key with the Task 6 endpoint test.
 
 - [ ] **Step 2: Write the failing entity_types reader test.** Create `backend/tests/integration/test_run_view_entity_types.py`:
 
@@ -537,7 +525,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionRunStage
+from app.schemas.extraction_run import RunSummaryResponse
 from app.services.extraction_run_read_service import _entity_types_for_run
 from app.services.run_lifecycle_service import RunLifecycleService
 
@@ -579,7 +567,9 @@ async def test_entity_types_from_widened_snapshot(db_session: AsyncSession) -> N
     if run is None:
         pytest.skip("Seed graph incomplete")
 
-    entity_types = await _entity_types_for_run(db_session, run)
+    entity_types = await _entity_types_for_run(
+        db_session, RunSummaryResponse.model_validate(run)
+    )
     assert entity_types, "expected a non-empty entity_types tree"
     roles = {et.role for et in entity_types}
     assert roles, "every entity type must carry a role from the widened snapshot"
@@ -615,7 +605,9 @@ async def test_entity_types_live_fallback_for_narrow_snapshot(
     db_session.expire_all()
 
     refetched = await db_session.get(type(run), run.id)
-    entity_types = await _entity_types_for_run(db_session, refetched)
+    entity_types = await _entity_types_for_run(
+        db_session, RunSummaryResponse.model_validate(refetched)
+    )
     assert entity_types, "live fallback must yield the entity_types tree"
     assert all(
         et.role in ("study_section", "model_container", "model_section")
@@ -628,17 +620,18 @@ async def test_entity_types_live_fallback_for_narrow_snapshot(
 Run: `cd backend && uv run pytest tests/integration/test_run_view_entity_types.py -v`
 Expected: FAIL — `ImportError: cannot import name '_entity_types_for_run'`.
 
-- [ ] **Step 4: Implement the entity_types + instances readers.** In `backend/app/services/extraction_run_read_service.py`, extend the imports. The file already imports `from sqlalchemy import select` and `from app.models.extraction import ExtractionRun, ExtractionRunStage` — **merge** into those (do not add a second `select`/`ExtractionRun` import, or ruff/F811 fails). Add only the new names:
+- [ ] **Step 4: Implement the entity_types reader.** In `backend/app/services/extraction_run_read_service.py`, extend the imports. The file already imports `from sqlalchemy import select` and `from app.models.extraction import ExtractionRun, ExtractionRunStage` — **merge** into those (do not add a second `select`/`ExtractionRun` import, or ruff/F811 fails). It already imports `RunSummaryResponse` in the schema block (reused below). Add only the new names:
 
 ```python
 # extend `from sqlalchemy import select`  ->
-from sqlalchemy import and_, select
+from sqlalchemy import and_, select   # and_ is used by Task 4's resolver
+
+# new import line (selectinload eager-loads the fields relationship in one go):
+from sqlalchemy.orm import selectinload
 
 # extend `from app.models.extraction import ExtractionRun, ExtractionRunStage`  ->
 from app.models.extraction import (
     ExtractionEntityType,
-    ExtractionField,
-    ExtractionInstance,
     ExtractionRun,
     ExtractionRunStage,
 )
@@ -651,26 +644,30 @@ from app.models.extraction_workflow import ExtractionReviewerState  # add to the
 from app.schemas.extraction_run import (
     RunViewCurrentValue,
     RunViewEntityType,
-    RunViewField,
-    RunViewInstance,
     RunViewResponse,
 )
 ```
 
-Then add, after `get_run_with_workflow_history`:
+Then add, after `get_run_with_workflow_history`. Note `_entity_types_for_run` takes the already-loaded `RunSummaryResponse` (`detail.run`) — it needs only `version_id`/`template_id`, both on that schema — so `build_run_view` does **not** re-fetch the ORM run:
 
 ```python
 def _snapshot_is_narrow(entity_types: list[dict]) -> bool:
     """A pre-0026 snapshot is detected by its first entity_type lacking 'role'.
-    Empty trees are treated as narrow so the live fallback can repopulate them."""
+    Empty trees are treated as narrow so the live fallback repopulates them —
+    a legitimately empty template just round-trips to an empty live read, which
+    is the correct (if marginally wasteful) recovery, not a structural read to
+    'optimize away'."""
     return not entity_types or "role" not in entity_types[0]
 
 
 async def _entity_types_for_run(
-    db: AsyncSession, run: ExtractionRun
+    db: AsyncSession, run: RunSummaryResponse
 ) -> list[RunViewEntityType]:
     """Frozen entity_types tree from the run's version snapshot, with a live
-    read fallback for pre-0026 narrow snapshots."""
+    read fallback for pre-0026 narrow snapshots (belt-and-suspenders: migration
+    0026 backfills these, but the fallback turns a 'silent broken study/model
+    partition' into a correct live render if any narrow snapshot slips through).
+    Both paths produce the same shape via ``model_validate``."""
     version = await db.get(ExtractionTemplateVersion, run.version_id)
     snapshot_types: list[dict] = (
         (version.schema_ or {}).get("entity_types", []) if version else []
@@ -678,79 +675,31 @@ async def _entity_types_for_run(
     if not _snapshot_is_narrow(snapshot_types):
         return [RunViewEntityType.model_validate(et) for et in snapshot_types]
 
-    # Live fallback — read the current template tree (same query the snapshot
-    # builder froze). Build RunViewField/RunViewEntityType from ORM rows.
+    # Live fallback — one statement, fields eager-loaded (selectinload), then
+    # model_validate straight off the ORM (RunViewEntityType/RunViewField carry
+    # from_attributes=True). The relationship is not guaranteed field-ordered,
+    # so sort the validated fields by sort_order to match the snapshot path.
     et_rows = (
         (
             await db.execute(
                 select(ExtractionEntityType)
                 .where(ExtractionEntityType.project_template_id == run.template_id)
+                .options(selectinload(ExtractionEntityType.fields))
                 .order_by(ExtractionEntityType.sort_order)
             )
         )
         .scalars()
         .all()
     )
-    field_rows = (
-        (
-            await db.execute(
-                select(ExtractionField)
-                .join(
-                    ExtractionEntityType,
-                    ExtractionEntityType.id == ExtractionField.entity_type_id,
-                )
-                .where(ExtractionEntityType.project_template_id == run.template_id)
-                .order_by(ExtractionField.sort_order)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    fields_by_et: dict[UUID, list[ExtractionField]] = {}
-    for f in field_rows:
-        fields_by_et.setdefault(f.entity_type_id, []).append(f)
-    return [
-        RunViewEntityType(
-            id=et.id,
-            name=et.name,
-            label=et.label,
-            description=et.description,
-            parent_entity_type_id=et.parent_entity_type_id,
-            cardinality=et.cardinality,
-            role=et.role,
-            sort_order=et.sort_order,
-            is_required=et.is_required,
-            fields=[
-                RunViewField.model_validate(f) for f in fields_by_et.get(et.id, [])
-            ],
-        )
-        for et in et_rows
-    ]
-
-
-async def _instances_for_run(
-    db: AsyncSession, run: ExtractionRun
-) -> list[RunViewInstance]:
-    """The seeded instances for this run's (article, template). Instances are
-    not run-scoped — they are keyed by (article_id, template_id)."""
-    rows = (
-        (
-            await db.execute(
-                select(ExtractionInstance)
-                .where(
-                    ExtractionInstance.article_id == run.article_id,
-                    ExtractionInstance.template_id == run.template_id,
-                )
-                .order_by(ExtractionInstance.sort_order)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    return [RunViewInstance.model_validate(r) for r in rows]
+    result: list[RunViewEntityType] = []
+    for et in et_rows:
+        view_et = RunViewEntityType.model_validate(et)
+        view_et.fields.sort(key=lambda f: f.sort_order)
+        result.append(view_et)
+    return result
 ```
 
-> `get_run_with_workflow_history` returns `RunDetailResponse.run` (a `RunSummaryResponse`), not the raw ORM run. `_entity_types_for_run`/`_instances_for_run` take the raw ORM `ExtractionRun` (they need `version_id`/`article_id`/`template_id`). `build_run_view` (Task 5) loads the ORM run once and passes it to both — see Task 5.
+> `instances` is deliberately not read here — see the Task 3 scope note. It lands in Task 12 (with the widened `RunViewInstance` shape its consumer needs).
 
 - [ ] **Step 5: Run the test to verify it passes.**
 
@@ -765,7 +714,7 @@ cd /Users/raphael/PycharmProjects/prumo
 git add backend/app/schemas/extraction_run.py \
         backend/app/services/extraction_run_read_service.py \
         backend/tests/integration/test_run_view_entity_types.py
-git commit -m "feat(extraction): RunView schema + frozen-snapshot entity_types/instances readers"
+git commit -m "feat(extraction): RunView schema + frozen-snapshot entity_types reader"
 ```
 
 ---
@@ -873,6 +822,19 @@ async def resolve_caller_current_values(
     ``source_user_id == caller_id`` rows — this is the 4th lockstep copy of the
     blind predicate and MUST stay identical to migration 0025 + the service
     filter in get_run_with_workflow_history.
+
+    NOTE: ``ExtractionExportService._build_single_user_value_map`` looks similar
+    but encodes a DIFFERENT contract (it sources ``accept_proposal`` from the
+    accepted proposal and drops ``reject``, with no human-proposal base layer).
+    This resolver mirrors the FRONTEND ``loadValuesForUser`` it replaces, not the
+    export contract — do NOT DRY them together, or run-open values diverge from
+    the form's current behavior (Invariant 6). The two reads below are
+    independent but run sequentially on the shared AsyncSession (a single
+    asyncpg connection cannot multiplex, so ``asyncio.gather`` here is unsafe);
+    this matches the sequential read pattern of the composed
+    get_run_with_workflow_history. Merging them into one CTE is a possible future
+    optimization, deliberately not taken here to keep this security-sensitive
+    resolver simple.
     """
     merged: dict[tuple[UUID, UUID], RunViewCurrentValue] = {}
 
@@ -936,14 +898,49 @@ async def resolve_caller_current_values(
 
 Add `ExtractionReviewerDecision` to the existing `from app.models.extraction_workflow import (...)` block if it is not already imported (it is imported today for `get_run_with_workflow_history`'s repository; verify the name is in scope).
 
-- [ ] **Step 4: Run the test to verify it passes.**
+- [ ] **Step 4: Add an automated parity test** (this resolver is the 4th copy of a security-critical predicate — a one-time by-hand check is the weak link). Append to `test_run_view_current_values.py` a test that pins the contract `resolve_caller_current_values` shares with the production `loadValuesForUser`:
+
+```python
+@pytest.mark.asyncio
+async def test_current_values_match_loadvaluesforuser_contract(
+    db_session: AsyncSession,
+) -> None:
+    """Layer precedence + value sourcing must match the frontend loadValuesForUser:
+      - a coord with ONLY a human proposal -> decision='human_proposal', proposal value
+      - a coord with an 'edit' reviewer decision -> decision='edit', the decision's
+        own `value` column (reviewer decision overrides the human-proposal layer)
+      - a 'reject' decision is RETAINED in the output (decision='reject'); the client
+        drops it, the server does not.
+    Build the decisions with the SAME reviewer-decision service the rest of the
+    suite uses (see _build_two_reviewer_review_run in test_blind_review_isolation
+    for the exact record-decision + reviewer_state upsert helper)."""
+    built = await _build_two_reviewer_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, reviewer_a, _reviewer_b = built
+
+    values = await resolve_caller_current_values(
+        db_session, run_id, caller_id=reviewer_a
+    )
+    by_decision = {v.decision for v in values}
+    # The builder records reviewer A's REVIEW-stage decision(s); reviewer A must
+    # see them resolved as their current value, sourced from the decision's own
+    # `value` column (parity with loadValuesForUser, NOT the export contract).
+    assert values, "reviewer A must resolve at least their own current value"
+    assert by_decision <= {"human_proposal", "edit", "accept_proposal", "reject"}
+    # If the builder records a 'reject', it must survive (server keeps it; client drops).
+    # (Assert the specific decision/value pairs your builder produces — pin them
+    # against the documented loadValuesForUser output, not the export helper's.)
+```
+
+> The frontend reads `reviewer_decision.value` (the decision row's own column), so this resolver does too. If `accept_proposal` surfaces a `null` value in production today, preserve that — do not source the value from the accepted proposal here (that would be a behavior change, out of scope). Tighten the final assertion to the exact `(decision, value)` pairs your chosen builder records.
+
+- [ ] **Step 5: Run the tests to verify they pass.**
 
 Run: `cd backend && uv run pytest tests/integration/test_run_view_current_values.py -v`
-Expected: PASS.
+Expected: PASS (caller-scope + parity).
 
-> Parity check (do this once, by hand, during implementation): build a coord with each decision type (`edit`, `accept_proposal`, `reject`) plus a human proposal, and confirm `resolve_caller_current_values` returns the same `value`/`decision` the production `loadValuesForUser` returns for that coord. The frontend reads `reviewer_decision.value` (the decision row's own column), so this resolver does too. If `accept_proposal` surfaces a `null` value in production today, preserve that — do not source the value from the accepted proposal here (that would be a behavior change, out of scope).
-
-- [ ] **Step 5: Lint + commit.**
+- [ ] **Step 6: Lint + commit.**
 
 ```bash
 cd backend && uv run ruff check app/services/extraction_run_read_service.py && uv run ruff format app/services/extraction_run_read_service.py
@@ -965,8 +962,8 @@ git commit -m "feat(extraction): server-side caller-scoped current_values resolv
 
 ```python
 """build_run_view composes get_run_with_workflow_history (the single blind
-filter) and adds entity_types + instances + current_values. It must NOT
-re-introduce a blind leak, and current_values must be empty in proposal stage."""
+filter) and adds entity_types + current_values. It must NOT re-introduce a
+blind leak, and current_values must be empty in proposal stage."""
 
 from __future__ import annotations
 
@@ -996,7 +993,6 @@ async def test_build_run_view_blinds_peer_in_review(db_session: AsyncSession) ->
     assert reviewer_a not in reviewer_ids, "build_run_view leaked a peer decision"
     # The aggregate pieces are present.
     assert view.entity_types, "entity_types tree must be populated"
-    assert isinstance(view.instances, list)
     # In review stage, current_values resolve for the caller.
     assert isinstance(view.current_values, list)
 
@@ -1043,22 +1039,20 @@ async def build_run_view(
     db: AsyncSession, run_id: UUID, *, caller_id: UUID, is_arbitrator: bool
 ) -> RunViewResponse:
     """The one-round-trip run-open view: the blind-filtered run detail plus the
-    frozen entity_types tree, the seeded instances, and the caller's
-    current_values. COMPOSES get_run_with_workflow_history (the single blind
-    filter) — it never re-queries the workflow tables, so the blind boundary
-    cannot drift."""
+    frozen entity_types tree and the caller's current_values. COMPOSES
+    get_run_with_workflow_history (the single blind filter) — it never re-queries
+    the workflow tables, so the blind boundary cannot drift. The composed
+    ``detail.run`` (a RunSummaryResponse) already carries ``version_id`` /
+    ``template_id`` / ``stage`` / ``article_id``, so there is no second ORM
+    fetch of the run here."""
     detail = await get_run_with_workflow_history(
         db, run_id, caller_id=caller_id, is_arbitrator=is_arbitrator
     )
-    run = await db.get(ExtractionRun, run_id)  # raw ORM row for version/article ids
-    if run is None:  # pragma: no cover - get_run_with_workflow_history already raised
-        raise RunNotFoundError(f"Run {run_id} not found")
 
-    entity_types = await _entity_types_for_run(db, run)
-    instances = await _instances_for_run(db, run)
+    entity_types = await _entity_types_for_run(db, detail.run)
     current_values = (
         await resolve_caller_current_values(db, run_id, caller_id=caller_id)
-        if run.stage in _CURRENT_VALUE_STAGES
+        if detail.run.stage in _CURRENT_VALUE_STAGES
         else []
     )
 
@@ -1069,7 +1063,6 @@ async def build_run_view(
         consensus_decisions=detail.consensus_decisions,
         published_states=detail.published_states,
         entity_types=entity_types,
-        instances=instances,
         current_values=current_values,
     )
 ```
@@ -1091,7 +1084,7 @@ cd backend && uv run ruff check app/services/extraction_run_read_service.py && u
 cd /Users/raphael/PycharmProjects/prumo
 git add backend/app/services/extraction_run_read_service.py \
         backend/tests/integration/test_build_run_view.py
-git commit -m "feat(extraction): build_run_view composes detail + entity_types + instances + current_values"
+git commit -m "feat(extraction): build_run_view composes detail + entity_types + current_values"
 ```
 
 ---
@@ -1108,8 +1101,7 @@ Mirror `get_run` exactly: `_load_run_and_check_member` (BOLA gate) → `is_run_a
 
 ```python
 """GET /api/v1/runs/{id}/view returns the composed RunViewResponse, gated by
-project membership (BOLA), with the instance metadata key serialized as
-'metadata' (not 'metadata_')."""
+project membership (BOLA)."""
 
 from __future__ import annotations
 
@@ -1133,10 +1125,7 @@ async def test_get_run_view_returns_aggregate(client, seeded_extraction_run) -> 
     assert body["ok"] is True
     data = body["data"]
     assert "run" in data and "proposals" in data
-    assert "entity_types" in data and "instances" in data and "current_values" in data
-    if data["instances"]:
-        assert "metadata" in data["instances"][0]
-        assert "metadata_" not in data["instances"][0]
+    assert "entity_types" in data and "current_values" in data
 
 
 @pytest.mark.asyncio
@@ -1150,16 +1139,16 @@ async def test_get_run_view_rejects_non_member(
 
 @pytest.mark.asyncio
 async def test_get_run_view_works_for_qa_run(client, seeded_qa_run) -> None:
-    # /view is kind-agnostic: QA runs also have a version snapshot, instances,
-    # and (in review+) current_values. useRun routes BOTH surfaces here, so
+    # /view is kind-agnostic: QA runs also have a version snapshot and (in
+    # review+) current_values. useRun routes BOTH surfaces here, so
     # build_run_view must not assume kind=extraction.
     resp = await client.get(f"/api/v1/runs/{seeded_qa_run.run_id}/view")
     assert resp.status_code == 200
     data = resp.json()["data"]
-    assert "entity_types" in data and "instances" in data and "current_values" in data
+    assert "entity_types" in data and "current_values" in data
 ```
 
-> The exact fixture names (`client`, `client_other_project`, `seeded_extraction_run`, `seeded_qa_run`) differ by repo convention — open `backend/tests/integration/` for the existing run-endpoint test that calls `GET /api/v1/runs/{id}` and the QA-session tests, and copy their fixtures verbatim. The assertions above (envelope `ok`/`data`, the three new keys, the `metadata` serialization, the 403 BOLA gate, and **QA parity** — `/view` works for `kind=quality_assessment` runs) are what this task pins.
+> The exact fixture names (`client`, `client_other_project`, `seeded_extraction_run`, `seeded_qa_run`) differ by repo convention — open `backend/tests/integration/` for the existing run-endpoint test that calls `GET /api/v1/runs/{id}` and the QA-session tests, and copy their fixtures verbatim. The assertions above (envelope `ok`/`data`, the two new keys `entity_types`/`current_values`, the 403 BOLA gate, and **QA parity** — `/view` works for `kind=quality_assessment` runs) are what this task pins.
 
 - [ ] **Step 2: Run it to verify it fails.**
 
@@ -1190,7 +1179,7 @@ async def get_run_view(
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[RunViewResponse]:
     """One-round-trip run-open view: blind-filtered run detail + the frozen
-    entity_types tree + seeded instances + the caller's current_values."""
+    entity_types tree + the caller's current_values."""
     run = await _load_run_and_check_member(db, run_id, current_user_sub)
     is_arbitrator = await is_run_arbitrator(db, run.project_id, current_user_sub)
     view = await build_run_view(
@@ -1261,13 +1250,41 @@ async def test_open_extraction_session_embeds_run_view(
     assert data["run_view"] is not None, "extraction open must embed the run view"
     view = data["run_view"]
     assert view["run"]["id"] == data["run_id"]
-    assert "entity_types" in view and "instances" in view
+    assert "entity_types" in view and "current_values" in view
     # Freshly opened run is in proposal stage -> current_values empty.
     assert view["run"]["stage"] == "proposal"
     assert view["current_values"] == []
+
+
+@pytest.mark.asyncio
+async def test_embedded_run_view_is_reviewer_scoped(
+    client_as_reviewer_b, two_reviewer_review_run
+) -> None:
+    """The embed must be blind-scoped to the OPENER. The endpoint computes
+    is_arbitrator from body.project_id (not run.project_id) — this pins that the
+    embedded run_view never leaks a peer's decisions when a plain reviewer opens
+    a review-stage run. (build_run_view's blind filter is unit-tested in
+    test_build_run_view; this covers the endpoint's own caller_id/is_arbitrator
+    wiring on the mutating path.)"""
+    fx = two_reviewer_review_run  # (project_id, article_id, template_id, reviewer_a)
+    resp = await client_as_reviewer_b.post(
+        "/api/v1/hitl/sessions",
+        json={
+            "kind": "extraction",
+            "project_id": str(fx.project_id),
+            "article_id": str(fx.article_id),
+            "project_template_id": str(fx.template_id),
+        },
+    )
+    assert resp.status_code in (200, 201)
+    view = resp.json()["data"]["run_view"]
+    reviewer_ids = {d["reviewer_id"] for d in view["decisions"]}
+    assert str(fx.reviewer_a) not in reviewer_ids, (
+        "embed leaked reviewer A's decision to reviewer B"
+    )
 ```
 
-> Match `client` / `seeded_project_article_template` to the existing `hitl_sessions` integration test fixtures (`backend/tests/integration/test_hitl_session*.py`).
+> Match `client` / `seeded_project_article_template` to the existing `hitl_sessions` integration test fixtures (`backend/tests/integration/test_hitl_session*.py`). For the second test, `two_reviewer_review_run` builds a review-stage run on a shared (article × template) with reviewer A having recorded a decision — base it on `_build_two_reviewer_review_run` (from `test_blind_review_isolation.py`) but expose the project/article/template ids so the endpoint can resume it; `client_as_reviewer_b` is the integration client authenticated as reviewer B. If wiring a reviewer-B-authenticated client is impractical, keep the first test and rely on `test_build_run_view_blinds_peer_in_review` (Task 5) — but note the endpoint's `body.project_id`-sourced `is_arbitrator` then stays unpinned.
 
 - [ ] **Step 2: Run it to verify it fails.**
 
@@ -1394,16 +1411,6 @@ export interface RunViewEntityType {
   fields: RunViewFieldResponse[];
 }
 
-export interface RunViewInstance {
-  id: string;
-  entity_type_id: string;
-  parent_instance_id: string | null;
-  label: string;
-  sort_order: number;
-  status: string;
-  metadata: Record<string, unknown>;
-}
-
 export interface RunViewCurrentValue {
   instance_id: string;
   field_id: string;
@@ -1411,9 +1418,10 @@ export interface RunViewCurrentValue {
   decision: string;
 }
 
+// `instances` is added here in Task 12 (deferred), alongside its backend field
+// and the frontend adapter that consumes it.
 export interface RunViewResponse extends RunDetailResponse {
   entity_types: RunViewEntityType[];
-  instances: RunViewInstance[];
   current_values: RunViewCurrentValue[];
 }
 ```
@@ -1434,9 +1442,9 @@ git commit -m "feat(runs): RunViewResponse TS types (superset of RunDetailRespon
 
 ### Task 9: `useRun` reads `/view`
 
-`RunViewResponse extends RunDetailResponse`, so every existing `useRun` consumer (reading `.run`/`.proposals`/`.decisions`) keeps compiling; the three new fields become available. The query key stays `runsKeys.detail(runId)`, so all mutation invalidation is unchanged.
+`RunViewResponse extends RunDetailResponse`, so every existing `useRun` consumer (reading `.run`/`.proposals`/`.decisions`) keeps compiling; the two new fields (`entity_types`, `current_values`) become available. The query key stays `runsKeys.detail(runId)`, so all mutation invalidation is unchanged.
 
-> **QA surface note:** `useRun` is consumed by **both** `ExtractionFullScreen.tsx` and `QualityAssessmentFullScreen.tsx`. Re-pointing it to `/view` routes QA runs through `build_run_view` too. This is safe — `/view` is kind-agnostic (Task 6 pins QA parity), QA templates are cloned and carry version snapshots, and the QA page reads only `.run`/`.proposals`/`.decisions`/`.consensus_decisions` (verified: `useReviewerSummary` reads `.decisions`, `ConsensusPanel` reads `.consensus_decisions`) — it ignores the three new fields. QA's session hook (`useQAAssessmentSession`) gets `run_view: null` and does not seed, so QA still does one real `GET /view`; that is acceptable (QA is not the slow-load target). Do not gate `useRun` by kind.
+> **QA surface note:** `useRun` is consumed by **both** `ExtractionFullScreen.tsx` and `QualityAssessmentFullScreen.tsx`. Re-pointing it to `/view` routes QA runs through `build_run_view` too. This is safe — `/view` is kind-agnostic (Task 6 pins QA parity), QA templates are cloned and carry version snapshots, and the QA page reads only `.run`/`.proposals`/`.decisions`/`.consensus_decisions` (verified: `useReviewerSummary` reads `.decisions`, `ConsensusPanel` reads `.consensus_decisions`) — it ignores the two new fields. QA's session hook (`useQAAssessmentSession`) gets `run_view: null` and does not seed, so QA still does one real `GET /view`; that is acceptable (QA is not the slow-load target). Do not gate `useRun` by kind.
 
 **Files:**
 - Modify: `frontend/hooks/runs/useRun.ts`
@@ -1694,15 +1702,16 @@ git commit -m "feat(extraction): review-stage values come from the view's curren
 
 **Design for when this is picked up** (resolve both hazards explicitly):
 
+0. **Add `instances` to the view server-side** (net-new here, since Phase 2 deliberately omitted it): a `RunViewInstance` schema carrying the **full** field set the frontend `ExtractionInstance` needs — `id`, `entity_type_id`, `parent_instance_id`, `label`, `sort_order`, `status`, `metadata` (via the `metadata_`→`metadata` `serialization_alias`), **plus** `project_id`, `created_by`, `created_at`, `updated_at` (all on the ORM row) — so the adapter is lossless rather than casting past missing fields; a `_instances_for_run(db, run)` reader (keyed by `article_id`+`template_id`, not run-scoped — cross-reference `ExtractionExportService._load_instances_for_runs` as the canonical scoping rule, do not import it); `instances: list[RunViewInstance]` on `RunViewResponse` (backend + the frontend `RunViewInstance` interface). Extend the Task 5 `build_run_view` + the Task 6 endpoint test to cover it (incl. the `metadata` wire-key assertion).
 1. **Adapters** in a new `frontend/lib/extraction/runViewAdapters.ts`:
    - `entityTypesFromRunView(view)`: map `view.entity_types` → `ExtractionEntityTypeWithFields[]`, setting `template_id: view.run.template_id` (a real string — the project template the run belongs to; the form never reads it, and `partitionEntityTypes` reads only `role`). Keep `allowed_values`/`allowed_units` as arrays and `validation_schema` as-is.
-   - `instancesFromRunView(view, run)`: backfill the 5 missing fields from the run header — `project_id: run.project_id`, `template_id: run.template_id`, `article_id: run.article_id`, `created_by: run.created_by`, and `created_at`/`updated_at` from the instance if added to `RunViewInstance`, else from a stable sentinel. **Decision point:** rather than backfill audit fields, prefer **adding `project_id`, `created_by`, `created_at`, `updated_at` to the backend `RunViewInstance`** (Task 3) so the adapter is lossless — cheaper than lying with casts. Re-run Tasks 3/6 tests if you widen `RunViewInstance`.
+   - `instancesFromRunView(view, run)`: with the widened `RunViewInstance` from step 0, this is a straight map (set `article_id: run.article_id` if `RunViewInstance` omits it). No `as unknown as` casts past missing fields.
 2. **Source from the view in `ExtractionFullScreen.tsx`** via `useMemo(() => entityTypesFromRunView(runDetail), [runDetail])` and the instances analog.
 3. **Resolve Hazard 1** by converting every `await refreshInstances()`-then-read site to **refetch-and-derive**: `const { data } = await refetchRun(); const fresh = instancesFromRunView(data, run);` and use `fresh` for the immediate read — never read the memo-derived `instances` in the same tick as the refetch. Audit all sites first: `grep -n "refreshInstances" frontend/pages/ExtractionFullScreen.tsx`. Sites that do **not** read instances immediately may use `queryClient.invalidateQueries({ queryKey: runsKeys.detail(activeRunId) })`.
 4. **Strip the direct reads** from `useExtractionData` (remove `entityTypes`/`instances`/`refreshInstances`/`loadInstances`/`mergeInstancesById` + the `extraction_entity_types`/`extraction_instances` queries; keep article/project/template/articles). Re-point any other `useExtractionData.entityTypes`/`.instances` consumer (`grep -rn "useExtractionData" frontend/`).
 5. **Behavior to preserve:** the frozen-snapshot entity_types now drive rendering (was live) — confirm a run opened against a since-edited template renders its frozen structure (the whole point of the Phase-A widening). Keep `mergeInstancesById`'s structural-sharing intent (avoid form remount/scroll-reset) — derive `instances` with a stable-identity memo, or keep a small by-id merge in the adapter.
 
-When this sub-phase lands, the backend `instances` field in `RunViewResponse` (built in Tasks 3/5, currently returned but not yet consumed by the form) becomes the single source, closing the last direct read on the open path.
+When this sub-phase lands, the backend `instances` field added in step 0 becomes the single source for the form's instances, closing the last direct Supabase read on the open path.
 
 ---
 
@@ -1753,7 +1762,7 @@ git commit -m "docs(plans): Phase 2 RunView server-collapse implementation plan"
 **Spec coverage (against the blueprint §Phase 2 + the task brief item A):**
 
 - Snapshot widening migration (lossy `_snapshot_initial_version`): Tasks 1 (unify + widen both builders) + 2 (0026 backfill + head-pin bump). Covers `role`, `description`, `validation_schema`, `unit`, `allowed_units`, `allow_other`/`other_label`/`other_placeholder`, `llm_description` — verified against the actual ORM columns. Live-read fallback for narrow legacy snapshots: Task 3 (`_snapshot_is_narrow` + `_entity_types_for_run`). ✓
-- `build_run_view` composes (not duplicates) `get_run_with_workflow_history` + entity_types (snapshot/live) + instances + current_values: Task 5. ✓
+- `build_run_view` composes (not duplicates) `get_run_with_workflow_history` + entity_types (snapshot/live) + current_values: Task 5. (Instances deferred to Task 12 — see scope note.) ✓
 - Read-only `GET /runs/{id}/view` + embed in `POST /hitl/sessions`: Tasks 6 + 7. ✓
 - Frontend: `useExtractionSession` consumes the embed (Task 10); `useRun` reads `/view` (Task 9); `useExtractedValues` reads current_values (Task 11). Removing the direct entity_types+instances Supabase reads from `useExtractionData` is **deferred to Task 12** (a documented sub-phase, not executed in Phase 2) — those reads are parallel/off the critical serial path and carry a read-after-write hazard. The structural slow-load collapse (the brief's intent) is fully delivered by Tasks 7/9/10/11. ⚠️ partial-by-design
 
@@ -1765,11 +1774,10 @@ git commit -m "docs(plans): Phase 2 RunView server-collapse implementation plan"
 - `computeRowProgress` stays pure/client — no server progress field; it keeps receiving `instances`/`values`/`entityTypes` on the client (from `useExtractionData` in Phase 2, from the view after Task 12). ✓ (Invariant 4)
 - Behavior parity for current_values — Task 4 mirrors `loadValuesForUser` (human base layer + reviewer-decision override via the materialized pointer, `reject` preserved); the client applies the identical `unwrapValue` + `extractValueFromDb`. ✓ (Invariant 6)
 
-**Type consistency:** `RunViewResponse` (backend `extends RunDetailResponse` via subclass; frontend `extends RunDetailResponse` via interface) carries the same three fields `entity_types`/`instances`/`current_values`. `RunViewEntityType`/`RunViewField`/`RunViewInstance`/`RunViewCurrentValue` names match across `backend/app/schemas/extraction_run.py` and `frontend/hooks/runs/types.ts`. `RunViewCurrentValue` (the only view field consumed in Phase 2) flows server → `useRun` → `runDetail.current_values` → `useExtractedValues` prop with matching `instance_id`/`field_id`/`value`/`decision`. `build_run_view(db, run_id, *, caller_id, is_arbitrator)` signature is identical in the endpoint (Task 6) and the embed (Task 7). `runsKeys.detail(runId)` is the single cache key seeded (Task 10) and read (Task 9) — all five mutation hooks already invalidate it, so no invalidation change is needed.
+**Type consistency:** `RunViewResponse` (backend `extends RunDetailResponse` via subclass; frontend `extends RunDetailResponse` via interface) carries the same two Phase-2 fields `entity_types`/`current_values` (`instances` added in Task 12). `RunViewField`/`RunViewEntityType`/`RunViewCurrentValue` names match across `backend/app/schemas/extraction_run.py` and `frontend/hooks/runs/types.ts`. `RunViewCurrentValue` (the only view field consumed in Phase 2) flows server → `useRun` → `runDetail.current_values` → `useExtractedValues` prop with matching `instance_id`/`field_id`/`value`/`decision`. `build_run_view(db, run_id, *, caller_id, is_arbitrator)` signature is identical in the endpoint (Task 6) and the embed (Task 7). `runsKeys.detail(runId)` is the single cache key seeded (Task 10) and read (Task 9) — all five mutation hooks already invalidate it, so no invalidation change is needed.
 
 **Known reconciliation points flagged for the implementer (not placeholders — explicit verify-then-adjust):**
 
 - Integration-test fixture names (`client`, `seeded_extraction_run`, `seeded_project_article_template`) differ by repo convention — copy them from the existing `tests/integration/test_extraction_runs*.py` / `test_hitl_session*.py` modules (Tasks 6, 7).
-- `RunViewInstance.metadata` wire-key serialization (`metadata_` → `metadata`) — pinned by the Task 6 endpoint assertion.
-- `resolve_caller_current_values` `accept_proposal` value sourcing — match current production `loadValuesForUser` behavior exactly; do not "fix" (Task 4 parity check).
+- `resolve_caller_current_values` `accept_proposal` value sourcing — match current production `loadValuesForUser` behavior exactly; do not "fix" (Task 4 automated parity test).
 - Frontend type reconciliation for the view's `entity_types`/`instances` (`template_id` non-null; `ExtractionInstance` missing 5 required fields) — owned by the deferred Task 12, which proposes widening `RunViewInstance` rather than casting past missing fields.
