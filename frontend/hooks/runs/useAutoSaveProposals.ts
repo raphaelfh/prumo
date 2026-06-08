@@ -45,6 +45,7 @@ import { toast } from 'sonner';
 import { apiClient } from '@/integrations/api';
 import { t } from '@/lib/copy';
 import { extractValueForSave } from '@/lib/validations/selectOther';
+import { selectDirtyEntries } from '@/lib/extraction/autosaveDirty';
 
 export type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 
@@ -70,6 +71,13 @@ export interface UseAutoSaveProposalsProps {
    * about the stage discriminator (QA today) are unaffected.
    */
   stage?: string | null;
+  /**
+   * Server-persisted values per ``${instanceId}_${fieldId}`` (the map the
+   * form hydrated from). A coord whose current value still equals its
+   * baseline is treated as already saved, so opening a run never re-POSTs
+   * loaded values as fresh proposals/decisions on mount.
+   */
+  baselineValues?: Record<string, unknown>;
 }
 
 export interface UseAutoSaveProposalsReturn {
@@ -106,7 +114,8 @@ function isWritableStage(stage?: string | null): boolean {
 export function useAutoSaveProposals(
   props: UseAutoSaveProposalsProps,
 ): UseAutoSaveProposalsReturn {
-  const { runId, values, enabled = true, debounceMs = 600, stage } = props;
+  const { runId, values, enabled = true, debounceMs = 600, stage, baselineValues } =
+    props;
 
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
@@ -123,6 +132,10 @@ export function useAutoSaveProposals(
   runIdRef.current = runId;
   enabledRef.current = enabled;
   stageRef.current = stage;
+  // Server-persisted baseline (see prop docs). Mirrored in a ref so the
+  // diff sees the latest hydrated map without re-creating callbacks.
+  const baselineRef = useRef<Record<string, unknown>>(baselineValues ?? {});
+  baselineRef.current = baselineValues ?? {};
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>();
   // Stringified last successful write per `${instanceId}_${fieldId}` —
@@ -132,20 +145,15 @@ export function useAutoSaveProposals(
   // as a synchronous lock across overlapping ``performSave`` invocations.
   const activeSavePromiseRef = useRef<Promise<void> | null>(null);
 
-  const computeDirtyEntries = useCallback((): Array<[string, unknown]> => {
-    const dirty: Array<[string, unknown]> = [];
-    for (const [key, value] of Object.entries(valuesRef.current)) {
-      // Skip ``undefined`` (field never touched) but treat ``null`` /
-      // ``''`` as deliberate clears — they must be persisted as
-      // ``{ value: null }`` proposals so reloads don't resurrect the
-      // previous value.
-      if (value === undefined) continue;
-      const stringified = JSON.stringify(value ?? null);
-      if (lastSavedByKeyRef.current[key] === stringified) continue;
-      dirty.push([key, value]);
-    }
-    return dirty;
-  }, []);
+  const computeDirtyEntries = useCallback(
+    (): Array<[string, unknown]> =>
+      selectDirtyEntries(
+        valuesRef.current,
+        lastSavedByKeyRef.current,
+        baselineRef.current,
+      ),
+    [],
+  );
 
   const performSave = useCallback(async (): Promise<void> => {
     while (activeSavePromiseRef.current) {
