@@ -14,7 +14,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useQueryClient } from "@tanstack/react-query";
+
 import { apiClient } from "@/integrations/api";
+import { runsKeys, type RunViewResponse } from "@/hooks/runs/types";
 
 // Monotonically-increasing generation token. Each effect-driven call to
 // `open()` reads the next value and only commits state when it still
@@ -48,6 +51,7 @@ interface OpenResponse {
   kind: "extraction" | "quality_assessment";
   project_template_id: string;
   instances_by_entity_type: Record<string, string>;
+  run_view: RunViewResponse | null;
 }
 
 export function useExtractionSession({
@@ -60,6 +64,7 @@ export function useExtractionSession({
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const generationRef = useRef(0);
+  const queryClient = useQueryClient();
 
   const open = useCallback(async () => {
     if (!enabled || !projectId || !articleId || !projectTemplateId) return;
@@ -82,6 +87,13 @@ export function useExtractionSession({
       // article — discarding it prevents autosave from routing
       // proposals to the wrong run (#23).
       if (myGeneration !== generationRef.current) return;
+      // Pre-seed the run-detail cache from the embedded view so useRun reads
+      // from cache on first paint — collapsing the session -> GET /runs/{id} ->
+      // values serial waterfall. Inside the generation guard so a stale
+      // article's view can never poison the new article's run cache.
+      if (data.run_view) {
+        queryClient.setQueryData(runsKeys.detail(data.run_id), data.run_view);
+      }
       setSession({
         runId: data.run_id,
         projectTemplateId: data.project_template_id,
@@ -103,7 +115,7 @@ export function useExtractionSession({
     } finally {
       if (myGeneration === generationRef.current) setLoading(false);
     }
-  }, [enabled, projectId, articleId, projectTemplateId]);
+  }, [enabled, projectId, articleId, projectTemplateId, queryClient]);
 
   useEffect(() => {
     void open();
