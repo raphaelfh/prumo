@@ -88,6 +88,16 @@ class ExtractionProposalService:
         if source_value == "human" and source_user_id is None:
             raise InvalidProposalError("source='human' requires source_user_id")
 
+        # Idempotent re-record: a client replaying an unchanged value (form
+        # remount, debounce double-fire, retry) must not append a duplicate
+        # row. The audit trail captures value *changes*, not redundant
+        # replays. A genuinely changed value still appends.
+        latest = await self._repo.get_latest_for_coord(
+            run_id, instance_id, field_id, source_value, source_user_id
+        )
+        if latest is not None and latest.proposed_value == proposed_value:
+            return latest
+
         record = ExtractionProposalRecord(
             run_id=run_id,
             instance_id=instance_id,

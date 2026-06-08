@@ -48,3 +48,28 @@ class ExtractionReviewerDecisionRepository:
         )
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
+
+    async def get_latest_for_coord(
+        self,
+        run_id: UUID,
+        reviewer_id: UUID,
+        instance_id: UUID,
+        field_id: UUID,
+    ) -> ExtractionReviewerDecision | None:
+        """Newest decision a reviewer made for a coord, for the idempotency
+        check. ``id`` is the tiebreaker on equal ``created_at``."""
+        stmt = (
+            select(ExtractionReviewerDecision)
+            .where(
+                ExtractionReviewerDecision.run_id == run_id,
+                ExtractionReviewerDecision.reviewer_id == reviewer_id,
+                ExtractionReviewerDecision.instance_id == instance_id,
+                ExtractionReviewerDecision.field_id == field_id,
+            )
+            .order_by(
+                ExtractionReviewerDecision.created_at.desc(),
+                ExtractionReviewerDecision.id.desc(),
+            )
+            .limit(1)
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
