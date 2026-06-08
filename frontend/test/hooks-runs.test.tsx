@@ -54,7 +54,7 @@ afterEach(() => {
 });
 
 describe("useRun", () => {
-  it("issues GET /api/v1/runs/{runId} and exposes the detail payload", async () => {
+  it("issues GET /api/v1/runs/{runId}/view and exposes the detail payload", async () => {
     const detail: Pick<RunDetailResponse, "run"> = {
       run: {
         id: "run-1",
@@ -86,7 +86,7 @@ describe("useRun", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(apiClientMock).toHaveBeenCalledTimes(1);
-    expect(apiClientMock).toHaveBeenCalledWith("/api/v1/runs/run-1");
+    expect(apiClientMock).toHaveBeenCalledWith("/api/v1/runs/run-1/view");
     expect(result.current.data?.run.id).toBe("run-1");
   });
 
