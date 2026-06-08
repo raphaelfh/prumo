@@ -9,6 +9,7 @@ from pydantic import BaseModel, model_validator
 # canonical enum value without importing directly from app.models.* —
 # enforced by scripts/fitness/check_layered_arch.py.
 from app.models.extraction_versioning import TemplateKind  # noqa: E402,F401
+from app.schemas.extraction_run import RunViewResponse
 
 
 class OpenHITLSessionRequest(BaseModel):
@@ -30,6 +31,10 @@ class OpenHITLSessionResponse(BaseModel):
     kind: Literal["extraction", "quality_assessment"]
     project_template_id: UUID
     instances_by_entity_type: dict[str, str]
+    # Embedded run-open view (extraction only). Lets the client render from a
+    # single round-trip instead of session -> GET /runs/{id} -> values. Null for
+    # quality_assessment (its surface does not consume this).
+    run_view: RunViewResponse | None = None
 
 
 class CloneTemplateRequest(BaseModel):

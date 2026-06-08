@@ -11,11 +11,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from app.api.deps.security import ensure_project_member, get_current_user_sub
 from app.core.deps import DbSession
 from app.schemas.common import ApiResponse
+from app.schemas.extraction_run import RunViewResponse
 from app.schemas.hitl_session import (
     OpenHITLSessionRequest,
     OpenHITLSessionResponse,
     TemplateKind,
 )
+from app.services.extraction_run_read_service import build_run_view, is_run_arbitrator
 from app.services.hitl_session_service import (
     HITLSessionInputError,
     HITLSessionService,
@@ -77,6 +79,14 @@ async def open_hitl_session(
         # internal advance to PROPOSAL. The caller should retry — return
         # 409 Conflict instead of bubbling up an unhandled 500.
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+
+    run_view: RunViewResponse | None = None
+    if session.kind == TemplateKind.EXTRACTION:
+        is_arbitrator = await is_run_arbitrator(db, body.project_id, current_user_sub)
+        run_view = await build_run_view(
+            db, session.run_id, caller_id=current_user_sub, is_arbitrator=is_arbitrator
+        )
+
     await db.commit()
     # Issue #32: a resumed Run is not a created resource; emit 200.
     if not session.created:
@@ -87,6 +97,7 @@ async def open_hitl_session(
             kind=session.kind.value,
             project_template_id=session.project_template_id,
             instances_by_entity_type=session.instances_by_entity_type,
+            run_view=run_view,
         ),
         trace_id=getattr(request.state, "trace_id", None),
     )
