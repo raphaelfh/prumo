@@ -35,9 +35,9 @@ import {
 } from 'react';
 import { toast } from 'sonner';
 
-import { supabase } from '@/integrations/supabase/client';
 import { extractValueFromDb } from '@/lib/validations/selectOther';
 import { dispatchValueUpdates } from '@/lib/extraction/valueUpdates';
+import { pickLatestProposalPerCoord } from '@/lib/extraction/proposalValues';
 import { t } from '@/lib/copy';
 import { ExtractionValueService } from '@/services/extractionValueService';
 import type { ProposalRecordResponse } from '@/hooks/runs/types';
@@ -55,11 +55,24 @@ interface UseExtractedValuesProps {
   runId: string | null | undefined;
   stage: string | null | undefined;
   proposals?: ProposalRecordResponse[];
+  /**
+   * Current reviewer id, supplied by the caller (from AuthContext via
+   * ``useCurrentUser``) so this hook never fires its own ``auth.getUser``
+   * round-trip — it re-runs on every proposals/stage change, which made it
+   * the dominant ``/auth/v1/user`` multiplier on run open.
+   */
+  currentUserId: string | null;
   enabled?: boolean;
 }
 
 interface UseExtractedValuesReturn {
   values: Record<string, any>;
+  /**
+   * The raw server-loaded value map (per ``${instanceId}_${fieldId}``) this
+   * hook last hydrated from. Passed to ``useAutoSaveProposals`` as the
+   * baseline so opening a run doesn't re-POST loaded values on mount.
+   */
+  loadedValues: Record<string, any>;
   updateValue: (instanceId: string, fieldId: string, value: any) => void;
   loading: boolean;
   initialized: boolean;
@@ -115,9 +128,11 @@ function mergeValuesById(
 export function useExtractedValues(
   props: UseExtractedValuesProps,
 ): UseExtractedValuesReturn {
-  const { runId, stage, proposals, enabled = true } = props;
+  const { runId, stage, proposals, currentUserId, enabled = true } = props;
 
   const [values, setValues] = useState<Record<string, any>>({});
+  // Raw server map the hook hydrated from — the autosave baseline.
+  const [loadedValues, setLoadedValues] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
   const [initialized, setInitialized] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -125,6 +140,17 @@ export function useExtractedValues(
 
   const applyLoadedValues = useCallback(
     (valuesMap: Record<string, any>) => {
+      // Expose the raw server map as the autosave baseline (see return docs)
+      // so the form never re-POSTs hydrated values on mount. Every hydration
+      // path (proposal + reviewer-state) routes through here, including the
+      // empty-map case, so switching runs replaces the baseline too. Keep the
+      // SAME reference when the content is unchanged: this runs on every
+      // ``loadValues`` (e.g. each ``proposals`` change), and emitting a fresh
+      // object each time churned re-renders (and, with an unstable proposals
+      // prop, looped to OOM).
+      setLoadedValues((prev) =>
+        JSON.stringify(prev) === JSON.stringify(valuesMap) ? prev : valuesMap,
+      );
       setValues((prev) => {
         if (hydratedRunIdRef.current !== runId) {
           hydratedRunIdRef.current = runId ?? null;
@@ -164,24 +190,20 @@ export function useExtractedValues(
           // ``source_user_id``: the current reviewer sees only their
           // own human edits, plus all AI / system proposals (which are
           // not reviewer-attributable opinions).
-          const userRes = await supabase.auth.getUser();
-          if (userRes.error) throw userRes.error;
-          const currentUserId = userRes.data.user?.id ?? null;
-
+          // Select the NEWEST proposal per coordinate (by ``created_at``),
+          // honoring the blind-review filter. Selecting by ``created_at``
+          // rather than array position fixes the "edited value reverts to
+          // the old value after refresh" bug: proposals are append-only, the
+          // API returns them oldest-first, and the previous first-hit-wins
+          // loop therefore surfaced the stale original value. The blind
+          // filter (a ``human`` proposal from another reviewer is hidden)
+          // now lives in the shared resolver. See
+          // ``frontend/lib/extraction/proposalValues.ts``.
           const valuesMap: Record<string, any> = {};
-          // ``proposals`` is sorted newest-first by the API; first
-          // visible hit per coord wins.
-          for (const p of proposals ?? []) {
-            // Another reviewer's edit — skip to keep the blind
-            // contract. ``source_user_id`` is guaranteed non-null for
-            // ``source='human'`` (backend CHECK), so a missing current
-            // user id (signed out) skips every human proposal too —
-            // fail closed.
-            if (p.source === 'human' && p.source_user_id !== currentUserId) {
-              continue;
-            }
-            const key = `${p.instance_id}_${p.field_id}`;
-            if (key in valuesMap) continue;
+          const latestByCoord = pickLatestProposalPerCoord(proposals, {
+            currentUserId,
+          });
+          for (const [key, p] of latestByCoord) {
             const unwrapped = unwrapProposalValue(p.proposed_value);
             const unit =
               typeof p.proposed_value === 'object' &&
@@ -197,16 +219,10 @@ export function useExtractedValues(
         }
 
         if (REVIEWER_STATE_STAGES.has(stage)) {
-          // Surface auth errors instead of treating them as "user is
-          // signed out" — a transient Supabase 5xx on /auth/v1/user
-          // would otherwise blank the entire extraction form silently
-          // (#49). Throwing here flows into the catch below, which
-          // sets ``error`` and toasts so the reviewer knows their
-          // edits are not lost.
-          const userRes = await supabase.auth.getUser();
-          if (userRes.error) throw userRes.error;
-          const user = userRes.data.user;
-          if (!user) {
+          // ``currentUserId`` comes from AuthContext (zero network), so the
+          // transient /auth/v1/user 5xx that used to blank the form (#49) is
+          // gone. A null id means signed out → reset, don't fetch values.
+          if (!currentUserId) {
             hydratedRunIdRef.current = runId;
             resetValuesIfNeeded(setValues);
             return;
@@ -214,7 +230,7 @@ export function useExtractedValues(
 
           const rows = await ExtractionValueService.loadValuesForUser(
             runId,
-            user.id,
+            currentUserId,
           );
           const valuesMap: Record<string, any> = {};
           for (const row of rows) {
@@ -245,7 +261,7 @@ export function useExtractedValues(
         if (!silent) setLoading(false);
       }
     },
-    [runId, stage, proposals, applyLoadedValues],
+    [runId, stage, proposals, currentUserId, applyLoadedValues],
   );
 
   useEffect(() => {
@@ -282,6 +298,7 @@ export function useExtractedValues(
 
   return {
     values,
+    loadedValues,
     updateValue,
     loading,
     initialized,

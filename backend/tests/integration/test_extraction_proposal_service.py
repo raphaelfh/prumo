@@ -395,6 +395,16 @@ async def test_list_by_item_returns_chronological(
         source=ExtractionProposalSource.AI,
         proposed_value={"v": "2"},
     )
+    # Same-transaction inserts tie on created_at (transaction_timestamp); force
+    # a distinct order so the chronological assertion is deterministic.
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_proposal_records "
+            "SET created_at = created_at - interval '1 second' WHERE id = :id"
+        ),
+        {"id": str(p1.id)},
+    )
+
     rows = await service.list_by_item(run_id, instance_id, field_id)
     ids = [r.id for r in rows]
     assert p1.id in ids and p2.id in ids
@@ -437,6 +447,16 @@ async def test_list_by_run_returns_chronological_filtered_by_run_id(
         field_id=_field_b,
         source=ExtractionProposalSource.AI,
         proposed_value={"v": "b1"},
+    )
+
+    # Same-transaction inserts tie on created_at; force a distinct order so the
+    # chronological assertion is deterministic.
+    await db_session.execute(
+        text(
+            "UPDATE public.extraction_proposal_records "
+            "SET created_at = created_at - interval '1 second' WHERE id = :id"
+        ),
+        {"id": str(a1.id)},
     )
 
     rows = await service.list_by_run(run_a)

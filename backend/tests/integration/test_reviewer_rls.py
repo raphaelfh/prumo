@@ -119,3 +119,60 @@ async def test_workflow_insert_policy_routes_through_is_project_reviewer(
     assert expr is not None
     assert "is_project_reviewer" in expr
     assert "is_project_manager" not in expr
+
+
+@pytest.mark.asyncio
+async def test_reviewer_states_select_policy_is_reviewer_scoped(
+    db_session: AsyncSession,
+) -> None:
+    """Migration 0025 self-scopes the reviewer_states SELECT policy as well.
+    The Phase-0 blind-isolation file only guards the decisions table; without
+    this, the reviewer_states leak (current-decision pointer per coord) is
+    untested."""
+    expr = (
+        await db_session.execute(
+            text(
+                "SELECT pg_get_expr(p.polqual, p.polrelid) "
+                "FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid "
+                "WHERE c.relname = 'extraction_reviewer_states' "
+                "AND p.polname = 'extraction_reviewer_states_select'"
+            )
+        )
+    ).scalar()
+    assert expr is not None, "SELECT policy missing"
+    assert "reviewer_id" in expr, (
+        "Blind-review leak: extraction_reviewer_states_select does not "
+        f"self-scope by reviewer_id. Current policy: {expr}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_is_project_arbitrator_exists_and_executable_by_authenticated(
+    db_session: AsyncSession,
+) -> None:
+    """The reviewer-scoped policies call ``is_project_arbitrator`` as the
+    calling (``authenticated``) role. If EXECUTE is not granted, every scoped
+    SELECT silently short-circuits to zero rows for real users — so lock both
+    the helper's existence and the authenticated EXECUTE grant."""
+    exists = (
+        await db_session.execute(
+            text(
+                "SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace "
+                "WHERE n.nspname = 'public' AND p.proname = 'is_project_arbitrator'"
+            )
+        )
+    ).scalar()
+    assert exists == 1, "is_project_arbitrator helper missing"
+
+    can_execute = (
+        await db_session.execute(
+            text(
+                "SELECT has_function_privilege('authenticated', "
+                "'public.is_project_arbitrator(uuid, uuid)', 'EXECUTE')"
+            )
+        )
+    ).scalar()
+    assert can_execute is True, (
+        "authenticated lacks EXECUTE on is_project_arbitrator — reviewer-scoped "
+        "SELECT policies would return zero rows for real users"
+    )

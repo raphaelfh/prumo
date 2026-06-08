@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
 
 import { QualityAssessmentInterface } from '@/components/quality/QualityAssessmentInterface';
@@ -90,16 +91,23 @@ function LocationProbe() {
 }
 
 function renderInterface() {
+  // HITLArticleTable now uses TanStack Query (useTemplateEntityTypes /
+  // useArticleExtractionValues), so the tree needs a QueryClientProvider.
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   return render(
-    <MemoryRouter initialEntries={['/projects/p1']}>
-      <Routes>
-        <Route
-          path="/projects/:projectId"
-          element={<QualityAssessmentInterface projectId="p1" />}
-        />
-        <Route path="*" element={<LocationProbe />} />
-      </Routes>
-    </MemoryRouter>,
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={['/projects/p1']}>
+        <Routes>
+          <Route
+            path="/projects/:projectId"
+            element={<QualityAssessmentInterface projectId="p1" />}
+          />
+          <Route path="*" element={<LocationProbe />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 

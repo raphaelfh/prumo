@@ -85,6 +85,22 @@ class ExtractionReviewService:
         if decision_value == "edit" and value is None:
             raise InvalidDecisionError("decision='edit' requires value")
 
+        # Idempotent re-record: an unchanged decision replay (form remount,
+        # retry) must not append a duplicate row. Compare the decision kind,
+        # its value, and the referenced proposal (which carries the meaning
+        # for ``accept_proposal``, whose ``value`` is null). A changed
+        # decision still appends and re-points the ReviewerState.
+        latest = await self._decisions.get_latest_for_coord(
+            run_id, reviewer_id, instance_id, field_id
+        )
+        if (
+            latest is not None
+            and latest.decision == decision_value
+            and latest.value == value
+            and latest.proposal_record_id == proposal_record_id
+        ):
+            return latest
+
         record = ExtractionReviewerDecision(
             run_id=run_id,
             instance_id=instance_id,
