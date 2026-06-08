@@ -49,6 +49,7 @@ from app.schemas.extraction_run import (
     RunSummaryResponse,
     RunViewCurrentValue,
     RunViewEntityType,
+    RunViewResponse,
 )
 
 
@@ -258,6 +259,50 @@ async def resolve_caller_current_values(
         )
 
     return list(merged.values())
+
+
+# Stages whose form hydrates from the materialized reviewer_states + decisions
+# (current_values). In 'proposal' the client uses proposals[]; pending/cancelled
+# show nothing.
+_CURRENT_VALUE_STAGES = frozenset(
+    {
+        ExtractionRunStage.REVIEW.value,
+        ExtractionRunStage.CONSENSUS.value,
+        ExtractionRunStage.FINALIZED.value,
+    }
+)
+
+
+async def build_run_view(
+    db: AsyncSession, run_id: UUID, *, caller_id: UUID, is_arbitrator: bool
+) -> RunViewResponse:
+    """The one-round-trip run-open view: the blind-filtered run detail plus the
+    frozen entity_types tree and the caller's current_values. COMPOSES
+    get_run_with_workflow_history (the single blind filter) — it never re-queries
+    the workflow tables, so the blind boundary cannot drift. The composed
+    ``detail.run`` (a RunSummaryResponse) already carries ``version_id`` /
+    ``template_id`` / ``stage`` / ``article_id``, so there is no second ORM
+    fetch of the run here."""
+    detail = await get_run_with_workflow_history(
+        db, run_id, caller_id=caller_id, is_arbitrator=is_arbitrator
+    )
+
+    entity_types = await _entity_types_for_run(db, detail.run)
+    current_values = (
+        await resolve_caller_current_values(db, run_id, caller_id=caller_id)
+        if detail.run.stage in _CURRENT_VALUE_STAGES
+        else []
+    )
+
+    return RunViewResponse(
+        run=detail.run,
+        proposals=detail.proposals,
+        decisions=detail.decisions,
+        consensus_decisions=detail.consensus_decisions,
+        published_states=detail.published_states,
+        entity_types=entity_types,
+        current_values=current_values,
+    )
 
 
 async def is_run_arbitrator(db: AsyncSession, project_id: UUID, user_id: UUID) -> bool:
