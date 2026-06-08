@@ -61,6 +61,12 @@ interface UseExtractedValuesProps {
 
 interface UseExtractedValuesReturn {
   values: Record<string, any>;
+  /**
+   * The raw server-loaded value map (per ``${instanceId}_${fieldId}``) this
+   * hook last hydrated from. Passed to ``useAutoSaveProposals`` as the
+   * baseline so opening a run doesn't re-POST loaded values on mount.
+   */
+  loadedValues: Record<string, any>;
   updateValue: (instanceId: string, fieldId: string, value: any) => void;
   loading: boolean;
   initialized: boolean;
@@ -119,6 +125,8 @@ export function useExtractedValues(
   const { runId, stage, proposals, enabled = true } = props;
 
   const [values, setValues] = useState<Record<string, any>>({});
+  // Raw server map the hook hydrated from — the autosave baseline.
+  const [loadedValues, setLoadedValues] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
   const [initialized, setInitialized] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -126,6 +134,11 @@ export function useExtractedValues(
 
   const applyLoadedValues = useCallback(
     (valuesMap: Record<string, any>) => {
+      // Expose the raw server map as the autosave baseline (see return docs)
+      // so the form never re-POSTs hydrated values on mount. Every hydration
+      // path (proposal + reviewer-state) routes through here, including the
+      // empty-map case, so switching runs replaces the baseline too.
+      setLoadedValues(valuesMap);
       setValues((prev) => {
         if (hydratedRunIdRef.current !== runId) {
           hydratedRunIdRef.current = runId ?? null;
@@ -283,6 +296,7 @@ export function useExtractedValues(
 
   return {
     values,
+    loadedValues,
     updateValue,
     loading,
     initialized,
