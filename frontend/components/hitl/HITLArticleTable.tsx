@@ -6,9 +6,10 @@
  * ``kind`` and a caller-supplied ``rowActionHref`` so each page can route
  * into its own full-screen surface (extraction or QA).
  *
- * Progress is computed from the user's ``extraction_reviewer_states``
- * keyed by template — kind-agnostic, so flipping the active template in
- * the mini-header above re-queries this table without other changes.
+ * Progress is the canonical required-field metric (``computeRowProgress``)
+ * over the per-article values from ``useArticleExtractionValues`` (the shared
+ * hook this table, the extraction table and the dashboard all consume), so
+ * every surface shows the same percentage.
  *
  * The richer extraction-only affordances (batch AI extraction, column
  * resizing, multi-select) live on ``ArticleExtractionTable`` and stay

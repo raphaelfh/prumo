@@ -5,7 +5,7 @@
  * including templates, instances and values.
  */
 
-import {useEffect, useState} from 'react';
+import {useEffect, useMemo, useState} from 'react';
 import {useSearchParams} from 'react-router-dom';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
@@ -16,6 +16,9 @@ import {
     useHITLProjectTemplates,
 } from '@/hooks/hitl/useHITLProjectTemplates';
 import {useProjectMemberRole} from '@/hooks/useProjectMemberRole';
+import {useArticleExtractionValues} from '@/hooks/extraction/useArticleExtractionValues';
+import {useTemplateEntityTypes} from '@/hooks/extraction/useTemplateEntityTypes';
+import {computeRowProgress} from '@/lib/extraction/progress';
 import {ArticleExtractionTable} from './ArticleExtractionTable';
 import {ConfigureTemplateFirst} from './config/ConfigureTemplateFirst';
 import {ExtractionExportDialog} from './ExtractionExportDialog';
@@ -46,12 +49,33 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   const [showCreateCustomDialog, setShowCreateCustomDialog] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [articles, setArticles] = useState<any[]>([]);
-  const [extractionStats, setExtractionStats] = useState({
-    totalArticles: 0,
-    extractionsStarted: 0,
-    extractionsCompleted: 0,
-    progressPercentage: 0,
-  });
+  // Per-article values + required-field structure, shared with the list
+  // tables. "Overall progress" below is the mean of the canonical per-article
+  // completion (previously "% of articles touched").
+  const { valuesByArticle } = useArticleExtractionValues(
+    projectId,
+    activeTemplate?.id,
+    user?.id,
+  );
+  const { entityTypes } = useTemplateEntityTypes(activeTemplate?.id);
+
+  const extractionStats = useMemo(() => {
+    const totalArticles = articles.length;
+    let completed = 0;
+    let sum = 0;
+    for (const article of articles) {
+      const d = valuesByArticle.get(article.id);
+      const pct = d ? computeRowProgress(d.instances, d.values, entityTypes) : 0;
+      sum += pct;
+      if (pct >= 100) completed += 1;
+    }
+    return {
+      totalArticles,
+      extractionsStarted: valuesByArticle.size,
+      extractionsCompleted: completed,
+      progressPercentage: totalArticles > 0 ? Math.round(sum / totalArticles) : 0,
+    };
+  }, [articles, valuesByArticle, entityTypes]);
 
     // Hook to manage templates
   const {
@@ -124,12 +148,6 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     }
   }, [projectId]);
 
-    // Load statistics when articles or template change
-  useEffect(() => {
-    if (articles.length > 0 && activeTemplate && user) {
-      loadExtractionStats();
-    }
-  }, [articles, activeTemplate, user]);
 
 
   const loadArticles = async () => {
@@ -148,73 +166,6 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     }
   };
 
-  const loadExtractionStats = async () => {
-    if (!activeTemplate || !user) return;
-
-    try {
-        // Fetch instances + reviewer_states (current decision per item)
-        // for the active user, both filtered by template, in parallel.
-        const [instancesResult, statesResult] = await Promise.all([
-            supabase
-                .from("extraction_instances")
-                .select("article_id")
-                .eq("project_id", projectId)
-                .eq("template_id", activeTemplate.id),
-            supabase
-                .from("extraction_reviewer_states")
-                .select(`
-            current_decision_id,
-            reviewer_decision:extraction_reviewer_decisions!fk_extraction_reviewer_states_decision_run_match(decision),
-            extraction_instances!inner(article_id, template_id, project_id)
-          `)
-                .eq("reviewer_id", user.id)
-                .eq("extraction_instances.project_id", projectId)
-                .eq("extraction_instances.template_id", activeTemplate.id),
-        ]);
-
-        const {data: instances, error: instancesError} = instancesResult;
-        const {data: states, error: statesError} = statesResult;
-
-        if (instancesError) throw instancesError;
-      if (statesError) throw statesError;
-
-        // Compute statistics
-      const totalArticles = articles.length;
-      const articlesWithInstances = new Set(instances?.map((i: any) => i.article_id) || []);
-      const extractionsStarted = articlesWithInstances.size;
-
-        // Count articles where the user has at least one non-reject
-        // decision; that's the post-HITL definition of "extraction made
-        // progress for this article".
-      const articlesWithValues = new Set(
-        (states ?? [])
-          .filter((s: any) => {
-            if (!s.current_decision_id) return false;
-            const dec = Array.isArray(s.reviewer_decision)
-              ? s.reviewer_decision[0]
-              : s.reviewer_decision;
-            return dec && dec.decision !== "reject";
-          })
-          .map((s: any) => s.extraction_instances?.article_id)
-          .filter(Boolean),
-      );
-      const extractionsCompleted = articlesWithValues.size;
-      
-      const progressPercentage = totalArticles > 0 
-        ? Math.round((extractionsCompleted / totalArticles) * 100)
-        : 0;
-
-      setExtractionStats({
-        totalArticles,
-        extractionsStarted,
-        extractionsCompleted,
-        progressPercentage,
-      });
-    } catch (error: any) {
-      console.error("Error loading extraction stats:", error);
-        toast.error(t('extraction', 'errorLoadStats'));
-    }
-  };
 
     // Render Dashboard tab
   const renderDashboard = () => (
