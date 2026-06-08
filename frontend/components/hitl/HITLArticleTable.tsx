@@ -58,6 +58,7 @@ import { t } from "@/lib/copy";
 import { TABLE_CELL_CLASS } from "@/lib/table-constants";
 import type { HITLKind } from "@/hooks/hitl/useHITLProjectTemplates";
 import { useTemplateEntityTypes } from "@/hooks/extraction/useTemplateEntityTypes";
+import { useArticleExtractionValues } from "@/hooks/extraction/useArticleExtractionValues";
 import { computeRowProgress } from "@/lib/extraction/progress";
 
 interface Article {
@@ -66,26 +67,6 @@ interface Article {
   authors: string[] | null;
   publication_year: number | null;
   created_at: string;
-}
-
-interface ExtractionInstanceRow {
-  id: string;
-  article_id: string | null;
-  template_id: string;
-  entity_type_id: string;
-  status: string;
-}
-
-interface ReviewerValueRow {
-  instance_id: string;
-  field_id: string;
-  value: unknown;
-  decision: string;
-}
-
-interface ArticleWithProgress extends Article {
-  instances: ExtractionInstanceRow[];
-  values: ReviewerValueRow[];
 }
 
 type SortField =
@@ -155,7 +136,7 @@ export function HITLArticleTable({
 }: Props) {
   const navigate = useNavigate();
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const [articles, setArticles] = useState<ArticleWithProgress[]>([]);
+  const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -170,6 +151,10 @@ export function HITLArticleTable({
   // progress metric shared with the form header.
   const { entityTypes, isLoading: entityTypesLoading } =
     useTemplateEntityTypes(templateId);
+  // Per-article values (instances + the user's persisted values), shared with
+  // the extraction table and the dashboard — replaces this table's own fetch.
+  const { valuesByArticle, isLoading: valuesLoading } =
+    useArticleExtractionValues(projectId, templateId, currentUserId);
 
   useEffect(() => {
     let cancelled = false;
@@ -205,98 +190,10 @@ export function HITLArticleTable({
           return;
         }
 
-        const instancesRes = await supabase
-          .from("extraction_instances")
-          .select("id, article_id, template_id, entity_type_id, status")
-          .eq("project_id", projectId)
-          .eq("template_id", templateId);
-        if (instancesRes.error) throw instancesRes.error;
-        const instances = (instancesRes.data ?? []) as ExtractionInstanceRow[];
-
-        const instanceIds = instances.map((i) => i.id);
-        const values: ReviewerValueRow[] = [];
-        if (instanceIds.length > 0) {
-          // Progress reflects work the current user has persisted —
-          // either a non-rejected ReviewerDecision (the post-publish
-          // path) OR a ``human`` ProposalRecord written by autosave
-          // while typing. Both sources must contribute, otherwise the
-          // table shows 0 % until the user explicitly clicks "Publish"
-          // (QA) or "Accept" on an AI proposal (extraction), even
-          // though autosave already persisted the typed value.
-          const [statesRes, proposalsRes] = await Promise.all([
-            supabase
-              .from("extraction_reviewer_states")
-              .select(
-                `instance_id, current_decision_id,
-                 reviewer_decision:extraction_reviewer_decisions!fk_extraction_reviewer_states_decision_run_match(field_id, value, decision)`,
-              )
-              .in("instance_id", instanceIds)
-              .eq("reviewer_id", currentUserId),
-            supabase
-              .from("extraction_proposal_records")
-              .select("instance_id, field_id, proposed_value, created_at")
-              .in("instance_id", instanceIds)
-              .eq("source", "human")
-              .eq("source_user_id", currentUserId)
-              .order("created_at", { ascending: false }),
-          ]);
-          if (statesRes.error) throw statesRes.error;
-          if (proposalsRes.error) throw proposalsRes.error;
-
-          const seen = new Set<string>();
-          for (const row of (statesRes.data ?? []) as any[]) {
-            const dec = Array.isArray(row.reviewer_decision)
-              ? row.reviewer_decision[0]
-              : row.reviewer_decision;
-            if (!dec || dec.decision === "reject") continue;
-            const key = `${row.instance_id}_${dec.field_id}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
-            values.push({
-              instance_id: row.instance_id as string,
-              field_id: dec.field_id as string,
-              value: dec.value,
-              decision: dec.decision as string,
-            });
-          }
-          for (const row of (proposalsRes.data ?? []) as any[]) {
-            const key = `${row.instance_id}_${row.field_id}`;
-            if (seen.has(key)) continue;
-            const raw = row.proposed_value;
-            const unwrapped =
-              raw && typeof raw === "object" && "value" in raw
-                ? (raw as { value: unknown }).value
-                : raw;
-            // Skip deliberate clears so a typed-then-erased field is
-            // not counted as "filled".
-            if (unwrapped === null || unwrapped === undefined || unwrapped === "") {
-              continue;
-            }
-            seen.add(key);
-            values.push({
-              instance_id: row.instance_id as string,
-              field_id: row.field_id as string,
-              value: raw,
-              decision: "edit",
-            });
-          }
-        }
-
-        const merged: ArticleWithProgress[] = baseArticles.map((article) => {
-          const articleInstances = instances.filter(
-            (i) => i.article_id === article.id,
-          );
-          const articleValues = values.filter((v) =>
-            articleInstances.some((i) => i.id === v.instance_id),
-          );
-          return {
-            ...article,
-            instances: articleInstances,
-            values: articleValues,
-          };
-        });
-
-        if (!cancelled) setArticles(merged);
+        // Per-article instances + values now come from
+        // ``useArticleExtractionValues`` (shared with the extraction table and
+        // dashboard); this effect only loads the article rows themselves.
+        if (!cancelled) setArticles(baseArticles);
       } catch (err) {
         if (!cancelled) {
           const message =
@@ -320,15 +217,16 @@ export function HITLArticleTable({
   const progressByArticle = useMemo(() => {
     const map = new Map<string, number>();
     for (const article of articles) {
+      const d = valuesByArticle.get(article.id);
       map.set(
         article.id,
-        computeRowProgress(article.instances, article.values, entityTypes),
+        d ? computeRowProgress(d.instances, d.values, entityTypes) : 0,
       );
     }
     return map;
-  }, [articles, entityTypes]);
+  }, [articles, valuesByArticle, entityTypes]);
 
-  const getProgress = (article: ArticleWithProgress): number =>
+  const getProgress = (article: Article): number =>
     progressByArticle.get(article.id) ?? 0;
 
   const filteredAndSorted = useMemo(() => {
@@ -401,8 +299,10 @@ export function HITLArticleTable({
         case "status": {
           const ap = getProgress(a);
           const bp = getProgress(b);
-          aVal = a.instances.length === 0 ? 0 : ap >= 100 ? 2 : 1;
-          bVal = b.instances.length === 0 ? 0 : bp >= 100 ? 2 : 1;
+          aVal =
+            (valuesByArticle.get(a.id)?.instances.length ?? 0) === 0 ? 0 : ap >= 100 ? 2 : 1;
+          bVal =
+            (valuesByArticle.get(b.id)?.instances.length ?? 0) === 0 ? 0 : bp >= 100 ? 2 : 1;
           break;
         }
         case "created_at":
@@ -476,7 +376,7 @@ export function HITLArticleTable({
     }
   };
 
-  const renderStatus = (article: ArticleWithProgress) => {
+  const renderStatus = (article: Article) => {
     const progress = getProgress(article);
     const status =
       progress >= 100
@@ -543,7 +443,7 @@ export function HITLArticleTable({
     );
   };
 
-  if (loading || entityTypesLoading) {
+  if (loading || entityTypesLoading || valuesLoading) {
     return (
       <div className="space-y-3" data-testid={`hitl-${kind}-table-loading`}>
         <Skeleton className="h-8 w-full max-w-md" />
