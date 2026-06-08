@@ -154,7 +154,7 @@ export function HITLArticleTable({
   // Per-article values (instances + the user's persisted values), shared with
   // the extraction table and the dashboard — replaces this table's own fetch.
   const { valuesByArticle, isLoading: valuesLoading } =
-    useArticleExtractionValues(projectId, templateId, currentUserId);
+    useArticleExtractionValues(projectId, templateId, currentUserId, kind);
 
   useEffect(() => {
     let cancelled = false;
