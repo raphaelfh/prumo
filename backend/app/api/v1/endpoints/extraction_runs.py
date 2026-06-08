@@ -49,6 +49,7 @@ from app.services.extraction_run_read_service import (
     RunNotFoundError,
     get_run_or_raise,
     get_run_with_workflow_history,
+    is_run_arbitrator,
     list_run_participants,
 )
 from app.services.run_lifecycle_service import (
@@ -146,8 +147,11 @@ async def get_run(
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[RunDetailResponse]:
-    await _load_run_and_check_member(db, run_id, current_user_sub)
-    detail = await get_run_with_workflow_history(db, run_id)
+    run = await _load_run_and_check_member(db, run_id, current_user_sub)
+    is_arbitrator = await is_run_arbitrator(db, run.project_id, current_user_sub)
+    detail = await get_run_with_workflow_history(
+        db, run_id, caller_id=current_user_sub, is_arbitrator=is_arbitrator
+    )
     return ApiResponse.success(
         detail,
         trace_id=getattr(request.state, "trace_id", None),

@@ -16,13 +16,15 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.extraction import ExtractionRun
+from app.models.extraction import ExtractionRun, ExtractionRunStage
 from app.models.extraction_workflow import (
     ExtractionConsensusDecision,
     ExtractionProposalRecord,
+    ExtractionProposalSource,
     ExtractionPublishedState,
     ExtractionReviewerDecision,
 )
+from app.models.project import ProjectMemberRole
 from app.models.user import Profile
 from app.repositories.extraction_consensus_decision_repository import (
     ExtractionConsensusDecisionRepository,
@@ -33,6 +35,7 @@ from app.repositories.extraction_proposal_repository import (
 from app.repositories.extraction_reviewer_decision_repository import (
     ExtractionReviewerDecisionRepository,
 )
+from app.repositories.project_repository import ProjectMemberRepository
 from app.schemas.extraction_run import (
     ConsensusDecisionResponse,
     ProposalRecordResponse,
@@ -60,11 +63,26 @@ async def get_run_or_raise(db: AsyncSession, run_id: UUID) -> RunSummaryResponse
     return RunSummaryResponse.model_validate(run)
 
 
-async def get_run_with_workflow_history(db: AsyncSession, run_id: UUID) -> RunDetailResponse:
+async def get_run_with_workflow_history(
+    db: AsyncSession,
+    run_id: UUID,
+    *,
+    caller_id: UUID,
+    is_arbitrator: bool,
+) -> RunDetailResponse:
     """Aggregate the full read-side view of a Run: header + every workflow
     row (proposals, reviewer decisions, consensus decisions, published
-    states). Returns the response schema directly so the endpoint just
-    wraps it in ApiResponse.success.
+    states). Returns the response schema directly so the endpoint just wraps
+    it in ApiResponse.success.
+
+    Blind-review enforcement (API path): the backend reaches these tables as
+    ``service_role`` (RLS bypassed), so this filter — not RLS — guards the
+    server read. Unless the caller is an arbitrator (manager/consensus) or the
+    run is ``finalized``, a reviewer sees only their OWN human proposals and
+    reviewer decisions; AI/system proposals, consensus rulings and published
+    states stay visible (shared, post-divergence artifacts). The predicate is
+    identical to the reviewer-scoped RLS policies in migration
+    ``0025_reviewer_scoped_select_rls`` so the two read paths never diverge.
     """
     run = await db.get(ExtractionRun, run_id)
     if run is None:
@@ -83,12 +101,38 @@ async def get_run_with_workflow_history(db: AsyncSession, run_id: UUID) -> RunDe
         .all()
     )
 
+    unblinded = is_arbitrator or run.stage == ExtractionRunStage.FINALIZED.value
+    if unblinded:
+        visible_proposals = proposals
+        visible_decisions = decisions
+    else:
+        visible_proposals = [
+            p
+            for p in proposals
+            if p.source != ExtractionProposalSource.HUMAN.value or p.source_user_id == caller_id
+        ]
+        visible_decisions = [d for d in decisions if d.reviewer_id == caller_id]
+
     return RunDetailResponse(
         run=RunSummaryResponse.model_validate(run),
-        proposals=[ProposalRecordResponse.model_validate(p) for p in proposals],
-        decisions=[ReviewerDecisionResponse.model_validate(d) for d in decisions],
+        proposals=[ProposalRecordResponse.model_validate(p) for p in visible_proposals],
+        decisions=[ReviewerDecisionResponse.model_validate(d) for d in visible_decisions],
         consensus_decisions=[ConsensusDecisionResponse.model_validate(c) for c in consensus],
         published_states=[PublishedStateResponse.model_validate(ps) for ps in published_rows],
+    )
+
+
+async def is_run_arbitrator(db: AsyncSession, project_id: UUID, user_id: UUID) -> bool:
+    """True when the user is a project ``manager`` or ``consensus`` member —
+    the roles allowed to see cross-reviewer divergence before a run is
+    finalized. The run-read endpoint uses this to decide whether to blind the
+    workflow history. Kept in the service layer so the endpoint imports only
+    from ``app.services`` (layered-architecture rule).
+    """
+    member = await ProjectMemberRepository(db).get_member(project_id, user_id)
+    return member is not None and member.role in (
+        ProjectMemberRole.MANAGER,
+        ProjectMemberRole.CONSENSUS,
     )
 
 
