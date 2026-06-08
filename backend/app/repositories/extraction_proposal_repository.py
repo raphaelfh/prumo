@@ -50,3 +50,31 @@ class ExtractionProposalRepository:
         )
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
+
+    async def get_latest_for_coord(
+        self,
+        run_id: UUID,
+        instance_id: UUID,
+        field_id: UUID,
+        source: str,
+        source_user_id: UUID | None,
+    ) -> ExtractionProposalRecord | None:
+        """Newest proposal for a coord scoped to source (+ user), for the
+        idempotency check. ``id`` is the deterministic tiebreaker on equal
+        ``created_at`` (same-transaction inserts share the timestamp)."""
+        stmt = (
+            select(ExtractionProposalRecord)
+            .where(
+                ExtractionProposalRecord.run_id == run_id,
+                ExtractionProposalRecord.instance_id == instance_id,
+                ExtractionProposalRecord.field_id == field_id,
+                ExtractionProposalRecord.source == source,
+                ExtractionProposalRecord.source_user_id == source_user_id,
+            )
+            .order_by(
+                ExtractionProposalRecord.created_at.desc(),
+                ExtractionProposalRecord.id.desc(),
+            )
+            .limit(1)
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()

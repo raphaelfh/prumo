@@ -33,6 +33,7 @@ import {
 
 // Hooks
 import {useExtractionData} from '@/hooks/extraction/useExtractionData';
+import {useCurrentUser} from '@/hooks/useCurrentUser';
 import {useExtractedValues} from '@/hooks/extraction/useExtractedValues';
 import {useExtractionSession} from '@/hooks/extraction/useExtractionSession';
 import {useFinalizedExtractionRun} from '@/hooks/extraction/useFinalizedExtractionRun';
@@ -96,7 +97,10 @@ export default function ExtractionFullScreen() {
 
   // Estado local
   const [submitting, setSubmitting] = useState(false);
-  const [currentUserId, setCurrentUserId] = useState<string>('');
+  // Current reviewer id from AuthContext (zero network) — was a
+  // supabase.auth.getUser() round-trip + a serial gate on run open.
+  const { userId } = useCurrentUser();
+  const currentUserId = userId ?? '';
 
   // UI state
   const [showPDF, setShowPDF] = useState(false);
@@ -155,6 +159,7 @@ export default function ExtractionFullScreen() {
   // Hook to manage extracted values — read path branches on stage.
   const {
     values,
+    loadedValues,
     updateValue,
     loading: valuesLoading,
     initialized: valuesInitialized,
@@ -163,6 +168,7 @@ export default function ExtractionFullScreen() {
     runId: activeRunId,
     stage,
     proposals,
+    currentUserId,
     enabled: !!activeRunId,
   });
 
@@ -325,6 +331,9 @@ export default function ExtractionFullScreen() {
     runId: activeRunId,
     stage,
     values,
+    // Server-loaded values are the baseline — opening a run must not re-POST
+    // them as fresh proposals (the re-record-on-mount duplication).
+    baselineValues: loadedValues,
     // Only PROPOSAL and REVIEW accept autosave writes. Past that
     // (consensus, finalized, pending) the backend rejects proposal
     // writes, which surfaced as a spurious "Error saving data
@@ -485,16 +494,6 @@ export default function ExtractionFullScreen() {
 
     // Removed: SectionAccordion does not need memo, FieldInput is memoized individually
 
-    // Load current user
-  useEffect(() => {
-    const loadUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setCurrentUserId(user.id);
-      }
-    };
-    loadUser();
-  }, []);
 
     // Redirect on critical error
   useEffect(() => {

@@ -54,6 +54,7 @@ describe('useExtractedValues — stage=proposal', () => {
   it('hydrates from proposals (newest-per-coord) without hitting reviewer_states', async () => {
     const { result } = renderHook(() =>
       useExtractedValues({
+        currentUserId: 'user-1',
         runId: 'run-1',
         stage: 'proposal',
         proposals: [
@@ -109,6 +110,7 @@ describe('useExtractedValues — stage=proposal', () => {
   it('returns empty when no proposals are provided', async () => {
     const { result } = renderHook(() =>
       useExtractedValues({
+        currentUserId: 'user-1',
         runId: 'run-1',
         stage: 'proposal',
         proposals: [],
@@ -130,6 +132,7 @@ describe('useExtractedValues — stage=proposal blinding (multi-reviewer)', () =
   it("does NOT hydrate another reviewer's human proposal (the leak)", async () => {
     const { result } = renderHook(() =>
       useExtractedValues({
+        currentUserId: 'user-1',
         runId: 'run-1',
         stage: 'proposal',
         proposals: [
@@ -158,6 +161,7 @@ describe('useExtractedValues — stage=proposal blinding (multi-reviewer)', () =
   it("DOES hydrate the current reviewer's own human proposal", async () => {
     const { result } = renderHook(() =>
       useExtractedValues({
+        currentUserId: 'user-1',
         runId: 'run-1',
         stage: 'proposal',
         proposals: [
@@ -184,6 +188,7 @@ describe('useExtractedValues — stage=proposal blinding (multi-reviewer)', () =
   it('always hydrates AI proposals (not reviewer-attributable)', async () => {
     const { result } = renderHook(() =>
       useExtractedValues({
+        currentUserId: 'user-1',
         runId: 'run-1',
         stage: 'proposal',
         proposals: [
@@ -210,6 +215,7 @@ describe('useExtractedValues — stage=proposal blinding (multi-reviewer)', () =
   it('always hydrates system proposals (e.g. reopen seed)', async () => {
     const { result } = renderHook(() =>
       useExtractedValues({
+        currentUserId: 'user-1',
         runId: 'run-1',
         stage: 'proposal',
         proposals: [
@@ -238,6 +244,7 @@ describe('useExtractedValues — stage=proposal blinding (multi-reviewer)', () =
     // (must be filtered). Older AI proposal should remain visible.
     const { result } = renderHook(() =>
       useExtractedValues({
+        currentUserId: 'user-1',
         runId: 'run-1',
         stage: 'proposal',
         proposals: [
@@ -305,6 +312,7 @@ describe('useExtractedValues — stage=review and beyond', () => {
 
     const { result } = renderHook(() =>
       useExtractedValues({
+        currentUserId: 'user-1',
         runId: 'run-1',
         stage: 'review',
       }),
@@ -328,6 +336,7 @@ describe('useExtractedValues — missing run / no auth', () => {
   it('returns empty + initialized=true when runId is null', async () => {
     const { result } = renderHook(() =>
       useExtractedValues({
+        currentUserId: 'user-1',
         runId: null,
         stage: null,
       }),
@@ -338,13 +347,9 @@ describe('useExtractedValues — missing run / no auth', () => {
   });
 
   it('returns empty when there is no authenticated user (review path)', async () => {
-    const supabase = (await import('@/integrations/supabase/client')).supabase;
-    (supabase.auth.getUser as any).mockResolvedValueOnce({
-      data: { user: null },
-    });
-
     const { result } = renderHook(() =>
       useExtractedValues({
+        currentUserId: null,
         runId: 'run-1',
         stage: 'review',
       }),
@@ -369,6 +374,7 @@ describe('useExtractedValues — disabled state (no run yet)', () => {
   it('flips loading=false and initialized=true synchronously when enabled=false', async () => {
     const { result } = renderHook(() =>
       useExtractedValues({
+        currentUserId: 'user-1',
         runId: null,
         stage: null,
         proposals: [],
@@ -384,6 +390,7 @@ describe('useExtractedValues — disabled state (no run yet)', () => {
   it('does not get stuck even when runId is set but enabled is explicitly false', async () => {
     const { result } = renderHook(() =>
       useExtractedValues({
+        currentUserId: 'user-1',
         runId: 'run-1',
         stage: 'review',
         proposals: [],
@@ -398,6 +405,7 @@ describe('useExtractedValues — disabled state (no run yet)', () => {
     const { result, rerender } = renderHook(
       ({ enabled }: { enabled: boolean }) =>
         useExtractedValues({
+          currentUserId: 'user-1',
           runId: 'run-1',
           stage: 'review',
           proposals: [],
@@ -425,6 +433,7 @@ describe('useExtractedValues — local update', () => {
   it('updateValue patches the local map immediately', async () => {
     const { result } = renderHook(() =>
       useExtractedValues({
+        currentUserId: 'user-1',
         runId: 'run-1',
         stage: 'proposal',
         proposals: [],
@@ -469,6 +478,7 @@ describe('useExtractedValues — local-edits-win on backend refetch', () => {
     const { result, rerender } = renderHook(
       ({ proposals }) =>
         useExtractedValues({
+          currentUserId: 'user-1',
           runId: 'run-1',
           stage: 'proposal',
           proposals,
@@ -506,6 +516,7 @@ describe('useExtractedValues — local-edits-win on backend refetch', () => {
     >(
       ({ proposals }) =>
         useExtractedValues({
+          currentUserId: 'user-1',
           runId: 'run-1',
           stage: 'proposal',
           proposals,
@@ -607,6 +618,7 @@ describe('useExtractedValues — run boundary reset', () => {
     const { result, rerender } = renderHook(
       ({ runId, proposals }) =>
         useExtractedValues({
+          currentUserId: 'user-1',
           runId,
           stage: 'proposal',
           proposals,

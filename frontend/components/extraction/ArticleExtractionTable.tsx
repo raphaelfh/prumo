@@ -12,7 +12,6 @@ import type {CSSProperties} from 'react';
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {useLocation, useNavigate} from 'react-router-dom';
 import {supabase} from '@/integrations/supabase/client';
-import {ExtractionValueService} from '@/services/extractionValueService';
 import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
 import {Progress} from '@/components/ui/progress';
@@ -69,6 +68,13 @@ import {
 } from '@/components/shared/list';
 import {DataTableWrapper} from '@/components/shared/list/DataTableWrapper';
 import {useIsNarrow} from '@/hooks/use-mobile';
+import {useQueryClient} from '@tanstack/react-query';
+import {useTemplateEntityTypes} from '@/hooks/extraction/useTemplateEntityTypes';
+import {
+  useArticleExtractionValues,
+  articleExtractionValuesKeys,
+} from '@/hooks/extraction/useArticleExtractionValues';
+import {computeRowProgress} from '@/lib/extraction/progress';
 
 interface Article {
   id: string;
@@ -78,27 +84,8 @@ interface Article {
   created_at: string;
 }
 
-interface ExtractionInstance {
-  id: string;
-  article_id: string | null;
-  template_id: string;
-  entity_type_id: string;
-  label: string;
-  created_at: string;
-}
-
-interface ExtractionValueDisplay {
-  id: string;
-  instance_id: string;
-  field_id: string;
-  value: any;
-  reviewer_id: string | null;
-  created_at: string;
-}
-
 interface ArticleWithExtraction extends Article {
-  instances: ExtractionInstance[];
-  extractedValues: ExtractionValueDisplay[];
+  /** Per-article AI-extraction in-progress flag (UI only). */
   isLoading: boolean;
 }
 
@@ -173,6 +160,17 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     const [filterValues, setFilterValues] = useState<FilterValues>(INITIAL_EXTRACTION_FILTER_VALUES);
   const [sortField, setSortField] = useState<SortField>('created_at');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+
+  // Required-field structure (cached by template id) for the canonical
+  // progress metric shared with the form header and QA list.
+  const {entityTypes, isLoading: entityTypesLoading} =
+    useTemplateEntityTypes(templateId);
+  // Per-article values, shared with the HITL list and dashboard (replaces this
+  // table's own instances/states/proposals fetch). Run-scoped to each
+  // article's form run for kind='extraction'.
+  const {valuesByArticle, isLoading: valuesLoading} =
+    useArticleExtractionValues(projectId, templateId, currentUserId);
+  const queryClient = useQueryClient();
     const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
         if (typeof window === 'undefined') return {...EXTRACTION_DEFAULT_COLUMN_WIDTHS};
         try {
@@ -245,138 +243,16 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
         return;
       }
 
-        // 2. Fetch extraction instances for template
-      const { data: instancesData, error: instancesError } = await supabase
-        .from('extraction_instances')
-        .select('*')
-        .eq('project_id', projectId)
-        .eq('template_id', templateId);
-
-      if (instancesError) {
-          console.error('Error fetching instances:', instancesError);
-        throw instancesError;
-      }
-
-        // 3. Resolve the "form run" per article so the value queries can
-        //    scope to it. Without this filter, the badge silently
-        //    cross-aggregates reviewer_states / proposals from unrelated
-        //    runs sharing the same instance ids (instances persist
-        //    across runs of the same template+article), so a stale
-        //    finalized run can mark a fresh article as "completed". The
-        //    form opens via ``HITLSessionService`` which prefers a
-        //    non-terminal run and falls back to the latest finalized;
-        //    the badge mirrors that.
-      const articleIds = articlesData.map((a) => a.id);
-      const formRunByArticle = await ExtractionValueService.findFormRunsByArticle(
-        articleIds,
-        templateId,
-      );
-      const formRunIds = Array.from(new Set(formRunByArticle.values()));
-
-        // 4. Fetch the user's persisted work in two parallel reads:
-        //    - Reviewer decisions (post-publish / explicit accept): the
-        //      reviewer_states pointer joined with the decision payload.
-        //    - Human proposals (autosave during typing): rows in
-        //      extraction_proposal_records authored by the current user.
-        //    Both contribute to "filled" — without proposals the table
-        //    would show 0 % progress until the user explicitly publishes
-        //    or accepts an AI suggestion, even though autosave already
-        //    persisted the typed value.
-      const instanceIds = (instancesData || []).map((i) => i.id);
-      const valuesData: any[] = [];
-      if (instanceIds.length > 0 && formRunIds.length > 0) {
-        const [statesResult, proposalsResult] = await Promise.all([
-          supabase
-            .from('extraction_reviewer_states')
-            .select(
-              `instance_id, current_decision_id,
-               reviewer_decision:extraction_reviewer_decisions!fk_extraction_reviewer_states_decision_run_match(field_id, value, decision, created_at)`,
-            )
-            .in('run_id', formRunIds)
-            .in('instance_id', instanceIds)
-            .eq('reviewer_id', currentUserId),
-          supabase
-            .from('extraction_proposal_records')
-            .select('instance_id, field_id, proposed_value, created_at')
-            .in('run_id', formRunIds)
-            .in('instance_id', instanceIds)
-            .eq('source', 'human')
-            .eq('source_user_id', currentUserId)
-            .order('created_at', { ascending: false }),
-        ]);
-        if (statesResult.error) {
-          console.error('Error fetching reviewer states:', statesResult.error);
-          throw statesResult.error;
-        }
-        if (proposalsResult.error) {
-          console.error('Error fetching proposals:', proposalsResult.error);
-          throw proposalsResult.error;
-        }
-
-        const seen = new Set<string>();
-        for (const s of (statesResult.data ?? []) as any[]) {
-          if (!s.current_decision_id) continue;
-          const dec = Array.isArray(s.reviewer_decision)
-            ? s.reviewer_decision[0]
-            : s.reviewer_decision;
-          if (!dec || dec.decision === 'reject') continue;
-          const key = `${s.instance_id}_${dec.field_id}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          valuesData.push({
-            id: s.current_decision_id,
-            instance_id: s.instance_id,
-            field_id: dec.field_id,
-            value: dec.value,
-            source: 'human',
-            reviewer_id: currentUserId,
-            created_at: dec.created_at,
-            updated_at: dec.created_at,
-          });
-        }
-        for (const p of (proposalsResult.data ?? []) as any[]) {
-          const key = `${p.instance_id}_${p.field_id}`;
-          if (seen.has(key)) continue;
-          const raw = p.proposed_value;
-          const unwrapped =
-            raw && typeof raw === 'object' && 'value' in raw
-              ? (raw as { value: unknown }).value
-              : raw;
-          // Skip deliberate clears so a typed-then-erased field is not
-          // counted as "filled".
-          if (unwrapped === null || unwrapped === undefined || unwrapped === '') {
-            continue;
-          }
-          seen.add(key);
-          valuesData.push({
-            id: `proposal:${p.instance_id}:${p.field_id}`,
-            instance_id: p.instance_id,
-            field_id: p.field_id,
-            value: raw,
-            source: 'human',
-            reviewer_id: currentUserId,
-            created_at: p.created_at,
-            updated_at: p.created_at,
-          });
-        }
-      }
-
-        // 4. Combine articles with their extractions
-      const articlesWithExtraction: ArticleWithExtraction[] = articlesData.map(article => {
-        const articleInstances = instancesData?.filter(i => i.article_id === article.id) || [];
-        const articleValues = valuesData.filter((v) =>
-          articleInstances.some((instance) => instance.id === v.instance_id),
-        );
-
-        return {
-          ...article,
-          instances: articleInstances as ExtractionInstance[],
-          extractedValues: articleValues as ExtractionValueDisplay[],
-          isLoading: false,
-        };
-      });
-
-      setArticles(articlesWithExtraction);
+        // Per-article instances + values come from useArticleExtractionValues
+        // (shared, run-scoped). This effect loads only the article rows and
+        // invalidates the values query so a refresh (route change, AI
+        // extraction onSuccess) re-reads progress too.
+      const rows: ArticleWithExtraction[] = articlesData.map((article) => ({
+        ...article,
+        isLoading: false,
+      }));
+      setArticles(rows);
+      await queryClient.invalidateQueries({ queryKey: articleExtractionValuesKeys.all });
     } catch (err: any) {
         console.error('Error loading articles:', err);
       setError(err.message);
@@ -443,16 +319,20 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
   }, [location.pathname, projectId, templateId, currentUserId]); // Reload when route changes
 
     // Compute extraction progress
-  const calculateExtractionProgress = (article: ArticleWithExtraction) => {
-    if (article.instances.length === 0) return 0;
+  // Per-article completion %, memoized once per (articles, entityTypes). Uses
+  // the canonical required-field metric (computeRowProgress) so this table
+  // shows the same percentage as the form header and the QA list.
+  const progressByArticle = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const article of articles) {
+      const d = valuesByArticle.get(article.id);
+      map.set(article.id, d ? computeRowProgress(d.instances, d.values, entityTypes) : 0);
+    }
+    return map;
+  }, [articles, valuesByArticle, entityTypes]);
 
-      // Count instances with at least one extracted value
-    const instancesWithValues = article.instances.filter(instance =>
-      article.extractedValues.some(value => value.instance_id === instance.id)
-    ).length;
-
-    return Math.round((instancesWithValues / article.instances.length) * 100);
-  };
+  const getProgress = (article: ArticleWithExtraction): number =>
+    progressByArticle.get(article.id) ?? 0;
 
     // Filter and sort articles
   const filteredAndSortedArticles = useMemo(() => {
@@ -487,7 +367,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
 
         const statusFilter = filterValues.status as string[] | undefined;
         if (statusFilter?.length) {
-        const progress = calculateExtractionProgress(article);
+        const progress = getProgress(article);
         const roundedProgress = Math.max(0, Math.min(100, Math.round(progress)));
         const isComplete = progress >= 100;
         const isInProgress = roundedProgress > 0 && roundedProgress < 100;
@@ -520,15 +400,15 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
           bValue = b.publication_year || 0;
           break;
         case 'extraction_progress':
-          aValue = calculateExtractionProgress(a);
-          bValue = calculateExtractionProgress(b);
+          aValue = getProgress(a);
+          bValue = getProgress(b);
           break;
         case 'status': {
             // Sort by status: not started (0), in progress (1), complete (2)
-          const aProgress = calculateExtractionProgress(a);
-          const bProgress = calculateExtractionProgress(b);
-          const aHasInstances = a.instances.length > 0;
-          const bHasInstances = b.instances.length > 0;
+          const aProgress = getProgress(a);
+          const bProgress = getProgress(b);
+          const aHasInstances = (valuesByArticle.get(a.id)?.instances.length ?? 0) > 0;
+          const bHasInstances = (valuesByArticle.get(b.id)?.instances.length ?? 0) > 0;
           
           aValue = !aHasInstances ? 0 : (aProgress >= 100 ? 2 : 1);
           bValue = !bHasInstances ? 0 : (bProgress >= 100 ? 2 : 1);
@@ -658,7 +538,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     };
 
   const getStatusBadge = (article: ArticleWithExtraction) => {
-    const progress = calculateExtractionProgress(article);
+    const progress = getProgress(article);
     const roundedProgress = Math.max(0, Math.min(100, Math.round(progress)));
     const uiStatus = roundedProgress >= 100 ? 'complete' : roundedProgress > 0 ? 'in_progress' : 'not_started';
     if (uiStatus === 'not_started') {
@@ -780,7 +660,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     });
 
     // Loading state — skeleton matching table layout (frontend-ux compact)
-  if (loading) {
+  if (loading || entityTypesLoading || valuesLoading) {
     return (
         <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
@@ -1106,9 +986,9 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
           </TableHeader>
           <TableBody>
             {filteredAndSortedArticles.map((article) => {
-              const progress = calculateExtractionProgress(article);
+              const progress = getProgress(article);
               const isComplete = progress >= 100;
-              const hasInstances = article.instances.length > 0;
+              const hasInstances = (valuesByArticle.get(article.id)?.instances.length ?? 0) > 0;
 
               return (
                   <TableRow key={article.id}
@@ -1236,9 +1116,9 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
               cardContent={
                   <>
                       {filteredAndSortedArticles.map((article) => {
-                          const progress = calculateExtractionProgress(article);
+                          const progress = getProgress(article);
                           const isComplete = progress >= 100;
-                          const hasInstances = article.instances.length > 0;
+                          const hasInstances = (valuesByArticle.get(article.id)?.instances.length ?? 0) > 0;
                           return (
                               <ListRowCard
                                   key={article.id}
