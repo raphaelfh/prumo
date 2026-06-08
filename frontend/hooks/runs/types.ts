@@ -128,6 +128,51 @@ export interface RunDetailResponse {
   published_states: PublishedStateResponse[];
 }
 
+export interface RunViewFieldResponse {
+  id: string;
+  name: string;
+  label: string;
+  description: string | null;
+  field_type: string;
+  is_required: boolean;
+  validation_schema: unknown | null;
+  allowed_values: unknown | null;
+  unit: string | null;
+  allowed_units: unknown | null;
+  sort_order: number;
+  llm_description: string | null;
+  allow_other: boolean;
+  other_label: string | null;
+  other_placeholder: string | null;
+}
+
+export interface RunViewEntityType {
+  id: string;
+  name: string;
+  label: string;
+  description: string | null;
+  parent_entity_type_id: string | null;
+  cardinality: string;
+  role: string;
+  sort_order: number;
+  is_required: boolean;
+  fields: RunViewFieldResponse[];
+}
+
+export interface RunViewCurrentValue {
+  instance_id: string;
+  field_id: string;
+  value: Record<string, unknown> | null;
+  decision: string;
+}
+
+// `instances` is added here in Task 12 (deferred), alongside its backend field
+// and the frontend adapter that consumes it.
+export interface RunViewResponse extends RunDetailResponse {
+  entity_types: RunViewEntityType[];
+  current_values: RunViewCurrentValue[];
+}
+
 /**
  * TanStack Query key factory for run-scoped data.
  */
