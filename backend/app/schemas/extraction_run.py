@@ -142,6 +142,70 @@ class RunDetailResponse(BaseModel):
     published_states: list[PublishedStateResponse]
 
 
+class RunViewField(BaseModel):
+    """A field in the frozen template snapshot, widened to every column the
+    run-open form renders from. Sourced from the version snapshot (or the live
+    table when the snapshot is a pre-0026 narrow one)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    label: str
+    description: str | None = None
+    field_type: str
+    is_required: bool
+    validation_schema: Any | None = None
+    allowed_values: Any | None = None
+    unit: str | None = None
+    allowed_units: Any | None = None
+    sort_order: int
+    llm_description: str | None = None
+    allow_other: bool = False
+    other_label: str | None = None
+    other_placeholder: str | None = None
+
+
+class RunViewEntityType(BaseModel):
+    """An entity type in the frozen template snapshot, with its fields embedded.
+    ``role`` drives the study/model partition; the tree hierarchy is conveyed by
+    ``parent_entity_type_id`` (flat array, ordered by ``sort_order``)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    label: str
+    description: str | None = None
+    parent_entity_type_id: UUID | None = None
+    cardinality: str
+    role: str
+    sort_order: int
+    is_required: bool
+    fields: list[RunViewField]
+
+
+class RunViewCurrentValue(BaseModel):
+    """The caller's current value for one (instance, field) coordinate, resolved
+    server-side for review/consensus/finalized. ``value`` is the raw jsonb
+    envelope (``{value, unit}`` or scalar) — the client unwraps it exactly as it
+    did for ``loadValuesForUser``. Empty list for proposal/pending/cancelled."""
+
+    instance_id: UUID
+    field_id: UUID
+    value: dict[str, Any] | None
+    decision: str
+
+
+class RunViewResponse(RunDetailResponse):
+    """``RunDetailResponse`` (run + blind-filtered workflow rows) plus the two
+    pieces the run-open form needs server-side: the frozen entity_types tree and
+    the caller's current_values. (``instances`` is added in Task 12.)"""
+
+    entity_types: list[RunViewEntityType]
+    current_values: list[RunViewCurrentValue]
+
+
 class RunReviewerProfile(BaseModel):
     """Display profile for a reviewer who participated in a run."""
 
