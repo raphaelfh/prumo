@@ -38,6 +38,7 @@ import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { extractValueFromDb } from '@/lib/validations/selectOther';
 import { dispatchValueUpdates } from '@/lib/extraction/valueUpdates';
+import { pickLatestProposalPerCoord } from '@/lib/extraction/proposalValues';
 import { t } from '@/lib/copy';
 import { ExtractionValueService } from '@/services/extractionValueService';
 import type { ProposalRecordResponse } from '@/hooks/runs/types';
@@ -168,20 +169,20 @@ export function useExtractedValues(
           if (userRes.error) throw userRes.error;
           const currentUserId = userRes.data.user?.id ?? null;
 
+          // Select the NEWEST proposal per coordinate (by ``created_at``),
+          // honoring the blind-review filter. Selecting by ``created_at``
+          // rather than array position fixes the "edited value reverts to
+          // the old value after refresh" bug: proposals are append-only, the
+          // API returns them oldest-first, and the previous first-hit-wins
+          // loop therefore surfaced the stale original value. The blind
+          // filter (a ``human`` proposal from another reviewer is hidden)
+          // now lives in the shared resolver. See
+          // ``frontend/lib/extraction/proposalValues.ts``.
           const valuesMap: Record<string, any> = {};
-          // ``proposals`` is sorted newest-first by the API; first
-          // visible hit per coord wins.
-          for (const p of proposals ?? []) {
-            // Another reviewer's edit — skip to keep the blind
-            // contract. ``source_user_id`` is guaranteed non-null for
-            // ``source='human'`` (backend CHECK), so a missing current
-            // user id (signed out) skips every human proposal too —
-            // fail closed.
-            if (p.source === 'human' && p.source_user_id !== currentUserId) {
-              continue;
-            }
-            const key = `${p.instance_id}_${p.field_id}`;
-            if (key in valuesMap) continue;
+          const latestByCoord = pickLatestProposalPerCoord(proposals, {
+            currentUserId,
+          });
+          for (const [key, p] of latestByCoord) {
             const unwrapped = unwrapProposalValue(p.proposed_value);
             const unit =
               typeof p.proposed_value === 'object' &&
