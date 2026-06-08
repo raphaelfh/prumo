@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -25,6 +25,7 @@ from app.models.extraction_workflow import (
     ExtractionProposalSource,
     ExtractionPublishedState,
     ExtractionReviewerDecision,
+    ExtractionReviewerState,
 )
 from app.models.project import ProjectMemberRole
 from app.models.user import Profile
@@ -46,6 +47,7 @@ from app.schemas.extraction_run import (
     RunDetailResponse,
     RunReviewerProfile,
     RunSummaryResponse,
+    RunViewCurrentValue,
     RunViewEntityType,
 )
 
@@ -169,6 +171,93 @@ async def _entity_types_for_run(
         view_et.fields.sort(key=lambda f: f.sort_order)
         result.append(view_et)
     return result
+
+
+async def resolve_caller_current_values(
+    db: AsyncSession, run_id: UUID, *, caller_id: UUID
+) -> list[RunViewCurrentValue]:
+    """The caller's current value per (instance, field) coordinate.
+
+    Mirrors the frontend ``loadValuesForUser`` it replaces, value-for-value:
+      Layer 1 (base): the caller's own human proposals, newest-per-coord;
+      Layer 2 (override): the caller's current reviewer decision per coord,
+        resolved through the materialized ``extraction_reviewer_states`` pointer
+        (``current_decision_id`` -> the live ``extraction_reviewer_decisions`` row).
+    ``reject`` decisions are kept (the client clears the coord but the audit row
+    stays). Caller-scoped: only ``reviewer_id == caller_id`` /
+    ``source_user_id == caller_id`` rows — this is the 4th lockstep copy of the
+    blind predicate and MUST stay identical to migration 0025 + the service
+    filter in get_run_with_workflow_history.
+
+    NOTE: ``ExtractionExportService._build_single_user_value_map`` looks similar
+    but encodes a DIFFERENT contract (it sources ``accept_proposal`` from the
+    accepted proposal and drops ``reject``, with no human-proposal base layer).
+    This resolver mirrors the FRONTEND ``loadValuesForUser`` it replaces, not the
+    export contract — do NOT DRY them together, or run-open values diverge from
+    the form's current behavior (Invariant 6). The two reads below are
+    independent but run sequentially on the shared AsyncSession (a single
+    asyncpg connection cannot multiplex, so ``asyncio.gather`` here is unsafe);
+    this matches the sequential read pattern of the composed
+    get_run_with_workflow_history. Merging them into one CTE is a possible future
+    optimization, deliberately not taken here to keep this security-sensitive
+    resolver simple.
+    """
+    merged: dict[tuple[UUID, UUID], RunViewCurrentValue] = {}
+
+    # Layer 1 — caller's own human proposals, newest-first; first-per-coord wins
+    # (ties on created_at are skipped by the `key in merged` guard below).
+    proposal_rows = (
+        (
+            await db.execute(
+                select(ExtractionProposalRecord)
+                .where(
+                    ExtractionProposalRecord.run_id == run_id,
+                    ExtractionProposalRecord.source == ExtractionProposalSource.HUMAN.value,
+                    ExtractionProposalRecord.source_user_id == caller_id,
+                )
+                .order_by(ExtractionProposalRecord.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for p in proposal_rows:
+        key = (p.instance_id, p.field_id)
+        if key in merged:
+            continue
+        merged[key] = RunViewCurrentValue(
+            instance_id=p.instance_id,
+            field_id=p.field_id,
+            value=p.proposed_value,
+            decision="human_proposal",
+        )
+
+    # Layer 2 — caller's current reviewer decision per coord (overrides Layer 1).
+    state_rows = (
+        await db.execute(
+            select(ExtractionReviewerState, ExtractionReviewerDecision)
+            .join(
+                ExtractionReviewerDecision,
+                and_(
+                    ExtractionReviewerDecision.run_id == ExtractionReviewerState.run_id,
+                    ExtractionReviewerDecision.id == ExtractionReviewerState.current_decision_id,
+                ),
+            )
+            .where(
+                ExtractionReviewerState.run_id == run_id,
+                ExtractionReviewerState.reviewer_id == caller_id,
+            )
+        )
+    ).all()
+    for state, decision in state_rows:
+        merged[(state.instance_id, state.field_id)] = RunViewCurrentValue(
+            instance_id=state.instance_id,
+            field_id=state.field_id,
+            value=decision.value,
+            decision=decision.decision,
+        )
+
+    return list(merged.values())
 
 
 async def is_run_arbitrator(db: AsyncSession, project_id: UUID, user_id: UUID) -> bool:
