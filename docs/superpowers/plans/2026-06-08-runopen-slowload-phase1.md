@@ -1,3 +1,9 @@
+---
+status: in_progress
+last_reviewed: 2026-06-08
+owner: '@raphaelfh'
+---
+
 # Run-open slow-load — Phase 1 (dedup the fan-out) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
