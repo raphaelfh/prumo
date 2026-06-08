@@ -16,6 +16,7 @@ from app.models.extraction import (
     TemplateKind,
 )
 from app.models.extraction_versioning import ExtractionTemplateVersion
+from app.services.extraction_snapshot import build_template_version_snapshot
 
 
 class TemplateNotFoundError(Exception):
@@ -475,50 +476,4 @@ class TemplateCloneService:
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
     async def _snapshot(self, project_template_id: UUID) -> dict[str, Any]:
-        from sqlalchemy import text
-
-        result = await self.db.execute(
-            text(
-                """
-                SELECT jsonb_build_object(
-                    'entity_types', COALESCE(
-                        (
-                            SELECT jsonb_agg(
-                                jsonb_build_object(
-                                    'id', et.id,
-                                    'name', et.name,
-                                    'label', et.label,
-                                    'parent_entity_type_id', et.parent_entity_type_id,
-                                    'cardinality', et.cardinality,
-                                    'role', et.role,
-                                    'sort_order', et.sort_order,
-                                    'is_required', et.is_required,
-                                    'fields', COALESCE(
-                                        (
-                                            SELECT jsonb_agg(jsonb_build_object(
-                                                'id', f.id,
-                                                'name', f.name,
-                                                'label', f.label,
-                                                'field_type', f.field_type,
-                                                'is_required', f.is_required,
-                                                'allowed_values', f.allowed_values,
-                                                'sort_order', f.sort_order
-                                            ) ORDER BY f.sort_order)
-                                            FROM public.extraction_fields f
-                                            WHERE f.entity_type_id = et.id
-                                        ),
-                                        '[]'::jsonb
-                                    )
-                                ) ORDER BY et.sort_order
-                            )
-                            FROM public.extraction_entity_types et
-                            WHERE et.project_template_id = :tid
-                        ),
-                        '[]'::jsonb
-                    )
-                )
-                """
-            ),
-            {"tid": str(project_template_id)},
-        )
-        return result.scalar_one()
+        return await build_template_version_snapshot(self.db, project_template_id)

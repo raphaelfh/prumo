@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,6 +25,7 @@ from app.models.extraction_workflow import (
     ExtractionReviewerDecisionType,
     ExtractionReviewerState,
 )
+from app.services.extraction_snapshot import build_template_version_snapshot
 from app.services.hitl_config_service import HitlConfigService
 
 
@@ -473,50 +474,7 @@ class RunLifecycleService:
         Captures the current entity_types + fields tree as the v=1 snapshot.
         Marked active so subsequent runs reuse it via the ``is_active`` index.
         """
-        snapshot_row = await self.db.execute(
-            text(
-                """
-                SELECT jsonb_build_object(
-                    'entity_types', COALESCE(
-                        (
-                            SELECT jsonb_agg(
-                                jsonb_build_object(
-                                    'id', et.id,
-                                    'name', et.name,
-                                    'label', et.label,
-                                    'parent_entity_type_id', et.parent_entity_type_id,
-                                    'cardinality', et.cardinality,
-                                    'sort_order', et.sort_order,
-                                    'is_required', et.is_required,
-                                    'fields', COALESCE(
-                                        (
-                                            SELECT jsonb_agg(jsonb_build_object(
-                                                'id', f.id,
-                                                'name', f.name,
-                                                'label', f.label,
-                                                'field_type', f.field_type,
-                                                'is_required', f.is_required,
-                                                'allowed_values', f.allowed_values,
-                                                'sort_order', f.sort_order
-                                            ) ORDER BY f.sort_order)
-                                            FROM public.extraction_fields f
-                                            WHERE f.entity_type_id = et.id
-                                        ),
-                                        '[]'::jsonb
-                                    )
-                                ) ORDER BY et.sort_order
-                            )
-                            FROM public.extraction_entity_types et
-                            WHERE et.project_template_id = :tid
-                        ),
-                        '[]'::jsonb
-                    )
-                )
-                """
-            ),
-            {"tid": str(project_template_id)},
-        )
-        snapshot = snapshot_row.scalar_one()
+        snapshot = await build_template_version_snapshot(self.db, project_template_id)
 
         # Upsert v=1 idempotently. Three races to handle:
         #
