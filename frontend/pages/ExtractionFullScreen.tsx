@@ -155,6 +155,7 @@ export default function ExtractionFullScreen() {
   // Hook to manage extracted values — read path branches on stage.
   const {
     values,
+    loadedValues,
     updateValue,
     loading: valuesLoading,
     initialized: valuesInitialized,
@@ -325,6 +326,9 @@ export default function ExtractionFullScreen() {
     runId: activeRunId,
     stage,
     values,
+    // Server-loaded values are the baseline — opening a run must not re-POST
+    // them as fresh proposals (the re-record-on-mount duplication).
+    baselineValues: loadedValues,
     // Only PROPOSAL and REVIEW accept autosave writes. Past that
     // (consensus, finalized, pending) the backend rejects proposal
     // writes, which surfaced as a spurious "Error saving data

@@ -204,10 +204,30 @@ export default function QualityAssessmentFullScreen() {
     [],
   );
 
+  // Server baseline for autosave — the same per-coord map the hydration
+  // effect applies, computed inline from ``runDetail`` so it is present when
+  // the hydrated ``values`` arrive. Stops opening an assessment from
+  // re-POSTing loaded values as fresh proposals.
+  const loadedValues = useMemo(() => {
+    const map: Record<string, unknown> = {};
+    for (const p of runDetail?.proposals ?? []) {
+      const k = keyOf({ instanceId: p.instance_id, fieldId: p.field_id });
+      const value =
+        p.proposed_value &&
+        typeof p.proposed_value === "object" &&
+        "value" in p.proposed_value
+          ? (p.proposed_value.value as unknown)
+          : (p.proposed_value as unknown);
+      map[k] = value;
+    }
+    return map;
+  }, [runDetail]);
+
   const { saveState, lastSavedAt, hasUnsavedChanges, saveNow } =
     useAutoSaveProposals({
       runId: session?.runId ?? null,
       values,
+      baselineValues: loadedValues,
       enabled:
         !!session &&
         !!runDetail &&
