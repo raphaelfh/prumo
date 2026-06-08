@@ -69,6 +69,8 @@ import {
 } from '@/components/shared/list';
 import {DataTableWrapper} from '@/components/shared/list/DataTableWrapper';
 import {useIsNarrow} from '@/hooks/use-mobile';
+import {useTemplateEntityTypes} from '@/hooks/extraction/useTemplateEntityTypes';
+import {computeRowProgress} from '@/lib/extraction/progress';
 
 interface Article {
   id: string;
@@ -173,6 +175,11 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     const [filterValues, setFilterValues] = useState<FilterValues>(INITIAL_EXTRACTION_FILTER_VALUES);
   const [sortField, setSortField] = useState<SortField>('created_at');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+
+  // Required-field structure (cached by template id) for the canonical
+  // progress metric shared with the form header and QA list.
+  const {entityTypes, isLoading: entityTypesLoading} =
+    useTemplateEntityTypes(templateId);
     const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
         if (typeof window === 'undefined') return {...EXTRACTION_DEFAULT_COLUMN_WIDTHS};
         try {
@@ -443,16 +450,22 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
   }, [location.pathname, projectId, templateId, currentUserId]); // Reload when route changes
 
     // Compute extraction progress
-  const calculateExtractionProgress = (article: ArticleWithExtraction) => {
-    if (article.instances.length === 0) return 0;
+  // Per-article completion %, memoized once per (articles, entityTypes). Uses
+  // the canonical required-field metric (computeRowProgress) so this table
+  // shows the same percentage as the form header and the QA list.
+  const progressByArticle = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const article of articles) {
+      map.set(
+        article.id,
+        computeRowProgress(article.instances, article.extractedValues, entityTypes),
+      );
+    }
+    return map;
+  }, [articles, entityTypes]);
 
-      // Count instances with at least one extracted value
-    const instancesWithValues = article.instances.filter(instance =>
-      article.extractedValues.some(value => value.instance_id === instance.id)
-    ).length;
-
-    return Math.round((instancesWithValues / article.instances.length) * 100);
-  };
+  const getProgress = (article: ArticleWithExtraction): number =>
+    progressByArticle.get(article.id) ?? 0;
 
     // Filter and sort articles
   const filteredAndSortedArticles = useMemo(() => {
@@ -487,7 +500,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
 
         const statusFilter = filterValues.status as string[] | undefined;
         if (statusFilter?.length) {
-        const progress = calculateExtractionProgress(article);
+        const progress = getProgress(article);
         const roundedProgress = Math.max(0, Math.min(100, Math.round(progress)));
         const isComplete = progress >= 100;
         const isInProgress = roundedProgress > 0 && roundedProgress < 100;
@@ -520,13 +533,13 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
           bValue = b.publication_year || 0;
           break;
         case 'extraction_progress':
-          aValue = calculateExtractionProgress(a);
-          bValue = calculateExtractionProgress(b);
+          aValue = getProgress(a);
+          bValue = getProgress(b);
           break;
         case 'status': {
             // Sort by status: not started (0), in progress (1), complete (2)
-          const aProgress = calculateExtractionProgress(a);
-          const bProgress = calculateExtractionProgress(b);
+          const aProgress = getProgress(a);
+          const bProgress = getProgress(b);
           const aHasInstances = a.instances.length > 0;
           const bHasInstances = b.instances.length > 0;
           
@@ -658,7 +671,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     };
 
   const getStatusBadge = (article: ArticleWithExtraction) => {
-    const progress = calculateExtractionProgress(article);
+    const progress = getProgress(article);
     const roundedProgress = Math.max(0, Math.min(100, Math.round(progress)));
     const uiStatus = roundedProgress >= 100 ? 'complete' : roundedProgress > 0 ? 'in_progress' : 'not_started';
     if (uiStatus === 'not_started') {
@@ -780,7 +793,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     });
 
     // Loading state — skeleton matching table layout (frontend-ux compact)
-  if (loading) {
+  if (loading || entityTypesLoading) {
     return (
         <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
@@ -1106,7 +1119,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
           </TableHeader>
           <TableBody>
             {filteredAndSortedArticles.map((article) => {
-              const progress = calculateExtractionProgress(article);
+              const progress = getProgress(article);
               const isComplete = progress >= 100;
               const hasInstances = article.instances.length > 0;
 
@@ -1236,7 +1249,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
               cardContent={
                   <>
                       {filteredAndSortedArticles.map((article) => {
-                          const progress = calculateExtractionProgress(article);
+                          const progress = getProgress(article);
                           const isComplete = progress >= 100;
                           const hasInstances = article.instances.length > 0;
                           return (

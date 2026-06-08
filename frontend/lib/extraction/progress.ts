@@ -111,3 +111,70 @@ export function computeRequiredFieldProgress(
     isComplete: totalRequired > 0 && completedRequired >= totalRequired,
   };
 }
+
+export interface ProgressInstanceRow {
+  id: string;
+  entity_type_id: string;
+  /** Optional — some list views don't fetch instance status. */
+  status?: string;
+}
+
+export interface ProgressValueRow {
+  instance_id: string;
+  field_id: string;
+  value: unknown;
+}
+
+/**
+ * Article/row-level completion % for the list views and dashboard. The single
+ * helper both extraction and QA article tables use, so the same article shows
+ * the same percentage everywhere. Wraps `computeRequiredFieldProgress` with the
+ * list-specific shortcuts:
+ *
+ * - no instances → 0%;
+ * - every instance `status === 'completed'` → 100% (terminal; skipped when the
+ *   rows carry no status — the field metric still reaches 100% when complete);
+ * - templates with no required fields (e.g. some QA tools) fall back to
+ *   instance-based progress so they don't flatline at 0%.
+ *
+ * It builds the `${instanceId}_${fieldId}` value map (unwrapping `{value}`
+ * envelopes, treating empty as unfilled) and the true instance set per entity
+ * type, so empty `cardinality='many'` instances still count in the denominator.
+ */
+export function computeRowProgress(
+  instances: ProgressInstanceRow[],
+  values: ProgressValueRow[],
+  entityTypes: ProgressEntityProjection[],
+): number {
+  if (instances.length === 0) return 0;
+  if (instances.every((i) => i.status === 'completed')) return 100;
+
+  const hasRequired = entityTypes.some((et) => et.fields.some((f) => f.is_required));
+  if (!hasRequired) {
+    const filled = instances.filter((inst) =>
+      values.some((v) => v.instance_id === inst.id),
+    ).length;
+    return Math.round((filled / instances.length) * 100);
+  }
+
+  const valueMap: Record<string, unknown> = {};
+  for (const v of values) {
+    const raw = v.value;
+    const unwrapped =
+      raw && typeof raw === 'object' && 'value' in (raw as Record<string, unknown>)
+        ? (raw as { value: unknown }).value
+        : raw;
+    valueMap[`${v.instance_id}_${v.field_id}`] = unwrapped;
+  }
+  const instanceIdsByEntityType = new Map<string, Set<string>>();
+  for (const inst of instances) {
+    let set = instanceIdsByEntityType.get(inst.entity_type_id);
+    if (!set) {
+      set = new Set();
+      instanceIdsByEntityType.set(inst.entity_type_id, set);
+    }
+    set.add(inst.id);
+  }
+  return computeRequiredFieldProgress(valueMap, entityTypes, instanceIdsByEntityType)
+    .completionPercentage;
+}

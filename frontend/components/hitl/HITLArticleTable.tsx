@@ -57,11 +57,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { t } from "@/lib/copy";
 import { TABLE_CELL_CLASS } from "@/lib/table-constants";
 import type { HITLKind } from "@/hooks/hitl/useHITLProjectTemplates";
-import {
-  useTemplateEntityTypes,
-  type TemplateEntityTypeWithFields,
-} from "@/hooks/extraction/useTemplateEntityTypes";
-import { computeRequiredFieldProgress } from "@/lib/extraction/progress";
+import { useTemplateEntityTypes } from "@/hooks/extraction/useTemplateEntityTypes";
+import { computeRowProgress } from "@/lib/extraction/progress";
 
 interface Article {
   id: string;
@@ -138,51 +135,6 @@ const INITIAL_FILTERS: FilterValues = {
   title: "",
   authors: "",
 };
-
-/**
- * Per-article completion %, using the canonical required-field metric
- * (`computeRequiredFieldProgress`) so the list agrees with the form header.
- *
- * - keeps the terminal `all instances completed => 100%` shortcut;
- * - QA / no-required-fields templates fall back to instance-based progress so
- *   they don't flatline at 0%;
- * - passes the true instance set per entity type so empty `cardinality='many'`
- *   instances still count in the denominator (guards regression #55).
- */
-export function computeArticleProgress(
-  article: ArticleWithProgress,
-  entityTypes: TemplateEntityTypeWithFields[],
-  hasRequired: boolean,
-): number {
-  if (article.instances.length === 0) return 0;
-  if (article.instances.every((i) => i.status === "completed")) return 100;
-  if (!hasRequired) {
-    const filled = article.instances.filter((inst) =>
-      article.values.some((v) => v.instance_id === inst.id),
-    ).length;
-    return Math.round((filled / article.instances.length) * 100);
-  }
-  const valueMap: Record<string, unknown> = {};
-  for (const v of article.values) {
-    const raw = v.value;
-    const unwrapped =
-      raw && typeof raw === "object" && "value" in (raw as Record<string, unknown>)
-        ? (raw as { value: unknown }).value
-        : raw;
-    valueMap[`${v.instance_id}_${v.field_id}`] = unwrapped;
-  }
-  const instanceIdsByEntityType = new Map<string, Set<string>>();
-  for (const inst of article.instances) {
-    let set = instanceIdsByEntityType.get(inst.entity_type_id);
-    if (!set) {
-      set = new Set();
-      instanceIdsByEntityType.set(inst.entity_type_id, set);
-    }
-    set.add(inst.id);
-  }
-  return computeRequiredFieldProgress(valueMap, entityTypes, instanceIdsByEntityType)
-    .completionPercentage;
-}
 
 interface Props {
   kind: HITLKind;
@@ -366,12 +318,12 @@ export function HITLArticleTable({
   // getProgress is read in the sort comparator and several render paths, so
   // recomputing per call would be O(values × fields) × N on every keystroke.
   const progressByArticle = useMemo(() => {
-    const hasRequired = entityTypes.some((et) =>
-      et.fields.some((f) => f.is_required),
-    );
     const map = new Map<string, number>();
     for (const article of articles) {
-      map.set(article.id, computeArticleProgress(article, entityTypes, hasRequired));
+      map.set(
+        article.id,
+        computeRowProgress(article.instances, article.values, entityTypes),
+      );
     }
     return map;
   }, [articles, entityTypes]);

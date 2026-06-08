@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import type { ExtractionField } from '@/types/extraction';
 
-import { computeRequiredFieldProgress, type ProgressEntityProjection } from './progress';
+import {
+  computeRequiredFieldProgress,
+  computeRowProgress,
+  type ProgressEntityProjection,
+} from './progress';
 
 function field(id: string, is_required: boolean): ExtractionField {
   // Only id + is_required are read by the formula.
@@ -78,5 +82,69 @@ describe('computeRequiredFieldProgress', () => {
     expect(r.totalFields).toBe(2);
     expect(r.completedFields).toBe(2);
     expect(r.completionPercentage).toBe(100);
+  });
+});
+
+describe('computeRowProgress (article/row level — shared by both list tables)', () => {
+  const entityTypes = [et('e1', [field('f1', true), field('f2', true), field('opt', false)])];
+  const inst = (id: string, entityTypeId: string, status?: string) => ({
+    id,
+    entity_type_id: entityTypeId,
+    status,
+  });
+  const val = (instance_id: string, field_id: string, value: unknown) => ({
+    instance_id,
+    field_id,
+    value,
+  });
+
+  it('agrees with the canonical header metric for the same data (the bug regression)', () => {
+    const rowPct = computeRowProgress(
+      [inst('i1', 'e1')],
+      [val('i1', 'f1', { value: 'x' })],
+      entityTypes,
+    );
+    const headerPct = computeRequiredFieldProgress({ i1_f1: 'x' }, entityTypes).completionPercentage;
+    expect(rowPct).toBe(50);
+    expect(rowPct).toBe(headerPct); // same article => same % in list and header
+  });
+
+  it("cardinality='many': 2 instances, only one filled => 50% (not 100)", () => {
+    const ets = [et('e1', [field('f1', true), field('f2', true)])];
+    const pct = computeRowProgress(
+      [inst('m1', 'e1'), inst('m2', 'e1')],
+      [val('m1', 'f1', { value: 'a' }), val('m1', 'f2', { value: 'b' })],
+      ets,
+    );
+    expect(pct).toBe(50); // denom = 2 required × 2 instances = 4; filled = 2
+  });
+
+  it('all instances completed => 100% (terminal shortcut)', () => {
+    expect(computeRowProgress([inst('i1', 'e1', 'completed')], [], entityTypes)).toBe(100);
+  });
+
+  it('rows without status never trigger the completed shortcut', () => {
+    expect(computeRowProgress([inst('i1', 'e1')], [], entityTypes)).toBe(0);
+  });
+
+  it('QA fallback (no required fields) => instance-based, not a 0% flatline', () => {
+    const ets = [et('e1', [field('f1', false)])];
+    expect(
+      computeRowProgress(
+        [inst('i1', 'e1'), inst('i2', 'e1')],
+        [val('i1', 'f1', { value: 'x' })],
+        ets,
+      ),
+    ).toBe(50);
+  });
+
+  it('empty wrapped value {value:""} is not counted as filled', () => {
+    expect(
+      computeRowProgress([inst('i1', 'e1')], [val('i1', 'f1', { value: '' })], entityTypes),
+    ).toBe(0);
+  });
+
+  it('no instances => 0%', () => {
+    expect(computeRowProgress([], [], entityTypes)).toBe(0);
   });
 });
