@@ -57,6 +57,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { t } from "@/lib/copy";
 import { TABLE_CELL_CLASS } from "@/lib/table-constants";
 import type { HITLKind } from "@/hooks/hitl/useHITLProjectTemplates";
+import {
+  useTemplateEntityTypes,
+  type TemplateEntityTypeWithFields,
+} from "@/hooks/extraction/useTemplateEntityTypes";
+import { computeRequiredFieldProgress } from "@/lib/extraction/progress";
 
 interface Article {
   id: string;
@@ -134,6 +139,51 @@ const INITIAL_FILTERS: FilterValues = {
   authors: "",
 };
 
+/**
+ * Per-article completion %, using the canonical required-field metric
+ * (`computeRequiredFieldProgress`) so the list agrees with the form header.
+ *
+ * - keeps the terminal `all instances completed => 100%` shortcut;
+ * - QA / no-required-fields templates fall back to instance-based progress so
+ *   they don't flatline at 0%;
+ * - passes the true instance set per entity type so empty `cardinality='many'`
+ *   instances still count in the denominator (guards regression #55).
+ */
+export function computeArticleProgress(
+  article: ArticleWithProgress,
+  entityTypes: TemplateEntityTypeWithFields[],
+  hasRequired: boolean,
+): number {
+  if (article.instances.length === 0) return 0;
+  if (article.instances.every((i) => i.status === "completed")) return 100;
+  if (!hasRequired) {
+    const filled = article.instances.filter((inst) =>
+      article.values.some((v) => v.instance_id === inst.id),
+    ).length;
+    return Math.round((filled / article.instances.length) * 100);
+  }
+  const valueMap: Record<string, unknown> = {};
+  for (const v of article.values) {
+    const raw = v.value;
+    const unwrapped =
+      raw && typeof raw === "object" && "value" in (raw as Record<string, unknown>)
+        ? (raw as { value: unknown }).value
+        : raw;
+    valueMap[`${v.instance_id}_${v.field_id}`] = unwrapped;
+  }
+  const instanceIdsByEntityType = new Map<string, Set<string>>();
+  for (const inst of article.instances) {
+    let set = instanceIdsByEntityType.get(inst.entity_type_id);
+    if (!set) {
+      set = new Set();
+      instanceIdsByEntityType.set(inst.entity_type_id, set);
+    }
+    set.add(inst.id);
+  }
+  return computeRequiredFieldProgress(valueMap, entityTypes, instanceIdsByEntityType)
+    .completionPercentage;
+}
+
 interface Props {
   kind: HITLKind;
   projectId: string;
@@ -163,6 +213,11 @@ export function HITLArticleTable({
   const [filterValues, setFilterValues] = useState<FilterValues>(INITIAL_FILTERS);
   const [sortField, setSortField] = useState<SortField>("created_at");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+
+  // Required-field structure (cached by template id) for the canonical
+  // progress metric shared with the form header.
+  const { entityTypes, isLoading: entityTypesLoading } =
+    useTemplateEntityTypes(templateId);
 
   useEffect(() => {
     let cancelled = false;
@@ -307,17 +362,22 @@ export function HITLArticleTable({
     };
   }, [projectId, templateId, currentUserId]);
 
-  const calcProgress = (article: ArticleWithProgress): number => {
-    if (article.instances.length === 0) return 0;
-    const allCompleted = article.instances.every(
-      (i) => i.status === "completed",
+  // Memoize per-article progress once per (articles, entityTypes) change —
+  // getProgress is read in the sort comparator and several render paths, so
+  // recomputing per call would be O(values × fields) × N on every keystroke.
+  const progressByArticle = useMemo(() => {
+    const hasRequired = entityTypes.some((et) =>
+      et.fields.some((f) => f.is_required),
     );
-    if (allCompleted) return 100;
-    const filled = article.instances.filter((instance) =>
-      article.values.some((v) => v.instance_id === instance.id),
-    ).length;
-    return Math.round((filled / article.instances.length) * 100);
-  };
+    const map = new Map<string, number>();
+    for (const article of articles) {
+      map.set(article.id, computeArticleProgress(article, entityTypes, hasRequired));
+    }
+    return map;
+  }, [articles, entityTypes]);
+
+  const getProgress = (article: ArticleWithProgress): number =>
+    progressByArticle.get(article.id) ?? 0;
 
   const filteredAndSorted = useMemo(() => {
     const visible = articles.filter((article) => {
@@ -346,7 +406,7 @@ export function HITLArticleTable({
       }
       const statusFilter = filterValues.status as string[] | undefined;
       if (statusFilter?.length) {
-        const progress = calcProgress(article);
+        const progress = getProgress(article);
         const status =
           progress >= 100
             ? "complete"
@@ -383,12 +443,12 @@ export function HITLArticleTable({
           bVal = b.publication_year ?? 0;
           break;
         case "progress":
-          aVal = calcProgress(a);
-          bVal = calcProgress(b);
+          aVal = getProgress(a);
+          bVal = getProgress(b);
           break;
         case "status": {
-          const ap = calcProgress(a);
-          const bp = calcProgress(b);
+          const ap = getProgress(a);
+          const bp = getProgress(b);
           aVal = a.instances.length === 0 ? 0 : ap >= 100 ? 2 : 1;
           bVal = b.instances.length === 0 ? 0 : bp >= 100 ? 2 : 1;
           break;
@@ -465,7 +525,7 @@ export function HITLArticleTable({
   };
 
   const renderStatus = (article: ArticleWithProgress) => {
-    const progress = calcProgress(article);
+    const progress = getProgress(article);
     const status =
       progress >= 100
         ? "complete"
@@ -531,7 +591,7 @@ export function HITLArticleTable({
     );
   };
 
-  if (loading) {
+  if (loading || entityTypesLoading) {
     return (
       <div className="space-y-3" data-testid={`hitl-${kind}-table-loading`}>
         <Skeleton className="h-8 w-full max-w-md" />
@@ -689,7 +749,7 @@ export function HITLArticleTable({
           </TableHeader>
           <TableBody>
             {filteredAndSorted.map((article) => {
-              const progress = calcProgress(article);
+              const progress = getProgress(article);
               return (
                 <TableRow
                   key={article.id}
