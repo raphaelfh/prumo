@@ -21,12 +21,8 @@ async def test_current_values_are_caller_scoped(db_session: AsyncSession) -> Non
         pytest.skip("Seed graph incomplete")
     run_id, reviewer_a, reviewer_b = built
 
-    a_values = await resolve_caller_current_values(
-        db_session, run_id, caller_id=reviewer_a
-    )
-    b_values = await resolve_caller_current_values(
-        db_session, run_id, caller_id=reviewer_b
-    )
+    a_values = await resolve_caller_current_values(db_session, run_id, caller_id=reviewer_a)
+    b_values = await resolve_caller_current_values(db_session, run_id, caller_id=reviewer_b)
     assert a_values, "reviewer A should resolve at least one current value"
     a_blob = " ".join(str(v.value) for v in a_values)
     assert "REVIEWER-B-SECRET" not in a_blob
@@ -44,9 +40,7 @@ async def test_current_values_empty_when_no_caller_rows(
     # real run/user could already share rows and make `== []` flaky).
     from uuid import uuid4
 
-    values = await resolve_caller_current_values(
-        db_session, uuid4(), caller_id=uuid4()
-    )
+    values = await resolve_caller_current_values(db_session, uuid4(), caller_id=uuid4())
     assert values == [], "no matching rows must resolve to an empty list"
 
 
@@ -59,9 +53,7 @@ async def test_current_values_match_loadvaluesforuser_contract(
         pytest.skip("Seed graph incomplete")
     run_id, reviewer_a, _reviewer_b = built
 
-    values = await resolve_caller_current_values(
-        db_session, run_id, caller_id=reviewer_a
-    )
+    values = await resolve_caller_current_values(db_session, run_id, caller_id=reviewer_a)
     assert values, "reviewer A must resolve at least their own current value"
     by_decision = {v.decision for v in values}
     assert by_decision <= {"human_proposal", "edit", "accept_proposal", "reject"}

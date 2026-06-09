@@ -50,9 +50,7 @@ async def test_entity_types_from_widened_snapshot(db_session: AsyncSession) -> N
     if run is None:
         pytest.skip("Seed graph incomplete")
 
-    entity_types = await _entity_types_for_run(
-        db_session, RunSummaryResponse.model_validate(run)
-    )
+    entity_types = await _entity_types_for_run(db_session, RunSummaryResponse.model_validate(run))
     assert entity_types, "expected a non-empty entity_types tree"
     roles = {et.role for et in entity_types}
     assert roles, "every entity type must carry a role from the widened snapshot"
@@ -97,6 +95,5 @@ async def test_entity_types_live_fallback_for_narrow_snapshot(
     )
     assert entity_types, "live fallback must yield the entity_types tree"
     assert all(
-        et.role in ("study_section", "model_container", "model_section")
-        for et in entity_types
+        et.role in ("study_section", "model_container", "model_section") for et in entity_types
     ), "fallback reads role from the live table"

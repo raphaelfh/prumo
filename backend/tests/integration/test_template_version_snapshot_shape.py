@@ -13,13 +13,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.extraction_snapshot import build_template_version_snapshot
 
 _ENTITY_KEYS = {
-    "id", "name", "label", "description", "parent_entity_type_id",
-    "cardinality", "role", "sort_order", "is_required", "fields",
+    "id",
+    "name",
+    "label",
+    "description",
+    "parent_entity_type_id",
+    "cardinality",
+    "role",
+    "sort_order",
+    "is_required",
+    "fields",
 }
 _FIELD_KEYS = {
-    "id", "name", "label", "description", "field_type", "is_required",
-    "validation_schema", "allowed_values", "unit", "allowed_units",
-    "sort_order", "llm_description", "allow_other", "other_label",
+    "id",
+    "name",
+    "label",
+    "description",
+    "field_type",
+    "is_required",
+    "validation_schema",
+    "allowed_values",
+    "unit",
+    "allowed_units",
+    "sort_order",
+    "llm_description",
+    "allow_other",
+    "other_label",
     "other_placeholder",
 }
 
