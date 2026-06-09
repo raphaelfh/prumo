@@ -44,11 +44,11 @@ async def test_snapshot_carries_role_and_all_field_columns(
     assert entity_types, "expected a non-empty entity_types tree for a seeded template"
 
     for et in entity_types:
-        assert _ENTITY_KEYS <= set(et.keys()), (
+        assert set(et.keys()) >= _ENTITY_KEYS, (
             f"entity_type missing keys: {_ENTITY_KEYS - set(et.keys())}"
         )
         assert et["role"] in ("study_section", "model_container", "model_section")
         for f in et["fields"]:
-            assert _FIELD_KEYS <= set(f.keys()), (
+            assert set(f.keys()) >= _FIELD_KEYS, (
                 f"field missing keys: {_FIELD_KEYS - set(f.keys())}"
             )
