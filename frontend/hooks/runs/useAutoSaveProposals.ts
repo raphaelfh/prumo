@@ -59,8 +59,8 @@ export interface UseAutoSaveProposalsProps {
    * Active run stage. Drives the write target:
    *   - ``'review'`` → POST ``/decisions`` with decision='edit' so each
    *     reviewer's typing lands as a per-user ReviewerDecision (the
-   *     blind-review contract). The read path (``loadValuesForUser``)
-   *     reads these back, scoped to the active reviewer.
+   *     blind-review contract). The run view reads these back resolved
+   *     and scoped to the active reviewer (``currentValues``).
    *   - any other value (``'proposal'``, ``undefined``, …) → POST
    *     ``/proposals`` with source='human'. Preserves the existing QA
    *     single-user publish flow and the extraction PROPOSAL stage
@@ -206,8 +206,8 @@ export function useAutoSaveProposals(
           // Stage-aware write target (Layer 2 of the multi-reviewer
           // blind fix). ``stage='review'`` means every reviewer is
           // making per-user decisions on top of the same Run — the
-          // write must be a ReviewerDecision so the read path's
-          // ``loadValuesForUser`` filter holds. Any other stage
+          // write must be a ReviewerDecision so the run view's
+          // reviewer-scoped read (``currentValues``) holds. Any other stage
           // (proposal, undefined) keeps writing ``human`` proposals,
           // preserving the QA publish flow and the extraction
           // PROPOSAL stage where one user (or AI) builds the initial

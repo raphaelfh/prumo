@@ -13,16 +13,19 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from app.models.extraction import ExtractionRun, ExtractionRunStage
+from app.models.extraction import ExtractionEntityType, ExtractionRun, ExtractionRunStage
+from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.models.extraction_workflow import (
     ExtractionConsensusDecision,
     ExtractionProposalRecord,
     ExtractionProposalSource,
     ExtractionPublishedState,
     ExtractionReviewerDecision,
+    ExtractionReviewerState,
 )
 from app.models.project import ProjectMemberRole
 from app.models.user import Profile
@@ -44,6 +47,9 @@ from app.schemas.extraction_run import (
     RunDetailResponse,
     RunReviewerProfile,
     RunSummaryResponse,
+    RunViewCurrentValue,
+    RunViewEntityType,
+    RunViewResponse,
 )
 
 
@@ -119,6 +125,183 @@ async def get_run_with_workflow_history(
         decisions=[ReviewerDecisionResponse.model_validate(d) for d in visible_decisions],
         consensus_decisions=[ConsensusDecisionResponse.model_validate(c) for c in consensus],
         published_states=[PublishedStateResponse.model_validate(ps) for ps in published_rows],
+    )
+
+
+def _snapshot_is_narrow(entity_types: list[dict]) -> bool:
+    """A pre-0026 snapshot is detected by its first entity_type lacking 'role'.
+    Empty trees are treated as narrow so the live fallback repopulates them —
+    a legitimately empty template just round-trips to an empty live read, which
+    is the correct (if marginally wasteful) recovery, not a structural read to
+    'optimize away'."""
+    return not entity_types or "role" not in entity_types[0]
+
+
+async def _entity_types_for_run(
+    db: AsyncSession, run: RunSummaryResponse
+) -> list[RunViewEntityType]:
+    """Frozen entity_types tree from the run's version snapshot, with a live
+    read fallback for pre-0026 narrow snapshots (belt-and-suspenders: migration
+    0026 backfills these, but the fallback turns a 'silent broken study/model
+    partition' into a correct live render if any narrow snapshot slips through).
+    Both paths produce the same shape via ``model_validate``."""
+    version = await db.get(ExtractionTemplateVersion, run.version_id)
+    snapshot_types: list[dict] = (version.schema_ or {}).get("entity_types", []) if version else []
+    if not _snapshot_is_narrow(snapshot_types):
+        return [RunViewEntityType.model_validate(et) for et in snapshot_types]
+
+    # Live fallback — one statement, fields eager-loaded (selectinload), then
+    # model_validate straight off the ORM (RunViewEntityType/RunViewField carry
+    # from_attributes=True). The relationship is not guaranteed field-ordered,
+    # so sort the validated fields by sort_order to match the snapshot path.
+    et_rows = (
+        (
+            await db.execute(
+                select(ExtractionEntityType)
+                .where(ExtractionEntityType.project_template_id == run.template_id)
+                .options(selectinload(ExtractionEntityType.fields))
+                .order_by(ExtractionEntityType.sort_order)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    result: list[RunViewEntityType] = []
+    for et in et_rows:
+        view_et = RunViewEntityType.model_validate(et)
+        view_et.fields.sort(key=lambda f: f.sort_order)
+        result.append(view_et)
+    return result
+
+
+async def resolve_caller_current_values(
+    db: AsyncSession, run_id: UUID, *, caller_id: UUID
+) -> list[RunViewCurrentValue]:
+    """The caller's current value per (instance, field) coordinate.
+
+    Mirrors the frontend ``loadValuesForUser`` it replaces, value-for-value:
+      Layer 1 (base): the caller's own human proposals, newest-per-coord;
+      Layer 2 (override): the caller's current reviewer decision per coord,
+        resolved through the materialized ``extraction_reviewer_states`` pointer
+        (``current_decision_id`` -> the live ``extraction_reviewer_decisions`` row).
+    ``reject`` decisions are kept (the client clears the coord but the audit row
+    stays). Caller-scoped: only ``reviewer_id == caller_id`` /
+    ``source_user_id == caller_id`` rows — this is the 4th lockstep copy of the
+    blind predicate and MUST stay identical to migration 0025 + the service
+    filter in get_run_with_workflow_history.
+
+    NOTE: ``ExtractionExportService._build_single_user_value_map`` looks similar
+    but encodes a DIFFERENT contract (it sources ``accept_proposal`` from the
+    accepted proposal and drops ``reject``, with no human-proposal base layer).
+    This resolver mirrors the FRONTEND ``loadValuesForUser`` it replaces, not the
+    export contract — do NOT DRY them together, or run-open values diverge from
+    the form's current behavior (Invariant 6). The two reads below are
+    independent but run sequentially on the shared AsyncSession (a single
+    asyncpg connection cannot multiplex, so ``asyncio.gather`` here is unsafe);
+    this matches the sequential read pattern of the composed
+    get_run_with_workflow_history. Merging them into one CTE is a possible future
+    optimization, deliberately not taken here to keep this security-sensitive
+    resolver simple.
+    """
+    merged: dict[tuple[UUID, UUID], RunViewCurrentValue] = {}
+
+    # Layer 1 — caller's own human proposals, newest-first; first-per-coord wins
+    # (ties on created_at are skipped by the `key in merged` guard below).
+    proposal_rows = (
+        (
+            await db.execute(
+                select(ExtractionProposalRecord)
+                .where(
+                    ExtractionProposalRecord.run_id == run_id,
+                    ExtractionProposalRecord.source == ExtractionProposalSource.HUMAN.value,
+                    ExtractionProposalRecord.source_user_id == caller_id,
+                )
+                .order_by(ExtractionProposalRecord.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for p in proposal_rows:
+        key = (p.instance_id, p.field_id)
+        if key in merged:
+            continue
+        merged[key] = RunViewCurrentValue(
+            instance_id=p.instance_id,
+            field_id=p.field_id,
+            value=p.proposed_value,
+            decision="human_proposal",
+        )
+
+    # Layer 2 — caller's current reviewer decision per coord (overrides Layer 1).
+    state_rows = (
+        await db.execute(
+            select(ExtractionReviewerState, ExtractionReviewerDecision)
+            .join(
+                ExtractionReviewerDecision,
+                and_(
+                    ExtractionReviewerDecision.run_id == ExtractionReviewerState.run_id,
+                    ExtractionReviewerDecision.id == ExtractionReviewerState.current_decision_id,
+                ),
+            )
+            .where(
+                ExtractionReviewerState.run_id == run_id,
+                ExtractionReviewerState.reviewer_id == caller_id,
+            )
+        )
+    ).all()
+    for state, decision in state_rows:
+        merged[(state.instance_id, state.field_id)] = RunViewCurrentValue(
+            instance_id=state.instance_id,
+            field_id=state.field_id,
+            value=decision.value,
+            decision=decision.decision,
+        )
+
+    return list(merged.values())
+
+
+# Stages whose form hydrates from the materialized reviewer_states + decisions
+# (current_values). In 'proposal' the client uses proposals[]; pending/cancelled
+# show nothing.
+_CURRENT_VALUE_STAGES = frozenset(
+    {
+        ExtractionRunStage.REVIEW.value,
+        ExtractionRunStage.CONSENSUS.value,
+        ExtractionRunStage.FINALIZED.value,
+    }
+)
+
+
+async def build_run_view(
+    db: AsyncSession, run_id: UUID, *, caller_id: UUID, is_arbitrator: bool
+) -> RunViewResponse:
+    """The one-round-trip run-open view: the blind-filtered run detail plus the
+    frozen entity_types tree and the caller's current_values. COMPOSES
+    get_run_with_workflow_history (the single blind filter) — it never re-queries
+    the workflow tables, so the blind boundary cannot drift. The composed
+    ``detail.run`` (a RunSummaryResponse) already carries ``version_id`` /
+    ``template_id`` / ``stage`` / ``article_id``, so there is no second ORM
+    fetch of the run here."""
+    detail = await get_run_with_workflow_history(
+        db, run_id, caller_id=caller_id, is_arbitrator=is_arbitrator
+    )
+
+    entity_types = await _entity_types_for_run(db, detail.run)
+    current_values = (
+        await resolve_caller_current_values(db, run_id, caller_id=caller_id)
+        if detail.run.stage in _CURRENT_VALUE_STAGES
+        else []
+    )
+
+    return RunViewResponse(
+        run=detail.run,
+        proposals=detail.proposals,
+        decisions=detail.decisions,
+        consensus_decisions=detail.consensus_decisions,
+        published_states=detail.published_states,
+        entity_types=entity_types,
+        current_values=current_values,
     )
 
 

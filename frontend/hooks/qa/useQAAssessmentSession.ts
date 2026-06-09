@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { apiClient } from "@/integrations/api";
+import { type RunViewResponse } from "@/hooks/runs/types";
 
 export interface QAAssessmentSession {
   runId: string;
@@ -44,6 +45,7 @@ interface OpenResponse {
   run_id: string;
   project_template_id: string;
   instances_by_entity_type: Record<string, string>;
+  run_view: RunViewResponse | null;
 }
 
 export function useQAAssessmentSession({

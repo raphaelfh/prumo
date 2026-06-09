@@ -86,11 +86,9 @@ function chain(payload: { data: unknown; error?: { message: string } | null }): 
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // ``loadValuesForUser`` now reads two layers in parallel (reviewer_states
-  // + human proposal_records) and merges by precedence. Most tests only
-  // care about one layer, so anything not explicitly mocked falls through
-  // to an empty chain. ``mockReturnValueOnce`` overrides this for the
-  // first call as before.
+  // Default ``supabase.from`` to an empty chain so any query a test
+  // doesn't explicitly stub falls through harmlessly. Individual tests
+  // override the relevant call(s) with ``mockReturnValueOnce``.
   (supabase.from as any).mockReturnValue(chain({ data: [] }));
 });
 
@@ -302,154 +300,6 @@ describe('ExtractionValueService.findLatestFinalizedRun', () => {
     (supabase.from as any).mockReturnValueOnce(c);
     await ExtractionValueService.findLatestFinalizedRun('article-1', null);
     expect(c.__calls.eqs.find(([col]) => col === 'template_id')).toBeUndefined();
-  });
-});
-
-describe('ExtractionValueService.loadValuesForUser', () => {
-  it('maps reviewer_states + decisions into DecisionValueRow entries', async () => {
-    (supabase.from as any).mockReturnValueOnce(
-      chain({
-        data: [
-          {
-            run_id: 'run-1',
-            reviewer_id: 'user-1',
-            instance_id: 'inst-1',
-            field_id: 'field-1',
-            current_decision_id: 'dec-1',
-            reviewer_decision: {
-              decision: 'edit',
-              value: { value: 42 },
-              created_at: '2026-04-28T10:00:00Z',
-            },
-          },
-          {
-            run_id: 'run-1',
-            reviewer_id: 'user-1',
-            instance_id: 'inst-2',
-            field_id: 'field-2',
-            current_decision_id: null,
-            reviewer_decision: null,
-          },
-        ],
-      }),
-    );
-    const rows = await ExtractionValueService.loadValuesForUser('run-1', 'user-1');
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
-      instanceId: 'inst-1',
-      fieldId: 'field-1',
-      value: 42,
-      decision: 'edit',
-      reviewerId: 'user-1',
-    });
-  });
-
-  it('unwraps {value: X} JSONB on the way out', async () => {
-    (supabase.from as any).mockReturnValueOnce(
-      chain({
-        data: [
-          {
-            run_id: 'run-1',
-            reviewer_id: 'user-1',
-            instance_id: 'inst-1',
-            field_id: 'field-1',
-            current_decision_id: 'dec-1',
-            reviewer_decision: {
-              decision: 'edit',
-              value: { value: { value: 'nested', unit: 'mg' } },
-              created_at: '2026-04-28T10:00:00Z',
-            },
-          },
-        ],
-      }),
-    );
-    const rows = await ExtractionValueService.loadValuesForUser('run-1', 'user-1');
-    expect(rows[0].value).toEqual({ value: 'nested', unit: 'mg' });
-  });
-
-  it('keeps reject decisions in the returned rows (consumer filters them)', async () => {
-    // The service is the source of truth for decision history; the
-    // ``useExtractedValues`` consumer is responsible for skipping rejects
-    // when populating the form. Don't filter at the service layer.
-    (supabase.from as any).mockReturnValueOnce(
-      chain({
-        data: [
-          {
-            run_id: 'run-1',
-            reviewer_id: 'user-1',
-            instance_id: 'inst-1',
-            field_id: 'field-1',
-            current_decision_id: 'dec-1',
-            reviewer_decision: {
-              decision: 'reject',
-              value: null,
-              created_at: '2026-04-28T10:00:00Z',
-            },
-          },
-        ],
-      }),
-    );
-    const rows = await ExtractionValueService.loadValuesForUser('run-1', 'user-1');
-    expect(rows).toHaveLength(1);
-    expect(rows[0].decision).toBe('reject');
-  });
-
-  it("scopes the query to (run_id, reviewer_id)", async () => {
-    const c = chain({ data: [] });
-    (supabase.from as any).mockReturnValueOnce(c);
-    await ExtractionValueService.loadValuesForUser('run-1', 'user-1');
-    expect(c.__calls.eqs).toContainEqual(['run_id', 'run-1']);
-    expect(c.__calls.eqs).toContainEqual(['reviewer_id', 'user-1']);
-  });
-
-  it('throws APIError when Supabase reports an error', async () => {
-    (supabase.from as any).mockReturnValueOnce(
-      chain({ data: null, error: { message: 'states down' } }),
-    );
-    await expect(
-      ExtractionValueService.loadValuesForUser('run-1', 'user-1'),
-    ).rejects.toThrow(/states down/);
-  });
-
-  it('falls back to the user’s latest human proposal_record when no reviewer_decision exists (H1)', async () => {
-    // Production scenario reproduced from article 5573e7f3 / run 154cd860:
-    // - run is in REVIEW stage (advanced after AI extraction)
-    // - 0 reviewer_decisions for the current user
-    // - 1 human proposal_record (source=human, source_user_id=current user)
-    //
-    // Pre-fix: hook reads ONLY extraction_reviewer_states → empty rows →
-    // form renders blank even though the user typed "Case series".
-    // Post-fix: precedence read falls back to the user's human proposal,
-    // so the form renders the typed value until an explicit decision is
-    // recorded (or auto-materialized on the next stage advance).
-    //
-    // Call order in the new impl: reviewer_states first (empty), then
-    // human proposals (returns 1 row).
-    (supabase.from as any)
-      .mockReturnValueOnce(chain({ data: [] }))
-      .mockReturnValueOnce(
-        chain({
-          data: [
-            {
-              instance_id: 'inst-source-of-data',
-              field_id: 'field-data-source',
-              proposed_value: { value: 'Case series' },
-              created_at: '2026-05-26T19:44:29Z',
-            },
-          ],
-        }),
-      );
-
-    const rows = await ExtractionValueService.loadValuesForUser(
-      'run-154cd860',
-      'user-352ec3f8',
-    );
-
-    expect(rows).toHaveLength(1);
-    expect(rows[0].instanceId).toBe('inst-source-of-data');
-    expect(rows[0].fieldId).toBe('field-data-source');
-    expect(rows[0].value).toBe('Case series');
-    expect(rows[0].reviewerId).toBe('user-352ec3f8');
   });
 });
 
