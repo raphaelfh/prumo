@@ -127,6 +127,13 @@ describe('ExtractionValueService.findActiveRun', () => {
     expect(c.__calls.eqs).toContainEqual(['kind', 'extraction']);
   });
 
+  it('scopes the query to article_id', async () => {
+    const c = chain({ data: null });
+    (supabase.from as any).mockReturnValueOnce(c);
+    await ExtractionValueService.findActiveRun('art-42', 'tpl-1');
+    expect(c.__calls.eqs).toContainEqual(['article_id', 'art-42']);
+  });
+
   it('restricts stages to pending/proposal/review/consensus', async () => {
     const c = chain({ data: null });
     (supabase.from as any).mockReturnValueOnce(c);
