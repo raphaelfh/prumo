@@ -187,11 +187,11 @@ describe('useAutoSaveProposals — basic write semantics', () => {
 describe('useAutoSaveProposals — stage-aware write target (Layer 2 fix)', () => {
   // Bug B (multi-reviewer blind review): during stage='review' every
   // reviewer's edit must land as a per-user ``ReviewerDecision`` so the
-  // load path (``loadValuesForUser``) keeps them blinded from each
-  // other. The previous unified write to /proposals appended the value
-  // as a shared ProposalRecord, which broke the per-user contract and
-  // also wasted writes that ``useExtractedValues``' review branch would
-  // never read back. Fix: when the caller passes ``stage='review'``,
+  // run view's reviewer-scoped read (``currentValues``) keeps them
+  // blinded from each other. The previous unified write to /proposals
+  // appended the value as a shared ProposalRecord, which broke the
+  // per-user contract and also wasted writes that ``useExtractedValues``'
+  // review branch would never read back. Fix: when the caller passes ``stage='review'``,
   // POST to /decisions with decision='edit'.
 
   it("writes an 'edit' ReviewerDecision per dirty coord when stage='review'", async () => {

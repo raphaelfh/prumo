@@ -30,6 +30,7 @@ from app.schemas.extraction_run import (
     RunDetailResponse,
     RunReviewersResponse,
     RunSummaryResponse,
+    RunViewResponse,
 )
 from app.services.coordinate_coherence import CoordinateMismatchError
 from app.services.extraction_consensus_service import (
@@ -47,6 +48,7 @@ from app.services.extraction_review_service import (
 )
 from app.services.extraction_run_read_service import (
     RunNotFoundError,
+    build_run_view,
     get_run_or_raise,
     get_run_with_workflow_history,
     is_run_arbitrator,
@@ -156,6 +158,21 @@ async def get_run(
         detail,
         trace_id=getattr(request.state, "trace_id", None),
     )
+
+
+@router.get("/{run_id}/view")
+async def get_run_view(
+    run_id: UUID,
+    request: Request,
+    db: DbSession,
+    current_user_sub: UUID = Depends(get_current_user_sub),
+) -> ApiResponse[RunViewResponse]:
+    """One-round-trip run-open view: blind-filtered run detail + the frozen
+    entity_types tree + the caller's current_values."""
+    run = await _load_run_and_check_member(db, run_id, current_user_sub)
+    is_arbitrator = await is_run_arbitrator(db, run.project_id, current_user_sub)
+    view = await build_run_view(db, run_id, caller_id=current_user_sub, is_arbitrator=is_arbitrator)
+    return ApiResponse.success(view, trace_id=_trace(request))
 
 
 @router.post("/{run_id}/proposals", status_code=status.HTTP_201_CREATED)
