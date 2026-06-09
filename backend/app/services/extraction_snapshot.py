@@ -21,7 +21,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-# WARNING: migration 0026_widen_template_version_snapshot embeds a copy of this
+# WARNING: migration 0026_widen_template_snapshot embeds a copy of this
 # key set for its one-time backfill. If you add a key here, update that
 # migration's SQL too (migrations must stay self-contained; they cannot import
 # app code that may change after they are committed).

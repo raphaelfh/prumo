@@ -16,14 +16,14 @@ Idempotent: only snapshots whose first entity_type lacks the ``role`` key
 (narrow) are rewritten; re-running is a no-op. Forward-only: the downgrade
 cannot reliably reconstruct the prior narrow shape and is a documented no-op.
 
-Revision ID: 0026_widen_template_version_snapshot
+Revision ID: 0026_widen_template_snapshot
 Revises: 0025_reviewer_scoped_select_rls
 Create Date: 2026-06-08
 """
 
 from alembic import op
 
-revision = "0026_widen_template_version_snapshot"
+revision = "0026_widen_template_snapshot"
 down_revision = "0025_reviewer_scoped_select_rls"
 branch_labels = None
 depends_on = None
