@@ -57,9 +57,9 @@ interface UseExtractedValuesProps {
   proposals?: ProposalRecordResponse[];
   /**
    * Pre-computed reviewer values embedded in the run view (review /
-   * consensus / finalized stages). When present, the hook reads directly
-   * from this array instead of firing a separate PostgREST query via
-   * ``ExtractionValueService.loadValuesForUser``.
+   * consensus / finalized stages) — the current decision per coord,
+   * resolved and reviewer-scoped server-side. The review branch hydrates
+   * directly from this array, with no separate client-side query.
    */
   currentValues?: RunViewCurrentValue[];
   /**
@@ -93,14 +93,6 @@ function resetValuesIfNeeded(
   setValues: Dispatch<SetStateAction<Record<string, any>>>,
 ) {
   setValues((prev) => (Object.keys(prev).length > 0 ? {} : prev));
-}
-
-function unwrapProposalValue(raw: unknown): unknown {
-  if (raw === null || raw === undefined) return null;
-  if (typeof raw === 'object' && raw !== null && 'value' in raw) {
-    return (raw as { value: unknown }).value ?? null;
-  }
-  return raw;
 }
 
 function mergeValuesById(
@@ -211,7 +203,7 @@ export function useExtractedValues(
             currentUserId,
           });
           for (const [key, p] of latestByCoord) {
-            const unwrapped = unwrapProposalValue(p.proposed_value);
+            const unwrapped = unwrapValue(p.proposed_value);
             const unit =
               typeof p.proposed_value === 'object' &&
               p.proposed_value !== null &&

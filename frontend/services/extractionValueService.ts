@@ -32,15 +32,6 @@ export interface RunRef {
   template_id: string;
 }
 
-export interface DecisionValueRow {
-  instanceId: string;
-  fieldId: string;
-  value: unknown;
-  decision: string;
-  reviewerId: string;
-  decidedAt: string;
-}
-
 export interface OtherUserDecisions {
   reviewerId: string;
   reviewerName: string;
@@ -212,111 +203,6 @@ export const ExtractionValueService = {
       if (!result.has(articleId)) result.set(articleId, runId);
     }
     return result;
-  },
-
-  /**
-   * Load the current value per (instance, field) for the given user
-   * within a run.
-   *
-   * Two layers are read in parallel and merged by precedence:
-   * 1. ``extraction_reviewer_states`` (joined to
-   *    ``extraction_reviewer_decisions``) — the user's formal review
-   *    decisions (latest per coord via the materialized pointer).
-   * 2. ``extraction_proposal_records`` (source=human, source_user_id=user)
-   *    — the user's autosaved input, the raw layer that always reflects
-   *    what they typed.
-   *
-   * Precedence: reviewer_decision wins where it exists; otherwise the
-   * latest human proposal_record fills in. Reject decisions clear the
-   * coord (the row stays in the output with ``decision='reject'`` so
-   * the consumer can distinguish "explicitly rejected" from "never set").
-   *
-   * Why fallback matters: ``useAutoSaveProposals`` writes proposals
-   * regardless of run stage. When a run advances PROPOSAL→REVIEW (via
-   * AI extraction or explicit "Submit for review") before any
-   * ``reviewer_decision`` exists for the user's typed values, the form
-   * would otherwise render blank — even though the proposal is alive.
-   */
-  async loadValuesForUser(
-    runId: string,
-    reviewerId: string,
-  ): Promise<DecisionValueRow[]> {
-    const [decisionsResult, proposalsResult] = await Promise.all([
-      supabase
-        .from('extraction_reviewer_states')
-        .select(
-          `run_id, reviewer_id, instance_id, field_id, current_decision_id,
-           reviewer_decision:extraction_reviewer_decisions!fk_extraction_reviewer_states_decision_run_match (
-             decision, value, created_at
-           )`,
-        )
-        .eq('run_id', runId)
-        .eq('reviewer_id', reviewerId),
-      supabase
-        .from('extraction_proposal_records')
-        .select('instance_id, field_id, proposed_value, created_at')
-        .eq('run_id', runId)
-        .eq('source', 'human')
-        .eq('source_user_id', reviewerId)
-        .order('created_at', { ascending: false }),
-    ]);
-
-    if (decisionsResult.error) {
-      throw new APIError(
-        `Failed to load reviewer values: ${decisionsResult.error.message}`,
-        undefined,
-        { error: decisionsResult.error },
-      );
-    }
-    if (proposalsResult.error) {
-      throw new APIError(
-        `Failed to load reviewer values: ${proposalsResult.error.message}`,
-        undefined,
-        { error: proposalsResult.error },
-      );
-    }
-
-    const merged = new Map<string, DecisionValueRow>();
-    const key = (instanceId: string, fieldId: string) => `${instanceId}_${fieldId}`;
-
-    // Layer 1 — human proposals (lowest precedence). Latest-first sort
-    // means the first occurrence per (instance, field) is the latest.
-    const proposalRows = (proposalsResult.data ?? []) as Array<{
-      instance_id: string;
-      field_id: string;
-      proposed_value: unknown;
-      created_at: string | null;
-    }>;
-    for (const p of proposalRows) {
-      const k = key(p.instance_id, p.field_id);
-      if (merged.has(k)) continue;
-      merged.set(k, {
-        instanceId: p.instance_id,
-        fieldId: p.field_id,
-        value: unwrapValue(p.proposed_value),
-        decision: 'human_proposal',
-        reviewerId,
-        decidedAt: p.created_at ?? '',
-      });
-    }
-
-    // Layer 2 — reviewer decisions (overrides proposals). Non-null
-    // decisions only — null reviewer_decision means the state row exists
-    // but no decision is current (cleared / never set).
-    const decisionRows = (decisionsResult.data ?? []) as unknown as ReviewerStateRow[];
-    for (const r of decisionRows) {
-      if (r.reviewer_decision === null) continue;
-      merged.set(key(r.instance_id, r.field_id), {
-        instanceId: r.instance_id,
-        fieldId: r.field_id,
-        value: unwrapValue(r.reviewer_decision.value),
-        decision: r.reviewer_decision.decision ?? 'edit',
-        reviewerId: r.reviewer_id,
-        decidedAt: r.reviewer_decision.created_at ?? '',
-      });
-    }
-
-    return [...merged.values()];
   },
 
   /**

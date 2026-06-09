@@ -320,8 +320,8 @@ export default function ExtractionFullScreen() {
     // and per-user ``ReviewerDecision`` rows (decision='edit') during
     // REVIEW stage. The stage-aware target preserves the blind-review
     // contract for multi-reviewer runs: each reviewer's typing during
-    // REVIEW lands in their own decision stream and the read path
-    // (``loadValuesForUser``) filters by reviewer_id (Layer 2 of the
+    // REVIEW lands in their own decision stream and the run view's
+    // ``currentValues`` are resolved per reviewer_id (Layer 2 of the
     // multi-reviewer blind fix).
     //
     // No-op until the session is open and the run is in a writable

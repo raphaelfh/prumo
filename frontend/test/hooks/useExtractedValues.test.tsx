@@ -25,9 +25,6 @@ vi.mock('@/integrations/supabase/client', () => ({
 }));
 
 vi.mock('@/services/extractionValueService', () => ({
-  ExtractionValueService: {
-    loadValuesForUser: vi.fn(async () => []),
-  },
   unwrapValue: (raw: unknown) => {
     if (raw === null || raw === undefined) return null;
     if (typeof raw === 'object' && raw !== null && 'value' in raw) {
@@ -45,7 +42,6 @@ vi.mock('@/lib/copy', () => ({
   t: (_ns: string, key: string) => key,
 }));
 
-import { ExtractionValueService } from '@/services/extractionValueService';
 import { useExtractedValues } from '@/hooks/extraction/useExtractedValues';
 import type { ProposalRecordResponse } from '@/hooks/runs/types';
 
@@ -110,9 +106,7 @@ describe('useExtractedValues — stage=proposal', () => {
     expect(result.current.values['inst-2_field-2']).toEqual({
       value: 'A',
       unit: 'mg',
-    });
-    expect(ExtractionValueService.loadValuesForUser).not.toHaveBeenCalled();
-  });
+    });  });
 
   it('returns empty when no proposals are provided', async () => {
     const { result } = renderHook(() =>
@@ -289,7 +283,7 @@ describe('useExtractedValues — stage=proposal blinding (multi-reviewer)', () =
 });
 
 describe('useExtractedValues — stage=review via currentValues', () => {
-  it('hydrates from currentValues, skips reject decisions, and does NOT call loadValuesForUser', async () => {
+  it('hydrates from currentValues and skips reject decisions', async () => {
     const i1 = 'inst-1';
     const f1 = 'field-1';
     const f2 = 'field-2';
@@ -321,13 +315,11 @@ describe('useExtractedValues — stage=review via currentValues', () => {
     expect(result.current.values[`${i1}_${f1}`]).toBe('X');
     // (b) reject decision is excluded
     expect(result.current.values[`${i1}_${f2}`]).toBeUndefined();
-    // (c) loadValuesForUser is NOT called
-    expect(ExtractionValueService.loadValuesForUser).not.toHaveBeenCalled();
   });
 });
 
 describe('useExtractedValues — stage=review and beyond', () => {
-  it('hydrates from currentValues, skips reject decisions, does NOT call loadValuesForUser', async () => {
+  it('hydrates scalar and unit-bearing currentValues, skipping rejects', async () => {
     // The review branch now reads from the pre-computed currentValues
     // embedded in the run view rather than issuing its own PostgREST query.
     // cv.value is the RAW server envelope: { value: <inner> }.
@@ -365,9 +357,7 @@ describe('useExtractedValues — stage=review and beyond', () => {
       }),
     );
 
-    await waitFor(() => expect(result.current.initialized).toBe(true));
-    expect(ExtractionValueService.loadValuesForUser).not.toHaveBeenCalled();
-    expect(result.current.values['inst-1_field-1']).toBe(42);
+    await waitFor(() => expect(result.current.initialized).toBe(true));    expect(result.current.values['inst-1_field-1']).toBe(42);
     expect(result.current.values['inst-2_field-2']).toBeUndefined();
     expect(result.current.values['inst-3_field-3']).toEqual({
       value: 'A',
@@ -386,9 +376,7 @@ describe('useExtractedValues — missing run / no auth', () => {
       }),
     );
     await waitFor(() => expect(result.current.initialized).toBe(true));
-    expect(result.current.values).toEqual({});
-    expect(ExtractionValueService.loadValuesForUser).not.toHaveBeenCalled();
-  });
+    expect(result.current.values).toEqual({});  });
 
   it('returns empty when there is no authenticated user (review path)', async () => {
     const { result } = renderHook(() =>
@@ -399,9 +387,7 @@ describe('useExtractedValues — missing run / no auth', () => {
       }),
     );
 
-    await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(ExtractionValueService.loadValuesForUser).not.toHaveBeenCalled();
-    expect(result.current.values).toEqual({});
+    await waitFor(() => expect(result.current.loading).toBe(false));    expect(result.current.values).toEqual({});
   });
 });
 
@@ -427,9 +413,7 @@ describe('useExtractedValues — disabled state (no run yet)', () => {
     );
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.initialized).toBe(true);
-    expect(result.current.values).toEqual({});
-    expect(ExtractionValueService.loadValuesForUser).not.toHaveBeenCalled();
-  });
+    expect(result.current.values).toEqual({});  });
 
   it('does not get stuck even when runId is set but enabled is explicitly false', async () => {
     const { result } = renderHook(() =>
@@ -441,9 +425,7 @@ describe('useExtractedValues — disabled state (no run yet)', () => {
         enabled: false,
       }),
     );
-    await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(ExtractionValueService.loadValuesForUser).not.toHaveBeenCalled();
-  });
+    await waitFor(() => expect(result.current.loading).toBe(false));  });
 
   it('becomes initialized once enabled flips from false to true', async () => {
     const currentValues = [
@@ -467,15 +449,11 @@ describe('useExtractedValues — disabled state (no run yet)', () => {
       { initialProps: { enabled: false } },
     );
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(ExtractionValueService.loadValuesForUser).not.toHaveBeenCalled();
-
     rerender({ enabled: true });
     // After re-enabling the hook must hydrate the form from currentValues
     // (the page wouldn't otherwise show values once the session resolves).
     await waitFor(() => expect(result.current.initialized).toBe(true));
-    expect(result.current.values['inst-1_field-1']).toBe('hydrated');
-    expect(ExtractionValueService.loadValuesForUser).not.toHaveBeenCalled();
-  });
+    expect(result.current.values['inst-1_field-1']).toBe('hydrated');  });
 });
 
 describe('useExtractedValues — local update', () => {
