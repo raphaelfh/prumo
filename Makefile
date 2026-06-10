@@ -333,7 +333,7 @@ test-backend: ## Executa testes do backend
 
 test-frontend: ## Executa testes do frontend
 	@echo "$(GREEN)🧪 Executando testes do Frontend...$(NC)"
-	@cd $(FRONTEND_DIR) && npm test
+	@cd $(FRONTEND_DIR) && npm run test:run
 
 test-backend-e2e: ## Executa testes e2e do backend (pytest -m e2e)
 	@echo "$(GREEN)🧪 Executando testes E2E do Backend...$(NC)"
@@ -358,6 +358,8 @@ lint-frontend: ## Executa linter do frontend
 lint: lint-backend lint-frontend ## Executa linter de todos os serviços
 
 ##@ Quality loop (architectural fitness functions + autonomous loop)
+
+verify: quality-scan ## Alias for quality-scan — the canonical one-command green/red gate
 
 quality-scan: ## Roda o verify_all.sh (lint + tests + fitness scripts) — sem LLM
 	@echo "$(GREEN)🔬 Quality scan: running deterministic gates...$(NC)"

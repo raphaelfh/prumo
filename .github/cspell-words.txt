@@ -1,5 +1,6 @@
 AEPEI
 BYOK
+HMAC
 PGRST
 SPECKIT
 aepei
@@ -27,8 +28,8 @@ customised
 dataclass
 deadfixtures
 dedup
-deque
 defence
+deque
 diátaxis
 docstrings
 eqdc
@@ -37,11 +38,11 @@ fastapi
 finalised
 finalize
 finalized
-fluidcompute
+fium
 fluid
+fluidcompute
 footgun
 frontmatter
-fium
 gatti
 gunicorn
 healthcheck
@@ -100,6 +101,7 @@ reparents
 rls
 ruff
 runbook
+runopen
 sastrugi
 savepoint
 savepoints
@@ -107,6 +109,9 @@ scoping
 scopus
 serialisation
 sessionmaker
+slowapi
+slowload
+sota
 sqlalchemy
 structlog
 studylevel
@@ -117,8 +122,8 @@ testclient
 textlayer
 timedelta
 timestamptz
-tomlsort
 toctou
+tomlsort
 trace
 trace_id
 tripod

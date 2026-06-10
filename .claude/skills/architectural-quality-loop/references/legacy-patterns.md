@@ -38,4 +38,4 @@ Two tiers:
 
 - Adding an entry: pick the next free number (NOT the next available — preserve the historical ordering of `blacklist_entry` IDs). Update `scripts/fitness/check_legacy_concepts.py` with the regex + rationale + blacklist_entry. Add the canary fixture to `backend/tests/unit/scripts/test_check_legacy_concepts_canary.py`.
 - Promoting from warn → hard: move the row from the warn table to the hard table; flip `tier="hard"` in the script; run the full pytest suite to confirm no false positives.
-- Removing an entry: only if the underlying concept is truly back in canonical use (extremely rare). Add a migration note in `docs/architecture/migrations.md` explaining why.
+- Removing an entry: only if the underlying concept is truly back in canonical use (extremely rare). Add a migration note in `docs/reference/migrations.md` explaining why.

@@ -27,7 +27,7 @@ owner: '@raphaelfh'
 - Adding mutation testing (mutmut, cosmic-ray) at MVP. The LLM judge with diff + original evidence is the adversarial check for v1; mutation testing is a Phase 2 add-on.
 - Touching CI. The loop runs locally; gates are the same commands CI uses.
 - Acting on remote environments (`start-remote`, `e2e-remote`). The loop is local-only.
-- Modifying [.specify/memory/constitution.md](../../../.specify/memory/constitution.md) or any architecture canonical doc. The loop *enforces* them; it does not *change* them.
+- Modifying [docs/reference/constitution.md](../../reference/constitution.md) or any architecture canonical doc. The loop *enforces* them; it does not *change* them.
 
 ## 3. Design principles
 
@@ -144,7 +144,7 @@ Stored in `scripts/fitness/`, each script exits non-zero on violation. They run 
 | Script | Invariant | Source of truth |
 |---|---|---|
 | `check_migration_split.sh` | Alembic only edits `public.*`; Supabase migrations only edit `auth.*` / `storage.*`. | [docs/reference/migrations.md](../../reference/migrations.md) |
-| `check_layered_arch.py` | `app/api/v1/routers/**` imports only services + schemas; `app/services/**` imports only repositories + schemas + other services; `app/repositories/**` imports only models. | [.specify/memory/constitution.md](../../../.specify/memory/constitution.md) principle I |
+| `check_layered_arch.py` | `app/api/v1/routers/**` imports only services + schemas; `app/services/**` imports only repositories + schemas + other services; `app/repositories/**` imports only models. | [docs/reference/constitution.md](../../reference/constitution.md) principle I |
 | `check_rls_coverage.py` | Every `extraction_*` and `project_*` table has at least one RLS policy referencing `auth.uid()`. | constitution.md principle IV |
 | `check_api_response_envelope.py` | Every router function returns `ApiResponse[...]` (no raw dicts, no bare models). | [docs/reference/extraction-hitl-architecture.md](../../reference/extraction-hitl-architecture.md) §3 |
 | `check_legacy_concepts.py` | Forbids reintroduction of `extracted_values`, `ai_suggestions`, `name == 'prediction_models'`, `initializeArticleInstances`. Pattern list lives in the skill's `legacy-patterns.md`. | CLAUDE.md "Recent Changes" |
@@ -256,4 +256,4 @@ Skill architectural-quality-loop --scope "concept:hitl-session"
 - Inductivee (2026). [Autonomous Agent Design Patterns](https://inductivee.com/blog/autonomous-agent-design-patterns).
 - arXiv:2510.08996. [Saving SWE-Bench: A Benchmark Mutation Approach for Realistic Agent Evaluation](https://arxiv.org/abs/2510.08996).
 - Masood, A. (2026). [Agent Drift: the reliability blind spot in multi-agent LLM systems](https://medium.com/@adnanmasood/agent-drift-the-reliability-blind-spot-in-multi-agent-llm-systems-and-a-blueprint-to-measure-it-7c653d684b80).
-- prumo canonical docs: [extraction-hitl-architecture.md](../../architecture/extraction-hitl-architecture.md), [migrations.md](../../architecture/migrations.md), [test-strategy.md](../../architecture/test-strategy.md), [.specify/memory/constitution.md](../../../.specify/memory/constitution.md).
+- prumo canonical docs: [extraction-hitl-architecture.md](../../architecture/extraction-hitl-architecture.md), [migrations.md](../../architecture/migrations.md), [test-strategy.md](../../architecture/test-strategy.md), [docs/reference/constitution.md](../../reference/constitution.md).

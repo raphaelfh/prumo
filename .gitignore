@@ -173,7 +173,7 @@ supabase/.branches/*
 .playwright-mcp/
 
 # Claude Code local artifacts (skill cache, isolated worktrees, superpowers shim)
-.claude/skills/
+.claude/settings.local.json
 .claude/worktrees/
 .superpowers/
 graphify-out/*
