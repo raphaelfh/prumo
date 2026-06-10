@@ -7,6 +7,17 @@
       "runtimeArgs": ["run", "dev"],
       "port": 8080,
       "autoPort": true
+    },
+    {
+      "name": "backend",
+      "runtimeExecutable": "make",
+      "runtimeArgs": ["backend"],
+      "port": 8000
+    },
+    {
+      "name": "full-stack",
+      "runtimeExecutable": "make",
+      "runtimeArgs": ["start"]
     }
   ]
 }

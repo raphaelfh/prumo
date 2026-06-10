@@ -89,7 +89,7 @@ The guard goes in the SAME commit as the deletion. Without the guard, the LLM ju
 
 ### 4. Update the canonical docs
 
-If the deleted concept appeared in `docs/architecture/extraction-hitl-architecture.md` §6 Legacy or in `CLAUDE.md` Recent Changes, update those entries. The skill's `../references/legacy-patterns.md` mirror is the secondary source — `check_glossary_sync.py` (Phase 4) catches drift between the two.
+If the deleted concept appeared in `docs/reference/extraction-hitl-architecture.md` §6 Legacy or in `CLAUDE.md` Recent Changes, update those entries. The skill's `../references/legacy-patterns.md` mirror is the secondary source — `check_glossary_sync.py` (Phase 4) catches drift between the two.
 
 ## Step 0 — worktree isolation (always)
 

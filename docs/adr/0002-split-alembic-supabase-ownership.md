@@ -51,4 +51,4 @@ SQLAlchemy-autogenerate unusable (Supabase CLI).
 ## More Information
 
 - [Migration strategy](../reference/migrations.md)
-- [Constitution §III. Split Migration Ownership](../../.specify/memory/constitution.md)
+- [Constitution §III. Split Migration Ownership](../reference/constitution.md)
