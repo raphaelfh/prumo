@@ -2,6 +2,7 @@ AEPEI
 BYOK
 HMAC
 PGRST
+PostgREST
 SPECKIT
 aepei
 affordances
