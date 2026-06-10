@@ -40,12 +40,12 @@ jobs:
             echo "::warning title=Claude review skipped::ANTHROPIC_API_KEY secret is not configured."
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         if: steps.probe.outputs.has_key == 'true'
         with:
           fetch-depth: 0
 
-      - uses: anthropics/claude-code-action@2ab86a3fa41c042f43128d970d64078c995128ab # v1
+      - uses: anthropics/claude-code-action@eee73e2ae5399c561de4ff038aa7b36a7aa991a7 # v1
         if: steps.probe.outputs.has_key == 'true'
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}

@@ -22,8 +22,8 @@ jobs:
   markdownlint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with: { node-version: '24' }
       # Single source of truth for ignores: .markdownlintignore at the
       # repo root (markdownlint-cli reads it via --ignore-path).
@@ -32,15 +32,15 @@ jobs:
   cspell:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with: { node-version: '24' }
       - run: npx -y cspell@8.17.5 --config .github/cspell.json "**/*.md"
 
   links:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       # Non-blocking: external-link checks are documented-flaky (rate
       # limits, transient 5xx). Findings still annotate the run; a hard
       # internal-link gate lives in the frontmatter/path checks.
@@ -58,11 +58,11 @@ jobs:
   frontmatter:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: bash scripts/docs/check-frontmatter.sh
 
   staleness:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: STALENESS_FAIL=0 bash scripts/docs/check-staleness.sh
