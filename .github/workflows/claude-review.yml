@@ -40,7 +40,7 @@ jobs:
             echo "::warning title=Claude review skipped::ANTHROPIC_API_KEY secret is not configured."
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         if: steps.probe.outputs.has_key == 'true'
         with:
           fetch-depth: 0
