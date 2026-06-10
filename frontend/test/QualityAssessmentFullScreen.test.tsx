@@ -119,7 +119,7 @@ vi.mock("@/integrations/api", () => ({
         instances_by_entity_type: { "et-1": "inst-1" },
       };
     }
-    if (url === "/api/v1/runs/run-1") {
+    if (url === "/api/v1/runs/run-1/view") {
       return {
         run: {
           id: "run-1",
@@ -140,6 +140,8 @@ vi.mock("@/integrations/api", () => ({
         decisions: [],
         consensus_decisions: [],
         published_states: [],
+        entity_types: [],
+        current_values: [],
       };
     }
     return {};

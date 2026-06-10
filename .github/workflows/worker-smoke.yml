@@ -42,13 +42,13 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install uv
-        run: pip install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
       - name: Install backend deps
         working-directory: backend
-        # NOTE: `--frozen` is intentionally omitted because `backend/uv.lock`
-        # is in `.gitignore`. If the project ever starts tracking the
-        # lockfile, add `--frozen` here for reproducible CI installs.
-        run: uv sync
+        run: uv sync --frozen
       - name: Boot worker in background
         working-directory: backend
         run: |

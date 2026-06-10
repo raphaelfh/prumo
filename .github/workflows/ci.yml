@@ -3,9 +3,16 @@ name: CI
 on:
   push:
     branches: [main, dev]
+  # No `branches:` filter on pull_request: stacked PRs (base = another
+  # feature branch) previously got zero CI and merged unverified.
   pull_request:
-    branches: [main, dev]
     types: [opened, synchronize, reopened, ready_for_review]
+
+# Agent sessions push fixups minutes apart; cancel superseded PR runs.
+# Push runs (deploy-gating on main) are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   PYTHON_VERSION: "3.11"
@@ -29,10 +36,13 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install uv
-        run: pip install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync --frozen --extra dev
 
       - name: Run Ruff (lint)
         run: uv run ruff check .
@@ -131,10 +141,13 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install uv
-        run: pip install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync --frozen --extra dev
 
       - name: Install Postgres client (psql)
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
@@ -229,7 +242,25 @@ jobs:
             --cov=app \
             --cov-report=xml \
             --cov-report=term-missing \
-            --cov-fail-under=62
+            --cov-fail-under=62 \
+            --junitxml=pytest-report.xml
+
+      # Skip budget: the suite once silently skipped ~196 tests in CI
+      # (missing seed graph) while staying green. Baseline is 21 skips
+      # (run 27179316884); budget 25 leaves headroom without letting a
+      # seed/fixture regression hide behind green.
+      - name: Enforce pytest skip budget
+        run: |
+          SKIPPED=$(uv run python -c "
+          import xml.etree.ElementTree as ET
+          r = ET.parse('pytest-report.xml').getroot()
+          ts = r if r.tag == 'testsuite' else r.find('testsuite')
+          print(ts.get('skipped', '0'))")
+          echo "Skipped tests: $SKIPPED (budget: 25)"
+          if [ "$SKIPPED" -gt 25 ]; then
+            echo "::error::Skip budget exceeded: $SKIPPED > 25 — a fixture/seed regression is likely hiding behind green."
+            exit 1
+          fi
 
       # Diff coverage gate (PR-only, hard fail).
       # Why: a PR that adds 500 LOC with 200 tested still passes the 62%
@@ -332,10 +363,13 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install uv
-        run: pip install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync --frozen --extra dev
 
       - name: Bootstrap auth schema stub
         run: |
@@ -428,12 +462,35 @@ jobs:
         run: npm ci
 
       - name: Run ESLint
-        run: npm run lint || true
+        run: npm run lint
 
       # Frontend typecheck is clean (#197 burned down from 183 → 0). Now
       # blocking: any new type error fails CI.
       - name: Type check (frontend)
         run: npm run typecheck
+
+  # =================== FRONTEND TESTS ===================
+  # 68 vitest files / 451 tests. Never ran in CI before 2026-06-10 — the
+  # suite had already rotted once (run-detail mock missed the /view move
+  # in #228) precisely because nothing gated it.
+  frontend-test:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run vitest
+        run: npm run test:run
 
   # =================== FRONTEND BUILD ===================
   frontend-build:
@@ -493,6 +550,20 @@ jobs:
           else
             echo "has_remote=false" >> "$GITHUB_OUTPUT"
           fi
+
+  # =================== E2E SKIP VISIBILITY ===================
+  # The Playwright jobs were silently skipped on 30/30 recent runs
+  # (secrets unset) while CI stayed green — coverage that reads as
+  # existing but doesn't. This job makes the skip loud (warning
+  # annotation on every run summary) without breaking PRs.
+  e2e-skip-warning:
+    name: E2E skip warning
+    runs-on: ubuntu-latest
+    needs: [e2e-config]
+    if: needs.e2e-config.outputs.has_local != 'true'
+    steps:
+      - run: |
+          echo "::warning title=Playwright E2E skipped::E2E_API_URL secret is unset — the entire Playwright suite (171 cases) is NOT running in CI. Configure the E2E secrets or stand up an ephemeral stack job."
 
   # =================== FRONTEND E2E BASELINE ===================
   frontend-e2e-local:

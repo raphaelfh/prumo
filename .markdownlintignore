@@ -24,8 +24,9 @@ docs/superpowers/specs/2026-*-design.md
 backend/alembic/versions/archive/**
 playwright-report/**
 test-results/**
-.pytest_cache/**
+**/.pytest_cache/**
 **/node_modules/**
+backend/.venv/**
 
 # Tooling surfaces — not the project documentation surface.
 # Skills, harness configs, and templates have their own authoring conventions.
