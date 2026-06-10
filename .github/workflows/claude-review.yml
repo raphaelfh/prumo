@@ -1,0 +1,75 @@
+name: Claude PR Review
+
+# Solo-dev second pair of eyes: an automated first-pass review on every
+# same-repo PR, prompted with the project's recurring incident classes
+# (mirrors .claude/skills/code-review). Comment-only — it never blocks
+# a merge and is not a required check.
+#
+# Requires the ANTHROPIC_API_KEY repo secret; the job no-ops loudly
+# when it is absent.
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Claude review
+    runs-on: ubuntu-latest
+    # Never run on fork PRs: PR-sourced text is a prompt-injection surface.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+    steps:
+      - id: probe
+        env:
+          KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "$KEY" ]; then
+            echo "has_key=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_key=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Claude review skipped::ANTHROPIC_API_KEY secret is not configured."
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.probe.outputs.has_key == 'true'
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@2ab86a3fa41c042f43128d970d64078c995128ab # v1
+        if: steps.probe.outputs.has_key == 'true'
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Review this pull request as prumo's first-pass reviewer.
+            Post inline comments on specific diff lines; be concise and
+            only flag findings you are confident about (false positives
+            cost the solo maintainer real time). Never request changes —
+            comment only.
+
+            Prioritize the project's recurring incident classes:
+            1. BOLA / missing project-membership checks on
+               backend/app/api/v1 endpoints (multi-tenant by default).
+            2. Run-state TOCTOU / races around run_lifecycle_service and
+               hitl_session_service.
+            3. Swallowed errors (bare except, Promise.all partial
+               failure, .catch(() => undefined)).
+            4. ApiResponse envelope drift (dict[str, Any] payloads,
+               error.message vs detail).
+            5. Stale TanStack Query cache (keys missing run_id /
+               template_version_id, missing invalidation).
+            6. Schema drift between SQLAlchemy models, Pydantic schemas,
+               Alembic migrations, and frontend types.
+            7. RLS policy gaps on new tables (supabase/migrations).
+
+            Skip style nits — ruff/eslint already gate formatting.
+          claude_args: '--model claude-sonnet-4-6'

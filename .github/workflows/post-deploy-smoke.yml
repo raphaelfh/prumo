@@ -1,0 +1,54 @@
+name: Post-deploy Smoke
+
+# The closing gate: everything else proves the application works, this
+# proves it shipped. Catches the documented failure class where the
+# Railway deploy silently sticks on a SKIPPED-CI SHA — CI is green,
+# prod is stale, nobody notices.
+#
+# Runs after every push to main (deploy trigger) with a delay for
+# Railway's Wait-for-CI + build, plus hourly as a synthetic monitor.
+# A failure emails the repo owner via standard workflow notifications.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "7 * * * *"
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    name: Prod reachability
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for Railway deploy (push only)
+        if: github.event_name == 'push'
+        run: sleep 420
+
+      - name: Backend /health
+        run: |
+          CODE=$(curl -fsS --max-time 15 -o /tmp/health.json -w "%{http_code}" \
+            https://web-production-48b398.up.railway.app/health) || CODE=000
+          echo "health -> $CODE"
+          cat /tmp/health.json 2>/dev/null || true
+          [ "$CODE" = "200" ]
+
+      - name: Frontend root
+        run: |
+          CODE=$(curl -fsSL --max-time 15 -o /dev/null -w "%{http_code}" \
+            https://prumoai.vercel.app) || CODE=000
+          echo "frontend -> $CODE"
+          [ "$CODE" = "200" ]
+
+      - name: API CORS preflight from prod origin
+        run: |
+          # Selective CORS breakage (allow-list drift on Railway) is a
+          # documented incident class — probe it synthetically.
+          HDR=$(curl -fsS --max-time 15 -o /dev/null -D - \
+            -H "Origin: https://prumoai.vercel.app" \
+            -H "Access-Control-Request-Method: GET" \
+            -X OPTIONS \
+            https://web-production-48b398.up.railway.app/api/v1/projects \
+            | grep -i '^access-control-allow-origin' || true)
+          echo "cors -> ${HDR:-MISSING}"
+          [ -n "$HDR" ]

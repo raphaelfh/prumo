@@ -156,7 +156,6 @@ dmypy.json
 .pyre/
 
 # uv
-uv.lock
 .vercel
 
 # Supabase Edge Functions
