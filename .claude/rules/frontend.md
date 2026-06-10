@@ -39,3 +39,15 @@ mechanics in `ui-styling`. This file is the always-true core.
   — fixtures self-provision via `frontend/e2e/_fixtures/ensure-fixtures.ts`,
   but the global CHARMS template must exist (`make db-seed` after a
   bare `reset-db`).
+
+## API contract types (generated — never hand-edit)
+
+- `frontend/types/api/{openapi.json,schema.d.ts}` are generated from
+  the FastAPI app: `npm run generate:api-types`. CI (`api-contract`
+  job) fails any PR where the committed output doesn't match the
+  backend — so after changing an endpoint or Pydantic schema, rerun
+  the generator and commit the diff.
+- New frontend code should import response/request shapes from
+  `frontend/types/api/schema.d.ts` instead of hand-mirroring backend
+  enums/models (hand-mirrored types are the documented root cause of
+  the envelope-drift incident class).
