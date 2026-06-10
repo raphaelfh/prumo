@@ -14,6 +14,7 @@ on:
       - backend/uv.lock
       - package.json
       - package-lock.json
+      - .github/workflows/security-audit.yml
 
 jobs:
   pip-audit:
@@ -27,7 +28,9 @@ jobs:
           cache-dependency-glob: backend/uv.lock
       - name: Export locked requirements
         working-directory: backend
-        run: uv export --frozen --no-dev --format requirements-txt > requirements-audit.txt
+        # --no-emit-project: the editable project itself can't be hash-pinned
+        # (pip-audit fails with 'no single file to hash' otherwise).
+        run: uv export --frozen --no-dev --no-emit-project --format requirements-txt > requirements-audit.txt
       - name: Audit
         working-directory: backend
         run: uvx pip-audit --strict -r requirements-audit.txt
