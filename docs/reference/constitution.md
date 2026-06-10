@@ -102,7 +102,7 @@ Security controls are mandatory, not optional additions.
 
 Static typing is mandatory across the entire stack.
 
-- **Backend**: Python 3.11+ type hints on ALL public functions and method signatures. `mypy` strict mode MUST pass. Pydantic schemas MUST be used for ALL API input/output validation.
+- **Backend**: Python 3.11+ type hints on ALL public functions and method signatures. `mypy` runs in CI as an advisory check (pre-existing debt is being burned down; it becomes blocking when clean — do not add new errors). Pydantic schemas MUST be used for ALL API input/output validation.
 - **Frontend**: TypeScript strict mode. `Zod` for runtime form validation. `@typescript-eslint` rules enforced. `any` types produce warnings and MUST be justified.
 - Schemas MUST support both `snake_case` (Python) and `camelCase` (frontend) via `populate_by_name=True` and field aliases.
 
@@ -114,7 +114,7 @@ The frontend MUST follow a consistent state and data-fetching strategy.
 
 - **API Client**: `apiClient` from `frontend/integrations/api/client.ts` is the canonical HTTP client for all FastAPI
   calls. New code MUST NOT create ad-hoc `fetch()` wrappers.
-- **Server State**: TanStack Query (v5) with structured `queryKey` factories for all FastAPI-backed data. Direct Supabase queries are acceptable only for simple table operations not routed through FastAPI.
+- **Server State**: TanStack Query (v5) with structured `queryKey` factories for all FastAPI-backed data. Direct Supabase client usage is restricted to auth and storage (ADR 0007, 2026-06-07): all application data flows through the API client — the former "simple table operations" allowance is the documented root cause of the dual-read-path incident class and is revoked.
 - **Client State**: Zustand stores for complex cross-component UI state. React Context for app-wide singletons (`AuthContext`, `ProjectContext`, `SidebarContext`).
 - **Components**: Functional components with hooks only. shadcn/ui (Radix) for UI primitives. Domain components
   organized by category under `frontend/components/{domain}/`.
@@ -155,9 +155,9 @@ The following technology choices are binding for all contributors:
 | Python package manager   | `uv`                                             | Never use `pip install` directly                                                        |
 | Frontend package manager | `npm`                                            |                                                                                         |
 | Python linter/formatter  | Ruff                                             | 100-char line length, Python 3.11+ target                                               |
-| Python type checker      | mypy                                             | Strict mode, `warn_return_any = true`                                                   |
+| Python type checker      | mypy                                             | Advisory in CI until debt is cleared; `warn_return_any = true`                          |
 | Frontend linter          | ESLint                                           | typescript-eslint + react-hooks plugins                                                 |
-| Backend test framework   | pytest                                           | 70% minimum coverage (excludes `schemas/read_models/*`, `worker/*`)                     |
+| Backend test framework   | pytest                                           | Ratcheted gates: 62% global / 80% diff / 85% critical-path (see ci.yml; never lowered)  |
 | Frontend test framework  | Vitest                                           | @testing-library/react + MSW for mocking                                                |
 | Structured logging       | structlog                                        | All backend logging via `LoggerMixin` or `get_logger()`                                 |
 | Rate limiting            | slowapi                                          | `get_remote_address` key function                                                       |
@@ -229,4 +229,11 @@ This constitution is the authoritative reference for all architectural and proce
 - Added complexity beyond what a principle prescribes MUST be justified in the PR description.
 - Use `CLAUDE.md` as the runtime development guidance companion to this constitution.
 
-**Version**: 2.0.0 | **Ratified**: 2026-02-16 | **Last Amended**: 2026-02-27
+**Version**: 2.1.0 | **Ratified**: 2026-02-16 | **Last Amended**: 2026-06-10
+
+> 2.1.0 amendments: §V/tooling-table aligned with the actual CI gates
+> (mypy advisory-until-clean; coverage 62/80/85 ratchet replaces the
+> aspirational 70%) — a "non-negotiable" doc that CI contradicts trains
+> agents to discount every MUST in it; §VI direct-Supabase-read
+> allowance revoked per ADR 0007 (single API read path); relocated
+> from `.specify/memory/` when spec-kit was retired.

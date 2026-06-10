@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-05-30
+last_reviewed: 2026-06-10
 owner: '@raphaelfh'
 ---
 
@@ -74,9 +74,11 @@ change set live in
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:
-`20260428_0018`.
+`0026_widen_template_snapshot` (post-squash numbering; run
+`ls backend/alembic/versions/` for the current head — and bump this line
+in any PR that adds an `extraction_*` migration).
 
-### Core HITL tables (introduced 0010 → 0012, evolved through 0018)
+### Core HITL tables (introduced pre-squash 0010 → 0012; evolving — see migration head above)
 
 | Table | Append-only? | Purpose |
 | --- | --- | --- |
@@ -104,9 +106,9 @@ The original 2026-04-27 cut had two transition shims (`ai_suggestions`,
 
 | Former table | Removed in | Replacement |
 | --- | --- | --- |
-| `ai_suggestions` | Migration `20260428_0019` (now in archive) | `extraction_proposal_records` (filter `source='ai'`) — `aiSuggestionService` reads here, derives status from the current reviewer_state. |
+| `ai_suggestions` | archived pre-squash migration `20260428_0019` | `extraction_proposal_records` (filter `source='ai'`) — `aiSuggestionService` reads here, derives status from the current reviewer_state. |
 | `extracted_values` | Migration `0002_drop_extracted_values` | `extraction_reviewer_decisions` for per-user values, `extraction_published_states` for canonical post-consensus values. `ExtractionValueService` (frontend) wraps the read/write path. |
-| `suggestion_status` enum | Migration `20260428_0019` (archived) | Status derived from reviewer_state's current decision (accept_proposal / edit / reject). |
+| `suggestion_status` enum | archived pre-squash migration `20260428_0019` | Status derived from reviewer_state's current decision (accept_proposal / edit / reject). |
 | `extraction_source` enum | Migration `0002_drop_extracted_values` | `extraction_proposal_source` (ai/human/system) on ProposalRecord. |
 
 ### Enums introduced or modified
@@ -121,13 +123,27 @@ The original 2026-04-27 cut had two transition shims (`ai_suggestions`,
 | `extraction_consensus_mode` | `select_existing`, `manual_override` | 0012 |
 | `extraction_run_stage` (rebuilt) | `pending`, `proposal`, `review`, `consensus`, `finalized`, `cancelled` | 0014 |
 
-### RLS — workflow tables (post-0018)
+### RLS — workflow tables (post-0025, reviewer-scoped)
 
-`SELECT` and `DELETE` use `is_project_member` (broad, read-only).
 `INSERT` and `UPDATE` use `is_project_reviewer` (`manager` /
-`reviewer` / `consensus` roles), introduced in 0018 — pre-0018 these
-were locked to `is_project_manager`, which would have blocked legitimate
-reviewer writes in production.
+`reviewer` / `consensus` roles). `SELECT` on the reviewer-attributable
+tables (`extraction_reviewer_decisions`, `extraction_reviewer_states`,
+`extraction_proposal_records`) is **self-scoped** since
+`0025_reviewer_scoped_select_rls` (the blind-leak fix): a member may
+read a row only when (a) they authored it (`reviewer_id` /
+`source_user_id` = `auth.uid()`), (b) they are a project
+`manager`/`consensus` arbitrator (`is_project_arbitrator` SECURITY
+DEFINER helper), or (c) the run is `finalized`. AI/system proposals
+stay visible to all members. Non-attributable workflow tables keep
+broad `is_project_member` SELECT.
+
+Two read paths MUST encode the identical predicate: this RLS layer
+(PostgREST/devtools path) and the service-layer filter in
+`extraction_run_read_service` (API path, reached as `service_role`
+which bypasses RLS). Before 0025, SELECT gated only on
+`is_project_member` and blinding lived in frontend JavaScript — the
+exact posture that produced the blind-review leak. Do not reintroduce
+it.
 
 ## 4. Conceptual flow
 
@@ -350,7 +366,7 @@ publish, AI), keep it in the page-specific component.
 
 - **AISuggestion** — Old AI-suggestion table; status was mutated by
   accept/reject. Replaced by `ProposalRecord` (source=ai). Removed in
-  migration `20260428_0019`.
+  archived pre-squash migration `20260428_0019`.
 - **ExtractedValue** — Old per-user value store. Replaced by
   `ReviewerDecision` (per-user, with run-stage REVIEW required) for
   in-flight values, and `PublishedState` for canonical post-consensus
