@@ -176,3 +176,6 @@ supabase/.branches/*
 .claude/worktrees/
 .superpowers/
 graphify-out/*
+
+# Orphan root lockfile (no root pyproject); the real lock is backend/uv.lock
+/uv.lock
