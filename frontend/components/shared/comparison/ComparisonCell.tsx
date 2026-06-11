@@ -70,6 +70,18 @@ export function ComparisonCell({
   // ✅ NOVO: Detectar se é campo numérico
   const isNumberField = field?.field_type === 'number';
 
+  const handleSave = () => {
+    if (editValue !== value && onValueChange) {
+      onValueChange(editValue);
+    }
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    setEditValue(value);
+    setIsEditing(false);
+  };
+
   // ✅ NOVO: Detectar clique fora do editor
   useEffect(() => {
     if (!isEditing) return;
@@ -101,18 +113,6 @@ export function ComparisonCell({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [isEditing, editValue, value, onValueChange, isSelectOpen]);
-
-  const handleSave = () => {
-    if (editValue !== value && onValueChange) {
-      onValueChange(editValue);
-    }
-    setIsEditing(false);
-  };
-
-  const handleCancel = () => {
-    setEditValue(value);
-    setIsEditing(false);
-  };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
