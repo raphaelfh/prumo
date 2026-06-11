@@ -452,8 +452,16 @@ describe('useExtractedValues — disabled state (no run yet)', () => {
     rerender({ enabled: true });
     // After re-enabling the hook must hydrate the form from currentValues
     // (the page wouldn't otherwise show values once the session resolves).
-    await waitFor(() => expect(result.current.initialized).toBe(true));
-    expect(result.current.values['inst-1_field-1']).toBe('hydrated');  });
+    // ``initialized`` is already true while disabled (the disabled branch
+    // sets it), so gating on it does not await the re-enabled hydration —
+    // asserting the value synchronously behind that vacuous gate raced the
+    // effect commit and flaked on CI (run 27356139150). Await the hydrated
+    // value itself: it is the only observable that flips on re-enable.
+    await waitFor(() =>
+      expect(result.current.values['inst-1_field-1']).toBe('hydrated'),
+    );
+    expect(result.current.initialized).toBe(true);
+  });
 });
 
 describe('useExtractedValues — local update', () => {
