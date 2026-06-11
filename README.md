@@ -10,7 +10,7 @@ owner: '@raphaelfh'
 
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue.svg)
-![React](https://img.shields.io/badge/React-18.3-blue.svg)
+![React](https://img.shields.io/badge/React-19-blue.svg)
 ![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)
 
 A complete platform for managing systematic reviews and meta-analyses.
@@ -28,7 +28,7 @@ A complete platform for managing systematic reviews and meta-analyses.
 ## Tech stack
 
 **Backend** — Python 3.11+, FastAPI, SQLAlchemy 2.0 (async), Alembic, Celery + Redis, Pydantic v2, structlog, gunicorn + uvicorn worker.
-**Frontend** — TypeScript (strict), React 18.3 + Vite, TanStack Query, Zustand, Tailwind + shadcn/ui (Radix), react-hook-form, Zod, in-house i18n (`frontend/lib/copy/`).
+**Frontend** — TypeScript (strict), React 19 + Vite, TanStack Query, Zustand, Tailwind + shadcn/ui (Radix), react-hook-form, Zod, in-house i18n (`frontend/lib/copy/`).
 **Database / Auth / Storage** — PostgreSQL (Supabase), Row Level Security with project-scoped helpers.
 **Testing** — pytest (backend), Vitest (frontend), Playwright (E2E + a11y + visual).
 **Hosting** — Vercel (frontend) + Railway (backend web + Celery worker + managed Redis) + Supabase (Postgres + Auth + Storage).

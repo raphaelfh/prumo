@@ -7,7 +7,7 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/integrations/api', () => ({
@@ -21,7 +21,7 @@ import { runsKeys, type RunViewResponse } from '@/hooks/runs/types';
 const apiClientMock = apiClient as unknown as ReturnType<typeof vi.fn>;
 
 function createWrapper(): {
-  wrapper: (props: { children: ReactNode }) => JSX.Element;
+  wrapper: (props: { children: ReactNode }) => ReactElement;
   queryClient: QueryClient;
 } {
   const queryClient = new QueryClient({
