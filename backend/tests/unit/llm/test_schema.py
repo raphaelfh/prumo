@@ -227,3 +227,41 @@ def test_json_schema_satisfies_strict_mode_contract():
     risk_value = defs[risk_def_name]["properties"]["value"]
     assert {"Low", "High"}.issubset(set(risk_value["anyOf"][0]["enum"]))
     assert schema["properties"]["risk"]["description"] == "desc"
+
+
+def test_integer_and_bare_list_type_mappings():
+    fields = [
+        _field(name="n_events", field_type="integer"),
+        _field(name="keywords", field_type="list"),
+    ]
+    [model] = build_output_models(_entity_type(fields))
+    instance = model.model_validate(
+        {
+            "n_events": {"value": 17, "confidence": 1.0, "reasoning": None, "evidence": None},
+            "keywords": {
+                "value": ["sepsis", "icu"],
+                "confidence": 0.9,
+                "reasoning": None,
+                "evidence": None,
+            },
+        }
+    )
+    data = dump_extraction(instance)
+    assert data["n_events"]["value"] == 17
+    assert data["keywords"]["value"] == ["sepsis", "icu"]
+
+
+def test_empty_allowed_values_falls_back_to_scalar():
+    field = _field(name="risk", field_type="select", allowed_values=[])
+    [model] = build_output_models(_entity_type([field]))
+    instance = model.model_validate(
+        {"risk": {"value": "anything goes", "confidence": 0.5, "reasoning": None, "evidence": None}}
+    )
+    assert dump_extraction(instance)["risk"]["value"] == "anything goes"
+
+
+def test_llm_description_preferred_when_both_set():
+    field = _field(name="population", llm_description="llm hint", description="human note")
+    [model] = build_output_models(_entity_type([field]))
+    prop = model.model_json_schema(by_alias=True)["properties"]["population"]
+    assert prop["description"] == "llm hint"
