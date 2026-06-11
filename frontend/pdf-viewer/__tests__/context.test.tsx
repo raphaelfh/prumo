@@ -1,4 +1,4 @@
-import {render, screen, act} from '@testing-library/react';
+import {render, renderHook, screen, act} from '@testing-library/react';
 import {describe, expect, it, vi} from 'vitest';
 import {ViewerProvider, useViewerStore, useViewerStoreApi} from '../core/context';
 import {createViewerStore} from '../core/store';
@@ -54,20 +54,13 @@ describe('<ViewerProvider> + useViewerStore', () => {
   });
 
   it('useViewerStoreApi returns the underlying StoreApi', () => {
-    let captured: ReturnType<typeof useViewerStoreApi> | null = null;
-    function Capture() {
-      captured = useViewerStoreApi();
-      return null;
-    }
-    render(
-      <ViewerProvider>
-        <Capture />
-      </ViewerProvider>,
-    );
-    expect(captured).not.toBeNull();
-    expect(typeof captured!.getState).toBe('function');
-    expect(typeof captured!.setState).toBe('function');
-    expect(typeof captured!.subscribe).toBe('function');
+    const {result} = renderHook(() => useViewerStoreApi(), {
+      wrapper: ({children}) => <ViewerProvider>{children}</ViewerProvider>,
+    });
+    expect(result.current).not.toBeNull();
+    expect(typeof result.current.getState).toBe('function');
+    expect(typeof result.current.setState).toBe('function');
+    expect(typeof result.current.subscribe).toBe('function');
   });
 
   it('accepts an externally created store via the `store` prop', () => {

@@ -3,7 +3,7 @@
  * Layout with tabs for Profile, Security and Integrations
  */
 
-import {useEffect, useState} from 'react';
+import {useState} from 'react';
 import {useNavigate, useSearchParams} from 'react-router-dom';
 import {Button} from '@/components/ui/button';
 import {cn} from '@/lib/utils';
@@ -55,13 +55,16 @@ export default function UserSettings() {
     const [activeTab, setActiveTab] = useState<TabId>(initialTab);
   const navigate = useNavigate();
 
-    // Sync tab when URL changes (e.g. direct link to ?tab=integrations)
-    useEffect(() => {
+    // Sync tab when URL changes (e.g. direct link to ?tab=integrations) —
+    // adjusted during render instead of via effect to avoid a cascading render.
+    const [prevSearchParams, setPrevSearchParams] = useState(searchParams);
+    if (searchParams !== prevSearchParams) {
+        setPrevSearchParams(searchParams);
         const tab = searchParams.get('tab');
-        if (tab && VALID_TAB_IDS.includes(tab as TabId)) {
+        if (tab && VALID_TAB_IDS.includes(tab as TabId) && tab !== activeTab) {
             setActiveTab(tab as TabId);
         }
-    }, [searchParams]);
+    }
 
     const handleTabChange = (tabId: TabId) => {
         setActiveTab(tabId);
