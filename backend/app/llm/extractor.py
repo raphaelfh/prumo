@@ -22,6 +22,8 @@ OutputT = TypeVar("OutputT", bound=BaseModel)
 
 # Reask ceiling: the initial request plus output retries, with headroom.
 # Under BYOK the key is the user's — a runaway reask loop is their bill.
+# Note: this caps REQUESTS per call, not tokens; per-request token spend
+# is bounded by the model's context window and visible per-span in Logfire.
 DEFAULT_USAGE_LIMITS = UsageLimits(request_limit=5)
 
 

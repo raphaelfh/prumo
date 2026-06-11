@@ -55,7 +55,6 @@ hotspots
 httpx
 idempotently
 isr
-langsmith
 lemeshow
 licence
 linter

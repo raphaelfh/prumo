@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-04-20
+last_reviewed: 2026-06-11
 owner: '@raphaelfh'
 ---
 
@@ -163,7 +163,7 @@ The following technology choices are binding for all contributors:
 | Rate limiting            | slowapi                                          | `get_remote_address` key function                                                       |
 | Database migrations      | Alembic (public schema) + Supabase CLI (storage) | `make db-generate MSG=...` for app tables; Supabase CLI for storage bucket changes only |
 | Background tasks         | Celery + Redis                                   | Task definitions in `app/worker/tasks/`                                                 |
-| AI models                | OpenAI GPT-4o/4o-mini                            | BYOK supported; LangChain for orchestration                                             |
+| AI models                | OpenAI GPT-4o/4o-mini via Pydantic AI v1 (<2)    | BYOK supported; `backend/app/llm/` is the single call-layer doorway; Logfire (OTel) for LLM observability |
 
 ## Development Workflow & Quality Gates
 
