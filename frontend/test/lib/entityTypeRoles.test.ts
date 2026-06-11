@@ -116,9 +116,7 @@ describe('partitionEntityTypes', () => {
 });
 
 describe('useEntityTypePartition', () => {
-  it('returns the correct partition when input is stable', () => {
-    // Referential stability is handled by the React Compiler in production;
-    // vitest runs outside the compiler so we verify value equality instead.
+  it('returns the same partition object across renders when input is stable', () => {
     const entityTypes: Row[] = [
       row('study', ENTITY_ROLE.STUDY_SECTION),
       row('container', ENTITY_ROLE.MODEL_CONTAINER),
@@ -129,7 +127,7 @@ describe('useEntityTypePartition', () => {
     );
     const first = result.current;
     rerender({ets: entityTypes});
-    expect(result.current).toStrictEqual(first);
+    expect(result.current).toBe(first);
   });
 
   it('recomputes when the input array changes', () => {

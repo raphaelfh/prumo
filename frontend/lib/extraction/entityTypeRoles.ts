@@ -11,6 +11,8 @@
  * convention changes.
  */
 
+import {useMemo} from 'react';
+
 import type {ExtractionEntityRole} from '@/types/extraction';
 
 export const ENTITY_ROLE: Record<Uppercase<ExtractionEntityRole>, ExtractionEntityRole> = {
@@ -82,12 +84,16 @@ export function partitionEntityTypes<
  *
  * Consumers should prefer this hook over calling ``partitionEntityTypes``
  * directly — keeping the logic next to the partition function means the
- * two evolve together. The React Compiler memoizes the result automatically.
+ * two evolve together.
  */
 export function useEntityTypePartition<
   T extends {role: ExtractionEntityRole; id: string},
 >(entityTypes: readonly T[]): EntityTypePartition<T> {
-  return partitionEntityTypes(entityTypes);
+  // kept: the compiler emits no memoization for a single free-function-call
+  // hook body (verified: transform output has no compiler-runtime), so this
+  // useMemo is still the only referential-stability guarantee consumers get.
+   
+  return useMemo(() => partitionEntityTypes(entityTypes), [entityTypes]);
 }
 
 /**
