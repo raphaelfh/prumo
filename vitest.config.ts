@@ -1,11 +1,10 @@
 /// <reference types="vitest" />
 import {defineConfig} from 'vite';
-import react, {reactCompilerPreset} from '@vitejs/plugin-react';
-import babel from '@rolldown/plugin-babel';
+import {reactWithCompiler} from './vite.shared-plugins';
 import path from 'path';
 
 export default defineConfig({
-  plugins: [react(), babel({presets: [reactCompilerPreset()]})],
+  plugins: reactWithCompiler(),
   // Vite 8 denies serving files outside the workspace root by default; tests
   // that import pdfjs-dist's worker via `?url` (frontend/lib/pdf-worker.ts)
   // hit that gate because the worker mjs lives under node_modules. Relaxing

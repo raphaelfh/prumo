@@ -467,3 +467,29 @@ gh pr merge feat/react-compiler-enablement --auto --squash
 ```
 
 Nudge with `gh pr update-branch` if dev moves (strict status checks).
+
+---
+
+## Execution outcome (2026-06-11, appended post-execution)
+
+Reality diverged from three planning assumptions — trust this block over
+the task text above:
+
+1. **Bailouts were NOT ≈0**: the compiler bails on ~80 files (~210 memo
+   sites, 70% of the inventory), dominated by `try/finally` in handlers
+   (unsupported by compiler v1) plus `props.x.y` destructuring patterns.
+   Those files keep ALL manual memoization, uncommented (per-site comments
+   at that volume would be noise). Regenerate the list with
+   `reactCompilerPreset({panicThreshold: 'all_errors'})` in
+   `vite.shared-plugins.ts` + `npm run build` — errors name the files.
+2. **Task 3's config shape changed**: `@vitejs/plugin-react` v6 dropped
+   built-in Babel; actual setup is `react()` + `@rolldown/plugin-babel`
+   with `reactCompilerPreset()`, shared by both configs via
+   `vite.shared-plugins.ts` (Vite 8, not 7).
+3. **Task 13's residual check is superseded**: 226 sites remain by design
+   (210 bailout + 16 documented exceptions, 8 with `// kept:` comments —
+   custom comparators, parent-bails, the "compiled-no-memo" hook class
+   discovered mid-sweep, and useSyncExternalStore subscribe stability).
+   "Compiled-no-memo" (e.g. single free-function-call hook bodies) is NOT
+   safe for removal — the true criterion is the per-file post-edit
+   transform audit, enforced in CI by `scripts/check_compiler_coverage.mjs`.

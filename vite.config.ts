@@ -1,6 +1,5 @@
 import {defineConfig} from "vite";
-import react, {reactCompilerPreset} from "@vitejs/plugin-react";
-import babel from "@rolldown/plugin-babel";
+import {reactWithCompiler} from "./vite.shared-plugins";
 import path from "path";
 
 // https://vitejs.dev/config/
@@ -45,11 +44,11 @@ export default defineConfig(({mode: _mode}) => ({
             },
         },
     },
-  plugins: [
-    react(),
-    // Bailout enumeration (plan Task 4): reactCompilerPreset({panicThreshold: 'all_errors'})
-    babel({presets: [reactCompilerPreset()]}),
-  ],
+  // React + React Compiler — shared with vitest.config.ts so the test
+  // pipeline can never drift from the app pipeline. To enumerate compiler
+  // bailouts: reactCompilerPreset({panicThreshold: 'all_errors'}) in
+  // vite.shared-plugins.ts, then `npm run build`.
+  plugins: reactWithCompiler(),
   resolve: {
     alias: {
         "@": path.resolve(__dirname, "./frontend"),
