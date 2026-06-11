@@ -54,8 +54,8 @@ function restore(snap: Map<string, { top: number; left: number }>): void {
 
 export function usePreserveScroll(selectors: string[]): PreserveScroll {
   // selectors is intentionally treated as a stable identity by callers (we
-  // pass a module-level constant array). Spreading into the deps lets eslint
-  // reason about the dependency without a disable directive.
+  // pass a module-level constant array), so the array itself is the dep —
+  // spreading it produced a non-literal dependency list the compiler rejects.
   return useCallback(
     async (operation) => {
       const snap = snapshot(selectors);
@@ -65,6 +65,6 @@ export function usePreserveScroll(selectors: string[]): PreserveScroll {
         restore(snap);
       }
     },
-    [...selectors]
+    [selectors]
   );
 }

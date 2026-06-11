@@ -8,11 +8,19 @@ export function useZoteroSyncStatus(syncRunId: string | null, pollingMs = 1500) 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
+    // Reset when the run id clears (during render, not via effect).
+    const [prevSyncRunId, setPrevSyncRunId] = useState(syncRunId);
+    if (syncRunId !== prevSyncRunId) {
+        setPrevSyncRunId(syncRunId);
         if (!syncRunId) {
             setData(null);
             setError(null);
             setLoading(false);
+        }
+    }
+
+    useEffect(() => {
+        if (!syncRunId) {
             return;
         }
 
@@ -38,7 +46,8 @@ export function useZoteroSyncStatus(syncRunId: string | null, pollingMs = 1500) 
             }
         };
 
-        void tick();
+        // Microtask so tick's setState calls run in an async callback.
+        queueMicrotask(() => void tick());
         return () => {
             active = false;
             if (timer) window.clearTimeout(timer);

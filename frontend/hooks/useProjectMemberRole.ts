@@ -19,8 +19,11 @@ export function useProjectMemberRole(projectId: string): UseProjectMemberRoleRet
     const [role, setRole] = useState<ProjectMemberRole | null>(null);
     const [loading, setLoading] = useState(true);
 
+    // Plain-identifier dep (`user?.id` in a dep array defeats compiler
+    // memoization preservation).
+    const userId = user?.id;
     const load = useCallback(async () => {
-        if (!projectId || !user) {
+        if (!projectId || !userId) {
             setRole(null);
             setLoading(false);
             return;
@@ -31,7 +34,7 @@ export function useProjectMemberRole(projectId: string): UseProjectMemberRoleRet
                 .from('project_members')
                 .select('role')
                 .eq('project_id', projectId)
-                .eq('user_id', user.id)
+                .eq('user_id', userId)
                 .single();
 
             if (error) {
@@ -45,10 +48,11 @@ export function useProjectMemberRole(projectId: string): UseProjectMemberRoleRet
         } finally {
             setLoading(false);
         }
-    }, [projectId, user?.id]);
+    }, [projectId, userId]);
 
     useEffect(() => {
-        load();
+        // Microtask so the loader's setState calls run in an async callback.
+        queueMicrotask(() => void load());
     }, [load]);
 
     return {
