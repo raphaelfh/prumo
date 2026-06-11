@@ -553,13 +553,13 @@ def test_section_extraction_render_includes_context_and_truncates():
     prompt = section_extraction.render(
         entity_name="Population",
         entity_description="Who was studied",
-        article_text="x" * (MAX_PDF_CHARS + 5000),
+        article_text="§" * (MAX_PDF_CHARS + 5000),
         memory_context=[{"entity_type_name": "Methods", "summary": "RCT"}],
     )
     assert "Section: Population" in prompt
     assert "Who was studied" in prompt
     assert "1. Methods: RCT" in prompt
-    assert prompt.count("x") == MAX_PDF_CHARS
+    assert prompt.count("§") == MAX_PDF_CHARS
 
 
 def test_quality_assessment_render_mentions_framework():
@@ -578,10 +578,10 @@ def test_quality_assessment_render_mentions_framework():
 
 def test_model_identification_render_and_output_model():
     prompt = model_identification.render(
-        container_label="prediction models", article_text="y" * (MAX_PDF_CHARS + 10)
+        container_label="prediction models", article_text="§" * (MAX_PDF_CHARS + 10)
     )
     assert "prediction models" in prompt
-    assert prompt.count("y") == MAX_PDF_CHARS
+    assert prompt.count("§") == MAX_PDF_CHARS
     output = model_identification.ModelIdentificationOutput.model_validate(
         {"models": [{"name": "Cox model"}]}
     )
