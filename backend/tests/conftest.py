@@ -10,6 +10,8 @@ import uuid
 from collections.abc import AsyncGenerator, Generator
 from unittest.mock import AsyncMock, MagicMock
 
+import logfire
+import pydantic_ai.models
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -26,6 +28,10 @@ from app.core.config import settings
 from app.core.deps import get_db, get_supabase
 from app.core.security import TokenPayload, get_current_user
 from app.main import app
+
+# No telemetry export and no real LLM call can escape the test suite.
+logfire.configure(send_to_logfire=False, console=False)
+pydantic_ai.models.ALLOW_MODEL_REQUESTS = False
 
 # =================== EVENT LOOP ===================
 
