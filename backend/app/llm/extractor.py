@@ -3,7 +3,11 @@
 A fresh tools-free Agent is built per call: the output type changes per
 template, and per-run output_type is incompatible with agent-level
 validators in pydantic-ai v1. Agents are cheap objects; this also keeps
-BYOK fully state-free."""
+BYOK fully state-free.
+
+Callers should catch ``pydantic_ai.exceptions.AgentRunError`` — it covers
+both ``UnexpectedModelBehavior`` (reask budget exhausted) and
+``UsageLimitExceeded`` (request ceiling hit)."""
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -56,7 +60,7 @@ async def extract_structured(
         model,
         output_type=NativeOutput(output_model),
         instructions=system_prompt,
-        output_retries=output_retries,
+        retries={"output": output_retries},
         model_settings={"temperature": 0.1},
     )
     for validator in validators:

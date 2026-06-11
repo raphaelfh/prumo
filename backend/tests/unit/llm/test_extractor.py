@@ -34,7 +34,41 @@ async def test_returns_typed_output_and_usage():
     )
     assert output.answer == "42"
     assert isinstance(usage, LlmUsage)
+    # FunctionModel populates non-zero estimated usage — the input→prompt /
+    # output→completion mapping must carry it through, not zero it out.
+    assert usage.prompt_tokens > 0
+    assert usage.completion_tokens > 0
     assert usage.total_tokens == usage.prompt_tokens + usage.completion_tokens
+
+
+async def test_usage_accumulates_across_reask_retries():
+    attempts = {"n": 0}
+
+    def reject_once(output: Demo) -> Demo:
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise ModelRetry("try again")
+        return output
+
+    _, clean_usage = await extract_structured(
+        output_model=Demo,
+        system_prompt="sys",
+        user_prompt="user",
+        model=_canned({"answer": "42"}),
+        prompt_name="demo",
+        prompt_version="abcdefabcdef",
+    )
+    attempts["n"] = 0
+    _, retried_usage = await extract_structured(
+        output_model=Demo,
+        system_prompt="sys",
+        user_prompt="user",
+        model=_canned({"answer": "42"}),
+        prompt_name="demo",
+        prompt_version="abcdefabcdef",
+        validators=[reject_once],
+    )
+    assert retried_usage.total_tokens > clean_usage.total_tokens
 
 
 async def test_validator_rejection_exhausts_retries_and_raises():
