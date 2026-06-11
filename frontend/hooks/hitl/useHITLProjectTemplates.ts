@@ -84,8 +84,28 @@ export function useHITLProjectTemplates({
 }: UseHITLProjectTemplatesProps): UseHITLProjectTemplatesResult {
   const [templates, setTemplates] = useState<ProjectTemplate[]>([]);
   const [globalTemplates, setGlobalTemplates] = useState<GlobalTemplate[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Only show the loader when there is actually something to load.
+  const [loading, setLoading] = useState(() => Boolean(projectId));
   const [error, setError] = useState<string | null>(null);
+
+  // Reset when the query coordinates change (during render, so the fetch
+  // effect below never sets state synchronously).
+  const [prevKey, setPrevKey] = useState({ projectId, kind, includeInactive });
+  if (
+    projectId !== prevKey.projectId ||
+    kind !== prevKey.kind ||
+    includeInactive !== prevKey.includeInactive
+  ) {
+    setPrevKey({ projectId, kind, includeInactive });
+    if (projectId) {
+      setLoading(true);
+      setError(null);
+    } else {
+      setTemplates([]);
+      setGlobalTemplates([]);
+      setLoading(false);
+    }
+  }
 
   const fetchProjectTemplates = useCallback(async (): Promise<ProjectTemplate[]> => {
     let query = supabase
@@ -114,15 +134,12 @@ export function useHITLProjectTemplates({
 
   useEffect(() => {
     if (!projectId) {
-      setTemplates([]);
-      setGlobalTemplates([]);
-      setLoading(false);
       return;
     }
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    void (async () => {
+    // Microtask so the fetch's setState calls run in async callbacks
+    // (the loading/error reset happens during render above).
+    queueMicrotask(() => void (async () => {
       try {
         const [project, global] = await Promise.all([
           fetchProjectTemplates(),
@@ -139,7 +156,7 @@ export function useHITLProjectTemplates({
       } finally {
         if (!cancelled) setLoading(false);
       }
-    })();
+    })());
     return () => {
       cancelled = true;
     };
