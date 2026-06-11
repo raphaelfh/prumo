@@ -61,7 +61,8 @@ export function useFinalizedExtractionRun(
 
   useEffect(() => {
     if (!enabled) return;
-    void load();
+    // Microtask so the loader's setState calls run in an async callback.
+    queueMicrotask(() => void load());
   }, [enabled, load]);
 
   return { finalizedRun, loading, error, refresh: load };

@@ -193,9 +193,12 @@ export function useModelManagement({
     }
   }, [enabled, modelParentEntityTypeId, articleId, getModelProgress]);
 
-    // FIX: Sync ref with loadModels right after definition
-    // Ensures ref is available when useEffect tries to use it
-  loadModelsRef.current = loadModels;
+    // Sync ref with loadModels in an effect (refs must not be written
+    // during render). Declared before the mount-load effect below so the
+    // ref is populated by the time that effect runs.
+  useEffect(() => {
+    loadModelsRef.current = loadModels;
+  }, [loadModels]);
 
     // Create new model (using service - simplified)
   const createModel = useCallback(async (

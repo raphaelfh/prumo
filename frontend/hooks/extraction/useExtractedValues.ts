@@ -272,12 +272,16 @@ export function useExtractedValues(
       // the spinner forever. Treat ``initialized = true`` here as
       // "we know there are no values to show" (the empty map below).
       hydratedRunIdRef.current = runId ?? null;
-      resetValuesIfNeeded(setValues);
-      setLoading(false);
-      setInitialized(true);
+      // Microtask so the reset's setState calls run in an async callback.
+      queueMicrotask(() => {
+        resetValuesIfNeeded(setValues);
+        setLoading(false);
+        setInitialized(true);
+      });
       return;
     }
-    void loadValues();
+    // Microtask so the loader's setState calls run in an async callback.
+    queueMicrotask(() => void loadValues());
   }, [enabled, loadValues]);
 
   const updateValue = useCallback((instanceId: string, fieldId: string, value: any) => {

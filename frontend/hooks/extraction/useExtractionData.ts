@@ -254,7 +254,8 @@ export function useExtractionData({
 
     // Load initial data
   useEffect(() => {
-    loadData();
+    // Microtask so the loader's setState calls run in an async callback.
+    queueMicrotask(() => void loadData());
   }, [loadData]);
 
     // Refresh function
@@ -262,12 +263,14 @@ export function useExtractionData({
     await loadData();
   }, [loadData]);
 
-    // Refresh instances only (no new creation)
+    // Refresh instances only (no new creation). Plain-identifier dep —
+    // optional-chained deps defeat compiler memoization preservation.
+  const activeTemplateId = template?.id;
   const refreshInstances = useCallback(async () => {
-    if (template?.id) {
-      await loadInstances(template.id);
+    if (activeTemplateId) {
+      await loadInstances(activeTemplateId);
     }
-  }, [template?.id, loadInstances]);
+  }, [activeTemplateId, loadInstances]);
 
   return {
     article,

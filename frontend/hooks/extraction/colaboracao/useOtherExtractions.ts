@@ -47,20 +47,22 @@ export function useOtherExtractions(
   } = props;
 
   const [otherExtractions, setOtherExtractions] = useState<OtherExtraction[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Only show the loader when there is actually something to load.
+  const [loading, setLoading] = useState(() => Boolean(enabled && articleId && currentUserId));
   const [error, setError] = useState<string | null>(null);
   const generationRef = useRef(0);
 
-  useEffect(() => {
-    if (!enabled || !articleId || !currentUserId) {
-      setLoading(false);
-      return;
-    }
-    void loadOtherExtractions();
-    return () => {
-      generationRef.current += 1;
-    };
-  }, [articleId, currentUserId, enabled, templateId]);
+  // Params cleared after mount: stop the loader (during render, not via effect).
+  const [prevKey, setPrevKey] = useState({ articleId, currentUserId, enabled, templateId });
+  if (
+    articleId !== prevKey.articleId ||
+    currentUserId !== prevKey.currentUserId ||
+    enabled !== prevKey.enabled ||
+    templateId !== prevKey.templateId
+  ) {
+    setPrevKey({ articleId, currentUserId, enabled, templateId });
+    if (!enabled || !articleId || !currentUserId) setLoading(false);
+  }
 
   const loadOtherExtractions = async () => {
     const myGeneration = ++generationRef.current;
@@ -105,6 +107,15 @@ export function useOtherExtractions(
       if (myGeneration === generationRef.current) setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!enabled || !articleId || !currentUserId) return;
+    // Microtask so the loader's setState calls run in an async callback.
+    queueMicrotask(() => void loadOtherExtractions());
+    return () => {
+      generationRef.current += 1;
+    };
+  }, [articleId, currentUserId, enabled, templateId]);
 
   const refresh = async () => {
     await loadOtherExtractions();
