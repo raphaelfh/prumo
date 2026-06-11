@@ -96,10 +96,8 @@ ENCRYPTION_KEY=sua-chave-de-criptografia-32-caracteres
 # Rate Limiting
 RATE_LIMIT_PER_MINUTE=60
 
-# LangSmith (opcional)
-LANGCHAIN_TRACING_V2=false
-LANGCHAIN_API_KEY=
-LANGCHAIN_PROJECT=review-hub
+# Logfire LLM observability (optional — fully inert when unset)
+# LOGFIRE_TOKEN=
 EOF
         echo -e "${GREEN}✓ .env criado com valores padrão${NC}"
     fi

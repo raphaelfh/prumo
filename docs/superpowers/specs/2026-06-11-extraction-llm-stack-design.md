@@ -62,9 +62,12 @@ Research snapshot (June 2026, verified against PyPI/GitHub/vendor docs):
 | Outlines | Constrained decoding only applies to self-hosted models; on the OpenAI API it delegates to OpenAI's own json_schema. N/A. |
 | LangChain / DSPy / Mirascope / Marvin | Too heavy for structured-output-only / optimizer-centric with awkward per-call BYOK / adoption risk / a wrapper over Pydantic AI, respectively. |
 
-**Decision:** `pydantic-ai-slim[openai]`, **pinned to v1.x**. The v1→v2
-transition is the accepted risk: v1 receives security support ≥ 6 months
-after v2 lands and has an official upgrade guide.
+**Decision:** `pydantic-ai-slim[openai]`, **pinned to v1.x**. v2 is
+beta-only as of 2026-06-11 (`2.0.0b7`; betas so far mostly fold in v1
+changes) and is not adopted. **Upgrade trigger:** when v2 reaches GA,
+schedule the v1→v2 upgrade as its own small follow-up — `app/llm/` is the
+only module touching the library, v1 receives security support ≥ 6 months
+after v2 lands, and an official upgrade guide is provided.
 
 **Observability decision:** **Pydantic Logfire SaaS** (free tier: 10M
 records/month — an order of magnitude above our volume). Only option with
@@ -206,7 +209,7 @@ belongs to the implementation plan (writing-plans).
 
 | Risk | Mitigation |
 | --- | --- |
-| Pydantic AI v2 transition | Pin v1.x; security support ≥ 6 months post-v2; official upgrade guide. |
+| Pydantic AI v2 transition | Pin v1.x; explicit upgrade trigger at v2 GA (§3); upgrade surface confined to `app/llm/`; v1 security support ≥ 6 months post-v2; official upgrade guide. |
 | Chunking raises call count for large templates | Only triggers over the property budget; per-call quality likely improves; cost visible in Logfire. |
 | Logfire pricing/posture changes | Instrumentation is pure OTel; re-point `OTEL_EXPORTER_OTLP_ENDPOINT` to Langfuse/Phoenix without code changes. |
 | Strict mode rejects an exotic user schema shape | Chunker keeps schemas inside the documented subset; provider 400s fail the run with a clear `error_message`. |

@@ -43,6 +43,7 @@ SUPPORT_PREFIXES = (
     "app.exceptions",
     "app.domain",
     "app.schemas",
+    "app.llm",
 )
 
 # Allowed outbound edges from each layer to other layers.

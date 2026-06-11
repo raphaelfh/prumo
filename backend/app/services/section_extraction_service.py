@@ -9,17 +9,22 @@ Implements:
 - SQLAlchemy repository pattern
 """
 
-import json
 from dataclasses import dataclass
 from time import perf_counter
 from typing import Any
 from uuid import UUID
 
+from pydantic_ai.exceptions import AgentRunError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import LoggerMixin
 from app.infrastructure.storage import StorageAdapter
+from app.llm.extractor import LlmUsage, extract_structured
+from app.llm.prompts import quality_assessment, section_extraction
+from app.llm.provider import MissingLLMKeyError, build_model
+from app.llm.schema import build_output_models, dump_extraction
+from app.llm.validators import evidence_is_plausible
 from app.models.extraction import (
     ExtractionEntityType,
     ExtractionEvidence,
@@ -40,10 +45,8 @@ from app.repositories import (
     ExtractionRunRepository,
 )
 from app.services.extraction_proposal_service import ExtractionProposalService
-from app.services.openai_service import OpenAIResponse, OpenAIService
 from app.services.pdf_processor import PDFProcessor
 from app.services.run_lifecycle_service import RunLifecycleService
-from app.utils.json_parser import parse_json_safe
 
 
 @dataclass
@@ -105,7 +108,7 @@ class SectionExtractionService(LoggerMixin):
         self.storage = storage
         self.trace_id = trace_id
         self.pdf_processor = PDFProcessor()
-        self.openai_service = OpenAIService(trace_id=trace_id, api_key=openai_api_key)
+        self._llm_api_key = openai_api_key
 
         # Repositories
         self._article_files = ArticleFileRepository(db)
@@ -211,17 +214,11 @@ class SectionExtractionService(LoggerMixin):
             entity_type = await self._get_entity_type(entity_type_id)
             phase_durations_ms["fetch_entity_type"] = (perf_counter() - phase_start) * 1000
 
-            # 5. Build extraction schema
+            # 5. Run LLM extraction (with token tracking)
             phase_start = perf_counter()
-            extraction_schema = self._build_extraction_schema(entity_type)
-            phase_durations_ms["build_schema"] = (perf_counter() - phase_start) * 1000
-
-            # 6. Run LLM extraction (with token tracking)
-            phase_start = perf_counter()
-            extracted_data, llm_response = await self._extract_with_llm(
+            extracted_data, llm_usage = await self._extract_with_llm(
                 pdf_text=pdf_text,
                 entity_type=entity_type,
-                schema=extraction_schema,
                 model=model,
             )
             phase_durations_ms["extract_llm"] = (perf_counter() - phase_start) * 1000
@@ -258,9 +255,9 @@ class SectionExtractionService(LoggerMixin):
                     run_id=run.id,
                     results={
                         "suggestions_created": suggestions_created,
-                        "tokens_prompt": llm_response.usage.prompt_tokens,
-                        "tokens_completion": llm_response.usage.completion_tokens,
-                        "tokens_total": llm_response.usage.total_tokens,
+                        "tokens_prompt": llm_usage.prompt_tokens,
+                        "tokens_completion": llm_usage.completion_tokens,
+                        "tokens_total": llm_usage.total_tokens,
                         "duration_ms": duration,
                         "fields_extracted": len(extracted_data) if extracted_data else 0,
                         "phase_durations_ms": phase_durations_ms,
@@ -274,7 +271,7 @@ class SectionExtractionService(LoggerMixin):
                 run_id=str(run.id),
                 operation_id=str(run.id),
                 suggestions_created=suggestions_created,
-                tokens_total=llm_response.usage.total_tokens,
+                tokens_total=llm_usage.total_tokens,
                 duration_ms=duration,
                 phase_durations_ms=phase_durations_ms,
             )
@@ -283,9 +280,9 @@ class SectionExtractionService(LoggerMixin):
                 extraction_run_id=str(run.id),
                 entity_type_id=str(entity_type_id),
                 suggestions_created=suggestions_created,
-                tokens_prompt=llm_response.usage.prompt_tokens,
-                tokens_completion=llm_response.usage.completion_tokens,
-                tokens_total=llm_response.usage.total_tokens,
+                tokens_prompt=llm_usage.prompt_tokens,
+                tokens_completion=llm_usage.completion_tokens,
+                tokens_total=llm_usage.total_tokens,
                 duration_ms=duration,
             )
 
@@ -328,7 +325,7 @@ class SectionExtractionService(LoggerMixin):
         that opens a Run via the HITL session service before asking the
         LLM to fill it in). Reuses the same building blocks as
         ``extract_section`` / ``_extract_section_with_memory``:
-        ``_get_pdf``, ``_build_extraction_schema``, ``_extract_with_llm``,
+        ``_get_pdf``, ``_extract_with_llm``,
         ``_create_suggestions``.
 
         Stage rules:
@@ -506,11 +503,9 @@ class SectionExtractionService(LoggerMixin):
             full_entity_type.fields = filtered  # type: ignore[attr-defined]
 
         try:
-            schema = self._build_extraction_schema(full_entity_type)
-            extracted_data, llm_response = await self._extract_with_llm(
+            extracted_data, llm_usage = await self._extract_with_llm(
                 pdf_text=pdf_text,
                 entity_type=full_entity_type,
-                schema=schema,
                 model=model,
                 kind=kind,
                 framework=framework,
@@ -525,7 +520,7 @@ class SectionExtractionService(LoggerMixin):
             )
             return {
                 "suggestions_created": suggestions_created,
-                "tokens_total": llm_response.usage.total_tokens,
+                "tokens_total": llm_usage.total_tokens,
             }
         finally:
             # Restore the unfiltered field list so callers that rely on
@@ -852,17 +847,11 @@ class SectionExtractionService(LoggerMixin):
         await self._runs.start_run(run.id)
 
         try:
-            # Build schema
-            phase_start = perf_counter()
-            extraction_schema = self._build_extraction_schema(entity_type)
-            section_phase_durations_ms["build_schema"] = (perf_counter() - phase_start) * 1000
-
             # Run extraction with memory context
             phase_start = perf_counter()
-            extracted_data, llm_response = await self._extract_with_llm(
+            extracted_data, llm_usage = await self._extract_with_llm(
                 pdf_text=pdf_text,
                 entity_type=entity_type,
-                schema=extraction_schema,
                 model=model,
                 memory_context=memory_history,
             )
@@ -893,9 +882,9 @@ class SectionExtractionService(LoggerMixin):
                 run_id=run.id,
                 results={
                     "suggestions_created": suggestions_created,
-                    "tokens_prompt": llm_response.usage.prompt_tokens,
-                    "tokens_completion": llm_response.usage.completion_tokens,
-                    "tokens_total": llm_response.usage.total_tokens,
+                    "tokens_prompt": llm_usage.prompt_tokens,
+                    "tokens_completion": llm_usage.completion_tokens,
+                    "tokens_total": llm_usage.total_tokens,
                     "summary": summary,
                     "duration_ms": (perf_counter() - section_start) * 1000,
                     "phase_durations_ms": section_phase_durations_ms,
@@ -905,12 +894,21 @@ class SectionExtractionService(LoggerMixin):
 
             return {
                 "suggestions_created": suggestions_created,
-                "tokens_total": llm_response.usage.total_tokens,
+                "tokens_total": llm_usage.total_tokens,
                 "summary": summary,
                 "phase_durations_ms": section_phase_durations_ms,
             }
 
+        except (AgentRunError, MissingLLMKeyError) as e:
+            # LLM-semantic failure (reask exhausted, usage ceiling, missing
+            # key): the DB session is healthy. Fail ONLY this section's run —
+            # rollback_and_fail would discard the whole uncommitted batch
+            # transaction (sibling sections + the parent batch run).
+            await self._runs.fail_run(run.id, str(e))
+            raise
         except Exception as e:
+            # DB-layer failure: the transaction may be poisoned
+            # (InFailedSQLTransactionError) — rollback before failing.
             await self._runs.rollback_and_fail(
                 run.id,
                 str(e),
@@ -1040,225 +1038,85 @@ class SectionExtractionService(LoggerMixin):
 
         return child_entity_types
 
-    def _build_extraction_schema(self, entity_type: Any) -> dict[str, Any]:
-        """
-        Build JSON extraction schema from fields.
-
-        Includes:
-        - Field types (string, number, boolean, array)
-        - allowed_values for select/enum fields
-        - llm_description for better context
-        """
-        fields = entity_type.fields if hasattr(entity_type, "fields") else []
-
-        properties = {}
-        required = []
-
-        for field in fields:
-            field_name = field.name if hasattr(field, "name") else ""
-            field_type = field.field_type if hasattr(field, "field_type") else "text"
-
-            # Map field types
-            json_type = "string"
-            if field_type in ("number", "integer", "float"):
-                json_type = "number"
-            elif field_type == "boolean":
-                json_type = "boolean"
-            elif field_type in ("array", "list", "multiselect"):
-                json_type = "array"
-
-            # Prefer llm_description; fallback to description.
-            # IMPORTANT: ensure description is always JSON-serializable.
-            # In tests (or runtime), some objects may expose MagicMock-like attributes
-            # or other non-serializable types, which would break json.dumps(schema).
-            raw_description: Any = ""
-            if hasattr(field, "llm_description") and field.llm_description:
-                raw_description = field.llm_description
-            elif hasattr(field, "description") and field.description:
-                raw_description = field.description
-
-            description = "" if raw_description is None else str(raw_description)
-
-            field_schema: dict[str, Any] = {
-                "type": json_type,
-                "description": description,
-            }
-
-            # Include allowed_values as enum when available (select/dropdown fields)
-            if hasattr(field, "allowed_values") and field.allowed_values:
-                allowed = field.allowed_values
-                # allowed_values can be {"options": [...]} or directly [...]
-                if isinstance(allowed, dict) and "options" in allowed:
-                    options = allowed["options"]
-                elif isinstance(allowed, list):
-                    options = allowed
-                else:
-                    options = None
-
-                if options:
-                    # Extract only option values
-                    enum_values = []
-                    for opt in options:
-                        if isinstance(opt, dict) and "value" in opt:
-                            enum_values.append(opt["value"])
-                        elif isinstance(opt, str):
-                            enum_values.append(opt)
-
-                    if enum_values:
-                        field_schema["enum"] = enum_values
-                        # Append option info to description
-                        options_str = ", ".join(f'"{v}"' for v in enum_values)
-                        field_schema["description"] += f" Must be one of: {options_str}"
-
-            properties[field_name] = field_schema
-
-            if hasattr(field, "is_required") and field.is_required:
-                required.append(field_name)
-
-        return {
-            "type": "object",
-            "properties": properties,
-            "required": required,
-        }
-
     async def _extract_with_llm(
         self,
         pdf_text: str,
         entity_type: Any,
-        schema: dict[str, Any],
         model: str,
         memory_context: list[dict[str, str]] | None = None,
         kind: str = "extraction",
         framework: str | None = None,
-    ) -> tuple[dict[str, Any], OpenAIResponse]:
+    ) -> tuple[dict[str, Any], LlmUsage]:
         """
-        Run extraction using LLM with token tracking.
+        Run extraction using the typed LLM call layer.
 
         Args:
             pdf_text: PDF text.
-            entity_type: Entity type to extract.
-            schema: JSON schema for extraction.
-            model: Modelo OpenAI.
+            entity_type: Entity type to extract (fields drive the output model).
+            model: OpenAI model name.
             memory_context: Summarized memory context (optional).
-            kind: Run kind ('extraction' or 'quality_assessment'). Drives
-                the system + user prompt — extraction asks the LLM to
-                pull factual data from sections; quality_assessment asks
-                the LLM to grade the study against a bias-assessment
-                framework (PROBAST / QUADAS-2). The response shape stays
-                identical (one object per field with value / confidence /
-                reasoning / evidence), so downstream parsing is unchanged.
+            kind: 'extraction' or 'quality_assessment' — selects the prompt
+                pair. The response shape is identical either way, so
+                downstream proposal writes are unchanged.
             framework: When kind=='quality_assessment', the assessment
-                framework name (PROBAST / QUADAS-2) for the LLM to ground
-                its judgments in.
+                framework (PROBAST / QUADAS-2) the prompts ground in.
 
         Returns:
-            Tuple with extracted data and OpenAI response with tokens.
+            Tuple of extracted data ({field_name: {value, confidence,
+            reasoning, evidence}}) and token usage. Templates larger than
+            the strict-mode property budget are split into multiple calls
+            and merged transparently.
         """
         entity_name = entity_type.name if hasattr(entity_type, "name") else "data"
         entity_description = entity_type.description if hasattr(entity_type, "description") else ""
 
-        # Build memory context when available
-        memory_section = ""
-        if memory_context:
-            memory_lines = [
-                f"{idx + 1}. {mem['entity_type_name']}: {mem['summary']}"
-                for idx, mem in enumerate(memory_context)
-            ]
-            memory_section = f"""
---- CONTEXT FROM PREVIOUSLY EXTRACTED SECTIONS ---
-{chr(10).join(memory_lines)}
-
-Use this context to maintain consistency and avoid contradictions with previously extracted data.
-"""
-
         if kind == "quality_assessment":
-            framework_label = framework or "the assessment tool"
-            system_prompt = (
-                f"You are a clinical-evidence methodologist assessing a study using "
-                f"{framework_label}. For each signaling question or judgment field, "
-                f"choose strictly from the field's allowed values, justify your "
-                f"choice with a one or two-sentence reasoning, and include a short "
-                f"verbatim quote from the article as evidence whenever possible. "
-                f"Be conservative: when the article does not provide enough "
-                f"information to decide, prefer the value that captures uncertainty "
-                f"(e.g., 'No information' or 'Probably no') over guessing. Always "
-                f"respond with valid JSON."
+            prompt_module: Any = quality_assessment
+            system_prompt = quality_assessment.system_prompt(framework)
+            user_prompt = quality_assessment.render(
+                entity_name=entity_name,
+                entity_description=entity_description,
+                article_text=pdf_text,
+                framework=framework,
+                memory_context=memory_context,
             )
-            prompt = f"""Assess the following domain of {framework_label} for the study below.
-
-Domain: {entity_name}
-Description: {entity_description}
-{memory_section}
-Article text:
-{pdf_text[:15000]}
-
-For EACH field in the schema below, return an object with:
-- "value": one of the field's allowed values
-- "confidence": number between 0 and 1 (1 = very confident in the judgment, 0 = no signal in the article)
-- "reasoning": 1-2 sentences justifying the judgment against the {framework_label} criterion
-- "evidence": optional object with "text" (short quoted passage supporting the judgment) and "page_number" (integer, if known)
-
-Schema:
-{json.dumps(schema, indent=2)}
-
-Example response format:
-{{
-  "field_name": {{
-    "value": "Probably yes",
-    "confidence": 0.7,
-    "reasoning": "Authors describe consecutive recruitment in a single tertiary centre.",
-    "evidence": {{ "text": "All eligible patients...", "page_number": 3 }}
-  }}
-}}
-"""
         else:
-            system_prompt = (
-                "You are an expert at extracting structured data from scientific "
-                "articles. For each field, provide the value, your confidence level "
-                "(0-1), and brief reasoning. Always respond with valid JSON."
+            prompt_module = section_extraction
+            system_prompt = section_extraction.SYSTEM_PROMPT
+            user_prompt = section_extraction.render(
+                entity_name=entity_name,
+                entity_description=entity_description,
+                article_text=pdf_text,
+                memory_context=memory_context,
             )
-            prompt = f"""Extract the following information from the scientific article:
 
-Section: {entity_name}
-Description: {entity_description}
-{memory_section}
-Article text:
-{pdf_text[:15000]}
+        output_models = build_output_models(entity_type)
+        if not output_models:
+            self.logger.info(
+                "extraction_skipped_no_fields",
+                trace_id=self.trace_id,
+                entity_type_name=entity_name,
+            )
+            return {}, LlmUsage()
 
-For EACH field in the schema below, return an object with:
-- "value": the extracted value (matching the field type and allowed values if specified)
-- "confidence": a number between 0 and 1 indicating your confidence in the extraction (1 = very confident, 0 = not found/uncertain)
-- "reasoning": a brief explanation (1-2 sentences) of why you extracted this value or why you're uncertain
-- "evidence": optional object with "text" (short quoted passage from the article supporting the value) and "page_number" (integer, if known)
+        llm_model = build_model(model, api_key=self._llm_api_key)
 
-Schema:
-{json.dumps(schema, indent=2)}
+        extracted_data: dict[str, Any] = {}
+        usage = LlmUsage()
+        for output_model in output_models:
+            output, call_usage = await extract_structured(
+                output_model=output_model,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                model=llm_model,
+                prompt_name=prompt_module.NAME,
+                prompt_version=prompt_module.VERSION,
+                validators=[evidence_is_plausible],
+            )
+            extracted_data.update(dump_extraction(output))
+            usage = usage + call_usage
 
-Example response format:
-{{
-  "field_name": {{
-    "value": "extracted value",
-    "confidence": 0.95,
-    "reasoning": "Found in methods section, explicitly stated.",
-    "evidence": {{ "text": "Exact quote from the article.", "page_number": 3 }}
-  }}
-}}
-"""
-
-        # Use chat_completion_full to capture token usage
-        response = await self.openai_service.chat_completion_full(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt},
-            ],
-            model=model,
-            response_format={"type": "json_object"},
-        )
-
-        # Use robust parser with empty-dict fallback
-        extracted_data = parse_json_safe(response.content, trace_id=self.trace_id, default={})
-
-        return extracted_data, response
+        return extracted_data, usage
 
     async def _create_suggestions(
         self,

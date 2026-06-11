@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-06-11
 owner: '@raphaelfh'
 ---
 
@@ -219,27 +219,35 @@ Database guarantees post 0016:
 
 ### 4.2 LLM prompt module pattern
 
-Prompts that drive LLM calls live in `backend/app/services/llm/`, not
-inline inside services. Each prompt is a pure module exposing:
+Prompts that drive LLM calls live in `backend/app/llm/prompts/` — one
+module per prompt. Each module exposes:
 
-- A `build(...)` static method that returns the prompt text (pure
-  function: no I/O, no globals, deterministic given inputs).
-- A `*_RESPONSE_SCHEMA` constant in JSON-schema shape for when
-  structured-output mode is enabled on the OpenAI call.
-- A `parse_*_from_response(...)` helper that normalizes the LLM JSON
-  into the service's expected shape.
+- `NAME` (str) — a stable identifier used for logging and span tagging.
+- `VERSION` (12-char content hash) — auto-bumps whenever the prompt text
+  changes; stamped on every Logfire span alongside `NAME` so prompt
+  regressions are traceable in production.
+- `render(...)` — returns the user prompt string (pure function: no I/O,
+  no globals, deterministic given inputs).
+- `SYSTEM_PROMPT` constant, or `system_prompt(framework)` where the
+  system prompt is parameterised by the calling context.
 
-Example: `app/services/llm/model_identification_prompt.py` is consumed by
-`model_extraction_service._identify_models`. The prompt is field-name-
-agnostic — it asks the LLM for a neutral `name` per model and uses the
-template's container `label` for grounding, so managers can rename
-fields in the Configuration tab without breaking extraction.
+**Structured output** is enforced by the typed call layer
+(`backend/app/llm/extractor.py::extract_structured`, Pydantic AI
+`NativeOutput`). There are no `*_RESPONSE_SCHEMA` JSON-schema constants
+and no tolerant parsers: if the model returns structurally invalid output,
+the call layer reasks (up to `DEFAULT_USAGE_LIMITS.request_limit`) and
+then raises `AgentRunError`, which fails the run. Callers must catch that
+exception.
 
-Unit tests in `tests/unit/test_model_identification_prompt.py` pin the
-prompt's neutrality (no internal field names appear in the text), the
-response schema, and the parser's backward-compat path.
+**Output models** — static schemas (e.g. `ModelIdentificationOutput`) are
+defined next to their prompt module. Template-driven schemas whose shape
+depends on the active template version are built at runtime by
+`backend/app/llm/schema.py::build_output_models`.
 
-### 4.2 Project template import (extraction catalogue)
+Unit tests for the prompt layer live in
+`backend/tests/unit/llm/test_prompts.py`.
+
+### 4.3 Project template import (extraction catalogue)
 
 The extraction **Import template** dialog reads `extraction_templates_global` through the Supabase client (RLS). **Do not** insert `project_extraction_templates` from the frontend: a deferred trigger requires every project template to have an **active** `extraction_template_versions` row at commit time, so creation stays in the API layer.
 
