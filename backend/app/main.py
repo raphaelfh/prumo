@@ -12,6 +12,7 @@ This module configures the main FastAPI application with:
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
+import logfire
 from alembic.config import Config as AlembicConfig
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
@@ -28,6 +29,7 @@ from app.core.error_handler import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
 from app.core.middleware import register_middlewares
 from app.core.security import get_jwks
+from app.llm.observability import configure_observability
 from app.utils.rate_limiter import limiter
 
 logger = get_logger(__name__)
@@ -73,7 +75,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     - Shutdown: Close connections and clean up resources.
     """
     # Startup
+    configure_observability(service_name="prumo-api")
     configure_logging()
+    logfire.instrument_fastapi(app)
     check_pending_migrations()
     logger.info(
         "application_startup",

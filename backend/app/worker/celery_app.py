@@ -163,7 +163,17 @@ celery_app.Task = LoggedTask
 # so a NotRegistered branch in on_failure alone would be dead code in
 # production. Keep both paths: the signal is the runtime hook, the
 # on_failure branch is defense in depth in case Celery changes routing.
-from celery.signals import task_unknown  # noqa: E402
+from celery.signals import task_unknown, worker_init  # noqa: E402
+
+
+@worker_init.connect
+def _configure_worker_observability(**_kwargs: Any) -> None:
+    """Logfire bootstrap for the worker process. Runs via signal (not at
+    import time) so the API process importing this module for ``.delay()``
+    doesn't get configured with the wrong service_name."""
+    from app.llm.observability import configure_observability
+
+    configure_observability(service_name="prumo-worker")
 
 
 @task_unknown.connect
