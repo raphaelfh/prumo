@@ -7,14 +7,11 @@ const NARROW_BREAKPOINT = 640;
 // matchMedia is an external store; useSyncExternalStore reads it without
 // the mount-effect setState the previous implementation needed.
 function useMediaQuery(query: string): boolean {
-  const subscribe = React.useCallback(
-    (onChange: () => void) => {
-      const mql = window.matchMedia(query);
-      mql.addEventListener("change", onChange);
-      return () => mql.removeEventListener("change", onChange);
-    },
-    [query],
-  );
+  const subscribe = (onChange: () => void) => {
+    const mql = window.matchMedia(query);
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  };
   return React.useSyncExternalStore(subscribe, () => window.matchMedia(query).matches);
 }
 

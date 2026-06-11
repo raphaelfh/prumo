@@ -1,4 +1,4 @@
-import {useCallback, useState} from 'react';
+import {useState} from 'react';
 import {useNavigate, useParams} from 'react-router-dom';
 
 export type ProjectTab = 'articles' | 'extraction' | 'settings';
@@ -14,14 +14,14 @@ export function useProjectNavigation(): UseProjectNavigationReturn {
   const navigate = useNavigate();
   const { projectId } = useParams<{ projectId: string }>();
 
-  const changeTab = useCallback((tab: ProjectTab) => {
+  const changeTab = (tab: ProjectTab) => {
     setActiveTab(tab);
-  }, []);
+  };
 
-  const navigateToArticle = useCallback((articleId: string) => {
+  const navigateToArticle = (articleId: string) => {
     if (!projectId) return;
     navigate(`/projects/${projectId}/articles/${articleId}`);
-  }, [projectId, navigate]);
+  };
 
   return {
     activeTab,

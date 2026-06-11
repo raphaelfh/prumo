@@ -10,7 +10,6 @@
  * Touch this file (or its constant) — not the consumers — when the
  * convention changes.
  */
-import {useMemo} from 'react';
 
 import type {ExtractionEntityRole} from '@/types/extraction';
 
@@ -79,16 +78,16 @@ export function partitionEntityTypes<
 }
 
 /**
- * Memoized partition for a loaded entity-type list.
+ * Partition hook for a loaded entity-type list.
  *
- * Consumers should prefer this hook over calling ``useMemo(() =>
- * partitionEntityTypes(...))`` by hand — keeping the memoization next
- * to the partition logic means the two evolve together.
+ * Consumers should prefer this hook over calling ``partitionEntityTypes``
+ * directly — keeping the logic next to the partition function means the
+ * two evolve together. The React Compiler memoizes the result automatically.
  */
 export function useEntityTypePartition<
   T extends {role: ExtractionEntityRole; id: string},
 >(entityTypes: readonly T[]): EntityTypePartition<T> {
-  return useMemo(() => partitionEntityTypes(entityTypes), [entityTypes]);
+  return partitionEntityTypes(entityTypes);
 }
 
 /**

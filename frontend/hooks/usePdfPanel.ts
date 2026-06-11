@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 
 export interface UsePdfPanelResult {
   isOpen: boolean;
@@ -13,8 +13,8 @@ export interface UsePdfPanelResult {
  */
 export function usePdfPanel(opts?: { initialOpen?: boolean }): UsePdfPanelResult {
   const [isOpen, setIsOpen] = useState<boolean>(opts?.initialOpen ?? false);
-  const open = useCallback(() => setIsOpen(true), []);
-  const close = useCallback(() => setIsOpen(false), []);
-  const toggle = useCallback(() => setIsOpen((v) => !v), []);
+  const open = () => setIsOpen(true);
+  const close = () => setIsOpen(false);
+  const toggle = () => setIsOpen((v) => !v);
   return { isOpen, open, close, toggle };
 }
