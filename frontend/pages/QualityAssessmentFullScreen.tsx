@@ -528,7 +528,7 @@ export default function QualityAssessmentFullScreen() {
         <Button
           size="sm"
           onClick={() => void handlePublish()}
-          disabled={publishing || finalized || !session}
+          disabled={publishing || finalized || !session || !runDetail}
           data-testid="qa-publish-button"
         >
           {publishing ? "Publishing…" : finalized ? "Published" : "Publish assessment"}
