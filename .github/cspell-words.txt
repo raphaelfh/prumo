@@ -1,10 +1,5 @@
-AEPEI
-BYOK
-HMAC
-PGRST
-PostgREST
-SPECKIT
 aepei
+AEPEI
 affordances
 alembic
 anyio
@@ -19,6 +14,7 @@ autouse
 bboxes
 behaviour
 behaviours
+BYOK
 celery
 centralising
 codegen
@@ -49,6 +45,7 @@ gatti
 gunicorn
 healthcheck
 hitl
+HMAC
 hono
 hosmer
 hotspots
@@ -59,6 +56,7 @@ lemeshow
 licence
 linter
 llms
+logfire
 lychee
 madr
 markdownlint
@@ -76,12 +74,14 @@ organised
 parameterised
 pathlib
 pdfium
+PGRST
 planos
 podman
 poolclass
 pooler
 popleft
 postgres
+PostgREST
 probast
 prumo
 psutil
@@ -98,6 +98,8 @@ rastreabilidade
 ratchet
 ratcheted
 ratcheting
+reask
+reasks
 reparents
 rls
 ruff
@@ -113,6 +115,7 @@ sessionmaker
 slowapi
 slowload
 sota
+SPECKIT
 sqlalchemy
 structlog
 studylevel
