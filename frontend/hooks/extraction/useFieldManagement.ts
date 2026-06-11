@@ -504,8 +504,11 @@ export function useFieldManagement({
     // Load permissions and fields on mount
   useEffect(() => {
     if (projectId && entityTypeId) {
-      checkPermissions();
-      loadFields();
+      // Microtask so the loaders' setState calls run in async callbacks.
+      queueMicrotask(() => {
+        void checkPermissions();
+        void loadFields();
+      });
     }
   }, [projectId, entityTypeId, checkPermissions, loadFields]);
 
