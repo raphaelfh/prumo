@@ -92,6 +92,12 @@ run_gate "test:pytest" \
 run_gate "test:vitest" \
   npm test -- --run
 
+# 5b. React Compiler pipeline proof — fails if a config refactor silently
+#     stops the compiler from being applied (manual memoization was removed
+#     on the assumption that it runs; see the compiler-enablement spec).
+run_gate "build:react-compiler" \
+  node scripts/check_compiler_coverage.mjs
+
 # 6. DB migration lint (squawk, only if migrations touched)
 #    We check `git diff --name-only HEAD~1..HEAD` for alembic versions; if nothing
 #    is in scope, skip silently.
