@@ -16,7 +16,7 @@
  * | Number of preds    | 5       | 3       | 5       |
  */
 
-import {useCallback, useEffect, useMemo, useState} from 'react';
+import {useCallback, useMemo, useState} from 'react';
 import {Label} from '@/components/ui/label';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '@/components/ui/select';
 import {Card, CardContent} from '@/components/ui/card';
@@ -41,15 +41,10 @@ export function EntitySelectorComparison(props: ComparisonSectionViewProps) {
     [props.instances, props.currentUser.userId, props.allUserInstances, props.entityType.id]
   );
 
-    // State: selected entity
-  const [selectedEntityLabel, setSelectedEntityLabel] = useState<string | null>(null);
-
-    // Auto-select first entity
-  useEffect(() => {
-    if (groupedEntities.length > 0 && !selectedEntityLabel) {
-      setSelectedEntityLabel(groupedEntities[0].label);
-    }
-  }, [groupedEntities, selectedEntityLabel]);
+    // State: entity explicitly picked by the user; defaults to the first
+    // grouped entity (derived during render instead of set via effect).
+  const [pickedEntityLabel, setSelectedEntityLabel] = useState<string | null>(null);
+  const selectedEntityLabel = pickedEntityLabel ?? groupedEntities[0]?.label ?? null;
 
     // Active entity
   const activeEntity = useMemo(() => 
