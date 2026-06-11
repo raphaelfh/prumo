@@ -1235,6 +1235,75 @@ class TestExtractSectionException:
 
 
 # ---------------------------------------------------------------------------
+# extract_section — LLM failure on the standalone path (legacy semantics)
+# ---------------------------------------------------------------------------
+
+
+class TestExtractSectionLlmFailure:
+    """Standalone extract_section path: an LLM failure still calls
+    rollback_and_fail (legacy parity — the standalone run owns its own
+    transaction and there are no sibling sections to protect)."""
+
+    @staticmethod
+    def _wire_pipeline(service, mock_storage):
+        mock_file = MagicMock()
+        mock_file.storage_key = "test.pdf"
+        service._article_files.get_latest_pdf = AsyncMock(return_value=mock_file)
+        mock_storage.download = AsyncMock(return_value=b"%PDF-1.4 test")
+        service.pdf_processor.extract_text = AsyncMock(return_value="text")
+
+        mock_field = MagicMock()
+        mock_field.name = "field_1"
+        mock_field.field_type = "string"
+        mock_field.description = "f"
+        mock_field.is_required = True
+        mock_entity = MagicMock()
+        mock_entity.id = uuid4()
+        mock_entity.name = "EntityX"
+        mock_entity.description = "d"
+        mock_entity.fields = [mock_field]
+        service._entity_types.get_with_fields = AsyncMock(return_value=mock_entity)
+
+        run = MagicMock()
+        run.id = uuid4()
+        service._lifecycle.create_run = AsyncMock(return_value=run)
+        service._lifecycle.advance_stage = AsyncMock(return_value=run)
+        service._runs.start_run = AsyncMock()
+        service._runs.complete_run = AsyncMock()
+        service._runs.fail_run = AsyncMock()
+        service._runs.rollback_and_fail = AsyncMock()
+        return run
+
+    @pytest.mark.asyncio
+    async def test_standalone_llm_failure_calls_rollback_and_fail(self, service, mock_storage):
+        from pydantic_ai import UnexpectedModelBehavior
+
+        run = self._wire_pipeline(service, mock_storage)
+
+        service._extract_with_llm = AsyncMock(
+            side_effect=UnexpectedModelBehavior("reask exhausted")
+        )
+
+        with pytest.raises(UnexpectedModelBehavior):
+            await service.extract_section(
+                project_id=uuid4(),
+                article_id=uuid4(),
+                template_id=uuid4(),
+                entity_type_id=uuid4(),
+            )
+
+        # Standalone path: rollback_and_fail is the single handler for ALL
+        # exceptions (legacy semantics — this run owns its own transaction).
+        service._runs.rollback_and_fail.assert_awaited_once_with(
+            run.id,
+            "reask exhausted",
+            logger=ANY,
+            trace_id=service.trace_id,
+            log_prefix="section_extraction",
+        )
+
+
+# ---------------------------------------------------------------------------
 # extract_all_sections
 # ---------------------------------------------------------------------------
 
@@ -1382,6 +1451,74 @@ class TestExtractAllSections:
             )
 
         service._runs.rollback_and_fail.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_mid_batch_llm_failure_does_not_roll_back_batch_transaction(self, service):
+        """An LLM-layer exception in _extract_section_with_memory must call
+        fail_run (session healthy) — NOT rollback_and_fail — so sibling
+        sections' uncommitted writes and the parent batch run are preserved."""
+        from pydantic_ai import UnexpectedModelBehavior
+
+        batch_run = self._make_run()
+        self._minimal_lifecycle_wire(service, batch_run)
+
+        # Wire rollback_and_fail too so we can assert it was never touched.
+        service._runs.rollback_and_fail = AsyncMock()
+
+        parent = MagicMock()
+        parent.entity_type_id = uuid4()
+        service._instances.get_by_id = AsyncMock(return_value=parent)
+
+        child1 = MagicMock()
+        child1.id = uuid4()
+        child1.name = "Section A"
+        child1.label = "Section A"
+
+        child2 = MagicMock()
+        child2.id = uuid4()
+        child2.name = "Section B"
+        child2.label = "Section B"
+
+        child3 = MagicMock()
+        child3.id = uuid4()
+        child3.name = "Section C"
+        child3.label = "Section C"
+
+        service._entity_types.get_children = AsyncMock(return_value=[child1, child2, child3])
+
+        # Wire _extract_section_with_memory: section 2 (child2) raises LLM error;
+        # sections 1 and 3 succeed.  _extract_section_with_memory is responsible
+        # for calling fail_run internally on the LLM path; we check that at the
+        # batch level rollback_and_fail is never called.
+        call_count = 0
+
+        async def _fake_extract_with_memory(**kwargs):  # noqa: ARG001
+            nonlocal call_count
+            call_count += 1
+            if call_count == 2:
+                raise UnexpectedModelBehavior("reask budget exhausted")
+            return {"suggestions_created": 1, "tokens_total": 50, "summary": "ok"}
+
+        service._extract_section_with_memory = AsyncMock(side_effect=_fake_extract_with_memory)
+
+        result = await service.extract_all_sections(
+            project_id=uuid4(),
+            article_id=uuid4(),
+            template_id=uuid4(),
+            parent_instance_id=uuid4(),
+            pdf_text="text",
+        )
+
+        # Batch completes — 2 successes, 1 failure.
+        assert result.failed_sections == 1
+        assert result.successful_sections == 2
+
+        # Batch-level complete_run must be called (parent run row survives).
+        service._runs.complete_run.assert_awaited()
+
+        # rollback_and_fail must NOT have been called at the batch level —
+        # the LLM exception leaves the session healthy.
+        service._runs.rollback_and_fail.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -1591,6 +1728,22 @@ class TestExtractWithLlmWiring:
         assert kwargs["prompt_name"] == quality_assessment.NAME
         assert "PROBAST" in kwargs["system_prompt"]
         assert "PROBAST" in kwargs["user_prompt"]
+
+    @pytest.mark.asyncio
+    async def test_llm_failure_propagates_instead_of_empty_dict(self, service):
+        from pydantic_ai import UnexpectedModelBehavior
+
+        with (
+            patch(
+                "app.services.section_extraction_service.extract_structured",
+                AsyncMock(side_effect=UnexpectedModelBehavior("reask budget exhausted")),
+            ),
+            patch("app.services.section_extraction_service.build_model", MagicMock()),
+            pytest.raises(UnexpectedModelBehavior),
+        ):
+            await service._extract_with_llm(
+                pdf_text="text", entity_type=self._entity_type(1), model="gpt-4o-mini"
+            )
 
     async def test_memory_context_included_in_user_prompt(self, service):
         from app.llm.schema import build_output_models

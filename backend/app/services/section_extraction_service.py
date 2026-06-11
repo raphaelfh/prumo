@@ -14,6 +14,7 @@ from time import perf_counter
 from typing import Any
 from uuid import UUID
 
+from pydantic_ai.exceptions import AgentRunError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,7 +22,7 @@ from app.core.logging import LoggerMixin
 from app.infrastructure.storage import StorageAdapter
 from app.llm.extractor import LlmUsage, extract_structured
 from app.llm.prompts import quality_assessment, section_extraction
-from app.llm.provider import build_model
+from app.llm.provider import MissingLLMKeyError, build_model
 from app.llm.schema import build_output_models, dump_extraction
 from app.llm.validators import evidence_is_plausible
 from app.models.extraction import (
@@ -898,7 +899,16 @@ class SectionExtractionService(LoggerMixin):
                 "phase_durations_ms": section_phase_durations_ms,
             }
 
+        except (AgentRunError, MissingLLMKeyError) as e:
+            # LLM-semantic failure (reask exhausted, usage ceiling, missing
+            # key): the DB session is healthy. Fail ONLY this section's run —
+            # rollback_and_fail would discard the whole uncommitted batch
+            # transaction (sibling sections + the parent batch run).
+            await self._runs.fail_run(run.id, str(e))
+            raise
         except Exception as e:
+            # DB-layer failure: the transaction may be poisoned
+            # (InFailedSQLTransactionError) — rollback before failing.
             await self._runs.rollback_and_fail(
                 run.id,
                 str(e),
