@@ -45,7 +45,11 @@ export default defineConfig(({mode: _mode}) => ({
             },
         },
     },
-  plugins: [react(), babel({presets: [reactCompilerPreset()]})],
+  plugins: [
+    react(),
+    // Bailout enumeration (plan Task 4): reactCompilerPreset({panicThreshold: 'all_errors'})
+    babel({presets: [reactCompilerPreset()]}),
+  ],
   resolve: {
     alias: {
         "@": path.resolve(__dirname, "./frontend"),
