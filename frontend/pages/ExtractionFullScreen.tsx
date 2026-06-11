@@ -277,11 +277,14 @@ export default function ExtractionFullScreen() {
     refreshFinalizedRun,
   ]);
 
+  // Plain-identifier dep so the compiler can preserve this memoization
+  // (optional-chained deps like `finalizedRun?.id` defeat it).
+  const finalizedRunId = finalizedRun?.id;
   const handleReopen = useCallback(async () => {
-    if (!finalizedRun?.id) return;
+    if (!finalizedRunId) return;
     setReopening(true);
     try {
-      await reopenMutation.mutateAsync(finalizedRun.id);
+      await reopenMutation.mutateAsync(finalizedRunId);
       // The reopen endpoint creates a fresh REVIEW-stage run linked via
       // parameters.parent_run_id. We refetch the HITL session first so
       // activeRunId points at the new child run; only then do the
@@ -299,7 +302,7 @@ export default function ExtractionFullScreen() {
       setReopening(false);
     }
   }, [
-    finalizedRun?.id,
+    finalizedRunId,
     reopenMutation,
     sessionResult,
     refreshValues,
