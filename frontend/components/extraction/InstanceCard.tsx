@@ -55,9 +55,18 @@ export function InstanceCard(props: InstanceCardProps) {
   const [isEditingLabel, setIsEditingLabel] = useState(false);
   const [editedLabel, setEditedLabel] = useState(instance.label);
   const [saving, setSaving] = useState(false);
+  // Saved label shown on the card. Local state instead of mutating the
+  // `instance` prop in place (react-hooks/immutability); re-synced if the
+  // prop changes from outside.
+  const [savedLabel, setSavedLabel] = useState(instance.label);
+  const [prevPropLabel, setPrevPropLabel] = useState(instance.label);
+  if (instance.label !== prevPropLabel) {
+    setPrevPropLabel(instance.label);
+    setSavedLabel(instance.label);
+  }
 
   const handleSaveLabel = async () => {
-    if (editedLabel.trim() === instance.label) {
+    if (editedLabel.trim() === savedLabel) {
       setIsEditingLabel(false);
       return;
     }
@@ -72,21 +81,21 @@ export function InstanceCard(props: InstanceCardProps) {
 
       if (error) throw error;
 
-        instance.label = editedLabel.trim(); // Update local
+      setSavedLabel(editedLabel.trim()); // Update local
       setIsEditingLabel(false);
         toast.success(t('extraction', 'labelUpdatedSuccess'));
 
     } catch (error: any) {
         console.error('Error updating label:', error);
         toast.error(t('extraction', 'errors_updateLabel'));
-        setEditedLabel(instance.label); // Revert
+        setEditedLabel(savedLabel); // Revert
     } finally {
       setSaving(false);
     }
   };
 
   const handleCancelEdit = () => {
-    setEditedLabel(instance.label);
+    setEditedLabel(savedLabel);
     setIsEditingLabel(false);
   };
 
@@ -139,9 +148,9 @@ export function InstanceCard(props: InstanceCardProps) {
                 type="button"
                 className="text-sm font-semibold cursor-pointer hover:text-primary transition-colors duration-75 flex items-center gap-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 onClick={() => setIsEditingLabel(true)}
-                title={instance.label}
+                title={savedLabel}
               >
-                {instance.label}
+                {savedLabel}
                 <Edit2 className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
               </button>
             )}

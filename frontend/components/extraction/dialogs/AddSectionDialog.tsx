@@ -13,7 +13,7 @@
  */
 
 import {useEffect, useState} from 'react';
-import {useForm} from 'react-hook-form';
+import {useForm, useWatch} from 'react-hook-form';
 import {zodResolver} from '@hookform/resolvers/zod';
 import {z} from 'zod';
 import {
@@ -107,7 +107,9 @@ export function AddSectionDialog({
     },
   });
 
-  const label = form.watch('label');
+  // useWatch instead of form.watch — the latter is incompatible with the
+  // React Compiler (react-hooks/incompatible-library).
+  const label = useWatch({control: form.control, name: 'label'});
 
     // Auto-generate name when label changes
   useEffect(() => {

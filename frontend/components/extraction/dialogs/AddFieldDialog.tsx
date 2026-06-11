@@ -12,7 +12,7 @@
  */
 
 import {useEffect, useState} from 'react';
-import {useForm} from 'react-hook-form';
+import {useForm, useWatch} from 'react-hook-form';
 import {zodResolver} from '@hookform/resolvers/zod';
 import {
     Dialog,
@@ -88,8 +88,10 @@ export function AddFieldDialog({
     },
   });
 
-  const fieldType = form.watch('field_type');
-  const label = form.watch('label');
+  // useWatch instead of form.watch — the latter is incompatible with the
+  // React Compiler (react-hooks/incompatible-library).
+  const fieldType = useWatch({control: form.control, name: 'field_type'});
+  const label = useWatch({control: form.control, name: 'label'});
 
     // Auto-generate name when label changes
   useEffect(() => {

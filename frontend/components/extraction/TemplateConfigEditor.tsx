@@ -37,12 +37,6 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
   const [removingSectionName, setRemovingSectionName] = useState('');
   const [showImportDialog, setShowImportDialog] = useState(false);
 
-  useEffect(() => {
-    if (projectId && templateId) {
-      loadEntityTypes();
-    }
-  }, [projectId, templateId]);
-
   const loadEntityTypes = async () => {
     setLoading(true);
     
@@ -90,6 +84,13 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (projectId && templateId) {
+      // Microtask so the loader's setState calls run in an async callback.
+      queueMicrotask(() => void loadEntityTypes());
+    }
+  }, [projectId, templateId]);
 
   const handleStartEdit = (entityType: ExtractionEntityType) => {
     setEditingId(entityType.id);
