@@ -163,7 +163,24 @@ celery_app.Task = LoggedTask
 # so a NotRegistered branch in on_failure alone would be dead code in
 # production. Keep both paths: the signal is the runtime hook, the
 # on_failure branch is defense in depth in case Celery changes routing.
-from celery.signals import task_unknown  # noqa: E402
+from celery.signals import task_unknown, worker_process_init  # noqa: E402
+
+
+@worker_process_init.connect(weak=False)
+def _configure_worker_observability(**_kwargs: Any) -> None:
+    """Logfire + logging bootstrap for each forked worker child.
+
+    Must run post-fork (``worker_process_init``, not ``worker_init``):
+    BatchSpanProcessor's export thread does not survive the prefork
+    fork, so configuring in the parent silently drops every task span.
+    Lazy imports keep the API process (which imports this module for
+    ``.delay()``) free of worker-side configuration.
+    """
+    from app.core.logging import configure_logging
+    from app.llm.observability import configure_observability
+
+    configure_observability(service_name="prumo-worker")
+    configure_logging()
 
 
 @task_unknown.connect

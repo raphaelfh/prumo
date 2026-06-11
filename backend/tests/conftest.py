@@ -10,6 +10,8 @@ import uuid
 from collections.abc import AsyncGenerator, Generator
 from unittest.mock import AsyncMock, MagicMock
 
+import logfire
+import pydantic_ai.models
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -22,10 +24,17 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import NullPool
 
-from app.core.config import settings
-from app.core.deps import get_db, get_supabase
-from app.core.security import TokenPayload, get_current_user
-from app.main import app
+# These guards must execute before any `app.*` import:
+# - logfire: disable the exporter so tests never emit spans, even when
+#   LOGFIRE_TOKEN is set in the developer's environment.
+# - pydantic-ai: block real model requests; tests use TestModel/FunctionModel.
+logfire.configure(send_to_logfire=False, console=False)
+pydantic_ai.models.ALLOW_MODEL_REQUESTS = False
+
+from app.core.config import settings  # noqa: E402
+from app.core.deps import get_db, get_supabase  # noqa: E402
+from app.core.security import TokenPayload, get_current_user  # noqa: E402
+from app.main import app  # noqa: E402
 
 # =================== EVENT LOOP ===================
 

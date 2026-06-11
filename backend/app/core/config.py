@@ -108,11 +108,6 @@ class Settings(BaseSettings):
     FEEDBACK_MAX_IMAGE_BYTES: int = 10 * 1024 * 1024
     FEEDBACK_MAX_VIDEO_BYTES: int = 50 * 1024 * 1024
 
-    # =================== LANGSMITH (OPCIONAL) ===================
-    LANGCHAIN_TRACING_V2: bool = False
-    LANGCHAIN_API_KEY: str | None = None
-    LANGCHAIN_PROJECT: str = "review-hub"
-
     @property
     def supabase_env(self) -> str:
         """Return o ambiente do Supabase (local | production)."""
