@@ -4,7 +4,7 @@ User API Key Schemas.
 Schemas Pydantic for gerenciamento de API keys of the usuarios.
 """
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -98,3 +98,47 @@ class CreateAPIKeyResponse(BaseModel):
     is_default: bool = Field(alias="isDefault")
 
     model_config = ConfigDict(populate_by_name=True)
+
+
+class ListAPIKeysData(BaseModel):
+    """Payload de ``GET /user-api-keys``."""
+
+    keys: list[APIKeyResponse]
+
+
+class UpdateAPIKeyResult(BaseModel):
+    """Payload de ``PATCH /user-api-keys/{id}``."""
+
+    id: str
+    updated: bool
+
+
+class DeleteAPIKeyResult(BaseModel):
+    """Payload de ``DELETE /user-api-keys/{id}``."""
+
+    id: str
+    deleted: bool
+
+
+class ProviderInfo(BaseModel):
+    """One supported BYOK provider (public catalogue)."""
+
+    id: str
+    name: str
+    description: str
+    docs_url: str = Field(alias="docsUrl")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ListProvidersData(BaseModel):
+    """Payload de ``GET /user-api-keys/providers``."""
+
+    providers: list[ProviderInfo]
+
+
+class KeyValidationResult(BaseModel):
+    """Payload de ``POST /user-api-keys/{id}/validate``."""
+
+    status: Literal["valid", "invalid", "pending"]
+    message: str

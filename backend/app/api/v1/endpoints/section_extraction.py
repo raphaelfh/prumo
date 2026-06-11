@@ -6,7 +6,6 @@ Suporta extraction individual or em batch de todas as sections.
 """
 
 from time import perf_counter
-from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -20,6 +19,7 @@ from app.schemas.common import ApiResponse
 from app.schemas.extraction import (
     BatchSectionResult,
     SectionExtractionRequest,
+    SectionExtractionResponseData,
     SingleSectionResult,
 )
 from app.services.api_key_service import APIKeyService
@@ -64,7 +64,7 @@ async def _check_request_scope(
 
 @router.post(
     "",
-    response_model=ApiResponse,
+    response_model=ApiResponse[SectionExtractionResponseData],
     summary="Extrair section(oes) de template",
     description="Extrai data de uma section especifica or todas as sections de um modelo.",
 )
@@ -76,7 +76,7 @@ async def extract_section(
     user: CurrentUser,
     supabase: SupabaseClient,
     current_user_sub: UUID = Depends(get_current_user_sub),
-) -> ApiResponse[dict[str, Any]]:
+) -> ApiResponse[SectionExtractionResponseData]:
     """
     Executa extraction de section(oes) de um template.
 
@@ -163,7 +163,7 @@ async def extract_section(
                 endpoint_duration_ms=(perf_counter() - endpoint_start) * 1000,
             )
 
-            response_data = SingleSectionResult(
+            response_data: SectionExtractionResponseData = SingleSectionResult(
                 extraction_run_id=single_result.extraction_run_id,
                 entity_type_id=single_result.entity_type_id,
                 suggestions_created=single_result.suggestions_created,
@@ -171,7 +171,7 @@ async def extract_section(
                 tokens_completion=single_result.tokens_completion,
                 tokens_total=single_result.tokens_total,
                 duration_ms=single_result.duration_ms,
-            ).model_dump(by_alias=True)
+            )
         elif payload.run_id is not None:
             qa_result = await service.extract_for_run(
                 run_id=payload.run_id,
@@ -205,7 +205,7 @@ async def extract_section(
                 total_tokens_used=qa_result.total_tokens_used,
                 duration_ms=qa_result.duration_ms,
                 sections=qa_result.sections,
-            ).model_dump(by_alias=True)
+            )
         else:
             # ``extract_all_sections`` (validator forces parent_instance_id).
             batch_result = await service.extract_all_sections(
@@ -243,7 +243,7 @@ async def extract_section(
                 total_tokens_used=batch_result.total_tokens_used,
                 duration_ms=batch_result.duration_ms,
                 sections=batch_result.sections,
-            ).model_dump(by_alias=True)
+            )
 
         return ApiResponse(ok=True, data=response_data, trace_id=trace_id)
 
