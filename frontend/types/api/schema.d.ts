@@ -749,6 +749,30 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * APIKeyResponse
+         * @description Resposta with data de uma API key (sem a key em si).
+         */
+        APIKeyResponse: {
+            /** Createdat */
+            createdAt: string;
+            /** Id */
+            id: string;
+            /** Isactive */
+            isActive: boolean;
+            /** Isdefault */
+            isDefault: boolean;
+            /** Keyname */
+            keyName: string | null;
+            /** Lastusedat */
+            lastUsedAt: string | null;
+            /** Lastvalidatedat */
+            lastValidatedAt: string | null;
+            /** Provider */
+            provider: string;
+            /** Validationstatus */
+            validationStatus: string | null;
+        };
         /** AdvanceStageRequest */
         AdvanceStageRequest: {
             /** Target Stage */
@@ -769,6 +793,26 @@ export interface components {
              * @description Dados da resposta
              */
             data?: unknown | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[Annotated[Union[SingleSectionResult, BatchSectionResult], FieldInfo(annotation=NoneType, required=True, discriminator='mode')]] */
+        ApiResponse_Annotated_Union_SingleSectionResult__BatchSectionResult___FieldInfo_annotation_NoneType__required_True__discriminator__mode____: {
+            /**
+             * Data
+             * @description Dados da resposta
+             */
+            data?: (components["schemas"]["SingleSectionResult"] | components["schemas"]["BatchSectionResult"]) | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -816,10 +860,44 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[CreateAPIKeyResponse] */
+        ApiResponse_CreateAPIKeyResponse_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["CreateAPIKeyResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[CreateModelHierarchyResponse] */
         ApiResponse_CreateModelHierarchyResponse_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["CreateModelHierarchyResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[DeleteAPIKeyResult] */
+        ApiResponse_DeleteAPIKeyResult_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["DeleteAPIKeyResult"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -905,6 +983,74 @@ export interface components {
         ApiResponse_HitlConfigRead_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["HitlConfigRead"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[KeyValidationResult] */
+        ApiResponse_KeyValidationResult_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["KeyValidationResult"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[ListAPIKeysData] */
+        ApiResponse_ListAPIKeysData_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ListAPIKeysData"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[ListProvidersData] */
+        ApiResponse_ListProvidersData_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ListProvidersData"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[ModelExtractionResult] */
+        ApiResponse_ModelExtractionResult_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ModelExtractionResult"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -1037,6 +1183,43 @@ export interface components {
              */
             trace_id?: string | null;
         };
+        /** ApiResponse[Union[SaveCredentialsResponse, TestConnectionResponse, ListCollectionsResponse, FetchItemsResponse, FetchAttachmentsResponse, DownloadAttachmentResponse, SyncCollectionResponse, SyncStatusResponse, SyncRetryFailedResponse, SyncItemResultsResponse]] */
+        ApiResponse_Union_SaveCredentialsResponse__TestConnectionResponse__ListCollectionsResponse__FetchItemsResponse__FetchAttachmentsResponse__DownloadAttachmentResponse__SyncCollectionResponse__SyncStatusResponse__SyncRetryFailedResponse__SyncItemResultsResponse__: {
+            /**
+             * Data
+             * @description Dados da resposta
+             */
+            data?: components["schemas"]["SaveCredentialsResponse"] | components["schemas"]["TestConnectionResponse"] | components["schemas"]["ListCollectionsResponse"] | components["schemas"]["FetchItemsResponse"] | components["schemas"]["FetchAttachmentsResponse"] | components["schemas"]["DownloadAttachmentResponse"] | components["schemas"]["SyncCollectionResponse"] | components["schemas"]["SyncStatusResponse"] | components["schemas"]["SyncRetryFailedResponse"] | components["schemas"]["SyncItemResultsResponse"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[UpdateAPIKeyResult] */
+        ApiResponse_UpdateAPIKeyResult_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["UpdateAPIKeyResult"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
         /** ApiResponse[UpdateTemplateActiveResponse] */
         ApiResponse_UpdateTemplateActiveResponse_: {
             /** @description Dados da resposta */
@@ -1075,6 +1258,36 @@ export interface components {
              * @description rastreamento
              */
             trace_id?: string | null;
+        };
+        /**
+         * BatchSectionResult
+         * @description Resultado de extraction em batch.
+         */
+        BatchSectionResult: {
+            /** Durationms */
+            durationMs: number;
+            /** Extractionrunid */
+            extractionRunId: string;
+            /** Failedsections */
+            failedSections: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            mode: "batch";
+            /**
+             * Sections
+             * @default []
+             */
+            sections: components["schemas"]["SectionOutcome"][];
+            /** Successfulsections */
+            successfulSections: number;
+            /** Totalsections */
+            totalSections: number;
+            /** Totalsuggestionscreated */
+            totalSuggestionsCreated: number;
+            /** Totaltokensused */
+            totalTokensUsed: number;
         };
         /** CloneTemplateRequest */
         CloneTemplateRequest: {
@@ -1195,6 +1408,22 @@ export interface components {
              * @default true
              */
             validateKey: boolean;
+        };
+        /**
+         * CreateAPIKeyResponse
+         * @description Resposta apos criar API key.
+         */
+        CreateAPIKeyResponse: {
+            /** Id */
+            id: string;
+            /** Isdefault */
+            isDefault: boolean;
+            /** Provider */
+            provider: string;
+            /** Validationmessage */
+            validationMessage: string | null;
+            /** Validationstatus */
+            validationStatus: string;
         };
         /** CreateConsensusRequest */
         CreateConsensusRequest: {
@@ -1330,6 +1559,42 @@ export interface components {
              * Format: uuid
              */
             project_template_id: string;
+        };
+        /**
+         * CreatedModelInfo
+         * @description One prediction-model instance created by model extraction.
+         */
+        CreatedModelInfo: {
+            /** Instanceid */
+            instanceId: string;
+            /** Modelname */
+            modelName: string;
+            /** Modellingmethod */
+            modellingMethod?: string | null;
+        };
+        /**
+         * DeleteAPIKeyResult
+         * @description Payload de ``DELETE /user-api-keys/{id}``.
+         */
+        DeleteAPIKeyResult: {
+            /** Deleted */
+            deleted: boolean;
+            /** Id */
+            id: string;
+        };
+        /**
+         * DownloadAttachmentResponse
+         * @description Response de download de attachment.
+         */
+        DownloadAttachmentResponse: {
+            /** Base64 */
+            base64: string;
+            /** Content Type */
+            content_type: string;
+            /** Filename */
+            filename: string;
+            /** Size */
+            size: number;
         };
         /**
          * ErrorDetail
@@ -1584,6 +1849,33 @@ export interface components {
              */
             type: "bug" | "suggestion" | "question" | "other";
         };
+        /**
+         * FetchAttachmentsResponse
+         * @description Response de buscar attachments.
+         */
+        FetchAttachmentsResponse: {
+            /** Attachments */
+            attachments: {
+                [key: string]: unknown;
+            }[];
+        };
+        /**
+         * FetchItemsResponse
+         * @description Response de buscar items.
+         */
+        FetchItemsResponse: {
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+            /** Items */
+            items: {
+                [key: string]: unknown;
+            }[];
+            /** Total Results */
+            total_results?: number | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1644,6 +1936,45 @@ export interface components {
             scope_kind: "project" | "template" | "system_default";
         };
         /**
+         * KeyValidationResult
+         * @description Payload de ``POST /user-api-keys/{id}/validate``.
+         */
+        KeyValidationResult: {
+            /** Message */
+            message: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "valid" | "invalid" | "pending";
+        };
+        /**
+         * ListAPIKeysData
+         * @description Payload de ``GET /user-api-keys``.
+         */
+        ListAPIKeysData: {
+            /** Keys */
+            keys: components["schemas"]["APIKeyResponse"][];
+        };
+        /**
+         * ListCollectionsResponse
+         * @description Response de listar collections.
+         */
+        ListCollectionsResponse: {
+            /** Collections */
+            collections: {
+                [key: string]: unknown;
+            }[];
+        };
+        /**
+         * ListProvidersData
+         * @description Payload de ``GET /user-api-keys/providers``.
+         */
+        ListProvidersData: {
+            /** Providers */
+            providers: components["schemas"]["ProviderInfo"][];
+        };
+        /**
          * ModelExtractionRequest
          * @description Request for extraction de modelos de predicao.
          */
@@ -1670,6 +2001,37 @@ export interface components {
              * Format: uuid
              */
             templateId: string;
+        };
+        /**
+         * ModelExtractionResult
+         * @description Resultado da extraction de modelos.
+         */
+        ModelExtractionResult: {
+            /** Childinstancescreated */
+            childInstancesCreated: number;
+            /** Extractionrunid */
+            extractionRunId: string;
+            metadata: components["schemas"]["ModelExtractionRunStats"];
+            /** Modelscreated */
+            modelsCreated: components["schemas"]["CreatedModelInfo"][];
+            /** Totalmodels */
+            totalModels: number;
+        };
+        /**
+         * ModelExtractionRunStats
+         * @description Timing/token metadata attached to a model-extraction response.
+         */
+        ModelExtractionRunStats: {
+            /** Duration */
+            duration: number;
+            /** Modelsfound */
+            modelsFound: number;
+            /** Tokenscompletion */
+            tokensCompletion: number;
+            /** Tokensprompt */
+            tokensPrompt: number;
+            /** Tokenstotal */
+            tokensTotal: number;
         };
         /**
          * ModelHierarchyChildResponse
@@ -1778,6 +2140,20 @@ export interface components {
             source: string;
             /** Source User Id */
             source_user_id: string | null;
+        };
+        /**
+         * ProviderInfo
+         * @description One supported BYOK provider (public catalogue).
+         */
+        ProviderInfo: {
+            /** Description */
+            description: string;
+            /** Docsurl */
+            docsUrl: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
         };
         /** PublishedStateResponse */
         PublishedStateResponse: {
@@ -2080,6 +2456,14 @@ export interface components {
             run: components["schemas"]["RunSummaryResponse"];
         };
         /**
+         * SaveCredentialsResponse
+         * @description Response for saving credentials.
+         */
+        SaveCredentialsResponse: {
+            /** Integration Id */
+            integration_id: string;
+        };
+        /**
          * SectionExtractionRequest
          * @description Request for extraction de section.
          */
@@ -2133,6 +2517,64 @@ export interface components {
             templateId: string;
         };
         /**
+         * SectionOutcome
+         * @description Per-section outcome inside a batch extraction result.
+         *
+         *     Wire format is snake_case on purpose — these items were emitted as
+         *     raw service dicts before being typed, and the keys are preserved
+         *     verbatim. Failure items carry ``error`` and omit the counters.
+         */
+        SectionOutcome: {
+            /** Entity Type Id */
+            entity_type_id: string;
+            /** Entity Type Name */
+            entity_type_name?: string | null;
+            /** Error */
+            error?: string | null;
+            /**
+             * Skipped
+             * @default false
+             */
+            skipped: boolean;
+            /** Success */
+            success: boolean;
+            /**
+             * Suggestions Created
+             * @default 0
+             */
+            suggestions_created: number;
+            /**
+             * Tokens Used
+             * @default 0
+             */
+            tokens_used: number;
+        };
+        /**
+         * SingleSectionResult
+         * @description Resultado de extraction de section unica.
+         */
+        SingleSectionResult: {
+            /** Durationms */
+            durationMs: number;
+            /** Entitytypeid */
+            entityTypeId: string;
+            /** Extractionrunid */
+            extractionRunId: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            mode: "single";
+            /** Suggestionscreated */
+            suggestionsCreated: number;
+            /** Tokenscompletion */
+            tokensCompletion: number;
+            /** Tokensprompt */
+            tokensPrompt: number;
+            /** Tokenstotal */
+            tokensTotal: number;
+        };
+        /**
          * SkippedFileEntry
          * @description Input for file that cannot be included in the export.
          */
@@ -2146,6 +2588,110 @@ export interface components {
             reason: string;
             /** Storage Key */
             storage_key: string;
+        };
+        /** SyncCollectionResponse */
+        SyncCollectionResponse: {
+            /** Message */
+            message: string;
+            /** Status */
+            status: string;
+            /** Syncrunid */
+            syncRunId: string;
+        };
+        /** SyncCountsResponse */
+        SyncCountsResponse: {
+            /** Failed */
+            failed: number;
+            /** Persisted */
+            persisted: number;
+            /** Reactivated */
+            reactivated: number;
+            /** Removedatsource */
+            removedAtSource: number;
+            /** Skipped */
+            skipped: number;
+            /** Totalreceived */
+            totalReceived: number;
+            /** Updated */
+            updated: number;
+        };
+        /** SyncItemResultEntry */
+        SyncItemResultEntry: {
+            /** Articleid */
+            articleId?: string | null;
+            /** Authorityruleapplied */
+            authorityRuleApplied?: string | null;
+            /** Errorcode */
+            errorCode?: string | null;
+            /** Errormessage */
+            errorMessage?: string | null;
+            /**
+             * Processedat
+             * Format: date-time
+             */
+            processedAt: string;
+            /** Status */
+            status: string;
+            /** Zoteroitemkey */
+            zoteroItemKey?: string | null;
+        };
+        /** SyncItemResultsResponse */
+        SyncItemResultsResponse: {
+            /** Items */
+            items: components["schemas"]["SyncItemResultEntry"][];
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+            /** Total */
+            total: number;
+        };
+        /** SyncRetryFailedResponse */
+        SyncRetryFailedResponse: {
+            /** Queueditems */
+            queuedItems: number;
+            /** Retryofsyncrunid */
+            retryOfSyncRunId: string;
+            /** Syncrunid */
+            syncRunId: string;
+        };
+        /** SyncStatusResponse */
+        SyncStatusResponse: {
+            /** Completedat */
+            completedAt?: string | null;
+            counts: components["schemas"]["SyncCountsResponse"];
+            /**
+             * Startedat
+             * Format: date-time
+             */
+            startedAt: string;
+            /** Status */
+            status: string;
+            /** Syncrunid */
+            syncRunId: string;
+            /** Traceid */
+            traceId: string;
+        };
+        /**
+         * TestConnectionResponse
+         * @description Response de teste de conexao.
+         */
+        TestConnectionResponse: {
+            /**
+             * Access
+             * @default {}
+             */
+            access: {
+                [key: string]: unknown;
+            };
+            /** Error */
+            error?: string | null;
+            /** Success */
+            success: boolean;
+            /** User Id */
+            user_id?: string | null;
+            /** User Name */
+            user_name?: string | null;
         };
         /**
          * UpdateAPIKeyRequest
@@ -2167,6 +2713,16 @@ export interface components {
              * @description Nome for identificar a key
              */
             keyName?: string | null;
+        };
+        /**
+         * UpdateAPIKeyResult
+         * @description Payload de ``PATCH /user-api-keys/{id}``.
+         */
+        UpdateAPIKeyResult: {
+            /** Id */
+            id: string;
+            /** Updated */
+            updated: boolean;
         };
         /** UpdateTemplateActiveRequest */
         UpdateTemplateActiveRequest: {
@@ -2440,7 +2996,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiResponse"];
+                    "application/json": components["schemas"]["ApiResponse_ModelExtractionResult_"];
                 };
             };
             /** @description Validation Error */
@@ -2506,7 +3062,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiResponse"];
+                    "application/json": components["schemas"]["ApiResponse_Annotated_Union_SingleSectionResult__BatchSectionResult___FieldInfo_annotation_NoneType__required_True__discriminator__mode____"];
                 };
             };
             /** @description Validation Error */
@@ -3332,7 +3888,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiResponse"];
+                    "application/json": components["schemas"]["ApiResponse_ListAPIKeysData_"];
                 };
             };
             /** @description Validation Error */
@@ -3365,7 +3921,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiResponse"];
+                    "application/json": components["schemas"]["ApiResponse_CreateAPIKeyResponse_"];
                 };
             };
             /** @description Validation Error */
@@ -3394,7 +3950,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiResponse"];
+                    "application/json": components["schemas"]["ApiResponse_ListProvidersData_"];
                 };
             };
         };
@@ -3416,7 +3972,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiResponse"];
+                    "application/json": components["schemas"]["ApiResponse_DeleteAPIKeyResult_"];
                 };
             };
             /** @description Validation Error */
@@ -3451,7 +4007,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiResponse"];
+                    "application/json": components["schemas"]["ApiResponse_UpdateAPIKeyResult_"];
                 };
             };
             /** @description Validation Error */
@@ -3482,7 +4038,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiResponse"];
+                    "application/json": components["schemas"]["ApiResponse_KeyValidationResult_"];
                 };
             };
             /** @description Validation Error */
@@ -3519,7 +4075,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ApiResponse"];
+                    "application/json": components["schemas"]["ApiResponse_Union_SaveCredentialsResponse__TestConnectionResponse__ListCollectionsResponse__FetchItemsResponse__FetchAttachmentsResponse__DownloadAttachmentResponse__SyncCollectionResponse__SyncStatusResponse__SyncRetryFailedResponse__SyncItemResultsResponse__"];
                 };
             };
             /** @description Validation Error */

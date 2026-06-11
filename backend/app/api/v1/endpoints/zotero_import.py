@@ -25,9 +25,14 @@ from app.core.transactions import UnitOfWork
 from app.schemas.common import ApiResponse
 from app.schemas.zotero import (
     DownloadAttachmentRequest,
+    DownloadAttachmentResponse,
     FetchAttachmentsRequest,
+    FetchAttachmentsResponse,
     FetchItemsRequest,
+    FetchItemsResponse,
+    ListCollectionsResponse,
     SaveCredentialsRequest,
+    SaveCredentialsResponse,
     SyncCollectionRequest,
     SyncCollectionResponse,
     SyncCountsResponse,
@@ -38,6 +43,8 @@ from app.schemas.zotero import (
     SyncRetryFailedResponse,
     SyncStatusRequest,
     SyncStatusResponse,
+    TestConnectionResponse,
+    ZoteroActionData,
 )
 from app.services.zotero_import_service import ZoteroImportService
 from app.services.zotero_service import ZoteroService
@@ -83,7 +90,7 @@ async def _assert_project_member(db: AsyncSession, project_id: UUID, user_sub: s
 
 @router.post(
     "/{action}",
-    response_model=ApiResponse,
+    response_model=ApiResponse[ZoteroActionData],
     summary="Executar acao Zotero",
     description="Endpoint unificado for todas as acoes de integracao with Zotero.",
 )
@@ -95,7 +102,7 @@ async def zotero_action(
     user: CurrentUser,
     supabase: SupabaseClient,
     body: dict[str, Any] | None = None,
-) -> ApiResponse[dict[str, Any]]:
+) -> ApiResponse[ZoteroActionData]:
     """
     Executa uma acao de integracao with Zotero.
 
@@ -120,36 +127,44 @@ async def zotero_action(
         match action:
             case ZoteroAction.SAVE_CREDENTIALS:
                 creds = SaveCredentialsRequest(**body)
-                result = await service.save_credentials(
-                    zotero_user_id=creds.zotero_user_id,
-                    api_key=creds.api_key,
-                    library_type=creds.library_type,
+                result = SaveCredentialsResponse.model_validate(
+                    await service.save_credentials(
+                        zotero_user_id=creds.zotero_user_id,
+                        api_key=creds.api_key,
+                        library_type=creds.library_type,
+                    )
                 )
                 # Explicit commit to persist credentials
                 await db.commit()
 
             case ZoteroAction.TEST_CONNECTION:
-                result = await service.test_connection()
+                result = TestConnectionResponse.model_validate(await service.test_connection())
 
             case ZoteroAction.LIST_COLLECTIONS:
-                result = await service.list_collections()
+                result = ListCollectionsResponse.model_validate(await service.list_collections())
 
             case ZoteroAction.FETCH_ITEMS:
                 items_req = FetchItemsRequest(**body)
-                result = await service.fetch_items(
-                    collection_key=items_req.collection_key,
-                    limit=items_req.limit,
-                    start=items_req.start,
+                result = FetchItemsResponse.model_validate(
+                    await service.fetch_items(
+                        collection_key=items_req.collection_key,
+                        limit=items_req.limit,
+                        start=items_req.start,
+                    )
                 )
 
             case ZoteroAction.FETCH_ATTACHMENTS:
                 attach_req = FetchAttachmentsRequest(**body)
-                result = await service.fetch_attachments(item_key=attach_req.item_key)
+                result = FetchAttachmentsResponse.model_validate(
+                    await service.fetch_attachments(item_key=attach_req.item_key)
+                )
 
             case ZoteroAction.DOWNLOAD_ATTACHMENT:
                 download_req = DownloadAttachmentRequest(**body)
-                result = await service.download_attachment(
-                    attachment_key=download_req.attachment_key,
+                result = DownloadAttachmentResponse.model_validate(
+                    await service.download_attachment(
+                        attachment_key=download_req.attachment_key,
+                    )
                 )
 
             case ZoteroAction.SYNC_COLLECTION:
