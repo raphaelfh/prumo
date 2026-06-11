@@ -48,8 +48,12 @@ export function useKeyboardShortcuts({
   enabled,
   sequenceTimeoutMs = DEFAULT_SEQUENCE_TIMEOUT,
 }: UseKeyboardShortcutsOptions): void {
+  // Latest-bindings mirror for the keydown listener; written in an effect
+  // (refs must not be written during render).
   const bindingsRef = useRef(bindings);
-  bindingsRef.current = bindings;
+  useEffect(() => {
+    bindingsRef.current = bindings;
+  }, [bindings]);
   const pendingPrefixRef = useRef<string | null>(null);
   const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 

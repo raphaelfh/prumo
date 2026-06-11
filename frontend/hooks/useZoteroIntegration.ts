@@ -122,7 +122,8 @@ export function useZoteroIntegration() {
 
     // Load integration on mount
   useEffect(() => {
-    loadIntegration();
+    // Microtask so the loader's setState calls run in an async callback.
+    queueMicrotask(() => void loadIntegration());
   }, [loadIntegration]);
 
   return {
