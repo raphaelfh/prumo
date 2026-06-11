@@ -8,6 +8,7 @@
  * header.
  */
 
+import type { ReactElement } from 'react';
 import { Badge } from '@/components/ui/badge';
 import {
   Tooltip,
@@ -151,7 +152,7 @@ export function HeaderStatusBadges({
       label: t('extraction', 'headerStatus'),
       content: saveStatusBadge,
     },
-  ].filter(Boolean) as Array<{ label: string; content: JSX.Element }>;
+  ].filter(Boolean) as Array<{ label: string; content: ReactElement }>;
 
   if (badges.length === 0) {
     return null;

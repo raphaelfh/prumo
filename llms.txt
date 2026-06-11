@@ -1,7 +1,7 @@
 # prumo — entry point for AI agents
 
 Prumo is a systematic-review / meta-analysis platform. Backend: Python 3.11 +
-FastAPI + Celery + Postgres (Supabase). Frontend: React 18 + TypeScript + Vite.
+FastAPI + Celery + Postgres (Supabase). Frontend: React 19 + TypeScript + Vite.
 Hosting: Railway (backend + worker + Redis) + Vercel (frontend) + Supabase
 (Postgres + Auth + Storage).
 

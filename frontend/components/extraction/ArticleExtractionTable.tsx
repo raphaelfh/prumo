@@ -192,7 +192,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
 
     // Ref to track last visited route (avoid unnecessary refresh)
   const lastPathRef = useRef<string>('');
-  const loadArticlesRef = useRef<() => Promise<void>>();
+  const loadArticlesRef = useRef<(() => Promise<void>) | undefined>(undefined);
 
     // Hook for batch AI extraction
   const { extractFullAI, loading: isExtracting } = useFullAIExtraction({

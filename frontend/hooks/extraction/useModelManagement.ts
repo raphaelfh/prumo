@@ -75,7 +75,7 @@ export function useModelManagement({
   const activeModelIdRef = useRef<string | null>(null);
 
     // Ref to store loadModels and avoid loops in useEffect
-  const loadModelsRef = useRef<() => Promise<void>>();
+  const loadModelsRef = useRef<(() => Promise<void>) | undefined>(undefined);
 
     // Sync ref with state
   useEffect(() => {

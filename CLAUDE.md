@@ -20,7 +20,7 @@ owner: '@raphaelfh'
 - **Backend**: Python 3.11+, FastAPI, SQLAlchemy 2.0 async, Alembic,
   Celery + Redis, Pydantic v2, structlog. PostgreSQL via Supabase
   (Auth + Storage). Hosted on **Railway** (web + worker + Redis).
-- **Frontend**: TypeScript strict, React 18.3 + Vite, TanStack Query,
+- **Frontend**: TypeScript strict, React 19 + Vite, TanStack Query,
   Zustand, shadcn/Radix, react-hook-form, Zod. In-house i18n at
   `frontend/lib/copy/` (no external i18n lib). Hosted on **Vercel**.
 - **Testing**: pytest (backend), vitest (frontend), Playwright (E2E).

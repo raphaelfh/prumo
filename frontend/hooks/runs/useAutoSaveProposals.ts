@@ -137,7 +137,7 @@ export function useAutoSaveProposals(
   const baselineRef = useRef<Record<string, unknown>>(baselineValues ?? {});
   baselineRef.current = baselineValues ?? {};
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // Stringified last successful write per `${instanceId}_${fieldId}` —
   // the diff check against the current values map.
   const lastSavedByKeyRef = useRef<Record<string, string>>({});
