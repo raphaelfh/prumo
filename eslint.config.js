@@ -21,22 +21,12 @@ export default tseslint.config(
       "react-refresh": reactRefresh,
     },
     rules: {
+      // React Compiler rules from eslint-plugin-react-hooks 7 run at their
+      // recommended error level. The 94-finding debt that once held them at
+      // "warn" was burned down in PRs #260–#265 — keep them at error so new
+      // violations fail CI instead of accumulating.
       ...reactHooks.configs.recommended.rules,
         "react-hooks/exhaustive-deps": "off",
-        // eslint-plugin-react-hooks 7 ships the React Compiler rules at
-        // error level. 94 pre-existing findings (52x set-state-in-effect,
-        // 16x immutability, 9x refs, ...) are real but predate the gate —
-        // surfaced as warnings while the debt burns down (same posture as
-        // the documented mypy debt). New code should not add warnings.
-        "react-hooks/set-state-in-effect": "warn",
-        "react-hooks/immutability": "warn",
-        "react-hooks/refs": "warn",
-        "react-hooks/incompatible-library": "warn",
-        "react-hooks/purity": "warn",
-        "react-hooks/preserve-manual-memoization": "warn",
-        "react-hooks/use-memo": "warn",
-        "react-hooks/static-components": "warn",
-        "react-hooks/globals": "warn",
         "react-refresh/only-export-components": "off",
         "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-unused-vars": ["warn", { 
