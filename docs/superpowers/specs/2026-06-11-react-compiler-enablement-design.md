@@ -12,9 +12,12 @@ owner: '@raphaelfh'
 PRs #260–#265 burned the 94 React Compiler lint findings down to zero,
 and #267 promoted the nine `react-hooks/*` rules to `error`. That work was the
 prerequisite; this is the payoff: enable `babel-plugin-react-compiler` in
-the Vite build so memoization is automatic, and remove the ~290 manual
-memoization sites (`useMemo` ×79, `useCallback` ×211, `React.memo`) that
-the compiler now subsumes.
+the Vite build so memoization is automatic, and remove the ~300 manual
+memoization sites (`useMemo` ×79, `useCallback` ×211, `memo()` ×9+ —
+including a memo-HOC factory in
+`frontend/components/performance/ReactMemoWrapper.tsx`) that the compiler
+now subsumes. The plan regenerates this inventory mechanically before the
+sweep; the counts here are indicative, not contractual.
 
 ## Decisions (approved 2026-06-11)
 
@@ -43,6 +46,13 @@ One PR against `dev`, squash-merged, structured as three review commits:
   toolchain has gained official, stable compiler support, stay on SWC.
   Decision rule: the documented-stable path wins; Babel is the guaranteed
   fallback.
+- **Compilation proof (hard gate before any removal)**: the healthcheck
+  must report the compiled/total component count, and the build output
+  must show compiler artifacts (`react/compiler-runtime` import / `_c(`
+  cache calls) for BOTH a `.tsx` component AND a plain `.ts` hook from
+  `frontend/hooks/` — hooks have no JSX, and a JSX-only Babel include
+  filter would silently leave all 211 `useCallback` hooks uncompiled
+  exactly where commit 2 deletes their manual memoization.
 
 ### Commit 2 — manual memoization sweep
 
@@ -57,15 +67,33 @@ burn-down), running `vitest` per batch locally:
 
 1. The three `memo()` calls with custom comparators (the compiler does not
    replicate `arePropsEqual`).
-2. `useCallback` whose manual deps are intentionally narrower than the
-   values referenced — removal changes the firing cadence of effects that
-   depend on the callback's identity. Audited one by one; when the case is
-   really a "handler that reads fresh props", the correct exit is
-   `useEffectEvent` (stable in React 19.2), not keeping the memo.
+2. `useCallback` **and `useMemo`** whose manual deps are intentionally
+   narrower than the values referenced (`exhaustive-deps` is off
+   repo-wide, so these exist in both) — removal changes the firing
+   cadence of effects that depend on the memoized identity. Triage is
+   mechanical, not manual: run `react-hooks/exhaustive-deps` as a one-off
+   report to split the ~300 sites into "deps match inference (safe
+   mechanical removal)" vs "narrower (individual audit)". When the
+   narrow-deps case is really a "handler that reads fresh props", the
+   correct exit is `useEffectEvent` (stable in React 19.2), not keeping
+   the memo.
 3. Components the compiler healthcheck reports as bailouts (the compiler
    skips what it cannot prove safe; removing manual memo there loses
    memoization entirely). Expected ≈0 given the clean lint, but enumerated
    before the sweep, not assumed.
+4. Plain `memo()` wrappers are unwrapped **only when the healthcheck
+   confirms the parent component compiles** — an uncompiled parent recreates
+   child JSX every render, and unwrapping the child's memo there turns
+   every keystroke into a subtree re-render (FieldInput and
+   ExtractionFormView, the two hottest components, keep their custom
+   comparators under exception 1 regardless).
+5. Context providers with memoized `value` objects are audited nominally
+   (high blast radius: an unmemoized provider value re-renders every
+   consumer) and exercised in the smoke checklist.
+
+`ReactMemoWrapper.tsx` (memo-HOC factory) is evaluated for deletion: with
+the compiler on it is legacy; if callers exist they migrate, if none it is
+removed outright.
 
 ### Commit 3 — derived cleanup + final verification
 
@@ -82,7 +110,9 @@ gate sequence below on the final tree.
 4. `npm run build` — green; bundle-size delta recorded in the PR body
    (informational, not a gate — the compiler adds some code).
 5. `npm run test:e2e:local` — full-stack Playwright (local Supabase;
-   `make db-fresh` if needed; fixtures self-provision).
+   `make db-fresh` if needed; fixtures self-provision). "Green" means the
+   current dev baseline profile (passes + known conditional skips), not an
+   absolute count — no NEW failures or skips attributable to this PR.
 6. Manual smoke on the local preview (`teste@prumo.local`) over the
    memoization-sensitive screens: ExtractionFullScreen (typing latency,
    autosave badge, PDF panel resize), QA full screen (publish flow),
@@ -104,9 +134,14 @@ gate sequence below on the final tree.
 
 ## Rollback
 
-Single squash-merged PR → one-commit revert. Built-in contingency: if the
-sweep (commit 2) fails the smoke test, commit 1 (compiler on, manual memo
-preserved) merges alone and the removal becomes an immediate follow-up PR.
+Single squash-merged PR → one-commit revert. Escalation ladder before a
+full revert: (1) a problematic component gets the `"use no memo"`
+directive (sanctioned per-component opt-out) with a tracking comment;
+(2) if the sweep (commit 2) fails the smoke test wholesale, the branch is
+re-cut at commit 1 (compiler on, manual memo preserved) and opened as its
+own PR, with the removal as an immediate follow-up — note that under
+squash-merge this is a branch re-cut, not a partial merge of the original
+PR.
 
 ## Out of scope
 
