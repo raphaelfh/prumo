@@ -126,12 +126,12 @@ testpaths = ["tests"]
 # --strict-markers: typo'd marker (@pytest.mark.intergration vs integration)
 # now fails the test instead of silently being ignored. Catches the class
 # of "marker doesn't filter what you think it filters" bug.
-addopts = "-v --tb=short --strict-markers"
+addopts = "-v --tb=short --strict-markers -m 'not llm'"
 markers = [
     "e2e: end-to-end tests against live stack",
     "performance: performance-sensitive or long-running tests",
     "integration: integration test requiring db_session + seeded fixtures from tests/integration/conftest.py",
-    "llm: live LLM smoke test; excluded unless PRUMO_LLM_SMOKE=1",
+    "llm: live LLM smoke test; deselected by default via addopts, run with -m llm and PRUMO_LLM_SMOKE=1",
 ]
 
 
