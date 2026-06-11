@@ -113,6 +113,12 @@ test.describe("Extraction refresh UX (smooth update after AI)", () => {
     // dispatch with a wildcard-style sentinel key that exists in the bus
     // contract: test only verifies the pipeline (subscribe → flip → unflip),
     // not a specific field.
+    // A data-bearing page can light a legit highlight on mount (initial
+    // refresh fires a real value-update; HIGHLIGHT_DURATION_MS = 1500).
+    // Wait for quiet before dispatching the sentinel, or the leftover
+    // glow makes the absence assertion below flaky.
+    await expect(page.locator(".field-just-updated")).toHaveCount(0, { timeout: 5000 });
+
     const fakeKey = "00000000-0000-0000-0000-000000000000_00000000-0000-0000-0000-000000000000";
     await dispatchValueUpdate(page, fakeKey);
 
