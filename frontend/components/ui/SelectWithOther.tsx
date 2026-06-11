@@ -1,4 +1,4 @@
-import {useEffect, useMemo, useState} from 'react';
+import {useMemo, useState} from 'react';
 import {Input} from '@/components/ui/input';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
@@ -45,8 +45,6 @@ export function SelectWithOther(props: SelectWithOtherProps) {
         className
     } = props;
 
-  const [internalOtherText, setInternalOtherText] = useState('');
-
     // Detect if "Other" is selected (accepts empty other_text to show input immediately)
   const isOtherSelected = useMemo(() => {
     if (!allowOther || !value) return false;
@@ -54,21 +52,24 @@ export function SelectWithOther(props: SelectWithOtherProps) {
     return isOtherObject(value);
   }, [value, allowOther]);
 
-  // Sincronizar internalOtherText com value (garantir que sempre reflete o valor atual)
-  useEffect(() => {
+  const [internalOtherText, setInternalOtherText] = useState(() =>
+    isOtherSelected && isOtherObject(value) ? (value as any).other_text || '' : '',
+  );
+
+  // Keep internalOtherText mirroring the controlled value
+  // (adjust-during-render instead of an effect to avoid cascading renders).
+  const [prevValue, setPrevValue] = useState(value);
+  if (value !== prevValue) {
+    setPrevValue(value);
     if (isOtherSelected && isOtherObject(value)) {
       const currentText = (value as any).other_text || '';
-        // Only update if different to avoid loops
       if (currentText !== internalOtherText) {
         setInternalOtherText(currentText);
       }
-    } else if (!isOtherSelected) {
-        // Clear only if really not selected
-      if (internalOtherText !== '') {
-        setInternalOtherText('');
-      }
+    } else if (!isOtherSelected && internalOtherText !== '') {
+      setInternalOtherText('');
     }
-  }, [value, isOtherSelected]); // Remover internalOtherText das deps para evitar loop
+  }
 
   const handleSelect = (val: string) => {
     if (allowOther && val === OTHER_OPTION_VALUE) {
