@@ -6,7 +6,7 @@
  * concept) and renders inside a ResizablePanel.
  */
 
-import {memo, useMemo} from 'react';
+import {memo} from 'react';
 import {ResizableHandle, ResizablePanel} from '@/components/ui/resizable';
 import {PrumoPdfViewer, articleFileSource} from '@prumo/pdf-viewer';
 
@@ -20,12 +20,7 @@ function ExtractionPDFPanelComponent({
   articleId,
   showPDF,
 }: ExtractionPDFPanelProps) {
-  // Re-create the lazy source only when articleId changes — stable reference
-  // keeps the viewer's `useEffect([source])` from refiring on parent renders.
-  const source = useMemo(
-    () => (articleId ? articleFileSource(articleId) : null),
-    [articleId],
-  );
+  const source = articleId ? articleFileSource(articleId) : null;
 
   if (!showPDF) {
     return null;
@@ -47,6 +42,7 @@ function ExtractionPDFPanelComponent({
   );
 }
 
+// kept: custom comparator — compiler does not replicate arePropsEqual
 export const ExtractionPDFPanel = memo(
   ExtractionPDFPanelComponent,
   (prev, next) =>

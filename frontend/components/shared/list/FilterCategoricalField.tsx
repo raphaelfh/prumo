@@ -54,14 +54,11 @@ export function FilterCategoricalField({
     };
 
     const q = query.trim().toLowerCase();
-    const filteredOptions = React.useMemo(() => {
-        if (!q) return options;
-        return options.filter(
-            (o) =>
-                o.label.toLowerCase().includes(q) ||
-                o.value.toLowerCase().includes(q)
-        );
-    }, [options, q]);
+    const filteredOptions = !q ? options : options.filter(
+        (o) =>
+            o.label.toLowerCase().includes(q) ||
+            o.value.toLowerCase().includes(q)
+    );
 
     const toggle = (optValue: string) => {
         const set = new Set(value);

@@ -1,4 +1,4 @@
-import {useEffect, useMemo, useRef} from 'react';
+import {useEffect, useRef} from 'react';
 import {usePageHandle} from '../hooks/usePageHandle';
 import {useViewerStore} from '../core/context';
 import './text-layer.css';
@@ -47,10 +47,7 @@ export function TextLayer({pageNumber, className}: TextLayerProps) {
   // in the selector (which would cause render loops).
   const searchMatches = useViewerStore((s) => s.search.matches);
   const activeIndex = useViewerStore((s) => s.search.activeIndex);
-  const matchesOnPage = useMemo(
-    () => searchMatches.filter((m) => m.pageNumber === pageNumber),
-    [searchMatches, pageNumber],
-  );
+  const matchesOnPage = searchMatches.filter((m) => m.pageNumber === pageNumber);
 
   useEffect(() => {
     const container = containerRef.current;

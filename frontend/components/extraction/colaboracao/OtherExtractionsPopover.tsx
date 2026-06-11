@@ -7,7 +7,7 @@
  * @component
  */
 
-import {useMemo} from 'react';
+import type React from 'react';
 import {Popover, PopoverContent, PopoverTrigger,} from '@/components/ui/popover';
 import {Badge} from '@/components/ui/badge';
 import {Separator} from '@/components/ui/separator';
@@ -40,30 +40,22 @@ interface OtherExtractionsPopoverProps {
 export function OtherExtractionsPopover(props: OtherExtractionsPopoverProps) {
   const { fieldId, instanceId, extractions, myValue, onViewComparison, children } = props;
 
-  // Filtrar extrações que têm valor para este campo/instância
-  const relevantExtractions = useMemo(() => {
-    const key = `${instanceId}_${fieldId}`;
-    return extractions
-      .map(ext => ({
-        ...ext,
-        value: ext.values[key]
-      }))
-      .filter(ext => ext.value !== null && ext.value !== undefined);
-  }, [extractions, fieldId, instanceId]);
+  const key = `${instanceId}_${fieldId}`;
+  const relevantExtractions = extractions
+    .map(ext => ({
+      ...ext,
+      value: ext.values[key]
+    }))
+    .filter(ext => ext.value !== null && ext.value !== undefined);
 
-  // Detectar consenso usando biblioteca compartilhada
-  const consensus = useMemo(() => {
+  const consensus = (() => {
     if (relevantExtractions.length === 0) return null;
-
-    // Coletar todos os valores (meu + outros)
     const allValues = [
       myValue,
       ...relevantExtractions.map(ext => ext.value)
     ];
-
-    // Usar função centralizada de detecção de consenso
     return detectConsensus(allValues);
-  }, [relevantExtractions, myValue]);
+  })();
 
   if (relevantExtractions.length === 0) return <>{children}</>;
 

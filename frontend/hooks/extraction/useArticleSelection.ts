@@ -5,7 +5,7 @@
  * filtered selection and state management.
  */
 
-import {useCallback, useMemo, useState} from 'react';
+import {useState} from 'react';
 
 interface UseArticleSelectionOptions {
   /**
@@ -80,27 +80,19 @@ export function useArticleSelection({
 }: UseArticleSelectionOptions): UseArticleSelectionReturn {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-    // Check for active filters
-  const hasActiveFilters = useMemo(() => {
-    return allArticleIds.length !== visibleArticleIds.length ||
-           !visibleArticleIds.every(id => allArticleIds.includes(id));
-  }, [allArticleIds, visibleArticleIds]);
+  const hasActiveFilters =
+    allArticleIds.length !== visibleArticleIds.length ||
+    !visibleArticleIds.every(id => allArticleIds.includes(id));
 
-  // Calcula estados do checkbox do header
-  const isAllSelected = useMemo(() => {
-    if (visibleArticleIds.length === 0) return false;
-    return visibleArticleIds.every(id => selectedIds.has(id));
-  }, [visibleArticleIds, selectedIds]);
+  const isAllSelected =
+    visibleArticleIds.length > 0 && visibleArticleIds.every(id => selectedIds.has(id));
 
-  const isIndeterminate = useMemo(() => {
-    const selectedVisibleCount = visibleArticleIds.filter(id => selectedIds.has(id)).length;
-    return selectedVisibleCount > 0 && selectedVisibleCount < visibleArticleIds.length;
-  }, [visibleArticleIds, selectedIds]);
+  const selectedVisibleCount = visibleArticleIds.filter(id => selectedIds.has(id)).length;
+  const isIndeterminate = selectedVisibleCount > 0 && selectedVisibleCount < visibleArticleIds.length;
 
   const selectedCount = selectedIds.size;
 
-    // Toggle selection of an article
-  const toggleArticle = useCallback((articleId: string) => {
+  const toggleArticle = (articleId: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
       if (next.has(articleId)) {
@@ -110,27 +102,23 @@ export function useArticleSelection({
       }
       return next;
     });
-  }, []);
+  };
 
-    // Select all visible articles
-  const selectAll = useCallback(() => {
+  const selectAll = () => {
     setSelectedIds(new Set(visibleArticleIds));
-  }, [visibleArticleIds]);
+  };
 
-    // Select only visible (filtered) articles
-  const selectFiltered = useCallback(() => {
+  const selectFiltered = () => {
     setSelectedIds(new Set(visibleArticleIds));
-  }, [visibleArticleIds]);
+  };
 
-    // Clear all selection
-  const deselectAll = useCallback(() => {
+  const deselectAll = () => {
     setSelectedIds(new Set());
-  }, []);
+  };
 
-    // Check if an article is selected
-  const isSelected = useCallback((articleId: string) => {
+  const isSelected = (articleId: string) => {
     return selectedIds.has(articleId);
-  }, [selectedIds]);
+  };
 
   return {
     selectedIds,

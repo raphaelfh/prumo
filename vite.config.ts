@@ -1,5 +1,5 @@
 import {defineConfig} from "vite";
-import react from "@vitejs/plugin-react-swc";
+import {reactWithCompiler} from "./vite.shared-plugins";
 import path from "path";
 
 // https://vitejs.dev/config/
@@ -44,7 +44,11 @@ export default defineConfig(({mode: _mode}) => ({
             },
         },
     },
-  plugins: [react()],
+  // React + React Compiler — shared with vitest.config.ts so the test
+  // pipeline can never drift from the app pipeline. To enumerate compiler
+  // bailouts: reactCompilerPreset({panicThreshold: 'all_errors'}) in
+  // vite.shared-plugins.ts, then `npm run build`.
+  plugins: reactWithCompiler(),
   resolve: {
     alias: {
         "@": path.resolve(__dirname, "./frontend"),

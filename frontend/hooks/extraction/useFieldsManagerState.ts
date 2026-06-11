@@ -6,7 +6,7 @@
  * @module hooks/extraction/useFieldsManagerState
  */
 
-import {useCallback, useState} from 'react';
+import {useState} from 'react';
 import type {ExtractionField, FieldValidationResult} from '@/types/extraction';
 
 interface FieldsManagerState {
@@ -60,7 +60,7 @@ const initialState: FieldsManagerState = {
 export function useFieldsManagerState() {
   const [state, setState] = useState<FieldsManagerState>(initialState);
 
-  const startEdit = useCallback((field: ExtractionField) => {
+  const startEdit = (field: ExtractionField) => {
     setState(prev => ({
       ...prev,
       editingId: field.id,
@@ -70,79 +70,79 @@ export function useFieldsManagerState() {
         is_required: field.is_required,
       },
     }));
-  }, []);
+  };
 
-  const updateEditData = useCallback((data: Partial<ExtractionField>) => {
+  const updateEditData = (data: Partial<ExtractionField>) => {
     setState(prev => ({
       ...prev,
       editData: { ...prev.editData, ...data },
     }));
-  }, []);
+  };
 
-  const cancelEdit = useCallback(() => {
+  const cancelEdit = () => {
     setState(prev => ({
       ...prev,
       editingId: null,
       editData: {},
     }));
-  }, []);
+  };
 
-  const setSavingEdit = useCallback((saving: boolean) => {
+  const setSavingEdit = (saving: boolean) => {
     setState(prev => ({ ...prev, savingEdit: saving }));
-  }, []);
+  };
 
-  const openAddDialog = useCallback(() => {
+  const openAddDialog = () => {
     setState(prev => ({ ...prev, showAddDialog: true }));
-  }, []);
+  };
 
-  const closeAddDialog = useCallback(() => {
+  const closeAddDialog = () => {
     setState(prev => ({ ...prev, showAddDialog: false }));
-  }, []);
+  };
 
-  const openEditDialog = useCallback((field: ExtractionField) => {
+  const openEditDialog = (field: ExtractionField) => {
     setState(prev => ({
       ...prev,
       fieldToEdit: field,
       showEditDialog: true,
     }));
-  }, []);
+  };
 
-  const closeEditDialog = useCallback(() => {
+  const closeEditDialog = () => {
     setState(prev => ({
       ...prev,
       showEditDialog: false,
       fieldToEdit: null,
     }));
-  }, []);
+  };
 
-  const openDeleteDialog = useCallback((field: ExtractionField) => {
+  const openDeleteDialog = (field: ExtractionField) => {
     setState(prev => ({
       ...prev,
       fieldToDelete: field,
       validatingDelete: field.id,
     }));
-  }, []);
+  };
 
-  const closeDeleteDialog = useCallback(() => {
+  const closeDeleteDialog = () => {
     setState(prev => ({
       ...prev,
       fieldToDelete: null,
       deleteValidation: null,
       validatingDelete: null,
     }));
-  }, []);
+  };
 
-  const setDeleteValidation = useCallback((validation: FieldValidationResult | null) => {
+  const setDeleteValidation = (validation: FieldValidationResult | null) => {
     setState(prev => ({ ...prev, deleteValidation: validation }));
-  }, []);
+  };
 
-  const setValidatingDelete = useCallback((fieldId: string | null) => {
+  const setValidatingDelete = (fieldId: string | null) => {
     setState(prev => ({ ...prev, validatingDelete: fieldId }));
-  }, []);
+  };
 
-  const resetAll = useCallback(() => {
+  const resetAll = () => {
     setState(initialState);
-  }, []);
+  };
 
   const actions: FieldsManagerActions = {
     startEdit,

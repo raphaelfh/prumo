@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -80,13 +80,11 @@ export function MultiSelectWithOther(props: MultiSelectWithOtherProps) {
     setInternalOthers(others);
   }
 
-  const summary = useMemo(() => {
-    const parts = [...internalSelected];
-    if (allowOther && internalOthers.length > 0) {
-        parts.push(...internalOthers.map((txt) => `${resolvedOtherLabel}: ${txt}`));
-    }
-    return parts.length > 0 ? parts.join(', ') : '';
-  }, [internalSelected, internalOthers, allowOther, resolvedOtherLabel]);
+  const summaryParts = [...internalSelected];
+  if (allowOther && internalOthers.length > 0) {
+    summaryParts.push(...internalOthers.map((txt) => `${resolvedOtherLabel}: ${txt}`));
+  }
+  const summary = summaryParts.length > 0 ? summaryParts.join(', ') : '';
 
   const toggleOption = (opt: string) => {
     const set = new Set(internalSelected);

@@ -3,7 +3,7 @@
  * Single source of truth for activeTab
  */
 
-import React, {createContext, ReactNode, useCallback, useContext, useEffect, useState} from 'react';
+import React, {createContext, ReactNode, useContext, useEffect, useState} from 'react';
 import {useSearchParams} from 'react-router-dom';
 import {t} from '@/lib/copy';
 import type {ProjectSummary} from '@/types/project';
@@ -56,7 +56,7 @@ export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) =>
 
     // Centralized tab change handler
     // Ready for analytics, validations, etc.
-  const changeTab = useCallback((tab: string) => {
+  const changeTab = (tab: string) => {
     setActiveTab(tab);
 
       // Analytics (future)
@@ -64,7 +64,7 @@ export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) =>
 
       // Validations (future)
     // if (hasUnsavedChanges) showConfirmDialog();
-  }, []);
+  };
 
   return (
     <ProjectContext.Provider

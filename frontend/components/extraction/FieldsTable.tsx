@@ -43,6 +43,7 @@ interface FieldsTableProps {
   getFieldTypeLabel: (type: string) => string;
 }
 
+// kept: parent component (FieldsManager) bails out of compilation — memo is load-bearing here
 export const FieldsTable = memo(function FieldsTable({
   fields,
   editingId,

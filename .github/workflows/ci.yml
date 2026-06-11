@@ -469,6 +469,14 @@ jobs:
       - name: Type check (frontend)
         run: npm run typecheck
 
+      # Manual memoization was removed on the assumption the React Compiler
+      # runs (PR enabling it); a config refactor that silently drops the
+      # compiler would degrade runtime perf with everything else green.
+      # The proof transforms a .tsx component and a .ts hook through the
+      # real Vite pipeline (<1s, no port binding).
+      - name: React Compiler pipeline proof
+        run: node scripts/check_compiler_coverage.mjs
+
   # =================== FRONTEND TESTS ===================
   # 68 vitest files / 451 tests. Never ran in CI before 2026-06-10 — the
   # suite had already rotted once (run-detail mock missed the /view move

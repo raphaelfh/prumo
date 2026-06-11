@@ -23,9 +23,9 @@ export type ThemeMode = 'light' | 'dark' | 'system';
 export function useTheme(): {theme: ThemeMode; cycle: () => void} {
   const {theme, setTheme} = useNextTheme();
   const current = (theme ?? 'system') as ThemeMode;
-  const cycle = React.useCallback(() => {
+  const cycle = () => {
     const next: ThemeMode = current === 'light' ? 'dark' : current === 'dark' ? 'system' : 'light';
     setTheme(next);
-  }, [current, setTheme]);
+  };
   return {theme: current, cycle};
 }

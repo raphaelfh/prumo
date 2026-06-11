@@ -7,6 +7,9 @@ const NARROW_BREAKPOINT = 640;
 // matchMedia is an external store; useSyncExternalStore reads it without
 // the mount-effect setState the previous implementation needed.
 function useMediaQuery(query: string): boolean {
+  // kept: useSyncExternalStore re-subscribes whenever `subscribe` changes
+  // identity — that stability is a React API contract, not a perf detail,
+  // so it stays explicit instead of relying on compiler output.
   const subscribe = React.useCallback(
     (onChange: () => void) => {
       const mql = window.matchMedia(query);

@@ -18,7 +18,7 @@
  * the run after each mutation so progress reflects in real time.
  */
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { AlertTriangle, CheckCircle2, Edit3, ShieldCheck } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -308,18 +308,15 @@ export function ConsensusPanel({
   isResolving = false,
   isFinalizing = false,
 }: ConsensusPanelProps) {
-  const resolvedByCoord = useMemo(() => {
+  const resolvedByCoord = (() => {
     const m = new Map<string, ConsensusDecisionResponse>();
     for (const c of runDetail.consensus_decisions) {
       m.set(`${c.instance_id}::${c.field_id}`, c);
     }
     return m;
-  }, [runDetail.consensus_decisions]);
+  })();
 
-  const divergentList = useMemo(
-    () => [...summary.divergentCoords],
-    [summary.divergentCoords],
-  );
+  const divergentList = [...summary.divergentCoords];
 
   const resolvedCount = divergentList.filter((c) => resolvedByCoord.has(c)).length;
   const totalCount = divergentList.length;

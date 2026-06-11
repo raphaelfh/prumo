@@ -7,7 +7,7 @@
  * up top makes that explicit.
  */
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Info, Layers, RotateCcw, ShieldCheck, Users } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -50,14 +50,10 @@ export function ReviewConsensusSection({ projectId }: ReviewConsensusSectionProp
     kind: 'quality_assessment',
   });
 
-  const allTemplates = useMemo(
-    () =>
-      [
-        ...extractionTemplates.templates,
-        ...qaTemplates.templates,
-      ].sort((a, b) => a.name.localeCompare(b.name)),
-    [extractionTemplates.templates, qaTemplates.templates],
-  );
+  const allTemplates = [
+    ...extractionTemplates.templates,
+    ...qaTemplates.templates,
+  ].sort((a, b) => a.name.localeCompare(b.name));
 
   const [draft, setDraft] = useState<HitlConfigPayload>(() =>
     projectConfig.data

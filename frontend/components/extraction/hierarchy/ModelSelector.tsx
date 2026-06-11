@@ -14,7 +14,6 @@
  * @component
  */
 
-import { useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -83,10 +82,7 @@ export function ModelSelector({
   onExtractAllSectionsForAllModels,
   extractingAllSectionsForAllModels = false,
 }: ModelSelectorProps) {
-  // Encontrar modelo ativo
-  const activeModel = useMemo(() => {
-    return models.find(m => m.instanceId === activeModelId);
-  }, [models, activeModelId]);
+  const activeModel = models.find(m => m.instanceId === activeModelId);
 
   // Renderizar badge de progresso (semantic tokens; flips correctly in dark mode)
   const renderProgressBadge = (progress?: Model['progress']) => {

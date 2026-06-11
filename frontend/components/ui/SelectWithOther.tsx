@@ -1,4 +1,4 @@
-import {useMemo, useState} from 'react';
+import {useState} from 'react';
 import {Input} from '@/components/ui/input';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
@@ -46,11 +46,7 @@ export function SelectWithOther(props: SelectWithOtherProps) {
     } = props;
 
     // Detect if "Other" is selected (accepts empty other_text to show input immediately)
-  const isOtherSelected = useMemo(() => {
-    if (!allowOther || !value) return false;
-    // Aceitar objeto com selected='other' mesmo se other_text estiver vazio
-    return isOtherObject(value);
-  }, [value, allowOther]);
+  const isOtherSelected = !allowOther || !value ? false : isOtherObject(value);
 
   const [internalOtherText, setInternalOtherText] = useState(() =>
     isOtherSelected && isOtherObject(value) ? (value as any).other_text || '' : '',
