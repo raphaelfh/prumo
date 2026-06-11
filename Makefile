@@ -350,6 +350,7 @@ e2e-remote: ## Roda smoke E2E remoto do frontend
 lint-backend: ## Executa linter do backend
 	@echo "$(GREEN)🔍 Executando linter do Backend...$(NC)"
 	@cd $(BACKEND_DIR) && uv run ruff check .
+	@cd $(BACKEND_DIR) && uv run ruff format --check .
 
 lint-frontend: ## Executa linter do frontend
 	@echo "$(GREEN)🔍 Executando linter do Frontend...$(NC)"
