@@ -92,7 +92,7 @@ export function useEntityTypePartition<
   // kept: the compiler emits no memoization for a single free-function-call
   // hook body (verified: transform output has no compiler-runtime), so this
   // useMemo is still the only referential-stability guarantee consumers get.
-   
+
   return useMemo(() => partitionEntityTypes(entityTypes), [entityTypes]);
 }
 
