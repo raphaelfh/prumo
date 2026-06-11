@@ -278,6 +278,18 @@ If you (the agent) are receiving AI-generated review on a PR, apply the same sta
 
 ---
 
+## Automated PR review (cloud routine / CI / "review PR N")
+
+Any automated surface reviewing a pull request uses this same skill as
+its single source of truth: the checklist above is WHAT to review;
+`references/automated-pr-review.md` is the orchestration contract —
+how to identify the PR, the dedup rule, the `## Claude review` comment
+format, and the comment-only hard rules. Keep review knowledge HERE,
+never inlined in routine prompts or workflow files (inline copies rot;
+the clone always carries the current version of this skill).
+
+---
+
 ## Workflow integration
 
 - **TDD / feature-dev**: review-after-each-task. Run the verification gate before saying a task is done.
