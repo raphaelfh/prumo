@@ -597,70 +597,133 @@ jobs:
             echo "has_remote=false" >> "$GITHUB_OUTPUT"
           fi
 
-  # =================== E2E SKIP VISIBILITY ===================
-  # The Playwright jobs were silently skipped on 30/30 recent runs
-  # (secrets unset) while CI stayed green — coverage that reads as
-  # existing but doesn't. This job makes the skip loud (warning
-  # annotation on every run summary) without breaking PRs.
-  e2e-skip-warning:
-    name: E2E skip warning
+  # =================== FRONTEND E2E (EPHEMERAL STACK) ===================
+  # Boots the full stack inside the runner — Supabase (CLI/Docker) +
+  # Alembic migrations + seed + FastAPI + built frontend — and runs the
+  # local Playwright projects (60 tests) on every PR. Replaces the
+  # secret-gated job that silently skipped on 30/30 runs: fixtures
+  # self-provision (frontend/e2e/_fixtures/ensure-fixtures.ts), so no
+  # pinned external environment is needed. Orchestration was validated
+  # end-to-end locally before this job was written (2026-06-11).
+  frontend-e2e-ephemeral:
+    name: Frontend E2E (ephemeral stack)
     runs-on: ubuntu-latest
-    needs: [e2e-config]
-    if: needs.e2e-config.outputs.has_local != 'true'
-    steps:
-      - run: |
-          echo "::warning title=Playwright E2E skipped::E2E_API_URL secret is unset — the entire Playwright suite (171 cases) is NOT running in CI. Configure the E2E secrets or stand up an ephemeral stack job."
-
-  # =================== FRONTEND E2E BASELINE ===================
-  frontend-e2e-local:
-    name: Frontend E2E Local
-    runs-on: ubuntu-latest
-    needs: [frontend-build, backend-e2e, e2e-config]
-    if: needs.e2e-config.outputs.has_local == 'true'
-
+    timeout-minutes: 25
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      SUPABASE_URL: http://127.0.0.1:54321
+      ENCRYPTION_KEY: test_encryption_key_32_characters
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      CORS_ORIGINS: "http://127.0.0.1:8080"
+      DEBUG: "true"
     steps:
       - uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install backend deps
+        working-directory: backend
+        run: uv sync --frozen
+
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
-
-      - name: Install dependencies
+      - name: Install frontend deps
         run: npm ci
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Start Supabase (auth/storage migrations auto-applied)
+        run: supabase start -x studio,imgproxy,inbucket,edge-runtime,logflare,vector
+
+      - name: Export Supabase keys
+        run: |
+          supabase status -o env | sed -E 's/^([A-Z_]+)="(.*)"$/\1=\2/' > /tmp/supabase.env
+          {
+            echo "SUPABASE_ANON_KEY=$(grep '^ANON_KEY=' /tmp/supabase.env | cut -d= -f2-)"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$(grep '^SERVICE_ROLE_KEY=' /tmp/supabase.env | cut -d= -f2-)"
+          } >> "$GITHUB_ENV"
+
+      - name: Apply Alembic migrations + seed
+        working-directory: backend
+        run: |
+          uv run alembic upgrade head
+          uv run python -m app.seed
+
+      - name: Boot backend
+        working-directory: backend
+        run: |
+          uv run uvicorn app.main:app --port 8000 > /tmp/e2e-backend.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8000/health
+
+      # Dev server, not build+preview: the suite's UI specs import raw
+      # TS modules in the browser (documented in the specs), which only
+      # the Vite dev server serves. Validated locally: 51 passed /
+      # 9 conditional skips / 0 failed against this exact arrangement.
+      - name: Serve frontend (Vite dev server)
+        env:
+          VITE_SUPABASE_URL: http://127.0.0.1:54321
+          VITE_SUPABASE_ANON_KEY: ${{ env.SUPABASE_ANON_KEY }}
+          VITE_API_URL: http://127.0.0.1:8000
+        run: |
+          npm run dev -- --port 8080 --strictPort > /tmp/e2e-dev.log 2>&1 &
+          for i in $(seq 1 20); do
+            curl -fsS http://127.0.0.1:8080 >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS -o /dev/null http://127.0.0.1:8080
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
-      - name: Run frontend E2E local projects
-        run: npm run test:e2e:local
+      - name: Run local E2E projects
         env:
-          E2E_FRONTEND_URL: ${{ secrets.E2E_FRONTEND_URL }}
-          E2E_API_URL: ${{ secrets.E2E_API_URL }}
-          E2E_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
-          E2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.E2E_SUPABASE_SERVICE_ROLE_KEY }}
-          E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL }}
-          E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
-          E2E_PROJECT_ID: ${{ secrets.E2E_PROJECT_ID }}
-          E2E_ARTICLE_ID: ${{ secrets.E2E_ARTICLE_ID }}
-          E2E_TEMPLATE_ID: ${{ secrets.E2E_TEMPLATE_ID }}
-          E2E_ENTITY_TYPE_ID: ${{ secrets.E2E_ENTITY_TYPE_ID }}
+          E2E_FRONTEND_URL: http://127.0.0.1:8080
+          E2E_API_URL: http://127.0.0.1:8000
+          E2E_SUPABASE_URL: http://127.0.0.1:54321
+          E2E_SUPABASE_ANON_KEY: ${{ env.SUPABASE_ANON_KEY }}
+          E2E_SUPABASE_SERVICE_ROLE_KEY: ${{ env.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npm run test:e2e:local
 
-      - name: Upload Playwright local artifacts
+      - name: Tail service logs on failure
+        if: failure()
+        run: |
+          echo "=== backend ==="; tail -120 /tmp/e2e-backend.log || true
+          echo "=== preview ==="; tail -40 /tmp/e2e-dev.log || true
+
+      - name: Upload Playwright artifacts
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-local-results
+          name: playwright-ephemeral-results
           path: |
-            playwright-report
-            test-results
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore
 
   # =================== FRONTEND E2E REMOTE ===================
   frontend-e2e-remote:
     name: Frontend E2E Remote Smoke
     runs-on: ubuntu-latest
-    needs: [frontend-e2e-local, e2e-config]
+    needs: [frontend-e2e-ephemeral, e2e-config]
     if: needs.e2e-config.outputs.has_remote == 'true'
 
     steps:
