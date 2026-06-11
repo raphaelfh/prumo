@@ -83,12 +83,20 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
     }
   }, [instanceId, fieldId, getHistory]);
 
+  // Clear history on close so next open has fresh data (adjusted during
+  // render instead of via effect).
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (!open) {
+      setHistory([]);
+    }
+  }
+
   useEffect(() => {
     if (open) {
-      loadHistory();
-    } else {
-        // Clear history on close so next open has fresh data
-      setHistory([]);
+      // Microtask so the loader's setState calls run in an async callback.
+      queueMicrotask(() => void loadHistory());
     }
   }, [open, loadHistory]);
 

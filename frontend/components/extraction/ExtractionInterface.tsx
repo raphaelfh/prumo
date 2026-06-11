@@ -91,8 +91,12 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
 
     const {isManager, loading: roleLoading} = useProjectMemberRole(projectId);
 
-    // Load active template when templates are loaded
-  useEffect(() => {
+    // Keep the active template in sync with the template list (adjusted
+    // during render instead of via effect; the null sentinel makes the
+    // first render perform the initial selection).
+  const [prevTemplates, setPrevTemplates] = useState<ProjectTemplate[] | null>(null);
+  if (templates !== prevTemplates) {
+    setPrevTemplates(templates);
     if (templates.length > 0) {
       if (!activeTemplate) {
           // If no active template, select the default
@@ -110,24 +114,25 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
         }
       }
     }
-  }, [templates]);
+  }
 
-    // Non-manager cannot access Configuration: redirect to extraction if they had configuration selected
-    useEffect(() => {
-        if (roleLoading) return;
-        if (!isManager && activeTab === 'configuration') {
-            setActiveTab('extraction');
-        }
-    }, [isManager, roleLoading, activeTab]);
+    // Non-manager cannot access Configuration: clamp back to extraction.
+    // Render-phase invariant — the guard guarantees termination.
+    if (!roleLoading && !isManager && activeTab === 'configuration') {
+        setActiveTab('extraction');
+    }
 
     // Sync activeTab FROM URL when bar (ProjectView) changes extractionTab param
-    useEffect(() => {
+    // (adjusted during render instead of via effect).
+    const [prevSearchParams, setPrevSearchParams] = useState(searchParams);
+    if (searchParams !== prevSearchParams) {
+        setPrevSearchParams(searchParams);
         const urlTab = searchParams.get('extractionTab') as 'extraction' | 'dashboard' | 'configuration' | null;
         const valid = urlTab && ['extraction', 'dashboard', 'configuration'].includes(urlTab);
         if (valid && urlTab !== activeTab) {
             setActiveTab(urlTab);
         }
-    }, [searchParams]);
+    }
 
     // Sync active tab with URL
   useEffect(() => {
@@ -140,15 +145,6 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   const handleTabChange = (tab: 'extraction' | 'dashboard' | 'configuration') => {
     setActiveTab(tab);
   };
-
-    // Load articles and statistics
-  useEffect(() => {
-    if (projectId) {
-      loadArticles();
-    }
-  }, [projectId]);
-
-
 
   const loadArticles = async () => {
     try {
@@ -165,6 +161,14 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
         toast.error(t('extraction', 'errorLoadArticles'));
     }
   };
+
+    // Load articles and statistics
+  useEffect(() => {
+    if (projectId) {
+      // Microtask so the loader's setState calls run in an async callback.
+      queueMicrotask(() => void loadArticles());
+    }
+  }, [projectId]);
 
 
     // Render Dashboard tab

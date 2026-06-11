@@ -109,20 +109,36 @@ export function ExtractionExportDialog({
     const abortRef = useRef<AbortController | null>(null);
 
     // Re-apply smart default + reset transient state each time the
-    // dialog opens (FR-029).
-    useEffect(() => {
-        if (!open) return;
-        setArticleScope(
-            defaultArticleScope ??
-            (selectedIds.length > 0 ? "selected_only" : "current_list"),
-        );
-        setIncludeAiMetadata(false);
-        setAnonymizeReviewerNames(false);
-        setMode("consensus");
-        setReviewerId(user?.id ?? null);
-        setError(null);
-        setSubmitting(false);
-    }, [open, defaultArticleScope, selectedIds.length, user?.id]);
+    // dialog opens (FR-029). Adjusted during render instead of via effect;
+    // the null sentinel makes the first render perform the initial reset.
+    const userId = user?.id;
+    const [prevResetKey, setPrevResetKey] = useState<{
+        open: boolean;
+        defaultArticleScope: typeof defaultArticleScope;
+        selectedCount: number;
+        userId: string | undefined;
+    } | null>(null);
+    if (
+        !prevResetKey ||
+        open !== prevResetKey.open ||
+        defaultArticleScope !== prevResetKey.defaultArticleScope ||
+        selectedIds.length !== prevResetKey.selectedCount ||
+        userId !== prevResetKey.userId
+    ) {
+        setPrevResetKey({open, defaultArticleScope, selectedCount: selectedIds.length, userId});
+        if (open) {
+            setArticleScope(
+                defaultArticleScope ??
+                (selectedIds.length > 0 ? "selected_only" : "current_list"),
+            );
+            setIncludeAiMetadata(false);
+            setAnonymizeReviewerNames(false);
+            setMode("consensus");
+            setReviewerId(userId ?? null);
+            setError(null);
+            setSubmitting(false);
+        }
+    }
 
     // US2 reviewer picker source. Only fetched when the dialog is open.
     const reviewersQuery = useEligibleReviewers(projectId, templateId, {
@@ -134,11 +150,10 @@ export function ExtractionExportDialog({
     );
 
     // Default reviewer to "me" when entering single_user mode.
-    useEffect(() => {
-        if (mode !== "single_user") return;
-        if (reviewerId) return;
-        if (user?.id) setReviewerId(user.id);
-    }, [mode, reviewerId, user?.id]);
+    // Render-phase invariant — the guard guarantees termination.
+    if (mode === "single_user" && !reviewerId && userId) {
+        setReviewerId(userId);
+    }
 
     // Abort any in-flight request if the dialog closes while submitting.
     useEffect(() => {
