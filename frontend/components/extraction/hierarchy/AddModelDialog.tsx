@@ -13,7 +13,7 @@
  * @component
  */
 
-import {useEffect, useState} from 'react';
+import {useState} from 'react';
 import {
     Dialog,
     DialogContent,
@@ -51,15 +51,17 @@ export function AddModelDialog({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-    // Reset on open/close
-  useEffect(() => {
+    // Reset on close — adjusted during render instead of via effect.
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
     if (!open) {
       setModelName('');
       setModellingMethod('');
       setError(null);
       setLoading(false);
     }
-  }, [open]);
+  }
 
     // Validation
   const validate = (): boolean => {

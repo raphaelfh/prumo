@@ -144,6 +144,29 @@ const EXTRACTION_DEFAULT_COLUMN_WIDTHS: Record<string, number> = {
     actions: 96,
 };
 const RESIZABLE_COLUMN_ORDER = ['title', 'authors', 'year', 'progress', 'status', 'actions'] as const;
+// Header checkbox component with indeterminate support. Module scope so its
+// identity is stable across renders (react-hooks/static-components).
+const HeaderCheckbox = React.memo(({
+  checked,
+  indeterminate,
+  onCheckedChange,
+  ...props
+}: {
+  checked: boolean;
+  indeterminate: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  'aria-label'?: string;
+}) => {
+  return (
+    <Checkbox
+      checked={indeterminate ? false : checked}
+      onCheckedChange={onCheckedChange}
+      className={indeterminate ? 'data-[state=checked]:bg-primary/50' : ''}
+      {...props}
+    />
+  );
+});
+
 export function ArticleExtractionTable({ projectId, templateId }: ArticleExtractionTableProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -269,7 +292,8 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
 
     // Load current user ID
   useEffect(() => {
-    loadCurrentUser();
+    // Microtask so the loader's setState calls run in an async callback.
+    queueMicrotask(() => void loadCurrentUser());
   }, [loadCurrentUser]);
 
     // Load project articles
@@ -492,28 +516,6 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
       });
     }
   }, [selectedIds, filteredAndSortedArticles, projectId, templateId, extractFullAI, deselectAll]);
-
-    // Header checkbox component with indeterminate support
-  const HeaderCheckbox = React.memo(({ 
-    checked, 
-    indeterminate, 
-    onCheckedChange, 
-    ...props 
-  }: { 
-    checked: boolean; 
-    indeterminate: boolean; 
-    onCheckedChange: (checked: boolean) => void;
-    'aria-label'?: string;
-  }) => {
-    return (
-      <Checkbox
-        checked={indeterminate ? false : checked}
-        onCheckedChange={onCheckedChange}
-        className={indeterminate ? 'data-[state=checked]:bg-primary/50' : ''}
-        {...props}
-      />
-    );
-  });
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {

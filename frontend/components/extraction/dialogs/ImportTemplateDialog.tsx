@@ -6,7 +6,7 @@
  * feedback.
  */
 
-import {useEffect, useState} from 'react';
+import {useState} from 'react';
 import {
     Dialog,
     DialogContent,
@@ -54,15 +54,28 @@ export function ImportTemplateDialog({
 
   const selectedTemplate = templates.find(t => t.id === selectedTemplateId);
 
-    // Sync selection when dialog opens with initialTemplateId (e.g. from config page list)
-    useEffect(() => {
-        if (!open) return;
-        if (initialTemplateId && templates.some(t => t.id === initialTemplateId)) {
-            setSelectedTemplateId(initialTemplateId);
-        } else if (!initialTemplateId) {
-            setSelectedTemplateId(null);
+    // Sync selection when dialog opens with initialTemplateId (e.g. from
+    // config page list) — adjusted during render instead of via effect.
+    const [prevSyncKey, setPrevSyncKey] = useState<{
+        open: boolean;
+        initialTemplateId: typeof initialTemplateId;
+        templates: typeof templates;
+    } | null>(null);
+    if (
+        !prevSyncKey ||
+        open !== prevSyncKey.open ||
+        initialTemplateId !== prevSyncKey.initialTemplateId ||
+        templates !== prevSyncKey.templates
+    ) {
+        setPrevSyncKey({open, initialTemplateId, templates});
+        if (open) {
+            if (initialTemplateId && templates.some(t => t.id === initialTemplateId)) {
+                setSelectedTemplateId(initialTemplateId);
+            } else if (!initialTemplateId) {
+                setSelectedTemplateId(null);
+            }
         }
-    }, [open, initialTemplateId, templates]);
+    }
 
   const handleImport = async () => {
     if (!selectedTemplate) {

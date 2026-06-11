@@ -12,7 +12,7 @@
  */
 
 import {useEffect, useState} from 'react';
-import {useForm} from 'react-hook-form';
+import {useForm, useWatch} from 'react-hook-form';
 import {zodResolver} from '@hookform/resolvers/zod';
 import {
     Dialog,
@@ -77,7 +77,21 @@ export function EditFieldDialog({
     },
   });
 
-  const fieldType = form.watch('field_type');
+  // useWatch instead of form.watch — the latter is incompatible with the
+  // React Compiler (react-hooks/incompatible-library).
+  const fieldType = useWatch({control: form.control, name: 'field_type'});
+  const allowOther = useWatch({control: form.control, name: 'allow_other'});
+
+  const loadValidation = async () => {
+    if (!field) return;
+
+    try {
+      const result = await onValidate(field.id);
+      setValidation(result);
+    } catch (err) {
+        console.error('Error validating field:', err);
+    }
+  };
 
     // Load field data when opening
   useEffect(() => {
@@ -97,21 +111,11 @@ export function EditFieldDialog({
         other_placeholder: field.other_placeholder || null,
       });
 
-        // Fetch field validation
-      loadValidation();
+        // Fetch field validation (microtask so its setState calls run in an
+        // async callback)
+      queueMicrotask(() => void loadValidation());
     }
   }, [field, open, form]);
-
-  const loadValidation = async () => {
-    if (!field) return;
-    
-    try {
-      const result = await onValidate(field.id);
-      setValidation(result);
-    } catch (err) {
-        console.error('Error validating field:', err);
-    }
-  };
 
   const handleTypeChange = async (newType: string) => {
     if (!field || !validation) return;
@@ -412,7 +416,7 @@ export function EditFieldDialog({
                           />
                         </div>
 
-                        {form.watch('allow_other') && (
+                        {allowOther && (
                           <div className="grid grid-cols-2 gap-3">
                             <FormField
                               control={form.control}

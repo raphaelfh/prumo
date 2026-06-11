@@ -87,15 +87,15 @@ export function RemoveSectionDialog({
     },
   });
 
-    // Analyze impact when dialog opens
-  useEffect(() => {
-    if (open && sectionId) {
-      analyzeImpact();
-    } else {
+    // Clear the analyzed impact when the dialog closes (during render, so
+    // the effect below never sets state synchronously).
+  const [prevResetKey, setPrevResetKey] = useState({ open, sectionId });
+  if (open !== prevResetKey.open || sectionId !== prevResetKey.sectionId) {
+    setPrevResetKey({ open, sectionId });
+    if (!(open && sectionId)) {
       setImpact(null);
-      form.reset();
     }
-  }, [open, sectionId]);
+  }
 
   const analyzeImpact = async () => {
     if (!sectionId) return;
@@ -193,6 +193,16 @@ export function RemoveSectionDialog({
       setAnalyzing(false);
     }
   };
+
+    // Analyze impact when dialog opens; reset the form when it closes.
+  useEffect(() => {
+    if (open && sectionId) {
+      // Microtask so the analyzer's setState calls run in an async callback.
+      queueMicrotask(() => void analyzeImpact());
+    } else {
+      form.reset();
+    }
+  }, [open, sectionId]);
 
     const handleSubmit = async (_data: RemoveSectionInput) => {
     if (!sectionId || !impact) return;
