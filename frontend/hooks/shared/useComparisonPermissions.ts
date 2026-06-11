@@ -57,9 +57,19 @@ export function useComparisonPermissions(
     canManageBlindMode: false,
     canExport: false,
     canEditTemplate: false,
-    loading: true,
+    // Only show the loader when there is actually something to load.
+    loading: Boolean(projectId && userId),
     error: null
   });
+
+  // Params cleared after mount: stop the loader (during render, not via effect).
+  const [prevKey, setPrevKey] = useState({ projectId, userId });
+  if (prevKey.projectId !== projectId || prevKey.userId !== userId) {
+    setPrevKey({ projectId, userId });
+    if (!projectId || !userId) {
+      setPermissions(prev => ({ ...prev, loading: false }));
+    }
+  }
 
   const loadPermissions = useCallback(async () => {
     try {
@@ -128,11 +138,10 @@ export function useComparisonPermissions(
 
   useEffect(() => {
     if (!projectId || !userId) {
-      setPermissions(prev => ({ ...prev, loading: false }));
       return;
     }
-
-    loadPermissions();
+    // Microtask so the loader's setState calls run in an async callback.
+    queueMicrotask(() => void loadPermissions());
   }, [projectId, userId, loadPermissions]);
 
     // Return refresh function to reload permissions

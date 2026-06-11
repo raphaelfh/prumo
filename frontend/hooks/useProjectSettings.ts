@@ -36,7 +36,8 @@ export function useProjectSettings(projectId: string) {
     }, [projectId]);
 
     useEffect(() => {
-        loadProject();
+        // Microtask so the loader's setState calls run in an async callback.
+        queueMicrotask(() => void loadProject());
     }, [loadProject]);
 
     const updateProject = useCallback((updates: Partial<Project>) => {
