@@ -17,6 +17,7 @@ interface EmptyFieldsStateProps {
   onAddField: () => void;
 }
 
+// kept: parent component (FieldsManager) bails out of compilation — memo is load-bearing here
 export const EmptyFieldsState = memo(function EmptyFieldsState({ canCreate, onAddField }: EmptyFieldsStateProps) {
   return (
     <Card role="region" aria-labelledby="empty-state-title">

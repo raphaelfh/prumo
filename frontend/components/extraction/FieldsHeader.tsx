@@ -20,6 +20,7 @@ interface FieldsHeaderProps {
   onAddField: () => void;
 }
 
+// kept: parent component (FieldsManager) bails out of compilation — memo is load-bearing here
 export const FieldsHeader = memo(function FieldsHeader({
   fieldsCount,
   userRole,

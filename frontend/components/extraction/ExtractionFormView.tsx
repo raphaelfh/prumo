@@ -147,6 +147,7 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
   );
 }
 
+// kept: custom comparator — compiler does not replicate arePropsEqual
 // Memoize on the props that actually trigger a visual change. AI suggestion
 // updates are checked by reference + length so the form re-renders when the
 // suggestions hook publishes a new map after extraction.
