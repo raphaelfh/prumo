@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -34,6 +34,22 @@ function normalizeMultiOption(opt: MultiSelectOption): { value: string; label: s
   return { value, label };
 }
 
+function splitMultiValue(
+  value: MultiSelectWithOtherProps['value'],
+): { selected: string[]; others: string[] } {
+  if (!value) {
+    return { selected: [], others: [] };
+  }
+  if (Array.isArray(value)) {
+    return { selected: value, others: [] };
+  }
+  if (isMultiOtherValue(value)) {
+    return { selected: value.selected || [], others: value.other_texts || [] };
+  }
+  // Fallback for compatibility
+  return { selected: [], others: [] };
+}
+
 export function MultiSelectWithOther(props: MultiSelectWithOtherProps) {
     const {
         options,
@@ -50,27 +66,19 @@ export function MultiSelectWithOther(props: MultiSelectWithOtherProps) {
     const resolvedPlaceholder = placeholder ?? t('ui', 'multiSelectPlaceholder');
 
   const [open, setOpen] = useState(false);
-  const [internalSelected, setInternalSelected] = useState<string[]>([]);
-  const [internalOthers, setInternalOthers] = useState<string[]>([]);
+  const [internalSelected, setInternalSelected] = useState<string[]>(() => splitMultiValue(value).selected);
+  const [internalOthers, setInternalOthers] = useState<string[]>(() => splitMultiValue(value).others);
 
-  useEffect(() => {
-    if (!value) {
-      setInternalSelected([]);
-      setInternalOthers([]);
-      return;
-    }
-    if (Array.isArray(value)) {
-      setInternalSelected(value);
-      setInternalOthers([]);
-    } else if (isMultiOtherValue(value)) {
-      setInternalSelected(value.selected || []);
-      setInternalOthers(value.other_texts || []);
-    } else {
-        // Fallback for compatibility
-      setInternalSelected([]);
-      setInternalOthers([]);
-    }
-  }, [value]);
+  // Re-sync the internal mirror when the controlled value changes
+  // (adjust-during-render instead of an effect, so "Add other" drafts
+  // survive renders that don't touch `value`).
+  const [prevValue, setPrevValue] = useState(value);
+  if (value !== prevValue) {
+    setPrevValue(value);
+    const { selected, others } = splitMultiValue(value);
+    setInternalSelected(selected);
+    setInternalOthers(others);
+  }
 
   const summary = useMemo(() => {
     const parts = [...internalSelected];
