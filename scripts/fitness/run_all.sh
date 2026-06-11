@@ -80,6 +80,9 @@ run_check "check_layered_arch.py" \
 run_check "check_react_query_keys.py" \
   python3 "${SCRIPT_DIR}/check_react_query_keys.py"
 
+run_check "check_file_size.py" \
+  python3 "${SCRIPT_DIR}/check_file_size.py"
+
 echo ""
 echo "Summary:"
 for line in "${results[@]}"; do
