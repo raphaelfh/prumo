@@ -7,7 +7,6 @@ Tests model extraction features:
 - Child instance hierarchy
 """
 
-import json
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -15,6 +14,8 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.storage import StorageAdapter
+from app.llm.extractor import LlmUsage
+from app.llm.prompts.model_identification import IdentifiedModel, ModelIdentificationOutput
 from app.services.model_extraction_service import ModelExtractionService
 
 
@@ -37,7 +38,6 @@ def service(mock_db, mock_storage):
     """ModelExtractionService fixture with mocks."""
     with (
         patch("app.services.model_extraction_service.PDFProcessor") as mock_pdf,
-        patch("app.services.model_extraction_service.OpenAIService") as mock_openai,
         patch("app.services.model_extraction_service.ArticleFileRepository") as mock_article_repo,
         patch(
             "app.services.model_extraction_service.ExtractionTemplateRepository"
@@ -54,9 +54,6 @@ def service(mock_db, mock_storage):
     ):
         mock_pdf_instance = MagicMock()
         mock_pdf.return_value = mock_pdf_instance
-
-        mock_openai_instance = MagicMock()
-        mock_openai.return_value = mock_openai_instance
 
         # Mock repositories
         mock_article_repo_instance = MagicMock()
@@ -93,7 +90,6 @@ def service(mock_db, mock_storage):
             trace_id="trace-123",
         )
         svc.pdf_processor = mock_pdf_instance
-        svc.openai_service = mock_openai_instance
         svc._article_files = mock_article_repo_instance
         svc._templates = mock_template_repo_instance
         svc._global_templates = mock_global_repo_instance
@@ -209,36 +205,6 @@ class TestModelIdentification:
     @pytest.mark.asyncio
     async def test_identify_models_success(self, service):
         """Test successful model identification."""
-        from app.services.openai_service import OpenAIResponse, OpenAIUsage
-
-        mock_response = OpenAIResponse(
-            content=json.dumps(
-                {
-                    "models": [
-                        {
-                            "model_name": "QSOFA Score",
-                            "model_type": "Logistic Regression",
-                            "target_outcome": "Sepsis prediction",
-                        },
-                        {
-                            "model_name": "NEWS Score",
-                            "model_type": "Point-based scoring",
-                            "target_outcome": "Deterioration risk",
-                        },
-                    ]
-                }
-            ),
-            usage=OpenAIUsage(
-                prompt_tokens=100,
-                completion_tokens=50,
-                total_tokens=150,
-            ),
-            model="gpt-4o-mini",
-        )
-
-        service.openai_service.chat_completion_full = AsyncMock(return_value=mock_response)
-
-        # Mock entity type in template
         mock_entity_type = MagicMock()
         mock_entity_type.name = "prediction_models"
         mock_entity_type.role = "model_container"
@@ -246,40 +212,62 @@ class TestModelIdentification:
         template = MagicMock()
         template.entity_types = [mock_entity_type]
 
-        # Returns tuple (models, response)
-        models, response = await service._identify_models(
-            pdf_text="Sample PDF text with model descriptions...",
-            template=template,
-            model="gpt-4o-mini",
-        )
+        with (
+            patch(
+                "app.services.model_extraction_service.extract_structured",
+                AsyncMock(
+                    return_value=(
+                        ModelIdentificationOutput(
+                            models=[
+                                IdentifiedModel(name="QSOFA Score"),
+                                IdentifiedModel(name="NEWS Score"),
+                            ]
+                        ),
+                        LlmUsage(prompt_tokens=100, completion_tokens=50),
+                    )
+                ),
+            ),
+            patch("app.services.model_extraction_service.build_model", MagicMock()),
+        ):
+            models, usage = await service._identify_models(
+                pdf_text="Sample PDF text with model descriptions...",
+                template=template,
+                model="gpt-4o-mini",
+            )
 
         assert len(models) == 2
-        assert models[0]["model_name"] == "QSOFA Score"
-        assert models[1]["model_type"] == "Point-based scoring"
+        assert models[0]["name"] == "QSOFA Score"
+        assert models[1]["name"] == "NEWS Score"
+        assert usage.prompt_tokens == 100
+        assert usage.completion_tokens == 50
+        assert usage.total_tokens == 150
 
     @pytest.mark.asyncio
     async def test_identify_models_no_models_found(self, service):
         """Test when no model is found."""
-        from app.services.openai_service import OpenAIResponse, OpenAIUsage
-
-        mock_response = OpenAIResponse(
-            content=json.dumps({"models": []}),
-            usage=OpenAIUsage(prompt_tokens=50, completion_tokens=20, total_tokens=70),
-            model="gpt-4o-mini",
-        )
-
-        service.openai_service.chat_completion_full = AsyncMock(return_value=mock_response)
-
         template = MagicMock()
         template.entity_types = []
 
-        models, response = await service._identify_models(
-            pdf_text="Generic article text without models...",
-            template=template,
-            model="gpt-4o-mini",
-        )
+        with (
+            patch(
+                "app.services.model_extraction_service.extract_structured",
+                AsyncMock(
+                    return_value=(
+                        ModelIdentificationOutput(models=[]),
+                        LlmUsage(prompt_tokens=50, completion_tokens=20),
+                    )
+                ),
+            ),
+            patch("app.services.model_extraction_service.build_model", MagicMock()),
+        ):
+            models, usage = await service._identify_models(
+                pdf_text="Generic article text without models...",
+                template=template,
+                model="gpt-4o-mini",
+            )
 
         assert models == []
+        assert usage.total_tokens == 70
 
 
 class TestEntityTypeLookup:
@@ -394,30 +382,22 @@ class TestFullExtractionFlow:
             return_value="PDF text with models described..."
         )
 
-        # Mock OpenAI
-        from app.services.openai_service import OpenAIResponse, OpenAIUsage
-
-        mock_openai_response = OpenAIResponse(
-            content=json.dumps(
-                {
-                    "models": [
-                        {
-                            "model_name": "Extracted Model",
-                            "model_type": "LR",
-                            "target_outcome": "Outcome",
-                        }
-                    ]
-                }
-            ),
-            usage=OpenAIUsage(prompt_tokens=100, completion_tokens=50, total_tokens=150),
-            model="gpt-4o-mini",
-        )
-        service.openai_service.chat_completion_full = AsyncMock(return_value=mock_openai_response)
-
         # Mock ExtractionInstance class to avoid SQLAlchemy mapper issues
-        with patch(
-            "app.services.model_extraction_service.ExtractionInstance"
-        ) as mock_instance_class:
+        with (
+            patch(
+                "app.services.model_extraction_service.extract_structured",
+                AsyncMock(
+                    return_value=(
+                        ModelIdentificationOutput(models=[IdentifiedModel(name="Extracted Model")]),
+                        LlmUsage(prompt_tokens=100, completion_tokens=50),
+                    )
+                ),
+            ),
+            patch("app.services.model_extraction_service.build_model", MagicMock()),
+            patch(
+                "app.services.model_extraction_service.ExtractionInstance"
+            ) as mock_instance_class,
+        ):
             mock_created_instance = MagicMock()
             mock_created_instance.id = uuid4()
             mock_created_instance.label = "Extracted Model"
@@ -479,18 +459,19 @@ class TestFullExtractionFlow:
         # Inject a DB-style failure on instance creation.
         service._instances.create = AsyncMock(side_effect=RuntimeError("FK violation"))
 
-        from app.services.openai_service import OpenAIResponse, OpenAIUsage
-
         service.pdf_processor.extract_text = AsyncMock(return_value="text")
-        service.openai_service.chat_completion_full = AsyncMock(
-            return_value=OpenAIResponse(
-                content=json.dumps({"models": [{"model_name": "M"}]}),
-                usage=OpenAIUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
-                model="gpt-4o-mini",
-            )
-        )
 
         with (
+            patch(
+                "app.services.model_extraction_service.extract_structured",
+                AsyncMock(
+                    return_value=(
+                        ModelIdentificationOutput(models=[IdentifiedModel(name="M")]),
+                        LlmUsage(prompt_tokens=1, completion_tokens=1),
+                    )
+                ),
+            ),
+            patch("app.services.model_extraction_service.build_model", MagicMock()),
             patch("app.services.model_extraction_service.ExtractionInstance"),
             pytest.raises(RuntimeError, match="FK violation"),
         ):
@@ -547,21 +528,23 @@ class TestFullExtractionFlow:
 
         service.pdf_processor.extract_text = AsyncMock(return_value="Generic text")
 
-        # Mock OpenAI
-        from app.services.openai_service import OpenAIResponse, OpenAIUsage
-
-        mock_openai_response = OpenAIResponse(
-            content=json.dumps({"models": []}),
-            usage=OpenAIUsage(prompt_tokens=50, completion_tokens=20, total_tokens=70),
-            model="gpt-4o-mini",
-        )
-        service.openai_service.chat_completion_full = AsyncMock(return_value=mock_openai_response)
-
-        result = await service.extract(
-            project_id=project_id,
-            article_id=article_id,
-            template_id=template_id,
-        )
+        with (
+            patch(
+                "app.services.model_extraction_service.extract_structured",
+                AsyncMock(
+                    return_value=(
+                        ModelIdentificationOutput(models=[]),
+                        LlmUsage(prompt_tokens=50, completion_tokens=20),
+                    )
+                ),
+            ),
+            patch("app.services.model_extraction_service.build_model", MagicMock()),
+        ):
+            result = await service.extract(
+                project_id=project_id,
+                article_id=article_id,
+                template_id=template_id,
+            )
 
         assert result.total_models == 0
         assert result.models_created == []
