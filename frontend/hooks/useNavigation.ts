@@ -3,7 +3,7 @@
  * Centralizes breadcrumbs, search and navigation logic
  */
 
-import {useCallback, useEffect, useState} from 'react';
+import {useCallback, useEffect, useMemo, useState} from 'react';
 import {useLocation, useNavigate} from 'react-router-dom';
 import {supabase} from '@/integrations/supabase/client';
 import {useAuth} from '@/contexts/AuthContext';
@@ -14,7 +14,6 @@ import type {BreadcrumbItem, NotificationItem, SearchResult, UserProfile} from '
 export const useNavigation = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([]);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -94,10 +93,9 @@ export const useNavigation = () => {
     }
   }, [location.pathname]);
 
-    // Update breadcrumbs when route changes
-  useEffect(() => {
-    setBreadcrumbs(generateBreadcrumbs());
-  }, [generateBreadcrumbs]);
+    // Breadcrumbs are a pure function of the route — derive instead of
+    // materializing through an effect.
+  const breadcrumbs = useMemo(() => generateBreadcrumbs(), [generateBreadcrumbs]);
 
   // Busca global
   const performSearch = useCallback(async (query: string): Promise<SearchResult[]> => {
@@ -217,7 +215,8 @@ export const useNotifications = () => {
   }, []);
 
   useEffect(() => {
-    loadNotifications();
+    // Microtask so the loader's setState calls run in an async callback.
+    queueMicrotask(() => void loadNotifications());
   }, [loadNotifications]);
 
   return {
@@ -289,7 +288,8 @@ export const useUserProfile = () => {
   }, [authUser]);
 
   useEffect(() => {
-    loadUserProfile();
+    // Microtask so the loader's setState calls run in an async callback.
+    queueMicrotask(() => void loadUserProfile());
   }, [loadUserProfile]);
 
   return {
