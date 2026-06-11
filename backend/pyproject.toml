@@ -34,9 +34,6 @@ dependencies = [
     "supabase>=2.0.0",
     # AI/LLM
     "openai>=1.0.0",
-    "langchain>=0.3.0",
-    "langchain-openai>=0.2.0",
-    "instructor>=1.0.0",
     "pydantic-ai-slim[openai]>=1.107.0,<2.0.0",
     "logfire[fastapi,celery]>=3.0.0",
     # PDF Processing
@@ -47,7 +44,6 @@ dependencies = [
     "slowapi>=0.1.9",
     # Utils
     "python-multipart>=0.0.9",
-    "tenacity>=9.0.0",
     "cryptography>=43.0.0",
     # Task Queue
     "celery[redis]>=5.4.0",
