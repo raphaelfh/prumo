@@ -791,13 +791,6 @@ class SectionExtractionService(LoggerMixin):
                 trace_id=self.trace_id,
                 log_prefix="section_extraction",
             )
-            self.logger.error(
-                "batch_extraction_failed",
-                trace_id=self.trace_id,
-                run_id=str(run.id),
-                operation_id=str(run.id),
-                error=str(e),
-            )
             raise
 
     async def _extract_section_with_memory(
