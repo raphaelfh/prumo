@@ -30,21 +30,17 @@ export function useAllUserInstances(props: UseAllUserInstancesProps): UseAllUser
   const { articleId, enabled = true } = props;
 
   const [instances, setInstances] = useState<InstanceWithCreator[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Only show the loader when there is actually something to load.
+  const [loading, setLoading] = useState(() => Boolean(enabled && articleId));
   const [error, setError] = useState<string | null>(null);
   const generationRef = useRef(0);
 
-  useEffect(() => {
-    if (!enabled || !articleId) {
-      setLoading(false);
-      return;
-    }
-
-    loadInstances();
-    return () => {
-      generationRef.current += 1;
-    };
-  }, [articleId, enabled]);
+  // Params cleared after mount: stop the loader (during render, not via effect).
+  const [prevKey, setPrevKey] = useState({ articleId, enabled });
+  if (articleId !== prevKey.articleId || enabled !== prevKey.enabled) {
+    setPrevKey({ articleId, enabled });
+    if (!enabled || !articleId) setLoading(false);
+  }
 
   const loadInstances = async () => {
     const myGeneration = ++generationRef.current;
@@ -74,6 +70,15 @@ export function useAllUserInstances(props: UseAllUserInstancesProps): UseAllUser
       if (myGeneration === generationRef.current) setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!enabled || !articleId) return;
+    // Microtask so the loader's setState calls run in an async callback.
+    queueMicrotask(() => void loadInstances());
+    return () => {
+      generationRef.current += 1;
+    };
+  }, [articleId, enabled]);
 
   const refresh = async () => {
     await loadInstances();

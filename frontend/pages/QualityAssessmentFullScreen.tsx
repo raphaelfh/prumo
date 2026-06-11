@@ -84,13 +84,19 @@ export default function QualityAssessmentFullScreen() {
     | null
   >(null);
 
+  // Reset the resolution whenever the URL segment changes (during render,
+  // so the lookup effect below never sets state synchronously).
+  const [prevTemplateId, setPrevTemplateId] = useState(templateId);
+  if (templateId !== prevTemplateId) {
+    setPrevTemplateId(templateId);
+    setResolvedTemplate(null);
+  }
+
   useEffect(() => {
-    let cancelled = false;
     if (!templateId) {
-      setResolvedTemplate(null);
       return;
     }
-    setResolvedTemplate(null);
+    let cancelled = false;
     void (async () => {
       const [projectRes, globalRes] = await Promise.all([
         supabase
@@ -168,29 +174,34 @@ export default function QualityAssessmentFullScreen() {
   // (instance, field) once the Run detail loads.
   const [values, setValues] = useState<Record<string, unknown>>({});
 
-  useEffect(() => {
-    if (!runDetail) return;
-    const latestByCoord = new Map<string, unknown>();
-    // Proposals are returned newest-first by the API; iterate so the LAST
-    // write wins per coord regardless of order.
-    for (const p of runDetail.proposals) {
-      const k = keyOf({ instanceId: p.instance_id, fieldId: p.field_id });
-      const value =
-        p.proposed_value &&
-        typeof p.proposed_value === "object" &&
-        "value" in p.proposed_value
-          ? (p.proposed_value.value as unknown)
-          : (p.proposed_value as unknown);
-      latestByCoord.set(k, value);
-    }
-    setValues((prev) => {
-      const next: Record<string, unknown> = { ...prev };
-      for (const [k, v] of latestByCoord) {
-        if (!(k in next)) next[k] = v;
+  // Hydrate during render when a new Run detail lands (instead of a
+  // synchronous setState in an effect).
+  const [prevRunDetail, setPrevRunDetail] = useState(runDetail);
+  if (runDetail !== prevRunDetail) {
+    setPrevRunDetail(runDetail);
+    if (runDetail) {
+      const latestByCoord = new Map<string, unknown>();
+      // Proposals are returned newest-first by the API; iterate so the LAST
+      // write wins per coord regardless of order.
+      for (const p of runDetail.proposals) {
+        const k = keyOf({ instanceId: p.instance_id, fieldId: p.field_id });
+        const value =
+          p.proposed_value &&
+          typeof p.proposed_value === "object" &&
+          "value" in p.proposed_value
+            ? (p.proposed_value.value as unknown)
+            : (p.proposed_value as unknown);
+        latestByCoord.set(k, value);
       }
-      return next;
-    });
-  }, [runDetail]);
+      setValues((prev) => {
+        const next: Record<string, unknown> = { ...prev };
+        for (const [k, v] of latestByCoord) {
+          if (!(k in next)) next[k] = v;
+        }
+        return next;
+      });
+    }
+  }
 
   // The autosave hook below watches ``values`` and debounces writes;
   // ``handleValueChange`` only needs to update local state. Lifecycle
@@ -347,11 +358,14 @@ export default function QualityAssessmentFullScreen() {
     toast.success("Assessment finalized.");
   }, [session, advanceMutation, refetchRun]);
 
+  // Plain-identifier dep so the compiler can preserve this memoization
+  // (optional-chained deps like `session?.runId` defeat it).
+  const sessionRunId = session?.runId;
   const handleReopen = useCallback(async () => {
-    if (!session?.runId) return;
+    if (!sessionRunId) return;
     setReopening(true);
     try {
-      await reopenMutation.mutateAsync(session.runId);
+      await reopenMutation.mutateAsync(sessionRunId);
       // The new run is now the latest non-terminal one for this triple,
       // so refetching the session picks it up. Local form state is reset
       // since the new run carries its own seeded proposals.
@@ -365,7 +379,7 @@ export default function QualityAssessmentFullScreen() {
     } finally {
       setReopening(false);
     }
-  }, [session?.runId, reopenMutation, refetchSession]);
+  }, [sessionRunId, reopenMutation, refetchSession]);
   const handlePublish = useCallback(async () => {
     if (!session || !runDetail) return;
 
@@ -528,7 +542,7 @@ export default function QualityAssessmentFullScreen() {
         <Button
           size="sm"
           onClick={() => void handlePublish()}
-          disabled={publishing || finalized || !session}
+          disabled={publishing || finalized || !session || !runDetail}
           data-testid="qa-publish-button"
         >
           {publishing ? "Publishing…" : finalized ? "Published" : "Publish assessment"}

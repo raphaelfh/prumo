@@ -178,6 +178,20 @@ interface FileUploadItemProps {
   onRetry?: (itemId: string) => void;
 }
 
+// Icon for the current upload status
+const StatusIcon: React.FC<{ status: FileUploadProgressItem['status'] }> = ({ status }) => {
+  switch (status) {
+    case 'success':
+      return <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0" />;
+    case 'error':
+      return <XCircle className="h-5 w-5 text-destructive flex-shrink-0" />;
+    case 'uploading':
+      return <Loader2 className="h-5 w-5 text-primary animate-spin flex-shrink-0" />;
+    default:
+      return <FileIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />;
+  }
+};
+
 const FileUploadItem: React.FC<FileUploadItemProps> = ({ item, onCancel, onRetry }) => {
   const formatBytes = (bytes: number): string => {
     if (bytes === 0) return '0 Bytes';
@@ -187,20 +201,6 @@ const FileUploadItem: React.FC<FileUploadItemProps> = ({ item, onCancel, onRetry
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
   };
 
-  // Ícone baseado no status
-  const StatusIcon = () => {
-    switch (item.status) {
-      case 'success':
-        return <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0" />;
-      case 'error':
-        return <XCircle className="h-5 w-5 text-destructive flex-shrink-0" />;
-      case 'uploading':
-        return <Loader2 className="h-5 w-5 text-primary animate-spin flex-shrink-0" />;
-      default:
-        return <FileIcon className="h-5 w-5 text-muted-foreground flex-shrink-0" />;
-    }
-  };
-
   return (
     <div className={cn(
       "flex items-start gap-3 p-3 rounded-lg border transition-colors",
@@ -208,7 +208,7 @@ const FileUploadItem: React.FC<FileUploadItemProps> = ({ item, onCancel, onRetry
       item.status === 'error' && "bg-destructive/10 border-destructive/20"
     )}>
       {/* Status icon */}
-      <StatusIcon />
+      <StatusIcon status={item.status} />
 
         {/* File info */}
       <div className="flex-1 min-w-0 space-y-2">

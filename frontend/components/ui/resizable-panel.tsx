@@ -109,13 +109,15 @@ export const ResizablePanel: React.FC<ResizablePanelProps> = ({
     }
   }, [flushPending, maxWidth, minWidth, side]);
 
-  const onPointerUp = useCallback(() => {
+  // Named function expression so the handler can unregister itself without
+  // referencing the outer `onPointerUp` binding inside its own initializer.
+  const onPointerUp = useCallback(function handlePointerUp() {
     const start = dragStartRef.current;
     dragStartRef.current = null;
     document.removeEventListener('mousemove', onPointerMove as EventListener);
-    document.removeEventListener('mouseup', onPointerUp as EventListener);
+    document.removeEventListener('mouseup', handlePointerUp as EventListener);
     document.removeEventListener('touchmove', onPointerMove as EventListener);
-    document.removeEventListener('touchend', onPointerUp as EventListener);
+    document.removeEventListener('touchend', handlePointerUp as EventListener);
     document.body.style.userSelect = '';
     document.body.style.cursor = '';
     if (rafRef.current != null) {
@@ -205,18 +207,18 @@ export const ResizablePanel: React.FC<ResizablePanelProps> = ({
   // Animate the open → close transition driven by the external `collapsed` prop.
   // We only kick the animation off when `collapsed` flips from false → true; an initial
   // render with `collapsed=true` should stay unmounted (no entry animation).
-  const prevCollapsedRef = useRef(collapsed);
+  // Adjusted during render (not in an effect) so the same <aside> node stays mounted
+  // across the flip and the width/opacity transition can actually play.
+  const [prevCollapsed, setPrevCollapsed] = useState(collapsed);
+  if (collapsed !== prevCollapsed) {
+    setPrevCollapsed(collapsed);
+    setIsClosing(!!collapsed);
+  }
   useEffect(() => {
-    const prev = prevCollapsedRef.current;
-    prevCollapsedRef.current = collapsed;
-    if (collapsed && !prev) {
-      setIsClosing(true);
-      const t = setTimeout(() => setIsClosing(false), CLOSE_ANIMATION_MS);
-      return () => clearTimeout(t);
-    }
-    if (!collapsed) setIsClosing(false);
-    return undefined;
-  }, [collapsed]);
+    if (!isClosing) return undefined;
+    const t = setTimeout(() => setIsClosing(false), CLOSE_ANIMATION_MS);
+    return () => clearTimeout(t);
+  }, [isClosing]);
 
   if (collapsed && !isClosing) return null;
 

@@ -123,24 +123,32 @@ export function useAutoSaveProposals(
 
   // Refs mirror the latest props so lifecycle handlers (pagehide,
   // unmount cleanup) read fresh values without closing over a stale
-  // render snapshot.
+  // render snapshot. Written in an effect (refs must not be written
+  // during render) — declared before the effects below so they always
+  // read the current commit's values.
   const valuesRef = useRef(values);
   const runIdRef = useRef(runId);
   const enabledRef = useRef(enabled);
   const stageRef = useRef(stage);
-  valuesRef.current = values;
-  runIdRef.current = runId;
-  enabledRef.current = enabled;
-  stageRef.current = stage;
   // Server-persisted baseline (see prop docs). Mirrored in a ref so the
   // diff sees the latest hydrated map without re-creating callbacks.
   const baselineRef = useRef<Record<string, unknown>>(baselineValues ?? {});
-  baselineRef.current = baselineValues ?? {};
+  useEffect(() => {
+    valuesRef.current = values;
+    runIdRef.current = runId;
+    enabledRef.current = enabled;
+    stageRef.current = stage;
+    baselineRef.current = baselineValues ?? {};
+  });
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // Stringified last successful write per `${instanceId}_${fieldId}` —
-  // the diff check against the current values map.
+  // the diff check against the current values map. The ref is the live
+  // map updated per write; the state mirror below lets render-phase
+  // consumers (dirty badge, hasUnsavedChanges) recompute without
+  // reading a ref during render.
   const lastSavedByKeyRef = useRef<Record<string, string>>({});
+  const [lastSavedByKey, setLastSavedByKey] = useState<Record<string, string>>({});
   // React state is async, so ``saveState === 'saving'`` cannot be used
   // as a synchronous lock across overlapping ``performSave`` invocations.
   const activeSavePromiseRef = useRef<Promise<void> | null>(null);
@@ -242,6 +250,10 @@ export function useAutoSaveProposals(
         }),
       );
 
+      // Mirror the diff map into state — partial successes updated the
+      // ref even when some writes failed.
+      setLastSavedByKey({ ...lastSavedByKeyRef.current });
+
       const failures = results.filter(
         (r): r is PromiseRejectedResult => r.status === 'rejected',
       );
@@ -280,13 +292,30 @@ export function useAutoSaveProposals(
   // when ``values`` changes so the next keystroke restarts the
   // countdown; the dedicated unmount-flush effect below handles the
   // route-change case.
+  // The badge flips to 'dirty' as soon as a render sees newly-typed
+  // entries — adjusted during render (the effect below only schedules the
+  // debounce). Keyed by content, not identity: callers may rebuild the
+  // values map every render, and an identity-keyed adjustment would
+  // re-render forever.
+  const valuesKey = useMemo(() => JSON.stringify(values), [values]);
+  const [prevValuesKey, setPrevValuesKey] = useState(valuesKey);
+  if (valuesKey !== prevValuesKey) {
+    setPrevValuesKey(valuesKey);
+    if (
+      enabled &&
+      runId &&
+      isWritableStage(stage) &&
+      selectDirtyEntries(values, lastSavedByKey, baselineValues ?? {}).length > 0
+    ) {
+      setSaveState('dirty');
+    }
+  }
+
   useEffect(() => {
     if (!enabled || !runId || !isWritableStage(stage)) return;
 
     const dirty = computeDirtyEntries();
     if (dirty.length === 0) return;
-
-    setSaveState('dirty');
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
@@ -345,13 +374,11 @@ export function useAutoSaveProposals(
   }, [performSave]);
 
   // Re-evaluate the dirty diff whenever ``values`` changes (user typed)
-  // or ``lastSavedAt`` advances (a save just acknowledged and updated
-  // the ``lastSavedByKeyRef`` map). Reading the ref directly inside
-  // ``useMemo`` is fine because those two triggers cover every state
-  // transition that could flip the answer.
+  // or a save acknowledges (``lastSavedByKey`` advances). Computed from
+  // render-safe state — never from the mutable refs.
   const hasUnsavedChanges = useMemo(
-    () => computeDirtyEntries().length > 0,
-    [values, lastSavedAt, computeDirtyEntries],
+    () => selectDirtyEntries(values, lastSavedByKey, baselineValues ?? {}).length > 0,
+    [values, lastSavedByKey, baselineValues],
   );
 
   return { saveState, lastSavedAt, error, hasUnsavedChanges, saveNow };

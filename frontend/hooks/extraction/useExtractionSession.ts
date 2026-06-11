@@ -66,11 +66,35 @@ export function useExtractionSession({
   const generationRef = useRef(0);
   const queryClient = useQueryClient();
 
-  const open = useCallback(async () => {
+  const willOpen = Boolean(enabled && projectId && articleId && projectTemplateId);
+
+  // Show the loader for effect-triggered opens during render, so openCore
+  // performs no synchronous setState when the effect kicks it off (the POST
+  // itself still starts synchronously — autosave relies on the generation
+  // bump ordering). The null sentinel covers the mount load.
+  const [prevOpenKey, setPrevOpenKey] = useState<{
+    enabled: boolean;
+    projectId: string | undefined;
+    articleId: string | undefined;
+    projectTemplateId: string | undefined;
+  } | null>(null);
+  if (
+    !prevOpenKey ||
+    enabled !== prevOpenKey.enabled ||
+    projectId !== prevOpenKey.projectId ||
+    articleId !== prevOpenKey.articleId ||
+    projectTemplateId !== prevOpenKey.projectTemplateId
+  ) {
+    setPrevOpenKey({ enabled, projectId, articleId, projectTemplateId });
+    if (willOpen) {
+      setLoading(true);
+      setError(null);
+    }
+  }
+
+  const openCore = useCallback(async () => {
     if (!enabled || !projectId || !articleId || !projectTemplateId) return;
     const myGeneration = ++generationRef.current;
-    setLoading(true);
-    setError(null);
     try {
       const data = await apiClient<OpenResponse>("/api/v1/hitl/sessions", {
         method: "POST",
@@ -117,15 +141,31 @@ export function useExtractionSession({
     }
   }, [enabled, projectId, articleId, projectTemplateId, queryClient]);
 
+  // Manual refetch (event-handler context): show the loader, then reopen.
+  const refetch = useCallback(async () => {
+    if (!enabled || !projectId || !articleId || !projectTemplateId) return;
+    setLoading(true);
+    setError(null);
+    await openCore();
+  }, [enabled, projectId, articleId, projectTemplateId, openCore]);
+
+  const openCoreRef = useRef(openCore);
   useEffect(() => {
-    void open();
+    openCoreRef.current = openCore;
+  }, [openCore]);
+
+  useEffect(() => {
+    // The POST must start synchronously (in-flight generation ordering);
+    // openCore's setState calls all happen after its first await, and the
+    // loader reset happens during render above.
+    void openCoreRef.current();
     return () => {
       // Bump the generation so any in-flight open() resolves into a
       // no-op when this effect tears down (component unmount or
       // dependency change).
       generationRef.current += 1;
     };
-  }, [open]);
+  }, [openCore]);
 
-  return { session, loading, error, refetch: open };
+  return { session, loading, error, refetch };
 }

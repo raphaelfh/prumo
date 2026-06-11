@@ -18,13 +18,6 @@ updates:
     groups:
       npm-minor-patch:
         update-types: [minor, patch]
-    # React 19 majors are deferred until the 4 React-18-peer deps are
-    # bumped first (react-day-picker v9 has a breaking API).
-    ignore:
-      - dependency-name: react
-        update-types: [version-update:semver-major]
-      - dependency-name: react-dom
-        update-types: [version-update:semver-major]
     open-pull-requests-limit: 5
 
   - package-ecosystem: github-actions

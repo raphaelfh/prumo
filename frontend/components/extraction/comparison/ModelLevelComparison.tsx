@@ -17,7 +17,7 @@
  * @component
  */
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import {
@@ -65,12 +65,11 @@ export function ModelLevelComparison(props: ModelLevelComparisonProps) {
     // My models (instances of type prediction_models)
   const myModels = myInstances[modelParentType.id] || [];
 
-    // Auto-select first model of current user
-  useEffect(() => {
-    if (myModels.length > 0 && !mySelectedModelId) {
-      setMySelectedModelId(myModels[0].id);
-    }
-  }, [myModels, mySelectedModelId]);
+    // Auto-select first model of current user — render-phase invariant
+    // (the guard guarantees termination).
+  if (myModels.length > 0 && !mySelectedModelId) {
+    setMySelectedModelId(myModels[0].id);
+  }
 
     // Extract models from other users
     // NOTE: otherExtractions.values contains flat extracted_values data
@@ -113,17 +112,23 @@ export function ModelLevelComparison(props: ModelLevelComparisonProps) {
     return grouped;
   }, [otherExtractions]);
 
-    // Reset selected model when user changes
-  useEffect(() => {
+    // Reset selected model when the compared user (or their model list)
+    // changes — adjusted during render instead of via effect.
+  const [prevOtherKey, setPrevOtherKey] = useState<{
+    userId: string | null;
+    models: typeof modelsByUser;
+  } | null>(null);
+  if (
+    !prevOtherKey ||
+    otherSelectedUserId !== prevOtherKey.userId ||
+    modelsByUser !== prevOtherKey.models
+  ) {
+    setPrevOtherKey({ userId: otherSelectedUserId, models: modelsByUser });
     if (otherSelectedUserId) {
       const userModels = modelsByUser.get(otherSelectedUserId);
-      if (userModels && userModels.length > 0) {
-        setOtherSelectedModelId(userModels[0].id);
-      } else {
-        setOtherSelectedModelId(null);
-      }
+      setOtherSelectedModelId(userModels && userModels.length > 0 ? userModels[0].id : null);
     }
-  }, [otherSelectedUserId, modelsByUser]);
+  }
 
     // Get child entity types of model (Candidate Predictors, Performance, etc)
   const modelChildTypes = useMemo(() => 

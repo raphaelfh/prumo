@@ -119,7 +119,8 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     // useEffect AFTER loadSuggestions declaration
   useEffect(() => {
     if (!enabled || !articleId) return;
-    loadSuggestions();
+    // Microtask so the loader's setState calls run in an async callback.
+    queueMicrotask(() => void loadSuggestions());
   }, [articleId, enabled, loadSuggestions]);
 
   const acceptSuggestionCore = useCallback(async (instanceId: string, fieldId: string, silent: boolean): Promise<boolean> => {
