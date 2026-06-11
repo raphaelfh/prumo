@@ -1,4 +1,4 @@
-import {useCallback, useEffect, useMemo, useState} from 'react';
+import {useCallback, useEffect, useState} from 'react';
 import {articleCache, globalCache} from '@/services/cacheService';
 
 /**
@@ -259,26 +259,4 @@ export function useOptimizedObjectCache<T extends Record<string, any>>({
     updateFields,
     getField,
   };
-}
-
-/**
- * Hook para cache de dados com dependências
- */
-export function useOptimizedCacheWithDeps<T>(
-  cacheKey: string,
-  fetchFn: () => Promise<T>,
-  deps: React.DependencyList,
-  options: Omit<UseOptimizedCacheOptions<T>, 'cacheKey' | 'fetchFn'> = {}
-) {
-  const memoizedFetchFn = useCallback(fetchFn, deps);
-  const memoizedCacheKey = useMemo(() => 
-    `${cacheKey}_${JSON.stringify(deps)}`, 
-    [cacheKey, deps]
-  );
-
-  return useOptimizedCache({
-    cacheKey: memoizedCacheKey,
-    fetchFn: memoizedFetchFn,
-    ...options,
-  });
 }
