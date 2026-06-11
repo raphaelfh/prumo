@@ -492,6 +492,52 @@ jobs:
       - name: Run vitest
         run: npm run test:run
 
+  # =================== API CONTRACT ===================
+  # The frontend types at frontend/types/api/ are generated from the
+  # FastAPI app (scripts/generate_api_types.sh). Regenerate and fail on
+  # diff: committed types can never drift from the backend — the
+  # structural fix for the envelope-drift incident class.
+  api-contract:
+    name: API Contract
+    runs-on: ubuntu-latest
+    env:
+      # App import only — stubs, no real services touched.
+      SUPABASE_URL: http://localhost:54321
+      SUPABASE_ANON_KEY: stub-anon
+      SUPABASE_SERVICE_ROLE_KEY: stub-service-role
+      ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      DATABASE_URL: postgresql+asyncpg://stub
+      DIRECT_DATABASE_URL: postgresql://stub
+      OPENAI_API_KEY: sk-stub
+      REDIS_URL: redis://localhost:6379/0
+      DEBUG: "true"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install backend deps
+        working-directory: backend
+        run: uv sync --frozen
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+      - name: Install frontend deps
+        run: npm ci
+      - name: Regenerate API types
+        run: bash scripts/generate_api_types.sh
+      - name: Fail on drift
+        run: |
+          if ! git diff --exit-code frontend/types/api/; then
+            echo "::error::frontend/types/api/ is stale — run 'npm run generate:api-types' and commit the result."
+            exit 1
+          fi
+
   # =================== FRONTEND BUILD ===================
   frontend-build:
     name: Frontend Build

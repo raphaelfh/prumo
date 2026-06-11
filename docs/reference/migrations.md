@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-05-24
+last_reviewed: 2026-06-10
 owner: '@raphaelfh'
 ---
 
@@ -229,7 +229,7 @@ must:
    `is_project_manager` (defined in earlier migrations as `SECURITY
    DEFINER` functions). Mirror the existing policy shape.
 
-See `0012_workflow_tables.py` and `0018_is_project_reviewer_rls.py` for
+See `0012_consensus_decision_run_fk.py` and `0025_reviewer_scoped_select_rls.py` for
 the canonical patterns.
 
 ## When AI assistants edit migrations
@@ -260,7 +260,8 @@ isolated improvement:
 
 ## Reference
 
-- Alembic head: `uv run alembic current` (currently `0001_baseline_v1`)
+- Alembic head: `uv run alembic current` — or `ls backend/alembic/versions/`
+  (don't pin the head here; it goes stale within days)
 - Migration history: `make db-history`
 - Archived migrations (pre-squash): `backend/alembic/versions/archive/`
 - Architecture: `docs/reference/extraction-hitl-architecture.md`
