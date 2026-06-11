@@ -490,6 +490,63 @@ class TestFullExtractionFlow:
         )
 
     @pytest.mark.asyncio
+    async def test_extract_marks_run_failed_when_llm_call_raises(self, service, mock_storage):
+        """Reask budget exhausted → run fails; no silent empty-list degradation."""
+        from pydantic_ai import UnexpectedModelBehavior
+
+        project_id = uuid4()
+        article_id = uuid4()
+        template_id = uuid4()
+        run_id = uuid4()
+        entity_type_id = uuid4()
+
+        mock_storage.download = AsyncMock(return_value=b"%PDF test")
+        mock_file = MagicMock()
+        mock_file.storage_key = "test.pdf"
+        service._article_files.get_latest_pdf = AsyncMock(return_value=mock_file)
+
+        mock_entity_type = MagicMock()
+        mock_entity_type.name = "prediction_models"
+        mock_entity_type.role = "model_container"
+        mock_template = MagicMock()
+        mock_template.id = template_id
+        mock_template.name = "T"
+        mock_template.entity_types = [mock_entity_type]
+        service._templates.get_with_entity_types = AsyncMock(return_value=mock_template)
+
+        mock_entity = MagicMock()
+        mock_entity.id = entity_type_id
+        service._entity_types.get_by_role = AsyncMock(return_value=mock_entity)
+        service._entity_types.get_children = AsyncMock(return_value=[])
+
+        mock_run = MagicMock()
+        mock_run.id = run_id
+        service._lifecycle.create_run = AsyncMock(return_value=mock_run)
+        service._lifecycle.advance_stage = AsyncMock(return_value=mock_run)
+        service._runs.start_run = AsyncMock()
+        service._runs.complete_run = AsyncMock()
+        service._runs.rollback_and_fail = AsyncMock()
+
+        service.pdf_processor.extract_text = AsyncMock(return_value="text")
+
+        with (
+            patch(
+                "app.services.model_extraction_service.extract_structured",
+                AsyncMock(side_effect=UnexpectedModelBehavior("reask budget exhausted")),
+            ),
+            patch("app.services.model_extraction_service.build_model", MagicMock()),
+            pytest.raises(UnexpectedModelBehavior, match="reask budget exhausted"),
+        ):
+            await service.extract(
+                project_id=project_id,
+                article_id=article_id,
+                template_id=template_id,
+            )
+
+        service._runs.rollback_and_fail.assert_awaited_once()
+        assert "reask budget exhausted" in str(service._runs.rollback_and_fail.await_args)
+
+    @pytest.mark.asyncio
     async def test_extract_no_models_found(self, service, mock_storage):
         """Test when no model is found."""
         project_id = uuid4()
