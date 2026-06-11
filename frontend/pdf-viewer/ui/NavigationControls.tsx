@@ -1,4 +1,4 @@
-import {useState, useEffect} from 'react';
+import {useState} from 'react';
 import {ChevronLeft, ChevronRight} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
@@ -10,9 +10,13 @@ export function NavigationControls({className}: {className?: string}) {
   const goToPage = useViewerStore((s) => s.actions.goToPage);
   const [local, setLocal] = useState(String(currentPage));
 
-  useEffect(() => {
+  // Mirror the store page into the input when it changes externally
+  // (adjust-during-render instead of an effect).
+  const [prevPage, setPrevPage] = useState(currentPage);
+  if (currentPage !== prevPage) {
+    setPrevPage(currentPage);
     setLocal(String(currentPage));
-  }, [currentPage]);
+  }
 
   const submit = () => {
     const n = parseInt(local, 10);

@@ -209,20 +209,14 @@ export default function ProjectView() {
         }
     }, [activeTab, searchParams, setSearchParams]);
 
-  useEffect(() => {
-    if (!projectId) return;
-    // New project selected: bump the generation so any in-flight load for the
-    // previous project resolves into a no-op, and show the spinner again
-    // instead of leaving the old project's data on screen (#110).
-    projectLoadRef.current += 1;
-    setLoading(true);
-    void loadProject();
-    void loadArticles();
-    return () => {
-      // Invalidate in-flight loads on projectId change / unmount.
-      projectLoadRef.current += 1;
-    };
-  }, [projectId]);
+  // New project selected: show the spinner again instead of leaving the old
+  // project's data on screen (#110). Adjusted during render so the effect
+  // below never calls setState synchronously.
+  const [prevProjectId, setPrevProjectId] = useState(projectId);
+  if (projectId !== prevProjectId) {
+    setPrevProjectId(projectId);
+    if (projectId) setLoading(true);
+  }
 
   const loadProject = async () => {
     if (!projectId) return;
@@ -273,6 +267,21 @@ export default function ProjectView() {
     }
   };
 
+  useEffect(() => {
+    if (!projectId) return;
+    // New project selected: bump the generation so any in-flight load for the
+    // previous project resolves into a no-op (#110). The loaders run from a
+    // microtask so all their setState calls happen in async callbacks.
+    projectLoadRef.current += 1;
+    queueMicrotask(() => {
+      void loadProject();
+      void loadArticles();
+    });
+    return () => {
+      // Invalidate in-flight loads on projectId change / unmount.
+      projectLoadRef.current += 1;
+    };
+  }, [projectId]);
 
   if (loading) {
     return (
