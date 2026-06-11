@@ -1,4 +1,4 @@
-import {useCallback, useRef, useState} from 'react';
+import {useRef, useState} from 'react';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {cn} from '@/lib/utils';
@@ -29,7 +29,7 @@ export function ArticleKeywordsField({
     const [draft, setDraft] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
 
-    const commitDraft = useCallback(() => {
+    const commitDraft = () => {
         const trimmed = draft.trim();
         if (!trimmed) {
             setDraft('');
@@ -42,7 +42,7 @@ export function ArticleKeywordsField({
         }
         onChange([...value, trimmed]);
         setDraft('');
-    }, [draft, onChange, value]);
+    };
 
     const removeAt = (index: number) => {
         onChange(value.filter((_, i) => i !== index));

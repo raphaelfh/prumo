@@ -1,4 +1,3 @@
-import {useCallback} from 'react';
 import {
     closestCenter,
     DndContext,
@@ -192,69 +191,54 @@ export function ArticleAuthorsField({rows, onChange, disabled}: ArticleAuthorsFi
         useSensor(KeyboardSensor, {coordinateGetter: sortableKeyboardCoordinates})
     );
 
-    const onDragEnd = useCallback(
-        (event: DragEndEvent) => {
-            const {active, over} = event;
-            if (!over || active.id === over.id) return;
-            const oldIndex = rows.findIndex((r) => r.id === active.id);
-            const newIndex = rows.findIndex((r) => r.id === over.id);
-            if (oldIndex < 0 || newIndex < 0) return;
-            onChange(arrayMove(rows, oldIndex, newIndex));
-        },
-        [rows, onChange]
-    );
+    const onDragEnd = (event: DragEndEvent) => {
+        const {active, over} = event;
+        if (!over || active.id === over.id) return;
+        const oldIndex = rows.findIndex((r) => r.id === active.id);
+        const newIndex = rows.findIndex((r) => r.id === over.id);
+        if (oldIndex < 0 || newIndex < 0) return;
+        onChange(arrayMove(rows, oldIndex, newIndex));
+    };
 
-    const updateRow = useCallback(
-        (id: string, patch: Partial<AuthorFormRow>) => {
-            onChange(rows.map((r) => (r.id === id ? {...r, ...patch} : r)));
-        },
-        [rows, onChange]
-    );
+    const updateRow = (id: string, patch: Partial<AuthorFormRow>) => {
+        onChange(rows.map((r) => (r.id === id ? {...r, ...patch} : r)));
+    };
 
-    const removeRow = useCallback(
-        (id: string) => {
-            const next = rows.filter((r) => r.id !== id);
-            onChange(next.length ? next : [newAuthorRow()]);
-        },
-        [rows, onChange]
-    );
+    const removeRow = (id: string) => {
+        const next = rows.filter((r) => r.id !== id);
+        onChange(next.length ? next : [newAuthorRow()]);
+    };
 
-    const insertBelow = useCallback(
-        (id: string) => {
-            const i = rows.findIndex((r) => r.id === id);
-            if (i < 0) return;
-            const copy = [...rows];
-            copy.splice(i + 1, 0, newAuthorRow());
-            onChange(copy);
-        },
-        [rows, onChange]
-    );
+    const insertBelow = (id: string) => {
+        const i = rows.findIndex((r) => r.id === id);
+        if (i < 0) return;
+        const copy = [...rows];
+        copy.splice(i + 1, 0, newAuthorRow());
+        onChange(copy);
+    };
 
-    const toggleMode = useCallback(
-        (id: string) => {
-            onChange(
-                rows.map((r) => {
-                    if (r.id !== id) return r;
-                    if (r.mode === 'person') {
-                        const combined = [r.lastName.trim(), r.firstName.trim()].filter(Boolean).join(' ');
-                        return {
-                            ...r,
-                            mode: 'single' as const,
-                            singleName: combined || r.singleName,
-                            lastName: '',
-                            firstName: '',
-                        };
-                    }
-                    return {...r, ...parsePersonFromSingle(r.singleName), mode: 'person' as const, singleName: ''};
-                })
-            );
-        },
-        [rows, onChange]
-    );
+    const toggleMode = (id: string) => {
+        onChange(
+            rows.map((r) => {
+                if (r.id !== id) return r;
+                if (r.mode === 'person') {
+                    const combined = [r.lastName.trim(), r.firstName.trim()].filter(Boolean).join(' ');
+                    return {
+                        ...r,
+                        mode: 'single' as const,
+                        singleName: combined || r.singleName,
+                        lastName: '',
+                        firstName: '',
+                    };
+                }
+                return {...r, ...parsePersonFromSingle(r.singleName), mode: 'person' as const, singleName: ''};
+            })
+        );
+    };
 
-    const addAtEnd = useCallback(() => {
+    const addAtEnd = () => {
         onChange([...rows, newAuthorRow()]);
-    }, [rows, onChange]);
+    };
 
     return (
         <div className="space-y-2">

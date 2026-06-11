@@ -10,7 +10,7 @@
  * toggle between PROBAST and QUADAS-2 on the fly.
  */
 
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ChevronDown, ShieldCheck, Sparkles } from "lucide-react";
 
@@ -135,14 +135,11 @@ export function useActiveTemplateSelection(
     return templates[0];
   }, [searchParams, templates]);
 
-  const selectTemplate = useCallback(
-    (templateId: string) => {
-      const next = new URLSearchParams(searchParams);
-      next.set("template", templateId);
-      setSearchParams(next, { replace: true });
-    },
-    [searchParams, setSearchParams],
-  );
+  const selectTemplate = (templateId: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.set("template", templateId);
+    setSearchParams(next, { replace: true });
+  };
 
   return { activeTemplate, selectTemplate };
 }

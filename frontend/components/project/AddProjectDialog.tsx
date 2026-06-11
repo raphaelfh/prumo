@@ -2,7 +2,6 @@
  * Dialog for creating a new project.
  */
 
-import {useMemo} from "react";
 import {useForm, useWatch} from "react-hook-form";
 import {zodResolver} from "@hookform/resolvers/zod";
 import {z} from "zod";
@@ -32,21 +31,17 @@ export function AddProjectDialog({
   onProjectCreate,
                                      isCreating = false,
 }: AddProjectDialogProps) {
-    const schema = useMemo(
-        () =>
-            z.object({
-                name: z
-                    .string()
-                    .min(1, t("project", "addDialogNameRequired"))
-                    .min(3, t("project", "addDialogNameMinLength"))
-                    .max(100, t("project", "addDialogNameMaxLength")),
-                description: z
-                    .string()
-                    .max(500, t("project", "addDialogDescriptionMaxLength"))
-                    .optional(),
-            }),
-        []
-    );
+    const schema = z.object({
+        name: z
+            .string()
+            .min(1, t("project", "addDialogNameRequired"))
+            .min(3, t("project", "addDialogNameMinLength"))
+            .max(100, t("project", "addDialogNameMaxLength")),
+        description: z
+            .string()
+            .max(500, t("project", "addDialogDescriptionMaxLength"))
+            .optional(),
+    });
 
     const form = useForm<FormValues>({
         resolver: zodResolver(schema),

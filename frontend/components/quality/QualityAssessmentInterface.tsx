@@ -15,7 +15,7 @@
  * with the bar-selected template id, so the user lands on the right session.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { CheckCircle, FileText, ShieldCheck } from "lucide-react";
 
@@ -105,7 +105,7 @@ export function QualityAssessmentInterface({ projectId }: Props) {
     };
   }, [projectId, activeTemplate, user]);
 
-  const tabContent = useMemo(() => {
+  const getTabContent = () => {
     if (activeTab === "configuration") {
       return (
         <QualityAssessmentConfiguration
@@ -215,7 +215,8 @@ export function QualityAssessmentInterface({ projectId }: Props) {
         />
       </div>
     );
-  }, [activeTab, activeTemplate, projectId, refresh, selectTemplate, stats, templates, templatesLoading]);
+  };
+  const tabContent = getTabContent();
 
   return (
     <div className="space-y-4 p-4 lg:p-6" data-testid="hitl-quality_assessment-interface">
