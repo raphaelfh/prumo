@@ -183,3 +183,47 @@ def test_extra_fields_forbidden():
                 },
             }
         )
+
+
+def test_required_field_hint_lands_in_schema_description():
+    [model] = build_output_models(_entity_type([_field(name="population", is_required=True)]))
+    prop = model.model_json_schema(by_alias=True)["properties"]["population"]
+    assert "Required field" in prop["description"]
+
+
+def test_duplicate_field_names_last_occurrence_wins():
+    first = _field(name="risk", field_type="text")
+    second = _field(
+        name="risk",
+        field_type="select",
+        allowed_values={"options": [{"value": "Low"}, {"value": "High"}]},
+    )
+    [model] = build_output_models(_entity_type([first, second]))
+    assert len(model.model_fields) == 1
+    instance = model.model_validate(
+        {"risk": {"value": "Low", "confidence": 0.5, "reasoning": None, "evidence": None}}
+    )
+    assert dump_extraction(instance)["risk"]["value"] == "Low"
+
+
+def test_json_schema_satisfies_strict_mode_contract():
+    field = _field(
+        name="risk",
+        field_type="select",
+        allowed_values={"options": [{"value": "Low"}, {"value": "High"}]},
+    )
+    [model] = build_output_models(_entity_type([field, _field(name="population")]))
+    schema = model.model_json_schema(by_alias=True)
+
+    assert schema["additionalProperties"] is False
+    assert sorted(schema["required"]) == ["population", "risk"]
+
+    defs = schema["$defs"]
+    for sub_schema in defs.values():
+        assert sub_schema["additionalProperties"] is False
+        assert sorted(sub_schema["required"]) == sorted(sub_schema["properties"].keys())
+
+    risk_def_name = schema["properties"]["risk"]["$ref"].rsplit("/", 1)[-1]
+    risk_value = defs[risk_def_name]["properties"]["value"]
+    assert {"Low", "High"}.issubset(set(risk_value["anyOf"][0]["enum"]))
+    assert schema["properties"]["risk"]["description"] == "desc"

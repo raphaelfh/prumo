@@ -60,7 +60,11 @@ def _enum_values(field: Any) -> list[Any]:
 
 def _description(field: Any) -> str:
     raw = getattr(field, "llm_description", None) or getattr(field, "description", None) or ""
-    return str(raw)
+    description = str(raw)
+    if getattr(field, "is_required", False):
+        hint = "Required field — search the full text before returning null."
+        description = f"{description} {hint}".strip() if description else hint
+    return description
 
 
 def _value_type(field: Any) -> Any:
@@ -108,6 +112,11 @@ def build_output_models(entity_type: Any) -> list[type[BaseModel]]:
     the LLM call entirely.
     """
     fields = list(getattr(entity_type, "fields", None) or [])
+    # Duplicate names within an entity type last-win, matching the legacy
+    # field_map semantics — extraction_fields has no (entity_type, name)
+    # unique constraint.
+    deduped: dict[str, Any] = {str(field.name): field for field in fields}
+    fields = list(deduped.values())
     if not fields:
         return []
     max_fields = max(1, OPENAI_STRICT_PROPERTY_BUDGET // _PROPERTIES_PER_FIELD)
