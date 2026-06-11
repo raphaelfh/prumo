@@ -1,14 +1,14 @@
 """
 Unit tests for SectionExtractionService.
 
-Testa funcionalidades de extração de seções:
-- Construção de schemas
-- Processamento de PDFs
-- Extração com LLM
-- Criação de sugestões
+Covers PDF fetching, entity-type lookups, orchestration of
+extract_section / extract_for_run / extract_all_sections, suggestion
+creation, and the _extract_with_llm wiring into the typed LLM call
+layer (app.llm). Schema-building behaviour is covered by
+tests/unit/llm/test_schema.py; prompt content by
+tests/unit/llm/test_prompts.py.
 """
 
-import json
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -16,6 +16,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.storage import StorageAdapter
+from app.llm.extractor import LlmUsage
 from app.services.section_extraction_service import SectionExtractionService
 
 
@@ -38,7 +39,6 @@ def service(mock_db, mock_storage):
     """Fixture do SectionExtractionService com mocks."""
     with (
         patch("app.services.section_extraction_service.PDFProcessor") as mock_pdf,
-        patch("app.services.section_extraction_service.OpenAIService") as mock_openai,
         patch("app.services.section_extraction_service.ArticleFileRepository") as mock_article_repo,
         patch(
             "app.services.section_extraction_service.ExtractionEntityTypeRepository"
@@ -54,9 +54,6 @@ def service(mock_db, mock_storage):
     ):
         mock_pdf_instance = MagicMock()
         mock_pdf.return_value = mock_pdf_instance
-
-        mock_openai_instance = MagicMock()
-        mock_openai.return_value = mock_openai_instance
 
         # Mock repositories
         mock_article_repo_instance = MagicMock()
@@ -90,7 +87,6 @@ def service(mock_db, mock_storage):
             trace_id="trace-123",
         )
         svc.pdf_processor = mock_pdf_instance
-        svc.openai_service = mock_openai_instance
         svc._article_files = mock_article_repo_instance
         svc._entity_types = mock_entity_repo_instance
         svc._instances = mock_instance_repo_instance
@@ -99,73 +95,6 @@ def service(mock_db, mock_storage):
         svc._lifecycle = mock_lifecycle_instance
 
         return svc
-
-
-class TestSectionExtractionSchema:
-    """Testes de construção de schemas."""
-
-    def test_build_extraction_schema_basic(self, service):
-        """Testa construção de schema básico."""
-        # Entity type como objeto mock com atributo .fields
-        mock_field1 = MagicMock()
-        mock_field1.name = "sample_size"
-        mock_field1.field_type = "integer"
-        mock_field1.description = "Number of participants"
-        mock_field1.is_required = True
-
-        mock_field2 = MagicMock()
-        mock_field2.name = "study_type"
-        mock_field2.field_type = "string"
-        mock_field2.description = "Type of study"
-        mock_field2.is_required = True
-
-        mock_field3 = MagicMock()
-        mock_field3.name = "has_control_group"
-        mock_field3.field_type = "boolean"
-        mock_field3.description = "Whether study has control"
-        mock_field3.is_required = False
-
-        entity_type = MagicMock()
-        entity_type.name = "Study Characteristics"
-        entity_type.fields = [mock_field1, mock_field2, mock_field3]
-
-        schema = service._build_extraction_schema(entity_type)
-
-        assert schema["type"] == "object"
-        assert "sample_size" in schema["properties"]
-        assert schema["properties"]["sample_size"]["type"] == "number"
-        assert schema["properties"]["study_type"]["type"] == "string"
-        assert schema["properties"]["has_control_group"]["type"] == "boolean"
-        assert "sample_size" in schema["required"]
-        assert "study_type" in schema["required"]
-        assert "has_control_group" not in schema["required"]
-
-    def test_build_extraction_schema_array_type(self, service):
-        """Testa schema com campos array."""
-        mock_field = MagicMock()
-        mock_field.name = "primary_outcomes"
-        mock_field.field_type = "array"
-        mock_field.description = "List of primary outcomes"
-        mock_field.is_required = False
-
-        entity_type = MagicMock()
-        entity_type.name = "Outcomes"
-        entity_type.fields = [mock_field]
-
-        schema = service._build_extraction_schema(entity_type)
-
-        assert schema["properties"]["primary_outcomes"]["type"] == "array"
-
-    def test_build_extraction_schema_empty_fields(self, service):
-        """Testa schema sem campos."""
-        entity_type = MagicMock()
-        entity_type.name = "Empty Entity"
-        entity_type.fields = []
-
-        schema = service._build_extraction_schema(entity_type)
-
-        assert schema["properties"] == {}
-        assert schema["required"] == []
 
 
 class TestSectionExtractionPDF:
@@ -276,59 +205,6 @@ class TestSectionExtractionEntityTypes:
         assert result[0].name == "Section 1"
 
 
-class TestSectionExtractionLLM:
-    """Testes de extração com LLM."""
-
-    @pytest.mark.asyncio
-    async def test_extract_with_llm_success(self, service):
-        """Testa extração bem-sucedida com LLM."""
-        # Mock OpenAI response with usage stats
-        from app.services.openai_service import OpenAIResponse, OpenAIUsage
-
-        mock_response = OpenAIResponse(
-            content=json.dumps(
-                {
-                    "sample_size": 150,
-                    "study_type": "RCT",
-                    "duration_weeks": 12,
-                }
-            ),
-            usage=OpenAIUsage(
-                prompt_tokens=100,
-                completion_tokens=50,
-                total_tokens=150,
-            ),
-            model="gpt-4o-mini",
-        )
-
-        service.openai_service.chat_completion_full = AsyncMock(return_value=mock_response)
-
-        # Entity type mock
-        entity_type = MagicMock()
-        entity_type.name = "Study Characteristics"
-        entity_type.description = "Basic study information"
-
-        schema = {
-            "type": "object",
-            "properties": {
-                "sample_size": {"type": "number"},
-                "study_type": {"type": "string"},
-            },
-        }
-
-        # Returns tuple (extracted_data, response)
-        extracted, response = await service._extract_with_llm(
-            pdf_text="Sample text from PDF...",
-            entity_type=entity_type,
-            schema=schema,
-            model="gpt-4o-mini",
-        )
-
-        assert extracted["sample_size"] == 150
-        assert extracted["study_type"] == "RCT"
-        assert response.usage.total_tokens == 150
-
-
 class TestSectionExtractionFullFlow:
     """Testes de fluxo completo."""
 
@@ -385,19 +261,13 @@ class TestSectionExtractionFullFlow:
         # Mock PDF processor
         service.pdf_processor.extract_text = AsyncMock(return_value="Extracted text from PDF")
 
-        # Mock OpenAI
-        from app.services.openai_service import OpenAIResponse, OpenAIUsage
-
-        mock_openai_response = OpenAIResponse(
-            content=json.dumps({"field_1": "Extracted value"}),
-            usage=OpenAIUsage(
-                prompt_tokens=100,
-                completion_tokens=50,
-                total_tokens=150,
-            ),
-            model="gpt-4o-mini",
+        # Mock the typed LLM call seam
+        service._extract_with_llm = AsyncMock(
+            return_value=(
+                {"field_1": "Extracted value"},
+                LlmUsage(prompt_tokens=100, completion_tokens=50),
+            )
         )
-        service.openai_service.chat_completion_full = AsyncMock(return_value=mock_openai_response)
 
         # Mock SQLAlchemy model class to avoid mapper issues
         with patch(
@@ -450,8 +320,6 @@ class TestExtractSectionWithExistingRun:
         existing_run,
         entity_type_id,
     ):
-        from app.services.openai_service import OpenAIResponse, OpenAIUsage
-
         mock_file = MagicMock()
         mock_file.storage_key = "test.pdf"
         service._article_files.get_latest_pdf = AsyncMock(return_value=mock_file)
@@ -479,13 +347,9 @@ class TestExtractSectionWithExistingRun:
         service._proposals.record_proposal = AsyncMock(return_value=mock_proposal)
         service._instances.get_by_article = AsyncMock(return_value=[])
 
-        # OpenAI shaped response.
-        service.openai_service.chat_completion_full = AsyncMock(
-            return_value=OpenAIResponse(
-                content=json.dumps({"field_1": "value"}),
-                usage=OpenAIUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
-                model="gpt-4o-mini",
-            )
+        # Typed LLM call seam.
+        service._extract_with_llm = AsyncMock(
+            return_value=({"field_1": "value"}, LlmUsage(prompt_tokens=10, completion_tokens=5))
         )
 
         # Run-lifecycle bookkeeping methods must exist as AsyncMock so we
@@ -585,83 +449,6 @@ class TestExtractSectionWithExistingRun:
         service._lifecycle.create_run.assert_not_awaited()
 
 
-class TestExtractWithLLMPrompt:
-    """The system + user prompt must change with the run kind so the LLM
-    grades QA studies instead of trying to extract structured data."""
-
-    @pytest.mark.asyncio
-    async def test_extraction_kind_uses_extraction_prompt(self, service):
-        from app.services.openai_service import OpenAIResponse, OpenAIUsage
-
-        captured_messages: list[dict[str, str]] = []
-
-        async def fake_chat(messages, **kwargs):  # noqa: ARG001
-            captured_messages.extend(messages)
-            return OpenAIResponse(
-                content=json.dumps({}),
-                usage=OpenAIUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
-                model="gpt-4o-mini",
-            )
-
-        service.openai_service.chat_completion_full = AsyncMock(side_effect=fake_chat)
-
-        entity_type = MagicMock()
-        entity_type.name = "Participants"
-        entity_type.description = "Population"
-
-        await service._extract_with_llm(
-            pdf_text="text",
-            entity_type=entity_type,
-            schema={"type": "object", "properties": {}},
-            model="gpt-4o-mini",
-            kind="extraction",
-            framework=None,
-        )
-
-        system_prompt = captured_messages[0]["content"]
-        user_prompt = captured_messages[1]["content"]
-        assert "extracting structured data" in system_prompt
-        assert "Section: Participants" in user_prompt
-        assert "PROBAST" not in system_prompt
-        assert "PROBAST" not in user_prompt
-
-    @pytest.mark.asyncio
-    async def test_quality_assessment_kind_uses_assessment_prompt(self, service):
-        from app.services.openai_service import OpenAIResponse, OpenAIUsage
-
-        captured_messages: list[dict[str, str]] = []
-
-        async def fake_chat(messages, **kwargs):  # noqa: ARG001
-            captured_messages.extend(messages)
-            return OpenAIResponse(
-                content=json.dumps({}),
-                usage=OpenAIUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
-                model="gpt-4o-mini",
-            )
-
-        service.openai_service.chat_completion_full = AsyncMock(side_effect=fake_chat)
-
-        entity_type = MagicMock()
-        entity_type.name = "Predictors"
-        entity_type.description = "Domain 2"
-
-        await service._extract_with_llm(
-            pdf_text="text",
-            entity_type=entity_type,
-            schema={"type": "object", "properties": {}},
-            model="gpt-4o-mini",
-            kind="quality_assessment",
-            framework="PROBAST",
-        )
-
-        system_prompt = captured_messages[0]["content"]
-        user_prompt = captured_messages[1]["content"]
-        assert "PROBAST" in system_prompt
-        assert "methodologist" in system_prompt
-        assert "Domain: Predictors" in user_prompt
-        assert "extracting structured data" not in system_prompt
-
-
 class TestExtractForRun:
     """Tests for the QA / pre-opened-run extraction path that reuses an
     existing Run instead of creating a new one."""
@@ -689,8 +476,6 @@ class TestExtractForRun:
     def _wire_minimal_qa_pipeline(self, service, run, template, top_level_entity_types):
         """Stub out the bits of the service that the QA path touches so each
         test can focus on a single behaviour."""
-        from app.services.openai_service import OpenAIResponse, OpenAIUsage
-
         service.db.get = AsyncMock(
             side_effect=lambda model_cls, _id: run if "Run" in model_cls.__name__ else template
         )
@@ -729,13 +514,9 @@ class TestExtractForRun:
         service._runs.fail_run = AsyncMock()
         service._lifecycle.advance_stage = AsyncMock()
 
-        # LLM
-        service.openai_service.chat_completion_full = AsyncMock(
-            return_value=OpenAIResponse(
-                content=json.dumps({}),
-                usage=OpenAIUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
-                model="gpt-4o-mini",
-            )
+        # Typed LLM call seam
+        service._extract_with_llm = AsyncMock(
+            return_value=({}, LlmUsage(prompt_tokens=10, completion_tokens=5))
         )
 
         # Proposal writes
@@ -890,8 +671,6 @@ class TestExtractOneEntityTypeForRun:
 
     @pytest.mark.asyncio
     async def test_restores_field_list_after_filtering(self, service, run):
-        from app.services.openai_service import OpenAIResponse, OpenAIUsage
-
         f_keep = MagicMock()
         f_keep.id = uuid4()
         f_keep.name = "kept"
@@ -918,12 +697,8 @@ class TestExtractOneEntityTypeForRun:
         service._fields_with_recent_human_proposal = AsyncMock(side_effect=fake_human_probe)
 
         # LLM + suggestion writes
-        service.openai_service.chat_completion_full = AsyncMock(
-            return_value=OpenAIResponse(
-                content=json.dumps({}),
-                usage=OpenAIUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
-                model="gpt-4o-mini",
-            )
+        service._extract_with_llm = AsyncMock(
+            return_value=({}, LlmUsage(prompt_tokens=1, completion_tokens=1))
         )
         service._create_suggestions = AsyncMock(return_value=0)
 
@@ -959,7 +734,7 @@ class TestExtractOneEntityTypeForRun:
         )
         service._fields_with_recent_human_proposal = AsyncMock(return_value={f1.id, f2.id})
         # If filter logic is wrong the LLM gets called — fail loudly.
-        service.openai_service.chat_completion_full = AsyncMock(
+        service._extract_with_llm = AsyncMock(
             side_effect=AssertionError("LLM must NOT be called when all fields are human")
         )
         service._create_suggestions = AsyncMock(return_value=0)
@@ -975,14 +750,11 @@ class TestExtractOneEntityTypeForRun:
         )
 
         assert result == {"suggestions_created": 0, "tokens_total": 0, "skipped": True}
-        service.openai_service.chat_completion_full.assert_not_called()
+        service._extract_with_llm.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_no_filter_when_skip_flag_is_false(self, service, run):
-        from app.services.openai_service import OpenAIResponse, OpenAIUsage
-
         # ``MagicMock(name='a')`` sets the *mock's* name, not the .name attribute.
-        # Set it explicitly so json.dumps inside _build_extraction_schema works.
         f1 = MagicMock(id=uuid4())
         f1.name = "a"
         f1.field_type = "string"
@@ -1003,12 +775,8 @@ class TestExtractOneEntityTypeForRun:
         service._fields_with_recent_human_proposal = AsyncMock(
             side_effect=AssertionError("human-proposal probe must not run when skip flag is False")
         )
-        service.openai_service.chat_completion_full = AsyncMock(
-            return_value=OpenAIResponse(
-                content=json.dumps({}),
-                usage=OpenAIUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
-                model="gpt-4o-mini",
-            )
+        service._extract_with_llm = AsyncMock(
+            return_value=({}, LlmUsage(prompt_tokens=1, completion_tokens=1))
         )
         service._create_suggestions = AsyncMock(return_value=0)
 
@@ -1026,7 +794,7 @@ class TestExtractOneEntityTypeForRun:
 
 
 # ---------------------------------------------------------------------------
-# _generate_extraction_summary (lines 897-927)
+# _generate_extraction_summary
 # ---------------------------------------------------------------------------
 
 
@@ -1099,7 +867,7 @@ class TestGenerateExtractionSummary:
 
 
 # ---------------------------------------------------------------------------
-# _get_child_entity_types edge cases (lines 964-998)
+# _get_child_entity_types edge cases
 # ---------------------------------------------------------------------------
 
 
@@ -1149,149 +917,7 @@ class TestGetChildEntityTypesEdgeCases:
 
 
 # ---------------------------------------------------------------------------
-# _build_extraction_schema — allowed_values branches (lines 1034-1068)
-# ---------------------------------------------------------------------------
-
-
-class TestBuildExtractionSchemaAllowedValues:
-    def test_allowed_values_as_list_of_strings(self, service):
-        field = MagicMock()
-        field.name = "status"
-        field.field_type = "string"
-        field.description = "Status"
-        field.llm_description = None
-        field.is_required = False
-        field.allowed_values = ["active", "inactive", "pending"]
-
-        et = MagicMock()
-        et.fields = [field]
-        schema = service._build_extraction_schema(et)
-
-        assert "enum" in schema["properties"]["status"]
-        assert schema["properties"]["status"]["enum"] == ["active", "inactive", "pending"]
-
-    def test_allowed_values_as_dict_with_options(self, service):
-        field = MagicMock()
-        field.name = "risk"
-        field.field_type = "string"
-        field.description = "Risk level"
-        field.llm_description = None
-        field.is_required = False
-        field.allowed_values = {"options": [{"value": "low"}, {"value": "high"}]}
-
-        et = MagicMock()
-        et.fields = [field]
-        schema = service._build_extraction_schema(et)
-
-        assert schema["properties"]["risk"]["enum"] == ["low", "high"]
-
-    def test_allowed_values_options_appended_to_description(self, service):
-        field = MagicMock()
-        field.name = "choice"
-        field.field_type = "string"
-        field.description = "Pick one"
-        field.llm_description = None
-        field.is_required = False
-        field.allowed_values = ["yes", "no"]
-
-        et = MagicMock()
-        et.fields = [field]
-        schema = service._build_extraction_schema(et)
-
-        assert "Must be one of" in schema["properties"]["choice"]["description"]
-
-    def test_allowed_values_empty_list_no_enum(self, service):
-        field = MagicMock()
-        field.name = "nopts"
-        field.field_type = "string"
-        field.description = "desc"
-        field.llm_description = None
-        field.is_required = False
-        field.allowed_values = []
-
-        et = MagicMock()
-        et.fields = [field]
-        schema = service._build_extraction_schema(et)
-
-        assert "enum" not in schema["properties"]["nopts"]
-
-    def test_llm_description_preferred_over_description(self, service):
-        field = MagicMock()
-        field.name = "f"
-        field.field_type = "string"
-        field.description = "plain desc"
-        field.llm_description = "llm desc"
-        field.is_required = False
-        field.allowed_values = None
-
-        et = MagicMock()
-        et.fields = [field]
-        schema = service._build_extraction_schema(et)
-
-        assert schema["properties"]["f"]["description"] == "llm desc"
-
-    def test_multiselect_maps_to_array_type(self, service):
-        field = MagicMock()
-        field.name = "tags"
-        field.field_type = "multiselect"
-        field.description = "tags"
-        field.llm_description = None
-        field.is_required = False
-        field.allowed_values = None
-
-        et = MagicMock()
-        et.fields = [field]
-        schema = service._build_extraction_schema(et)
-
-        assert schema["properties"]["tags"]["type"] == "array"
-
-
-# ---------------------------------------------------------------------------
-# _extract_with_llm — memory context branch (lines 1120-1124)
-# ---------------------------------------------------------------------------
-
-
-class TestExtractWithLLMMemoryContext:
-    @pytest.mark.asyncio
-    async def test_memory_context_included_in_prompt(self, service):
-        from app.services.openai_service import OpenAIResponse, OpenAIUsage
-
-        captured: list[dict] = []
-
-        async def capture_call(messages, **kwargs):  # noqa: ARG001
-            captured.extend(messages)
-            return OpenAIResponse(
-                content="{}",
-                usage=OpenAIUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
-                model="gpt-4o-mini",
-            )
-
-        service.openai_service.chat_completion_full = AsyncMock(side_effect=capture_call)
-
-        et = MagicMock()
-        et.name = "Methods"
-        et.description = "methods section"
-
-        memory = [
-            {"entity_type_name": "Participants", "summary": "N=100 patients"},
-        ]
-
-        await service._extract_with_llm(
-            pdf_text="article text",
-            entity_type=et,
-            schema={"type": "object", "properties": {}},
-            model="gpt-4o-mini",
-            memory_context=memory,
-        )
-
-        user_prompt = captured[1]["content"]
-        assert "CONTEXT FROM PREVIOUSLY EXTRACTED SECTIONS" in user_prompt
-        assert "Participants" in user_prompt
-        assert "N=100 patients" in user_prompt
-
-
-# ---------------------------------------------------------------------------
-# _create_suggestions — branches (lines 1248+)
+# _create_suggestions — branches
 # ---------------------------------------------------------------------------
 
 
@@ -1571,7 +1197,7 @@ class TestCreateSuggestions:
 
 
 # ---------------------------------------------------------------------------
-# extract_section — exception path (lines 270-281)
+# extract_section — exception path
 # ---------------------------------------------------------------------------
 
 
@@ -1609,7 +1235,7 @@ class TestExtractSectionException:
 
 
 # ---------------------------------------------------------------------------
-# extract_all_sections (lines 593-760)
+# extract_all_sections
 # ---------------------------------------------------------------------------
 
 
@@ -1759,7 +1385,7 @@ class TestExtractAllSections:
 
 
 # ---------------------------------------------------------------------------
-# extract_for_run — entity error path (lines 370-386)
+# extract_for_run — entity error path
 # ---------------------------------------------------------------------------
 
 
@@ -1813,3 +1439,181 @@ class TestExtractForRunErrorPath:
         assert result.failed_sections == 1
         assert result.sections[0]["success"] is False
         assert "type fetch error" in result.sections[0]["error"]
+
+
+# ---------------------------------------------------------------------------
+# _extract_with_llm — wiring into the typed call layer (app.llm)
+# ---------------------------------------------------------------------------
+
+
+class TestExtractWithLlmWiring:
+    """The service-level _extract_with_llm: prompt selection, chunk merge,
+    usage accumulation — through the real schema builder, no network."""
+
+    @staticmethod
+    def _entity_type(n_fields=1):
+        from types import SimpleNamespace
+
+        fields = [
+            SimpleNamespace(
+                name=f"field_{i}",
+                field_type="text",
+                llm_description="d",
+                description=None,
+                allowed_values=None,
+                is_required=False,
+            )
+            for i in range(n_fields)
+        ]
+        return SimpleNamespace(name="population", description="who", fields=fields)
+
+    async def test_no_fields_skips_llm_entirely(self, service):
+        with patch("app.services.section_extraction_service.extract_structured") as mock_x:
+            data, usage = await service._extract_with_llm(
+                pdf_text="text", entity_type=self._entity_type(0), model="gpt-4o-mini"
+            )
+        assert data == {}
+        assert usage.total_tokens == 0
+        mock_x.assert_not_called()
+
+    async def test_single_chunk_success_returns_data_and_usage(self, service):
+        from app.llm.schema import build_output_models
+
+        entity_type = self._entity_type(2)
+        [model_cls] = build_output_models(entity_type)
+        output = model_cls.model_validate(
+            {
+                "field_0": {"value": "150", "confidence": 0.9, "reasoning": None, "evidence": None},
+                "field_1": {"value": "RCT", "confidence": 0.8, "reasoning": None, "evidence": None},
+            }
+        )
+        mock_x = AsyncMock(return_value=(output, LlmUsage(prompt_tokens=100, completion_tokens=50)))
+        with (
+            patch("app.services.section_extraction_service.extract_structured", mock_x),
+            patch("app.services.section_extraction_service.build_model", MagicMock()),
+        ):
+            extracted, usage = await service._extract_with_llm(
+                pdf_text="Sample text from PDF...",
+                entity_type=entity_type,
+                model="gpt-4o-mini",
+            )
+        assert extracted["field_0"]["value"] == "150"
+        assert extracted["field_1"]["value"] == "RCT"
+        assert usage.total_tokens == 150
+        mock_x.assert_awaited_once()
+
+    async def test_chunked_template_merges_results_and_usage(self, service):
+        from app.llm.schema import build_output_models
+
+        entity_type = self._entity_type(30)  # > 14 fields → 2+ chunks
+        chunk_models = build_output_models(entity_type)
+        assert len(chunk_models) >= 2
+
+        def _payload(model_cls):
+            return model_cls.model_validate(
+                {
+                    info.alias: {
+                        "value": "v",
+                        "confidence": 0.5,
+                        "reasoning": None,
+                        "evidence": None,
+                    }
+                    for info in model_cls.model_fields.values()
+                }
+            )
+
+        outputs = [
+            (_payload(m), LlmUsage(prompt_tokens=10, completion_tokens=5)) for m in chunk_models
+        ]
+        with (
+            patch(
+                "app.services.section_extraction_service.extract_structured",
+                AsyncMock(side_effect=outputs),
+            ),
+            patch("app.services.section_extraction_service.build_model", MagicMock()),
+        ):
+            data, usage = await service._extract_with_llm(
+                pdf_text="text", entity_type=entity_type, model="gpt-4o-mini"
+            )
+        assert len(data) == 30
+        assert usage.prompt_tokens == 10 * len(chunk_models)
+
+    async def test_extraction_kind_selects_extraction_prompt(self, service):
+        from app.llm.prompts import section_extraction
+        from app.llm.schema import build_output_models
+
+        entity_type = self._entity_type(1)
+        [model_cls] = build_output_models(entity_type)
+        output = model_cls.model_validate(
+            {"field_0": {"value": "v", "confidence": 0.5, "reasoning": None, "evidence": None}}
+        )
+        mock_x = AsyncMock(return_value=(output, LlmUsage(prompt_tokens=1, completion_tokens=1)))
+        with (
+            patch("app.services.section_extraction_service.extract_structured", mock_x),
+            patch("app.services.section_extraction_service.build_model", MagicMock()),
+        ):
+            await service._extract_with_llm(
+                pdf_text="text",
+                entity_type=entity_type,
+                model="gpt-4o-mini",
+                kind="extraction",
+                framework=None,
+            )
+        kwargs = mock_x.call_args.kwargs
+        assert kwargs["prompt_name"] == section_extraction.NAME
+        assert "extracting structured data" in kwargs["system_prompt"]
+        assert "Section: population" in kwargs["user_prompt"]
+        assert "PROBAST" not in kwargs["system_prompt"]
+        assert "PROBAST" not in kwargs["user_prompt"]
+
+    async def test_quality_assessment_kind_selects_qa_prompt(self, service):
+        from app.llm.prompts import quality_assessment
+        from app.llm.schema import build_output_models
+
+        entity_type = self._entity_type(1)
+        [model_cls] = build_output_models(entity_type)
+        output = model_cls.model_validate(
+            {"field_0": {"value": "Low", "confidence": 0.5, "reasoning": None, "evidence": None}}
+        )
+        mock_x = AsyncMock(return_value=(output, LlmUsage(prompt_tokens=1, completion_tokens=1)))
+        with (
+            patch("app.services.section_extraction_service.extract_structured", mock_x),
+            patch("app.services.section_extraction_service.build_model", MagicMock()),
+        ):
+            await service._extract_with_llm(
+                pdf_text="text",
+                entity_type=entity_type,
+                model="gpt-4o-mini",
+                kind="quality_assessment",
+                framework="PROBAST",
+            )
+        kwargs = mock_x.call_args.kwargs
+        assert kwargs["prompt_name"] == quality_assessment.NAME
+        assert "PROBAST" in kwargs["system_prompt"]
+        assert "PROBAST" in kwargs["user_prompt"]
+
+    async def test_memory_context_included_in_user_prompt(self, service):
+        from app.llm.schema import build_output_models
+
+        entity_type = self._entity_type(1)
+        [model_cls] = build_output_models(entity_type)
+        output = model_cls.model_validate(
+            {"field_0": {"value": "v", "confidence": 0.5, "reasoning": None, "evidence": None}}
+        )
+        mock_x = AsyncMock(return_value=(output, LlmUsage(prompt_tokens=1, completion_tokens=1)))
+        with (
+            patch("app.services.section_extraction_service.extract_structured", mock_x),
+            patch("app.services.section_extraction_service.build_model", MagicMock()),
+        ):
+            await service._extract_with_llm(
+                pdf_text="article text",
+                entity_type=entity_type,
+                model="gpt-4o-mini",
+                memory_context=[
+                    {"entity_type_name": "Participants", "summary": "N=100 patients"},
+                ],
+            )
+        user_prompt = mock_x.call_args.kwargs["user_prompt"]
+        assert "CONTEXT FROM PREVIOUSLY EXTRACTED SECTIONS" in user_prompt
+        assert "Participants" in user_prompt
+        assert "N=100 patients" in user_prompt
