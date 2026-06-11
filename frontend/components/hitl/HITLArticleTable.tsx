@@ -168,11 +168,24 @@ export function HITLArticleTable({
     };
   }, []);
 
+  // Restart the loading state when the query coordinates change (during
+  // render, so the fetch effect below never sets state synchronously).
+  const [prevQueryKey, setPrevQueryKey] = useState({ projectId, templateId, currentUserId });
+  if (
+    projectId !== prevQueryKey.projectId ||
+    templateId !== prevQueryKey.templateId ||
+    currentUserId !== prevQueryKey.currentUserId
+  ) {
+    setPrevQueryKey({ projectId, templateId, currentUserId });
+    if (projectId && templateId && currentUserId) {
+      setLoading(true);
+      setError(null);
+    }
+  }
+
   useEffect(() => {
     if (!projectId || !templateId || !currentUserId) return;
     let cancelled = false;
-    setLoading(true);
-    setError(null);
 
     void (async () => {
       try {

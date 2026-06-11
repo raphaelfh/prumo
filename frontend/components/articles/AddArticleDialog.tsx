@@ -11,6 +11,13 @@ import {t} from "@/lib/copy";
 import {FILE_ROLES} from "@/lib/file-constants";
 import {detectFileFormat, validateFile} from "@/lib/file-validation";
 
+// Timestamped storage key for the uploaded file. Module-scope because the
+// clock read is impure and must stay out of render-scoped functions.
+function buildStorageKey(projectId: string, articleId: string, originalName: string): string {
+  const fileExt = originalName.split('.').pop();
+  return `${projectId}/${articleId}/${Date.now()}.${fileExt}`;
+}
+
 interface AddArticleDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -146,8 +153,7 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
           return;
         }
 
-        const fileExt = pdfFile.name.split('.').pop();
-        const fileName = `${projectId}/${article.id}/${Date.now()}.${fileExt}`;
+        const fileName = buildStorageKey(projectId, article.id, pdfFile.name);
         
         const { error: uploadError } = await supabase.storage
           .from("articles")

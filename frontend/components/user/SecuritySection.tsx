@@ -3,7 +3,7 @@
  */
 
 import {useMemo, useState} from 'react';
-import {useForm} from 'react-hook-form';
+import {useForm, useWatch} from 'react-hook-form';
 import {zodResolver} from '@hookform/resolvers/zod';
 import {z} from 'zod';
 import {Button} from '@/components/ui/button';
@@ -71,8 +71,10 @@ export function SecuritySection() {
         defaultValues: {newPassword: '', confirmPassword: ''},
     });
 
-    const newPassword = form.watch('newPassword') ?? '';
-    const confirmPassword = form.watch('confirmPassword') ?? '';
+    // useWatch instead of form.watch — the latter is incompatible with the
+    // React Compiler (react-hooks/incompatible-library).
+    const newPassword = useWatch({control: form.control, name: 'newPassword'}) ?? '';
+    const confirmPassword = useWatch({control: form.control, name: 'confirmPassword'}) ?? '';
     const passwordStrength = getPasswordStrength(newPassword);
     const passwordsMatch = newPassword === confirmPassword && confirmPassword !== '';
 

@@ -3,7 +3,7 @@
  */
 
 import {useMemo} from "react";
-import {useForm} from "react-hook-form";
+import {useForm, useWatch} from "react-hook-form";
 import {zodResolver} from "@hookform/resolvers/zod";
 import {z} from "zod";
 import {AppDialog} from "@/components/patterns/AppDialog";
@@ -53,7 +53,9 @@ export function AddProjectDialog({
         defaultValues: {name: "", description: ""},
     });
 
-    const descriptionValue = form.watch("description") ?? "";
+    // useWatch instead of form.watch — the latter is incompatible with the
+    // React Compiler (react-hooks/incompatible-library).
+    const descriptionValue = useWatch({control: form.control, name: "description"}) ?? "";
 
     const onSubmit = async (values: FormValues) => {
     await onProjectCreate({
