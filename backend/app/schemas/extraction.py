@@ -115,9 +115,27 @@ class SectionExtractionRequest(BaseModel):
         return self
 
 
+class SectionOutcome(BaseModel):
+    """Per-section outcome inside a batch extraction result.
+
+    Wire format is snake_case on purpose — these items were emitted as
+    raw service dicts before being typed, and the keys are preserved
+    verbatim. Failure items carry ``error`` and omit the counters.
+    """
+
+    entity_type_id: str
+    entity_type_name: str | None = None
+    success: bool
+    suggestions_created: int = 0
+    tokens_used: int = 0
+    skipped: bool = False
+    error: str | None = None
+
+
 class SingleSectionResult(BaseModel):
     """Resultado de extraction de section unica."""
 
+    mode: Literal["single"] = "single"
     extraction_run_id: str = Field(..., alias="extractionRunId")
     suggestions_created: int = Field(..., alias="suggestionsCreated")
     entity_type_id: str = Field(..., alias="entityTypeId")
@@ -132,6 +150,7 @@ class SingleSectionResult(BaseModel):
 class BatchSectionResult(BaseModel):
     """Resultado de extraction em batch."""
 
+    mode: Literal["batch"] = "batch"
     extraction_run_id: str = Field(..., alias="extractionRunId")
     total_sections: int = Field(..., alias="totalSections")
     successful_sections: int = Field(..., alias="successfulSections")
@@ -139,9 +158,18 @@ class BatchSectionResult(BaseModel):
     total_suggestions_created: int = Field(..., alias="totalSuggestionsCreated")
     total_tokens_used: int = Field(..., alias="totalTokensUsed")
     duration_ms: float = Field(..., alias="durationMs")
-    sections: list[dict[str, Any]] = Field(default=[], alias="sections")
+    sections: list[SectionOutcome] = Field(default=[], alias="sections")
 
     model_config = ConfigDict(populate_by_name=True)
+
+
+# Discriminated union: the ``mode`` tag lets OpenAPI consumers (and the
+# generated TypeScript types) narrow the payload instead of guessing by
+# field presence.
+SectionExtractionResponseData = Annotated[
+    SingleSectionResult | BatchSectionResult,
+    Field(discriminator="mode"),
+]
 
 
 # =================== MODEL EXTRACTION SCHEMAS ===================
@@ -214,14 +242,36 @@ class IdentifiedModel(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class CreatedModelInfo(BaseModel):
+    """One prediction-model instance created by model extraction."""
+
+    instance_id: str = Field(..., alias="instanceId")
+    model_name: str = Field(..., alias="modelName")
+    modelling_method: str | None = Field(default=None, alias="modellingMethod")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ModelExtractionRunStats(BaseModel):
+    """Timing/token metadata attached to a model-extraction response."""
+
+    duration: int
+    models_found: int = Field(..., alias="modelsFound")
+    tokens_prompt: int = Field(..., alias="tokensPrompt")
+    tokens_completion: int = Field(..., alias="tokensCompletion")
+    tokens_total: int = Field(..., alias="tokensTotal")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class ModelExtractionResult(BaseModel):
     """Resultado da extraction de modelos."""
 
     extraction_run_id: str = Field(..., alias="extractionRunId")
-    models_created: list[dict[str, Any]] = Field(..., alias="modelsCreated")
+    models_created: list[CreatedModelInfo] = Field(..., alias="modelsCreated")
     total_models: int = Field(..., alias="totalModels")
     child_instances_created: int = Field(..., alias="childInstancesCreated")
-    metadata: dict[str, Any]
+    metadata: ModelExtractionRunStats
 
     model_config = ConfigDict(populate_by_name=True)
 

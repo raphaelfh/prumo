@@ -1,6 +1,88 @@
 {
   "components": {
     "schemas": {
+      "APIKeyResponse": {
+        "description": "Resposta with data de uma API key (sem a key em si).",
+        "properties": {
+          "createdAt": {
+            "title": "Createdat",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "isActive": {
+            "title": "Isactive",
+            "type": "boolean"
+          },
+          "isDefault": {
+            "title": "Isdefault",
+            "type": "boolean"
+          },
+          "keyName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Keyname"
+          },
+          "lastUsedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastusedat"
+          },
+          "lastValidatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastvalidatedat"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "validationStatus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validationstatus"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "keyName",
+          "isActive",
+          "isDefault",
+          "validationStatus",
+          "lastUsedAt",
+          "lastValidatedAt",
+          "createdAt"
+        ],
+        "title": "APIKeyResponse",
+        "type": "object"
+      },
       "AdvanceStageRequest": {
         "properties": {
           "target_stage": {
@@ -61,6 +143,69 @@
           "ok"
         ],
         "title": "ApiResponse",
+        "type": "object"
+      },
+      "ApiResponse_Annotated_Union_SingleSectionResult__BatchSectionResult___FieldInfo_annotation_NoneType__required_True__discriminator__mode____": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "batch": "#/components/schemas/BatchSectionResult",
+                    "single": "#/components/schemas/SingleSectionResult"
+                  },
+                  "propertyName": "mode"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/SingleSectionResult"
+                  },
+                  {
+                    "$ref": "#/components/schemas/BatchSectionResult"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta",
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[Annotated[Union[SingleSectionResult, BatchSectionResult], FieldInfo(annotation=NoneType, required=True, discriminator='mode')]]",
         "type": "object"
       },
       "ApiResponse_CloneTemplateResponse_": {
@@ -159,6 +304,54 @@
         "title": "ApiResponse[ConsensusResultResponse]",
         "type": "object"
       },
+      "ApiResponse_CreateAPIKeyResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreateAPIKeyResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[CreateAPIKeyResponse]",
+        "type": "object"
+      },
       "ApiResponse_CreateModelHierarchyResponse_": {
         "properties": {
           "data": {
@@ -205,6 +398,54 @@
           "ok"
         ],
         "title": "ApiResponse[CreateModelHierarchyResponse]",
+        "type": "object"
+      },
+      "ApiResponse_DeleteAPIKeyResult_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeleteAPIKeyResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[DeleteAPIKeyResult]",
         "type": "object"
       },
       "ApiResponse_ExportCancelResponse_": {
@@ -445,6 +686,198 @@
           "ok"
         ],
         "title": "ApiResponse[HitlConfigRead]",
+        "type": "object"
+      },
+      "ApiResponse_KeyValidationResult_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KeyValidationResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[KeyValidationResult]",
+        "type": "object"
+      },
+      "ApiResponse_ListAPIKeysData_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ListAPIKeysData"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ListAPIKeysData]",
+        "type": "object"
+      },
+      "ApiResponse_ListProvidersData_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ListProvidersData"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ListProvidersData]",
+        "type": "object"
+      },
+      "ApiResponse_ModelExtractionResult_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelExtractionResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ModelExtractionResult]",
         "type": "object"
       },
       "ApiResponse_OpenHITLSessionResponse_": {
@@ -783,6 +1216,130 @@
         "title": "ApiResponse[RunViewResponse]",
         "type": "object"
       },
+      "ApiResponse_Union_SaveCredentialsResponse__TestConnectionResponse__ListCollectionsResponse__FetchItemsResponse__FetchAttachmentsResponse__DownloadAttachmentResponse__SyncCollectionResponse__SyncStatusResponse__SyncRetryFailedResponse__SyncItemResultsResponse__": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SaveCredentialsResponse"
+              },
+              {
+                "$ref": "#/components/schemas/TestConnectionResponse"
+              },
+              {
+                "$ref": "#/components/schemas/ListCollectionsResponse"
+              },
+              {
+                "$ref": "#/components/schemas/FetchItemsResponse"
+              },
+              {
+                "$ref": "#/components/schemas/FetchAttachmentsResponse"
+              },
+              {
+                "$ref": "#/components/schemas/DownloadAttachmentResponse"
+              },
+              {
+                "$ref": "#/components/schemas/SyncCollectionResponse"
+              },
+              {
+                "$ref": "#/components/schemas/SyncStatusResponse"
+              },
+              {
+                "$ref": "#/components/schemas/SyncRetryFailedResponse"
+              },
+              {
+                "$ref": "#/components/schemas/SyncItemResultsResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta",
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[Union[SaveCredentialsResponse, TestConnectionResponse, ListCollectionsResponse, FetchItemsResponse, FetchAttachmentsResponse, DownloadAttachmentResponse, SyncCollectionResponse, SyncStatusResponse, SyncRetryFailedResponse, SyncItemResultsResponse]]",
+        "type": "object"
+      },
+      "ApiResponse_UpdateAPIKeyResult_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateAPIKeyResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[UpdateAPIKeyResult]",
+        "type": "object"
+      },
       "ApiResponse_UpdateTemplateActiveResponse_": {
         "properties": {
           "data": {
@@ -882,6 +1439,64 @@
           "ok"
         ],
         "title": "ApiResponse[list[dict[str, Any]]]",
+        "type": "object"
+      },
+      "BatchSectionResult": {
+        "description": "Resultado de extraction em batch.",
+        "properties": {
+          "durationMs": {
+            "title": "Durationms",
+            "type": "number"
+          },
+          "extractionRunId": {
+            "title": "Extractionrunid",
+            "type": "string"
+          },
+          "failedSections": {
+            "title": "Failedsections",
+            "type": "integer"
+          },
+          "mode": {
+            "const": "batch",
+            "default": "batch",
+            "title": "Mode",
+            "type": "string"
+          },
+          "sections": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SectionOutcome"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
+          "successfulSections": {
+            "title": "Successfulsections",
+            "type": "integer"
+          },
+          "totalSections": {
+            "title": "Totalsections",
+            "type": "integer"
+          },
+          "totalSuggestionsCreated": {
+            "title": "Totalsuggestionscreated",
+            "type": "integer"
+          },
+          "totalTokensUsed": {
+            "title": "Totaltokensused",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "extractionRunId",
+          "totalSections",
+          "successfulSections",
+          "failedSections",
+          "totalSuggestionsCreated",
+          "totalTokensUsed",
+          "durationMs"
+        ],
+        "title": "BatchSectionResult",
         "type": "object"
       },
       "CloneTemplateRequest": {
@@ -1103,6 +1718,47 @@
           "apiKey"
         ],
         "title": "CreateAPIKeyRequest",
+        "type": "object"
+      },
+      "CreateAPIKeyResponse": {
+        "description": "Resposta apos criar API key.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "isDefault": {
+            "title": "Isdefault",
+            "type": "boolean"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "validationMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validationmessage"
+          },
+          "validationStatus": {
+            "title": "Validationstatus",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "validationStatus",
+          "validationMessage",
+          "isDefault"
+        ],
+        "title": "CreateAPIKeyResponse",
         "type": "object"
       },
       "CreateConsensusRequest": {
@@ -1412,6 +2068,84 @@
           "project_template_id"
         ],
         "title": "CreateRunRequest",
+        "type": "object"
+      },
+      "CreatedModelInfo": {
+        "description": "One prediction-model instance created by model extraction.",
+        "properties": {
+          "instanceId": {
+            "title": "Instanceid",
+            "type": "string"
+          },
+          "modelName": {
+            "title": "Modelname",
+            "type": "string"
+          },
+          "modellingMethod": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modellingmethod"
+          }
+        },
+        "required": [
+          "instanceId",
+          "modelName"
+        ],
+        "title": "CreatedModelInfo",
+        "type": "object"
+      },
+      "DeleteAPIKeyResult": {
+        "description": "Payload de ``DELETE /user-api-keys/{id}``.",
+        "properties": {
+          "deleted": {
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "deleted"
+        ],
+        "title": "DeleteAPIKeyResult",
+        "type": "object"
+      },
+      "DownloadAttachmentResponse": {
+        "description": "Response de download de attachment.",
+        "properties": {
+          "base64": {
+            "title": "Base64",
+            "type": "string"
+          },
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "base64",
+          "filename",
+          "content_type",
+          "size"
+        ],
+        "title": "DownloadAttachmentResponse",
         "type": "object"
       },
       "ErrorDetail": {
@@ -1979,6 +2713,58 @@
         "title": "FeedbackCreate",
         "type": "object"
       },
+      "FetchAttachmentsResponse": {
+        "description": "Response de buscar attachments.",
+        "properties": {
+          "attachments": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Attachments",
+            "type": "array"
+          }
+        },
+        "required": [
+          "attachments"
+        ],
+        "title": "FetchAttachmentsResponse",
+        "type": "object"
+      },
+      "FetchItemsResponse": {
+        "description": "Response de buscar items.",
+        "properties": {
+          "has_more": {
+            "default": false,
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total_results": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Results"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "FetchItemsResponse",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -2093,6 +2879,82 @@
         "title": "HitlConfigRead",
         "type": "object"
       },
+      "KeyValidationResult": {
+        "description": "Payload de ``POST /user-api-keys/{id}/validate``.",
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "valid",
+              "invalid",
+              "pending"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "message"
+        ],
+        "title": "KeyValidationResult",
+        "type": "object"
+      },
+      "ListAPIKeysData": {
+        "description": "Payload de ``GET /user-api-keys``.",
+        "properties": {
+          "keys": {
+            "items": {
+              "$ref": "#/components/schemas/APIKeyResponse"
+            },
+            "title": "Keys",
+            "type": "array"
+          }
+        },
+        "required": [
+          "keys"
+        ],
+        "title": "ListAPIKeysData",
+        "type": "object"
+      },
+      "ListCollectionsResponse": {
+        "description": "Response de listar collections.",
+        "properties": {
+          "collections": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Collections",
+            "type": "array"
+          }
+        },
+        "required": [
+          "collections"
+        ],
+        "title": "ListCollectionsResponse",
+        "type": "object"
+      },
+      "ListProvidersData": {
+        "description": "Payload de ``GET /user-api-keys/providers``.",
+        "properties": {
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderInfo"
+            },
+            "title": "Providers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "providers"
+        ],
+        "title": "ListProvidersData",
+        "type": "object"
+      },
       "ModelExtractionRequest": {
         "description": "Request for extraction de modelos de predicao.",
         "properties": {
@@ -2141,6 +3003,76 @@
           "templateId"
         ],
         "title": "ModelExtractionRequest",
+        "type": "object"
+      },
+      "ModelExtractionResult": {
+        "description": "Resultado da extraction de modelos.",
+        "properties": {
+          "childInstancesCreated": {
+            "title": "Childinstancescreated",
+            "type": "integer"
+          },
+          "extractionRunId": {
+            "title": "Extractionrunid",
+            "type": "string"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/ModelExtractionRunStats"
+          },
+          "modelsCreated": {
+            "items": {
+              "$ref": "#/components/schemas/CreatedModelInfo"
+            },
+            "title": "Modelscreated",
+            "type": "array"
+          },
+          "totalModels": {
+            "title": "Totalmodels",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "extractionRunId",
+          "modelsCreated",
+          "totalModels",
+          "childInstancesCreated",
+          "metadata"
+        ],
+        "title": "ModelExtractionResult",
+        "type": "object"
+      },
+      "ModelExtractionRunStats": {
+        "description": "Timing/token metadata attached to a model-extraction response.",
+        "properties": {
+          "duration": {
+            "title": "Duration",
+            "type": "integer"
+          },
+          "modelsFound": {
+            "title": "Modelsfound",
+            "type": "integer"
+          },
+          "tokensCompletion": {
+            "title": "Tokenscompletion",
+            "type": "integer"
+          },
+          "tokensPrompt": {
+            "title": "Tokensprompt",
+            "type": "integer"
+          },
+          "tokensTotal": {
+            "title": "Tokenstotal",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "duration",
+          "modelsFound",
+          "tokensPrompt",
+          "tokensCompletion",
+          "tokensTotal"
+        ],
+        "title": "ModelExtractionRunStats",
         "type": "object"
       },
       "ModelHierarchyChildResponse": {
@@ -2359,6 +3291,35 @@
           "created_at"
         ],
         "title": "ProposalRecordResponse",
+        "type": "object"
+      },
+      "ProviderInfo": {
+        "description": "One supported BYOK provider (public catalogue).",
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "docsUrl": {
+            "title": "Docsurl",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "docsUrl"
+        ],
+        "title": "ProviderInfo",
         "type": "object"
       },
       "PublishedStateResponse": {
@@ -2987,6 +3948,20 @@
         "title": "RunViewResponse",
         "type": "object"
       },
+      "SaveCredentialsResponse": {
+        "description": "Response for saving credentials.",
+        "properties": {
+          "integration_id": {
+            "title": "Integration Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "integration_id"
+        ],
+        "title": "SaveCredentialsResponse",
+        "type": "object"
+      },
       "SectionExtractionRequest": {
         "description": "Request for extraction de section.",
         "properties": {
@@ -3114,6 +4089,112 @@
         "title": "SectionExtractionRequest",
         "type": "object"
       },
+      "SectionOutcome": {
+        "description": "Per-section outcome inside a batch extraction result.\n\nWire format is snake_case on purpose \u2014 these items were emitted as\nraw service dicts before being typed, and the keys are preserved\nverbatim. Failure items carry ``error`` and omit the counters.",
+        "properties": {
+          "entity_type_id": {
+            "title": "Entity Type Id",
+            "type": "string"
+          },
+          "entity_type_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Type Name"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "skipped": {
+            "default": false,
+            "title": "Skipped",
+            "type": "boolean"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "suggestions_created": {
+            "default": 0,
+            "title": "Suggestions Created",
+            "type": "integer"
+          },
+          "tokens_used": {
+            "default": 0,
+            "title": "Tokens Used",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "entity_type_id",
+          "success"
+        ],
+        "title": "SectionOutcome",
+        "type": "object"
+      },
+      "SingleSectionResult": {
+        "description": "Resultado de extraction de section unica.",
+        "properties": {
+          "durationMs": {
+            "title": "Durationms",
+            "type": "number"
+          },
+          "entityTypeId": {
+            "title": "Entitytypeid",
+            "type": "string"
+          },
+          "extractionRunId": {
+            "title": "Extractionrunid",
+            "type": "string"
+          },
+          "mode": {
+            "const": "single",
+            "default": "single",
+            "title": "Mode",
+            "type": "string"
+          },
+          "suggestionsCreated": {
+            "title": "Suggestionscreated",
+            "type": "integer"
+          },
+          "tokensCompletion": {
+            "title": "Tokenscompletion",
+            "type": "integer"
+          },
+          "tokensPrompt": {
+            "title": "Tokensprompt",
+            "type": "integer"
+          },
+          "tokensTotal": {
+            "title": "Tokenstotal",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "extractionRunId",
+          "suggestionsCreated",
+          "entityTypeId",
+          "tokensPrompt",
+          "tokensCompletion",
+          "tokensTotal",
+          "durationMs"
+        ],
+        "title": "SingleSectionResult",
+        "type": "object"
+      },
       "SkippedFileEntry": {
         "description": "Input for file that cannot be included in the export.",
         "properties": {
@@ -3137,6 +4218,298 @@
           "reason"
         ],
         "title": "SkippedFileEntry",
+        "type": "object"
+      },
+      "SyncCollectionResponse": {
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "syncRunId": {
+            "title": "Syncrunid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "syncRunId",
+          "status",
+          "message"
+        ],
+        "title": "SyncCollectionResponse",
+        "type": "object"
+      },
+      "SyncCountsResponse": {
+        "properties": {
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "persisted": {
+            "title": "Persisted",
+            "type": "integer"
+          },
+          "reactivated": {
+            "title": "Reactivated",
+            "type": "integer"
+          },
+          "removedAtSource": {
+            "title": "Removedatsource",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "totalReceived": {
+            "title": "Totalreceived",
+            "type": "integer"
+          },
+          "updated": {
+            "title": "Updated",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "totalReceived",
+          "persisted",
+          "updated",
+          "skipped",
+          "failed",
+          "removedAtSource",
+          "reactivated"
+        ],
+        "title": "SyncCountsResponse",
+        "type": "object"
+      },
+      "SyncItemResultEntry": {
+        "properties": {
+          "articleId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Articleid"
+          },
+          "authorityRuleApplied": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorityruleapplied"
+          },
+          "errorCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errorcode"
+          },
+          "errorMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errormessage"
+          },
+          "processedAt": {
+            "format": "date-time",
+            "title": "Processedat",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "zoteroItemKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zoteroitemkey"
+          }
+        },
+        "required": [
+          "status",
+          "processedAt"
+        ],
+        "title": "SyncItemResultEntry",
+        "type": "object"
+      },
+      "SyncItemResultsResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SyncItemResultEntry"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "SyncItemResultsResponse",
+        "type": "object"
+      },
+      "SyncRetryFailedResponse": {
+        "properties": {
+          "queuedItems": {
+            "title": "Queueditems",
+            "type": "integer"
+          },
+          "retryOfSyncRunId": {
+            "title": "Retryofsyncrunid",
+            "type": "string"
+          },
+          "syncRunId": {
+            "title": "Syncrunid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "syncRunId",
+          "retryOfSyncRunId",
+          "queuedItems"
+        ],
+        "title": "SyncRetryFailedResponse",
+        "type": "object"
+      },
+      "SyncStatusResponse": {
+        "properties": {
+          "completedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completedat"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/SyncCountsResponse"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "title": "Startedat",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "syncRunId": {
+            "title": "Syncrunid",
+            "type": "string"
+          },
+          "traceId": {
+            "title": "Traceid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "syncRunId",
+          "status",
+          "counts",
+          "startedAt",
+          "traceId"
+        ],
+        "title": "SyncStatusResponse",
+        "type": "object"
+      },
+      "TestConnectionResponse": {
+        "description": "Response de teste de conexao.",
+        "properties": {
+          "access": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Access",
+            "type": "object"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "user_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Name"
+          }
+        },
+        "required": [
+          "success"
+        ],
+        "title": "TestConnectionResponse",
         "type": "object"
       },
       "UpdateAPIKeyRequest": {
@@ -3181,6 +4554,25 @@
           }
         },
         "title": "UpdateAPIKeyRequest",
+        "type": "object"
+      },
+      "UpdateAPIKeyResult": {
+        "description": "Payload de ``PATCH /user-api-keys/{id}``.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "updated": {
+            "title": "Updated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "updated"
+        ],
+        "title": "UpdateAPIKeyResult",
         "type": "object"
       },
       "UpdateTemplateActiveRequest": {
@@ -3618,7 +5010,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse"
+                  "$ref": "#/components/schemas/ApiResponse_ModelExtractionResult_"
                 }
               }
             },
@@ -3712,7 +5104,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse"
+                  "$ref": "#/components/schemas/ApiResponse_Annotated_Union_SingleSectionResult__BatchSectionResult___FieldInfo_annotation_NoneType__required_True__discriminator__mode____"
                 }
               }
             },
@@ -5075,7 +6467,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse"
+                  "$ref": "#/components/schemas/ApiResponse_ListAPIKeysData_"
                 }
               }
             },
@@ -5120,7 +6512,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse"
+                  "$ref": "#/components/schemas/ApiResponse_CreateAPIKeyResponse_"
                 }
               }
             },
@@ -5157,7 +6549,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse"
+                  "$ref": "#/components/schemas/ApiResponse_ListProvidersData_"
                 }
               }
             },
@@ -5191,7 +6583,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse"
+                  "$ref": "#/components/schemas/ApiResponse_DeleteAPIKeyResult_"
                 }
               }
             },
@@ -5248,7 +6640,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse"
+                  "$ref": "#/components/schemas/ApiResponse_UpdateAPIKeyResult_"
                 }
               }
             },
@@ -5297,7 +6689,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse"
+                  "$ref": "#/components/schemas/ApiResponse_KeyValidationResult_"
                 }
               }
             },
@@ -5362,7 +6754,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse"
+                  "$ref": "#/components/schemas/ApiResponse_Union_SaveCredentialsResponse__TestConnectionResponse__ListCollectionsResponse__FetchItemsResponse__FetchAttachmentsResponse__DownloadAttachmentResponse__SyncCollectionResponse__SyncStatusResponse__SyncRetryFailedResponse__SyncItemResultsResponse__"
                 }
               }
             },

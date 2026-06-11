@@ -6,7 +6,6 @@ Identifica and cria instances de modelos with its hierarquias completas.
 """
 
 from time import perf_counter
-from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -107,7 +106,7 @@ async def create_manual_model_hierarchy(
 
 @router.post(
     "",
-    response_model=ApiResponse,
+    response_model=ApiResponse[ModelExtractionResult],
     summary="Extrair modelos de predicao",
     description="Identifica and extrai automaticamente modelos de predicao do article.",
 )
@@ -119,7 +118,7 @@ async def extract_models(
     user: CurrentUser,
     supabase: SupabaseClient,
     current_user_sub: UUID = Depends(get_current_user_sub),
-) -> ApiResponse[dict[str, Any]]:
+) -> ApiResponse[ModelExtractionResult]:
     """
     Run prediction model extraction for an article.
 
@@ -206,7 +205,7 @@ async def extract_models(
                 "tokensCompletion": result.tokens_completion,
                 "tokensTotal": result.tokens_total,
             },
-        ).model_dump(by_alias=True)
+        )
 
         return ApiResponse(ok=True, data=response_data, trace_id=trace_id)
 
