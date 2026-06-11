@@ -35,6 +35,22 @@ import {t} from '@/lib/copy';
 import {getExportStatus as getArticlesExportStatus, type ExportStatusResponse} from '@/services/articlesExportService';
 import {getExportStatus as getExtractionExportStatus} from '@/services/extractionExportService';
 
+// Jobs that finished within the last five minutes count as "unread".
+// Module-scope because the clock read is impure and must stay out of
+// render-scoped functions (same memoization semantics as before: the
+// count refreshes when the job list changes).
+function countRecentlyFinished(jobs: BackgroundJob[]): number {
+    const now = Date.now();
+    const FIVE_MINUTES = 5 * 60 * 1000;
+    return jobs.filter((job) => {
+        if (job.status !== 'completed' && job.status !== 'failed') {
+            return false;
+        }
+        const completedTime = job.completedAt || 0;
+        return now - completedTime < FIVE_MINUTES;
+    }).length;
+}
+
 export function NotificationCenter() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -162,18 +178,7 @@ export function NotificationCenter() {
   });
 
     // Count unread notifications (jobs that finished recently)
-  const unreadCount = useMemo(() => {
-    const now = Date.now();
-    const FIVE_MINUTES = 5 * 60 * 1000;
-    
-    return recentJobs.filter((job) => {
-      if (job.status !== 'completed' && job.status !== 'failed') {
-        return false;
-      }
-      const completedTime = job.completedAt || 0;
-      return now - completedTime < FIVE_MINUTES;
-    }).length;
-  }, [recentJobs]);
+  const unreadCount = useMemo(() => countRecentlyFinished(recentJobs), [recentJobs]);
 
     const hasActiveBackgroundJobs = useMemo(
         () =>

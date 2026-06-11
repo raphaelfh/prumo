@@ -5,7 +5,7 @@
  * On 202 (async): sends export to background notifications and closes.
  */
 
-import {useEffect, useState} from "react";
+import {useState} from "react";
 import {
     Dialog,
     DialogContent,
@@ -85,10 +85,13 @@ export function ArticlesExportDialog({
     const articleCount = articleIds.length;
     const canSubmit = articleCount > 0 && formats.length > 0;
 
-    useEffect(() => {
-        if (!open) return;
-        setArticleScope(defaultArticleScope);
-    }, [open, defaultArticleScope]);
+    // Re-apply the default scope when the dialog (re)opens — adjusted during
+    // render instead of via effect.
+    const [prevScopeKey, setPrevScopeKey] = useState({open, defaultArticleScope});
+    if (open !== prevScopeKey.open || defaultArticleScope !== prevScopeKey.defaultArticleScope) {
+        setPrevScopeKey({open, defaultArticleScope});
+        if (open) setArticleScope(defaultArticleScope);
+    }
 
     const handleFormatChange = (format: ExportFormat, checked: boolean) => {
         setFormats((prev) =>

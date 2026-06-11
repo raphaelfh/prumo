@@ -257,14 +257,6 @@ export function ArticleForm({
     license: ''
   });
 
-    // Load article data (edit mode)
-  useEffect(() => {
-    if (mode === 'edit' && articleId) {
-      loadArticle();
-      loadFiles();
-    }
-  }, [mode, articleId]);
-
   const loadArticle = async () => {
     if (!articleId) return;
     
@@ -337,6 +329,17 @@ export function ArticleForm({
       console.error("Error loading files:", error);
     }
   };
+
+    // Load article data (edit mode)
+  useEffect(() => {
+    if (mode === 'edit' && articleId) {
+      // Microtask so the loaders' setState calls run in async callbacks.
+      queueMicrotask(() => {
+        void loadArticle();
+        void loadFiles();
+      });
+    }
+  }, [mode, articleId]);
 
     const scrollRef = useRef<HTMLDivElement>(null);
 

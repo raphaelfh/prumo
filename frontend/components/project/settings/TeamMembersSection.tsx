@@ -37,10 +37,6 @@ export function TeamMembersSection({ projectId }: TeamMembersSectionProps) {
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
   const [editingRole, setEditingRole] = useState<MemberRole | null>(null);
 
-  useEffect(() => {
-    loadMembers();
-  }, [projectId]);
-
   const loadMembers = async () => {
     try {
         const {data, error} = await supabase.rpc('get_project_members', {
@@ -53,6 +49,11 @@ export function TeamMembersSection({ projectId }: TeamMembersSectionProps) {
         toast.error(t('project', 'teamErrorLoadingMembers'));
     }
   };
+
+  useEffect(() => {
+    // Microtask so the loader's setState calls run in an async callback.
+    queueMicrotask(() => void loadMembers());
+  }, [projectId]);
 
   const handleInviteMember = async (e: React.FormEvent) => {
     e.preventDefault();

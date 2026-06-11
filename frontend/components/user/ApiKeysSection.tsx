@@ -59,11 +59,6 @@ export function ApiKeysSection() {
     validateKey: true,
   });
 
-  // Carregar dados iniciais
-  useEffect(() => {
-    loadData();
-  }, []);
-
   const getAccessToken = async (): Promise<string> => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) {
@@ -91,6 +86,12 @@ export function ApiKeysSection() {
       setLoading(false);
     }
   };
+
+  // Load initial data
+  useEffect(() => {
+    // Microtask so the loader's setState calls run in an async callback.
+    queueMicrotask(() => void loadData());
+  }, []);
 
   const handleAddKey = async () => {
     if (!formData.apiKey.trim()) {

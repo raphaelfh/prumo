@@ -82,14 +82,26 @@ export function ZoteroImportDialog({
     conflictResolution: 'update',
   });
 
+    // Reset the wizard when the dialog opens or projectId changes (during
+    // render, so the effect below never sets local state synchronously).
+  const [prevKey, setPrevKey] = useState({ open, projectId });
+  if (open !== prevKey.open || projectId !== prevKey.projectId) {
+    setPrevKey({ open, projectId });
+    if (open) {
+      setCurrentStep('select-collection');
+      setSelectedCollection(null);
+    }
+  }
+
     // Load collections when dialog opens or projectId changes
   useEffect(() => {
     if (open) {
         console.warn('[ZoteroImportDialog] Dialog opened with projectId:', projectId);
-      listCollections();
-      setCurrentStep('select-collection');
-      setSelectedCollection(null);
-      resetProgress();
+      // Microtask so the hooks' setState calls run in async callbacks.
+      queueMicrotask(() => {
+        listCollections();
+        resetProgress();
+      });
     }
   }, [open, projectId, listCollections, resetProgress]);
 

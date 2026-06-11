@@ -3,7 +3,7 @@
  */
 
 import {useEffect, useMemo, useState} from 'react';
-import {useForm} from 'react-hook-form';
+import {useForm, useWatch} from 'react-hook-form';
 import {zodResolver} from '@hookform/resolvers/zod';
 import {z} from 'zod';
 import {Button} from '@/components/ui/button';
@@ -49,10 +49,6 @@ export function ProfileSection() {
         defaultValues: {full_name: ''},
   });
 
-  useEffect(() => {
-    loadProfile();
-  }, []);
-
   const loadProfile = async () => {
     setLoading(true);
     try {
@@ -82,6 +78,11 @@ export function ProfileSection() {
     }
   };
 
+  useEffect(() => {
+    // Microtask so the loader's setState calls run in an async callback.
+    queueMicrotask(() => void loadProfile());
+  }, []);
+
     const onSubmit = async (values: FormValues) => {
     setSaving(true);
     try {
@@ -106,7 +107,9 @@ export function ProfileSection() {
     }
   };
 
-    const fullName = form.watch('full_name') ?? '';
+    // useWatch instead of form.watch — the latter is incompatible with the
+    // React Compiler (react-hooks/incompatible-library).
+    const fullName = useWatch({control: form.control, name: 'full_name'}) ?? '';
 
   if (loading) {
     return (

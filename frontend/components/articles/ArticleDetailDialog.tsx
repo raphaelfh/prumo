@@ -70,13 +70,6 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
-    if (articleId && open) {
-      loadArticle();
-      loadFiles();
-    }
-  }, [articleId, open]);
-
   const loadArticle = async () => {
     if (!articleId) return;
     
@@ -111,6 +104,16 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
       console.error("Error loading files:", error);
     }
   };
+
+  useEffect(() => {
+    if (articleId && open) {
+      // Microtask so the loaders' setState calls run in async callbacks.
+      queueMicrotask(() => {
+        void loadArticle();
+        void loadFiles();
+      });
+    }
+  }, [articleId, open]);
 
   const downloadFile = async (file: ArticleFile) => {
     try {

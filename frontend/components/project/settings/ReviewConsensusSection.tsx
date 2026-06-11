@@ -7,7 +7,7 @@
  * up top makes that explicit.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Info, Layers, RotateCcw, ShieldCheck, Users } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -59,13 +59,25 @@ export function ReviewConsensusSection({ projectId }: ReviewConsensusSectionProp
     [extractionTemplates.templates, qaTemplates.templates],
   );
 
-  const [draft, setDraft] = useState<HitlConfigPayload>({
-    reviewer_count: 1,
-    consensus_rule: 'unanimous',
-    arbitrator_id: null,
-  });
+  const [draft, setDraft] = useState<HitlConfigPayload>(() =>
+    projectConfig.data
+      ? {
+          reviewer_count: projectConfig.data.reviewer_count,
+          consensus_rule: projectConfig.data.consensus_rule,
+          arbitrator_id: projectConfig.data.arbitrator_id,
+        }
+      : {
+          reviewer_count: 1,
+          consensus_rule: 'unanimous',
+          arbitrator_id: null,
+        },
+  );
 
-  useEffect(() => {
+  // Re-hydrate the draft when the server config (re)loads — adjusted during
+  // render instead of via effect.
+  const [prevConfigData, setPrevConfigData] = useState(projectConfig.data);
+  if (projectConfig.data !== prevConfigData) {
+    setPrevConfigData(projectConfig.data);
     if (projectConfig.data) {
       setDraft({
         reviewer_count: projectConfig.data.reviewer_count,
@@ -73,7 +85,7 @@ export function ReviewConsensusSection({ projectId }: ReviewConsensusSectionProp
         arbitrator_id: projectConfig.data.arbitrator_id,
       });
     }
-  }, [projectConfig.data]);
+  }
 
   const projectIsCustomized = projectConfig.data
     ? projectConfig.data.scope_kind === 'project'
