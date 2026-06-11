@@ -11,7 +11,13 @@ from pydantic_ai import ModelRetry
 
 
 def evidence_is_plausible(output: Any) -> Any:
-    """Reject impossible evidence so it never reaches the database."""
+    """Reject impossible evidence so it never reaches the database.
+
+    Assumes every field in ``type(output).model_fields`` carries a
+    ``field_info.alias`` matching the schema property name the model was
+    shown (the ``build_output_models`` convention) — the retry message
+    must reference names the model can map back to its schema.
+    """
     for field_name, field_info in type(output).model_fields.items():
         label = field_info.alias or field_name
         field_result = getattr(output, field_name)

@@ -15,6 +15,8 @@ class MissingLLMKeyError(ValueError):
 
 
 def build_model(model_name: str, *, api_key: str | None = None) -> Model:
+    if not model_name or not model_name.strip():
+        raise ValueError("model_name must be a non-empty string.")
     key = api_key or settings.OPENAI_API_KEY
     if not key:
         raise MissingLLMKeyError(

@@ -21,3 +21,8 @@ def test_raises_clear_error_when_no_key_anywhere(monkeypatch):
     monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
     with pytest.raises(MissingLLMKeyError, match="OPENAI_API_KEY"):
         build_model("gpt-4o-mini", api_key=None)
+
+
+def test_rejects_blank_model_name():
+    with pytest.raises(ValueError, match="non-empty"):
+        build_model("   ", api_key="sk-user-key")
