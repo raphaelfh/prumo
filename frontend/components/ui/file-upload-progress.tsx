@@ -62,36 +62,30 @@ export const FileUploadProgress: React.FC<FileUploadProgressProps> = ({
   className
 }) => {
     // Calculate overall statistics
-  const stats = React.useMemo(() => {
-    const total = items.length;
-    const completed = items.filter(i => i.status === 'success').length;
-    const failed = items.filter(i => i.status === 'error').length;
-    const uploading = items.filter(i => i.status === 'uploading').length;
-    const pending = items.filter(i => i.status === 'pending').length;
-    
-    const totalProgress = items.reduce((acc, item) => acc + item.progress, 0) / (total || 1);
-    
-    const totalSize = items.reduce((acc, item) => acc + item.file.size, 0);
-    const uploadedSize = items.reduce((acc, item) => {
-      return acc + (item.uploadedSize || (item.file.size * item.progress / 100));
-    }, 0);
-    
-    const avgSpeed = items
-      .filter(i => i.speed && i.speed > 0)
-      .reduce((acc, item) => acc + (item.speed || 0), 0) / (uploading || 1);
-    
-    return {
-      total,
-      completed,
-      failed,
-      uploading,
-      pending,
-      totalProgress,
-      totalSize,
-      uploadedSize,
-      avgSpeed
-    };
-  }, [items]);
+  const total = items.length;
+  const completed = items.filter(i => i.status === 'success').length;
+  const failed = items.filter(i => i.status === 'error').length;
+  const uploading = items.filter(i => i.status === 'uploading').length;
+  const pending = items.filter(i => i.status === 'pending').length;
+  const totalProgress = items.reduce((acc, item) => acc + item.progress, 0) / (total || 1);
+  const totalSize = items.reduce((acc, item) => acc + item.file.size, 0);
+  const uploadedSize = items.reduce((acc, item) => {
+    return acc + (item.uploadedSize || (item.file.size * item.progress / 100));
+  }, 0);
+  const avgSpeed = items
+    .filter(i => i.speed && i.speed > 0)
+    .reduce((acc, item) => acc + (item.speed || 0), 0) / (uploading || 1);
+  const stats = {
+    total,
+    completed,
+    failed,
+    uploading,
+    pending,
+    totalProgress,
+    totalSize,
+    uploadedSize,
+    avgSpeed
+  };
 
   // Formatar bytes
   const formatBytes = (bytes: number): string => {

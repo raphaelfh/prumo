@@ -1,4 +1,4 @@
-import {useCallback, useEffect, useRef, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 
 type WidthMap = Record<string, number>;
 
@@ -34,11 +34,11 @@ export function useResizableTableColumns({
         columnWidthsRef.current = columnWidths;
     }, [columnWidths]);
 
-    const registerHeaderRef = useCallback((columnId: string, el: HTMLTableCellElement | null) => {
+    const registerHeaderRef = (columnId: string, el: HTMLTableCellElement | null) => {
         headerRefs.current[columnId] = el;
-    }, []);
+    };
 
-    const startResize = useCallback((columnId: string, clientX: number) => {
+    const startResize = (columnId: string, clientX: number) => {
         const isVisibleColumn = (key: string) => {
             const el = headerRefs.current[key];
             if (!el) return false;
@@ -68,7 +68,7 @@ export function useResizableTableColumns({
         setResizeStartWidth(initialWidth);
         setResizeAdjacentColumn(adjacentColumn);
         setResizeAdjacentStartWidth(adjacentStartWidth);
-    }, [orderedColumns, columnWidths, defaultColumnWidths, minWidth]);
+    };
 
     useEffect(() => {
         if (resizingColumn === null) return;
