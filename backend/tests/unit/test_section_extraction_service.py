@@ -1520,6 +1520,52 @@ class TestExtractAllSections:
         # the LLM exception leaves the session healthy.
         service._runs.rollback_and_fail.assert_not_awaited()
 
+    @pytest.mark.asyncio
+    async def test_section_llm_failure_runs_real_split_handler(self, service):
+        """Drive the REAL _extract_section_with_memory with the LLM seam
+        raising: its split except-handler must fail_run the section run
+        (session healthy) and never touch rollback_and_fail."""
+        from pydantic_ai import UnexpectedModelBehavior
+
+        batch_run = self._make_run()
+        section_run = self._make_run()
+        # First create_run call returns the batch run, second the section run.
+        service._lifecycle.create_run = AsyncMock(side_effect=[batch_run, section_run])
+        service._lifecycle.advance_stage = AsyncMock(side_effect=[batch_run, section_run])
+        service._runs.start_run = AsyncMock()
+        service._runs.complete_run = AsyncMock()
+        service._runs.fail_run = AsyncMock()
+        service._runs.rollback_and_fail = AsyncMock()
+
+        parent = MagicMock()
+        parent.entity_type_id = uuid4()
+        service._instances.get_by_id = AsyncMock(return_value=parent)
+
+        child = MagicMock()
+        child.id = uuid4()
+        child.name = "Section A"
+        child.label = "Section A"
+        service._entity_types.get_children = AsyncMock(return_value=[child])
+
+        service._extract_with_llm = AsyncMock(
+            side_effect=UnexpectedModelBehavior("reask budget exhausted")
+        )
+
+        result = await service.extract_all_sections(
+            project_id=uuid4(),
+            article_id=uuid4(),
+            template_id=uuid4(),
+            parent_instance_id=uuid4(),
+            pdf_text="text",
+        )
+
+        assert result.failed_sections == 1
+        service._runs.fail_run.assert_awaited_once()
+        failed_run_id, error_message = service._runs.fail_run.await_args.args
+        assert failed_run_id == section_run.id
+        assert "reask budget exhausted" in error_message
+        service._runs.rollback_and_fail.assert_not_awaited()
+
 
 # ---------------------------------------------------------------------------
 # extract_for_run — entity error path
