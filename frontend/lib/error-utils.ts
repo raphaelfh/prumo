@@ -151,6 +151,26 @@ export async function withErrorHandlingResult<T>(
   }
 }
 
+/**
+ * Service-layer Result wrapper: runs an async operation and converts
+ * the outcome to ErrorResult. No toast, no UI — logging only. Exported
+ * service functions use this so they never throw across the boundary;
+ * components decide presentation by branching on `ok`
+ * (zero-bailouts spec, 2026-06-11).
+ */
+export async function toResult<T>(
+  operation: () => Promise<T>,
+  context: string
+): Promise<ErrorResult<T>> {
+  try {
+    return { ok: true, data: await operation() };
+  } catch (err) {
+    const error = normalizeError(err);
+    logger.error(`❌ [${context}] Error:`, error);
+    return { ok: false, error };
+  }
+}
+
 // =================== SYNC ERROR HANDLING ===================
 
 /**
