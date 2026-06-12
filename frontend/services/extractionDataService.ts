@@ -24,7 +24,11 @@ import type {
 // ---------------------------------------------------------------------------
 
 export interface ExtractionPhase1Result {
-  article: Article;
+  // Null when the requested article id does not exist (or is not visible
+  // under RLS). This is the missing-entity null channel — not a load
+  // failure — so the caller renders the page's "not found" empty state
+  // (a Back affordance) instead of redirecting away.
+  article: Article | null;
   project: Project;
   template: ProjectExtractionTemplate;
   articles: Article[];
@@ -33,6 +37,13 @@ export interface ExtractionPhase1Result {
 /**
  * Load the four independent data sources for ExtractionFullScreen in a
  * single Promise.all. Returns ErrorResult on any error so the caller surfaces a single toast.
+ *
+ * Missing article: read with maybeSingle() so an unknown id resolves to
+ * null (the house null-channel idiom, see profileService.fetchProfile)
+ * rather than a PGRST116 "Cannot coerce the result to a single JSON
+ * object" throw. A thrown error here would set the hook's error state and
+ * trip ExtractionFullScreen's redirect-on-error effect, bouncing the user
+ * to the project list with no empty/error UI ever painted.
  *
  * Template selection: newest active extraction template (created_at DESC)
  * so this matches ExtractionInterface's active picker.
@@ -49,7 +60,7 @@ export function loadExtractionPhase1(
       {data: templateData, error: templateError},
       {data: articlesData, error: articlesError},
     ] = await Promise.all([
-      supabase.from('articles').select('*').eq('id', articleId).single(),
+      supabase.from('articles').select('*').eq('id', articleId).maybeSingle(),
       supabase.from('projects').select('*').eq('id', projectId).single(),
       supabase
         .from('project_extraction_templates')
@@ -74,7 +85,7 @@ export function loadExtractionPhase1(
     if (!templateData) throw new Error(noTemplateMessage);
 
     return {
-      article: articleData as Article,
+      article: (articleData ?? null) as Article | null,
       project: projectData as Project,
       template: templateData as ProjectExtractionTemplate,
       articles: (articlesData ?? []) as Article[],
