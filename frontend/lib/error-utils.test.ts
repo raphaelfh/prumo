@@ -6,7 +6,7 @@ vi.mock('sonner', () => ({
 }));
 
 import {toast} from 'sonner';
-import {toResult} from './error-utils';
+import {toResult, PgError} from './error-utils';
 
 describe('toResult', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -32,5 +32,16 @@ describe('toResult', () => {
       throw new Error('boom');
     }, 'test.op');
     expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('passes PgError through toResult preserving instanceof and code', async () => {
+    const result = await toResult(async () => {
+      throw new PgError('denied', '42501');
+    }, 'test.pgError');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(PgError);
+      expect((result.error as PgError).code).toBe('42501');
+    }
   });
 });

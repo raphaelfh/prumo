@@ -33,6 +33,19 @@ export interface WithErrorHandlingOptions {
 // =================== ERROR NORMALIZATION ===================
 
 /**
+ * Error carrying a Postgres/PostgREST error code across the service
+ * boundary. normalizeError passes Error instances through unchanged,
+ * so the code survives toResult — callers branch on `instanceof
+ * PgError` + `.code` instead of casting.
+ */
+export class PgError extends Error {
+  constructor(message: string, public readonly code?: string) {
+    super(message);
+    this.name = 'PgError';
+  }
+}
+
+/**
  * Normalizes any error to an Error instance
  *
  * @param error - Caught error (can be any)

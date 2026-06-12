@@ -600,6 +600,10 @@ export function loadModelInstances(
  * Invoke the calculate_model_progress RPC for a single model instance.
  * Returns a zero-progress object on any error — callers treat missing
  * progress as 0 so the UI stays functional even if the RPC is unavailable.
+ *
+ * NOTE: deliberately departs from the ErrorResult contract (returns a
+ * zero-progress fallback on RPC errors rather than {ok: false}) so the UI
+ * degrades gracefully without the caller needing a result branch for progress.
  */
 export async function fetchModelProgress(
   articleId: string,

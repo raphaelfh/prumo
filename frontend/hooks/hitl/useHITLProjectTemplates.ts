@@ -19,7 +19,10 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { apiClient } from "@/integrations/api";
-import { supabase } from "@/integrations/supabase/client";
+import {
+  fetchGlobalTemplates,
+  fetchProjectTemplates,
+} from "@/services/qaTemplateService";
 import { t } from "@/lib/copy";
 
 export type HITLKind = "extraction" | "quality_assessment";
@@ -107,30 +110,16 @@ export function useHITLProjectTemplates({
     }
   }
 
-  const fetchProjectTemplates = useCallback(async (): Promise<ProjectTemplate[]> => {
-    let query = supabase
-      .from("project_extraction_templates")
-      .select("*")
-      .eq("project_id", projectId)
-      .eq("kind", kind)
-      .order("created_at", { ascending: false });
-    if (!includeInactive) {
-      query = query.eq("is_active", true);
+  const refresh = useCallback(async (): Promise<ProjectTemplate[]> => {
+    if (!projectId) return [];
+    const result = await fetchProjectTemplates(projectId, kind, includeInactive);
+    if (result.ok) {
+      setTemplates(result.data as ProjectTemplate[]);
+      return result.data as ProjectTemplate[];
     }
-    const { data, error: queryError } = await query;
-    if (queryError) throw queryError;
-    return (data ?? []) as ProjectTemplate[];
+    setError(result.error.message);
+    throw result.error;
   }, [projectId, kind, includeInactive]);
-
-  const fetchGlobalTemplates = useCallback(async (): Promise<GlobalTemplate[]> => {
-    const { data, error: queryError } = await supabase
-      .from("extraction_templates_global")
-      .select("id, name, description, framework, version, kind")
-      .eq("kind", kind)
-      .order("name", { ascending: true });
-    if (queryError) throw queryError;
-    return (data ?? []) as GlobalTemplate[];
-  }, [kind]);
 
   useEffect(() => {
     if (!projectId) {
@@ -140,91 +129,88 @@ export function useHITLProjectTemplates({
     // Microtask so the fetch's setState calls run in async callbacks
     // (the loading/error reset happens during render above).
     queueMicrotask(() => void (async () => {
-      try {
-        const [project, global] = await Promise.all([
-          fetchProjectTemplates(),
-          fetchGlobalTemplates(),
-        ]);
-        if (!cancelled) {
-          setTemplates(project);
-          setGlobalTemplates(global);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load templates");
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+      const [projectResult, globalResult] = await Promise.all([
+        fetchProjectTemplates(projectId, kind, includeInactive),
+        fetchGlobalTemplates(kind),
+      ]);
+      if (cancelled) return;
+      if (projectResult.ok && globalResult.ok) {
+        setTemplates(projectResult.data as ProjectTemplate[]);
+        setGlobalTemplates(globalResult.data as GlobalTemplate[]);
+      } else {
+        const err = projectResult.ok ? globalResult : projectResult;
+        if (!err.ok) setError(err.error.message);
       }
+      setLoading(false);
     })());
     return () => {
       cancelled = true;
     };
-  }, [projectId, fetchProjectTemplates, fetchGlobalTemplates]);
-
-  const refresh = useCallback(async (): Promise<ProjectTemplate[]> => {
-    if (!projectId) return [];
-    try {
-      const project = await fetchProjectTemplates();
-      setTemplates(project);
-      return project;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to refresh templates";
-      setError(message);
-      throw err;
-    }
-  }, [projectId, fetchProjectTemplates]);
+  }, [projectId, kind, includeInactive, refresh]);
 
   const cloneTemplate = useCallback(
     async (globalTemplateId: string): Promise<ProjectTemplate | null> => {
-      try {
-        const result = await apiClient<CloneResponse>(
+      const result = await (async () => {
+        const data = await apiClient<CloneResponse>(
           `/api/v1/projects/${projectId}/templates/clone`,
           {
             method: "POST",
             body: { global_template_id: globalTemplateId, kind },
           },
         );
-        const refreshed = await refresh();
-        const created = refreshed.find((tpl) => tpl.id === result.project_template_id);
-        if (result.created) {
-          toast.success(t("extraction", "templateClonedSuccess").replace("{{name}}", created?.name ?? ""));
-        }
-        return created ?? null;
-      } catch (err) {
+        return data;
+      })().then(
+        (data) => ({ ok: true as const, data }),
+        (err: unknown) => ({ ok: false as const, error: err }),
+      );
+
+      if (!result.ok) {
+        const err = result.error;
         toast.error(`${t("extraction", "errors_cloneTemplate")}: ${
           err instanceof Error ? err.message : "unknown error"
         }`);
         return null;
       }
+
+      const refreshed = await refresh().catch(() => [] as ProjectTemplate[]);
+      const created = refreshed.find((tpl) => tpl.id === result.data.project_template_id);
+      if (result.data.created) {
+        toast.success(t("extraction", "templateClonedSuccess").replace("{{name}}", created?.name ?? ""));
+      }
+      return created ?? null;
     },
     [projectId, kind, refresh],
   );
 
   const setTemplateActive = useCallback(
     async (templateId: string, isActive: boolean): Promise<boolean> => {
-      try {
-        await apiClient<UpdateActiveResponse>(
-          `/api/v1/projects/${projectId}/templates/${templateId}`,
-          {
-            method: "PATCH",
-            body: { is_active: isActive },
-          },
-        );
-        await refresh();
-        toast.success(
-          t(
-            "extraction",
-            isActive ? "templateActivatedSuccess" : "templateDeactivatedSuccess",
-          ),
-        );
-        return true;
-      } catch (err) {
+      const result = await apiClient<UpdateActiveResponse>(
+        `/api/v1/projects/${projectId}/templates/${templateId}`,
+        {
+          method: "PATCH",
+          body: { is_active: isActive },
+        },
+      ).then(
+        () => ({ ok: true as const }),
+        (err: unknown) => ({ ok: false as const, error: err }),
+      );
+
+      if (!result.ok) {
+        const err = result.error;
         toast.error(`${t("extraction", "errors_updateTemplateStatus")}: ${
           err instanceof Error ? err.message : "unknown error"
         }`);
         return false;
       }
+
+      await refresh().catch(() => undefined);
+      toast.success(
+        t(
+          "extraction",
+          isActive ? "templateActivatedSuccess" : "templateDeactivatedSuccess",
+        ),
+      );
+      return true;
     },
     [projectId, refresh],
   );

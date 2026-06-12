@@ -100,3 +100,49 @@ export function openExtractionSession(
     'extractionRunService.openExtractionSession',
   );
 }
+
+// ---------------------------------------------------------------------------
+// useAutoSaveProposals: single-field proposal / decision write
+// ---------------------------------------------------------------------------
+
+export interface WriteProposalParams {
+  runId: string;
+  instanceId: string;
+  fieldId: string;
+  normalizedValue: unknown;
+  /** When true, writes a ReviewerDecision (stage='review'); otherwise writes a human proposal. */
+  useDecisionEndpoint: boolean;
+}
+
+/**
+ * Write a single field value to the run as either a human proposal
+ * (/proposals) or a reviewer decision (/decisions), determined by
+ * ``useDecisionEndpoint``. Keepalive=true so the request survives route
+ * changes and tab closes.
+ *
+ * NOTE: does not return ErrorResult — the caller (performSave inside
+ * useAutoSaveProposals) uses Promise.allSettled to fan out writes and
+ * handles failures in aggregate, so individual writes may throw.
+ */
+export async function writeRunFieldValue(
+  params: WriteProposalParams,
+): Promise<void> {
+  const {runId, instanceId, fieldId, normalizedValue, useDecisionEndpoint} = params;
+  const endpoint = useDecisionEndpoint
+    ? `/api/v1/runs/${runId}/decisions`
+    : `/api/v1/runs/${runId}/proposals`;
+  const body = useDecisionEndpoint
+    ? {
+        instance_id: instanceId,
+        field_id: fieldId,
+        decision: 'edit' as const,
+        value: {value: normalizedValue},
+      }
+    : {
+        instance_id: instanceId,
+        field_id: fieldId,
+        source: 'human' as const,
+        proposed_value: {value: normalizedValue},
+      };
+  await apiClient(endpoint, {method: 'POST', body, keepalive: true});
+}

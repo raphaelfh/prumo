@@ -511,3 +511,35 @@ export function bulkDeleteArticles(articleIds: string[]): Promise<ErrorResult<vo
     if (deleteError) throw deleteError;
   }, 'articlesService.bulkDeleteArticles');
 }
+
+// ---------------------------------------------------------------------------
+// HITLArticleTable: project-scoped article list
+// ---------------------------------------------------------------------------
+
+export interface ArticleListItem {
+  id: string;
+  title: string | null;
+  authors: string[] | null;
+  publication_year: number | null;
+  created_at: string;
+}
+
+/**
+ * Fetch all articles for a project, ordered newest first.
+ * Used by HITLArticleTable for both extraction and QA HITL flows.
+ *
+ * NOTE: error messages are surfaced as toasts by the caller.
+ */
+export function fetchProjectArticles(
+  projectId: string,
+): Promise<ErrorResult<ArticleListItem[]>> {
+  return toResult(async () => {
+    const {data, error} = await supabase
+      .from('articles')
+      .select('id, title, authors, publication_year, created_at')
+      .eq('project_id', projectId)
+      .order('created_at', {ascending: false});
+    if (error) throw error;
+    return (data ?? []) as ArticleListItem[];
+  }, 'articlesService.fetchProjectArticles');
+}

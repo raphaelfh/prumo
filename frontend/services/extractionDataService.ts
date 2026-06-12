@@ -32,8 +32,7 @@ export interface ExtractionPhase1Result {
 
 /**
  * Load the four independent data sources for ExtractionFullScreen in a
- * single Promise.all. Throws on any error so the caller can surface a
- * single toast.
+ * single Promise.all. Returns ErrorResult on any error so the caller surfaces a single toast.
  *
  * Template selection: newest active extraction template (created_at DESC)
  * so this matches ExtractionInterface's active picker.
