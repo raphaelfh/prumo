@@ -895,7 +895,7 @@ export default function ExtractionFullScreen() {
       let attempts = 0;
       const maxAttempts = 5;
       const pollDelay = 1000;
-      let foundSuggestions = false;
+      let foundSuggestions: boolean;
 
       try {
         await new Promise(resolve => setTimeout(resolve, 1500));

@@ -246,10 +246,10 @@ export class ExtractionInstanceService {
 
         // More specific message for validation errors
       if (isValidationError) {
-          throw new Error(`Integrity validation failed: ${errorMessage}`);
+          throw new Error(`Integrity validation failed: ${errorMessage}`, { cause: error });
       }
 
-        throw new Error(`Failed to create instance: ${errorMessage}`);
+        throw new Error(`Failed to create instance: ${errorMessage}`, { cause: error });
     }
   }
 
@@ -406,7 +406,7 @@ export class ExtractionInstanceService {
         parentType: parentEntityType.name,
         label
       });
-        throw new Error(`Failed to create hierarchy: ${error.message}`);
+        throw new Error(`Failed to create hierarchy: ${error.message}`, { cause: error });
     }
   }
 
@@ -443,7 +443,7 @@ export class ExtractionInstanceService {
         throw error;
       }
 
-        throw new Error(`Failed to remove instance: ${message}`);
+        throw new Error(`Failed to remove instance: ${message}`, { cause: error });
     }
   }
 
@@ -490,7 +490,7 @@ export class ExtractionInstanceService {
       }
         const message = error instanceof Error ? error.message : 'Unknown error';
         console.error('Error fetching instances:', error);
-        throw new Error(`Failed to fetch instances: ${message}`);
+        throw new Error(`Failed to fetch instances: ${message}`, { cause: error });
     }
   }
 
