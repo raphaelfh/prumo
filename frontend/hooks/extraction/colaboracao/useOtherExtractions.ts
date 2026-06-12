@@ -69,7 +69,7 @@ export function useOtherExtractions(
     setLoading(true);
     setError(null);
 
-    try {
+    const doLoad = async () => {
       if (!templateId) {
         if (myGeneration === generationRef.current) setOtherExtractions([]);
         return;
@@ -99,13 +99,17 @@ export function useOtherExtractions(
           timestamp: o.latestDecidedAt ? new Date(o.latestDecidedAt) : new Date(),
         })),
       );
-    } catch (err: any) {
-      if (myGeneration !== generationRef.current) return;
-      console.error('Error loading other extractions:', err);
-      setError(err.message || t('extraction', 'errors_loadOtherExtractions'));
-    } finally {
-      if (myGeneration === generationRef.current) setLoading(false);
-    }
+    };
+
+    doLoad()
+      .catch((err: unknown) => {
+        if (myGeneration !== generationRef.current) return;
+        console.error('Error loading other extractions:', err);
+        setError(err instanceof Error ? err.message : t('extraction', 'errors_loadOtherExtractions'));
+      })
+      .finally(() => {
+        if (myGeneration === generationRef.current) setLoading(false);
+      });
   };
 
   useEffect(() => {

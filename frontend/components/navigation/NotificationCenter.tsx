@@ -56,6 +56,8 @@ export function NotificationCenter() {
   const [open, setOpen] = useState(false);
     const {jobs, removeJob, clearCompletedJobs, getRecentJobs, updateJob} = useBackgroundJobs();
   
+  // kept: extra dep (jobs) forces recompute on any job-list change, even when
+  // getRecentJobs identity is stable — removing it would miss new job additions (zero-bailouts spec).
   const recentJobs = useMemo(() => getRecentJobs(20), [jobs, getRecentJobs]);
 
     useEffect(() => {
@@ -65,29 +67,31 @@ export function NotificationCenter() {
         const tick = async () => {
             if (isInFlight || isDisposed) return;
             isInFlight = true;
-            try {
-                const exportJobs = useBackgroundJobs
-                    .getState()
-                    .jobs.filter(
-                        (job) =>
-                            (job.type === 'articles-export' || job.type === 'extraction-export') &&
-                            (job.status === 'pending' || job.status === 'running')
-                    ) as Array<ArticlesExportJob | ExtractionExportJob>;
+            const exportJobs = useBackgroundJobs
+                .getState()
+                .jobs.filter(
+                    (job) =>
+                        (job.type === 'articles-export' || job.type === 'extraction-export') &&
+                        (job.status === 'pending' || job.status === 'running')
+                ) as Array<ArticlesExportJob | ExtractionExportJob>;
 
-                if (exportJobs.length === 0) return;
-
+            if (exportJobs.length > 0) {
                 await Promise.all(
-                    exportJobs.map(async (job) => {
-                        try {
-                            const status =
-                                job.type === 'articles-export'
-                                    ? await getArticlesExportStatus(job.metadata.backendJobId)
-                                    : await getExtractionExportStatus(
-                                        job.metadata.projectId,
-                                        job.metadata.backendJobId,
-                                    );
-                            const nextStatus = status.status === 'pending' ? 'running' : status.status;
+                    exportJobs.map((job) => {
+                        // Select the right fetch promise outside any try/catch so
+                        // ternary / conditional expressions are not inside a try
+                        // block (React Compiler restriction: no value-blocks in
+                        // try/catch). Use .then().catch() for the same reason.
+                        const statusFetch =
+                            job.type === 'articles-export'
+                                ? getArticlesExportStatus(job.metadata.backendJobId)
+                                : getExtractionExportStatus(
+                                    job.metadata.projectId,
+                                    job.metadata.backendJobId,
+                                );
+                        return statusFetch.then((status) => {
                             const exportStatus = status as ExportStatusResponse;
+                            const nextStatus = status.status === 'pending' ? 'running' : status.status;
                             updateJob(job.id, {
                                 status: nextStatus,
                                 startedAt: job.startedAt ?? Date.now(),
@@ -115,18 +119,17 @@ export function NotificationCenter() {
                                         ? {skipped: exportStatus.skipped_files.length}
                                         : undefined,
                             });
-                        } catch (error) {
+                        }).catch((error: unknown) => {
                             updateJob(job.id, {
                                 status: 'failed',
                                 completedAt: Date.now(),
                                 error: error instanceof Error ? error.message : 'Failed to check export status',
                             });
-                        }
+                        });
                     })
                 );
-            } finally {
-                isInFlight = false;
             }
+            isInFlight = false;
         };
 
         void tick();
@@ -178,15 +181,11 @@ export function NotificationCenter() {
   });
 
     // Count unread notifications (jobs that finished recently)
-  const unreadCount = useMemo(() => countRecentlyFinished(recentJobs), [recentJobs]);
+  const unreadCount = countRecentlyFinished(recentJobs);
 
-    const hasActiveBackgroundJobs = useMemo(
-        () =>
-            jobs.some(
-                (job) => job.status === 'pending' || job.status === 'running'
-            ),
-        [jobs]
-    );
+  const hasActiveBackgroundJobs = jobs.some(
+    (job) => job.status === 'pending' || job.status === 'running'
+  );
 
   const handleRemoveJob = (jobId: string, e: React.MouseEvent) => {
     e.stopPropagation();

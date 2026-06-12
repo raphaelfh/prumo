@@ -9,7 +9,7 @@
  * - Accessibility (keyboard navigation)
  */
 
-import React, {useCallback, useRef, useState} from 'react';
+import React, {useRef, useState} from 'react';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
 import {AlertCircle, FileIcon, Upload, X} from 'lucide-react';
@@ -20,6 +20,9 @@ export interface FileWithPreview extends File {
   preview?: string;
   id?: string;
 }
+
+/** Default maximum file size in bytes (50MB). */
+const DEFAULT_MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 export interface FileDropZoneProps {
   /**
@@ -94,7 +97,7 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
   selectedFiles = [],
   onFileRemove,
   maxFiles = 10,
-  maxFileSize = 50 * 1024 * 1024, // 50MB
+  maxFileSize = DEFAULT_MAX_FILE_SIZE,
   acceptedTypes = [],
   acceptedExtensions = [],
                                                               label,
@@ -113,7 +116,7 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
   /**
    * Valida um arquivo individual
    */
-  const validateFile = useCallback((file: File): { valid: boolean; error?: string } => {
+  const validateFile = (file: File): { valid: boolean; error?: string } => {
     // Validar tamanho
     if (file.size > maxFileSize) {
       return {
@@ -135,12 +138,12 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
     }
 
     return { valid: true };
-  }, [maxFileSize, acceptedTypes, acceptedExtensions]);
+  };
 
   /**
    * Processa arquivos selecionados
    */
-  const processFiles = useCallback((fileList: FileList | null) => {
+  const processFiles = (fileList: FileList | null) => {
     if (!fileList) return;
 
     const files = Array.from(fileList);
@@ -184,20 +187,20 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
     if (validFiles.length > 0) {
       onFilesSelected(validFiles);
     }
-  }, [selectedFiles.length, maxFiles, validateFile, onFilesSelected, onError]);
+  };
 
   /**
    * Handler para drag events
    */
-  const handleDragEnter = useCallback((e: React.DragEvent) => {
+  const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (!disabled && !isUploading) {
       setIsDragging(true);
     }
-  }, [disabled, isUploading]);
+  };
 
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
+  const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
@@ -205,14 +208,14 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
     if (dropZoneRef.current && !dropZoneRef.current.contains(e.relatedTarget as Node)) {
       setIsDragging(false);
     }
-  }, []);
+  };
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
+  const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-  }, []);
+  };
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
@@ -221,29 +224,29 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
 
     const { files } = e.dataTransfer;
     processFiles(files);
-  }, [disabled, isUploading, processFiles]);
+  };
 
   /**
    * Handler for click selection
    */
-  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     processFiles(e.target.files);
     // Limpar input para permitir selecionar o mesmo arquivo novamente
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
-  }, [processFiles]);
+  };
 
   /**
    * Handler para remover arquivo
    */
-  const handleRemoveFile = useCallback((fileId: string) => {
+  const handleRemoveFile = (fileId: string) => {
     const file = selectedFiles.find(f => f.id === fileId);
     if (file?.preview) {
       URL.revokeObjectURL(file.preview);
     }
     onFileRemove?.(fileId);
-  }, [selectedFiles, onFileRemove]);
+  };
 
   /**
    * Limpar previews ao desmontar

@@ -12,8 +12,7 @@
  * @module hooks/extraction/useFieldManagement
  */
 
-import {useCallback, useEffect, useState} from 'react';
-import {supabase} from '@/integrations/supabase/client';
+import {useEffect, useState} from 'react';
 import {useAuth} from '@/contexts/AuthContext';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
@@ -25,8 +24,16 @@ import {
     ExtractionFieldUpdate,
     FieldValidationResult,
     PermissionCheckResult,
-    ProjectMemberRole,
 } from '@/types/extraction';
+import {
+  checkProjectPermissions,
+  loadEntityTypeFields,
+  validateFieldImpact,
+  insertField,
+  updateField as updateFieldService,
+  deleteField as deleteFieldService,
+  reorderFields as reorderFieldsService,
+} from '@/services/extractionFieldService';
 
 interface UseFieldManagementProps {
   entityTypeId: string;
@@ -51,7 +58,7 @@ export function useFieldManagement({
   /**
    * Check user permissions in project
    */
-  const checkPermissions = useCallback(async (): Promise<PermissionCheckResult> => {
+  const checkPermissions = async (): Promise<PermissionCheckResult> => {
     if (!user) {
       return {
         canView: false,
@@ -59,447 +66,328 @@ export function useFieldManagement({
         canDelete: false,
         canCreate: false,
         role: null,
-          message: t('common', 'errors_userNotAuthenticated'),
+        message: t('common', 'errors_userNotAuthenticated'),
       };
     }
 
-    try {
-      const { data, error } = await supabase
-        .from('project_members')
-        .select('role')
-        .eq('project_id', projectId)
-        .eq('user_id', user.id)
-        .single();
-
-      if (error) {
-          console.error('Error checking permissions:', error);
-        throw error;
-      }
-
-      const role = data?.role as ProjectMemberRole;
-      const isManager = role === 'manager';
-
-      const canView = true; // Todos membros podem ver
-
-      const result: PermissionCheckResult = {
-        canView,
-        canEdit: isManager,
-        canDelete: isManager,
-        canCreate: isManager,
-        role,
-      };
-
-      setPermissions(result);
-      return result;
-    } catch (err: any) {
-        console.error('Error checking permissions:', err);
-      const errorResult = {
+    const result = await checkProjectPermissions(user.id, projectId);
+    if (!result.ok) {
+      console.error('Error checking permissions:', result.error);
+      const errorResult: PermissionCheckResult = {
         canView: false,
         canEdit: false,
         canDelete: false,
         canCreate: false,
         role: null,
-          message: t('extraction', 'errors_checkPermissions'),
+        message: t('extraction', 'errors_checkPermissions'),
       };
       setPermissions(errorResult);
       return errorResult;
     }
-  }, [user, projectId]);
+
+    setPermissions(result.data);
+    return result.data;
+  };
 
   /**
    * Load section fields
    */
-  const loadFields = useCallback(async () => {
+  const loadFields = async () => {
     if (!entityTypeId) {
-        console.warn('entityTypeId not provided');
+      console.warn('entityTypeId not provided');
       setFields([]);
       return;
     }
 
     setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('extraction_fields')
-        .select('*')
-        .eq('entity_type_id', entityTypeId)
-        .order('sort_order', { ascending: true });
 
-      if (error) throw error;
-
-      setFields((data as ExtractionField[]) || []);
-    } catch (err: any) {
-        console.error('Error loading fields:', err);
-        toast.error(`${t('extraction', 'errors_loadFields')}: ${err.message}`);
+    const result = await loadEntityTypeFields(entityTypeId);
+    if (!result.ok) {
+      console.error('Error loading fields:', result.error);
+      toast.error(`${t('extraction', 'errors_loadFields')}: ${result.error.message}`);
       setFields([]);
-    } finally {
-      setLoading(false);
+    } else {
+      setFields(result.data);
     }
-  }, [entityTypeId]);
+    setLoading(false);
+  };
 
   /**
    * Validate field before operations (check impact)
    */
-  const validateField = useCallback(async (
+  const validateField = async (
     fieldId: string
   ): Promise<FieldValidationResult> => {
-    try {
-        // Count reviewer decisions referencing this field, grouped by
-        // article via the run. A field is "in use" when any reviewer has
-        // a non-reject decision against it; that triggers the safety
-        // gate on delete / type-change.
-      const { data: decisionRows, error: decisionsError } = await supabase
-        .from('extraction_reviewer_decisions')
-        .select('id, decision, run:run_id(article_id)')
-        .eq('field_id', fieldId)
-        .neq('decision', 'reject');
+    const result = await validateFieldImpact(
+      fieldId,
+      t('extraction', 'fieldSafeToModifyMessage'),
+      (count, articles) =>
+        t('extraction', 'fieldExtractedValuesMessage')
+          .replace('{{count}}', String(count))
+          .replace('{{n}}', String(articles)),
+    );
 
-      if (decisionsError) throw decisionsError;
-
-      const extractedCount = decisionRows?.length || 0;
-      const affectedArticles = Array.from(
-        new Set(
-          (decisionRows || [])
-            .map((d: { run: { article_id: string } | { article_id: string }[] | null }) => {
-              const run = Array.isArray(d.run) ? d.run[0] : d.run;
-              return run?.article_id;
-            })
-            .filter((id): id is string => Boolean(id)),
-        ),
-      );
-      const hasValues = extractedCount > 0;
-
-      return {
-        canDelete: !hasValues,
-        canUpdate: true,
-        canChangeType: !hasValues,
-        extractedValuesCount: extractedCount,
-        affectedArticles,
-        message: hasValues
-            ? t('extraction', 'fieldExtractedValuesMessage')
-                .replace('{{count}}', String(extractedCount))
-                .replace('{{n}}', String(affectedArticles.length))
-            : t('extraction', 'fieldSafeToModifyMessage'),
-      };
-    } catch (err: any) {
-        console.error('Error validating field:', err);
+    if (!result.ok) {
+      console.error('Error validating field:', result.error);
       return {
         canDelete: false,
         canUpdate: false,
         canChangeType: false,
         extractedValuesCount: 0,
         affectedArticles: [],
-          message: t('extraction', 'errors_validateField'),
+        message: t('extraction', 'errors_validateField'),
       };
     }
-  }, []);
+    return result.data;
+  };
 
   /**
    * Add new field
    */
-  const addField = useCallback(async (
+  const addField = async (
     fieldData: ExtractionFieldInput
   ): Promise<ExtractionField | null> => {
       // Check permissions
     const perms = await checkPermissions();
     if (!perms.canCreate) {
-        toast.error(t('extraction', 'errors_noPermissionAddField'));
+      toast.error(t('extraction', 'errors_noPermissionAddField'));
       return null;
     }
 
-    try {
-        // Validate data with Zod
-      const validatedData = ExtractionFieldSchema.parse(fieldData);
-
-        // Check if name already exists in this section
-      const existingField = fields.find(f => f.name === validatedData.name);
-      if (existingField) {
-          toast.error(t('extraction', 'errors_fieldExistsInSection').replace('{{name}}', validatedData.name));
-        return null;
-      }
-
-        // Calculate next sort_order
-      const maxSortOrder = fields.reduce(
-        (max, field) => Math.max(max, field.sort_order),
-        0
-      );
-
-      const newField: ExtractionFieldInsert = {
-        entity_type_id: entityTypeId,
-        name: validatedData.name,
-        label: validatedData.label,
-        description: validatedData.description || null,
-        field_type: validatedData.field_type,
-        is_required: validatedData.is_required,
-        validation_schema: validatedData.validation_schema || {},
-        allowed_values: validatedData.allowed_values || null,
-        unit: validatedData.unit || null,
-        allowed_units: validatedData.allowed_units || null,
-        sort_order: maxSortOrder + 1,
-      };
-
-      const { data, error } = await supabase
-        .from('extraction_fields')
-        .insert(newField)
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      const createdField = data as ExtractionField;
-      setFields(prev => [...prev, createdField]);
-        toast.success(t('extraction', 'fieldAddedSuccess').replace('{{label}}', createdField.label));
-      
-      return createdField;
-    } catch (err: any) {
-        // If Zod validation error
-      if (err.name === 'ZodError') {
-        const firstError = err.errors[0];
-          toast.error(t('extraction', 'errors_validationPrefix').replace('{{message}}', firstError.message));
-      } else {
-          console.error('Error adding field:', err);
-          toast.error(`${t('extraction', 'errors_addField')}: ${err.message}`);
-      }
+    // Validate with Zod — may throw ZodError
+    const zodResult = ExtractionFieldSchema.safeParse(fieldData);
+    if (!zodResult.success) {
+      const firstError = zodResult.error.errors[0];
+      toast.error(t('extraction', 'errors_validationPrefix').replace('{{message}}', firstError.message));
       return null;
     }
-  }, [fields, entityTypeId, checkPermissions]);
+    const validatedData = zodResult.data;
+
+    // Check if name already exists in this section
+    const existingField = fields.find(f => f.name === validatedData.name);
+    if (existingField) {
+      toast.error(t('extraction', 'errors_fieldExistsInSection').replace('{{name}}', validatedData.name));
+      return null;
+    }
+
+    // Calculate next sort_order
+    const maxSortOrder = fields.reduce(
+      (max, field) => Math.max(max, field.sort_order),
+      0
+    );
+
+    const newField: ExtractionFieldInsert = {
+      entity_type_id: entityTypeId,
+      name: validatedData.name,
+      label: validatedData.label,
+      description: validatedData.description || null,
+      field_type: validatedData.field_type,
+      is_required: validatedData.is_required,
+      validation_schema: validatedData.validation_schema || {},
+      allowed_values: validatedData.allowed_values || null,
+      unit: validatedData.unit || null,
+      allowed_units: validatedData.allowed_units || null,
+      sort_order: maxSortOrder + 1,
+    };
+
+    const result = await insertField(newField);
+    if (!result.ok) {
+      console.error('Error adding field:', result.error);
+      toast.error(`${t('extraction', 'errors_addField')}: ${result.error.message}`);
+      return null;
+    }
+
+    const createdField = result.data;
+    setFields(prev => [...prev, createdField]);
+    toast.success(t('extraction', 'fieldAddedSuccess').replace('{{label}}', createdField.label));
+    return createdField;
+  };
 
   /**
    * Create "Other (specify)" field associated with a select field
    */
-  const createOtherSpecifyField = useCallback(async (
+  const createOtherSpecifyField = async (
     parentFieldName: string,
     parentFieldLabel: string,
     sortOrder: number
   ): Promise<ExtractionField | null> => {
     const perms = await checkPermissions();
     if (!perms.canCreate) {
-        toast.error(t('extraction', 'errors_noPermissionAddField'));
+      toast.error(t('extraction', 'errors_noPermissionAddField'));
       return null;
     }
 
-    try {
-      const otherFieldName = `${parentFieldName}_other_specify`;
-      const otherFieldLabel = `${parentFieldLabel} (Other - Specify)`;
+    const otherFieldName = `${parentFieldName}_other_specify`;
+    const otherFieldLabel = `${parentFieldLabel} (Other - Specify)`;
 
-        // Check if already exists
-      const existingField = fields.find(f => f.name === otherFieldName);
-      if (existingField) {
-        return existingField;
-      }
+    // Check if already exists
+    const existingField = fields.find(f => f.name === otherFieldName);
+    if (existingField) {
+      return existingField;
+    }
 
-      const otherField: ExtractionFieldInsert = {
-        entity_type_id: entityTypeId,
-        name: otherFieldName,
-        label: otherFieldLabel,
-          description: `Specify when "Other (specify)" was selected in ${parentFieldLabel}`,
-        field_type: 'text',
-        is_required: false,
-        validation_schema: {
-          conditional_required: {
-            depends_on: parentFieldName,
-            required_when: 'Other (specify)'
-          }
-        },
-        allowed_values: null,
-        unit: null,
-        allowed_units: null,
-        sort_order: sortOrder + 1,
-      };
+    const otherField: ExtractionFieldInsert = {
+      entity_type_id: entityTypeId,
+      name: otherFieldName,
+      label: otherFieldLabel,
+      description: `Specify when "Other (specify)" was selected in ${parentFieldLabel}`,
+      field_type: 'text',
+      is_required: false,
+      validation_schema: {
+        conditional_required: {
+          depends_on: parentFieldName,
+          required_when: 'Other (specify)'
+        }
+      },
+      allowed_values: null,
+      unit: null,
+      allowed_units: null,
+      sort_order: sortOrder + 1,
+    };
 
-      const { data, error } = await supabase
-        .from('extraction_fields')
-        .insert(otherField)
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      const createdField = data as ExtractionField;
-      setFields(prev => [...prev, createdField]);
-      return createdField;
-    } catch (err: any) {
-        console.error('Error creating Other specify field:', err);
-        toast.error(`${t('extraction', 'errors_addField')}: ${err.message}`);
+    const result = await insertField(otherField);
+    if (!result.ok) {
+      console.error('Error creating Other specify field:', result.error);
+      toast.error(`${t('extraction', 'errors_addField')}: ${result.error.message}`);
       return null;
     }
-  }, [fields, entityTypeId, checkPermissions]);
+
+    const createdField = result.data;
+    setFields(prev => [...prev, createdField]);
+    return createdField;
+  };
 
   /**
    * Update existing field
    */
-  const updateField = useCallback(async (
+  const updateField = async (
     fieldId: string,
     updates: ExtractionFieldUpdate
   ): Promise<ExtractionField | null> => {
-      // Check permissions
+    // Check permissions
     const perms = await checkPermissions();
     if (!perms.canEdit) {
-        toast.error(t('extraction', 'errors_noPermissionEditField'));
+      toast.error(t('extraction', 'errors_noPermissionEditField'));
       return null;
     }
 
-      // If trying to change type, validate
+    // If trying to change type, validate
     if (updates.field_type) {
       const currentField = fields.find(f => f.id === fieldId);
       if (currentField && currentField.field_type !== updates.field_type) {
         const validation = await validateField(fieldId);
         if (!validation.canChangeType) {
-            toast.error(t('extraction', 'errors_cannotChangeFieldType'));
+          toast.error(t('extraction', 'errors_cannotChangeFieldType'));
           return null;
         }
       }
     }
 
-    try {
-      const { data, error } = await supabase
-        .from('extraction_fields')
-        .update(updates)
-        .eq('id', fieldId)
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      const updatedField = data as ExtractionField;
-      setFields(prev =>
-        prev.map(field => (field.id === fieldId ? updatedField : field))
-      );
-        toast.success(t('extraction', 'fieldUpdatedSuccess'));
-      
-      return updatedField;
-    } catch (err: any) {
-        console.error('Error updating field:', err);
-        toast.error(`${t('extraction', 'errors_updateField')}: ${err.message}`);
+    const result = await updateFieldService(fieldId, updates);
+    if (!result.ok) {
+      console.error('Error updating field:', result.error);
+      toast.error(`${t('extraction', 'errors_updateField')}: ${result.error.message}`);
       return null;
     }
-  }, [fields, checkPermissions, validateField]);
+
+    const updatedField = result.data;
+    setFields(prev =>
+      prev.map(field => (field.id === fieldId ? updatedField : field))
+    );
+    toast.success(t('extraction', 'fieldUpdatedSuccess'));
+    return updatedField;
+  };
 
   /**
    * Remove field (with impact validation)
    */
-  const deleteField = useCallback(async (
+  const deleteField = async (
     fieldId: string
   ): Promise<boolean> => {
-      // Check permissions
+    // Check permissions
     const perms = await checkPermissions();
     if (!perms.canDelete) {
-        toast.error(t('extraction', 'errors_noPermissionRemoveField'));
+      toast.error(t('extraction', 'errors_noPermissionRemoveField'));
       return false;
     }
 
-      // Validate if can delete
+    // Validate if can delete
     const validation = await validateField(fieldId);
     if (!validation.canDelete) {
-        toast.error(validation.message || t('extraction', 'errors_cannotRemoveField'));
+      toast.error(validation.message || t('extraction', 'errors_cannotRemoveField'));
       return false;
     }
 
-    try {
-      const { error } = await supabase
-        .from('extraction_fields')
-        .delete()
-        .eq('id', fieldId);
-
-      if (error) throw error;
-
-      setFields(prev => prev.filter(field => field.id !== fieldId));
-        toast.success(t('extraction', 'fieldRemovedSuccess'));
-      
-      return true;
-    } catch (err: any) {
-        console.error('Error removing field:', err);
-        toast.error(`${t('extraction', 'errors_removeField')}: ${err.message}`);
+    const result = await deleteFieldService(fieldId);
+    if (!result.ok) {
+      console.error('Error removing field:', result.error);
+      toast.error(`${t('extraction', 'errors_removeField')}: ${result.error.message}`);
       return false;
     }
-  }, [checkPermissions, validateField]);
+
+    setFields(prev => prev.filter(field => field.id !== fieldId));
+    toast.success(t('extraction', 'fieldRemovedSuccess'));
+    return true;
+  };
 
   /**
    * Remove associated "Other (specify)" field
    */
-  const removeOtherSpecifyField = useCallback(async (
+  const removeOtherSpecifyField = async (
     parentFieldName: string
   ): Promise<boolean> => {
     const perms = await checkPermissions();
     if (!perms.canDelete) {
-        toast.error(t('extraction', 'errors_noPermissionRemoveField'));
+      toast.error(t('extraction', 'errors_noPermissionRemoveField'));
       return false;
     }
 
-    try {
-      const otherFieldName = `${parentFieldName}_other_specify`;
-      const otherField = fields.find(f => f.name === otherFieldName);
+    const otherFieldName = `${parentFieldName}_other_specify`;
+    const otherField = fields.find(f => f.name === otherFieldName);
 
-      if (!otherField) {
-          return true; // Already does not exist
-      }
+    if (!otherField) {
+      return true; // Already does not exist
+    }
 
-        // Check if has extracted data
-      const validation = await validateField(otherField.id);
-      if (validation.extractedValuesCount > 0) {
-        toast.error(
-            t('extraction', 'errors_cannotRemoveFieldWithData')
-                .replace('{{label}}', otherField.label)
-                .replace('{{n}}', String(validation.extractedValuesCount))
-        );
-        return false;
-      }
-
-      const success = await deleteField(otherField.id);
-      return success;
-    } catch (err: any) {
-        console.error('Error removing Other specify field:', err);
-        toast.error(`${t('extraction', 'errors_removeField')}: ${err.message}`);
+    // Check if has extracted data
+    const validation = await validateField(otherField.id);
+    if (validation.extractedValuesCount > 0) {
+      toast.error(
+        t('extraction', 'errors_cannotRemoveFieldWithData')
+          .replace('{{label}}', otherField.label)
+          .replace('{{n}}', String(validation.extractedValuesCount))
+      );
       return false;
     }
-  }, [fields, checkPermissions, validateField, deleteField]);
+
+    return deleteField(otherField.id);
+  };
 
   /**
-   * Reordenar campos (batch update)
+   * Reorder fields (batch update)
    */
-  const reorderFields = useCallback(async (
+  const reorderFields = async (
     reorderedFields: { id: string; sort_order: number }[]
   ): Promise<boolean> => {
-      // Check permissions
+    // Check permissions
     const perms = await checkPermissions();
     if (!perms.canEdit) {
-        toast.error(t('extraction', 'errors_noPermissionReorderField'));
+      toast.error(t('extraction', 'errors_noPermissionReorderField'));
       return false;
     }
 
-    try {
-        // Update all sort_order in batch
-      const updates = reorderedFields.map(({ id, sort_order }) =>
-        supabase
-          .from('extraction_fields')
-          .update({ sort_order })
-          .eq('id', id)
-      );
-
-      // Supabase query builders resolve (never reject) on SQL/RLS
-      // errors — the error lives on the resolved object's `.error`
-      // field. ``Promise.all`` just throws away that array, so we must
-      // inspect every result to detect a partial failure (#56).
-      const results = await Promise.all(updates);
-      const failed = results
-        .map((r) => (r as { error: { message: string } | null }).error)
-        .filter((e): e is { message: string } => Boolean(e));
-      if (failed.length > 0) {
-        throw new Error(
-          `Failed to update sort_order for ${failed.length} field(s): ${failed[0].message}`,
-        );
-      }
-
-        // Reload fields to ensure correct order
-      await loadFields();
-        toast.success(t('extraction', 'fieldsReorderSuccess'));
-
-      return true;
-    } catch (err: any) {
-        console.error('Error reordering fields:', err);
-        toast.error(`${t('extraction', 'errors_reorderFields')}: ${err.message}`);
+    const result = await reorderFieldsService(reorderedFields);
+    if (!result.ok) {
+      console.error('Error reordering fields:', result.error);
+      toast.error(`${t('extraction', 'errors_reorderFields')}: ${result.error.message}`);
       return false;
     }
-  }, [checkPermissions, loadFields]);
+
+    // Reload fields to ensure correct order
+    await loadFields();
+    toast.success(t('extraction', 'fieldsReorderSuccess'));
+    return true;
+  };
 
     // Load permissions and fields on mount
   useEffect(() => {
@@ -522,22 +410,21 @@ export function useFieldManagement({
     canCreate: permissions.canCreate,
     userRole: permissions.role,
 
-      // Operations
+    // Operations
     addField,
     updateField,
     deleteField,
     reorderFields,
 
-      // Validation
+    // Validation
     validateField,
 
     // Campos "Other (specify)"
     createOtherSpecifyField,
     removeOtherSpecifyField,
 
-      // Utilities
+    // Utilities
     refreshFields: loadFields,
     refreshPermissions: checkPermissions,
   };
 }
-

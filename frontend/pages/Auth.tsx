@@ -1,6 +1,6 @@
 import {useState} from "react";
 import {useNavigate} from "react-router-dom";
-import {supabase} from "@/integrations/supabase/client";
+import {signInWithPassword, signUp, resetPasswordForEmail} from "@/services/authService";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {Label} from "@/components/ui/label";
@@ -197,21 +197,16 @@ function LoginForm({
 
     const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-        setError(null);
+    setError(null);
     setLoading(true);
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-          email: form.email,
-          password: form.password,
-      });
-      if (error) throw error;
-        toast.success(t("auth", "loginSuccess"));
-      navigate("/");
-    } catch (err: any) {
-        setError(mapAuthError(err.message || t("auth", "errorLogin")));
-    } finally {
-      setLoading(false);
+    const result = await signInWithPassword(form.email, form.password);
+    setLoading(false);
+    if (!result.ok) {
+      setError(mapAuthError(result.error.message || t("auth", "errorLogin")));
+      return;
     }
+    toast.success(t("auth", "loginSuccess"));
+    navigate("/");
   };
 
     return (
@@ -314,45 +309,41 @@ function RegisterForm({onSwitchToLogin}: { onSwitchToLogin: () => void }) {
 
     const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-        setError(null);
+    setError(null);
 
-        const pwError = validatePassword(form.password);
-        if (pwError) {
-            setError(pwError);
-            return;
-        }
-        if (form.password !== form.confirmPassword) {
-            setError(t("auth", "passwordsDoNotMatch"));
-            return;
-        }
+    const pwError = validatePassword(form.password);
+    if (pwError) {
+      setError(pwError);
+      return;
+    }
+    if (form.password !== form.confirmPassword) {
+      setError(t("auth", "passwordsDoNotMatch"));
+      return;
+    }
 
     setLoading(true);
-    try {
-      const { data, error } = await supabase.auth.signUp({
-          email: form.email,
-          password: form.password,
-        options: {
-            data: {full_name: form.fullName},
-          emailRedirectTo: `${authRedirectBaseUrl}/`,
-        },
-      });
-      if (error) throw error;
-      // Supabase returns a session when email confirmations are disabled
-      // (the local CLI default). In that case the user is already
-      // authenticated; navigate to the dashboard instead of parking
-      // them on a "check your email" screen for an email that will
-      // never arrive. When confirmations are required (production
-      // default), `data.session` is null and we keep the original UX.
-      if (data.session) {
-        toast.success(t("auth", "loginSuccess"));
-        navigate("/");
-      } else {
-        setEmailSent(true);
-      }
-    } catch (err: any) {
-        setError(mapAuthError(err.message || t("auth", "errorCreateAccount")));
-    } finally {
-      setLoading(false);
+    const result = await signUp(
+      form.email,
+      form.password,
+      form.fullName,
+      `${authRedirectBaseUrl}/`,
+    );
+    setLoading(false);
+    if (!result.ok) {
+      setError(mapAuthError(result.error.message || t("auth", "errorCreateAccount")));
+      return;
+    }
+    // Supabase returns a session when email confirmations are disabled
+    // (the local CLI default). In that case the user is already
+    // authenticated; navigate to the dashboard instead of parking
+    // them on a "check your email" screen for an email that will
+    // never arrive. When confirmations are required (production
+    // default), sessionReady is false and we keep the original UX.
+    if (result.data.sessionReady) {
+      toast.success(t("auth", "loginSuccess"));
+      navigate("/");
+    } else {
+      setEmailSent(true);
     }
   };
 
@@ -502,17 +493,13 @@ function ForgotPasswordForm({onBack}: { onBack: () => void }) {
         e.preventDefault();
         setError(null);
         setLoading(true);
-        try {
-            const {error} = await supabase.auth.resetPasswordForEmail(email, {
-                redirectTo: `${authRedirectBaseUrl}/auth/reset-password`,
-            });
-            if (error) throw error;
-            setSent(true);
-        } catch (err: any) {
-            setError(mapAuthError(err.message || t("auth", "errorSendEmail")));
-        } finally {
-            setLoading(false);
+        const result = await resetPasswordForEmail(email, `${authRedirectBaseUrl}/auth/reset-password`);
+        setLoading(false);
+        if (!result.ok) {
+            setError(mapAuthError(result.error.message || t("auth", "errorSendEmail")));
+            return;
         }
+        setSent(true);
     };
 
     if (sent) {

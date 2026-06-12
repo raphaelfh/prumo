@@ -28,7 +28,6 @@
 import {
   type Dispatch,
   type SetStateAction,
-  useCallback,
   useEffect,
   useRef,
   useState,
@@ -137,40 +136,36 @@ export function useExtractedValues(
   const [error, setError] = useState<string | null>(null);
   const hydratedRunIdRef = useRef<string | null>(null);
 
-  const applyLoadedValues = useCallback(
-    (valuesMap: Record<string, any>) => {
-      // Expose the raw server map as the autosave baseline (see return docs)
-      // so the form never re-POSTs hydrated values on mount. Every hydration
-      // path (proposal + reviewer-state) routes through here, including the
-      // empty-map case, so switching runs replaces the baseline too. Keep the
-      // SAME reference when the content is unchanged: this runs on every
-      // ``loadValues`` (e.g. each ``proposals`` change), and emitting a fresh
-      // object each time churned re-renders (and, with an unstable proposals
-      // prop, looped to OOM).
-      setLoadedValues((prev) =>
-        JSON.stringify(prev) === JSON.stringify(valuesMap) ? prev : valuesMap,
-      );
-      setValues((prev) => {
-        if (hydratedRunIdRef.current !== runId) {
-          hydratedRunIdRef.current = runId ?? null;
-          const addedKeys = Object.keys(valuesMap);
-          if (addedKeys.length > 0) {
-            requestAnimationFrame(() => dispatchValueUpdates(addedKeys));
-          }
-          return valuesMap;
+  const applyLoadedValues = (valuesMap: Record<string, any>) => {
+    // Expose the raw server map as the autosave baseline (see return docs)
+    // so the form never re-POSTs hydrated values on mount. Every hydration
+    // path (proposal + reviewer-state) routes through here, including the
+    // empty-map case, so switching runs replaces the baseline too. Keep the
+    // SAME reference when the content is unchanged: this runs on every
+    // ``loadValues`` (e.g. each ``proposals`` change), and emitting a fresh
+    // object each time churned re-renders (and, with an unstable proposals
+    // prop, looped to OOM).
+    setLoadedValues((prev) =>
+      JSON.stringify(prev) === JSON.stringify(valuesMap) ? prev : valuesMap,
+    );
+    setValues((prev) => {
+      if (hydratedRunIdRef.current !== runId) {
+        hydratedRunIdRef.current = runId ?? null;
+        const addedKeys = Object.keys(valuesMap);
+        if (addedKeys.length > 0) {
+          requestAnimationFrame(() => dispatchValueUpdates(addedKeys));
         }
-        return mergeValuesById(prev, valuesMap);
-      });
-    },
-    [runId],
-  );
+        return valuesMap;
+      }
+      return mergeValuesById(prev, valuesMap);
+    });
+  };
 
-  const loadValues = useCallback(
-    async (silent = false) => {
+  const loadValues = (silent = false) => {
       if (!silent) setLoading(true);
       setError(null);
 
-      try {
+      const doLoad = async () => {
         if (!runId || !stage) {
           hydratedRunIdRef.current = null;
           resetValuesIfNeeded(setValues);
@@ -249,16 +244,17 @@ export function useExtractedValues(
         hydratedRunIdRef.current = runId;
         resetValuesIfNeeded(setValues);
         setInitialized(true);
-      } catch (err: any) {
-        console.error('Erro ao carregar valores extraídos:', err);
-        setError(err.message || t('extraction', 'errors_loadExtractedValues'));
-        toast.error(t('extraction', 'errors_loadExtractedValues'));
-      } finally {
-        if (!silent) setLoading(false);
-      }
-    },
-    [runId, stage, proposals, currentValues, currentUserId, applyLoadedValues],
-  );
+      };
+
+      return doLoad()
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : t('extraction', 'errors_loadExtractedValues');
+          console.error('Erro ao carregar valores extraídos:', err);
+          setError(message);
+          toast.error(t('extraction', 'errors_loadExtractedValues'));
+        })
+        .finally(() => { if (!silent) setLoading(false); });
+  };
 
   useEffect(() => {
     if (!enabled) {
@@ -284,17 +280,15 @@ export function useExtractedValues(
     queueMicrotask(() => void loadValues());
   }, [enabled, loadValues]);
 
-  const updateValue = useCallback((instanceId: string, fieldId: string, value: any) => {
+  const updateValue = (instanceId: string, fieldId: string, value: any) => {
     const key = `${instanceId}_${fieldId}`;
     setValues((prev) => ({
       ...prev,
       [key]: value,
     }));
-  }, []);
+  };
 
-  const refresh = useCallback(async () => {
-    await loadValues(true);
-  }, [loadValues]);
+  const refresh = () => loadValues(true);
 
   return {
     values,

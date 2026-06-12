@@ -6,7 +6,6 @@
  * @component
  */
 
-import {memo} from 'react';
 import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,} from '@/components/ui/tooltip';
@@ -20,8 +19,7 @@ interface FieldsHeaderProps {
   onAddField: () => void;
 }
 
-// kept: parent component (FieldsManager) bails out of compilation — memo is load-bearing here
-export const FieldsHeader = memo(function FieldsHeader({
+export function FieldsHeader({
   fieldsCount,
   userRole,
   canCreate,
@@ -87,4 +85,4 @@ export const FieldsHeader = memo(function FieldsHeader({
       </TooltipProvider>
     </div>
   );
-});
+}

@@ -28,9 +28,10 @@ export function FilterNumericRangeField({
                                             value,
                                             onChange,
                                             minBound = 1990,
-                                            maxBound = new Date().getFullYear(),
+                                            maxBound: maxBoundProp,
                                             step = 1,
                                         }: FilterNumericRangeFieldProps) {
+    const maxBound = maxBoundProp ?? new Date().getFullYear();
     const useSelects = minBound != null && maxBound != null;
     const options = useSelects
         ? Array.from({length: maxBound - minBound + 1}, (_, i) => maxBound - i)

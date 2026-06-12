@@ -31,7 +31,7 @@ import {Switch} from '@/components/ui/switch';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue,} from '@/components/ui/select';
 import {Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage,} from '@/components/ui/form';
 import {Info, Loader2, Plus} from 'lucide-react';
-import {supabase} from '@/integrations/supabase/client';
+import {createSection} from '@/services/templateService';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 
@@ -121,62 +121,32 @@ export function AddSectionDialog({
 
   const handleSubmit = async (data: AddSectionInput) => {
     setLoading(true);
-    
-    try {
-        console.warn('Creating new section:', data);
 
-        // 1. Fetch next sort_order from existing entity_types
-      const { data: existingEntityTypes, error: orderError } = await supabase
-        .from('extraction_entity_types')
-        .select('sort_order')
-        .eq('project_template_id', templateId)
-        .order('sort_order', { ascending: false })
-        .limit(1);
+    console.warn('Creating new section:', data);
 
-      if (orderError) {
-          console.error('Error fetching sort_order:', orderError);
-        throw orderError;
-      }
+    const result = await createSection({
+      templateId,
+      name: data.name,
+      label: data.label,
+      description: data.description,
+      cardinality: data.cardinality,
+      isRequired: data.is_required,
+    });
 
-      const nextSortOrder = (existingEntityTypes?.[0]?.sort_order || 0) + 1;
-
-        // 2. Create entity type
-      const { data: newEntityType, error: entityError } = await supabase
-        .from('extraction_entity_types')
-        .insert({
-          project_template_id: templateId,
-          name: data.name,
-          label: data.label,
-          description: data.description || null,
-          cardinality: data.cardinality,
-          sort_order: nextSortOrder,
-          is_required: data.is_required,
-          parent_entity_type_id: null, // New section is always ROOT
-          role: 'study_section' as const,
-        })
-        .select()
-        .single();
-
-      if (entityError) {
-          console.error('Error creating entity type:', entityError);
-        throw entityError;
-      }
-
-        console.warn('Entity type created:', newEntityType.id);
-
-        toast.success(t('extraction', 'sectionCreatedSuccess').replace('{{label}}', data.label));
-
-        // Reset form and close dialog
-      form.reset();
-      onOpenChange(false);
-      onSectionAdded();
-
-    } catch (error: any) {
-        console.error('Error creating section:', error);
-        toast.error(`${t('extraction', 'sectionCreateError')}: ${error.message}`);
-    } finally {
+    if (!result.ok) {
+      console.error('Error creating section:', result.error);
+      toast.error(`${t('extraction', 'sectionCreateError')}: ${result.error.message}`);
       setLoading(false);
+      return;
     }
+
+    toast.success(t('extraction', 'sectionCreatedSuccess').replace('{{label}}', data.label));
+
+    // Reset form and close dialog
+    form.reset();
+    onOpenChange(false);
+    onSectionAdded();
+    setLoading(false);
   };
 
   const handleClose = () => {

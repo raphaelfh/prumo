@@ -15,7 +15,7 @@
  * - Success callback for refresh
  */
 
-import {useCallback, useState} from "react";
+import {useState} from "react";
 import {toast} from "sonner";
 import {t} from "@/lib/copy";
 import {useModelExtraction} from "./useModelExtraction";
@@ -23,9 +23,9 @@ import type {AllModelsSectionsProgress} from "./useBatchAllModelsSectionsExtract
 import {useBatchAllModelsSectionsExtraction} from "./useBatchAllModelsSectionsExtraction";
 import type {TopLevelSectionsProgress} from "./useTopLevelSectionsExtraction";
 import {useTopLevelSectionsExtraction} from "./useTopLevelSectionsExtraction";
-import {supabase} from "@/integrations/supabase/client";
 import {queryEntityTypesWithFallback} from "./helpers/queryEntityTypes";
 import {ENTITY_ROLE} from "@/lib/extraction/entityTypeRoles";
+import {loadExtractedModels} from "@/services/extractionInstanceService";
 
 /**
  * Full extraction progress
@@ -102,34 +102,6 @@ export function useFullAIExtraction(options?: {
   });
 
   /**
-   * Fetches extracted models from the article
-   *
-   * @param articleId - Article ID
-   * @param modelParentEntityTypeId - Model entity type ID
-   * @returns Array of found models
-   */
-  const fetchExtractedModels = useCallback(async (
-    articleId: string,
-    modelParentEntityTypeId: string
-  ): Promise<Array<{ instanceId: string; modelName: string }>> => {
-    const { data: instances, error: instancesError } = await supabase
-      .from('extraction_instances')
-      .select('id, label')
-      .eq('article_id', articleId)
-      .eq('entity_type_id', modelParentEntityTypeId)
-      .order('sort_order', { ascending: true });
-
-    if (instancesError) {
-      throw new Error(`Failed to fetch models: ${instancesError.message}`);
-    }
-
-    return (instances || []).map(instance => ({
-      instanceId: instance.id,
-        modelName: instance.label || 'Unnamed model',
-    }));
-  }, []);
-
-  /**
    * Fetches the model container entity type id by structural role.
    *
    * The template has at most one ``model_container`` (enforced by a
@@ -137,7 +109,7 @@ export function useFullAIExtraction(options?: {
    * throws — failing fast is correct here: every caller assumes a
    * template that owns prediction models.
    */
-  const fetchModelParentEntityTypeId = useCallback(async (
+  const fetchModelParentEntityTypeId = async (
     templateId: string
   ): Promise<string> => {
     const results = await queryEntityTypesWithFallback<{ id: string }>({
@@ -151,15 +123,14 @@ export function useFullAIExtraction(options?: {
     }
 
     return results[0].id;
-  }, []);
+  };
 
   /**
    * Extracts models and then sections for each model
    *
    * @param params - Extraction parameters
    */
-  const extractFullAI = useCallback(
-    async (params: {
+  const extractFullAI = async (params: {
       projectId: string;
       articleId: string;
       templateId: string;
@@ -169,7 +140,7 @@ export function useFullAIExtraction(options?: {
       setError(null);
       setProgress(null);
 
-      try {
+      const doExtract = async () => {
         const { projectId, articleId, templateId } = params;
 
           // PHASE 1: Extract models and top-level sections in parallel
@@ -207,7 +178,12 @@ export function useFullAIExtraction(options?: {
 
         // PHASE 2: Fetch extracted models
         const modelParentEntityTypeId = await fetchModelParentEntityTypeId(templateId);
-        const models = await fetchExtractedModels(articleId, modelParentEntityTypeId);
+        const modelsResult = await loadExtractedModels(articleId, modelParentEntityTypeId);
+
+        if (!modelsResult.ok) {
+          throw modelsResult.error;
+        }
+        const models = modelsResult.data;
 
         if (models.length === 0) {
           toast.warning(t('extraction', 'noModelsFoundTitle'), {
@@ -269,33 +245,24 @@ export function useFullAIExtraction(options?: {
 
           // Clear progress
         setProgress(null);
-      } catch (err: any) {
+      };
+
+      doExtract()
+        .catch((err: unknown) => {
           console.error('[useFullAIExtraction] Error caught', {
-          error: err instanceof Error ? err.message : String(err),
-          name: err instanceof Error ? err.name : 'Unknown',
-          stack: err instanceof Error ? err.stack : undefined,
-        });
+            error: err instanceof Error ? err.message : String(err),
+            name: err instanceof Error ? err.name : 'Unknown',
+            stack: err instanceof Error ? err.stack : undefined,
+          });
 
-          // Handle error in a user-friendly way
-        const message = err instanceof Error ? err.message : String(err);
-        setError(message);
-
-          toast.error(`${t('extraction', 'fullAIErrorPrefix')}: ${message}`, {
-          duration: 8000,
-        });
-
-          // Clear progress
-        setProgress(null);
-
-          // Re-throw to allow additional handling by the component
-        throw err;
-      } finally {
-        setLoading(false);
-      }
-    },
-    [extractModelsHook, extractTopLevelSections, extractAllSectionsForAllModels, fetchModelParentEntityTypeId, fetchExtractedModels, options],
-  );
+          const message = err instanceof Error ? err.message : String(err);
+          setError(message);
+          toast.error(`${t('extraction', 'fullAIErrorPrefix')}: ${message}`, {duration: 8000});
+          setProgress(null);
+          throw err;
+        })
+        .finally(() => setLoading(false));
+  };
 
   return { extractFullAI, loading, error, progress };
 }
-

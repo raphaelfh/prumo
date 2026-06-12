@@ -1,6 +1,6 @@
-import {useEffect, useMemo, useState} from 'react';
+import {useEffect, useState} from 'react';
 
-import {zoteroService} from '@/services/zoteroImportService';
+import {fetchZoteroSyncStatus} from '@/services/zoteroImportService';
 import type {ZoteroSyncStatus} from '@/types/zotero';
 
 export function useZoteroSyncStatus(syncRunId: string | null, pollingMs = 1500) {
@@ -30,20 +30,19 @@ export function useZoteroSyncStatus(syncRunId: string | null, pollingMs = 1500) 
         const tick = async () => {
             if (!active) return;
             setLoading(true);
-            try {
-                const next = await zoteroService.getSyncStatus(syncRunId);
-                if (!active) return;
-                setData(next);
+            // IO + try/catch/finally relocated to zoteroImportService.fetchZoteroSyncStatus
+            const result = await fetchZoteroSyncStatus(syncRunId);
+            if (!active) return;
+            if (result.ok) {
+                setData(result.data);
                 setError(null);
-                if (next.status === 'pending' || next.status === 'running') {
+                if (result.data.status === 'pending' || result.data.status === 'running') {
                     timer = window.setTimeout(tick, pollingMs);
                 }
-            } catch (err) {
-                if (!active) return;
-                setError(err instanceof Error ? err.message : 'Failed to load sync status');
-            } finally {
-                if (active) setLoading(false);
+            } else {
+                setError(result.error.message || 'Failed to load sync status');
             }
+            if (active) setLoading(false);
         };
 
         // Microtask so tick's setState calls run in an async callback.
@@ -54,10 +53,7 @@ export function useZoteroSyncStatus(syncRunId: string | null, pollingMs = 1500) 
         };
     }, [syncRunId, pollingMs]);
 
-    const isTerminal = useMemo(
-        () => !!data && ['completed', 'failed', 'cancelled'].includes(data.status),
-        [data]
-    );
+    const isTerminal = !!data && ['completed', 'failed', 'cancelled'].includes(data.status);
 
     return {data, loading, error, isTerminal};
 }

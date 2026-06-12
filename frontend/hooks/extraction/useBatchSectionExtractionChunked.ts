@@ -13,7 +13,7 @@
  * - Error handling (skip failed sections)
  */
 
-import {useCallback, useState} from "react";
+import {useState} from "react";
 // Note: a PDF-text cache used to be planned here (process once, reuse across
 // chunks), but it was never wired — the setter sat unused. Removed for now;
 // reintroduce only with a proper setter call inside `extractAllSections`.
@@ -86,14 +86,13 @@ export function useBatchSectionExtractionChunked(options?: {
    *
    * @param request - Extraction params (sectionIds and pdfText are generated)
    */
-  const extractAllSections = useCallback(
-    async (request: Omit<BatchSectionExtractionRequest, 'sectionIds' | 'pdfText'>) => {
+  const extractAllSections = async (request: Omit<BatchSectionExtractionRequest, 'sectionIds' | 'pdfText'>) => {
         console.warn('[useBatchSectionExtractionChunked] Starting extraction with chunking', request);
       setLoading(true);
       setError(null);
       setProgress(null);
 
-      try {
+      const doExtract = async () => {
           // 1. Fetch model section list
           console.warn('[useBatchSectionExtractionChunked] Fetching model sections...');
         const sections = await getModelChildSections(
@@ -178,45 +177,37 @@ export function useBatchSectionExtractionChunked(options?: {
 
         // Limpar progresso
         setProgress(null);
-      } catch (err: any) {
-        console.error('[useBatchSectionExtractionChunked] Erro capturado', {
-          error: err instanceof Error ? err.message : String(err),
-          name: err instanceof Error ? err.name : 'Unknown',
-          stack: err instanceof Error ? err.stack : undefined,
-        });
+      };
 
-          // Handle error in a user-friendly way
-        const message = getErrorMessage(err);
-        const code = getErrorCode(err);
-        setError(message);
-
-        // Toast de erro
-        const errorCode = code || '';
-        if (err instanceof PDFNotFoundError || errorCode === 'PDF_NOT_FOUND') {
-            toast.error(t('extraction', 'sectionExtractionErrorTitle'), {
-            description: message,
+      doExtract()
+        .catch((err: unknown) => {
+          console.error('[useBatchSectionExtractionChunked] Erro capturado', {
+            error: err instanceof Error ? err.message : String(err),
+            name: err instanceof Error ? err.name : 'Unknown',
+            stack: err instanceof Error ? err.stack : undefined,
           });
-        } else if (err instanceof AuthenticationError || errorCode === 'AUTH_ERROR') {
+
+          const message = getErrorMessage(err);
+          const code = getErrorCode(err);
+          setError(message);
+
+          // Toast de erro
+          const errorCode = code || '';
+          if (err instanceof PDFNotFoundError || errorCode === 'PDF_NOT_FOUND') {
+            toast.error(t('extraction', 'sectionExtractionErrorTitle'), {description: message});
+          } else if (err instanceof AuthenticationError || errorCode === 'AUTH_ERROR') {
             toast.error(t('extraction', 'sectionExtractionErrorAuth'), {
-                description: t('extraction', 'sectionExtractionErrorAuthDesc'),
-          });
-        } else {
-            toast.error(`${t('extraction', 'sectionExtractionErrorTitle')}: ${message}`, {
-            duration: 8000,
-          });
-        }
+              description: t('extraction', 'sectionExtractionErrorAuthDesc'),
+            });
+          } else {
+            toast.error(`${t('extraction', 'sectionExtractionErrorTitle')}: ${message}`, {duration: 8000});
+          }
 
-        // Limpar progresso
-        setProgress(null);
-
-        // Re-throw para permitir tratamento adicional pelo componente
-        throw err;
-      } finally {
-        setLoading(false);
-      }
-    },
-    [options, chunkSize],
-  );
+          setProgress(null);
+          throw err;
+        })
+        .finally(() => setLoading(false));
+  };
 
   return { extractAllSections, loading, error, progress };
 }

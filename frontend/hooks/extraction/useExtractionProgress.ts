@@ -11,8 +11,6 @@
  * @hook
  */
 
-import { useMemo } from 'react';
-
 import {
   type ProgressEntityProjection,
   type RequiredFieldProgress,
@@ -25,8 +23,5 @@ export function useExtractionProgress(
   values: Record<string, any>,
   entityTypes: ProgressEntityProjection[],
 ): UseExtractionProgressReturn {
-  return useMemo(
-    () => computeRequiredFieldProgress(values, entityTypes),
-    [values, entityTypes],
-  );
+  return computeRequiredFieldProgress(values, entityTypes);
 }
