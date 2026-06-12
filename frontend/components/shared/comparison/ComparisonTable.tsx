@@ -9,7 +9,7 @@
  * - Configurable columns
  * - Automatic consensus detection
  * - Visual highlights for match/divergence
- * - Optimized performance (useMemo)
+ * - Optimized performance (React Compiler memoization)
  * - Full accessibility
  *
  * @component
