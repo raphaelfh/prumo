@@ -22,7 +22,7 @@ import {Textarea} from '@/components/ui/textarea';
 import {Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage,} from '@/components/ui/form';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue,} from '@/components/ui/select';
 import {Loader2, PlusCircle} from 'lucide-react';
-import {supabase} from '@/integrations/supabase/client';
+import {createCustomTemplate} from '@/services/templateService';
 import {useAuth} from '@/contexts/AuthContext';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
@@ -76,41 +76,29 @@ export function CreateCustomTemplateDialog({
     }
 
     setLoading(true);
-    try {
-      const { data: template, error } = await supabase
-        .from('project_extraction_templates')
-        .insert({
-          project_id: projectId,
-          name: data.name,
-          description: data.description,
-          framework: data.framework,
-          version: '1.0.0',
-          schema: {
-            description: data.description || '',
-            custom: true,
-            created_via_ui: true
-          },
-          is_active: true,
-          created_by: user.id
-        })
-        .select()
-        .single();
 
-      if (error) throw error;
+    const result = await createCustomTemplate({
+      projectId,
+      name: data.name,
+      description: data.description,
+      framework: data.framework,
+      createdBy: user.id,
+    });
 
-        toast.success(`"${data.name}" ${t('extraction', 'createSuccessCreated')}`);
-        toast.info(t('extraction', 'createInfoAddSections'));
-      
-      form.reset();
-      onTemplateCreated(template.id);
-      onOpenChange(false);
-
-    } catch (err: any) {
-        console.error('Error creating template:', err);
-        toast.error(`${t('extraction', 'createErrorCreate')}: ${err.message}`);
-    } finally {
+    if (!result.ok) {
+      console.error('Error creating template:', result.error);
+      toast.error(`${t('extraction', 'createErrorCreate')}: ${result.error.message}`);
       setLoading(false);
+      return;
     }
+
+    toast.success(`"${data.name}" ${t('extraction', 'createSuccessCreated')}`);
+    toast.info(t('extraction', 'createInfoAddSections'));
+
+    form.reset();
+    onTemplateCreated(result.data.id);
+    onOpenChange(false);
+    setLoading(false);
   };
 
   const handleCancel = () => {

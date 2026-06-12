@@ -1,6 +1,7 @@
 // frontend/services/articlesService.ts
 /**
- * Articles service — IO for article CRUD, file management, and storage operations.
+ * Articles service — IO for article CRUD, file management, storage
+ * operations, and project-scoped article list queries.
  *
  * Service-layer contract (zero-bailouts spec): exported functions never
  * throw across the boundary; they return ErrorResult<T>. try/catch and
@@ -411,6 +412,68 @@ export function deleteArticle(articleId: string): Promise<ErrorResult<void>> {
 
     if (deleteError) throw deleteError;
   }, 'articlesService.deleteArticle');
+}
+
+// ---------------------------------------------------------------------------
+// ExtractionInterface: article list for dashboard stats
+// ---------------------------------------------------------------------------
+
+export interface ArticleRow {
+  id: string;
+  title: string;
+  doi?: string | null;
+  created_at: string;
+}
+
+/**
+ * Load articles for a project (for dashboard stats in ExtractionInterface).
+ * Single-query relocation: no test needed.
+ */
+export function loadProjectArticles(
+  projectId: string,
+): Promise<ErrorResult<ArticleRow[]>> {
+  return toResult(async () => {
+    const {data, error} = await supabase
+      .from('articles')
+      .select('id, title, doi, created_at')
+      .eq('project_id', projectId)
+      .order('created_at', {ascending: false});
+
+    if (error) throw error;
+
+    return (data || []) as ArticleRow[];
+  }, 'articlesService.loadProjectArticles');
+}
+
+// ---------------------------------------------------------------------------
+// ArticleExtractionTable: article list load
+// ---------------------------------------------------------------------------
+
+export interface ArticleTableRow {
+  id: string;
+  title: string;
+  authors: string[] | null;
+  publication_year: number | null;
+  created_at: string;
+}
+
+/**
+ * Load articles for the ArticleExtractionTable.
+ */
+export function loadExtractionTableArticles(
+  projectId: string,
+): Promise<ErrorResult<ArticleTableRow[]>> {
+  return toResult(async () => {
+    const {data, error} = await supabase
+      .from('articles')
+      .select('id, title, authors, publication_year, created_at')
+      .eq('project_id', projectId)
+      .order('created_at', {ascending: false});
+
+    if (error) throw error;
+
+    return (data || []) as ArticleTableRow[];
+  }, 'articlesService.loadExtractionTableArticles');
 }
 
 // ---------------------------------------------------------------------------

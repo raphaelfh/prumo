@@ -70,17 +70,16 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
     }
 
     setLoading(true);
-    try {
-        console.warn('[AISuggestionHistoryPopover] Loading history...', {instanceId, fieldId});
-      const data = await getHistory(instanceId, fieldId);
-        console.warn('[AISuggestionHistoryPopover] History loaded:', {count: data.length, data});
-      setHistory(data);
-    } catch (err) {
+    console.warn('[AISuggestionHistoryPopover] Loading history...', {instanceId, fieldId});
+
+    const data = await getHistory(instanceId, fieldId).catch((err: unknown) => {
         console.error('[AISuggestionHistoryPopover] Error loading history:', err);
-      setHistory([]);
-    } finally {
-      setLoading(false);
-    }
+      return [] as typeof history;
+    });
+
+    console.warn('[AISuggestionHistoryPopover] History loaded:', {count: data.length, data});
+    setHistory(data);
+    setLoading(false);
   }, [instanceId, fieldId, getHistory]);
 
   // Clear history on close so next open has fresh data (adjusted during

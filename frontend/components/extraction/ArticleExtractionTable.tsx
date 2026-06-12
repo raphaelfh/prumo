@@ -11,7 +11,6 @@
 import type {CSSProperties} from 'react';
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {useLocation, useNavigate} from 'react-router-dom';
-import {supabase} from '@/integrations/supabase/client';
 import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
 import {Progress} from '@/components/ui/progress';
@@ -69,6 +68,8 @@ import {
 import {DataTableWrapper} from '@/components/shared/list/DataTableWrapper';
 import {useIsNarrow} from '@/hooks/use-mobile';
 import {useQueryClient} from '@tanstack/react-query';
+import {loadExtractionTableArticles} from '@/services/articlesService';
+import {getCurrentUserId} from '@/services/authService';
 import {useTemplateEntityTypes} from '@/hooks/extraction/useTemplateEntityTypes';
 import {
   useArticleExtractionValues,
@@ -229,13 +230,9 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
 
     // Declare loadCurrentUser before any use to avoid TDZ
   const loadCurrentUser = useCallback(async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setCurrentUserId(user.id);
-      }
-    } catch (error: any) {
-        console.error('Error loading user:', error);
+    const result = await getCurrentUserId();
+    if (result.ok && result.data) {
+      setCurrentUserId(result.data);
     }
   }, []);
 
@@ -248,41 +245,34 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     setLoading(true);
     setError(null);
 
-    try {
-        // 1. Fetch project articles
-      const { data: articlesData, error: articlesError } = await supabase
-        .from('articles')
-        .select('id, title, authors, publication_year, created_at')
-        .eq('project_id', projectId)
-        .order('created_at', { ascending: false });
+    const result = await loadExtractionTableArticles(projectId);
 
-      if (articlesError) {
-          console.error('Error fetching articles:', articlesError);
-        throw articlesError;
-      }
-
-      if (!articlesData || articlesData.length === 0) {
-        setArticles([]);
-        return;
-      }
-
-        // Per-article instances + values come from useArticleExtractionValues
-        // (shared, run-scoped). This effect loads only the article rows and
-        // invalidates the values query so a refresh (route change, AI
-        // extraction onSuccess) re-reads progress too.
-      const rows: ArticleWithExtraction[] = articlesData.map((article) => ({
-        ...article,
-        isLoading: false,
-      }));
-      setArticles(rows);
-      await queryClient.invalidateQueries({ queryKey: articleExtractionValuesKeys.all });
-    } catch (err: any) {
-        console.error('Error loading articles:', err);
-      setError(err.message);
-        toast.error(`${t('extraction', 'tableErrorLoadArticles')}: ${err.message}`);
-    } finally {
+    if (!result.ok) {
+      setError(result.error.message);
+      toast.error(`${t('extraction', 'tableErrorLoadArticles')}: ${result.error.message}`);
       setLoading(false);
+      return;
     }
+
+    const articlesData = result.data;
+
+    if (!articlesData || articlesData.length === 0) {
+      setArticles([]);
+      setLoading(false);
+      return;
+    }
+
+      // Per-article instances + values come from useArticleExtractionValues
+      // (shared, run-scoped). This effect loads only the article rows and
+      // invalidates the values query so a refresh (route change, AI
+      // extraction onSuccess) re-reads progress too.
+    const rows: ArticleWithExtraction[] = articlesData.map((article) => ({
+      ...article,
+      isLoading: false,
+    }));
+    setArticles(rows);
+    await queryClient.invalidateQueries({ queryKey: articleExtractionValuesKeys.all });
+    setLoading(false);
   }, [projectId, templateId, currentUserId]);
 
     // Update loadArticles ref when it changes (must be before any use)
@@ -494,27 +484,27 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
           description: t('extraction', 'extractionMayTakeMinutes'),
     });
 
-    try {
-        // Process articles sequentially to avoid overload
-      for (let i = 0; i < selectedArticles.length; i++) {
-        const article = selectedArticles[i];
-          toast.info(t('extraction', 'processingArticle').replace('{{current}}', String(i + 1)).replace('{{total}}', String(selectedArticles.length)).replace('{{title}}', article.title || ''));
-        
-        await extractFullAI({
-          projectId,
-          articleId: article.id,
-          templateId,
-        });
-      }
+      // Process articles sequentially; abort on first failure
+    let failed = false;
+    for (let i = 0; i < selectedArticles.length; i++) {
+      if (failed) break;
+      const article = selectedArticles[i];
+        toast.info(t('extraction', 'processingArticle').replace('{{current}}', String(i + 1)).replace('{{total}}', String(selectedArticles.length)).replace('{{title}}', article.title || ''));
 
-        // Clear selection after success
-      deselectAll();
-    } catch (error: any) {
-        console.error('Error in batch AI extraction:', error);
-        toast.error(t('extraction', 'tableErrorProcessAI'), {
-            description: error.message || t('extraction', 'tableErrorUnknown'),
+      await extractFullAI({
+        projectId,
+        articleId: article.id,
+        templateId,
+      }).catch((error: unknown) => {
+        failed = true;
+          console.error('Error in batch AI extraction:', error);
+          toast.error(t('extraction', 'tableErrorProcessAI'), {
+              description: error instanceof Error ? error.message : t('extraction', 'tableErrorUnknown'),
+          });
       });
     }
+
+    if (!failed) deselectAll();
   }, [selectedIds, filteredAndSortedArticles, projectId, templateId, extractFullAI, deselectAll]);
 
   const handleSort = (field: SortField) => {

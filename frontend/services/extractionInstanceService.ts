@@ -509,3 +509,27 @@ export class ExtractionInstanceService {
  */
 export const extractionInstanceService = new ExtractionInstanceService();
 
+// =================== MODULE-LEVEL HELPERS ===================
+
+import type {ErrorResult} from '@/lib/error-utils';
+import {toResult} from '@/lib/error-utils';
+
+/**
+ * Update the label of a single extraction instance.
+ * NOTE: on success the caller should show a toast using the extraction
+ * 'labelUpdatedSuccess' copy key; on failure the 'errors_updateLabel' key.
+ */
+export async function updateInstanceLabel(
+  instanceId: string,
+  label: string,
+): Promise<ErrorResult<void>> {
+  return toResult(async () => {
+    const {error} = await supabase
+      .from('extraction_instances')
+      .update({label: label.trim()})
+      .eq('id', instanceId);
+
+    if (error) throw error;
+  }, 'updateInstanceLabel');
+}
+

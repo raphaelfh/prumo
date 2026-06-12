@@ -85,12 +85,12 @@ export function EditFieldDialog({
   const loadValidation = async () => {
     if (!field) return;
 
-    try {
-      const result = await onValidate(field.id);
-      setValidation(result);
-    } catch (err) {
+    const result = await onValidate(field.id).catch((err: unknown) => {
         console.error('Error validating field:', err);
-    }
+      return null;
+    });
+
+    if (result) setValidation(result);
   };
 
     // Load field data when opening
@@ -152,14 +152,11 @@ export function EditFieldDialog({
     if (!field) return;
 
     setLoading(true);
-    try {
-      const result = await onSave(field.id, data);
-      if (result) {
-        onOpenChange(false);
-      }
-    } finally {
-      setLoading(false);
+    const result = await onSave(field.id, data).catch(() => null);
+    if (result) {
+      onOpenChange(false);
     }
+    setLoading(false);
   };
 
   const handleCancel = () => {

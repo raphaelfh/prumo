@@ -20,7 +20,7 @@ import {Badge} from '@/components/ui/badge';
 import {Edit2, Save, Trash2, X} from 'lucide-react';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
-import {supabase} from '@/integrations/supabase/client';
+import {updateInstanceLabel} from '@/services/extractionInstanceService';
 import MemoizedFieldInput from './FieldInput'; // Use memoized version
 import type {ExtractionField, ExtractionInstance} from '@/types/extraction';
 import type {OtherExtraction} from '@/hooks/extraction/colaboracao/useOtherExtractions';
@@ -73,25 +73,18 @@ export function InstanceCard(props: InstanceCardProps) {
 
     setSaving(true);
 
-    try {
-      const { error } = await supabase
-        .from('extraction_instances')
-        .update({ label: editedLabel.trim() })
-        .eq('id', instance.id);
+    const result = await updateInstanceLabel(instance.id, editedLabel);
 
-      if (error) throw error;
-
-      setSavedLabel(editedLabel.trim()); // Update local
+    if (result.ok) {
+      setSavedLabel(editedLabel.trim());
       setIsEditingLabel(false);
-        toast.success(t('extraction', 'labelUpdatedSuccess'));
-
-    } catch (error: any) {
-        console.error('Error updating label:', error);
-        toast.error(t('extraction', 'errors_updateLabel'));
-        setEditedLabel(savedLabel); // Revert
-    } finally {
-      setSaving(false);
+      toast.success(t('extraction', 'labelUpdatedSuccess'));
+    } else {
+      toast.error(t('extraction', 'errors_updateLabel'));
+      setEditedLabel(savedLabel); // Revert
     }
+
+    setSaving(false);
   };
 
   const handleCancelEdit = () => {
