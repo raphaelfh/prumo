@@ -280,7 +280,7 @@ export function AddSectionDialog({
                     </SelectContent>
                   </Select>
                   <FormDescription className="flex items-start gap-2">
-                    <Info className="h-4 w-4 mt-0.5 text-info flex-shrink-0" />
+                    <Info className="h-4 w-4 mt-0.5 text-info shrink-0" />
                     <span>
                       Single section for data that appears once per article.
                       Multiple section allows several instances (e.g. a list or table).

@@ -126,9 +126,9 @@ export function TemplateConsensusOverride({
       >
         <span className="flex items-center gap-2 min-w-0">
           {expanded ? (
-            <ChevronDown className="h-4 w-4 flex-shrink-0" strokeWidth={1.5} />
+            <ChevronDown className="h-4 w-4 shrink-0" strokeWidth={1.5} />
           ) : (
-            <ChevronRight className="h-4 w-4 flex-shrink-0" strokeWidth={1.5} />
+            <ChevronRight className="h-4 w-4 shrink-0" strokeWidth={1.5} />
           )}
           <span className="font-medium truncate">{template.name}</span>
           {template.framework && (
@@ -140,7 +140,7 @@ export function TemplateConsensusOverride({
         {config.isLoading ? (
           <Skeleton className="h-5 w-24" />
         ) : (
-          <Badge variant={isOverridden ? 'default' : 'outline'} className="text-[11px] flex-shrink-0">
+          <Badge variant={isOverridden ? 'default' : 'outline'} className="text-[11px] shrink-0">
             {isOverridden
               ? t('consensus', 'templatesOverriddenBadge')
               : t('consensus', 'templatesInheritsBadge')}

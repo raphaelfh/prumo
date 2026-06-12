@@ -285,14 +285,14 @@ export default function ProjectView() {
           {/* Sticky action bar — stack on narrow (flex-col md:flex-row), single row from md */}
         {!isFullBleed && (
             <div
-                className="flex-shrink-0 min-h-12 md:h-12 flex flex-col md:flex-row md:items-center md:justify-between items-stretch gap-2 md:gap-0 py-3 md:py-0 border-b border-border/40 bg-background/80 backdrop-blur-sm px-6 lg:px-10">
+                className="shrink-0 min-h-12 md:h-12 flex flex-col md:flex-row md:items-center md:justify-between items-stretch gap-2 md:gap-0 py-3 md:py-0 border-b border-border/40 bg-background/80 backdrop-blur-sm px-6 lg:px-10">
           <span className="text-[13px] text-muted-foreground/70 w-full min-w-0 md:flex-1 md:truncate">
             {activeTab === 'articles'
                 ? 'Articles'
                 : (TAB_DESCRIPTIONS[activeTab] ?? '')}
           </span>
                 {activeTab === 'extraction' && (
-                    <div className="flex items-center gap-0.5 w-full md:w-auto flex-shrink-0" role="tablist"
+                    <div className="flex items-center gap-0.5 w-full md:w-auto shrink-0" role="tablist"
                          aria-label="Extraction views">
                         {[
                             {value: 'extraction' as const, label: t('extraction', 'tabExtraction')},
@@ -319,7 +319,7 @@ export default function ProjectView() {
                     </div>
                 )}
                 {activeTab === 'quality' && (
-                    <div className="flex items-center gap-0.5 w-full md:w-auto flex-shrink-0" role="tablist"
+                    <div className="flex items-center gap-0.5 w-full md:w-auto shrink-0" role="tablist"
                          aria-label="Quality assessment views">
                         {[
                             {value: 'assessment' as const, label: t('qa', 'tabAssessment')},
@@ -347,7 +347,7 @@ export default function ProjectView() {
                     </div>
                 )}
               {activeTab === 'articles' && (
-                  <div className="flex items-center gap-1.5 w-full md:w-auto flex-shrink-0 flex-wrap">
+                  <div className="flex items-center gap-1.5 w-full md:w-auto shrink-0 flex-wrap">
                       <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                               <Button
@@ -374,7 +374,7 @@ export default function ProjectView() {
                                   className="flex items-center gap-2.5 rounded-md py-2 px-2.5 cursor-pointer focus:bg-muted/60"
                               >
                           <span
-                              className="h-5 w-5 rounded bg-primary/10 flex items-center justify-center flex-shrink-0 border border-primary/15">
+                              className="h-5 w-5 rounded bg-primary/10 flex items-center justify-center shrink-0 border border-primary/15">
                             <span className="text-[9px] font-semibold text-primary leading-none">Z</span>
                           </span>
                                   From Zotero
@@ -384,7 +384,7 @@ export default function ProjectView() {
                                   className="flex items-center gap-2.5 rounded-md py-2 px-2.5 cursor-pointer focus:bg-muted/60"
                               >
                           <span
-                              className="h-5 w-5 rounded bg-primary/10 flex items-center justify-center flex-shrink-0 border border-primary/15">
+                              className="h-5 w-5 rounded bg-primary/10 flex items-center justify-center shrink-0 border border-primary/15">
                             <FileText className="h-2.5 w-2.5 text-primary"/>
                           </span>
                                   From RIS file

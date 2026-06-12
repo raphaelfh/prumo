@@ -202,7 +202,7 @@ export function TeamMembersSection({ projectId }: TeamMembersSectionProps) {
                               <div className="flex items-center justify-between py-1.5">
                                   <div className="flex items-center gap-3 min-w-0">
                                       <div
-                                          className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                                          className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0 overflow-hidden">
                                           {member.user_avatar_url ? (
                                               <img
                                                   src={member.user_avatar_url}
@@ -226,7 +226,7 @@ export function TeamMembersSection({ projectId }: TeamMembersSectionProps) {
                                           </p>
                                       </div>
                                   </div>
-                                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                                  <div className="flex items-center gap-1.5 shrink-0">
                                       {editingMemberId === member.id ? (
                                           <>
                                               <Select

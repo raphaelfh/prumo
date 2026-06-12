@@ -98,7 +98,7 @@ export function DeleteFieldConfirm({
               {canDelete ? (
                 <div className="rounded-lg border border-warning/30 bg-warning/10 p-4">
                   <div className="flex items-start gap-2">
-                    <AlertTriangle className="h-5 w-5 text-warning mt-0.5 flex-shrink-0" />
+                    <AlertTriangle className="h-5 w-5 text-warning mt-0.5 shrink-0" />
                     <div className="flex-1">
                         <p className="font-medium text-foreground">{t('common', 'attention')}</p>
                       <ul className="mt-2 list-disc list-inside space-y-1 text-sm text-foreground/80">
@@ -113,7 +113,7 @@ export function DeleteFieldConfirm({
               ) : (
                 <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-4">
                   <div className="flex items-start gap-2">
-                    <AlertCircle className="h-5 w-5 text-destructive mt-0.5 flex-shrink-0" />
+                    <AlertCircle className="h-5 w-5 text-destructive mt-0.5 shrink-0" />
                     <div className="flex-1">
                         <p className="font-medium text-destructive">{t('extraction', 'impossibleToDelete')}</p>
                       <ul className="mt-2 list-disc list-inside space-y-1 text-sm text-destructive/90">

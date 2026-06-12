@@ -254,7 +254,7 @@ export const ResizablePanel: React.FC<ResizablePanelProps> = ({
   return (
     <aside
       className={cn(
-        'relative flex-shrink-0 overflow-hidden',
+        'relative shrink-0 overflow-hidden',
         // Disable the smooth transition during active drag — the cursor drives width directly.
         isDragging ? '' : 'transition-[width,opacity] duration-200 ease-out motion-reduce:duration-0',
         className,

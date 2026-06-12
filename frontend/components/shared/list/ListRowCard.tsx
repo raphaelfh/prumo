@@ -29,7 +29,7 @@ export function ListRowCard({
     const content = (
         <>
             {leading && (
-                <div className="flex-shrink-0 flex items-center" onClick={(e) => e.stopPropagation()}>
+                <div className="shrink-0 flex items-center" onClick={(e) => e.stopPropagation()}>
                     {leading}
                 </div>
             )}
@@ -44,7 +44,7 @@ export function ListRowCard({
                     </div>
                 )}
             </div>
-            <div className="flex-shrink-0 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            <div className="shrink-0 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                 {primaryAction}
                 {secondaryActions}
             </div>

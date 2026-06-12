@@ -426,7 +426,7 @@ export function AddFieldDialog({
             {/* Info adicional */}
             <div className="rounded-lg border border-info/30 bg-info/5 p-3 text-sm text-foreground">
               <div className="flex items-start gap-2">
-                <Info className="h-4 w-4 mt-0.5 flex-shrink-0 text-info" />
+                <Info className="h-4 w-4 mt-0.5 shrink-0 text-info" />
                 <div>
                     <p className="font-medium">{t('extraction', 'addFieldTipsTitle')}</p>
                   <ul className="mt-1 list-disc list-inside space-y-1 text-xs text-muted-foreground">
