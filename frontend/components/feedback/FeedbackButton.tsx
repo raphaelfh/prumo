@@ -22,7 +22,7 @@ export function FeedbackButton() {
               size="icon"
               onClick={() => setDialogOpen(true)}
               aria-label={t('navigation', 'sendFeedback')}
-              className="flex-shrink-0 h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors duration-75"
+              className="shrink-0 h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors duration-75"
             >
                 <MessageCircle className="h-4 w-4" strokeWidth={1.5}/>
             </Button>

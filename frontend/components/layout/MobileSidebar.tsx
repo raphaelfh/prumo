@@ -30,7 +30,7 @@ export const MobileSidebar: React.FC<MobileSidebarProps> = ({open, onOpenChange,
         <div className="flex flex-col h-full">
           <SheetHeader className="px-3 py-3 pr-12 border-b border-border/40 shrink-0">
             <div className="flex items-center gap-2.5">
-              <div className="h-5 w-5 rounded bg-primary/10 flex items-center justify-center flex-shrink-0 border border-primary/15">
+              <div className="h-5 w-5 rounded bg-primary/10 flex items-center justify-center shrink-0 border border-primary/15">
                 <span className="text-[10px] font-semibold text-primary leading-none">
                   {(projectName || 'P')[0].toUpperCase()}
                 </span>
@@ -60,7 +60,7 @@ export const MobileSidebar: React.FC<MobileSidebarProps> = ({open, onOpenChange,
                           : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
                       )}
                     >
-                      <Icon className={cn('h-4 w-4 flex-shrink-0', active && 'text-foreground')} strokeWidth={1.5} />
+                      <Icon className={cn('h-4 w-4 shrink-0', active && 'text-foreground')} strokeWidth={1.5} />
                       <span className="text-[13px]">{item.label}</span>
                     </Button>
                   );

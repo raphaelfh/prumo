@@ -33,7 +33,7 @@ export function HeaderFinalizeButton({
       onClick={onSubmit}
       disabled={!isComplete || submitting}
       className={`
-        flex-shrink-0 font-medium 
+        shrink-0 font-medium 
         shadow-sm hover:shadow-md hover:scale-[1.02]
         transition-all duration-150 ease-out
         disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100

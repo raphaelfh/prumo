@@ -217,7 +217,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
               <CardContent className="pt-4 pb-4 px-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex items-start space-x-3">
-                  <Settings className="h-4 w-4 text-info mt-0.5 flex-shrink-0" strokeWidth={1.5}/>
+                  <Settings className="h-4 w-4 text-info mt-0.5 shrink-0" strokeWidth={1.5}/>
                 <div>
                     <p className="text-[13px] font-medium text-foreground">{t('extraction', 'dashboardConfigureTitle')}</p>
                     <p className="text-[13px] text-muted-foreground mt-1">
@@ -275,7 +275,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
             <Card className="border-border/40 shadow-elev-popover rounded-md w-full">
                 <CardContent className="pt-6 pb-6">
                     <div className="flex items-start gap-3 text-[13px] text-muted-foreground">
-                        <AlertCircle className="h-5 w-5 text-muted-foreground flex-shrink-0 mt-0.5" strokeWidth={1.5}/>
+                        <AlertCircle className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" strokeWidth={1.5}/>
                         <p>{t('extraction', 'configContactManagerToConfigure')}</p>
                     </div>
             </CardContent>
@@ -328,7 +328,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
                     {/* 2. Manager info */}
                     <div className="bg-info/5 border border-info/30 rounded-lg p-4">
                 <div className="flex items-start space-x-3">
-                    <AlertCircle className="h-4 w-4 text-info mt-0.5 flex-shrink-0" strokeWidth={1.5}/>
+                    <AlertCircle className="h-4 w-4 text-info mt-0.5 shrink-0" strokeWidth={1.5}/>
                     <div className="text-[13px] text-foreground">
                         <p className="font-medium mb-1">{t('extraction', 'configManagersNote')}</p>
                     <p className="text-muted-foreground">
@@ -416,7 +416,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
             <Card className="border-border/40 shadow-elev-popover rounded-md w-full">
                 <CardContent className="pt-6 pb-6">
                     <div className="flex items-start gap-3 text-[13px] text-muted-foreground">
-                        <AlertCircle className="h-5 w-5 text-muted-foreground flex-shrink-0 mt-0.5" strokeWidth={1.5}/>
+                        <AlertCircle className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" strokeWidth={1.5}/>
                         <p>{t('extraction', 'configContactManagerToConfigure')}</p>
                     </div>
                 </CardContent>

@@ -148,7 +148,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                 />
               </div>
               
-              <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="flex items-center gap-2 shrink-0">
                 <HeaderStatusBadges
                   userRole={userRole}
                   isBlindMode={isBlindMode}
@@ -162,7 +162,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                 />
               </div>
               
-              <div className="flex-shrink-0">
+              <div className="shrink-0">
                 <HeaderFinalizeButton
                   isComplete={isComplete}
                   onSubmit={onFinalize}
@@ -229,7 +229,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
             </div>
 
                 {/* Zone 2: View controls (center-left) */}
-            <div className="flex items-center gap-1 flex-shrink-0">
+            <div className="flex items-center gap-1 shrink-0">
               <HeaderPDFControls
                 showPDF={showPDF}
                 onTogglePDF={onTogglePDF}
@@ -244,7 +244,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
             </div>
 
             {/* Zona 3: Status e Feedback (Centro) */}
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-2 shrink-0">
               <HeaderStatusBadges
                 userRole={userRole}
                 isBlindMode={isBlindMode}
@@ -259,7 +259,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
             </div>
 
                 {/* Zone 4: Secondary actions (center-right) */}
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-2 shrink-0">
               <HeaderAIActions
                 suggestions={aiSuggestions}
                 onClick={onAISuggestionsClick}
@@ -280,7 +280,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
             </div>
 
                 {/* Zone 5: Primary action (far right) */}
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-2 shrink-0">
               <HeaderFinalizeButton
                 isComplete={isComplete}
                 onSubmit={onFinalize}
