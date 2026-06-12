@@ -16,7 +16,7 @@
  * field to materialize PublishedState rows.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -192,32 +192,27 @@ export default function QualityAssessmentFullScreen() {
   // ``handleValueChange`` only needs to update local state. Lifecycle
   // handlers in the hook (unmount flush, ``pagehide``, visibility) carry
   // the write through any navigation that happens mid-debounce.
-  const handleValueChange = useCallback(
-    (instanceId: string, fieldId: string, value: unknown) => {
-      const k = keyOf({ instanceId, fieldId });
-      setValues((prev) => ({ ...prev, [k]: value }));
-    },
-    [],
-  );
+  const handleValueChange = (instanceId: string, fieldId: string, value: unknown) => {
+    const k = keyOf({ instanceId, fieldId });
+    setValues((prev) => ({ ...prev, [k]: value }));
+  };
 
   // Server baseline for autosave — the same per-coord map the hydration
   // effect applies, computed inline from ``runDetail`` so it is present when
   // the hydrated ``values`` arrive. Stops opening an assessment from
   // re-POSTing loaded values as fresh proposals.
-  const loadedValues = useMemo(() => {
-    const map: Record<string, unknown> = {};
-    for (const p of runDetail?.proposals ?? []) {
-      const k = keyOf({ instanceId: p.instance_id, fieldId: p.field_id });
-      const value =
-        p.proposed_value &&
-        typeof p.proposed_value === "object" &&
-        "value" in p.proposed_value
-          ? (p.proposed_value.value as unknown)
-          : (p.proposed_value as unknown);
-      map[k] = value;
-    }
-    return map;
-  }, [runDetail]);
+  const loadedValuesMap: Record<string, unknown> = {};
+  for (const p of runDetail?.proposals ?? []) {
+    const k = keyOf({ instanceId: p.instance_id, fieldId: p.field_id });
+    const value =
+      p.proposed_value &&
+      typeof p.proposed_value === "object" &&
+      "value" in p.proposed_value
+        ? (p.proposed_value.value as unknown)
+        : (p.proposed_value as unknown);
+    loadedValuesMap[k] = value;
+  }
+  const loadedValues = loadedValuesMap;
 
   const { saveState, lastSavedAt, hasUnsavedChanges, saveNow } =
     useAutoSaveProposals({
@@ -238,10 +233,7 @@ export default function QualityAssessmentFullScreen() {
   //    (no ReviewerDecision write). Accept just bubbles the value to
   //    ``handleValueChange``, which records a fresh ``human`` proposal
   //    via the existing form pipeline.
-  const sessionInstanceIds = useMemo(
-    () => Object.values(session?.instancesByEntityType ?? {}),
-    [session],
-  );
+  const sessionInstanceIds = Object.values(session?.instancesByEntityType ?? {});
 
   const {
     suggestions: aiSuggestions,
@@ -285,68 +277,62 @@ export default function QualityAssessmentFullScreen() {
   const [publishing, setPublishing] = useState(false);
   const [reopening, setReopening] = useState(false);
 
-  const fieldLabelByCoord = useMemo(() => {
-    const map: Record<string, string> = {};
-    if (!session) return map;
+  const fieldLabelByCoordMap: Record<string, string> = {};
+  if (session) {
     for (const domain of domains) {
       const instanceId = session.instancesByEntityType[domain.entityType.id];
-      if (!instanceId) continue;
-      for (const f of domain.fields) {
-        map[`${instanceId}::${f.id}`] = `${domain.entityType.label} · ${f.label}`;
+      if (instanceId) {
+        for (const f of domain.fields) {
+          fieldLabelByCoordMap[`${instanceId}::${f.id}`] = `${domain.entityType.label} · ${f.label}`;
+        }
       }
     }
-    return map;
-  }, [session, domains]);
+  }
+  const fieldLabelByCoord = fieldLabelByCoordMap;
 
   const inConsensusStage = runDetail?.run.stage === "consensus";
 
-  const handleSelectExisting = useCallback(
-    async (params: {
-      instanceId: string;
-      fieldId: string;
-      decisionId: string;
-    }) => {
-      await consensusMutation.mutateAsync({
-        instance_id: params.instanceId,
-        field_id: params.fieldId,
-        mode: "select_existing",
-        selected_decision_id: params.decisionId,
-      });
-      await refetchRun();
-    },
-    [consensusMutation, refetchRun],
-  );
+  const handleSelectExisting = async (params: {
+    instanceId: string;
+    fieldId: string;
+    decisionId: string;
+  }) => {
+    await consensusMutation.mutateAsync({
+      instance_id: params.instanceId,
+      field_id: params.fieldId,
+      mode: "select_existing",
+      selected_decision_id: params.decisionId,
+    });
+    await refetchRun();
+  };
 
-  const handleManualOverride = useCallback(
-    async (params: {
-      instanceId: string;
-      fieldId: string;
-      value: unknown;
-      rationale: string;
-    }) => {
-      await consensusMutation.mutateAsync({
-        instance_id: params.instanceId,
-        field_id: params.fieldId,
-        mode: "manual_override",
-        value: { value: params.value },
-        rationale: params.rationale,
-      });
-      await refetchRun();
-    },
-    [consensusMutation, refetchRun],
-  );
+  const handleManualOverride = async (params: {
+    instanceId: string;
+    fieldId: string;
+    value: unknown;
+    rationale: string;
+  }) => {
+    await consensusMutation.mutateAsync({
+      instance_id: params.instanceId,
+      field_id: params.fieldId,
+      mode: "manual_override",
+      value: { value: params.value },
+      rationale: params.rationale,
+    });
+    await refetchRun();
+  };
 
-  const handleFinalizeFromConsensus = useCallback(async () => {
+  const handleFinalizeFromConsensus = async () => {
     if (!session) return;
     await advanceMutation.mutateAsync({ target_stage: "finalized" });
     await refetchRun();
     toast.success("Assessment finalized.");
-  }, [session, advanceMutation, refetchRun]);
+  };
 
-  // Plain-identifier dep so the compiler can preserve this memoization
-  // (optional-chained deps like `session?.runId` defeat it).
+  // Plain-identifier dep so the compiler can track this dep without
+  // optional-chaining (optional-chained deps like `session?.runId` defeat it).
   const sessionRunId = session?.runId;
-  const handleReopen = useCallback(async () => {
+  const handleReopen = async () => {
     if (!sessionRunId) return;
     setReopening(true);
     await reopenMutation.mutateAsync(sessionRunId).then(async () => {
@@ -362,8 +348,8 @@ export default function QualityAssessmentFullScreen() {
       );
     });
     setReopening(false);
-  }, [sessionRunId, reopenMutation, refetchSession]);
-  const handlePublish = useCallback(async () => {
+  };
+  const handlePublish = async () => {
     if (!session || !runDetail) return;
 
     // Preflight: an empty publish has no semantic meaning — the run would
@@ -419,17 +405,9 @@ export default function QualityAssessmentFullScreen() {
       );
     });
     setPublishing(false);
-  }, [
-    session,
-    runDetail,
-    advanceMutation,
-    consensusMutation,
-    values,
-    refetchRun,
-    saveNow,
-  ]);
+  };
 
-  const sortedDomains = useMemo(() => domains, [domains]);
+  const sortedDomains = domains;
 
   if (!projectId || !articleId || !templateId) {
     return (

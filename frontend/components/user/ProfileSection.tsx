@@ -2,7 +2,7 @@
  * User profile section: view and edit profile information.
  */
 
-import {useEffect, useMemo, useState} from 'react';
+import {useEffect, useState} from 'react';
 import {useForm, useWatch} from 'react-hook-form';
 import {zodResolver} from '@hookform/resolvers/zod';
 import {z} from 'zod';
@@ -33,16 +33,12 @@ export function ProfileSection() {
     const [email, setEmail] = useState('');
     const [avatarUrl, setAvatarUrl] = useState('');
 
-    const schema = useMemo(
-        () =>
-            z.object({
-                full_name: z
-                    .string()
-                    .min(1, t('user', 'profileNameRequired'))
-                    .max(100, t('user', 'profileNameMaxLength')),
-            }),
-        []
-    );
+    const schema = z.object({
+        full_name: z
+            .string()
+            .min(1, t('user', 'profileNameRequired'))
+            .max(100, t('user', 'profileNameMaxLength')),
+    });
 
     const form = useForm<FormValues>({
         resolver: zodResolver(schema),

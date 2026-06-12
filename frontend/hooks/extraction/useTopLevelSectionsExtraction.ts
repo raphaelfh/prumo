@@ -11,7 +11,7 @@
  * - Aggregated results
  */
 
-import {useCallback, useState} from "react";
+import {useState} from "react";
 import {toast} from "sonner";
 import {t} from "@/lib/copy";
 import {SectionExtractionService} from "@/services/sectionExtractionService";
@@ -69,8 +69,7 @@ export function useTopLevelSectionsExtraction(options?: {
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<TopLevelSectionsProgress | null>(null);
 
-  const extractTopLevelSections = useCallback(
-    async (params: {
+  const extractTopLevelSections = async (params: {
       projectId: string;
       articleId: string;
       templateId: string;
@@ -221,9 +220,7 @@ export function useTopLevelSectionsExtraction(options?: {
           setLoading(false);
           setProgress(null);
         });
-    },
-    [options],
-  );
+  };
 
   return { extractTopLevelSections, loading, error, progress };
 }

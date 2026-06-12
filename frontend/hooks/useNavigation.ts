@@ -3,7 +3,7 @@
  * Centralizes breadcrumbs, search and navigation logic
  */
 
-import {useCallback, useEffect, useMemo, useState} from 'react';
+import {useEffect, useState} from 'react';
 import {useLocation, useNavigate} from 'react-router-dom';
 import {useAuth} from '@/contexts/AuthContext';
 import {t} from '@/lib/copy';
@@ -18,8 +18,8 @@ export const useNavigation = () => {
   const [searchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
-  // Gerar breadcrumbs baseado na rota atual
-  const generateBreadcrumbs = useCallback((): BreadcrumbItem[] => {
+  // Gerar breadcrumbs baseado na rota atual — pure derivation from location.pathname.
+  const breadcrumbs = (() => {
     try {
       const pathSegments = location.pathname.split('/').filter(Boolean);
       const items: BreadcrumbItem[] = [];
@@ -39,7 +39,7 @@ export const useNavigation = () => {
           let label = segment;
           let icon;
           let shouldSkip = false;
-          
+
           switch (segment) {
             case 'projects':
                 // Do not add "Projects" to breadcrumbs, skip to next
@@ -91,14 +91,10 @@ export const useNavigation = () => {
         console.error('Error generating breadcrumbs:', error);
       return [{ label: 'Dashboard', href: '/', isActive: true }];
     }
-  }, [location.pathname]);
-
-    // Breadcrumbs are a pure function of the route — derive instead of
-    // materializing through an effect.
-  const breadcrumbs = useMemo(() => generateBreadcrumbs(), [generateBreadcrumbs]);
+  })();
 
   // Busca global
-  const performSearch = useCallback(async (query: string): Promise<SearchResult[]> => {
+  const performSearch = async (query: string): Promise<SearchResult[]> => {
     if (!query.trim()) return [];
 
     setIsSearching(true);
@@ -139,13 +135,13 @@ export const useNavigation = () => {
     }
 
     return results;
-  }, []);
+  };
 
   // Navegar para resultado da busca
-  const navigateToSearchResult = useCallback((result: SearchResult) => {
+  const navigateToSearchResult = (result: SearchResult) => {
     navigate(result.href);
     setIsSearchOpen(false);
-  }, [navigate]);
+  };
 
   return {
     breadcrumbs,
@@ -163,7 +159,7 @@ export const useNotifications = () => {
   const [unreadCount, setUnreadCount] = useState(0);
 
     // Load user notifications
-  const loadNotifications = useCallback(() => {
+  const loadNotifications = () => {
     // For now, simulate notifications
     // In production, fetch from database
     const mockNotifications: NotificationItem[] = [
@@ -178,25 +174,25 @@ export const useNotifications = () => {
     ];
     setNotifications(mockNotifications);
     setUnreadCount(mockNotifications.filter(n => !n.isRead).length);
-  }, []);
+  };
 
     // Mark notification as read
-  const markAsRead = useCallback((notificationId: string) => {
-    setNotifications(prev => 
-      prev.map(n => 
+  const markAsRead = (notificationId: string) => {
+    setNotifications(prev =>
+      prev.map(n =>
         n.id === notificationId ? { ...n, isRead: true } : n
       )
     );
     setUnreadCount(prev => Math.max(0, prev - 1));
-  }, []);
+  };
 
   // Marcar todas como lidas
-  const markAllAsRead = useCallback(() => {
-    setNotifications(prev => 
+  const markAllAsRead = () => {
+    setNotifications(prev =>
       prev.map(n => ({ ...n, isRead: true }))
     );
     setUnreadCount(0);
-  }, []);
+  };
 
   useEffect(() => {
     // Microtask so the loader's setState calls run in an async callback.
@@ -218,7 +214,7 @@ export const useUserProfile = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadUserProfile = useCallback(async () => {
+  const loadUserProfile = async () => {
     if (!authUser) {
       setUser(null);
       setIsLoading(false);
@@ -260,7 +256,7 @@ export const useUserProfile = () => {
       });
     }
     setIsLoading(false);
-  }, [authUser]);
+  };
 
   useEffect(() => {
     // Microtask so the loader's setState calls run in an async callback.

@@ -2,7 +2,7 @@
  * Security section: change password and security settings.
  */
 
-import {useMemo, useState} from 'react';
+import {useState} from 'react';
 import {useForm, useWatch} from 'react-hook-form';
 import {zodResolver} from '@hookform/resolvers/zod';
 import {z} from 'zod';
@@ -47,24 +47,20 @@ export function SecuritySection() {
     const [loading, setLoading] = useState(false);
     const [showPasswords, setShowPasswords] = useState({new: false, confirm: false});
 
-    const schema = useMemo(
-        () =>
-            z
-                .object({
-                    newPassword: z
-                        .string()
-                        .min(8, t('user', 'securitySchemaMin'))
-                        .regex(/[A-Z]/, t('user', 'securitySchemaUppercase'))
-                        .regex(/[a-z]/, t('user', 'securitySchemaLowercase'))
-                        .regex(/[0-9]/, t('user', 'securitySchemaNumber')),
-                    confirmPassword: z.string().min(1, t('user', 'securitySchemaConfirm')),
-                })
-                .refine((data) => data.newPassword === data.confirmPassword, {
-                    message: t('user', 'securitySchemaMismatch'),
-                    path: ['confirmPassword'],
-                }),
-        []
-    );
+    const schema = z
+        .object({
+            newPassword: z
+                .string()
+                .min(8, t('user', 'securitySchemaMin'))
+                .regex(/[A-Z]/, t('user', 'securitySchemaUppercase'))
+                .regex(/[a-z]/, t('user', 'securitySchemaLowercase'))
+                .regex(/[0-9]/, t('user', 'securitySchemaNumber')),
+            confirmPassword: z.string().min(1, t('user', 'securitySchemaConfirm')),
+        })
+        .refine((data) => data.newPassword === data.confirmPassword, {
+            message: t('user', 'securitySchemaMismatch'),
+            path: ['confirmPassword'],
+        });
 
     const form = useForm<FormValues>({
         resolver: zodResolver(schema),

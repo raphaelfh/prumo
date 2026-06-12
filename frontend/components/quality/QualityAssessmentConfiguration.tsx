@@ -15,7 +15,7 @@
  * the tool brings it back to the article table without losing work.
  */
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Loader2, ShieldCheck } from "lucide-react";
 
 import {
@@ -59,10 +59,7 @@ export function QualityAssessmentConfiguration({
 
   const [pendingId, setPendingId] = useState<string | null>(null);
 
-  const enabledCount = useMemo(
-    () => templates.filter((tpl) => tpl.is_active).length,
-    [templates],
-  );
+  const enabledCount = templates.filter((tpl) => tpl.is_active).length;
 
   const findInactiveClone = (
     globalTemplateId: string,

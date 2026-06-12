@@ -9,7 +9,7 @@
  */
 
 import type {CSSProperties} from 'react';
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {useLocation, useNavigate} from 'react-router-dom';
 import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
@@ -145,9 +145,8 @@ const EXTRACTION_DEFAULT_COLUMN_WIDTHS: Record<string, number> = {
     actions: 96,
 };
 const RESIZABLE_COLUMN_ORDER = ['title', 'authors', 'year', 'progress', 'status', 'actions'] as const;
-// Header checkbox component with indeterminate support. Module scope so its
-// identity is stable across renders (react-hooks/static-components).
-const HeaderCheckbox = React.memo(({
+// Header checkbox component with indeterminate support.
+function HeaderCheckbox({
   checked,
   indeterminate,
   onCheckedChange,
@@ -157,7 +156,7 @@ const HeaderCheckbox = React.memo(({
   indeterminate: boolean;
   onCheckedChange: (checked: boolean) => void;
   'aria-label'?: string;
-}) => {
+}) {
   return (
     <Checkbox
       checked={indeterminate ? false : checked}
@@ -166,7 +165,7 @@ const HeaderCheckbox = React.memo(({
       {...props}
     />
   );
-});
+}
 
 export function ArticleExtractionTable({ projectId, templateId }: ArticleExtractionTableProps) {
   const navigate = useNavigate();
@@ -229,15 +228,15 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
   });
 
     // Declare loadCurrentUser before any use to avoid TDZ
-  const loadCurrentUser = useCallback(async () => {
+  const loadCurrentUser = async () => {
     const result = await getCurrentUserId();
     if (result.ok && result.data) {
       setCurrentUserId(result.data);
     }
-  }, []);
+  };
 
     // Declare loadArticles before any use to avoid TDZ
-  const loadArticles = useCallback(async () => {
+  const loadArticles = async () => {
     if (!projectId || !templateId || !currentUserId) {
       return;
     }
@@ -274,7 +273,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     await queryClient.invalidateQueries({ queryKey: articleExtractionValuesKeys.all });
     setLoading(false);
     // queryClient is referentially stable across renders (useQueryClient).
-  }, [projectId, templateId, currentUserId, queryClient]);
+  };
 
     // Update loadArticles ref when it changes (must be before any use)
   useEffect(() => {
@@ -334,26 +333,23 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
   }, [location.pathname, projectId, templateId, currentUserId]); // Reload when route changes
 
     // Compute extraction progress
-  // Per-article completion %, memoized once per (articles, entityTypes). Uses
-  // the canonical required-field metric (computeRowProgress) so this table
-  // shows the same percentage as the form header and the QA list.
-  const progressByArticle = useMemo(() => {
+  // Per-article completion %, computed once per render. Uses the canonical
+  // required-field metric (computeRowProgress) so this table shows the same
+  // percentage as the form header and the QA list.
+  const progressByArticle = (() => {
     const map = new Map<string, number>();
     for (const article of articles) {
       const d = valuesByArticle.get(article.id);
       map.set(article.id, d ? computeRowProgress(d.instances, d.values, entityTypes) : 0);
     }
     return map;
-  }, [articles, valuesByArticle, entityTypes]);
+  })();
 
-  const getProgress = useCallback(
-    (article: ArticleWithExtraction): number =>
-      progressByArticle.get(article.id) ?? 0,
-    [progressByArticle],
-  );
+  const getProgress = (article: ArticleWithExtraction): number =>
+    progressByArticle.get(article.id) ?? 0;
 
     // Filter and sort articles
-  const filteredAndSortedArticles = useMemo(() => {
+  const filteredAndSortedArticles = (() => {
     const filtered = articles.filter(article => {
         // Global filter
       if (globalFilter) {
@@ -452,15 +448,14 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
       }
     });
 
+    // getProgress and valuesByArticle are read inside the filter/sort;
+    // including them keeps progress-based filtering reactive to value changes.
     return filtered;
-    // getProgress (stable, keyed on progressByArticle) and valuesByArticle are
-    // read inside the filter/sort; including them keeps progress-based filtering
-    // and sorting reactive to value changes that don't replace the articles array.
-  }, [articles, globalFilter, filterValues, sortField, sortDirection, getProgress, valuesByArticle]);
+  })();
 
     // Article selection
-  const allArticleIds = useMemo(() => articles.map(a => a.id), [articles]);
-  const visibleArticleIds = useMemo(() => filteredAndSortedArticles.map(a => a.id), [filteredAndSortedArticles]);
+  const allArticleIds = articles.map(a => a.id);
+  const visibleArticleIds = filteredAndSortedArticles.map(a => a.id);
   
   const {
     selectedIds,
@@ -479,7 +474,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
   });
 
     // Batch AI extraction handler
-  const handleBatchAIExtraction = useCallback(async () => {
+  const handleBatchAIExtraction = async () => {
     if (selectedIds.size === 0) {
         toast.error(t('extraction', 'tableSelectAtLeastOne'));
       return;
@@ -512,7 +507,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     }
 
     if (!failed) deselectAll();
-  }, [selectedIds, filteredAndSortedArticles, projectId, templateId, extractFullAI, deselectAll]);
+  };
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -602,12 +597,12 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     );
   };
 
-    const clearListFilters = useCallback(() => {
+    const clearListFilters = () => {
         setGlobalFilter('');
         setFilterValues(INITIAL_EXTRACTION_FILTER_VALUES);
-    }, []);
+    };
 
-    const clearFilterField = useCallback((fieldId: string) => {
+    const clearFilterField = (fieldId: string) => {
         const field = EXTRACTION_FILTER_FIELDS.find((f) => f.id === fieldId);
         if (!field) return;
         setFilterValues((prev) => ({
@@ -619,33 +614,25 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                         ? {}
                         : '',
         }));
-    }, []);
+    };
 
-    const extractionFilterLabels = useMemo(
-        () =>
-            Object.fromEntries(
-                EXTRACTION_FILTER_FIELDS.map((f) => [f.id, f.label])
-            ) as Record<string, string>,
-        []
+    const extractionFilterLabels = Object.fromEntries(
+        EXTRACTION_FILTER_FIELDS.map((f) => [f.id, f.label])
+    ) as Record<string, string>;
+
+    const activeFiltersList = buildActiveFiltersList(
+        EXTRACTION_FILTER_FIELDS,
+        filterValues,
+        extractionFilterLabels
     );
 
-    const activeFiltersList = useMemo(
-        () =>
-            buildActiveFiltersList(
-                EXTRACTION_FILTER_FIELDS,
-                filterValues,
-                extractionFilterLabels
-            ),
-        [filterValues, extractionFilterLabels]
-    );
-
-    const activeFiltersCount = useMemo(() => {
+    const activeFiltersCount = (() => {
         let n = globalFilter.trim() ? 1 : 0;
         EXTRACTION_FILTER_FIELDS.forEach((f) => {
             if (!isFilterValueEmpty(filterValues[f.id])) n += 1;
         });
         return n;
-    }, [globalFilter, filterValues]);
+    })();
 
     useListKeyboardShortcuts({
         searchInputRef,

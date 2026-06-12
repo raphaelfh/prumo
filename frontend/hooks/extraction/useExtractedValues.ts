@@ -28,7 +28,6 @@
 import {
   type Dispatch,
   type SetStateAction,
-  useCallback,
   useEffect,
   useRef,
   useState,
@@ -137,36 +136,32 @@ export function useExtractedValues(
   const [error, setError] = useState<string | null>(null);
   const hydratedRunIdRef = useRef<string | null>(null);
 
-  const applyLoadedValues = useCallback(
-    (valuesMap: Record<string, any>) => {
-      // Expose the raw server map as the autosave baseline (see return docs)
-      // so the form never re-POSTs hydrated values on mount. Every hydration
-      // path (proposal + reviewer-state) routes through here, including the
-      // empty-map case, so switching runs replaces the baseline too. Keep the
-      // SAME reference when the content is unchanged: this runs on every
-      // ``loadValues`` (e.g. each ``proposals`` change), and emitting a fresh
-      // object each time churned re-renders (and, with an unstable proposals
-      // prop, looped to OOM).
-      setLoadedValues((prev) =>
-        JSON.stringify(prev) === JSON.stringify(valuesMap) ? prev : valuesMap,
-      );
-      setValues((prev) => {
-        if (hydratedRunIdRef.current !== runId) {
-          hydratedRunIdRef.current = runId ?? null;
-          const addedKeys = Object.keys(valuesMap);
-          if (addedKeys.length > 0) {
-            requestAnimationFrame(() => dispatchValueUpdates(addedKeys));
-          }
-          return valuesMap;
+  const applyLoadedValues = (valuesMap: Record<string, any>) => {
+    // Expose the raw server map as the autosave baseline (see return docs)
+    // so the form never re-POSTs hydrated values on mount. Every hydration
+    // path (proposal + reviewer-state) routes through here, including the
+    // empty-map case, so switching runs replaces the baseline too. Keep the
+    // SAME reference when the content is unchanged: this runs on every
+    // ``loadValues`` (e.g. each ``proposals`` change), and emitting a fresh
+    // object each time churned re-renders (and, with an unstable proposals
+    // prop, looped to OOM).
+    setLoadedValues((prev) =>
+      JSON.stringify(prev) === JSON.stringify(valuesMap) ? prev : valuesMap,
+    );
+    setValues((prev) => {
+      if (hydratedRunIdRef.current !== runId) {
+        hydratedRunIdRef.current = runId ?? null;
+        const addedKeys = Object.keys(valuesMap);
+        if (addedKeys.length > 0) {
+          requestAnimationFrame(() => dispatchValueUpdates(addedKeys));
         }
-        return mergeValuesById(prev, valuesMap);
-      });
-    },
-    [runId],
-  );
+        return valuesMap;
+      }
+      return mergeValuesById(prev, valuesMap);
+    });
+  };
 
-  const loadValues = useCallback(
-    (silent = false) => {
+  const loadValues = (silent = false) => {
       if (!silent) setLoading(true);
       setError(null);
 
@@ -259,9 +254,7 @@ export function useExtractedValues(
           toast.error(t('extraction', 'errors_loadExtractedValues'));
         })
         .finally(() => { if (!silent) setLoading(false); });
-    },
-    [runId, stage, proposals, currentValues, currentUserId, applyLoadedValues],
-  );
+  };
 
   useEffect(() => {
     if (!enabled) {
@@ -287,15 +280,15 @@ export function useExtractedValues(
     queueMicrotask(() => void loadValues());
   }, [enabled, loadValues]);
 
-  const updateValue = useCallback((instanceId: string, fieldId: string, value: any) => {
+  const updateValue = (instanceId: string, fieldId: string, value: any) => {
     const key = `${instanceId}_${fieldId}`;
     setValues((prev) => ({
       ...prev,
       [key]: value,
     }));
-  }, []);
+  };
 
-  const refresh = useCallback(() => loadValues(true), [loadValues]);
+  const refresh = () => loadValues(true);
 
   return {
     values,

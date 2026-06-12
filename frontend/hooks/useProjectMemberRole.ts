@@ -3,7 +3,7 @@
  * Used to condition UI (e.g. show Configuration tab only for managers).
  */
 
-import {useCallback, useEffect, useState} from 'react';
+import {useEffect, useState} from 'react';
 import {useAuth} from '@/contexts/AuthContext';
 import type {ProjectMemberRole} from '@/types/extraction';
 import {getProjectMemberRole} from '@/services/projectSettingsService';
@@ -19,10 +19,8 @@ export function useProjectMemberRole(projectId: string): UseProjectMemberRoleRet
     const [role, setRole] = useState<ProjectMemberRole | null>(null);
     const [loading, setLoading] = useState(true);
 
-    // Plain-identifier dep (`user?.id` in a dep array defeats compiler
-    // memoization preservation).
     const userId = user?.id;
-    const load = useCallback(async () => {
+    const load = async () => {
         if (!projectId || !userId) {
             setRole(null);
             setLoading(false);
@@ -32,7 +30,7 @@ export function useProjectMemberRole(projectId: string): UseProjectMemberRoleRet
         const result = await getProjectMemberRole(projectId, userId);
         setRole(result.ok ? result.data : null);
         setLoading(false);
-    }, [projectId, userId]);
+    };
 
     useEffect(() => {
         // Microtask so the loader's setState calls run in an async callback.

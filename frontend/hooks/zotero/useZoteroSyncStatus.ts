@@ -1,4 +1,4 @@
-import {useEffect, useMemo, useState} from 'react';
+import {useEffect, useState} from 'react';
 
 import {fetchZoteroSyncStatus} from '@/services/zoteroImportService';
 import type {ZoteroSyncStatus} from '@/types/zotero';
@@ -53,10 +53,7 @@ export function useZoteroSyncStatus(syncRunId: string | null, pollingMs = 1500) 
         };
     }, [syncRunId, pollingMs]);
 
-    const isTerminal = useMemo(
-        () => !!data && ['completed', 'failed', 'cancelled'].includes(data.status),
-        [data]
-    );
+    const isTerminal = !!data && ['completed', 'failed', 'cancelled'].includes(data.status);
 
     return {data, loading, error, isTerminal};
 }

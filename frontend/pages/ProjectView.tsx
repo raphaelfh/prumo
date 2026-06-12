@@ -1,4 +1,4 @@
-import {useCallback, useEffect, useRef, useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import {useNavigate, useParams, useSearchParams} from "react-router-dom";
 import {loadProjectById, loadProjectArticles} from "@/services/projectsService";
 import {Button} from "@/components/ui/button";
@@ -81,7 +81,7 @@ export default function ProjectView() {
     const [articlesExportEnabled, setArticlesExportEnabled] = useState(false);
     const {isConfigured: hasZoteroConfigured} = useZoteroIntegration();
 
-    const closeArticleEditor = useCallback(() => {
+    const closeArticleEditor = () => {
         setSearchParams(
             (prev) => {
                 const next = new URLSearchParams(prev);
@@ -91,9 +91,9 @@ export default function ProjectView() {
             },
             {replace: true}
         );
-    }, [setSearchParams]);
+    };
 
-    const openArticleEditorAdd = useCallback(() => {
+    const openArticleEditorAdd = () => {
         setSearchParams(
             (prev) => {
                 const next = new URLSearchParams(prev);
@@ -104,23 +104,20 @@ export default function ProjectView() {
             },
             {replace: false}
         );
-    }, [setSearchParams]);
+    };
 
-    const openArticleEditorEdit = useCallback(
-        (articleId: string) => {
-            setSearchParams(
-                (prev) => {
-                    const next = new URLSearchParams(prev);
-                    next.set('tab', 'articles');
-                    next.set('articleEditor', 'edit');
-                    next.set('articleId', articleId);
-                    return next;
-                },
-                {replace: false}
-            );
-        },
-        [setSearchParams]
-    );
+    const openArticleEditorEdit = (articleId: string) => {
+        setSearchParams(
+            (prev) => {
+                const next = new URLSearchParams(prev);
+                next.set('tab', 'articles');
+                next.set('articleEditor', 'edit');
+                next.set('articleId', articleId);
+                return next;
+            },
+            {replace: false}
+        );
+    };
 
     useEffect(() => {
         if (activeTab !== 'articles') {

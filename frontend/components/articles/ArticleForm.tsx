@@ -3,7 +3,7 @@
  * and a section nav that syncs with scroll (IntersectionObserver). Use variant "panel" inside a Sheet.
  */
 
-import {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import {useNavigate} from "react-router-dom";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
@@ -331,9 +331,9 @@ export function ArticleForm({
 
     const scrollRef = useRef<HTMLDivElement>(null);
 
-    const scrollToSection = useCallback((step: FormStep) => {
+    const scrollToSection = (step: FormStep) => {
         document.getElementById(`article-section-${step}`)?.scrollIntoView({behavior: 'smooth', block: 'start'});
-    }, []);
+    };
 
     useEffect(() => {
         if (loading) return;
@@ -571,12 +571,12 @@ export function ArticleForm({
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   };
 
-    const itemTypeSelectValue = useMemo(() => {
+    const itemTypeSelectValue = (() => {
         const v = formData.article_type.trim();
         if (!v) return ITEM_TYPE_NONE_SELECT_VALUE;
         if (isKnownZoteroItemType(v)) return v;
         return ITEM_TYPE_CUSTOM_SELECT_VALUE;
-    }, [formData.article_type]);
+    })();
 
     const onItemTypeSelectChange = (value: string) => {
         if (value === ITEM_TYPE_NONE_SELECT_VALUE) {

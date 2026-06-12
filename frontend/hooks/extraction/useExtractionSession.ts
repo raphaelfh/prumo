@@ -12,7 +12,7 @@
  * seeded for every top-level entity type, and is in PROPOSAL stage.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -84,7 +84,7 @@ export function useExtractionSession({
     }
   }
 
-  const openCore = useCallback(async () => {
+  const openCore = async () => {
     if (!enabled || !projectId || !articleId || !projectTemplateId) return;
     const myGeneration = ++generationRef.current;
 
@@ -123,15 +123,15 @@ export function useExtractionSession({
       instancesByEntityType: data.instances_by_entity_type,
     });
     setLoading(false);
-  }, [enabled, projectId, articleId, projectTemplateId, queryClient]);
+  };
 
   // Manual refetch (event-handler context): show the loader, then reopen.
-  const refetch = useCallback(async () => {
+  const refetch = async () => {
     if (!enabled || !projectId || !articleId || !projectTemplateId) return;
     setLoading(true);
     setError(null);
     await openCore();
-  }, [enabled, projectId, articleId, projectTemplateId, openCore]);
+  };
 
   const openCoreRef = useRef(openCore);
   useEffect(() => {

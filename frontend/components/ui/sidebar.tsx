@@ -55,6 +55,7 @@ const SidebarProvider = React.forwardRef<
   // We use openProp and setOpenProp for control from outside the component.
   const [_open, _setOpen] = React.useState(defaultOpen);
   const open = openProp ?? _open;
+  // kept: identity feeds provider-value memo and keyboard-shortcut effect (deps-report flagged; zero-bailouts spec)
   const setOpen = (value: boolean | ((value: boolean) => boolean)) => {
     const openState = typeof value === "function" ? value(open) : value;
     if (setOpenProp) {
@@ -68,11 +69,13 @@ const SidebarProvider = React.forwardRef<
   };
 
   // Helper to toggle the sidebar.
+  // kept: identity feeds provider-value memo and keyboard-shortcut effect (deps-report flagged; zero-bailouts spec)
   const toggleSidebar = () => {
     return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open);
   };
 
   // Adds a keyboard shortcut to toggle the sidebar.
+  // kept: identity feeds provider-value memo and keyboard-shortcut effect (deps-report flagged; zero-bailouts spec)
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === SIDEBAR_KEYBOARD_SHORTCUT && (event.metaKey || event.ctrlKey)) {
@@ -89,6 +92,7 @@ const SidebarProvider = React.forwardRef<
   // This makes it easier to style the sidebar with Tailwind classes.
   const state = open ? "expanded" : "collapsed";
 
+  // kept: provider value — unmemoized value re-renders every consumer (zero-bailouts spec, exception class)
   const contextValue = React.useMemo<SidebarContext>(
     () => ({
       state,

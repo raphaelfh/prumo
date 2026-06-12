@@ -56,6 +56,8 @@ export function NotificationCenter() {
   const [open, setOpen] = useState(false);
     const {jobs, removeJob, clearCompletedJobs, getRecentJobs, updateJob} = useBackgroundJobs();
   
+  // kept: extra dep (jobs) forces recompute on any job-list change, even when
+  // getRecentJobs identity is stable — removing it would miss new job additions (zero-bailouts spec).
   const recentJobs = useMemo(() => getRecentJobs(20), [jobs, getRecentJobs]);
 
     useEffect(() => {
@@ -179,15 +181,11 @@ export function NotificationCenter() {
   });
 
     // Count unread notifications (jobs that finished recently)
-  const unreadCount = useMemo(() => countRecentlyFinished(recentJobs), [recentJobs]);
+  const unreadCount = countRecentlyFinished(recentJobs);
 
-    const hasActiveBackgroundJobs = useMemo(
-        () =>
-            jobs.some(
-                (job) => job.status === 'pending' || job.status === 'running'
-            ),
-        [jobs]
-    );
+  const hasActiveBackgroundJobs = jobs.some(
+    (job) => job.status === 'pending' || job.status === 'running'
+  );
 
   const handleRemoveJob = (jobId: string, e: React.MouseEvent) => {
     e.stopPropagation();

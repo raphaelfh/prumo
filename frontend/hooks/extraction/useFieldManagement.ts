@@ -12,7 +12,7 @@
  * @module hooks/extraction/useFieldManagement
  */
 
-import {useCallback, useEffect, useState} from 'react';
+import {useEffect, useState} from 'react';
 import {useAuth} from '@/contexts/AuthContext';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
@@ -58,7 +58,7 @@ export function useFieldManagement({
   /**
    * Check user permissions in project
    */
-  const checkPermissions = useCallback(async (): Promise<PermissionCheckResult> => {
+  const checkPermissions = async (): Promise<PermissionCheckResult> => {
     if (!user) {
       return {
         canView: false,
@@ -87,12 +87,12 @@ export function useFieldManagement({
 
     setPermissions(result.data);
     return result.data;
-  }, [user, projectId]);
+  };
 
   /**
    * Load section fields
    */
-  const loadFields = useCallback(async () => {
+  const loadFields = async () => {
     if (!entityTypeId) {
       console.warn('entityTypeId not provided');
       setFields([]);
@@ -110,12 +110,12 @@ export function useFieldManagement({
       setFields(result.data);
     }
     setLoading(false);
-  }, [entityTypeId]);
+  };
 
   /**
    * Validate field before operations (check impact)
    */
-  const validateField = useCallback(async (
+  const validateField = async (
     fieldId: string
   ): Promise<FieldValidationResult> => {
     const result = await validateFieldImpact(
@@ -139,12 +139,12 @@ export function useFieldManagement({
       };
     }
     return result.data;
-  }, []);
+  };
 
   /**
    * Add new field
    */
-  const addField = useCallback(async (
+  const addField = async (
     fieldData: ExtractionFieldInput
   ): Promise<ExtractionField | null> => {
       // Check permissions
@@ -201,12 +201,12 @@ export function useFieldManagement({
     setFields(prev => [...prev, createdField]);
     toast.success(t('extraction', 'fieldAddedSuccess').replace('{{label}}', createdField.label));
     return createdField;
-  }, [fields, entityTypeId, checkPermissions]);
+  };
 
   /**
    * Create "Other (specify)" field associated with a select field
    */
-  const createOtherSpecifyField = useCallback(async (
+  const createOtherSpecifyField = async (
     parentFieldName: string,
     parentFieldLabel: string,
     sortOrder: number
@@ -255,12 +255,12 @@ export function useFieldManagement({
     const createdField = result.data;
     setFields(prev => [...prev, createdField]);
     return createdField;
-  }, [fields, entityTypeId, checkPermissions]);
+  };
 
   /**
    * Update existing field
    */
-  const updateField = useCallback(async (
+  const updateField = async (
     fieldId: string,
     updates: ExtractionFieldUpdate
   ): Promise<ExtractionField | null> => {
@@ -296,12 +296,12 @@ export function useFieldManagement({
     );
     toast.success(t('extraction', 'fieldUpdatedSuccess'));
     return updatedField;
-  }, [fields, checkPermissions, validateField]);
+  };
 
   /**
    * Remove field (with impact validation)
    */
-  const deleteField = useCallback(async (
+  const deleteField = async (
     fieldId: string
   ): Promise<boolean> => {
     // Check permissions
@@ -328,12 +328,12 @@ export function useFieldManagement({
     setFields(prev => prev.filter(field => field.id !== fieldId));
     toast.success(t('extraction', 'fieldRemovedSuccess'));
     return true;
-  }, [checkPermissions, validateField]);
+  };
 
   /**
    * Remove associated "Other (specify)" field
    */
-  const removeOtherSpecifyField = useCallback(async (
+  const removeOtherSpecifyField = async (
     parentFieldName: string
   ): Promise<boolean> => {
     const perms = await checkPermissions();
@@ -361,12 +361,12 @@ export function useFieldManagement({
     }
 
     return deleteField(otherField.id);
-  }, [fields, checkPermissions, validateField, deleteField]);
+  };
 
   /**
    * Reorder fields (batch update)
    */
-  const reorderFields = useCallback(async (
+  const reorderFields = async (
     reorderedFields: { id: string; sort_order: number }[]
   ): Promise<boolean> => {
     // Check permissions
@@ -387,7 +387,7 @@ export function useFieldManagement({
     await loadFields();
     toast.success(t('extraction', 'fieldsReorderSuccess'));
     return true;
-  }, [checkPermissions, loadFields]);
+  };
 
     // Load permissions and fields on mount
   useEffect(() => {

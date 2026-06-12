@@ -12,7 +12,7 @@
  * resolver.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ExtractionValueService, type RunRef } from "@/services/extractionValueService";
 
@@ -38,7 +38,7 @@ export function useFinalizedExtractionRun(
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
-  const load = useCallback(async () => {
+  const load = async () => {
     if (!articleId) {
       setFinalizedRun(null);
       return;
@@ -55,7 +55,7 @@ export function useFinalizedExtractionRun(
         setFinalizedRun(null);
       })
       .finally(() => setLoading(false));
-  }, [articleId, projectTemplateId]);
+  };
 
   useEffect(() => {
     if (!enabled) return;

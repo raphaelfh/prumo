@@ -14,7 +14,7 @@
  * - Error handling (skips failed models)
  */
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import {t} from "@/lib/copy";
 import { getModelChildSections } from "./helpers/getModelChildSections";
@@ -83,8 +83,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
    * Extracts all sections from all existing models
    * @param params - Extraction params (projectId, articleId, templateId, models)
    */
-  const extractAllSectionsForAllModels = useCallback(
-    async (params: {
+  const extractAllSectionsForAllModels = async (params: {
       projectId: string;
       articleId: string;
       templateId: string;
@@ -262,9 +261,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
           throw err;
         })
         .finally(() => setLoading(false));
-    },
-    [options],
-  );
+  };
 
   return { extractAllSectionsForAllModels, loading, error, progress };
 }

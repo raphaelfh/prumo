@@ -4,7 +4,7 @@
  * manually via the configuration UI.
  */
 
-import {useState, useMemo} from 'react';
+import {useState} from 'react';
 import {useForm} from 'react-hook-form';
 import {zodResolver} from '@hookform/resolvers/zod';
 import {z} from 'zod';
@@ -58,7 +58,7 @@ export function CreateCustomTemplateDialog({
 }: CreateCustomTemplateDialogProps) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
-    const CustomTemplateSchema = useMemo(() => buildCustomTemplateSchema(), []);
+    const CustomTemplateSchema = buildCustomTemplateSchema();
 
   const form = useForm<CustomTemplateInput>({
     resolver: zodResolver(CustomTemplateSchema),

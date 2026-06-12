@@ -10,7 +10,7 @@
  * - Real-time statistics
  */
 
-import {useCallback, useRef, useState} from 'react';
+import {useRef, useState} from 'react';
 import {uploadQueuedFile} from '@/services/fileUploadService';
 import {toast} from 'sonner';
 import {validateFile} from '@/lib/file-validation';
@@ -80,7 +80,7 @@ export function useMultiFileUpload(
   /**
    * Adds files to the queue
    */
-  const addFiles = useCallback((files: File[], fileRole: FileRole) => {
+  const addFiles = (files: File[], fileRole: FileRole) => {
     const newItems: UploadQueueItem[] = files.map(file => ({
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       file,
@@ -92,12 +92,12 @@ export function useMultiFileUpload(
 
     setQueue(prev => [...prev, ...newItems]);
     return newItems;
-  }, []);
+  };
 
   /**
    * Uploads a single file — delegates IO (and try/finally) to the service.
    */
-  const uploadSingleFile = useCallback(async (item: UploadQueueItem): Promise<ArticleFile> => {
+  const uploadSingleFile = async (item: UploadQueueItem): Promise<ArticleFile> => {
     // Pre-validate so invalid files fail immediately without hitting the network.
     const validation = validateFile(item.file);
     if (!validation.valid) {
@@ -120,12 +120,12 @@ export function useMultiFileUpload(
         ));
       },
     });
-  }, [projectId, articleId]);
+  };
 
   /**
    * Processes the upload queue
    */
-  const processQueue = useCallback(async () => {
+  const processQueue = async () => {
     if (isUploading) return;
 
     setIsUploading(true);
@@ -237,12 +237,12 @@ export function useMultiFileUpload(
       }
     }
 
-  }, [queue, isUploading, maxConcurrent, maxRetries, uploadSingleFile, onComplete, onFileComplete, onProgress]);
+  };
 
   /**
    * Cancels a specific upload
    */
-  const cancelUpload = useCallback((itemId: string) => {
+  const cancelUpload = (itemId: string) => {
     const abortController = abortControllersRef.current.get(itemId);
     if (abortController) {
       abortController.abort();
@@ -253,21 +253,21 @@ export function useMultiFileUpload(
     ));
 
     activeUploadsRef.current.delete(itemId);
-  }, []);
+  };
 
   /**
    * Retries a failed upload
    */
-  const retryUpload = useCallback((itemId: string) => {
+  const retryUpload = (itemId: string) => {
     setQueue(prev => prev.map(q =>
       q.id === itemId ? { ...q, status: 'pending' as const, error: undefined, progress: 0 } : q
     ));
-  }, []);
+  };
 
   /**
    * Clears the queue
    */
-  const clearQueue = useCallback(() => {
+  const clearQueue = () => {
     // Cancel all active uploads
     abortControllersRef.current.forEach(controller => controller.abort());
     abortControllersRef.current.clear();
@@ -275,15 +275,15 @@ export function useMultiFileUpload(
 
     setQueue([]);
     setIsUploading(false);
-  }, []);
+  };
 
   /**
    * Removes an item from the queue
    */
-  const removeFromQueue = useCallback((itemId: string) => {
+  const removeFromQueue = (itemId: string) => {
     cancelUpload(itemId);
     setQueue(prev => prev.filter(q => q.id !== itemId));
-  }, [cancelUpload]);
+  };
 
   // Calculate statistics
   const stats = {

@@ -22,8 +22,6 @@
  *   - Containers missing on either snapshot or restore are silently skipped,
  *     so the helper is safe to share across pages.
  */
-import { useCallback } from "react";
-
 export type PreserveScroll = <T>(operation: () => Promise<T>) => Promise<T>;
 
 function snapshot(selectors: string[]): Map<string, { top: number; left: number }> {
@@ -72,11 +70,5 @@ async function runWithScrollPreserved<T>(
 }
 
 export function usePreserveScroll(selectors: string[]): PreserveScroll {
-  // selectors is intentionally treated as a stable identity by callers (we
-  // pass a module-level constant array), so the array itself is the dep —
-  // spreading it produced a non-literal dependency list the compiler rejects.
-  return useCallback(
-    (operation) => runWithScrollPreserved(selectors, operation),
-    [selectors]
-  );
+  return (operation) => runWithScrollPreserved(selectors, operation);
 }

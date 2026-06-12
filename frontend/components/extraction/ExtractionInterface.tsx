@@ -5,7 +5,7 @@
  * including templates, instances and values.
  */
 
-import {useEffect, useMemo, useState} from 'react';
+import {useEffect, useState} from 'react';
 import {useSearchParams} from 'react-router-dom';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
@@ -59,7 +59,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   );
   const { entityTypes } = useTemplateEntityTypes(activeTemplate?.id);
 
-  const extractionStats = useMemo(() => {
+  const extractionStats = (() => {
     const totalArticles = articles.length;
     let completed = 0;
     let sum = 0;
@@ -75,7 +75,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
       extractionsCompleted: completed,
       progressPercentage: totalArticles > 0 ? Math.round(sum / totalArticles) : 0,
     };
-  }, [articles, valuesByArticle, entityTypes]);
+  })();
 
     // Hook to manage templates
   const {

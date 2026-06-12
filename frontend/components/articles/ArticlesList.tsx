@@ -1,5 +1,5 @@
 import type {CSSProperties} from "react";
-import {forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState} from "react";
+import {forwardRef, useEffect, useImperativeHandle, useRef, useState} from "react";
 import {useNavigate} from "react-router-dom";
 import {Button} from "@/components/ui/button";
 import {Badge} from "@/components/ui/badge";
@@ -336,13 +336,9 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
         }
         return {...DEFAULT_COLUMN_WIDTHS};
     });
-    const renderedResizableColumns = useMemo(
-        () =>
-            TABLE_COLUMNS
-                .filter((col) => col.visibleKey == null || visibleColumns[col.visibleKey] === true)
-                .map((col) => col.id),
-        [visibleColumns]
-    );
+    const renderedResizableColumns = TABLE_COLUMNS
+        .filter((col) => col.visibleKey == null || visibleColumns[col.visibleKey] === true)
+        .map((col) => col.id);
     const {registerHeaderRef, startResize} = useResizableTableColumns({
         columnWidths,
         setColumnWidths,
@@ -371,7 +367,7 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
   };
 
     // Clear single filter field (for chip clear)
-    const clearFilterField = useCallback((fieldId: string) => {
+    const clearFilterField = (fieldId: string) => {
         const field = ARTICLES_FILTER_FIELDS.find(f => f.id === fieldId);
         if (!field) return;
         setFilterValues(prev => ({
@@ -383,15 +379,15 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
                         ? {}
                         : '',
         }));
-    }, []);
+    };
 
-    const clearAllFilters = useCallback(() => {
+    const clearAllFilters = () => {
         setSearchTerm('');
         setFilterValues(INITIAL_ARTICLES_FILTER_VALUES);
-    }, []);
+    };
 
     // Faceted values for Filter suggestions (derived from articles)
-    const facetedValues = useMemo(() => {
+    const facetedValues = (() => {
         const years = new Map<number, number>();
         const journals = new Map<string, number>();
         const authors = new Map<string, number>();
@@ -435,9 +431,9 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
                 count
             })),
     };
-    }, [articles]);
+    })();
 
-    const ARTICLES_FILTER_LABELS: Record<string, string> = useMemo(() => ({
+    const ARTICLES_FILTER_LABELS: Record<string, string> = {
         title: 'Title',
         authors: 'Authors',
         journal_title: 'Journal',
@@ -446,12 +442,9 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
         has_main_file: 'PDF',
         ingestion_source: 'Source',
         sync_state: 'Sync state',
-    }), []);
+    };
 
-    const activeFiltersList = useMemo(
-        () => buildActiveFiltersList(ARTICLES_FILTER_FIELDS, filterValues, ARTICLES_FILTER_LABELS),
-        [filterValues, ARTICLES_FILTER_LABELS]
-    );
+    const activeFiltersList = buildActiveFiltersList(ARTICLES_FILTER_FIELDS, filterValues, ARTICLES_FILTER_LABELS);
 
     // Visible columns toggle
     const toggleColumn = (column: string) => {
@@ -527,8 +520,8 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
     setUploadDialogOpen(true);
   };
 
-  // Filtrar e ordenar artigos com useMemo
-  const filteredArticles = useMemo(() => {
+  // Filtrar e ordenar artigos
+  const filteredArticles = (() => {
     const filtered = articles.filter(article => {
       // Filtro global de busca
       if (searchTerm) {
@@ -650,7 +643,7 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
     });
 
     return filtered;
-  }, [articles, searchTerm, filterValues, sortField, sortDirection, articlesWithMainFile]);
+  })();
 
     // Latest-value refs read only by the imperative `openExportDialog` handle
     // (never during render), so the handle can stay stable across data changes.
