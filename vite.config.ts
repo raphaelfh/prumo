@@ -27,7 +27,7 @@ export default defineConfig(({mode: _mode}) => ({
                         return "radix-vendor";
                     }
 
-                    if (id.includes("react-router-dom")) {
+                    if (id.includes("react-router")) {
                         return "router-vendor";
                     }
 
