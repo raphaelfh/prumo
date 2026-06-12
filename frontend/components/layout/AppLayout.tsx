@@ -50,7 +50,7 @@ export const ProjectLayout: React.FC<AppLayoutProps> = ({children, className}) =
 
   return (
     <div className={cn('h-screen flex flex-col overflow-hidden bg-background', className)}>
-      <div className="flex-shrink-0">
+      <div className="shrink-0">
         <Topbar />
       </div>
 

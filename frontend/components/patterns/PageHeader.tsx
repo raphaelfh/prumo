@@ -25,12 +25,12 @@ export function PageHeader({title, description, leading, actions, className}: Pa
   return (
       <div
           className={cn(
-              'h-12 flex items-center justify-between border-b border-border/40 bg-background/80 backdrop-blur-md px-6 flex-shrink-0',
+              'h-12 flex items-center justify-between border-b border-border/40 bg-background/80 backdrop-blur-md px-6 shrink-0',
               className
           )}
       >
           <div className="flex items-center gap-4 flex-1 min-w-0">
-              {leading && <div className="flex-shrink-0">{leading}</div>}
+              {leading && <div className="shrink-0">{leading}</div>}
               <div className="flex items-baseline gap-3 min-w-0">
                   {title && (
                       <span className="text-[13px] font-medium text-foreground truncate">{title}</span>
@@ -41,7 +41,7 @@ export function PageHeader({title, description, leading, actions, className}: Pa
               </div>
           </div>
           {actions && (
-              <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="flex items-center gap-2 shrink-0">
                   {actions}
               </div>
           )}

@@ -222,10 +222,10 @@ export function AllowedUnitsList({
                     : "bg-background hover:bg-accent"
                 )}
               >
-                <GripVertical className="h-4 w-4 text-muted-foreground/40 flex-shrink-0" />
+                <GripVertical className="h-4 w-4 text-muted-foreground/40 shrink-0" />
                 
                 {index === 0 && (
-                  <Star className="h-3 w-3 text-primary flex-shrink-0" />
+                  <Star className="h-3 w-3 text-primary shrink-0" />
                 )}
                 
                 <span className={cn(

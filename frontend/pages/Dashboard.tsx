@@ -79,13 +79,13 @@ export default function Dashboard() {
           <div className="divide-y divide-border/30">
             {[0, 1, 2, 3, 4].map((i) => (
               <div key={i} className={cn("flex items-center gap-3 py-3 sm:gap-4", SHELL_PADDING_X)}>
-                <Skeleton className="h-9 w-9 flex-shrink-0 rounded-lg"/>
+                <Skeleton className="h-9 w-9 shrink-0 rounded-lg"/>
                 <div className="min-w-0 flex-1 space-y-2">
                   <Skeleton className="h-3.5 w-1/3 max-w-[180px]"/>
                   <Skeleton className="h-3 w-1/2 max-w-[280px]"/>
                 </div>
-                <Skeleton className="hidden h-7 w-16 flex-shrink-0 rounded md:block"/>
-                <Skeleton className="h-8 w-8 flex-shrink-0 rounded-md"/>
+                <Skeleton className="hidden h-7 w-16 shrink-0 rounded md:block"/>
+                <Skeleton className="h-8 w-8 shrink-0 rounded-md"/>
               </div>
             ))}
           </div>
@@ -158,7 +158,7 @@ export default function Dashboard() {
                 }}
               >
                 <div
-                  className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg border border-border/50 bg-muted/20 transition-all duration-150 group-hover:border-border group-hover:shadow-sm motion-reduce:transition-none">
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/50 bg-muted/20 transition-all duration-150 group-hover:border-border group-hover:shadow-sm motion-reduce:transition-none">
                   <BookOpen
                     className="h-4 w-4 text-muted-foreground/60 transition-colors group-hover:text-foreground motion-reduce:transition-none"
                     strokeWidth={1.75}
@@ -174,7 +174,7 @@ export default function Dashboard() {
                     {project.is_active && (
                       <span
                         aria-hidden="true"
-                        className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-success shadow-[0_0_8px_hsl(var(--success)/0.45)]"
+                        className="h-1.5 w-1.5 shrink-0 rounded-full bg-success shadow-[0_0_8px_hsl(var(--success)/0.45)]"
                       />
                     )}
                   </div>
@@ -183,7 +183,7 @@ export default function Dashboard() {
                   </p>
                 </div>
 
-                <div className="hidden flex-shrink-0 flex-col items-end pl-2 md:flex">
+                <div className="hidden shrink-0 flex-col items-end pl-2 md:flex">
                   <span
                     className="mb-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/40">
                     {t('pages', 'dashboardCreatedDate')}
@@ -194,7 +194,7 @@ export default function Dashboard() {
                 </div>
 
                 <div
-                  className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground/30 transition-all duration-150 group-hover:bg-muted/50 group-hover:text-foreground/80 motion-reduce:transition-none">
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground/30 transition-all duration-150 group-hover:bg-muted/50 group-hover:text-foreground/80 motion-reduce:transition-none">
                   <ChevronRight className="h-4 w-4" aria-hidden="true"/>
                 </div>
               </div>

@@ -452,14 +452,14 @@ export function ArticleFileUploadDialogNew({
                             className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 p-3 border rounded-lg"
                           >
                             <div className="flex items-center gap-3 w-full sm:w-auto">
-                              <div className="flex-shrink-0">
+                              <div className="shrink-0">
                                 {getStatusIcon(fileWithRole.status)}
                               </div>
 
                               <div className="flex-1 min-w-0">
                                 <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 mb-1 sm:mb-0">
                                   <div className="flex items-center gap-2 min-w-0">
-                                    <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                                    <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
                                     <span className="font-medium text-sm truncate">
                                       {fileWithRole.file.name}
                                     </span>
@@ -514,7 +514,7 @@ export function ArticleFileUploadDialogNew({
                                 )}
                               </div>
 
-                              <div className="flex-shrink-0 sm:ml-auto">
+                              <div className="shrink-0 sm:ml-auto">
                                 <Button
                                   variant="ghost"
                                   size="sm"
