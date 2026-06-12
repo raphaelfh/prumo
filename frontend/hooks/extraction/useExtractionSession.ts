@@ -16,8 +16,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useQueryClient } from "@tanstack/react-query";
 
-import { apiClient } from "@/integrations/api";
 import { runsKeys, type RunViewResponse } from "@/hooks/runs/types";
+import { openExtractionSession } from "@/services/extractionRunService";
 
 // Monotonically-increasing generation token. Each effect-driven call to
 // `open()` reads the next value and only commits state when it still
@@ -44,14 +44,6 @@ interface UseExtractionSessionResult {
   loading: boolean;
   error: string | null;
   refetch: () => Promise<void>;
-}
-
-interface OpenResponse {
-  run_id: string;
-  kind: "extraction" | "quality_assessment";
-  project_template_id: string;
-  instances_by_entity_type: Record<string, string>;
-  run_view: RunViewResponse | null;
 }
 
 export function useExtractionSession({
@@ -95,50 +87,42 @@ export function useExtractionSession({
   const openCore = useCallback(async () => {
     if (!enabled || !projectId || !articleId || !projectTemplateId) return;
     const myGeneration = ++generationRef.current;
-    try {
-      const data = await apiClient<OpenResponse>("/api/v1/hitl/sessions", {
-        method: "POST",
-        body: {
-          kind: "extraction",
-          project_id: projectId,
-          article_id: articleId,
-          project_template_id: projectTemplateId,
-        },
-      });
-      // Only the most-recent open() may commit. If a new effect fired
-      // while we were in flight (article navigation, prop change), this
-      // generation is stale and the response belongs to a previous
-      // article — discarding it prevents autosave from routing
-      // proposals to the wrong run (#23).
-      if (myGeneration !== generationRef.current) return;
-      // Pre-seed the run-detail cache from the embedded view so useRun reads
-      // from cache on first paint — collapsing the session -> GET /runs/{id} ->
-      // values serial waterfall. Inside the generation guard so a stale
-      // article's view can never poison the new article's run cache.
-      if (data.run_view) {
-        queryClient.setQueryData(runsKeys.detail(data.run_id), data.run_view);
-      }
-      setSession({
-        runId: data.run_id,
-        projectTemplateId: data.project_template_id,
-        instancesByEntityType: data.instances_by_entity_type,
-      });
-    } catch (err) {
-      if (myGeneration !== generationRef.current) return;
+
+    const result = await openExtractionSession({projectId, articleId, projectTemplateId});
+
+    // Only the most-recent open() may commit. If a new effect fired
+    // while we were in flight (article navigation, prop change), this
+    // generation is stale and the response belongs to a previous
+    // article — discarding it prevents autosave from routing
+    // proposals to the wrong run (#23).
+    if (myGeneration !== generationRef.current) return;
+
+    if (!result.ok) {
       // Surface the failure to the console — the page only renders
       // ``error`` inline if the form is already mounted, but the
       // extraction route gates rendering on ``valuesLoading`` until the
       // session resolves. Without this log a silent backend rejection
       // (BOLA, 401, 404) is invisible to support.
-      console.error("[useExtractionSession] open() failed:", err);
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to open extraction session",
-      );
-    } finally {
-      if (myGeneration === generationRef.current) setLoading(false);
+      console.error("[useExtractionSession] open() failed:", result.error);
+      setError(result.error.message || "Failed to open extraction session");
+      setLoading(false);
+      return;
     }
+
+    const data = result.data;
+    // Pre-seed the run-detail cache from the embedded view so useRun reads
+    // from cache on first paint — collapsing the session -> GET /runs/{id} ->
+    // values serial waterfall. Inside the generation guard so a stale
+    // article's view can never poison the new article's run cache.
+    if (data.run_view) {
+      queryClient.setQueryData(runsKeys.detail(data.run_id), data.run_view as RunViewResponse);
+    }
+    setSession({
+      runId: data.run_id,
+      projectTemplateId: data.project_template_id,
+      instancesByEntityType: data.instances_by_entity_type,
+    });
+    setLoading(false);
   }, [enabled, projectId, articleId, projectTemplateId, queryClient]);
 
   // Manual refetch (event-handler context): show the loader, then reopen.

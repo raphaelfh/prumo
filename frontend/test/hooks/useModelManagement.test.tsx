@@ -38,10 +38,15 @@ vi.mock('@/integrations/api', () => ({
   createManualModelHierarchy: vi.fn(),
 }));
 
+const mockLoadModelInstances = vi.fn();
+const mockFetchModelProgress = vi.fn();
+
 vi.mock('@/services/extractionInstanceService', () => ({
   extractionInstanceService: {
     removeInstance: vi.fn(),
   },
+  loadModelInstances: (...args: any[]) => mockLoadModelInstances(...args),
+  fetchModelProgress: (...args: any[]) => mockFetchModelProgress(...args),
 }));
 
 import { supabase } from '@/integrations/supabase/client';
@@ -51,13 +56,8 @@ import { useModelManagement } from '@/hooks/extraction/useModelManagement';
 
 function mockLoadModelsToEmpty() {
   // useModelManagement fires loadModels() in a useEffect when enabled — mock
-  // a supabase.from('extraction_instances')... chain returning zero models.
-  const loadChain: any = {
-    select: vi.fn(() => loadChain),
-    eq: vi.fn(() => loadChain),
-    order: vi.fn(() => Promise.resolve({ data: [], error: null })),
-  };
-  (supabase.from as any).mockReturnValueOnce(loadChain);
+  // loadModelInstances from the service returning zero models.
+  mockLoadModelInstances.mockResolvedValueOnce({ ok: true, data: [] });
 }
 
 const baseProps = {
@@ -73,6 +73,8 @@ beforeEach(() => {
   // ``mockReturnValueOnce`` queues from prior tests don't bleed in and
   // hand the wrong chain to a later supabase.from() call.
   vi.resetAllMocks();
+  // Default fetchModelProgress to zero progress (overridden per test as needed).
+  mockFetchModelProgress.mockResolvedValue({ completed: 0, total: 0, percentage: 0 });
 });
 
 describe('useModelManagement → createModel guard rails', () => {
@@ -194,43 +196,32 @@ describe('useModelManagement → createModel guard rails', () => {
 
 describe('useModelManagement → getModelProgress (RPC contract)', () => {
   // Locks the frontend ↔ Supabase contract for the
-  // ``calculate_model_progress`` RPC. The remote function signature was
-  // rewritten in alembic migration 0013 from
-  // ``(p_project_id, p_article_id)`` returning one-row-per-instance to
-  // ``(p_article_id, p_model_id)`` returning a single
-  // ``(completed_fields, total_fields, percentage)`` row.
-  //
-  // Passing the legacy parameter names yields PostgREST 404 PGRST202 and
-  // the UI silently falls back to "0%" progress badges — these tests
-  // make that drift impossible to ship.
+  // ``calculate_model_progress`` RPC. The RPC logic has moved to
+  // ``fetchModelProgress`` in extractionInstanceService; the hook delegates
+  // to it. These tests verify the delegation and the return-value contract.
 
   it('calls calculate_model_progress with (p_article_id, p_model_id), not the legacy (p_project_id, p_article_id)', async () => {
     mockLoadModelsToEmpty();
-    (supabase.rpc as any).mockResolvedValue({
-      data: [{ completed_fields: 0, total_fields: 0, percentage: 0 }],
-      error: null,
-    });
+    mockFetchModelProgress.mockResolvedValue({ completed: 0, total: 0, percentage: 0 });
 
     const { result } = renderHook(() => useModelManagement(baseProps));
     await act(async () => {
       await result.current.getModelProgress('model-instance-1');
     });
 
-    expect(supabase.rpc).toHaveBeenCalledWith('calculate_model_progress', {
-      p_article_id: 'a-1',
-      p_model_id: 'model-instance-1',
-    });
-    // Defensive: legacy keys must not leak back in.
-    const callArgs = (supabase.rpc as any).mock.calls[0][1];
-    expect(callArgs).not.toHaveProperty('p_project_id');
+    // fetchModelProgress is called with (articleId, instanceId) — maps to
+    // (p_article_id, p_model_id) inside the service (tested in service tests).
+    expect(mockFetchModelProgress).toHaveBeenCalledWith('a-1', 'model-instance-1');
+    // Defensive: p_project_id must not appear in any call to rpc.
+    const rpcCalls = (supabase.rpc as any).mock?.calls ?? [];
+    for (const call of rpcCalls) {
+      expect(call[1]).not.toHaveProperty('p_project_id');
+    }
   });
 
   it('maps the new return shape (completed_fields, total_fields, percentage) to Model.progress', async () => {
     mockLoadModelsToEmpty();
-    (supabase.rpc as any).mockResolvedValue({
-      data: [{ completed_fields: 7, total_fields: 10, percentage: 70 }],
-      error: null,
-    });
+    mockFetchModelProgress.mockResolvedValue({ completed: 7, total: 10, percentage: 70 });
 
     const { result } = renderHook(() => useModelManagement(baseProps));
     let progress: any;
@@ -243,10 +234,8 @@ describe('useModelManagement → getModelProgress (RPC contract)', () => {
 
   it('returns zeros when the RPC errors (e.g. 404, RLS) instead of throwing', async () => {
     mockLoadModelsToEmpty();
-    (supabase.rpc as any).mockResolvedValue({
-      data: null,
-      error: { code: 'PGRST202', message: 'function not found' },
-    });
+    // fetchModelProgress always returns zeros on error (never throws) — see service impl.
+    mockFetchModelProgress.mockResolvedValue({ completed: 0, total: 0, percentage: 0 });
 
     const { result } = renderHook(() => useModelManagement(baseProps));
     let progress: any;
@@ -259,7 +248,7 @@ describe('useModelManagement → getModelProgress (RPC contract)', () => {
 
   it('returns zeros when the RPC returns an empty result', async () => {
     mockLoadModelsToEmpty();
-    (supabase.rpc as any).mockResolvedValue({ data: [], error: null });
+    mockFetchModelProgress.mockResolvedValue({ completed: 0, total: 0, percentage: 0 });
 
     const { result } = renderHook(() => useModelManagement(baseProps));
     let progress: any;

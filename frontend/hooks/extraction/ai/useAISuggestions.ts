@@ -11,7 +11,6 @@
  */
 
 import {useCallback, useEffect, useState} from 'react';
-import {supabase} from '@/integrations/supabase/client';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 import type {
@@ -24,7 +23,8 @@ import type {
 import {getSuggestionKey} from '@/types/ai-extraction';
 import {AISuggestionService} from '@/services/aiSuggestionService';
 import {filterSuggestionsByConfidence} from '@/lib/ai-extraction/suggestionUtils';
-import {AuthenticationError, getErrorMessage,} from '@/lib/ai-extraction/errors';
+import {getErrorMessage} from '@/lib/ai-extraction/errors';
+import {getRequiredUserId} from '@/services/authService';
 
 // =================== HOOK ===================
 
@@ -53,67 +53,55 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
   const providedInstanceKey = providedInstanceIds?.join('|') ?? null;
 
     // Declare loadSuggestions BEFORE useEffect to avoid init error
-  const loadSuggestions = useCallback(async (): Promise<LoadSuggestionsResult> => {
+  const loadSuggestions = useCallback((): Promise<LoadSuggestionsResult> => {
     setLoading(true);
 
-    try {
-        console.warn('Loading AI suggestions...', {articleId, runId});
+    // Prefer caller-provided instance ids when available (QA gets these
+    // straight from the HITL session response). Fall back to the
+    // article-wide lookup that Data Extraction has always used.
+    const getInstanceIds = providedInstanceIds && providedInstanceIds.length > 0
+      ? Promise.resolve(providedInstanceIds)
+      : AISuggestionService.getArticleInstanceIds(articleId);
 
-        // Prefer caller-provided instance ids when available (QA gets these
-        // straight from the HITL session response). Fall back to the
-        // article-wide lookup that Data Extraction has always used.
-      const instanceIds = providedInstanceIds && providedInstanceIds.length > 0
-        ? providedInstanceIds
-        : await AISuggestionService.getArticleInstanceIds(articleId);
-
-      if (instanceIds.length === 0) {
+    return getInstanceIds
+      .then((instanceIds) => {
+        if (instanceIds.length === 0) {
           console.warn('No instances found when loading suggestions');
-        setSuggestions({});
-        setLoading(false);
-        return { suggestions: {}, count: 0 };
-      }
+          setSuggestions({});
+          return { suggestions: {}, count: 0 } as LoadSuggestionsResult;
+        }
 
         console.warn(`📋 ${instanceIds.length} instance(s) found for loading suggestions:`, {
-            instanceIds: instanceIds.slice(0, 5), // First 5 IDs for debug
-        totalCount: instanceIds.length
-      });
+          instanceIds: instanceIds.slice(0, 5),
+          totalCount: instanceIds.length,
+        });
 
-        // Load suggestions using the service
-      const result = await AISuggestionService.loadSuggestions(
-        articleId,
-        instanceIds,
-        runId,
-      );
-
+        return AISuggestionService.loadSuggestions(articleId, instanceIds, runId);
+      })
+      .then((result) => {
         // CRITICAL: setSuggestions updates state asynchronously
         // Use updater function so previous state is considered
-      setSuggestions(() => {
-        const newSuggestions = result.suggestions;
-        const count = Object.keys(newSuggestions).length;
+        setSuggestions(() => {
+          const newSuggestions = result.suggestions;
+          const count = Object.keys(newSuggestions).length;
           console.warn(`✅ [useAISuggestions] ${count} suggestion(s) loaded and state updated`);
-
-          // Detailed log of loaded suggestion keys for debug
-        const suggestionKeys = Object.keys(newSuggestions).slice(0, 10);
+          const suggestionKeys = Object.keys(newSuggestions).slice(0, 10);
           console.warn(`📝 [useAISuggestions] First suggestions loaded:`, {
-          keys: suggestionKeys,
-          total: count
+            keys: suggestionKeys,
+            total: count,
+          });
+          return newSuggestions;
         });
-        
-        return newSuggestions;
-      });
-
-        // Return result directly for polling
-      return result;
-
-    } catch (err: any) {
+        return result;
+      })
+      .catch((err: unknown) => {
         console.error('Error loading suggestions:', err);
-      const message = getErrorMessage(err);
+        const message = getErrorMessage(err);
         toast.error(`${t('extraction', 'errors_loadSuggestions')}: ${message}`);
-        setSuggestions({}); // Clear suggestions on error
-      return { suggestions: {}, count: 0 };
-    } finally {
-      setLoading(false);
-    }
+        setSuggestions({});
+        return { suggestions: {}, count: 0 } as LoadSuggestionsResult;
+      })
+      .finally(() => setLoading(false));
   }, [articleId, runId, providedInstanceKey]);
 
     // useEffect AFTER loadSuggestions declaration
@@ -131,7 +119,14 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     // Feedback visual imediato
     setActionLoading(prev => ({ ...prev, [key]: 'accept' }));
 
-    try {
+    const clearLoading = () =>
+      setActionLoading(prev => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+
+    const doAccept = async (): Promise<boolean> => {
       if (acceptStrategy === 'human-proposal') {
         // Quality-Assessment path: the run lives in PROPOSAL until
         // Publish, so a ReviewerDecision (which requires REVIEW) would
@@ -139,9 +134,8 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
         // up via ``onSuggestionAccepted`` — the consumer records it as
         // a ``human`` proposal through its existing form pipeline.
       } else {
-        // Get user more efficiently (cache if possible)
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new AuthenticationError();
+        const userResult = await getRequiredUserId();
+        if (!userResult.ok) throw userResult.error;
 
         // Accept suggestion using the service (writes ReviewerDecision
         // with decision='accept_proposal' on a REVIEW-stage run).
@@ -153,7 +147,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
           fieldId,
           value: suggestion.value,
           confidence: suggestion.confidence,
-          reviewerId: user.id,
+          reviewerId: userResult.data,
           runId,
         });
       }
@@ -184,20 +178,16 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
 
         if (!silent) toast.success(t('extraction', 'toastSuggestionAcceptedSuccess'));
         return true;
+    };
 
-    } catch (err: any) {
+    return doAccept()
+      .catch((err: unknown) => {
         console.error('Error accepting suggestion:', err);
-      const message = getErrorMessage(err);
+        const message = getErrorMessage(err);
         if (!silent) toast.error(`${t('extraction', 'errors_acceptSuggestion')}: ${message}`);
         return false;
-    } finally {
-        // Clear loading after operation
-      setActionLoading(prev => {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      });
-    }
+      })
+      .finally(clearLoading);
   }, [suggestions, projectId, articleId, runId, acceptStrategy, onSuggestionAccepted]);
 
   // Public accept: surfaces its own toasts (silent=false) and keeps the
@@ -217,14 +207,20 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     // Feedback visual imediato
     setActionLoading(prev => ({ ...prev, [key]: 'reject' }));
 
-    try {
+    const clearLoading = () =>
+      setActionLoading(prev => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+
+    const doReject = async (): Promise<void> => {
       if (acceptStrategy === 'human-proposal') {
         // QA path: same logic as accept — no ReviewerDecision write.
         // Local state flip + onSuggestionRejected callback are enough.
       } else {
-        // Obter user de forma mais eficiente
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new AuthenticationError();
+        const userResult = await getRequiredUserId();
+        if (!userResult.ok) throw userResult.error;
 
           // Check if was accepted before (need to remove extracted_value)
         const wasAccepted = suggestion.status === 'accepted';
@@ -232,7 +228,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
           // Reject suggestion using the service
         await AISuggestionService.rejectSuggestion({
           suggestionId: suggestion.id,
-          reviewerId: user.id,
+          reviewerId: userResult.data,
             wasAccepted, // Pass flag to remove extracted_value if needed
           instanceId,
           fieldId,
@@ -266,54 +262,43 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
       }
 
         toast.success(t('extraction', 'toastSuggestionRejectedSuccess'));
+    };
 
-    } catch (err: any) {
+    doReject()
+      .catch((err: unknown) => {
         console.error('Error rejecting suggestion:', err);
-      const message = getErrorMessage(err);
+        const message = getErrorMessage(err);
         toast.error(`${t('extraction', 'errors_rejectSuggestion')}: ${message}`);
-    } finally {
-        // Clear loading after operation
-      setActionLoading(prev => {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      });
-    }
+      })
+      .finally(clearLoading);
   }, [suggestions, projectId, articleId, runId, acceptStrategy, onSuggestionRejected]);
 
   const batchAccept = useCallback(async (threshold = 0.8) => {
-    try {
-      const filtered = filterSuggestionsByConfidence(suggestions, threshold);
+    const filtered = filterSuggestionsByConfidence(suggestions, threshold);
 
-      if (filtered.length === 0) {
-          toast.info(t('extraction', 'noSuggestionConfidenceToast').replace('{{pct}}', String(Math.round(threshold * 100))));
-        return;
-      }
-
-      // Accept each in silent mode so we fire ONE batch toast instead of N+1,
-      // and count real successes so the batch toast can't claim success when
-      // every accept actually failed (#160).
-      const results = await Promise.all(
-        filtered.map(([key]) => {
-          // key format: `${instanceId}_${fieldId}`
-          const [instanceId, ...fieldIdParts] = key.split('_');
-          const fieldId = fieldIdParts.join('_'); // Caso field_id tenha underscores
-          return acceptSuggestionCore(instanceId, fieldId, /* silent */ true);
-        })
-      );
-
-      const accepted = results.filter(Boolean).length;
-      if (accepted === 0) {
-          toast.error(t('extraction', 'errors_batchAcceptSuggestions'));
-        return;
-      }
-        toast.success(t('extraction', 'batchAcceptCountToast').replace('{{n}}', String(accepted)));
-
-    } catch (err: any) {
-      console.error('❌ Erro no batch accept:', err);
-      const message = getErrorMessage(err);
-        toast.error(`${t('extraction', 'errors_batchAcceptSuggestions')}: ${message}`);
+    if (filtered.length === 0) {
+        toast.info(t('extraction', 'noSuggestionConfidenceToast').replace('{{pct}}', String(Math.round(threshold * 100))));
+      return;
     }
+
+    // Accept each in silent mode so we fire ONE batch toast instead of N+1,
+    // and count real successes so the batch toast can't claim success when
+    // every accept actually failed (#160).
+    const results = await Promise.all(
+      filtered.map(([key]) => {
+        // key format: `${instanceId}_${fieldId}`
+        const [instanceId, ...fieldIdParts] = key.split('_');
+        const fieldId = fieldIdParts.join('_'); // Caso field_id tenha underscores
+        return acceptSuggestionCore(instanceId, fieldId, /* silent */ true);
+      })
+    );
+
+    const accepted = results.filter(Boolean).length;
+    if (accepted === 0) {
+        toast.error(t('extraction', 'errors_batchAcceptSuggestions'));
+      return;
+    }
+    toast.success(t('extraction', 'batchAcceptCountToast').replace('{{n}}', String(accepted)));
   }, [suggestions, acceptSuggestionCore]);
 
   /**
@@ -322,16 +307,14 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
   const getSuggestionsHistory = useCallback(async (
     instanceId: string,
     fieldId: string
-  ): Promise<AISuggestionHistoryItem[]> => {
-    try {
-      return await AISuggestionService.getHistory(instanceId, fieldId, 10);
-    } catch (err: any) {
-        console.error('Error loading suggestion history:', err);
+  ): Promise<AISuggestionHistoryItem[]> =>
+    AISuggestionService.getHistory(instanceId, fieldId, 10).catch((err: unknown) => {
+      console.error('Error loading suggestion history:', err);
       const message = getErrorMessage(err);
-        toast.error(`${t('extraction', 'errors_loadSuggestionsHistory')}: ${message}`);
-      return [];
-    }
-  }, []);
+      toast.error(`${t('extraction', 'errors_loadSuggestionsHistory')}: ${message}`);
+      return [] as AISuggestionHistoryItem[];
+    })
+  , []);
 
   /**
    * Returns the latest suggestion for a field (if present in local state)

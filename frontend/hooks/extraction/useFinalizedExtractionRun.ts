@@ -45,18 +45,16 @@ export function useFinalizedExtractionRun(
     }
     setLoading(true);
     setError(null);
-    try {
-      const run = await ExtractionValueService.findLatestFinalizedRun(
-        articleId,
-        projectTemplateId ?? null,
-      );
-      setFinalizedRun(run);
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error(String(err)));
-      setFinalizedRun(null);
-    } finally {
-      setLoading(false);
-    }
+
+    ExtractionValueService.findLatestFinalizedRun(articleId, projectTemplateId ?? null)
+      .then((run) => {
+        setFinalizedRun(run);
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err : new Error(String(err)));
+        setFinalizedRun(null);
+      })
+      .finally(() => setLoading(false));
   }, [articleId, projectTemplateId]);
 
   useEffect(() => {

@@ -10,15 +10,17 @@
  */
 
 import {useCallback, useEffect, useState} from 'react';
-import {supabase} from '@/integrations/supabase/client';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 import {extractionInstanceService} from '@/services/extractionInstanceService';
+import {
+  loadExtractionPhase1,
+  loadEntityTypesWithFields,
+} from '@/services/extractionDataService';
 import type {Article} from '@/types/article';
 import type {Project} from '@/types/project';
 import type {
     ExtractionEntityTypeWithFields,
-    ExtractionField,
     ExtractionInstance,
     ProjectExtractionTemplate
 } from '@/types/extraction';
@@ -128,37 +130,26 @@ export function useExtractionData({
       return;
     }
 
-    try {
-      const refreshedInstances = await extractionInstanceService.getInstances({
-        articleId,
-        templateId
-      });
-
-      const normalised: ExtractionInstance[] = refreshedInstances.map(instance => ({
-        ...instance,
-        article_id: instance.article_id!,
-        metadata: instance.metadata as unknown,
-      }));
-
-      setInstances(prev => mergeInstancesById(prev, normalised));
-    } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : t('extraction', 'errors_loadInstances');
-        console.error('Error loading instances:', err);
-      toast.error(message);
-    }
+    const result = await extractionInstanceService.getInstances({articleId, templateId});
+    const normalised: ExtractionInstance[] = result.map(instance => ({
+      ...instance,
+      article_id: instance.article_id!,
+      metadata: instance.metadata as unknown,
+    }));
+    setInstances(prev => mergeInstancesById(prev, normalised));
   }, [articleId]);
 
     // Load all data
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(() => {
     if (!enabled || !projectId || !articleId) {
       setLoading(false);
-      return;
+      return Promise.resolve();
     }
 
-    try {
-      setLoading(true);
-      setError(null);
+    setLoading(true);
+    setError(null);
 
+    const doLoad = async () => {
       // Phase 1 — independent reads in parallel. Article, project, the
       // active extraction template, and the navigation article list don't
       // depend on one another, so awaiting them sequentially only stacked
@@ -167,45 +158,23 @@ export function useExtractionData({
       // ``template.id``, and the strictly-sequential version parked the
       // template 3rd in line, stalling the whole extracted-values waterfall
       // behind two unrelated round-trips.
-      //
-      // Template selection: newest active wins (``created_at`` DESC) so this
-      // matches ``ExtractionInterface``'s active picker and Configuration and
-      // Extraction views converge on the same template (BUG #1 — split
-      // picker). Defensive against legacy projects with multiple actives.
-      const [
-        { data: articleData, error: articleError },
-        { data: projectData, error: projectError },
-        { data: templateData, error: templateError },
-        { data: articlesData, error: articlesError },
-      ] = await Promise.all([
-        supabase.from('articles').select('*').eq('id', articleId).single(),
-        supabase.from('projects').select('*').eq('id', projectId).single(),
-        supabase
-          .from('project_extraction_templates')
-          .select('*')
-          .eq('project_id', projectId)
-          .eq('is_active', true)
-          .eq('kind', 'extraction')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        supabase
-          .from('articles')
-          .select('id, title')
-          .eq('project_id', projectId)
-          .order('created_at', { ascending: false }),
-      ]);
+      const phase1 = await loadExtractionPhase1(
+        articleId,
+        projectId,
+        t('common', 'errors_templateNotFound'),
+      );
 
-      if (articleError) throw articleError;
-      if (projectError) throw projectError;
-      if (templateError) throw templateError;
-      if (articlesError) throw articlesError;
-      if (!templateData) throw new Error(t('common', 'errors_templateNotFound'));
+      if (!phase1.ok) {
+        const message = phase1.error.message || t('extraction', 'errors_loadExtractionData');
+        setError(message);
+        toast.error(message);
+        return;
+      }
 
-      setArticle(articleData);
-      setProject(projectData);
-      setTemplate(templateData as ProjectExtractionTemplate);
-      setArticles((articlesData ?? []) as Article[]);
+      setArticle(phase1.data.article);
+      setProject(phase1.data.project);
+      setTemplate(phase1.data.template as ProjectExtractionTemplate);
+      setArticles(phase1.data.articles);
 
       // Phase 2 — entity types (with fields) and the already-materialised
       // instances both depend only on the resolved template id, so load
@@ -213,43 +182,29 @@ export function useExtractionData({
       // ``hitl_session_service._ensure_instances`` on session open;
       // ``ExtractionFullScreen`` re-triggers ``refreshInstances`` once the
       // session ``activeRunId`` is available, so we don't race the session.
-      const [{ data: entityTypesData, error: entityTypesError }] =
-        await Promise.all([
-          supabase
-            .from('extraction_entity_types')
-            .select(`
-          *,
-          fields:extraction_fields(*)
-        `)
-            .eq('project_template_id', templateData.id)
-            .order('sort_order', { ascending: true }),
-          loadInstances(templateData.id),
-        ]);
+      const [entityTypesResult] = await Promise.all([
+        loadEntityTypesWithFields(phase1.data.template.id),
+        loadInstances(phase1.data.template.id),
+      ]);
 
-      if (entityTypesError) throw entityTypesError;
+      if (!entityTypesResult.ok) {
+        const message = entityTypesResult.error.message || t('extraction', 'errors_loadExtractionData');
+        setError(message);
+        toast.error(message);
+        return;
+      }
 
-      const typesWithFields: EntityTypeWithFields[] = (entityTypesData || []).map(et => ({
-        ...et,
-        template_id: et.template_id!,
-        fields: ((et.fields || []) as ExtractionField[]).map(field => ({
-          ...field,
-          allowed_values: field.allowed_values as string[] | null,
-          allowed_units: field.allowed_units as string[] | null,
-          validation_schema: field.validation_schema as unknown,
-        })),
-      }));
+      setEntityTypes(entityTypesResult.data);
+    };
 
-      setEntityTypes(typesWithFields);
-
-    } catch (err: unknown) {
+    return doLoad()
+      .catch((err: unknown) => {
         const message = err instanceof Error ? err.message : t('extraction', 'errors_loadExtractionData');
         console.error('Error loading extraction data:', err);
-      setError(message);
-      toast.error(message);
-      setLoading(false);
-    } finally {
-      setLoading(false);
-    }
+        setError(message);
+        toast.error(message);
+      })
+      .finally(() => setLoading(false));
   }, [projectId, articleId, enabled, loadInstances]);
 
     // Load initial data
@@ -285,4 +240,3 @@ export function useExtractionData({
     refreshInstances,
   };
 }
-
