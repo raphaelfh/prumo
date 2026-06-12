@@ -19,6 +19,13 @@ updates:
       npm-minor-patch:
         update-types: [minor, patch]
     open-pull-requests-limit: 5
+    ignore:
+      # TypeScript 6.0.x is blocked: openapi-typescript (critical for
+      # generate:api-types) peers on "^5.x" as of its latest 7.13.0.
+      # Revisit when openapi-typescript ships TS 6 support; 6.1+ will
+      # open a fresh PR automatically.
+      - dependency-name: typescript
+        versions: [">=6.0.0 <6.1.0"]
 
   - package-ecosystem: github-actions
     directory: /
