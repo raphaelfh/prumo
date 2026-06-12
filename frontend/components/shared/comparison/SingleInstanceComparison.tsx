@@ -6,7 +6,6 @@
  * - Compares values from all users side by side
  */
 
-import {useCallback, useMemo} from 'react';
 import {type ComparisonColumn, ComparisonTable, type ComparisonUser} from './ComparisonTable';
 import {extractInstanceValuesForUser} from '@/lib/comparison/grouping';
 import type {ComparisonSectionViewProps} from './ComparisonSectionView';
@@ -31,19 +30,16 @@ export function SingleInstanceComparison(props: ComparisonSectionViewProps) {
 
     // IMPORTANT: All hooks must be called BEFORE any early return
     // Prepare columns (each field is a row)
-  const columns = useMemo<ComparisonColumn[]>(() =>
-    entityType.fields.map((field: ExtractionField) => ({
-      id: field.id,
-      label: field.label,
-      getValue: (fieldId: string, userData: Record<string, any>) => userData[fieldId],
-      isRequired: field.is_required,
-        field: field // Pass field to column
-    })),
-    [entityType.fields]
-  );
+  const columns: ComparisonColumn[] = entityType.fields.map((field: ExtractionField) => ({
+    id: field.id,
+    label: field.label,
+    getValue: (fieldId: string, userData: Record<string, any>) => userData[fieldId],
+    isRequired: field.is_required,
+      field: field // Pass field to column
+  }));
 
     // Prepare data (userId -> fieldId -> value)
-  const comparisonData = useMemo(() => {
+  const comparisonData = (() => {
     if (!instance) return {};
 
     const data: Record<string, Record<string, any>> = {};
@@ -65,25 +61,22 @@ export function SingleInstanceComparison(props: ComparisonSectionViewProps) {
     });
 
     return data;
-  }, [currentUserId, myValues, otherExtractions, instance]);
+  })();
 
     // Prepare list of other users
-  const otherUsers = useMemo<ComparisonUser[]>(() =>
-    otherExtractions.map(ext => ({
-      userId: ext.userId,
-      userName: ext.userName,
-      userAvatar: ext.userAvatar,
-      isCurrentUser: false
-    })),
-    [otherExtractions]
-  );
+  const otherUsers: ComparisonUser[] = otherExtractions.map(ext => ({
+    userId: ext.userId,
+    userName: ext.userName,
+    userAvatar: ext.userAvatar,
+    isCurrentUser: false,
+  }));
 
     // Edit handler
-  const handleValueChange = useCallback((fieldId: string, newValue: any) => {
+  const handleValueChange = (fieldId: string, newValue: any) => {
     if (onValueUpdate && instance) {
       onValueUpdate(instance.id, fieldId, newValue);
     }
-  }, [instance, onValueUpdate]);
+  };
   
   // Early return APÓS todos os hooks
   if (!instance) {

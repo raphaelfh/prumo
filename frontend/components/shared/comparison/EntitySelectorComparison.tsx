@@ -16,7 +16,7 @@
  * | Number of preds    | 5       | 3       | 5       |
  */
 
-import {useCallback, useMemo, useState} from 'react';
+import {useState} from 'react';
 import {Label} from '@/components/ui/label';
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from '@/components/ui/select';
 import {Card, CardContent} from '@/components/ui/card';
@@ -46,14 +46,11 @@ export function EntitySelectorComparison(props: ComparisonSectionViewProps) {
   const currentUserId = currentUser.userId;
 
     // Group instances by label (use real DB instances)
-  const groupedEntities = useMemo(() =>
-    groupInstancesByLabel(
-      instances,
-      currentUserId,
-        allUserInstances,
-      entityType.id
-    ),
-    [instances, currentUserId, allUserInstances, entityType.id]
+  const groupedEntities = groupInstancesByLabel(
+    instances,
+    currentUserId,
+    allUserInstances,
+    entityType.id
   );
 
     // State: entity explicitly picked by the user; defaults to the first
@@ -62,27 +59,21 @@ export function EntitySelectorComparison(props: ComparisonSectionViewProps) {
   const selectedEntityLabel = pickedEntityLabel ?? groupedEntities[0]?.label ?? null;
 
     // Active entity
-  const activeEntity = useMemo(() => 
-    groupedEntities.find(e => e.label === selectedEntityLabel),
-    [groupedEntities, selectedEntityLabel]
-  );
+  const activeEntity = groupedEntities.find(e => e.label === selectedEntityLabel);
 
     // Prepare columns
-  const columns = useMemo<ComparisonColumn[]>(() =>
-    entityType.fields.map((field: ExtractionField) => ({
-      id: field.id,
-      label: field.label,
-      getValue: (fieldId: string, userData: Record<string, any>) => userData[fieldId],
-      isRequired: field.is_required,
-        field: field
-    })),
-    [entityType.fields]
-  );
+  const columns: ComparisonColumn[] = entityType.fields.map((field: ExtractionField) => ({
+    id: field.id,
+    label: field.label,
+    getValue: (fieldId: string, userData: Record<string, any>) => userData[fieldId],
+    isRequired: field.is_required,
+    field: field,
+  }));
 
     // Prepare data for selected entity
-  const comparisonData = useMemo(() => {
+  const comparisonData = (() => {
     if (!activeEntity) return {};
-    
+
     const data: Record<string, Record<string, any>> = {};
 
       // For each user that has this entity, extract values
@@ -98,10 +89,10 @@ export function EntitySelectorComparison(props: ComparisonSectionViewProps) {
     });
 
     return data;
-  }, [activeEntity, currentUserId, myValues, otherExtractions]);
+  })();
 
     // Prepare user list (only those who have this entity)
-  const usersWithEntity = useMemo<ComparisonUser[]>(() => {
+  const usersWithEntity: ComparisonUser[] = (() => {
     if (!activeEntity) return [];
 
     const users: ComparisonUser[] = [];
@@ -116,24 +107,24 @@ export function EntitySelectorComparison(props: ComparisonSectionViewProps) {
             userId: ext.userId,
             userName: ext.userName,
             userAvatar: ext.userAvatar,
-            isCurrentUser: false
+            isCurrentUser: false,
           });
         }
       }
     });
 
     return users;
-  }, [activeEntity, currentUserId, currentUser, otherExtractions]);
+  })();
 
     // Edit handler
-  const handleValueChange = useCallback((fieldId: string, newValue: any) => {
+  const handleValueChange = (fieldId: string, newValue: any) => {
     if (activeEntity && onValueUpdate) {
       const myInstanceId = activeEntity.instancesByUser.get(currentUserId);
       if (myInstanceId) {
         onValueUpdate(myInstanceId, fieldId, newValue);
       }
     }
-  }, [activeEntity, currentUserId, onValueUpdate]);
+  };
 
     // Validations
   if (instances.length === 0) {

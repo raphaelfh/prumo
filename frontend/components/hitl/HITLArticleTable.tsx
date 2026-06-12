@@ -17,7 +17,7 @@
  * and the structural parity the user asked for.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AlertCircle, CheckCircle2, Circle, FileText } from "lucide-react";
 import { toast } from "sonner";
@@ -202,10 +202,9 @@ export function HITLArticleTable({
     };
   }, [projectId, templateId, currentUserId]);
 
-  // Memoize per-article progress once per (articles, entityTypes) change —
-  // getProgress is read in the sort comparator and several render paths, so
-  // recomputing per call would be O(values × fields) × N on every keystroke.
-  const progressByArticle = useMemo(() => {
+  // Per-article completion %, computed once per render.
+  // getProgress is read in the sort comparator and several render paths.
+  const progressByArticle = (() => {
     const map = new Map<string, number>();
     for (const article of articles) {
       const d = valuesByArticle.get(article.id);
@@ -215,14 +214,11 @@ export function HITLArticleTable({
       );
     }
     return map;
-  }, [articles, valuesByArticle, entityTypes]);
+  })();
 
-  const getProgress = useCallback(
-    (article: Article): number => progressByArticle.get(article.id) ?? 0,
-    [progressByArticle],
-  );
+  const getProgress = (article: Article): number => progressByArticle.get(article.id) ?? 0;
 
-  const filteredAndSorted = useMemo(() => {
+  const filteredAndSorted = (() => {
     const visible = articles.filter((article) => {
       if (globalFilter) {
         const q = globalFilter.toLowerCase();
@@ -307,32 +303,24 @@ export function HITLArticleTable({
       return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
     });
 
+    // getProgress and valuesByArticle are read inside the filter/sort;
+    // including them keeps progress-based filtering reactive to value changes.
     return visible;
-    // getProgress (stable, keyed on progressByArticle) and valuesByArticle are
-    // read inside the filter/sort; including them keeps progress-based filtering
-    // and sorting reactive to value changes that don't replace the articles array.
-  }, [articles, globalFilter, filterValues, sortField, sortDirection, getProgress, valuesByArticle]);
+  })();
 
-  const activeFiltersCount = useMemo(() => {
+  const activeFiltersCount = (() => {
     let n = globalFilter.trim() ? 1 : 0;
     FILTER_FIELDS.forEach((f) => {
       if (!isFilterValueEmpty(filterValues[f.id])) n += 1;
     });
     return n;
-  }, [globalFilter, filterValues]);
+  })();
 
-  const filterLabels = useMemo(
-    () =>
-      Object.fromEntries(FILTER_FIELDS.map((f) => [f.id, f.label])) as Record<
-        string,
-        string
-      >,
-    [],
-  );
-  const activeFiltersList = useMemo(
-    () => buildActiveFiltersList(FILTER_FIELDS, filterValues, filterLabels),
-    [filterValues, filterLabels],
-  );
+  const filterLabels = Object.fromEntries(
+    FILTER_FIELDS.map((f) => [f.id, f.label])
+  ) as Record<string, string>;
+
+  const activeFiltersList = buildActiveFiltersList(FILTER_FIELDS, filterValues, filterLabels);
 
   const clearFilterField = (fieldId: string) => {
     const f = FILTER_FIELDS.find((field) => field.id === fieldId);

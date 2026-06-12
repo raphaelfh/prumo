@@ -10,7 +10,7 @@
  * - Modern responsive UI
  */
 
-import {useCallback, useEffect, useState} from "react";
+import {useEffect, useState} from "react";
 import {
     Dialog,
     DialogContent,
@@ -95,18 +95,18 @@ export function ArticleFileUploadDialogNew({
   }, [open, articleId]);
 
   // Drag & Drop handlers
-  const handleDragOver = useCallback((e: React.DragEvent) => {
+  const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(true);
-  }, []);
+  };
 
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
+  const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-  }, []);
+  };
 
     // Update statistics
-  const updateStats = useCallback(() => {
+  const updateStats = () => {
     setFiles(currentFiles => {
       const stats = {
         total: currentFiles.length,
@@ -118,10 +118,10 @@ export function ArticleFileUploadDialogNew({
       setUploadStats(stats);
       return currentFiles;
     });
-  }, []);
+  };
 
     // Add files
-  const addFiles = useCallback((newFiles: File[]) => {
+  const addFiles = (newFiles: File[]) => {
     const validFiles = newFiles.filter(file => {
       const validation = validateFile(file);
       if (!validation.valid) {
@@ -143,28 +143,28 @@ export function ArticleFileUploadDialogNew({
 
     setFiles(prev => [...prev, ...filesWithRoles]);
     updateStats();
-  }, [hasMainFile, updateStats]);
+  };
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    
+
     const droppedFiles = Array.from(e.dataTransfer.files);
     addFiles(droppedFiles);
-  }, [addFiles]);
+  };
 
     // Remove file
-  const removeFile = useCallback((fileId: string) => {
+  const removeFile = (fileId: string) => {
     setFiles(prev => prev.filter(f => f.id !== fileId));
     updateStats();
-  }, [updateStats]);
+  };
 
     // Update file role
-  const updateFileRole = useCallback((fileId: string, role: FileRole) => {
-    setFiles(prev => prev.map(f => 
+  const updateFileRole = (fileId: string, role: FileRole) => {
+    setFiles(prev => prev.map(f =>
       f.id === fileId ? { ...f, role } : f
     ));
-  }, []);
+  };
 
   // Upload individual de arquivo
   const uploadFile = async (fileWithRole: FileWithRole): Promise<void> => {

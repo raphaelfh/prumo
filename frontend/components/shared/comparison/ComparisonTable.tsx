@@ -15,7 +15,6 @@
  * @component
  */
 
-import {useMemo} from 'react';
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from '@/components/ui/table';
 import {ScrollArea} from '@/components/ui/scroll-area';
 import {Badge} from '@/components/ui/badge';
@@ -96,65 +95,50 @@ export function ComparisonTable<T = any>({
   maxHeight = '600px'
 }: ComparisonTableProps<T>) {
   
-  const allUsers = useMemo(() => 
-    [currentUser, ...otherUsers], 
-    [currentUser, otherUsers]
-  );
+  const allUsers = [currentUser, ...otherUsers];
 
-  // Pre-computar grid data (memoizado para performance)
-  const gridData = useMemo(() => {
-    return rows.map(rowId => {
-        // Collect value from each user for this row
-      const userValues = allUsers.map(user => {
-        const userData = data[user.userId] || {};
-          // Assuming row represents a single field
-        return userData[rowId];
-      });
-
-        // Detect consensus for this row
-      const consensus = detectConsensus(userValues, consensusThreshold);
-
-      return {
-        rowId,
-        userValues: allUsers.map((user, idx) => ({
-          userId: user.userId,
-          value: userValues[idx]
-        })),
-        consensus
-      };
+  // Pre-compute grid data
+  const gridData = rows.map(rowId => {
+      // Collect value from each user for this row
+    const userValues = allUsers.map(user => {
+      const userData = data[user.userId] || {};
+        // Assuming row represents a single field
+      return userData[rowId];
     });
-  }, [rows, allUsers, data, consensusThreshold]);
 
-    // Overall statistics
-  const stats = useMemo(() => {
-    const totalRows = gridData.length;
-    const consensusRows = gridData.filter(
-      row => row.consensus?.hasConsensus
-    ).length;
+      // Detect consensus for this row
+    const consensus = detectConsensus(userValues, consensusThreshold);
 
     return {
-      total: totalRows,
-      consensus: consensusRows,
-      divergent: totalRows - consensusRows,
-      consensusPercentage: totalRows > 0 
-        ? Math.round((consensusRows / totalRows) * 100)
-        : 0
+      rowId,
+      userValues: allUsers.map((user, idx) => ({
+        userId: user.userId,
+        value: userValues[idx]
+      })),
+      consensus
     };
-  }, [gridData]);
+  });
+
+    // Overall statistics
+  const statsTotal = gridData.length;
+  const statsConsensus = gridData.filter(row => row.consensus?.hasConsensus).length;
+  const stats = {
+    total: statsTotal,
+    consensus: statsConsensus,
+    divergent: statsTotal - statsConsensus,
+    consensusPercentage: statsTotal > 0
+      ? Math.round((statsConsensus / statsTotal) * 100)
+      : 0,
+  };
 
     // Compute dynamic height based on number of rows
-  const tableHeight = useMemo(() => {
-    const headerHeight = 50; // px
-    const statsHeight = showConsensus && stats.total > 0 ? 45 : 0; // px
-      const rowHeight = 60; // px approximate per row
-    const padding = 20; // px
-
-    const calculatedHeight = headerHeight + statsHeight + (rows.length * rowHeight) + padding;
-    const maxHeightPx = parseInt(maxHeight.replace('px', '')); // Parse '600px' → 600
-
-      // Return min of calculated and max (for scroll on large tables)
-    return Math.min(calculatedHeight, maxHeightPx);
-  }, [rows.length, showConsensus, stats.total, maxHeight]);
+  const headerHeight = 50; // px
+  const statsHeight = showConsensus && stats.total > 0 ? 45 : 0; // px
+  const rowHeight = 60; // px approximate per row
+  const padding = 20; // px
+  const calculatedHeight = headerHeight + statsHeight + (rows.length * rowHeight) + padding;
+  const maxHeightPx = parseInt(maxHeight.replace('px', '')); // Parse '600px' → 600
+  const tableHeight = Math.min(calculatedHeight, maxHeightPx);
 
   if (rows.length === 0) {
     return (

@@ -7,7 +7,7 @@
  * @component
  */
 
-import {useCallback, useEffect, useState} from 'react';
+import {useEffect, useState} from 'react';
 import {Popover, PopoverContent, PopoverTrigger,} from '@/components/ui/popover';
 import {ScrollArea} from '@/components/ui/scroll-area';
 import {Badge} from '@/components/ui/badge';
@@ -63,7 +63,7 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
 
-  const loadHistory = useCallback(async () => {
+  const loadHistory = async () => {
     if (!instanceId || !fieldId) {
         console.warn('[AISuggestionHistoryPopover] instanceId or fieldId not provided');
       return;
@@ -80,7 +80,7 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
     console.warn('[AISuggestionHistoryPopover] History loaded:', {count: data.length, data});
     setHistory(data);
     setLoading(false);
-  }, [instanceId, fieldId, getHistory]);
+  };
 
   // Clear history on close so next open has fresh data (adjusted during
   // render instead of via effect).

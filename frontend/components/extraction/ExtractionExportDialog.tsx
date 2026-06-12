@@ -7,7 +7,7 @@
  * the browser; async uploads dispatch a BackgroundJob + toast.
  */
 
-import {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import {
     Dialog,
     DialogContent,
@@ -144,10 +144,7 @@ export function ExtractionExportDialog({
     const reviewersQuery = useEligibleReviewers(projectId, templateId, {
         enabled: open,
     });
-    const reviewers = useMemo(
-        () => reviewersQuery.data ?? [],
-        [reviewersQuery.data],
-    );
+    const reviewers = reviewersQuery.data ?? [];
 
     // Default reviewer to "me" when entering single_user mode.
     // Render-phase invariant — the guard guarantees termination.
@@ -187,7 +184,7 @@ export function ExtractionExportDialog({
     })();
 
     // Build the request payload from the current state.
-    const buildRequest = useCallback((): ExtractionExportRequest => ({
+    const buildRequest = (): ExtractionExportRequest => ({
         template_id: templateId,
         mode,
         reviewer_id: mode === "single_user" ? reviewerId : null,
@@ -195,17 +192,9 @@ export function ExtractionExportDialog({
         article_ids: articleIds,
         include_ai_metadata: includeAiMetadata,
         anonymize_reviewer_names: anonymizeReviewerNames,
-    }), [
-        templateId,
-        mode,
-        reviewerId,
-        articleScope,
-        articleIds,
-        includeAiMetadata,
-        anonymizeReviewerNames,
-    ]);
+    });
 
-    const submit = useCallback(async () => {
+    const submit = async () => {
         if (!canSubmit) return;
         setSubmitting(true);
         setError(null);
@@ -247,25 +236,12 @@ export function ExtractionExportDialog({
 
         setSubmitting(false);
         abortRef.current = null;
-    }, [
-        canSubmit,
-        buildRequest,
-        projectId,
-        addJob,
-        projectName,
-        templateId,
-        templateName,
-        mode,
-        articleCount,
-        includeAiMetadata,
-        anonymizeReviewerNames,
-        onOpenChange,
-    ]);
+    };
 
-    const dismiss = useCallback(() => {
+    const dismiss = () => {
         if (abortRef.current) abortRef.current.abort();
         onOpenChange(false);
-    }, [onOpenChange]);
+    };
 
     // Cmd/Ctrl + Enter to submit (FR-006 / FR-035).
     useEffect(() => {

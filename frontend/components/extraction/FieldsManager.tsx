@@ -14,7 +14,6 @@
  * @component
  */
 
-import {useCallback, useMemo} from 'react';
 import {Loader2} from 'lucide-react';
 import {useFieldManagement} from '@/hooks/extraction/useFieldManagement';
 import {useFieldsManagerState} from '@/hooks/extraction/useFieldsManagerState';
@@ -70,11 +69,11 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
   // Tratamento de erros
   const { handleFieldOperationError, handleFieldValidationError } = useErrorHandler();
 
-  const handleStartEdit = useCallback((field: ExtractionField) => {
+  const handleStartEdit = (field: ExtractionField) => {
     actions.startEdit(field);
-  }, [actions]);
+  };
 
-  const handleSaveEdit = useCallback(async (fieldId: string) => {
+  const handleSaveEdit = async (fieldId: string) => {
     actions.setSavingEdit(true);
     const result = await updateField(fieldId, editData).catch((error: unknown) => {
       handleFieldOperationError(error, 'edit');
@@ -84,17 +83,17 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
       actions.cancelEdit();
     }
     actions.setSavingEdit(false);
-  }, [actions, updateField, editData, handleFieldOperationError]);
+  };
 
-  const handleCancelEdit = useCallback(() => {
+  const handleCancelEdit = () => {
     actions.cancelEdit();
-  }, [actions]);
+  };
 
-  const handleOpenEditDialog = useCallback((field: ExtractionField) => {
+  const handleOpenEditDialog = (field: ExtractionField) => {
     actions.openEditDialog(field);
-  }, [actions]);
+  };
 
-  const handleOpenDeleteDialog = useCallback(async (field: ExtractionField) => {
+  const handleOpenDeleteDialog = async (field: ExtractionField) => {
     actions.openDeleteDialog(field);
 
     const validation = await validateField(field.id).catch((error: unknown) => {
@@ -115,9 +114,9 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
       });
     }
     actions.setValidatingDelete(null);
-  }, [actions, validateField, handleFieldValidationError]);
+  };
 
-  const handleConfirmDelete = useCallback(async (fieldId: string) => {
+  const handleConfirmDelete = async (fieldId: string) => {
     const success = await deleteField(fieldId).catch((error: unknown) => {
       handleFieldOperationError(error, 'delete');
       return false;
@@ -126,9 +125,9 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
       actions.closeDeleteDialog();
     }
     return success;
-  }, [actions, deleteField, handleFieldOperationError]);
+  };
 
-  const getFieldTypeLabel = useCallback((type: string) => {
+  const getFieldTypeLabel = (type: string) => {
     const labels: Record<string, string> = {
         text: t('extraction', 'fieldTypeText'),
         number: t('extraction', 'fieldTypeNumber'),
@@ -138,13 +137,11 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
         boolean: t('extraction', 'fieldTypeBoolean'),
     };
     return labels[type] || type;
-  }, []);
+  };
 
-  // Memoizar valores computados
-  const hasFields = useMemo(() => fields.length > 0, [fields.length]);
+  const hasFields = fields.length > 0;
 
-    // Dialog handlers - fixed to avoid closing inadvertently
-  const dialogHandlers = useMemo(() => ({
+  const dialogHandlers = {
     addDialog: (open: boolean) => {
       if (!open) actions.closeAddDialog();
     },
@@ -154,7 +151,7 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
     deleteDialog: (open: boolean) => {
       if (!open) actions.closeDeleteDialog();
     },
-  }), [actions]);
+  };
 
   if (loading) {
     return (
