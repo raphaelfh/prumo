@@ -273,7 +273,8 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     setArticles(rows);
     await queryClient.invalidateQueries({ queryKey: articleExtractionValuesKeys.all });
     setLoading(false);
-  }, [projectId, templateId, currentUserId]);
+    // queryClient is referentially stable across renders (useQueryClient).
+  }, [projectId, templateId, currentUserId, queryClient]);
 
     // Update loadArticles ref when it changes (must be before any use)
   useEffect(() => {
@@ -345,8 +346,11 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     return map;
   }, [articles, valuesByArticle, entityTypes]);
 
-  const getProgress = (article: ArticleWithExtraction): number =>
-    progressByArticle.get(article.id) ?? 0;
+  const getProgress = useCallback(
+    (article: ArticleWithExtraction): number =>
+      progressByArticle.get(article.id) ?? 0,
+    [progressByArticle],
+  );
 
     // Filter and sort articles
   const filteredAndSortedArticles = useMemo(() => {
@@ -449,7 +453,10 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     });
 
     return filtered;
-  }, [articles, globalFilter, filterValues, sortField, sortDirection]);
+    // getProgress (stable, keyed on progressByArticle) and valuesByArticle are
+    // read inside the filter/sort; including them keeps progress-based filtering
+    // and sorting reactive to value changes that don't replace the articles array.
+  }, [articles, globalFilter, filterValues, sortField, sortDirection, getProgress, valuesByArticle]);
 
     // Article selection
   const allArticleIds = useMemo(() => articles.map(a => a.id), [articles]);

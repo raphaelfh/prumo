@@ -17,7 +17,7 @@
  * and the structural parity the user asked for.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AlertCircle, CheckCircle2, Circle, FileText } from "lucide-react";
 import { toast } from "sonner";
@@ -217,8 +217,10 @@ export function HITLArticleTable({
     return map;
   }, [articles, valuesByArticle, entityTypes]);
 
-  const getProgress = (article: Article): number =>
-    progressByArticle.get(article.id) ?? 0;
+  const getProgress = useCallback(
+    (article: Article): number => progressByArticle.get(article.id) ?? 0,
+    [progressByArticle],
+  );
 
   const filteredAndSorted = useMemo(() => {
     const visible = articles.filter((article) => {
@@ -306,7 +308,10 @@ export function HITLArticleTable({
     });
 
     return visible;
-  }, [articles, globalFilter, filterValues, sortField, sortDirection]);
+    // getProgress (stable, keyed on progressByArticle) and valuesByArticle are
+    // read inside the filter/sort; including them keeps progress-based filtering
+    // and sorting reactive to value changes that don't replace the articles array.
+  }, [articles, globalFilter, filterValues, sortField, sortDirection, getProgress, valuesByArticle]);
 
   const activeFiltersCount = useMemo(() => {
     let n = globalFilter.trim() ? 1 : 0;

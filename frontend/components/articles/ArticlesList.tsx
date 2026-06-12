@@ -652,10 +652,16 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
     return filtered;
   }, [articles, searchTerm, filterValues, sortField, sortDirection, articlesWithMainFile]);
 
+    // Latest-value refs read only by the imperative `openExportDialog` handle
+    // (never during render), so the handle can stay stable across data changes.
+    // Assigned in an effect rather than during render to keep the React Compiler
+    // happy — the imperative callback is the sole reader and runs after commit.
     const filteredArticlesRef = useRef(filteredArticles);
-    filteredArticlesRef.current = filteredArticles;
     const selectedArticlesRef = useRef(selectedArticles);
-    selectedArticlesRef.current = selectedArticles;
+    useEffect(() => {
+        filteredArticlesRef.current = filteredArticles;
+        selectedArticlesRef.current = selectedArticles;
+    }, [filteredArticles, selectedArticles]);
 
     useEffect(() => {
         onExportAvailabilityChange?.(

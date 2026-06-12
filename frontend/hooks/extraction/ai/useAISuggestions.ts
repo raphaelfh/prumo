@@ -48,8 +48,12 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     // Loading state per suggestion for immediate visual feedback
   const [actionLoading, setActionLoading] = useState<Record<string, 'accept' | 'reject' | null>>({});
 
-  // Stable cache of pre-resolved instance ids — `useCallback` deps capture
-  // it without re-running on every parent render.
+  // Stable, content-derived key for the caller-provided instance ids. The
+  // loader reads ONLY this primitive (never the `providedInstanceIds` array
+  // directly), so neither the manual deps nor the React Compiler's inferred
+  // reactivity re-run the loader/effect on every parent render when the caller
+  // passes a fresh array with identical ids. Instance ids are UUIDs (no '|'),
+  // so the join/split round-trip is lossless.
   const providedInstanceKey = providedInstanceIds?.join('|') ?? null;
 
     // Declare loadSuggestions BEFORE useEffect to avoid init error
@@ -59,8 +63,9 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     // Prefer caller-provided instance ids when available (QA gets these
     // straight from the HITL session response). Fall back to the
     // article-wide lookup that Data Extraction has always used.
-    const getInstanceIds = providedInstanceIds && providedInstanceIds.length > 0
-      ? Promise.resolve(providedInstanceIds)
+    const keyedInstanceIds = providedInstanceKey ? providedInstanceKey.split('|') : [];
+    const getInstanceIds = keyedInstanceIds.length > 0
+      ? Promise.resolve(keyedInstanceIds)
       : AISuggestionService.getArticleInstanceIds(articleId);
 
     return getInstanceIds

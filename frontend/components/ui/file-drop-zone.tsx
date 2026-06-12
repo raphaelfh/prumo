@@ -21,6 +21,9 @@ export interface FileWithPreview extends File {
   id?: string;
 }
 
+/** Default maximum file size in bytes (50MB). */
+const DEFAULT_MAX_FILE_SIZE = 50 * 1024 * 1024;
+
 export interface FileDropZoneProps {
   /**
    * Callback when files are selected
@@ -94,7 +97,7 @@ export const FileDropZone: React.FC<FileDropZoneProps> = ({
   selectedFiles = [],
   onFileRemove,
   maxFiles = 10,
-  maxFileSize = 50 * 1024 * 1024, // 50MB
+  maxFileSize = DEFAULT_MAX_FILE_SIZE,
   acceptedTypes = [],
   acceptedExtensions = [],
                                                               label,

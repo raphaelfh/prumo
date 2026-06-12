@@ -14,35 +14,48 @@ import type {ExtractionField} from '@/types/extraction';
 import {t} from '@/lib/copy';
 
 export function SingleInstanceComparison(props: ComparisonSectionViewProps) {
-  const instance = props.instances[0];
+    // Destructure all used props so manual memo dep lists reference locals
+    // (the React Compiler infers `props` — less specific — from `props.x.y`
+    // accesses, which prevents it from preserving the manual memoization).
+  const {
+    instances,
+    entityType,
+    currentUser,
+    myValues,
+    otherExtractions,
+    onValueUpdate,
+    editable,
+  } = props;
+  const currentUserId = currentUser.userId;
+  const instance = instances[0];
 
     // IMPORTANT: All hooks must be called BEFORE any early return
     // Prepare columns (each field is a row)
   const columns = useMemo<ComparisonColumn[]>(() =>
-    props.entityType.fields.map((field: ExtractionField) => ({
+    entityType.fields.map((field: ExtractionField) => ({
       id: field.id,
       label: field.label,
       getValue: (fieldId: string, userData: Record<string, any>) => userData[fieldId],
       isRequired: field.is_required,
         field: field // Pass field to column
     })),
-    [props.entityType.fields]
+    [entityType.fields]
   );
 
     // Prepare data (userId -> fieldId -> value)
   const comparisonData = useMemo(() => {
     if (!instance) return {};
-    
+
     const data: Record<string, Record<string, any>> = {};
-    
+
     // Meus valores
-    data[props.currentUser.userId] = extractInstanceValuesForUser(
-      props.myValues, 
+    data[currentUserId] = extractInstanceValuesForUser(
+      myValues,
       instance.id
     );
 
       // Other users' values
-    props.otherExtractions.forEach(ext => {
+    otherExtractions.forEach(ext => {
         // Find corresponding instanceId (same section)
         // For cardinality='one', there is always only 1 instance per user
       data[ext.userId] = extractInstanceValuesForUser(
@@ -50,27 +63,27 @@ export function SingleInstanceComparison(props: ComparisonSectionViewProps) {
         instance.id // Assumindo mesmo ID (pode precisar ajuste)
       );
     });
-    
+
     return data;
-  }, [props.currentUser.userId, props.myValues, props.otherExtractions, instance]);
+  }, [currentUserId, myValues, otherExtractions, instance]);
 
     // Prepare list of other users
-  const otherUsers = useMemo<ComparisonUser[]>(() => 
-    props.otherExtractions.map(ext => ({
+  const otherUsers = useMemo<ComparisonUser[]>(() =>
+    otherExtractions.map(ext => ({
       userId: ext.userId,
       userName: ext.userName,
       userAvatar: ext.userAvatar,
       isCurrentUser: false
     })),
-    [props.otherExtractions]
+    [otherExtractions]
   );
 
     // Edit handler
   const handleValueChange = useCallback((fieldId: string, newValue: any) => {
-    if (props.onValueUpdate && instance) {
-      props.onValueUpdate(instance.id, fieldId, newValue);
+    if (onValueUpdate && instance) {
+      onValueUpdate(instance.id, fieldId, newValue);
     }
-  }, [instance, props.onValueUpdate]);
+  }, [instance, onValueUpdate]);
   
   // Early return APÓS todos os hooks
   if (!instance) {
@@ -84,12 +97,12 @@ export function SingleInstanceComparison(props: ComparisonSectionViewProps) {
   return (
     <ComparisonTable
       columns={columns}
-      rows={props.entityType.fields.map((f: ExtractionField) => f.id)}
-      currentUser={props.currentUser}
+      rows={entityType.fields.map((f: ExtractionField) => f.id)}
+      currentUser={currentUser}
       otherUsers={otherUsers}
       data={comparisonData}
       showConsensus
-      editable={props.editable}
+      editable={editable}
       onValueChange={handleValueChange}
       maxHeight="600px"
     />

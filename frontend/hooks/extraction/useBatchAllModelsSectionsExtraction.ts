@@ -114,9 +114,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
         let totalDurationMs = 0;
 
         // Processar cada modelo sequencialmente
-        for (let i = 0; i < models.length; i++) {
-          const model = models[i];
-
+        for (const [i, model] of models.entries()) {
             console.warn(`[useBatchAllModelsSectionsExtraction] Processing model ${i + 1}/${models.length}`, {
             modelName: model.modelName,
             instanceId: model.instanceId,

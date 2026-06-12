@@ -30,15 +30,30 @@ import type {ComparisonSectionViewProps} from './ComparisonSectionView';
 import type {ExtractionField} from '@/types/extraction';
 
 export function EntitySelectorComparison(props: ComparisonSectionViewProps) {
+    // Destructure all used props so manual memo dep lists reference locals
+    // (the React Compiler infers `props` — less specific — from `props.x.y`
+    // accesses, which prevents it from preserving the manual memoization).
+  const {
+    instances,
+    currentUser,
+    allUserInstances,
+    entityType,
+    myValues,
+    otherExtractions,
+    onValueUpdate,
+    editable,
+  } = props;
+  const currentUserId = currentUser.userId;
+
     // Group instances by label (use real DB instances)
-  const groupedEntities = useMemo(() => 
+  const groupedEntities = useMemo(() =>
     groupInstancesByLabel(
-      props.instances,
-      props.currentUser.userId,
-        props.allUserInstances,
-      props.entityType.id
+      instances,
+      currentUserId,
+        allUserInstances,
+      entityType.id
     ),
-    [props.instances, props.currentUser.userId, props.allUserInstances, props.entityType.id]
+    [instances, currentUserId, allUserInstances, entityType.id]
   );
 
     // State: entity explicitly picked by the user; defaults to the first
@@ -54,14 +69,14 @@ export function EntitySelectorComparison(props: ComparisonSectionViewProps) {
 
     // Prepare columns
   const columns = useMemo<ComparisonColumn[]>(() =>
-    props.entityType.fields.map((field: ExtractionField) => ({
+    entityType.fields.map((field: ExtractionField) => ({
       id: field.id,
       label: field.label,
       getValue: (fieldId: string, userData: Record<string, any>) => userData[fieldId],
       isRequired: field.is_required,
         field: field
     })),
-    [props.entityType.fields]
+    [entityType.fields]
   );
 
     // Prepare data for selected entity
@@ -72,18 +87,18 @@ export function EntitySelectorComparison(props: ComparisonSectionViewProps) {
 
       // For each user that has this entity, extract values
     activeEntity.instancesByUser.forEach((instanceId, userId) => {
-      if (userId === props.currentUser.userId) {
-        data[userId] = extractInstanceValuesForUser(props.myValues, instanceId);
+      if (userId === currentUserId) {
+        data[userId] = extractInstanceValuesForUser(myValues, instanceId);
       } else {
-        const ext = props.otherExtractions.find(e => e.userId === userId);
+        const ext = otherExtractions.find(e => e.userId === userId);
         if (ext) {
           data[userId] = extractInstanceValuesForUser(ext.values, instanceId);
         }
       }
     });
-    
+
     return data;
-  }, [activeEntity, props.currentUser.userId, props.myValues, props.otherExtractions]);
+  }, [activeEntity, currentUserId, myValues, otherExtractions]);
 
     // Prepare user list (only those who have this entity)
   const usersWithEntity = useMemo<ComparisonUser[]>(() => {
@@ -92,10 +107,10 @@ export function EntitySelectorComparison(props: ComparisonSectionViewProps) {
     const users: ComparisonUser[] = [];
 
     activeEntity.instancesByUser.forEach((_instanceId, userId) => {
-      if (userId === props.currentUser.userId) {
-        users.push(props.currentUser);
+      if (userId === currentUserId) {
+        users.push(currentUser);
       } else {
-        const ext = props.otherExtractions.find(e => e.userId === userId);
+        const ext = otherExtractions.find(e => e.userId === userId);
         if (ext) {
           users.push({
             userId: ext.userId,
@@ -106,27 +121,27 @@ export function EntitySelectorComparison(props: ComparisonSectionViewProps) {
         }
       }
     });
-    
+
     return users;
-  }, [activeEntity, props.currentUser, props.otherExtractions]);
+  }, [activeEntity, currentUserId, currentUser, otherExtractions]);
 
     // Edit handler
   const handleValueChange = useCallback((fieldId: string, newValue: any) => {
-    if (activeEntity && props.onValueUpdate) {
-      const myInstanceId = activeEntity.instancesByUser.get(props.currentUser.userId);
+    if (activeEntity && onValueUpdate) {
+      const myInstanceId = activeEntity.instancesByUser.get(currentUserId);
       if (myInstanceId) {
-        props.onValueUpdate(myInstanceId, fieldId, newValue);
+        onValueUpdate(myInstanceId, fieldId, newValue);
       }
     }
-  }, [activeEntity, props.currentUser.userId, props.onValueUpdate]);
+  }, [activeEntity, currentUserId, onValueUpdate]);
 
     // Validations
-  if (props.instances.length === 0) {
+  if (instances.length === 0) {
     return (
       <Alert>
         <Info className="h-4 w-4" />
         <AlertDescription>
-            {t('shared', 'youHaveNoInstancesOf').replace('{{entity}}', props.entityType.label)}
+            {t('shared', 'youHaveNoInstancesOf').replace('{{entity}}', entityType.label)}
         </AlertDescription>
       </Alert>
     );
@@ -151,7 +166,7 @@ export function EntitySelectorComparison(props: ComparisonSectionViewProps) {
           <div className="flex items-end gap-4">
             <div className="flex-1 space-y-2">
               <Label className="text-sm font-medium">
-                  {t('shared', 'selectEntityToCompare').replace('{{entity}}', props.entityType.label.toLowerCase())}
+                  {t('shared', 'selectEntityToCompare').replace('{{entity}}', entityType.label.toLowerCase())}
               </Label>
               <Select 
                 value={selectedEntityLabel || ''} 
@@ -159,7 +174,7 @@ export function EntitySelectorComparison(props: ComparisonSectionViewProps) {
               >
                 <SelectTrigger>
                     <SelectValue
-                        placeholder={t('shared', 'selectEntityPlaceholder').replace('{{entity}}', props.entityType.label.toLowerCase())}/>
+                        placeholder={t('shared', 'selectEntityPlaceholder').replace('{{entity}}', entityType.label.toLowerCase())}/>
                 </SelectTrigger>
                 <SelectContent>
                   {groupedEntities.map(entity => {
@@ -190,12 +205,12 @@ export function EntitySelectorComparison(props: ComparisonSectionViewProps) {
       {activeEntity && (
         <ComparisonTable
           columns={columns}
-          rows={props.entityType.fields.map((f: ExtractionField) => f.id)}
-          currentUser={props.currentUser}
+          rows={entityType.fields.map((f: ExtractionField) => f.id)}
+          currentUser={currentUser}
           otherUsers={usersWithEntity.filter(u => !u.isCurrentUser)}
           data={comparisonData}
           showConsensus
-          editable={props.editable}
+          editable={editable}
           onValueChange={handleValueChange}
           maxHeight="600px"
         />
