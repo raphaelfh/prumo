@@ -221,7 +221,7 @@ export function ZoteroImportDialog({
     <>
       <Dialog open={open} onOpenChange={handleClose}>
         <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
-        <DialogHeader className="flex-shrink-0">
+        <DialogHeader className="shrink-0">
             <DialogTitle>{t('articles', 'zoteroTitle')}</DialogTitle>
           <DialogDescription>
               {currentStep === 'select-collection' && t('articles', 'zoteroSelectCollection')}
@@ -270,7 +270,7 @@ export function ZoteroImportDialog({
                           />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
-                              <FolderOpen className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                              <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
                               <p className="font-medium truncate">
                                 {collection.data.name}
                               </p>
@@ -386,7 +386,7 @@ export function ZoteroImportDialog({
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm gap-2">
                   <span className="truncate flex-1">{progress.message}</span>
-                  <span className="text-muted-foreground flex-shrink-0">
+                  <span className="text-muted-foreground shrink-0">
                     {progress.total > 0 ? `${progress.current}/${progress.total}` : "—"}
                   </span>
                 </div>
@@ -397,7 +397,7 @@ export function ZoteroImportDialog({
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="p-3 rounded-lg border bg-muted/50">
                   <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
-                    <CheckCircle2 className="h-3 w-3 flex-shrink-0" />
+                    <CheckCircle2 className="h-3 w-3 shrink-0" />
                       <span>{t('articles', 'zoteroImported')}</span>
                   </div>
                   <p className="text-xl font-bold">{progress.stats.imported}</p>
@@ -405,7 +405,7 @@ export function ZoteroImportDialog({
 
                 <div className="p-3 rounded-lg border bg-muted/50">
                   <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
-                    <Download className="h-3 w-3 flex-shrink-0" />
+                    <Download className="h-3 w-3 shrink-0" />
                       <span>{t('articles', 'zoteroUpdated')}</span>
                   </div>
                   <p className="text-xl font-bold">{progress.stats.updated}</p>
@@ -413,7 +413,7 @@ export function ZoteroImportDialog({
 
                 <div className="p-3 rounded-lg border bg-muted/50">
                   <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
-                    <AlertCircle className="h-3 w-3 flex-shrink-0" />
+                    <AlertCircle className="h-3 w-3 shrink-0" />
                       <span>{t('articles', 'zoteroSkipped')}</span>
                   </div>
                   <p className="text-xl font-bold">{progress.stats.skipped}</p>
@@ -421,7 +421,7 @@ export function ZoteroImportDialog({
 
                 <div className="p-3 rounded-lg border bg-muted/50">
                   <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
-                    <XCircle className="h-3 w-3 flex-shrink-0" />
+                    <XCircle className="h-3 w-3 shrink-0" />
                       <span>{t('articles', 'zoteroErrors')}</span>
                   </div>
                   <p className="text-xl font-bold">{progress.stats.errors}</p>
@@ -431,7 +431,7 @@ export function ZoteroImportDialog({
                 {progress.stats.pdfsDownloaded !== undefined && progress.stats.pdfsDownloaded > 0 && (
                   <div className="p-3 rounded-lg border bg-primary/5">
                     <div className="flex items-center gap-1 text-xs text-primary mb-1">
-                      <Download className="h-3 w-3 flex-shrink-0" />
+                      <Download className="h-3 w-3 shrink-0" />
                       <span>PDFs</span>
                     </div>
                     <p className="text-xl font-bold text-primary">{progress.stats.pdfsDownloaded}</p>
@@ -478,7 +478,7 @@ export function ZoteroImportDialog({
         </ScrollArea>
 
             {/* Footer with buttons */}
-        <div className="flex justify-between pt-4 border-t flex-shrink-0">
+        <div className="flex justify-between pt-4 border-t shrink-0">
           <div>
             {currentStep === 'configure-options' && (
               <Button variant="outline" onClick={handleBack} disabled={importing}>

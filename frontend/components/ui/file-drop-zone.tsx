@@ -385,7 +385,7 @@ const FilePreviewCard: React.FC<FilePreviewCardProps> = ({ file, onRemove, disab
   return (
     <div className="flex items-center gap-3 p-3 border rounded-lg bg-card hover:bg-accent/50 transition-colors">
       {/* Ícone ou preview */}
-      <div className="flex-shrink-0 w-12 h-12 rounded bg-muted flex items-center justify-center overflow-hidden">
+      <div className="shrink-0 w-12 h-12 rounded bg-muted flex items-center justify-center overflow-hidden">
         {file.preview ? (
           <img src={file.preview} alt={file.name} className="w-full h-full object-cover" />
         ) : (
@@ -410,7 +410,7 @@ const FilePreviewCard: React.FC<FilePreviewCardProps> = ({ file, onRemove, disab
           if (file.id) onRemove(file.id);
         }}
         disabled={disabled}
-        className="flex-shrink-0"
+        className="shrink-0"
         aria-label={t('ui', 'removeFileAria').replace('{{name}}', file.name)}
       >
         <X className="h-4 w-4" />

@@ -997,7 +997,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                             <Tooltip>
                                 <TooltipTrigger asChild>
                                     <div className="flex items-center gap-1 cursor-help">
-                                        <User className="h-3 w-3 text-muted-foreground flex-shrink-0"/>
+                                        <User className="h-3 w-3 text-muted-foreground shrink-0"/>
                                         <span className="truncate block min-w-0">
                                           {article.authors.slice(0, 1).join(', ')}
                                             {article.authors.length > 1 && ` +${article.authors.length - 1}`}

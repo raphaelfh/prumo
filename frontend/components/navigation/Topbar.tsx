@@ -42,8 +42,8 @@ export const Topbar: React.FC<TopbarProps> = ({
             className={cn("sticky top-0 z-40 w-full border-b border-border/40 bg-background/80 backdrop-blur-md", className)}>
             <div className="flex h-12 w-full items-center justify-between px-4 sm:px-6">
                 <div className="flex items-center gap-2 min-w-0 flex-1">
-              <div className="h-5 w-5 rounded bg-muted animate-pulse flex-shrink-0"/>
-              <div className="h-[13px] w-28 bg-muted animate-pulse rounded flex-shrink-0"/>
+              <div className="h-5 w-5 rounded bg-muted animate-pulse shrink-0"/>
+              <div className="h-[13px] w-28 bg-muted animate-pulse rounded shrink-0"/>
           </div>
         </div>
       </header>
@@ -68,7 +68,7 @@ export const Topbar: React.FC<TopbarProps> = ({
   return (
       <header
           className={cn("z-40 w-full border-b border-border/40 bg-background/80 backdrop-blur-md sticky top-0", className)}>
-          <div className="flex h-12 w-full items-center justify-between px-4 sm:px-6 flex-shrink-0">
+          <div className="flex h-12 w-full items-center justify-between px-4 sm:px-6 shrink-0">
               {/* Left Section - Toggle + title (min-w-0 so title can truncate) */}
               <div className="flex items-center gap-2 min-w-0 flex-1">
                   {/* Hamburger Menu - Mobile/Tablet only */}
@@ -78,7 +78,7 @@ export const Topbar: React.FC<TopbarProps> = ({
                           size="icon"
                           onClick={sidebarContext.toggleMobile}
                           aria-label={t('navigation', 'ariaOpenMenu')}
-                          className="flex lg:hidden flex-shrink-0 h-8 w-8 hover:bg-muted/50 transition-colors duration-75"
+                          className="flex lg:hidden shrink-0 h-8 w-8 hover:bg-muted/50 transition-colors duration-75"
                       >
                           <Menu className="h-4 w-4 text-muted-foreground"/>
                       </Button>
@@ -92,7 +92,7 @@ export const Topbar: React.FC<TopbarProps> = ({
               aria-label={t('layout', 'sidebarToggleAriaLabel')}
               aria-pressed={!sidebarContext.sidebarCollapsed}
               aria-keyshortcuts="Meta+B"
-              className="hidden lg:flex flex-shrink-0 h-8 w-8 hover:bg-muted/50 transition-colors duration-75 relative"
+              className="hidden lg:flex shrink-0 h-8 w-8 hover:bg-muted/50 transition-colors duration-75 relative"
             >
               <span className="relative h-4 w-4 block">
                 <PanelLeftClose
@@ -129,7 +129,7 @@ export const Topbar: React.FC<TopbarProps> = ({
         </div>
 
         {/* Right Section - Notifications + Feedback */}
-              <div className="flex items-center gap-1.5 flex-shrink-0">
+              <div className="flex items-center gap-1.5 shrink-0">
           <NotificationCenter />
           <FeedbackButton />
         </div>

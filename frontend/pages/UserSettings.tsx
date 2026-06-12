@@ -99,7 +99,7 @@ export default function UserSettings() {
 
         <div className="flex-1 overflow-hidden flex w-full">
             <aside
-                className="w-56 flex-shrink-0 border-r border-border/40 bg-[#fafafa] dark:bg-[#0c0c0c] overflow-y-auto">
+                className="w-56 shrink-0 border-r border-border/40 bg-[#fafafa] dark:bg-[#0c0c0c] overflow-y-auto">
                 <nav role="tablist" aria-label="Settings sections" className="py-4 px-2 space-y-0.5">
               {TABS.map((tab) => {
                 const Icon = tab.icon;
@@ -117,7 +117,7 @@ export default function UserSettings() {
                         isActive ? 'bg-muted text-foreground' : 'text-muted-foreground'
                     )}
                   >
-                      <Icon className="h-4 w-4 flex-shrink-0" strokeWidth={1.5}/>
+                      <Icon className="h-4 w-4 shrink-0" strokeWidth={1.5}/>
                       {tab.label}
                   </button>
                 );

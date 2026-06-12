@@ -38,7 +38,7 @@ export function ConfigureTemplateFirst({
                 <div className="flex flex-col items-center gap-2">
                     <div className="bg-muted/50 rounded-lg p-3 w-full max-w-md space-y-2 text-left">
                         <div className="flex items-start space-x-2">
-                            <Download className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" strokeWidth={1.5}/>
+                            <Download className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" strokeWidth={1.5}/>
                             <div>
                                 <p className="text-[13px] font-medium">{t('extraction', 'configImportCharms')}</p>
                                 <p className="text-[13px] text-muted-foreground">
@@ -47,7 +47,7 @@ export function ConfigureTemplateFirst({
                             </div>
                         </div>
                         <div className="flex items-start space-x-2">
-                            <PlusCircle className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0"
+                            <PlusCircle className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0"
                                         strokeWidth={1.5}/>
                             <div>
                                 <p className="text-[13px] font-medium">{t('extraction', 'configCreateCustom')}</p>

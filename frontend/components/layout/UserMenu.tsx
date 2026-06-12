@@ -45,14 +45,14 @@ export const UserMenu: React.FC<UserMenuProps> = ({collapsed}) => {
           aria-haspopup="menu"
           className="flex items-center gap-2.5 w-full h-8 px-2.5 rounded-md text-left text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors duration-75"
         >
-          <Avatar className="h-6 w-6 flex-shrink-0 border border-border/40">
+          <Avatar className="h-6 w-6 shrink-0 border border-border/40">
             <AvatarImage src={user.avatar} alt={user.name} />
             <AvatarFallback className="text-[9px] bg-muted">{user.initials}</AvatarFallback>
           </Avatar>
           {!collapsed && (
             <>
               <span className="text-[13px] truncate flex-1 min-w-0">{user.name}</span>
-              <ChevronDown className="h-3.5 w-3.5 ml-auto text-muted-foreground/50 flex-shrink-0" strokeWidth={1.5} />
+              <ChevronDown className="h-3.5 w-3.5 ml-auto text-muted-foreground/50 shrink-0" strokeWidth={1.5} />
             </>
           )}
         </button>
