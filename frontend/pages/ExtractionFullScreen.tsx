@@ -15,7 +15,7 @@
  * @page
  */
 
-import {useCallback, useEffect, useMemo, useState} from 'react';
+import {useEffect, useState} from 'react';
 import {useNavigate, useParams} from 'react-router-dom';
 import {toast} from 'sonner';
 import {extractionInstanceService, markInstancesCompleted} from '@/services/extractionInstanceService';
@@ -210,77 +210,63 @@ export default function ExtractionFullScreen() {
   // join lives in useExtractionData; for now we use the instance label
   // alone (entityType.label) plus the field label fetched off the run
   // detail's proposals/decisions when available.
-  const fieldLabelByCoord = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const inst of instances) {
-      const et = entityTypes.find((e) => e.id === inst.entity_type_id);
-      const sectionLabel = et?.label ?? et?.name ?? 'Section';
-      // Decisions + proposals carry the field id but not the label;
-      // fall back to the field id when nothing else is known. The
-      // ConsensusPanel still renders correctly — just shows the id.
-      const seenFields = new Set<string>();
-      for (const d of runDetail?.decisions ?? []) {
-        if (d.instance_id !== inst.id || seenFields.has(d.field_id)) continue;
-        seenFields.add(d.field_id);
-        map[`${inst.id}::${d.field_id}`] = `${sectionLabel} · ${d.field_id.slice(0, 8)}…`;
-      }
+  const fieldLabelByCoordMap: Record<string, string> = {};
+  for (const inst of instances) {
+    const et = entityTypes.find((e) => e.id === inst.entity_type_id);
+    const sectionLabel = et?.label ?? et?.name ?? 'Section';
+    // Decisions + proposals carry the field id but not the label;
+    // fall back to the field id when nothing else is known. The
+    // ConsensusPanel still renders correctly — just shows the id.
+    const seenFields = new Set<string>();
+    for (const d of runDetail?.decisions ?? []) {
+      if (d.instance_id !== inst.id || seenFields.has(d.field_id)) continue;
+      seenFields.add(d.field_id);
+      fieldLabelByCoordMap[`${inst.id}::${d.field_id}`] = `${sectionLabel} · ${d.field_id.slice(0, 8)}…`;
     }
-    return map;
-  }, [instances, entityTypes, runDetail?.decisions]);
+  }
+  const fieldLabelByCoord = fieldLabelByCoordMap;
 
-  const handleSelectExisting = useCallback(
-    async (params: {
-      instanceId: string;
-      fieldId: string;
-      decisionId: string;
-    }) => {
-      await consensusMutation.mutateAsync({
-        instance_id: params.instanceId,
-        field_id: params.fieldId,
-        mode: 'select_existing',
-        selected_decision_id: params.decisionId,
-      });
-      await refetchRun();
-    },
-    [consensusMutation, refetchRun],
-  );
+  const handleSelectExisting = async (params: {
+    instanceId: string;
+    fieldId: string;
+    decisionId: string;
+  }) => {
+    await consensusMutation.mutateAsync({
+      instance_id: params.instanceId,
+      field_id: params.fieldId,
+      mode: 'select_existing',
+      selected_decision_id: params.decisionId,
+    });
+    await refetchRun();
+  };
 
-  const handleManualOverride = useCallback(
-    async (params: {
-      instanceId: string;
-      fieldId: string;
-      value: unknown;
-      rationale: string;
-    }) => {
-      await consensusMutation.mutateAsync({
-        instance_id: params.instanceId,
-        field_id: params.fieldId,
-        mode: 'manual_override',
-        value: { value: params.value },
-        rationale: params.rationale,
-      });
-      await refetchRun();
-    },
-    [consensusMutation, refetchRun],
-  );
+  const handleManualOverride = async (params: {
+    instanceId: string;
+    fieldId: string;
+    value: unknown;
+    rationale: string;
+  }) => {
+    await consensusMutation.mutateAsync({
+      instance_id: params.instanceId,
+      field_id: params.fieldId,
+      mode: 'manual_override',
+      value: { value: params.value },
+      rationale: params.rationale,
+    });
+    await refetchRun();
+  };
 
-  const handleFinalizeFromConsensus = useCallback(async () => {
+  const handleFinalizeFromConsensus = async () => {
     if (!activeRunId) return;
     await advanceMutation.mutateAsync({ target_stage: 'finalized' });
     await Promise.all([refetchRun(), refreshValues(), refreshFinalizedRun()]);
     toast.success('Extraction finalized.');
-  }, [
-    activeRunId,
-    advanceMutation,
-    refetchRun,
-    refreshValues,
-    refreshFinalizedRun,
-  ]);
+  };
 
-  // Plain-identifier dep so the compiler can preserve this memoization
-  // (optional-chained deps like `finalizedRun?.id` defeat it).
+  // Plain-identifier dep so the compiler can track this dep without
+  // optional-chaining (optional-chained deps like `finalizedRun?.id` defeat it).
   const finalizedRunId = finalizedRun?.id;
-  const handleReopen = useCallback(async () => {
+  const handleReopen = async () => {
     if (!finalizedRunId) return;
     setReopening(true);
     await reopenMutation.mutateAsync(finalizedRunId).then(async () => {
@@ -299,14 +285,7 @@ export default function ExtractionFullScreen() {
       );
     });
     setReopening(false);
-  }, [
-    finalizedRunId,
-    reopenMutation,
-    sessionResult,
-    refreshValues,
-    refreshFinalizedRun,
-    refetchRun,
-  ]);
+  };
 
   // Hook para calcular progresso
   const { completedFields, totalFields, completionPercentage, isComplete } =
@@ -356,13 +335,13 @@ export default function ExtractionFullScreen() {
   // Declared after `useAutoSaveProposals` so the closure picks up the
   // already-initialized `saveNow` (avoids the temporal-dead-zone crash
   // on first render).
-  const handleSubmitForReview = useCallback(async () => {
+  const handleSubmitForReview = async () => {
     if (!activeRunId) return;
     await saveNow();
     await advanceMutation.mutateAsync({ target_stage: 'review' });
     await Promise.all([refetchRun(), refreshValues()]);
     toast.success('Submitted for review.');
-  }, [activeRunId, saveNow, advanceMutation, refetchRun, refreshValues]);
+  };
 
     // "Reconcile" — flush any pending edits and advance REVIEW →
     // CONSENSUS so the ``ConsensusPanel`` becomes reachable. This
@@ -371,13 +350,13 @@ export default function ExtractionFullScreen() {
     // ``handlePublish`` advanced past REVIEW). Gate at the call site
     // on ``permissions.canResolveConflicts`` (manager / consensus
     // roles) so reviewers don't accidentally trigger it.
-  const handleReconcile = useCallback(async () => {
+  const handleReconcile = async () => {
     if (!activeRunId) return;
     await saveNow();
     await advanceMutation.mutateAsync({ target_stage: 'consensus' });
     await Promise.all([refetchRun(), refreshValues()]);
     toast.success('Reviewers reconciled. Resolve any divergences below.');
-  }, [activeRunId, saveNow, advanceMutation, refetchRun, refreshValues]);
+  };
 
     // Permissions hook (controls comparison access)
   const permissions = useComparisonPermissions(
@@ -395,23 +374,23 @@ export default function ExtractionFullScreen() {
   });
 
     // Hook for AI suggestions with callbacks to fill/clear field
-  const handleAISuggestionAccepted = useCallback(async (instanceId: string, fieldId: string, value: any) => {
+  const handleAISuggestionAccepted = async (instanceId: string, fieldId: string, value: any) => {
       // Fill field automatically when suggestion is accepted
       console.warn('Accepting AI suggestion:', {instanceId, fieldId, value});
       // updateValue updates local state immediately
       // AISuggestionService.acceptSuggestion already saves to DB
       // No need to reload all values (refreshValues caused full page reload)
     updateValue(instanceId, fieldId, value);
-  }, [updateValue]);
+  };
 
-  const handleAISuggestionRejected = useCallback(async (instanceId: string, fieldId: string) => {
+  const handleAISuggestionRejected = async (instanceId: string, fieldId: string) => {
       // Clear field when suggestion is rejected
       console.warn('Rejecting AI suggestion - clearing field:', {instanceId, fieldId});
       // updateValue updates local state immediately
       // AISuggestionService.rejectSuggestion already updates status in DB
       // No need to reload all values (refreshValues caused full page reload)
     updateValue(instanceId, fieldId, null);
-  }, [updateValue]);
+  };
 
   const { 
     suggestions: aiSuggestions, 
@@ -485,18 +464,6 @@ export default function ExtractionFullScreen() {
     }
   }, [articleId, models, activeModelId, setActiveModelId]);
 
-  // =================== MEMOIZAÇÕES PARA PERFORMANCE ===================
-
-    // Memoize instance filter function (avoids recreating it)
-  const getInstancesForModel = useCallback((entityTypeId: string, modelId: string) => {
-    return instances.filter(
-      i => i.entity_type_id === entityTypeId && i.parent_instance_id === modelId
-    );
-  }, [instances]);
-
-    // Removed: SectionAccordion does not need memo, FieldInput is memoized individually
-
-
     // Redirect on critical error
   useEffect(() => {
     if (dataError && projectId) {
@@ -505,10 +472,16 @@ export default function ExtractionFullScreen() {
     }
   }, [dataError, projectId, navigate]);
 
+  const getInstancesForModel = (entityTypeId: string, modelId: string) => {
+    return instances.filter(
+      i => i.entity_type_id === entityTypeId && i.parent_instance_id === modelId
+    );
+  };
+
     // Function to reload instances (used after model extraction)
-  const handleRefreshInstances = useCallback(async () => {
+  const handleRefreshInstances = async () => {
     await refreshInstances();
-  }, [refreshInstances]);
+  };
 
   const handleBack = () => {
     navigate(`/projects/${projectId}?tab=extraction`);
