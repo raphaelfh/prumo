@@ -249,7 +249,6 @@ export const extraction = {
     newInstanceLabel: 'New instance',
     batchAcceptCountToast: '{{n}} suggestion(s) accepted in batch',
     noSuggestionConfidenceToast: 'No suggestions with confidence ≥{{pct}}%',
-    cancelledByUser: 'Cancelled by user',
     errors_extractionError: 'Extraction error',
     errors_extractionAuth: 'Authentication error',
     errors_noPermissionAddField: 'You do not have permission to add fields',
