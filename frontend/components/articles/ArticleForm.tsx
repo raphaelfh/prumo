@@ -31,7 +31,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {supabase} from "@/integrations/supabase/client";
 import {toast} from "sonner";
 import {
   AlertCircle,
@@ -55,6 +54,15 @@ import {ArticleKeywordsField} from './ArticleKeywordsField';
 import {PageHeader} from '@/components/patterns/PageHeader';
 import {SettingsCard, SettingsField, SettingsSection} from '@/components/settings';
 import {t} from '@/lib/copy';
+import {
+    fetchArticle,
+    fetchArticleFiles,
+    insertArticle,
+    updateArticle,
+    downloadFileBlob,
+    deleteArticleFile,
+    type ArticleFileRecord,
+} from '@/services/articlesService';
 import {authorsFromRows, newAuthorRow, rowsFromAuthorsArray, type AuthorFormRow} from '@/lib/articleAuthors';
 import {normalizeArticleKeywordsForSave} from '@/lib/articleKeywords';
 import {
@@ -99,14 +107,8 @@ interface Article {
   data_availability: string | null;
 }
 
-interface ArticleFile {
-  id: string;
-  file_type: string;
-  file_role: string | null;
-  storage_key: string;
-  original_filename: string | null;
-  bytes: number | null;
-}
+// Re-use the service type (same shape)
+type ArticleFile = ArticleFileRecord;
 
 interface ArticleFormProps {
   mode: 'add' | 'edit';
@@ -259,75 +261,61 @@ export function ArticleForm({
 
   const loadArticle = async () => {
     if (!articleId) return;
-    
+
     setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from("articles")
-        .select("*")
-        .eq("id", articleId)
-        .single();
+    const result = await fetchArticle(articleId);
+    setLoading(false);
 
-      if (error) throw error;
-      
-      setArticle(data);
-
-        // Populate form
-        setAuthorRows(rowsFromAuthorsArray(data.authors));
-      setFormData({
-        title: data.title || '',
-        abstract: data.abstract || '',
-        publication_year: data.publication_year?.toString() || '',
-        publication_month: data.publication_month?.toString() || '',
-        publication_day: data.publication_day?.toString() || '',
-        journal_title: data.journal_title || '',
-        journal_issn: data.journal_issn || '',
-        journal_eissn: data.journal_eissn || '',
-        journal_publisher: data.journal_publisher || '',
-        volume: data.volume || '',
-        issue: data.issue || '',
-        pages: data.pages || '',
-        doi: data.doi || '',
-        pmid: data.pmid || '',
-        pmcid: data.pmcid || '',
-        arxiv_id: data.arxiv_id || '',
-        pii: data.pii || '',
-          keywords: (data.keywords ?? []).map((k) => k.trim()).filter(Boolean),
-        mesh_terms: data.mesh_terms?.join(', ') || '',
-        url_landing: data.url_landing || '',
-          url_pdf: data.url_pdf || '',
-        language: data.language || '',
-        article_type: data.article_type || '',
-        publication_status: data.publication_status || '',
-        study_design: data.study_design || '',
-        conflicts_of_interest: data.conflicts_of_interest || '',
-        data_availability: data.data_availability || '',
-        open_access: data.open_access || false,
-        license: data.license || ''
-      });
-    } catch (error: any) {
-      console.error("Error loading article:", error);
-        toast.error(t('articles', 'errorLoadArticle'));
-    } finally {
-      setLoading(false);
+    if (!result.ok) {
+      toast.error(t('articles', 'errorLoadArticle'));
+      return;
     }
+
+    const data = result.data as any;
+    setArticle(data as Article);
+
+    // Populate form
+    setAuthorRows(rowsFromAuthorsArray(data.authors));
+    setFormData({
+      title: data.title || '',
+      abstract: data.abstract || '',
+      publication_year: data.publication_year?.toString() || '',
+      publication_month: data.publication_month?.toString() || '',
+      publication_day: data.publication_day?.toString() || '',
+      journal_title: data.journal_title || '',
+      journal_issn: data.journal_issn || '',
+      journal_eissn: data.journal_eissn || '',
+      journal_publisher: data.journal_publisher || '',
+      volume: data.volume || '',
+      issue: data.issue || '',
+      pages: data.pages || '',
+      doi: data.doi || '',
+      pmid: data.pmid || '',
+      pmcid: data.pmcid || '',
+      arxiv_id: data.arxiv_id || '',
+      pii: data.pii || '',
+        keywords: (data.keywords ?? []).map((k: string) => k.trim()).filter(Boolean),
+      mesh_terms: data.mesh_terms?.join(', ') || '',
+      url_landing: data.url_landing || '',
+        url_pdf: data.url_pdf || '',
+      language: data.language || '',
+      article_type: data.article_type || '',
+      publication_status: data.publication_status || '',
+      study_design: data.study_design || '',
+      conflicts_of_interest: data.conflicts_of_interest || '',
+      data_availability: data.data_availability || '',
+      open_access: data.open_access || false,
+      license: data.license || ''
+    });
   };
 
   const loadFiles = async () => {
     if (!articleId) return;
-
-    try {
-      const { data, error } = await supabase
-        .from("article_files")
-        .select("*")
-        .eq("article_id", articleId)
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      setFiles(data || []);
-    } catch (error: any) {
-      console.error("Error loading files:", error);
+    const result = await fetchArticleFiles(articleId);
+    if (result.ok) {
+      setFiles(result.data);
     }
+    // silent on error — files are best-effort
   };
 
     // Load article data (edit mode)
@@ -443,159 +431,127 @@ export function ArticleForm({
     }
 
     setSaving(true);
-    try {
-        // Helper to validate and convert numeric date values
-      const parseDateValue = (value: string | undefined): number | null => {
-        if (!value || value.trim() === '') return null;
-        const num = parseInt(value.trim(), 10);
-        if (isNaN(num)) return null;
-        return num;
-      };
 
-      // Validar publication_month (deve estar entre 1-12)
-      const parsedMonth = parseDateValue(formData.publication_month);
-      const validMonth = parsedMonth !== null && parsedMonth >= 1 && parsedMonth <= 12 ? parsedMonth : null;
+    // Helper to validate and convert numeric date values
+    const parseDateValue = (value: string | undefined): number | null => {
+      if (!value || value.trim() === '') return null;
+      const num = parseInt(value.trim(), 10);
+      if (isNaN(num)) return null;
+      return num;
+    };
 
-      // Validar publication_day (deve estar entre 1-31)
-      const parsedDay = parseDateValue(formData.publication_day);
-      const validDay = parsedDay !== null && parsedDay >= 1 && parsedDay <= 31 ? parsedDay : null;
+    const parsedMonth = parseDateValue(formData.publication_month);
+    const validMonth = parsedMonth !== null && parsedMonth >= 1 && parsedMonth <= 12 ? parsedMonth : null;
 
-      // Validar publication_year (deve estar entre 1600-2500)
-      const parsedYear = parseDateValue(formData.publication_year);
-      const validYear = parsedYear !== null && parsedYear >= 1600 && parsedYear <= 2500 ? parsedYear : null;
+    const parsedDay = parseDateValue(formData.publication_day);
+    const validDay = parsedDay !== null && parsedDay >= 1 && parsedDay <= 31 ? parsedDay : null;
 
-      const articleData = {
-        project_id: projectId,
-        title: formData.title.trim(),
-        abstract: formData.abstract.trim() || null,
-          authors: authorsFromRows(authorRows),
-        publication_year: validYear,
-        publication_month: validMonth,
-        publication_day: validDay,
-        journal_title: formData.journal_title.trim() || null,
-        journal_issn: formData.journal_issn.trim() || null,
-        journal_eissn: formData.journal_eissn.trim() || null,
-        journal_publisher: formData.journal_publisher.trim() || null,
-        volume: formData.volume.trim() || null,
-        issue: formData.issue.trim() || null,
-        pages: formData.pages.trim() || null,
-        doi: formData.doi.trim() || null,
-        pmid: formData.pmid.trim() || null,
-        pmcid: formData.pmcid.trim() || null,
-        arxiv_id: formData.arxiv_id.trim() || null,
-        pii: formData.pii.trim() || null,
-          keywords: normalizeArticleKeywordsForSave(formData.keywords),
-        mesh_terms: formData.mesh_terms.trim() ? formData.mesh_terms.split(",").map(m => m.trim()) : null,
-        url_landing: formData.url_landing.trim() || null,
-          url_pdf: formData.url_pdf.trim() || null,
-        language: formData.language.trim() || null,
-        article_type: formData.article_type.trim() || null,
-        publication_status: formData.publication_status.trim() || null,
-        study_design: formData.study_design.trim() || null,
-        conflicts_of_interest: formData.conflicts_of_interest.trim() || null,
-        data_availability: formData.data_availability.trim() || null,
-        open_access: formData.open_access,
-        license: formData.license.trim() || null,
-        ingestion_source: mode === 'add' ? "MANUAL" : undefined,
-          source_lineage: mode === 'add' ? "manual" : undefined,
-          sync_state: mode === 'add' ? "active" : undefined,
-      };
+    const parsedYear = parseDateValue(formData.publication_year);
+    const validYear = parsedYear !== null && parsedYear >= 1600 && parsedYear <= 2500 ? parsedYear : null;
 
-      if (mode === 'add') {
-        const { error } = await supabase
-          .from("articles")
-          .insert([articleData])
-          .select()
-          .single();
+    const articleData = {
+      project_id: projectId,
+      title: formData.title.trim(),
+      abstract: formData.abstract.trim() || null,
+        authors: authorsFromRows(authorRows),
+      publication_year: validYear,
+      publication_month: validMonth,
+      publication_day: validDay,
+      journal_title: formData.journal_title.trim() || null,
+      journal_issn: formData.journal_issn.trim() || null,
+      journal_eissn: formData.journal_eissn.trim() || null,
+      journal_publisher: formData.journal_publisher.trim() || null,
+      volume: formData.volume.trim() || null,
+      issue: formData.issue.trim() || null,
+      pages: formData.pages.trim() || null,
+      doi: formData.doi.trim() || null,
+      pmid: formData.pmid.trim() || null,
+      pmcid: formData.pmcid.trim() || null,
+      arxiv_id: formData.arxiv_id.trim() || null,
+      pii: formData.pii.trim() || null,
+        keywords: normalizeArticleKeywordsForSave(formData.keywords),
+      mesh_terms: formData.mesh_terms.trim() ? formData.mesh_terms.split(",").map(m => m.trim()) : null,
+      url_landing: formData.url_landing.trim() || null,
+        url_pdf: formData.url_pdf.trim() || null,
+      language: formData.language.trim() || null,
+      article_type: formData.article_type.trim() || null,
+      publication_status: formData.publication_status.trim() || null,
+      study_design: formData.study_design.trim() || null,
+      conflicts_of_interest: formData.conflicts_of_interest.trim() || null,
+      data_availability: formData.data_availability.trim() || null,
+      open_access: formData.open_access,
+      license: formData.license.trim() || null,
+      ingestion_source: mode === 'add' ? "MANUAL" : undefined,
+        source_lineage: mode === 'add' ? "manual" : undefined,
+        sync_state: mode === 'add' ? "active" : undefined,
+    };
 
-        if (error) throw error;
-      } else {
-        if (!articleId) throw new Error("articleId is required for edit mode");
-        const { error } = await supabase
-          .from("articles")
-          .update(articleData)
-          .eq("id", articleId)
-          .select()
-          .single();
-
-        if (error) throw error;
+    let result;
+    if (mode === 'add') {
+      result = await insertArticle(articleData);
+    } else {
+      if (!articleId) {
+        setSaving(false);
+        toast.error(t('articles', 'errorUpdateArticle') + ': articleId is required for edit mode');
+        return;
       }
+      result = await updateArticle(articleId, articleData);
+    }
 
-        toast.success(mode === 'add' ? t('articles', 'articleCreatedSuccess') : t('articles', 'articleUpdatedSuccess'));
+    setSaving(false);
 
-      if (mode === 'add') {
-          if (isPanel) {
-              onComplete?.();
-              onDismiss?.();
-          } else {
-              navigate(`/projects/${projectId}?tab=articles`);
-          }
-      } else {
-        onComplete?.();
-      }
-    } catch (error: any) {
-      console.error("Error saving article:", error);
-        const errorMessage = error?.message || error?.details || (mode === 'add' ? t('articles', 'errorCreateArticle') : t('articles', 'errorUpdateArticle'));
+    if (!result.ok) {
+      const errorMessage = result.error.message || (mode === 'add' ? t('articles', 'errorCreateArticle') : t('articles', 'errorUpdateArticle'));
         toast.error(`${mode === 'add' ? t('articles', 'errorCreateArticle') : t('articles', 'errorUpdateArticle')}: ${errorMessage}`);
-    } finally {
-      setSaving(false);
+      return;
+    }
+
+      toast.success(mode === 'add' ? t('articles', 'articleCreatedSuccess') : t('articles', 'articleUpdatedSuccess'));
+
+    if (mode === 'add') {
+        if (isPanel) {
+            onComplete?.();
+            onDismiss?.();
+        } else {
+            navigate(`/projects/${projectId}?tab=articles`);
+        }
+    } else {
+      onComplete?.();
     }
   };
 
   const downloadFile = async (file: ArticleFile) => {
-    try {
-      const { data, error } = await supabase.storage
-        .from("articles")
-        .download(file.storage_key);
-
-      if (error) throw error;
-
-      const url = URL.createObjectURL(data);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = file.original_filename || "document.pdf";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (error: any) {
-      console.error("Error downloading file:", error);
-        toast.error(t('articles', 'errorDownloadFile'));
+    const result = await downloadFileBlob(file.storage_key);
+    if (!result.ok) {
+      toast.error(t('articles', 'errorDownloadFile'));
+      return;
     }
+    const url = URL.createObjectURL(result.data);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = file.original_filename || "document.pdf";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const handleDeleteFile = async () => {
     if (!fileToDelete) return;
 
     setDeletingFile(true);
-    try {
-        // Delete file from storage
-      const { error: storageError } = await supabase.storage
-        .from("articles")
-        .remove([fileToDelete.storage_key]);
+    const result = await deleteArticleFile(fileToDelete.id, fileToDelete.storage_key);
+    setDeletingFile(false);
 
-      if (storageError) {
-          console.warn('Error deleting file from storage:', storageError);
-      }
-
-        // Delete record from DB
-      const { error: dbError } = await supabase
-        .from("article_files")
-        .delete()
-        .eq("id", fileToDelete.id);
-
-      if (dbError) throw dbError;
-
-        toast.success(t('articles', 'fileRemovedSuccess'));
-        loadFiles(); // Reload file list
-      setDeleteDialogOpen(false);
-      setFileToDelete(null);
-    } catch (error: any) {
-      console.error("Error deleting file:", error);
-        toast.error(t('articles', 'errorRemoveFile'));
-    } finally {
-      setDeletingFile(false);
+    if (!result.ok) {
+      toast.error(t('articles', 'errorRemoveFile'));
+      return;
     }
+
+      toast.success(t('articles', 'fileRemovedSuccess'));
+      void loadFiles(); // Reload file list
+    setDeleteDialogOpen(false);
+    setFileToDelete(null);
   };
 
   const openDeleteDialog = (file: ArticleFile) => {
@@ -604,25 +560,15 @@ export function ArticleForm({
   };
 
   const viewPDF = async (file: ArticleFile) => {
-    try {
-      const { data: fileData, error: downloadError } = await supabase.storage
-        .from("articles")
-        .download(file.storage_key);
-
-      if (downloadError) {
-        console.error("Error downloading file:", downloadError);
-        throw downloadError;
-      }
-
-      const blob = new Blob([fileData], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
-      
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
-    } catch (error: any) {
-      console.error("Error viewing PDF:", error);
-        toast.error(t('articles', 'errorViewPdf'));
+    const result = await downloadFileBlob(file.storage_key);
+    if (!result.ok) {
+      toast.error(t('articles', 'errorViewPdf'));
+      return;
     }
+    const blob = new Blob([result.data], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank");
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
   };
 
     const itemTypeSelectValue = useMemo(() => {
