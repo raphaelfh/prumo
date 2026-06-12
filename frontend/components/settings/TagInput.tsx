@@ -127,7 +127,7 @@ export function TagInput({
                                 type="button"
                                 size="icon"
                                 variant="ghost"
-                                className="h-6 w-6 flex-shrink-0"
+                                className="h-6 w-6 shrink-0"
                                 onClick={() => onRemove(index)}
                                 aria-label="Remover"
                             >

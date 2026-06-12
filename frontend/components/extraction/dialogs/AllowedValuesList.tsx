@@ -240,7 +240,7 @@ export function AllowedValuesList({
                   key={`${value}-${index}`}
                   className="flex items-center gap-2 bg-background rounded-md px-3 py-2 group hover:bg-accent transition-colors border"
                 >
-                  <GripVertical className="h-4 w-4 text-muted-foreground/40 flex-shrink-0" />
+                  <GripVertical className="h-4 w-4 text-muted-foreground/40 shrink-0" />
                   <span className="flex-1 text-sm">{value}</span>
                   <Badge variant="secondary" className="text-xs">
                     {index + 1}

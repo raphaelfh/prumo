@@ -60,7 +60,7 @@ export function DetailSheet({
 
           {/* Fixed footer */}
         {footer && (
-          <div className="border-t pt-4 flex justify-end gap-2 flex-shrink-0">
+          <div className="border-t pt-4 flex justify-end gap-2 shrink-0">
             {footer}
           </div>
         )}

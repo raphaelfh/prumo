@@ -320,7 +320,7 @@ function NotificationItem({ job, onRemove, onClick }: NotificationItemProps) {
     >
       <div className="flex items-start gap-3">
           {/* Icon */}
-        <div className="flex-shrink-0 mt-0.5">
+        <div className="shrink-0 mt-0.5">
           {icon}
         </div>
 
@@ -334,7 +334,7 @@ function NotificationItem({ job, onRemove, onClick }: NotificationItemProps) {
             <Button
               variant="ghost"
               size="icon"
-              className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+              className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
               onClick={(e) => onRemove(job.id, e)}
             >
               <X className="h-3 w-3" />
@@ -352,7 +352,7 @@ function NotificationItem({ job, onRemove, onClick }: NotificationItemProps) {
                 <span className="text-muted-foreground truncate flex-1">
                   {job.progress.message}
                 </span>
-                <span className="text-muted-foreground ml-2 flex-shrink-0">
+                <span className="text-muted-foreground ml-2 shrink-0">
                   {job.progress.total > 0 ? `${job.progress.current}/${job.progress.total}` : '—'}
                 </span>
               </div>

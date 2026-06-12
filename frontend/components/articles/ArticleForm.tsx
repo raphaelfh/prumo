@@ -670,7 +670,7 @@ export function ArticleForm({
 
             <div className="flex flex-1 flex-col overflow-hidden min-h-0 lg:flex-row">
                 <aside
-                    className="w-full flex-shrink-0 border-b border-border/40 bg-[#fafafa] dark:bg-[#0c0c0c] lg:w-56 lg:border-b-0 lg:border-r overflow-x-auto lg:overflow-y-auto">
+                    className="w-full shrink-0 border-b border-border/40 bg-[#fafafa] dark:bg-[#0c0c0c] lg:w-56 lg:border-b-0 lg:border-r overflow-x-auto lg:overflow-y-auto">
                     <nav
                         role="navigation"
                         aria-label={t('articles', 'formStepsAria')}
@@ -694,7 +694,7 @@ export function ArticleForm({
                                             : 'text-muted-foreground border-l-2 border-l-transparent pl-1.5'
                                     )}
                                 >
-                                    <Icon className="h-4 w-4 flex-shrink-0" strokeWidth={1.5}/>
+                                    <Icon className="h-4 w-4 shrink-0" strokeWidth={1.5}/>
                                     <span className="whitespace-nowrap lg:whitespace-normal">{step.label}</span>
                                     {isActive && step.id === 'basic' && !isStepValid('basic') && (
                                         <AlertCircle className="ml-auto h-3.5 w-3.5 shrink-0 text-warning"/>
