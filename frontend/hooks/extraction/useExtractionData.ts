@@ -9,7 +9,7 @@
  * Reduces main component complexity (SRP).
  */
 
-import {useCallback, useEffect, useState} from 'react';
+import {useEffect, useState} from 'react';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 import {extractionInstanceService} from '@/services/extractionInstanceService';
@@ -124,7 +124,7 @@ export function useExtractionData({
     // change — only added/updated entries trigger downstream re-renders. This
     // removes the visual flash + scroll reset that came from replacing the
     // whole array on every refresh.
-  const loadInstances = useCallback(async (templateId: string) => {
+  const loadInstances = async (templateId: string) => {
     if (!articleId || !templateId) {
       setInstances([]);
       return;
@@ -137,10 +137,10 @@ export function useExtractionData({
       metadata: instance.metadata as unknown,
     }));
     setInstances(prev => mergeInstancesById(prev, normalised));
-  }, [articleId]);
+  };
 
     // Load all data
-  const loadData = useCallback(() => {
+  const loadData = () => {
     if (!enabled || !projectId || !articleId) {
       setLoading(false);
       return Promise.resolve();
@@ -205,7 +205,7 @@ export function useExtractionData({
         toast.error(message);
       })
       .finally(() => setLoading(false));
-  }, [projectId, articleId, enabled, loadInstances]);
+  };
 
     // Load initial data
   useEffect(() => {
@@ -214,18 +214,17 @@ export function useExtractionData({
   }, [loadData]);
 
     // Refresh function
-  const refresh = useCallback(async () => {
+  const refresh = async () => {
     await loadData();
-  }, [loadData]);
+  };
 
-    // Refresh instances only (no new creation). Plain-identifier dep —
-    // optional-chained deps defeat compiler memoization preservation.
+    // Refresh instances only (no new creation).
   const activeTemplateId = template?.id;
-  const refreshInstances = useCallback(async () => {
+  const refreshInstances = async () => {
     if (activeTemplateId) {
       await loadInstances(activeTemplateId);
     }
-  }, [activeTemplateId, loadInstances]);
+  };
 
   return {
     article,

@@ -3,7 +3,7 @@
  * Reusable between desktop and mobile sidebar
  */
 
-import {useCallback, useEffect, useState} from 'react';
+import {useEffect, useState} from 'react';
 import {useNavigate} from 'react-router-dom';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
@@ -15,7 +15,7 @@ export const useProjectsList = () => {
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const loadProjects = useCallback(async () => {
+  const loadProjects = async () => {
     setLoading(true);
     const result = await listProjects();
     if (result.ok) {
@@ -25,11 +25,11 @@ export const useProjectsList = () => {
       console.error(result.error);
     }
     setLoading(false);
-  }, []);
+  };
 
-  const switchProject = useCallback((projectId: string) => {
+  const switchProject = (projectId: string) => {
     navigate(`/projects/${projectId}`);
-  }, [navigate]);
+  };
 
   useEffect(() => {
     // Microtask so the loader's setState calls run in an async callback.

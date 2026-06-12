@@ -14,7 +14,7 @@
  * @module hooks/extraction/useModelManagement
  */
 
-import {useCallback, useEffect, useRef, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {createManualModelHierarchy} from '@/integrations/api';
 import {useAuth} from '@/contexts/AuthContext';
 import {toast} from 'sonner';
@@ -82,13 +82,11 @@ export function useModelManagement({
   }, [activeModelId]);
 
     // Calculate progress for a model (using optimized SQL function).
-    // Declared BEFORE loadModels because loadModels depends on it.
-  const getModelProgress = useCallback(async (instanceId: string): Promise<Model['progress']> =>
-    fetchModelProgress(articleId, instanceId)
-  , [articleId]);
+  const getModelProgress = async (instanceId: string): Promise<Model['progress']> =>
+    fetchModelProgress(articleId, instanceId);
 
     // Load existing models
-  const loadModels = useCallback(async () => {
+  const loadModels = async () => {
     if (!enabled || !modelParentEntityTypeId) {
       console.warn('⏭️ loadModels: Skipped (enabled:', enabled, ', modelParentEntityTypeId:', modelParentEntityTypeId, ')');
       setModels([]);
@@ -144,7 +142,7 @@ export function useModelManagement({
     }
 
     setLoading(false);
-  }, [enabled, modelParentEntityTypeId, articleId, getModelProgress]);
+  };
 
     // Sync ref with loadModels in an effect (refs must not be written
     // during render). Declared before the mount-load effect below so the
@@ -154,7 +152,7 @@ export function useModelManagement({
   }, [loadModels]);
 
     // Create new model (using service - simplified)
-  const createModel = useCallback(async (
+  const createModel = async (
     modelName: string,
     modellingMethod: string
   ): Promise<CreateModelResult | null> => {
@@ -200,10 +198,10 @@ export function useModelManagement({
         label: child.label,
       })),
     };
-  }, [user, modelParentEntityTypeId, projectId, articleId, templateId]);
+  };
 
     // Remove model (using service - simplified)
-  const removeModel = useCallback(async (instanceId: string): Promise<void> => {
+  const removeModel = async (instanceId: string): Promise<void> => {
     console.warn('🗑️ Removing model:', instanceId);
 
     await extractionInstanceService.removeInstance(instanceId).catch((err: unknown) => {
@@ -248,12 +246,12 @@ export function useModelManagement({
 
     console.warn('✅ Modelo removido:', removedModelName);
     toast.success(t('extraction', 'modelRemovedSuccess').replace('{{label}}', removedModelName));
-  }, []); // No deps - uses only setters and functional callbacks
+  };
 
   // Refresh models
-  const refreshModels = useCallback(() => {
+  const refreshModels = () => {
     return loadModels();
-  }, [loadModels]);
+  };
 
     // Load models on mount
     // FIX: Remove loadModels from deps to avoid loops

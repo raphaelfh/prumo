@@ -11,7 +11,7 @@
  * caller doesn't have to know whether the run is extraction or
  * quality_assessment, only that it exists and is in PROPOSAL stage.
  */
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { t } from "@/lib/copy";
@@ -35,8 +35,7 @@ export function useRunAIExtraction(options?: {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const extractForRun = useCallback(
-    async (params: ExtractForRunRequest): Promise<ExtractForRunResult> => {
+  const extractForRun = async (params: ExtractForRunRequest): Promise<ExtractForRunResult> => {
       setLoading(true);
       setError(null);
 
@@ -70,9 +69,7 @@ export function useRunAIExtraction(options?: {
           throw err;
         })
         .finally(() => setLoading(false));
-    },
-    [options],
-  );
+  };
 
   return { extractForRun, loading, error };
 }

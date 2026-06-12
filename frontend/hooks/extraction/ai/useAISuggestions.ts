@@ -10,7 +10,7 @@
  * @hook
  */
 
-import {useCallback, useEffect, useState} from 'react';
+import {useEffect, useState} from 'react';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 import type {
@@ -57,7 +57,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
   const providedInstanceKey = providedInstanceIds?.join('|') ?? null;
 
     // Declare loadSuggestions BEFORE useEffect to avoid init error
-  const loadSuggestions = useCallback((): Promise<LoadSuggestionsResult> => {
+  const loadSuggestions = (): Promise<LoadSuggestionsResult> => {
     setLoading(true);
 
     // Prefer caller-provided instance ids when available (QA gets these
@@ -107,7 +107,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
         return { suggestions: {}, count: 0 } as LoadSuggestionsResult;
       })
       .finally(() => setLoading(false));
-  }, [articleId, runId, providedInstanceKey]);
+  };
 
     // useEffect AFTER loadSuggestions declaration
   useEffect(() => {
@@ -116,7 +116,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     queueMicrotask(() => void loadSuggestions());
   }, [articleId, enabled, loadSuggestions]);
 
-  const acceptSuggestionCore = useCallback(async (instanceId: string, fieldId: string, silent: boolean): Promise<boolean> => {
+  const acceptSuggestionCore = async (instanceId: string, fieldId: string, silent: boolean): Promise<boolean> => {
     const key = getSuggestionKey(instanceId, fieldId);
     const suggestion = suggestions[key];
     if (!suggestion) return false;
@@ -193,18 +193,15 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
         return false;
       })
       .finally(clearLoading);
-  }, [suggestions, projectId, articleId, runId, acceptStrategy, onSuggestionAccepted]);
+  };
 
   // Public accept: surfaces its own toasts (silent=false) and keeps the
   // Promise<void> contract — only the batch path needs the success flag.
-  const acceptSuggestion = useCallback(
-    async (instanceId: string, fieldId: string): Promise<void> => {
-      await acceptSuggestionCore(instanceId, fieldId, false);
-    },
-    [acceptSuggestionCore],
-  );
+  const acceptSuggestion = async (instanceId: string, fieldId: string): Promise<void> => {
+    await acceptSuggestionCore(instanceId, fieldId, false);
+  };
 
-  const rejectSuggestion = useCallback(async (instanceId: string, fieldId: string) => {
+  const rejectSuggestion = async (instanceId: string, fieldId: string) => {
     const key = getSuggestionKey(instanceId, fieldId);
     const suggestion = suggestions[key];
     if (!suggestion) return;
@@ -276,9 +273,9 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
         toast.error(`${t('extraction', 'errors_rejectSuggestion')}: ${message}`);
       })
       .finally(clearLoading);
-  }, [suggestions, projectId, articleId, runId, acceptStrategy, onSuggestionRejected]);
+  };
 
-  const batchAccept = useCallback(async (threshold = 0.8) => {
+  const batchAccept = async (threshold = 0.8) => {
     const filtered = filterSuggestionsByConfidence(suggestions, threshold);
 
     if (filtered.length === 0) {
@@ -304,12 +301,12 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
       return;
     }
     toast.success(t('extraction', 'batchAcceptCountToast').replace('{{n}}', String(accepted)));
-  }, [suggestions, acceptSuggestionCore]);
+  };
 
   /**
    * Fetches full suggestion history for a specific field
    */
-  const getSuggestionsHistory = useCallback(async (
+  const getSuggestionsHistory = async (
     instanceId: string,
     fieldId: string
   ): Promise<AISuggestionHistoryItem[]> =>
@@ -318,25 +315,24 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
       const message = getErrorMessage(err);
       toast.error(`${t('extraction', 'errors_loadSuggestionsHistory')}: ${message}`);
       return [] as AISuggestionHistoryItem[];
-    })
-  , []);
+    });
 
   /**
    * Returns the latest suggestion for a field (if present in local state)
    */
-  const getLatestSuggestion = useCallback((
+  const getLatestSuggestion = (
     instanceId: string,
     fieldId: string
   ): AISuggestion | undefined => {
     const key = getSuggestionKey(instanceId, fieldId);
     return suggestions[key];
-  }, [suggestions]);
+  };
 
     // Helper to check if a suggestion is loading
-  const isActionLoading = useCallback((instanceId: string, fieldId: string): 'accept' | 'reject' | null => {
+  const isActionLoading = (instanceId: string, fieldId: string): 'accept' | 'reject' | null => {
     const key = getSuggestionKey(instanceId, fieldId);
     return actionLoading[key] || null;
-  }, [actionLoading]);
+  };
 
   return {
     suggestions,

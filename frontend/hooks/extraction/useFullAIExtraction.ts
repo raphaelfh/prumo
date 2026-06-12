@@ -15,7 +15,7 @@
  * - Success callback for refresh
  */
 
-import {useCallback, useState} from "react";
+import {useState} from "react";
 import {toast} from "sonner";
 import {t} from "@/lib/copy";
 import {useModelExtraction} from "./useModelExtraction";
@@ -109,7 +109,7 @@ export function useFullAIExtraction(options?: {
    * throws — failing fast is correct here: every caller assumes a
    * template that owns prediction models.
    */
-  const fetchModelParentEntityTypeId = useCallback(async (
+  const fetchModelParentEntityTypeId = async (
     templateId: string
   ): Promise<string> => {
     const results = await queryEntityTypesWithFallback<{ id: string }>({
@@ -123,15 +123,14 @@ export function useFullAIExtraction(options?: {
     }
 
     return results[0].id;
-  }, []);
+  };
 
   /**
    * Extracts models and then sections for each model
    *
    * @param params - Extraction parameters
    */
-  const extractFullAI = useCallback(
-    async (params: {
+  const extractFullAI = async (params: {
       projectId: string;
       articleId: string;
       templateId: string;
@@ -263,9 +262,7 @@ export function useFullAIExtraction(options?: {
           throw err;
         })
         .finally(() => setLoading(false));
-    },
-    [extractModelsHook, extractTopLevelSections, extractAllSectionsForAllModels, fetchModelParentEntityTypeId, options],
-  );
+  };
 
   return { extractFullAI, loading, error, progress };
 }

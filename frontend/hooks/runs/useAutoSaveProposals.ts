@@ -39,7 +39,7 @@
  * and the next natural refetch picks up the freshly written proposals.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { writeRunFieldValue } from '@/services/extractionRunService';
@@ -153,17 +153,14 @@ export function useAutoSaveProposals(
   // as a synchronous lock across overlapping ``performSave`` invocations.
   const activeSavePromiseRef = useRef<Promise<void> | null>(null);
 
-  const computeDirtyEntries = useCallback(
-    (): Array<[string, unknown]> =>
-      selectDirtyEntries(
-        valuesRef.current,
-        lastSavedByKeyRef.current,
-        baselineRef.current,
-      ),
-    [],
-  );
+  const computeDirtyEntries = (): Array<[string, unknown]> =>
+    selectDirtyEntries(
+      valuesRef.current,
+      lastSavedByKeyRef.current,
+      baselineRef.current,
+    );
 
-  const performSave = useCallback((): Promise<void> => {
+  const performSave = (): Promise<void> => {
     // Serialize concurrent saves: wait for any in-flight batch, swallowing
     // its error (the owner invocation surfaces it; queued calls still retry
     // dirty values that weren't acknowledged).
@@ -268,7 +265,7 @@ export function useAutoSaveProposals(
 
     activeSavePromiseRef.current = savePromise;
     return savePromise;
-  }, [computeDirtyEntries]);
+  };
 
   // (1) Debounced save on values change. The cleanup clears the timer
   // when ``values`` changes so the next keystroke restarts the
@@ -279,7 +276,7 @@ export function useAutoSaveProposals(
   // debounce). Keyed by content, not identity: callers may rebuild the
   // values map every render, and an identity-keyed adjustment would
   // re-render forever.
-  const valuesKey = useMemo(() => JSON.stringify(values), [values]);
+  const valuesKey = JSON.stringify(values);
   const [prevValuesKey, setPrevValuesKey] = useState(valuesKey);
   if (valuesKey !== prevValuesKey) {
     setPrevValuesKey(valuesKey);
@@ -347,21 +344,19 @@ export function useAutoSaveProposals(
     };
   }, [performSave]);
 
-  const saveNow = useCallback(async (): Promise<void> => {
+  const saveNow = async (): Promise<void> => {
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
       debounceRef.current = undefined;
     }
     await performSave();
-  }, [performSave]);
+  };
 
   // Re-evaluate the dirty diff whenever ``values`` changes (user typed)
   // or a save acknowledges (``lastSavedByKey`` advances). Computed from
   // render-safe state — never from the mutable refs.
-  const hasUnsavedChanges = useMemo(
-    () => selectDirtyEntries(values, lastSavedByKey, baselineValues ?? {}).length > 0,
-    [values, lastSavedByKey, baselineValues],
-  );
+  const hasUnsavedChanges =
+    selectDirtyEntries(values, lastSavedByKey, baselineValues ?? {}).length > 0;
 
   return { saveState, lastSavedAt, error, hasUnsavedChanges, saveNow };
 }

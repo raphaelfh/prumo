@@ -2,7 +2,7 @@
  * Hook to manage the Zotero import process
  */
 
-import {useCallback, useState} from 'react';
+import {useState} from 'react';
 import {zoteroService, listZoteroCollections, importZoteroCollection} from '@/services/zoteroImportService';
 import type {ImportOptions, ImportProgress, ImportResult, ZoteroCollection} from '@/types/zotero';
 import {toast} from 'sonner';
@@ -19,7 +19,7 @@ export function useZoteroImport() {
    * Lists available collections in Zotero
    * IO + try/catch/finally relocated to zoteroImportService.listZoteroCollections
    */
-  const listCollections = useCallback(async () => {
+  const listCollections = async () => {
     setLoadingCollections(true);
     const result = await listZoteroCollections();
     setLoadingCollections(false);
@@ -30,13 +30,13 @@ export function useZoteroImport() {
     console.error('Error listing collections:', result.error);
     toast.error(result.error.message || t('extraction', 'errors_zoteroFetch'));
     return [];
-  }, []);
+  };
 
   /**
    * Starts import of a collection
    * IO + try/catch/finally relocated to zoteroImportService.importZoteroCollection
    */
-  const startImport = useCallback(async (
+  const startImport = async (
     projectId: string,
     collectionKey: string,
     options: ImportOptions,
@@ -118,25 +118,25 @@ export function useZoteroImport() {
     }
 
     return importResult;
-  }, []);
+  };
 
   /**
    * Cancels import in progress
    */
-  const cancelImport = useCallback(() => {
+  const cancelImport = () => {
     zoteroService.cancelImport();
     setImporting(false);
     setProgress(null);
     setCurrentJobId(null);
     toast.info(t('extraction', 'zoteroImportCancelled'));
-  }, []);
+  };
 
   /**
    * Resets progress state
    */
-  const resetProgress = useCallback(() => {
+  const resetProgress = () => {
     setProgress(null);
-  }, []);
+  };
 
   return {
     collections,

@@ -18,7 +18,6 @@
  * react-query cache and trivially testable.
  */
 
-import { useMemo } from "react";
 
 import type { ReviewerDecisionResponse, RunDetailResponse } from "./types";
 
@@ -101,8 +100,7 @@ function unwrap(raw: unknown): unknown {
 export function useReviewerSummary(
   runDetail: RunDetailResponse | null | undefined,
 ): ReviewerSummary {
-  return useMemo(() => {
-    if (!runDetail) return EMPTY_SUMMARY;
+  if (!runDetail) return EMPTY_SUMMARY;
 
     // Latest decision per (reviewer × coord) — `decisions` are append-only
     // so we keep the newest by created_at.
@@ -158,15 +156,14 @@ export function useReviewerSummary(
     );
     const ratio = Math.min(1, reviewers.size / required);
 
-    return {
-      reviewers: [...reviewers],
-      currentDecisions,
-      decisionsByCoord,
-      divergentCoords,
-      requiredReviewerCount: required,
-      completionRatio: ratio,
-      filledCoords,
-      touchedCoords,
-    };
-  }, [runDetail]);
+  return {
+    reviewers: [...reviewers],
+    currentDecisions,
+    decisionsByCoord,
+    divergentCoords,
+    requiredReviewerCount: required,
+    completionRatio: ratio,
+    filledCoords,
+    touchedCoords,
+  };
 }

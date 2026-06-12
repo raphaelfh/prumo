@@ -13,7 +13,7 @@
  * - User-friendly error handling
  */
 
-import {useCallback, useState} from "react";
+import {useState} from "react";
 import {toast} from "sonner";
 import {type SectionExtractionRequest, SectionExtractionService,} from "@/services/sectionExtractionService";
 import {
@@ -67,8 +67,7 @@ export function useSectionExtraction(options?: {
    * Extracts data from a specific section
    * @param request - Extraction parameters
    */
-  const extractSection = useCallback(
-    async (request: SectionExtractionRequest) => {
+  const extractSection = async (request: SectionExtractionRequest) => {
         console.warn('[useSectionExtraction] Starting extraction', request);
       setLoading(true);
       setError(null);
@@ -150,9 +149,7 @@ export function useSectionExtraction(options?: {
           throw err;
         })
         .finally(() => setLoading(false));
-    },
-    [options],
-  );
+  };
 
   return { extractSection, loading, error };
 }

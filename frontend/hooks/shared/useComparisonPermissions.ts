@@ -11,7 +11,7 @@
  * @hook
  */
 
-import {useCallback, useEffect, useState} from 'react';
+import {useEffect, useState} from 'react';
 import {loadComparisonPermissions} from '@/services/projectSettingsService';
 import {type PermissionRules, type UserRole} from '@/lib/comparison/permissions';
 import {t} from '@/lib/copy';
@@ -71,7 +71,7 @@ export function useComparisonPermissions(
     }
   }
 
-  const fetchPermissions = useCallback(async () => {
+  const fetchPermissions = async () => {
     setPermissions(prev => ({ ...prev, loading: true, error: null }));
 
     const result = await loadComparisonPermissions(projectId, userId);
@@ -99,7 +99,7 @@ export function useComparisonPermissions(
         error: result.error.message || t('common', 'errors_loadPermissions'),
       });
     }
-  }, [projectId, userId]);
+  };
 
   useEffect(() => {
     if (!projectId || !userId) {

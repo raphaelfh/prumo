@@ -2,7 +2,7 @@
  * Hook to manage user Zotero integration
  */
 
-import {useCallback, useEffect, useState} from 'react';
+import {useEffect, useState} from 'react';
 import {
   loadZoteroIntegration,
   saveZoteroCredentials,
@@ -23,7 +23,7 @@ export function useZoteroIntegration() {
    * Loads Zotero integration for the current user.
    * IO + try/catch/finally relocated to zoteroImportService.loadZoteroIntegration
    */
-  const loadIntegration = useCallback(async () => {
+  const loadIntegration = async () => {
     setLoading(true);
     const result = await loadZoteroIntegration();
     setLoading(false);
@@ -35,13 +35,13 @@ export function useZoteroIntegration() {
       setIntegration(null);
       setIsConfigured(false);
     }
-  }, []);
+  };
 
   /**
    * Saves Zotero credentials.
    * IO + try/catch/finally relocated to zoteroImportService.saveZoteroCredentials
    */
-  const saveCredentials = useCallback(async (credentials: ZoteroCredentialsInput) => {
+  const saveCredentials = async (credentials: ZoteroCredentialsInput) => {
     setLoading(true);
     const result = await saveZoteroCredentials(credentials);
     setLoading(false);
@@ -53,13 +53,13 @@ export function useZoteroIntegration() {
     console.error('Error saving credentials:', result.error);
     toast.error(result.error.message || t('extraction', 'zoteroCredentialsSaveError'));
     return false;
-  }, [loadIntegration]);
+  };
 
   /**
    * Tests Zotero connection.
    * IO + try/catch/finally relocated to zoteroImportService.testZoteroConnection
    */
-  const testConnection = useCallback(async (): Promise<ZoteroTestConnectionResult> => {
+  const testConnection = async (): Promise<ZoteroTestConnectionResult> => {
     setTesting(true);
     const result = await testZoteroConnection();
     setTesting(false);
@@ -75,13 +75,13 @@ export function useZoteroIntegration() {
       toast.error(connectionResult.error || t('extraction', 'zoteroConnectionFailed'));
     }
     return connectionResult;
-  }, []);
+  };
 
   /**
    * Removes Zotero integration.
    * IO + try/catch/finally relocated to zoteroImportService.disconnectZotero
    */
-  const disconnect = useCallback(async () => {
+  const disconnect = async () => {
     setLoading(true);
     const result = await disconnectZotero();
     setLoading(false);
@@ -94,7 +94,7 @@ export function useZoteroIntegration() {
     console.error('Error disconnecting Zotero:', result.error);
     toast.error(result.error.message || t('extraction', 'zoteroDisconnectError'));
     return false;
-  }, []);
+  };
 
   // Load integration on mount
   useEffect(() => {

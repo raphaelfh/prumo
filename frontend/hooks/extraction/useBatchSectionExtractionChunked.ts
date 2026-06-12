@@ -13,7 +13,7 @@
  * - Error handling (skip failed sections)
  */
 
-import {useCallback, useState} from "react";
+import {useState} from "react";
 // Note: a PDF-text cache used to be planned here (process once, reuse across
 // chunks), but it was never wired — the setter sat unused. Removed for now;
 // reintroduce only with a proper setter call inside `extractAllSections`.
@@ -86,8 +86,7 @@ export function useBatchSectionExtractionChunked(options?: {
    *
    * @param request - Extraction params (sectionIds and pdfText are generated)
    */
-  const extractAllSections = useCallback(
-    async (request: Omit<BatchSectionExtractionRequest, 'sectionIds' | 'pdfText'>) => {
+  const extractAllSections = async (request: Omit<BatchSectionExtractionRequest, 'sectionIds' | 'pdfText'>) => {
         console.warn('[useBatchSectionExtractionChunked] Starting extraction with chunking', request);
       setLoading(true);
       setError(null);
@@ -208,9 +207,7 @@ export function useBatchSectionExtractionChunked(options?: {
           throw err;
         })
         .finally(() => setLoading(false));
-    },
-    [options, chunkSize],
-  );
+  };
 
   return { extractAllSections, loading, error, progress };
 }

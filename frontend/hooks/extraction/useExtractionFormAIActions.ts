@@ -9,7 +9,6 @@
  * ``onRefreshInstances``, ``onExtractionComplete``) in one place so
  * any new AI action just plugs into the same callback chain.
  */
-import {useCallback} from 'react';
 
 import {useBatchAllModelsSectionsExtraction} from './useBatchAllModelsSectionsExtraction';
 import {useBatchSectionExtractionChunked} from './useBatchSectionExtractionChunked';
@@ -76,13 +75,13 @@ export function useExtractionFormAIActions(props: UseExtractionFormAIActionsProp
     },
   });
 
-  const handleExtractModels = useCallback(async () => {
+  const handleExtractModels = async () => {
     extractModels({projectId, articleId, templateId}).catch((error: unknown) => {
       console.error('[useExtractionFormAIActions] extractModels failed:', error);
     });
-  }, [extractModels, projectId, articleId, templateId]);
+  };
 
-  const handleExtractAllSections = useCallback(async () => {
+  const handleExtractAllSections = async () => {
     if (!activeModelId) {
       console.warn('[useExtractionFormAIActions] no active model; skipping');
       return;
@@ -96,9 +95,9 @@ export function useExtractionFormAIActions(props: UseExtractionFormAIActionsProp
     }).catch((error: unknown) => {
       console.error('[useExtractionFormAIActions] extractAllSections failed:', error);
     });
-  }, [extractAllSections, projectId, articleId, templateId, activeModelId]);
+  };
 
-  const handleExtractAllSectionsForAllModels = useCallback(async () => {
+  const handleExtractAllSectionsForAllModels = async () => {
     if (models.length === 0) {
       console.warn('[useExtractionFormAIActions] no models; skipping');
       return;
@@ -111,7 +110,7 @@ export function useExtractionFormAIActions(props: UseExtractionFormAIActionsProp
     }).catch((error: unknown) => {
       console.error('[useExtractionFormAIActions] extractAllSectionsForAllModels failed:', error);
     });
-  }, [extractAllSectionsForAllModels, projectId, articleId, templateId, models]);
+  };
 
   return {
     handleExtractModels,

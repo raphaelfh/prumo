@@ -15,7 +15,7 @@
  * Pass exactly one — the backend rejects both.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { openQASession } from "@/services/qaTemplateService";
 
@@ -89,7 +89,7 @@ export function useQAAssessmentSession({
     }
   }
 
-  const openCore = useCallback(async () => {
+  const openCore = async () => {
     if (!enabled || !projectId || !articleId) return;
     if (!globalTemplateId && !projectTemplateId) return;
     const myGeneration = ++generationRef.current;
@@ -121,16 +121,16 @@ export function useQAAssessmentSession({
       setError(result.error.message);
     }
     setLoading(false);
-  }, [enabled, projectId, articleId, globalTemplateId, projectTemplateId]);
+  };
 
   // Manual refetch (event-handler context): show the loader, then reopen.
-  const refetch = useCallback(async () => {
+  const refetch = async () => {
     if (!enabled || !projectId || !articleId) return;
     if (!globalTemplateId && !projectTemplateId) return;
     setLoading(true);
     setError(null);
     await openCore();
-  }, [enabled, projectId, articleId, globalTemplateId, projectTemplateId, openCore]);
+  };
 
   const openCoreRef = useRef(openCore);
   useEffect(() => {

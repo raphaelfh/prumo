@@ -13,7 +13,7 @@
  * - User-friendly error handling
  */
 
-import {useCallback, useState} from "react";
+import {useState} from "react";
 import {toast} from "sonner";
 import {t} from "@/lib/copy";
 import {type ModelExtractionRequest, SectionExtractionService,} from "@/services/sectionExtractionService";
@@ -59,8 +59,7 @@ export function useModelExtraction(options?: {
    * Extracts prediction models from the article
    * @param request - Extraction parameters
    */
-  const extractModels = useCallback(
-    async (request: ModelExtractionRequest) => {
+  const extractModels = async (request: ModelExtractionRequest) => {
         console.warn('[useModelExtraction] Starting model extraction', request);
       setLoading(true);
       setError(null);
@@ -131,9 +130,7 @@ export function useModelExtraction(options?: {
           throw err;
         })
         .finally(() => setLoading(false));
-    },
-    [options],
-  );
+  };
 
   return { extractModels, loading, error };
 }

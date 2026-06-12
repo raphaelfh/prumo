@@ -3,7 +3,7 @@
  * Extracts data logic from ProjectSettings to keep the component focused on layout.
  */
 
-import {useCallback, useEffect, useState} from 'react';
+import {useEffect, useState} from 'react';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 import type {Project} from '@/types/project';
@@ -14,7 +14,7 @@ export function useProjectSettings(projectId: string) {
     const [loading, setLoading] = useState(true);
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
-    const loadProject = useCallback(async () => {
+    const loadProject = async () => {
         if (!projectId) return;
         setLoading(true);
         const result = await loadProjectForSettings(projectId);
@@ -26,19 +26,19 @@ export function useProjectSettings(projectId: string) {
         }
         setProject(result.data);
         setHasUnsavedChanges(false);
-    }, [projectId]);
+    };
 
     useEffect(() => {
         // Microtask so the loader's setState calls run in an async callback.
         queueMicrotask(() => void loadProject());
     }, [loadProject]);
 
-    const updateProject = useCallback((updates: Partial<Project>) => {
+    const updateProject = (updates: Partial<Project>) => {
         setProject((prev) => (prev ? {...prev, ...updates} : null));
         setHasUnsavedChanges(true);
-    }, []);
+    };
 
-    const saveProject = useCallback(async () => {
+    const saveProject = async () => {
         if (!project) return;
 
         setLoading(true);
@@ -66,7 +66,7 @@ export function useProjectSettings(projectId: string) {
         toast.success(t('project', 'settingsSaveSuccess'));
         setHasUnsavedChanges(false);
         await loadProject();
-    }, [project, projectId, loadProject]);
+    };
 
     return {
         project,

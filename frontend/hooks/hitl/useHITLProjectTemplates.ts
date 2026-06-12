@@ -15,7 +15,7 @@
  *   of truth lives server-side in ``template_clone_service``.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { apiClient } from "@/integrations/api";
@@ -110,7 +110,7 @@ export function useHITLProjectTemplates({
     }
   }
 
-  const refresh = useCallback(async (): Promise<ProjectTemplate[]> => {
+  const refresh = async (): Promise<ProjectTemplate[]> => {
     if (!projectId) return [];
     const result = await fetchProjectTemplates(projectId, kind, includeInactive);
     if (result.ok) {
@@ -119,7 +119,7 @@ export function useHITLProjectTemplates({
     }
     setError(result.error.message);
     throw result.error;
-  }, [projectId, kind, includeInactive]);
+  };
 
   useEffect(() => {
     if (!projectId) {
@@ -148,8 +148,7 @@ export function useHITLProjectTemplates({
     };
   }, [projectId, kind, includeInactive, refresh]);
 
-  const cloneTemplate = useCallback(
-    async (globalTemplateId: string): Promise<ProjectTemplate | null> => {
+  const cloneTemplate = async (globalTemplateId: string): Promise<ProjectTemplate | null> => {
       const result = await (async () => {
         const data = await apiClient<CloneResponse>(
           `/api/v1/projects/${projectId}/templates/clone`,
@@ -178,12 +177,9 @@ export function useHITLProjectTemplates({
         toast.success(t("extraction", "templateClonedSuccess").replace("{{name}}", created?.name ?? ""));
       }
       return created ?? null;
-    },
-    [projectId, kind, refresh],
-  );
+  };
 
-  const setTemplateActive = useCallback(
-    async (templateId: string, isActive: boolean): Promise<boolean> => {
+  const setTemplateActive = async (templateId: string, isActive: boolean): Promise<boolean> => {
       const result = await apiClient<UpdateActiveResponse>(
         `/api/v1/projects/${projectId}/templates/${templateId}`,
         {
@@ -211,17 +207,12 @@ export function useHITLProjectTemplates({
         ),
       );
       return true;
-    },
-    [projectId, refresh],
-  );
+  };
 
-  const isTemplateImported = useCallback(
-    (globalTemplateId: string): boolean =>
-      templates.some(
-        (tpl) => tpl.global_template_id === globalTemplateId && tpl.is_active,
-      ),
-    [templates],
-  );
+  const isTemplateImported = (globalTemplateId: string): boolean =>
+    templates.some(
+      (tpl) => tpl.global_template_id === globalTemplateId && tpl.is_active,
+    );
 
   return {
     templates,
