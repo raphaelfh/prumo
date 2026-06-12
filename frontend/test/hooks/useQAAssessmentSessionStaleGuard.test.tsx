@@ -13,14 +13,15 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@/integrations/api', () => ({
-  apiClient: vi.fn(),
+vi.mock('@/services/qaTemplateService', () => ({
+  openQASession: vi.fn(),
 }));
 
-import { apiClient } from '@/integrations/api';
+import { openQASession } from '@/services/qaTemplateService';
 import { useQAAssessmentSession } from '@/hooks/qa/useQAAssessmentSession';
 
-const apiClientMock = apiClient as ReturnType<typeof vi.fn>;
+// Alias for readability — the test was originally written against apiClient.
+const apiClientMock = openQASession as ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -34,11 +35,17 @@ describe('useQAAssessmentSession — stale-response guard (#109)', () => {
       resolveFirst = res;
     });
 
-    apiClientMock.mockReturnValueOnce(firstOpen).mockResolvedValue({
-      run_id: 'run-art2',
-      project_template_id: 'tpl-1',
-      instances_by_entity_type: {},
-    });
+    // openQASession returns ErrorResult<OpenQASessionResponse>; wrap the raw
+    // data in {ok: true, data: ...} to match the service contract.
+    const wrapResult = (data: unknown) => ({ok: true, data});
+    const firstOpenResult = firstOpen.then(wrapResult);
+    apiClientMock.mockReturnValueOnce(firstOpenResult).mockResolvedValue(
+      wrapResult({
+        run_id: 'run-art2',
+        project_template_id: 'tpl-1',
+        instances_by_entity_type: {},
+      }),
+    );
 
     const { result, rerender } = renderHook(
       ({ articleId }) =>

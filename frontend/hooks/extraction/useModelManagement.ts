@@ -14,13 +14,12 @@
  * @module hooks/extraction/useModelManagement
  */
 
-import {useCallback, useEffect, useRef, useState} from 'react';
-import {supabase} from '@/integrations/supabase/client';
+import {useEffect, useRef, useState} from 'react';
 import {createManualModelHierarchy} from '@/integrations/api';
 import {useAuth} from '@/contexts/AuthContext';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
-import {extractionInstanceService} from '@/services/extractionInstanceService';
+import {extractionInstanceService, loadModelInstances, fetchModelProgress} from '@/services/extractionInstanceService';
 import type {Model} from '@/components/extraction/hierarchy/ModelSelector';
 
 // =================== INTERFACES ===================
@@ -83,115 +82,67 @@ export function useModelManagement({
   }, [activeModelId]);
 
     // Calculate progress for a model (using optimized SQL function).
-    // Declared BEFORE loadModels because loadModels depends on it.
-    //
-    // Contract: the RPC was rewritten in alembic migration 0013 to
-    // ``calculate_model_progress(p_article_id, p_model_id)`` returning a
-    // single ``(completed_fields, total_fields, percentage)`` row scoped
-    // to a single model. See ``frontend/integrations/supabase/types.ts``
-    // for the generated signature.
-  const getModelProgress = useCallback(async (instanceId: string): Promise<Model['progress']> => {
-    try {
-      const { data, error } = await supabase
-        .rpc('calculate_model_progress', {
-          p_article_id: articleId,
-          p_model_id: instanceId,
-        });
-
-      if (error) {
-          console.warn('Error calculating progress (fallback to 0):', error);
-        return { completed: 0, total: 0, percentage: 0 };
-      }
-
-        // PostgREST wraps a single-row TABLE return in an array; guard for
-        // both shapes so a future schema change to RETURNS RECORD does
-        // not silently regress us.
-      const row = Array.isArray(data) ? data[0] : data;
-      if (!row) {
-        return { completed: 0, total: 0, percentage: 0 };
-      }
-
-      return {
-        completed: row.completed_fields ?? 0,
-        total: row.total_fields ?? 0,
-        percentage: Number(row.percentage ?? 0),
-      };
-
-    } catch (err) {
-        console.error('Error calculating model progress:', err);
-      return { completed: 0, total: 0, percentage: 0 };
-    }
-  }, [articleId]);
+  const getModelProgress = async (instanceId: string): Promise<Model['progress']> =>
+    fetchModelProgress(articleId, instanceId);
 
     // Load existing models
-  const loadModels = useCallback(async () => {
+  const loadModels = async () => {
     if (!enabled || !modelParentEntityTypeId) {
-        console.warn('⏭️ loadModels: Skipped (enabled:', enabled, ', modelParentEntityTypeId:', modelParentEntityTypeId, ')');
+      console.warn('⏭️ loadModels: Skipped (enabled:', enabled, ', modelParentEntityTypeId:', modelParentEntityTypeId, ')');
       setModels([]);
       setLoading(false);
       return;
     }
 
-    try {
-      setLoading(true);
-      setError(null);
+    setLoading(true);
+    setError(null);
 
-        console.warn('[useModelManagement] Loading models for article:', articleId, ', entity_type:', modelParentEntityTypeId);
+    console.warn('[useModelManagement] Loading models for article:', articleId, ', entity_type:', modelParentEntityTypeId);
 
-        // Fetch prediction_models instances for this article
-      const { data: instances, error: instancesError } = await supabase
-        .from('extraction_instances')
-        .select('id, label, sort_order, created_at')
-        .eq('article_id', articleId)
-        .eq('entity_type_id', modelParentEntityTypeId)
-        .order('sort_order', { ascending: true });
+    const result = await loadModelInstances(articleId, modelParentEntityTypeId);
 
-      if (instancesError) throw instancesError;
-
-        console.warn(`✅ Encontradas ${instances?.length || 0} instances de modelos:`, instances?.map(i => i.label));
-
-      if (!instances || instances.length === 0) {
-        setModels([]);
-        setActiveModelId(null);
-          // FIX: Do not return here - let finally run so loading = false is guaranteed
-          // finally always runs, but being explicit is clearer
-      } else {
-          // For each model, calculate progress
-        const modelsWithProgress = await Promise.all(
-          instances.map(async (instance) => {
-            const progress = await getModelProgress(instance.id);
-            
-            return {
-              instanceId: instance.id,
-              modelName: instance.label,
-              progress
-            };
-          })
-        );
-
-        setModels(modelsWithProgress);
-
-        const currentActiveId = activeModelIdRef.current;
-        const hasActiveModel = currentActiveId
-          ? modelsWithProgress.some(model => model.instanceId === currentActiveId)
-          : false;
-
-          // If active model no longer exists (or not set yet), pick first available
-        if (!hasActiveModel) {
-          const fallbackModelId = modelsWithProgress[0]?.instanceId ?? null;
-          setActiveModelId(fallbackModelId);
-        }
-      }
-
-    } catch (err: any) {
-        console.error('Error loading models:', err);
-      setError(err.message);
-        // FIX: Do not setLoading(false) in catch - finally always runs
-    } finally {
-        // Ensure loading is always false, even on early returns
+    if (!result.ok) {
+      console.error('Error loading models:', result.error);
+      setError(result.error.message);
       setLoading(false);
+      return;
     }
-  }, [enabled, modelParentEntityTypeId, articleId, getModelProgress]);
+
+    const instances = result.data;
+    console.warn(`✅ Encontradas ${instances.length} instances de modelos:`, instances.map(i => i.label));
+
+    if (instances.length === 0) {
+      setModels([]);
+      setActiveModelId(null);
+    } else {
+        // For each model, calculate progress
+      const modelsWithProgress = await Promise.all(
+        instances.map(async (instance) => {
+          const progress = await getModelProgress(instance.id);
+          return {
+            instanceId: instance.id,
+            modelName: instance.label ?? 'Unnamed model',
+            progress
+          };
+        })
+      );
+
+      setModels(modelsWithProgress);
+
+      const currentActiveId = activeModelIdRef.current;
+      const hasActiveModel = currentActiveId
+        ? modelsWithProgress.some(model => model.instanceId === currentActiveId)
+        : false;
+
+        // If active model no longer exists (or not set yet), pick first available
+      if (!hasActiveModel) {
+        const fallbackModelId = modelsWithProgress[0]?.instanceId ?? null;
+        setActiveModelId(fallbackModelId);
+      }
+    }
+
+    setLoading(false);
+  };
 
     // Sync ref with loadModels in an effect (refs must not be written
     // during render). Declared before the mount-load effect below so the
@@ -201,115 +152,106 @@ export function useModelManagement({
   }, [loadModels]);
 
     // Create new model (using service - simplified)
-  const createModel = useCallback(async (
+  const createModel = async (
     modelName: string,
     modellingMethod: string
   ): Promise<CreateModelResult | null> => {
     if (!user || !modelParentEntityTypeId) {
-        toast.error(t('extraction', 'modelNotAuthenticatedOrInvalid'));
+      toast.error(t('extraction', 'modelNotAuthenticatedOrInvalid'));
       return null;
     }
 
-    try {
-        console.warn('🆕 Creating new model:', modelName);
-      const result = await createManualModelHierarchy({
-        project_id: projectId,
-        article_id: articleId,
-        template_id: templateId,
-        model_name: modelName.trim(),
-        modelling_method: modellingMethod || null,
-      });
-
-      // 4. Create Model object
-      const newModel: Model = {
-        instanceId: result.model_id,
-        modelName: result.model_label,
-        progress: { completed: 0, total: 0, percentage: 0 }
-      };
-
-      // 5. Update state
-      setModels(prev => [...prev, newModel]);
-      setActiveModelId(newModel.instanceId);
-
-      toast.success(t('extraction', 'modelCreatedSuccess').replace('{{label}}', result.model_label));
-
-      console.warn(`✅ Hierarchy created: 1 parent + ${result.child_instances.length} children`);
-
-      // Return model and created child instances.
-      return {
-        model: newModel,
-        childInstances: result.child_instances.map((child) => ({
-          id: child.id,
-          entityTypeId: child.entity_type_id,
-          parentInstanceId: child.parent_instance_id,
-          label: child.label,
-        })),
-      };
-
-    } catch (err: any) {
-        console.error('Error creating model:', err);
-        toast.error(`${t('extraction', 'errors_createModel')}: ${err.message}`);
+    const result = await createManualModelHierarchy({
+      project_id: projectId,
+      article_id: articleId,
+      template_id: templateId,
+      model_name: modelName.trim(),
+      modelling_method: modellingMethod || null,
+    }).catch((err: unknown) => {
+      console.error('Error creating model:', err);
+      toast.error(`${t('extraction', 'errors_createModel')}: ${err instanceof Error ? err.message : String(err)}`);
       return null;
-    }
-  }, [user, modelParentEntityTypeId, projectId, articleId, templateId]);
+    });
+
+    if (!result) return null;
+
+    // Create Model object
+    const newModel: Model = {
+      instanceId: result.model_id,
+      modelName: result.model_label,
+      progress: { completed: 0, total: 0, percentage: 0 }
+    };
+
+    // Update state
+    setModels(prev => [...prev, newModel]);
+    setActiveModelId(newModel.instanceId);
+
+    toast.success(t('extraction', 'modelCreatedSuccess').replace('{{label}}', result.model_label));
+    console.warn(`✅ Hierarchy created: 1 parent + ${result.child_instances.length} children`);
+
+    return {
+      model: newModel,
+      childInstances: result.child_instances.map((child) => ({
+        id: child.id,
+        entityTypeId: child.entity_type_id,
+        parentInstanceId: child.parent_instance_id,
+        label: child.label,
+      })),
+    };
+  };
 
     // Remove model (using service - simplified)
-  const removeModel = useCallback(async (instanceId: string): Promise<void> => {
-    try {
-        console.warn('🗑️ Removing model:', instanceId);
+  const removeModel = async (instanceId: string): Promise<void> => {
+    console.warn('🗑️ Removing model:', instanceId);
 
-        // Delegate to service (automatic CASCADE)
-      await extractionInstanceService.removeInstance(instanceId);
-
-        // Update local state - remove model and capture name for toast
-      let removedModelName = 'Modelo';
-      let updatedModels: Model[] = [];
-
-      setModels(prev => {
-        const model = prev.find(m => m.instanceId === instanceId);
-        if (model) {
-          removedModelName = model.modelName;
-        }
-
-        const filteredModels = prev.filter(m => m.instanceId !== instanceId);
-        updatedModels = filteredModels;
-
-        return filteredModels;
-      });
-
-        // Ensure a valid active model always exists after removal
-      setActiveModelId(prevActiveId => {
-        if (!updatedModels.length) {
-          return null;
-        }
-
-        const stillExists = prevActiveId
-          ? updatedModels.some(model => model.instanceId === prevActiveId)
-          : false;
-
-        if (stillExists) {
-          return prevActiveId;
-        }
-
-          // Select first remaining model as fallback
-        return updatedModels[0].instanceId;
-      });
-
-        console.warn('✅ Modelo removido:', removedModelName);
-        toast.success(t('extraction', 'modelRemovedSuccess').replace('{{label}}', removedModelName));
-
-    } catch (err: any) {
-        console.error('Error removing model:', err);
-        toast.error(`${t('extraction', 'errors_removeModel')}: ${err.message}`);
-        // Re-throw error instead of returning boolean for consistent error handling
+    await extractionInstanceService.removeInstance(instanceId).catch((err: unknown) => {
+      console.error('Error removing model:', err);
+      toast.error(`${t('extraction', 'errors_removeModel')}: ${err instanceof Error ? err.message : String(err)}`);
       throw err;
-    }
-  }, []); // No deps - uses only setters and functional callbacks
+    });
+
+    // Update local state - remove model and capture name for toast
+    let removedModelName = 'Modelo';
+    let updatedModels: Model[] = [];
+
+    setModels(prev => {
+      const model = prev.find(m => m.instanceId === instanceId);
+      if (model) {
+        removedModelName = model.modelName;
+      }
+
+      const filteredModels = prev.filter(m => m.instanceId !== instanceId);
+      updatedModels = filteredModels;
+
+      return filteredModels;
+    });
+
+      // Ensure a valid active model always exists after removal
+    setActiveModelId(prevActiveId => {
+      if (!updatedModels.length) {
+        return null;
+      }
+
+      const stillExists = prevActiveId
+        ? updatedModels.some(model => model.instanceId === prevActiveId)
+        : false;
+
+      if (stillExists) {
+        return prevActiveId;
+      }
+
+        // Select first remaining model as fallback
+      return updatedModels[0].instanceId;
+    });
+
+    console.warn('✅ Modelo removido:', removedModelName);
+    toast.success(t('extraction', 'modelRemovedSuccess').replace('{{label}}', removedModelName));
+  };
 
   // Refresh models
-  const refreshModels = useCallback(() => {
+  const refreshModels = () => {
     return loadModels();
-  }, [loadModels]);
+  };
 
     // Load models on mount
     // FIX: Remove loadModels from deps to avoid loops
@@ -335,4 +277,3 @@ export function useModelManagement({
     getModelProgress
   };
 }
-

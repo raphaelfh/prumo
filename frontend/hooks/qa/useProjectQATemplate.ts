@@ -8,7 +8,7 @@
 
 import { useEffect, useState } from "react";
 
-import { supabase } from "@/integrations/supabase/client";
+import { loadProjectQATemplate } from "@/services/qaTemplateService";
 import type {
   ExtractionEntityType,
   ExtractionField,
@@ -16,7 +16,10 @@ import type {
 
 import type { QADomain, QATemplate } from "./useQATemplate";
 
-type EntityTypeWithFields = ExtractionEntityType & {
+export type { QADomain, QATemplate };
+
+// Re-export EntityTypeWithFields shape for consumers that need it.
+export type EntityTypeWithFields = ExtractionEntityType & {
   extraction_fields?: ExtractionField[];
 };
 
@@ -41,59 +44,32 @@ export function useProjectQATemplate({
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Reset loading state when query coordinates change (during render, so
+  // the fetch below never calls setState synchronously inside the effect).
+  const [prevKey, setPrevKey] = useState({ projectTemplateId, enabled });
+  if (projectTemplateId !== prevKey.projectTemplateId || enabled !== prevKey.enabled) {
+    setPrevKey({ projectTemplateId, enabled });
+    if (enabled && projectTemplateId) {
+      setLoading(true);
+      setError(null);
+    }
+  }
+
   useEffect(() => {
     if (!enabled || !projectTemplateId) return;
 
     let cancelled = false;
-    void (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const tplRes = await supabase
-          .from("project_extraction_templates")
-          .select("id, name, description, framework, version, kind")
-          .eq("id", projectTemplateId)
-          .maybeSingle();
-        if (tplRes.error) throw tplRes.error;
-        if (!tplRes.data) throw new Error("Project template not found");
-        if (tplRes.data.kind !== "quality_assessment") {
-          throw new Error(
-            `Template kind '${tplRes.data.kind}' is not 'quality_assessment'`,
-          );
-        }
-
-        const etRes = await supabase
-          .from("extraction_entity_types")
-          .select("*, extraction_fields(*)")
-          .eq("project_template_id", projectTemplateId)
-          .order("sort_order", { ascending: true });
-        if (etRes.error) throw etRes.error;
-
-        const entities = (etRes.data as EntityTypeWithFields[] | null) ?? [];
-        const grouped: QADomain[] = entities.map((et) => ({
-          // Keep deterministic field order for stable rendering.
-          // Related fields are loaded in the same query.
-          entityType: et as ExtractionEntityType,
-          fields: ([...(et.extraction_fields ?? [])]
-            .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))) as ExtractionField[],
-        }));
-
-        if (!cancelled) {
-          setTemplate(tplRes.data as QATemplate);
-          setDomains(grouped);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(
-            err instanceof Error
-              ? err.message
-              : "Failed to load project QA template",
-          );
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+    void loadProjectQATemplate(projectTemplateId).then((result) => {
+      if (cancelled) return;
+      if (result.ok) {
+        setTemplate(result.data.template);
+        setDomains(result.data.domains);
+      } else {
+        setError(result.error.message);
       }
-    })();
+      setLoading(false);
+    });
+
     return () => {
       cancelled = true;
     };

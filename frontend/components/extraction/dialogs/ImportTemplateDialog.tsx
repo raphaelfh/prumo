@@ -85,26 +85,21 @@ export function ImportTemplateDialog({
 
     setImporting(true);
 
-    try {
-        console.warn('[ImportTemplateDialog] import:', selectedTemplate.name);
+    console.warn('[ImportTemplateDialog] import:', selectedTemplate.name);
 
-      const result = await importGlobalTemplate(projectId, selectedTemplate.id);
+    const result = await importGlobalTemplate(projectId, selectedTemplate.id);
 
-      if (result.success) {
-        toast.success(
-            `${t('extraction', 'importSuccess')}: "${selectedTemplate.name}". ${result.details?.entityTypesAdded} ${t('extraction', 'importSections')}, ${result.details?.fieldsAdded} fields.`
-        );
-        onOpenChange(false);
-        onTemplateImported(result.templateId);
-      } else {
-          throw new Error(result.error || 'Unknown error');
-      }
+    setImporting(false);
 
-    } catch (error: any) {
-      console.error('[ImportTemplateDialog] import failed', error);
-        toast.error(`${t('extraction', 'importErrorImport')}: ${error.message}`);
-    } finally {
-      setImporting(false);
+    if (result.success) {
+      toast.success(
+          `${t('extraction', 'importSuccess')}: "${selectedTemplate.name}". ${result.details?.entityTypesAdded} ${t('extraction', 'importSections')}, ${result.details?.fieldsAdded} fields.`
+      );
+      onOpenChange(false);
+      onTemplateImported(result.templateId);
+    } else {
+      console.error('[ImportTemplateDialog] import failed', result.error);
+      toast.error(`${t('extraction', 'importErrorImport')}: ${result.error || 'Unknown error'}`);
     }
   };
 

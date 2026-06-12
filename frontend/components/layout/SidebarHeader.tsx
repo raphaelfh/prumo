@@ -16,8 +16,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {useProjectsList} from '@/hooks/useProjectsList';
 import {useAuth} from '@/contexts/AuthContext';
-import {supabase} from '@/integrations/supabase/client';
 import {toast} from 'sonner';
+import {createProject} from '@/services/projectsService';
 import {AddProjectDialog} from '@/components/project/AddProjectDialog';
 import {t} from '@/lib/copy';
 
@@ -40,28 +40,16 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({projectName, open, 
       return;
     }
     setIsCreating(true);
-    try {
-      const {data: projectId, error} = await supabase.rpc(
-        'create_project_with_member' as never,
-        {p_name: data.name, p_description: data.description || undefined, p_review_title: undefined} as never,
-      );
-      if (error) {
-        toast.error(`${t('pages', 'dashboardErrorCreating')}: ${error.message}`);
-        return;
-      }
-      if (!projectId || typeof projectId !== 'string') {
-        toast.error(t('pages', 'dashboardErrorProjectIdNotReturned'));
-        return;
-      }
-      toast.success(t('pages', 'dashboardProjectCreated'));
-      setShowAddDialog(false);
-      await loadProjects();
-      switchProject(projectId);
-    } catch {
-      toast.error(t('pages', 'dashboardUnexpectedError'));
-    } finally {
-      setIsCreating(false);
+    const result = await createProject(data.name, data.description);
+    setIsCreating(false);
+    if (!result.ok) {
+      toast.error(`${t('pages', 'dashboardErrorCreating')}: ${result.error.message}`);
+      return;
     }
+    toast.success(t('pages', 'dashboardProjectCreated'));
+    setShowAddDialog(false);
+    await loadProjects();
+    switchProject(result.data.projectId);
   };
 
   return (
