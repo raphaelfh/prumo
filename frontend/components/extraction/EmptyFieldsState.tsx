@@ -6,7 +6,6 @@
  * @component
  */
 
-import {memo} from 'react';
 import {Card, CardContent} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {Plus} from 'lucide-react';
@@ -17,8 +16,7 @@ interface EmptyFieldsStateProps {
   onAddField: () => void;
 }
 
-// kept: parent component (FieldsManager) bails out of compilation — memo is load-bearing here
-export const EmptyFieldsState = memo(function EmptyFieldsState({ canCreate, onAddField }: EmptyFieldsStateProps) {
+export function EmptyFieldsState({ canCreate, onAddField }: EmptyFieldsStateProps) {
   return (
     <Card role="region" aria-labelledby="empty-state-title">
       <CardContent className="pt-6">
@@ -41,4 +39,4 @@ export const EmptyFieldsState = memo(function EmptyFieldsState({ canCreate, onAd
       </CardContent>
     </Card>
   );
-});
+}

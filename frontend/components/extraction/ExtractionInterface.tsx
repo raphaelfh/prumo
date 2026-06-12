@@ -5,7 +5,7 @@
  * including templates, instances and values.
  */
 
-import {useEffect, useMemo, useState} from 'react';
+import {useEffect, useState} from 'react';
 import {useSearchParams} from 'react-router-dom';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
@@ -25,7 +25,7 @@ import {ExtractionExportDialog} from './ExtractionExportDialog';
 import {TemplateConfigEditor} from './TemplateConfigEditor';
 import {useAuth} from '@/contexts/AuthContext';
 import {CreateCustomTemplateDialog, ImportTemplateDialog} from './dialogs';
-import {supabase} from '@/integrations/supabase/client';
+import {loadProjectArticles} from '@/services/articlesService';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 
@@ -59,7 +59,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   );
   const { entityTypes } = useTemplateEntityTypes(activeTemplate?.id);
 
-  const extractionStats = useMemo(() => {
+  const extractionStats = (() => {
     const totalArticles = articles.length;
     let completed = 0;
     let sum = 0;
@@ -75,7 +75,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
       extractionsCompleted: completed,
       progressPercentage: totalArticles > 0 ? Math.round(sum / totalArticles) : 0,
     };
-  }, [articles, valuesByArticle, entityTypes]);
+  })();
 
     // Hook to manage templates
   const {
@@ -147,19 +147,13 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   };
 
   const loadArticles = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("articles")
-        .select("id, title, doi, created_at")
-        .eq("project_id", projectId)
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      setArticles(data || []);
-    } catch (error: any) {
-      console.error("Error loading articles:", error);
-        toast.error(t('extraction', 'errorLoadArticles'));
+    const result = await loadProjectArticles(projectId);
+    if (!result.ok) {
+      console.error("Error loading articles:", result.error);
+      toast.error(t('extraction', 'errorLoadArticles'));
+      return;
     }
+    setArticles(result.data);
   };
 
     // Load articles and statistics

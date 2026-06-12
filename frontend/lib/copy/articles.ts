@@ -242,7 +242,6 @@ export const articles = {
     listErrorDeletingArticles: 'Error deleting article(s)',
     listPdfNotFound: 'PDF file not found',
     listErrorAccessingPdf: 'Error accessing PDF file',
-    listErrorOpeningPdf: 'Error opening PDF',
     listAddPdf: 'Add PDF',
     listUntitled: 'Untitled',
     listOfArticles: 'of',

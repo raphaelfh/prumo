@@ -3,13 +3,13 @@
  * Centralizes breadcrumbs, search and navigation logic
  */
 
-import {useCallback, useEffect, useMemo, useState} from 'react';
+import {useEffect, useState} from 'react';
 import {useLocation, useNavigate} from 'react-router-dom';
-import {supabase} from '@/integrations/supabase/client';
 import {useAuth} from '@/contexts/AuthContext';
 import {t} from '@/lib/copy';
 import {File, FileText, Folder, LogIn, Settings} from 'lucide-react';
 import type {BreadcrumbItem, NotificationItem, SearchResult, UserProfile} from '@/types/navigation';
+import {searchProjects, searchArticles, loadUserProfile as loadUserProfileSvc} from '@/services/projectSettingsService';
 
 export const useNavigation = () => {
   const location = useLocation();
@@ -18,8 +18,8 @@ export const useNavigation = () => {
   const [searchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
-  // Gerar breadcrumbs baseado na rota atual
-  const generateBreadcrumbs = useCallback((): BreadcrumbItem[] => {
+  // Gerar breadcrumbs baseado na rota atual — pure derivation from location.pathname.
+  const breadcrumbs = (() => {
     try {
       const pathSegments = location.pathname.split('/').filter(Boolean);
       const items: BreadcrumbItem[] = [];
@@ -39,7 +39,7 @@ export const useNavigation = () => {
           let label = segment;
           let icon;
           let shouldSkip = false;
-          
+
           switch (segment) {
             case 'projects':
                 // Do not add "Projects" to breadcrumbs, skip to next
@@ -91,28 +91,23 @@ export const useNavigation = () => {
         console.error('Error generating breadcrumbs:', error);
       return [{ label: 'Dashboard', href: '/', isActive: true }];
     }
-  }, [location.pathname]);
-
-    // Breadcrumbs are a pure function of the route — derive instead of
-    // materializing through an effect.
-  const breadcrumbs = useMemo(() => generateBreadcrumbs(), [generateBreadcrumbs]);
+  })();
 
   // Busca global
-  const performSearch = useCallback(async (query: string): Promise<SearchResult[]> => {
+  const performSearch = async (query: string): Promise<SearchResult[]> => {
     if (!query.trim()) return [];
 
     setIsSearching(true);
-    try {
-      const results: SearchResult[] = [];
+    const [projectsResult, articlesResult] = await Promise.all([
+      searchProjects(query),
+      searchArticles(query),
+    ]);
+    setIsSearching(false);
 
-        // Fetch projects
-      const { data: projects } = await supabase
-        .from('projects')
-        .select('id, name, description')
-        .ilike('name', `%${query}%`)
-        .limit(5);
+    const results: SearchResult[] = [];
 
-      projects?.forEach(project => {
+    if (projectsResult.ok) {
+      projectsResult.data.forEach(project => {
         results.push({
           id: project.id,
           title: project.name,
@@ -120,18 +115,13 @@ export const useNavigation = () => {
           type: 'project',
           href: `/projects/${project.id}`,
           icon: Folder,
-          metadata: { projectId: project.id },
+          metadata: {projectId: project.id},
         });
       });
+    }
 
-        // Fetch articles
-      const { data: articles } = await supabase
-        .from('articles')
-        .select('id, title, abstract')
-        .ilike('title', `%${query}%`)
-        .limit(5);
-
-      articles?.forEach(article => {
+    if (articlesResult.ok) {
+      articlesResult.data.forEach(article => {
         results.push({
           id: article.id,
           title: article.title,
@@ -139,24 +129,19 @@ export const useNavigation = () => {
           type: 'article',
           href: `/articles/${article.id}`,
           icon: FileText,
-          metadata: { articleId: article.id },
+          metadata: {articleId: article.id},
         });
       });
-
-      return results;
-    } catch (error) {
-        console.error('Search error:', error);
-      return [];
-    } finally {
-      setIsSearching(false);
     }
-  }, []);
+
+    return results;
+  };
 
   // Navegar para resultado da busca
-  const navigateToSearchResult = useCallback((result: SearchResult) => {
+  const navigateToSearchResult = (result: SearchResult) => {
     navigate(result.href);
     setIsSearchOpen(false);
-  }, [navigate]);
+  };
 
   return {
     breadcrumbs,
@@ -174,45 +159,40 @@ export const useNotifications = () => {
   const [unreadCount, setUnreadCount] = useState(0);
 
     // Load user notifications
-  const loadNotifications = useCallback(async () => {
-    try {
-        // For now, simulate notifications
-        // In production, fetch from database
-      const mockNotifications: NotificationItem[] = [
-        {
-          id: '2',
-            title: t('navigation', 'notifProjectCompletedTitle'),
-            message: t('navigation', 'notifProjectCompletedMessage'),
-          type: 'success',
-          timestamp: new Date(Date.now() - 3600000),
-          isRead: true,
-        },
-      ];
-
-      setNotifications(mockNotifications);
-      setUnreadCount(mockNotifications.filter(n => !n.isRead).length);
-    } catch (error) {
-        console.error('Error loading notifications:', error);
-    }
-  }, []);
+  const loadNotifications = () => {
+    // For now, simulate notifications
+    // In production, fetch from database
+    const mockNotifications: NotificationItem[] = [
+      {
+        id: '2',
+        title: t('navigation', 'notifProjectCompletedTitle'),
+        message: t('navigation', 'notifProjectCompletedMessage'),
+        type: 'success',
+        timestamp: new Date(Date.now() - 3600000),
+        isRead: true,
+      },
+    ];
+    setNotifications(mockNotifications);
+    setUnreadCount(mockNotifications.filter(n => !n.isRead).length);
+  };
 
     // Mark notification as read
-  const markAsRead = useCallback((notificationId: string) => {
-    setNotifications(prev => 
-      prev.map(n => 
+  const markAsRead = (notificationId: string) => {
+    setNotifications(prev =>
+      prev.map(n =>
         n.id === notificationId ? { ...n, isRead: true } : n
       )
     );
     setUnreadCount(prev => Math.max(0, prev - 1));
-  }, []);
+  };
 
   // Marcar todas como lidas
-  const markAllAsRead = useCallback(() => {
-    setNotifications(prev => 
+  const markAllAsRead = () => {
+    setNotifications(prev =>
       prev.map(n => ({ ...n, isRead: true }))
     );
     setUnreadCount(0);
-  }, []);
+  };
 
   useEffect(() => {
     // Microtask so the loader's setState calls run in an async callback.
@@ -234,58 +214,49 @@ export const useUserProfile = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadUserProfile = useCallback(async () => {
-      if (!authUser) {
-          setUser(null);
-          setIsLoading(false);
-          return;
-      }
-
-      try {
-          setError(null);
-          setIsLoading(true);
-
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', authUser.id)
-        .single();
-
-      if (profileError) {
-          console.warn('Error fetching profile, using basic data:', profileError);
-        setUser({
-          id: authUser.id,
-            name: authUser.user_metadata?.full_name || 'User',
-          email: authUser.email || '',
-            initials: authUser.email?.charAt(0).toUpperCase() || 'U',
-            role: 'Researcher',
-        });
-        return;
-      }
-
-      if (profile) {
-        const initials = profile.full_name
-            ? profile.full_name.split(' ').map((n: string) => n[0]).join('').toUpperCase()
-          : authUser.email?.charAt(0).toUpperCase() || 'U';
-
-        setUser({
-          id: authUser.id,
-            name: profile.full_name || 'User',
-          email: authUser.email || '',
-          avatar: profile.avatar_url || undefined,
-          initials,
-            role: 'Researcher',
-            organization: 'Research Institute',
-        });
-      }
-      } catch (err) {
-          console.error('Unexpected error loading profile:', err);
-          setError(t('common', 'errors_loadProfileFailed'));
+  const loadUserProfile = async () => {
+    if (!authUser) {
       setUser(null);
-    } finally {
       setIsLoading(false);
+      return;
     }
-  }, [authUser]);
+    setError(null);
+    setIsLoading(true);
+    const result = await loadUserProfileSvc(authUser.id);
+    if (!result.ok) {
+      console.error('Unexpected error loading profile:', result.error);
+      setError(t('common', 'errors_loadProfileFailed'));
+      setUser(null);
+      setIsLoading(false);
+      return;
+    }
+    const profile = result.data;
+    if (!profile) {
+      // Not found — fall back to auth metadata
+      console.warn('Profile not found, using basic data');
+      setUser({
+        id: authUser.id,
+        name: authUser.user_metadata?.full_name || 'User',
+        email: authUser.email || '',
+        initials: authUser.email?.charAt(0).toUpperCase() || 'U',
+        role: 'Researcher',
+      });
+    } else {
+      const initials = profile.full_name
+        ? profile.full_name.split(' ').map((n: string) => n[0]).join('').toUpperCase()
+        : authUser.email?.charAt(0).toUpperCase() || 'U';
+      setUser({
+        id: authUser.id,
+        name: profile.full_name || 'User',
+        email: authUser.email || '',
+        avatar: profile.avatar_url || undefined,
+        initials,
+        role: 'Researcher',
+        organization: 'Research Institute',
+      });
+    }
+    setIsLoading(false);
+  };
 
   useEffect(() => {
     // Microtask so the loader's setState calls run in an async callback.

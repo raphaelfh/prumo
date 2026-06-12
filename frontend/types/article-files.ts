@@ -1,4 +1,4 @@
-import {FileFormat, FileRole} from '@/lib/file-constants';
+import {FileRole} from '@/lib/file-constants';
 
 /**
  * TypeScript types for the article files system
@@ -28,36 +28,4 @@ export interface ArticleFile {
   updated_at: string;
 }
 
-export interface ArticleFileInsert {
-  project_id: string;
-  article_id: string;
-    file_type: FileFormat | string; // Format detected automatically
-    file_role: FileRole;            // Role selected by the user
-  storage_key: string;
-  original_filename: string;
-  bytes: number;
-  md5?: string | null;
-}
-
-export interface FileUploadProgress {
-  file: File;
-  progress: number;
-  status: 'pending' | 'uploading' | 'success' | 'error';
-  error?: string;
-  articleFileId?: string;
-}
-
-export interface FileUploadResult {
-  success: boolean;
-  articleFile?: ArticleFile;
-  error?: string;
-}
-
-export interface MultiFileUploadResult {
-  successful: ArticleFile[];
-  failed: Array<{
-    file: File;
-    error: string;
-  }>;
-}
 
