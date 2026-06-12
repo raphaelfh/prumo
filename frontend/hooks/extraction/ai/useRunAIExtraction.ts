@@ -11,104 +11,65 @@
  * caller doesn't have to know whether the run is extraction or
  * quality_assessment, only that it exists and is in PROPOSAL stage.
  */
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
-import { apiClient } from "@/integrations/api";
 import { t } from "@/lib/copy";
+import {
+  extractForRun as extractForRunService,
+  type ExtractForRunRequest,
+  type ExtractForRunResult,
+} from "@/services/extractionRunService";
 
-interface ExtractForRunRequest {
-  projectId: string;
-  articleId: string;
-  templateId: string;
-  runId: string;
-  /**
-   * Default true: only fields without a more recent ``human`` proposal
-   * receive an AI proposal. Lets users re-run AI without losing edits.
-   */
-  skipFieldsWithHumanProposals?: boolean;
-  /**
-   * Default false: keep the run in PROPOSAL after success. QA needs
-   * this off because its publish flow drives the lifecycle from
-   * PROPOSAL → REVIEW → CONSENSUS → FINALIZED in one go.
-   */
-  autoAdvanceToReview?: boolean;
-  model?: string;
-}
-
-interface ExtractForRunResponseBody {
-  extractionRunId: string;
-  totalSections: number;
-  successfulSections: number;
-  failedSections: number;
-  totalSuggestionsCreated: number;
-  totalTokensUsed: number;
-  durationMs: number;
-}
+export type { ExtractForRunResult as ExtractForRunResponseBody };
 
 export interface UseRunAIExtractionReturn {
-  extractForRun: (params: ExtractForRunRequest) => Promise<ExtractForRunResponseBody>;
+  extractForRun: (params: ExtractForRunRequest) => Promise<ExtractForRunResult>;
   loading: boolean;
   error: string | null;
 }
 
 export function useRunAIExtraction(options?: {
-  onSuccess?: (result: ExtractForRunResponseBody) => Promise<void> | void;
+  onSuccess?: (result: ExtractForRunResult) => Promise<void> | void;
 }): UseRunAIExtractionReturn {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const extractForRun = useCallback(
-    async (params: ExtractForRunRequest): Promise<ExtractForRunResponseBody> => {
+  const extractForRun = async (params: ExtractForRunRequest): Promise<ExtractForRunResult> => {
       setLoading(true);
       setError(null);
-      try {
-        // ``apiClient`` already unwraps the ``ApiResponse`` envelope and
-        // hands back the inner data shape — so we type the call as
-        // ``ExtractForRunResponseBody`` directly.
-        const result = await apiClient<ExtractForRunResponseBody>(
-          "/api/v1/extraction/sections",
-          {
-            method: "POST",
-            body: {
-              projectId: params.projectId,
-              articleId: params.articleId,
-              templateId: params.templateId,
-              runId: params.runId,
-              skipFieldsWithHumanProposals:
-                params.skipFieldsWithHumanProposals ?? true,
-              autoAdvanceToReview: params.autoAdvanceToReview ?? false,
-              model: params.model ?? "gpt-4o-mini",
-            },
-          },
-        );
+
+      const doExtract = async (): Promise<ExtractForRunResult> => {
+        const result = await extractForRunService(params);
+        if (!result.ok) throw result.error;
+
         if (options?.onSuccess) {
-          await options.onSuccess(result);
+          await options.onSuccess(result.data);
         }
-        const created = result?.totalSuggestionsCreated ?? 0;
-        const successful = result?.successfulSections ?? 0;
-        const total = result?.totalSections ?? 0;
+        const created = result.data?.totalSuggestionsCreated ?? 0;
+        const successful = result.data?.successfulSections ?? 0;
+        const total = result.data?.totalSections ?? 0;
         toast.success(
           t("extraction", "fullAICompleteSuccessTitle"),
           {
             description: `${created} suggestions created across ${successful}/${total} sections.`,
           },
         );
-        return result;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        setError(message);
-        toast.error(
-          `${t("extraction", "fullAIErrorPrefix")}: ${message}`,
-          { duration: 8000 },
-        );
-        throw err;
-      } finally {
-        setLoading(false);
-      }
-    },
-    [options],
-  );
+        return result.data;
+      };
+
+      return doExtract()
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          setError(message);
+          toast.error(
+            `${t("extraction", "fullAIErrorPrefix")}: ${message}`,
+            { duration: 8000 },
+          );
+          throw err;
+        })
+        .finally(() => setLoading(false));
+  };
 
   return { extractForRun, loading, error };
 }

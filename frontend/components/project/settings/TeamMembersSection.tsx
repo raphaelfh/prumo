@@ -3,7 +3,15 @@
  */
 
 import {useEffect, useState} from 'react';
-import {supabase} from '@/integrations/supabase/client';
+import {
+  findUserIdByEmail,
+  getProjectMembers,
+  insertProjectMember,
+  removeProjectMember,
+  updateMemberRole,
+  type ProjectMemberRow,
+} from '@/services/projectSettingsService';
+import {PgError} from '@/lib/error-utils';
 import {toast} from 'sonner';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
@@ -16,14 +24,7 @@ import {SettingsSection, SettingsCard} from '@/components/settings';
 import {MEMBER_ROLES, type MemberRole} from '@/types/project';
 import {t} from '@/lib/copy';
 
-interface ProjectMember {
-  id: string;
-  user_id: string;
-  role: MemberRole;
-  user_email: string | null;
-  user_full_name: string | null;
-  user_avatar_url: string | null;
-}
+type ProjectMember = ProjectMemberRow;
 
 interface TeamMembersSectionProps {
   projectId: string;
@@ -38,15 +39,12 @@ export function TeamMembersSection({ projectId }: TeamMembersSectionProps) {
   const [editingRole, setEditingRole] = useState<MemberRole | null>(null);
 
   const loadMembers = async () => {
-    try {
-        const {data, error} = await supabase.rpc('get_project_members', {
-            p_project_id: projectId,
-        });
-      if (error) throw error;
-      setMembers((data as ProjectMember[]) || []);
-    } catch (error: unknown) {
-        console.error('Error loading members:', error);
-        toast.error(t('project', 'teamErrorLoadingMembers'));
+    const result = await getProjectMembers(projectId);
+    if (result.ok) {
+      setMembers(result.data);
+    } else {
+      console.error('Error loading members:', result.error);
+      toast.error(t('project', 'teamErrorLoadingMembers'));
     }
   };
 
@@ -61,43 +59,40 @@ export function TeamMembersSection({ projectId }: TeamMembersSectionProps) {
     if (!email) return;
 
     setLoading(true);
-    try {
-        const {data: userId, error: rpcError} = await supabase.rpc('find_user_id_by_email', {
-            p_email: email,
-            p_project_id: projectId,
-        });
-      if (rpcError) {
-          console.error('Error finding user:', rpcError);
-          if (rpcError.code === '42501') {
-              toast.error(t('project', 'teamErrorOnlyManagersInvite'));
-          } else {
-              toast.error(t('project', 'teamErrorFindingUser'));
-          }
-        return;
-      }
-      if (!userId) {
-          toast.error(t('project', 'teamUserNotFound'));
-        return;
-      }
 
-        const {error} = await supabase.from('project_members').insert([
-            {project_id: projectId, user_id: userId, role: selectedRole},
-        ]);
-      if (error) {
-          if (error.code === '23505') toast.error(t('project', 'teamUserAlreadyMember'));
-          else throw error;
-        return;
+    const findResult = await findUserIdByEmail(email, projectId);
+    if (!findResult.ok) {
+      console.error('Error finding user:', findResult.error);
+      if (findResult.error instanceof PgError && findResult.error.code === '42501') {
+        toast.error(t('project', 'teamErrorOnlyManagersInvite'));
+      } else {
+        toast.error(t('project', 'teamErrorFindingUser'));
       }
-        toast.success(`${t('project', 'teamMemberAddedAs')} ${MEMBER_ROLES[selectedRole].label}!`);
-        setInviteEmail('');
-      setSelectedRole('reviewer');
-      loadMembers();
-    } catch (error: unknown) {
-        console.error('Error inviting member:', error);
-        toast.error(t('project', 'teamErrorAddingMember'));
-    } finally {
       setLoading(false);
+      return;
     }
+    if (!findResult.data.userId) {
+      toast.error(t('project', 'teamUserNotFound'));
+      setLoading(false);
+      return;
+    }
+
+    const insertResult = await insertProjectMember(projectId, findResult.data.userId, selectedRole);
+    setLoading(false);
+
+    if (!insertResult.ok) {
+      console.error('Error inviting member:', insertResult.error);
+      toast.error(t('project', 'teamErrorAddingMember'));
+      return;
+    }
+    if (insertResult.data.alreadyMember) {
+      toast.error(t('project', 'teamUserAlreadyMember'));
+      return;
+    }
+    toast.success(`${t('project', 'teamMemberAddedAs')} ${MEMBER_ROLES[selectedRole].label}!`);
+    setInviteEmail('');
+    setSelectedRole('reviewer');
+    void loadMembers();
   };
 
   const handleStartEditRole = (memberId: string, currentRole: MemberRole) => {
@@ -112,33 +107,28 @@ export function TeamMembersSection({ projectId }: TeamMembersSectionProps) {
 
   const handleSaveRole = async (memberId: string) => {
     if (!editingRole) return;
-    try {
-      const { error } = await supabase
-          .from('project_members')
-        .update({ role: editingRole })
-          .eq('id', memberId);
-      if (error) throw error;
-        toast.success(`${t('project', 'teamRoleChangedTo')} ${MEMBER_ROLES[editingRole].label}`);
-      setEditingMemberId(null);
-      setEditingRole(null);
-      loadMembers();
-    } catch (err: unknown) {
-        console.error('Error updating role:', err);
-        toast.error(t('project', 'teamErrorUpdatingRole'));
+    const result = await updateMemberRole(memberId, editingRole);
+    if (!result.ok) {
+      console.error('Error updating role:', result.error);
+      toast.error(t('project', 'teamErrorUpdatingRole'));
+      return;
     }
+    toast.success(`${t('project', 'teamRoleChangedTo')} ${MEMBER_ROLES[editingRole].label}`);
+    setEditingMemberId(null);
+    setEditingRole(null);
+    void loadMembers();
   };
 
   const handleRemoveMember = async (memberId: string) => {
-      if (!confirm(t('project', 'teamConfirmRemoveMember'))) return;
-    try {
-        const {error} = await supabase.from('project_members').delete().eq('id', memberId);
-      if (error) throw error;
-        toast.success(t('project', 'teamMemberRemoved'));
-      loadMembers();
-    } catch (err: unknown) {
-        console.error('Error removing member:', err);
-        toast.error(t('project', 'teamErrorRemovingMember'));
+    if (!confirm(t('project', 'teamConfirmRemoveMember'))) return;
+    const result = await removeProjectMember(memberId);
+    if (!result.ok) {
+      console.error('Error removing member:', result.error);
+      toast.error(t('project', 'teamErrorRemovingMember'));
+      return;
     }
+    toast.success(t('project', 'teamMemberRemoved'));
+    void loadMembers();
   };
 
   return (

@@ -73,25 +73,15 @@ export function SectionAccordion(props: SectionAccordionProps) {
     // onSuccess callback notifies parent for suggestion refresh
     // IMPORTANT: onSuccess must not block - call without await so loading is not stuck
   const { extractSection, loading: extractionLoading } = useSectionExtraction({
-      onSuccess: async (runId, _suggestionsCreated) => {
+      onSuccess: (runId, _suggestionsCreated) => {
         // Notify parent that extraction completed
         // CRITICAL: Do not await here - let it run in background
-      // O loading deve ser resetado pelo hook independentemente deste callback
-      if (props.onExtractionComplete) {
-        try {
-          const result = props.onExtractionComplete(runId);
-          // Se retornar Promise, tratar erro sem bloquear
-          if (result && typeof result === 'object' && 'catch' in result) {
-            result.catch(err => {
-              console.error('Erro no callback onExtractionComplete:', err);
-                // Do not block the hook from resetting loading
-            });
-          }
-        } catch (err) {
-          console.error('Erro ao chamar callback onExtractionComplete:', err);
+        // O loading deve ser resetado pelo hook independentemente deste callback
+        if (!props.onExtractionComplete) return;
+        Promise.resolve(props.onExtractionComplete(runId)).catch((err: unknown) => {
+          console.error('Erro no callback onExtractionComplete:', err);
             // Do not block the hook from resetting loading
-        }
-      }
+        });
     },
   });
 
@@ -108,19 +98,17 @@ export function SectionAccordion(props: SectionAccordionProps) {
       return;
     }
 
-    try {
-      await extractSection({
-        projectId,
-        articleId,
-        templateId,
-        entityTypeId: entityType.id,
-        parentInstanceId: props.parentInstanceId,
-        runId: props.runId ?? undefined,
-      });
-    } catch (error) {
+    await extractSection({
+      projectId,
+      articleId,
+      templateId,
+      entityTypeId: entityType.id,
+      parentInstanceId: props.parentInstanceId,
+      runId: props.runId ?? undefined,
+    }).catch((error: unknown) => {
         // Error already handled by hook with toast
       console.error('Section extraction failed:', error);
-    }
+    });
   };
 
     // Calculate progress for this section

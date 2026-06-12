@@ -363,13 +363,12 @@ export function FieldsManagerWithDragDrop({ entityTypeId, sectionName }: FieldsM
 
   const handleSaveEdit = async (fieldId: string) => {
     setSavingEdit(true);
-    try {
-      await updateField(fieldId, editData);
+    const result = await updateField(fieldId, editData).catch(() => null);
+    if (result) {
       setEditingId(null);
       setEditData({});
-    } finally {
-      setSavingEdit(false);
     }
+    setSavingEdit(false);
   };
 
   const handleCancelEdit = () => {
@@ -386,12 +385,15 @@ export function FieldsManagerWithDragDrop({ entityTypeId, sectionName }: FieldsM
   const handleOpenDeleteDialog = async (field: ExtractionField) => {
     setValidatingDelete(true);
     setFieldToDelete(field);
-    
-    try {
-      const validation = await validateField(field.id);
-      setDeleteValidation(validation);
-    } catch (err) {
+
+    const validation = await validateField(field.id).catch((err: unknown) => {
         console.error('Error validating field for deletion:', err);
+      return null;
+    });
+
+    if (validation) {
+      setDeleteValidation(validation);
+    } else {
       setDeleteValidation({
         canDelete: false,
         canUpdate: false,
@@ -400,9 +402,8 @@ export function FieldsManagerWithDragDrop({ entityTypeId, sectionName }: FieldsM
         affectedArticles: [],
           message: t('extraction', 'errors_validateField'),
       });
-    } finally {
-      setValidatingDelete(false);
     }
+    setValidatingDelete(false);
   };
 
   const handleConfirmDelete = async (fieldId: string) => {
@@ -416,29 +417,22 @@ export function FieldsManagerWithDragDrop({ entityTypeId, sectionName }: FieldsM
     if (!over || active.id === over.id) return;
 
     setIsReordering(true);
-    
+
     // Otimistic update (UI first)
     const oldIndex = fields.findIndex((field) => field.id === active.id);
     const newIndex = fields.findIndex((field) => field.id === over.id);
     const reorderedFields = arrayMove(fields, oldIndex, newIndex);
-    
+
     // Preparar dados para backend
     const reorderData = reorderedFields.map((field, index) => ({
       id: field.id,
         sort_order: index + 1, // sort_order starts at 1
     }));
 
-    try {
-      const success = await reorderFields(reorderData);
-      if (!success) {
-          // If backend failed, revert change
-          // (list will reload automatically)
-      }
-    } catch (err) {
+    await reorderFields(reorderData).catch((err: unknown) => {
         console.error('Error reordering:', err);
-    } finally {
-      setIsReordering(false);
-    }
+    });
+    setIsReordering(false);
   };
 
   if (loading) {

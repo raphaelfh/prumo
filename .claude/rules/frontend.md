@@ -51,3 +51,17 @@ mechanics in `ui-styling`. This file is the always-true core.
   `frontend/types/api/schema.d.ts` instead of hand-mirroring backend
   enums/models (hand-mirrored types are the documented root cause of
   the envelope-drift incident class).
+
+## React Compiler
+
+- The build runs `babel-plugin-react-compiler` with `panicThreshold:
+  'all_errors'` (`vite.shared-plugins.ts`): a component or hook the
+  compiler cannot compile fails the build and vitest. Don't write
+  `try/finally` (or `throw` inside `try`) in component/hook bodies —
+  move IO into a `frontend/services/` function returning
+  `ErrorResult<T>` (`frontend/lib/error-utils.ts:toResult`); exported
+  service functions never throw across the boundary and never toast.
+- Last-resort opt-out for a file the compiler genuinely cannot handle:
+  `'use no memo'` directive plus a `// kept:` comment with the reason.
+- `scripts/enumerate_compiler_bailouts.mjs` lists every non-compiling
+  file in one pass (useful before compiler upgrades).

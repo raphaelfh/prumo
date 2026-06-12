@@ -41,7 +41,7 @@ export function useFeedback() {
     mutationFn: (payload: SubmitFeedbackPayload) => FeedbackService.submit(payload),
   });
 
-  const submitFeedback = async (
+  const submitFeedback = (
     data: FeedbackFormData,
     attachments: FeedbackAttachmentInput[] = [],
   ): Promise<boolean> => {
@@ -51,32 +51,31 @@ export function useFeedback() {
         description: t('common', 'feedbackDescriptionMinLength'),
         variant: 'destructive',
       });
-      return false;
+      return Promise.resolve(false);
     }
 
-    try {
-      await mutation.mutateAsync({
-        type: data.type,
-        description: data.description.trim(),
-        severity: data.type === 'bug' ? data.severity : undefined,
-        summary: data.summary,
-        context: getCurrentContext(),
-        attachments,
-      });
+    return mutation.mutateAsync({
+      type: data.type,
+      description: data.description.trim(),
+      severity: data.type === 'bug' ? data.severity : undefined,
+      summary: data.summary,
+      context: getCurrentContext(),
+      attachments,
+    }).then(() => {
       toast({
         title: t('common', 'feedbackSuccessTitle'),
         description: t('navigation', 'feedbackSuccessSent'),
       });
-      return true;
-    } catch (err) {
+      return true as boolean;
+    }).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : t('common', 'errors_sendFeedbackFailed');
       toast({
         title: t('common', 'errors_sendFeedbackFailed'),
         description: msg,
         variant: 'destructive',
       });
-      return false;
-    }
+      return false as boolean;
+    });
   };
 
   return { submitFeedback, submitting: mutation.isPending, error: mutation.error?.message ?? null };

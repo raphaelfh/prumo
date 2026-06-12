@@ -103,27 +103,27 @@ export function AddFieldDialog({
 
   const handleSubmit = async (data: ExtractionFieldInput) => {
     setLoading(true);
-    try {
-        // Configure "Other (specify)" support via dedicated flags
-      const finalData = { 
-        ...data,
-        allow_other: (fieldType === 'select' || fieldType === 'multiselect') ? allowOther : false,
-          other_label: (fieldType === 'select' || fieldType === 'multiselect') && allowOther ? (data as any).other_label || t('extraction', 'otherSpecifyDefault') : null,
-        other_placeholder: (fieldType === 'select' || fieldType === 'multiselect') && allowOther ? (data as any).other_placeholder || null : null,
-      } as any;
 
-      const result = await onSave(finalData);
-      if (result) {
-          // Don't create/remove auxiliary fields; "Other" is inline
-          // Reset form and close
-        form.reset();
-        setAutoGenerateName(true);
-        setAllowOther(false);
-        onOpenChange(false);
-      }
-    } finally {
-      setLoading(false);
+      // Configure "Other (specify)" support via dedicated flags
+    const finalData = {
+      ...data,
+      allow_other: (fieldType === 'select' || fieldType === 'multiselect') ? allowOther : false,
+        other_label: (fieldType === 'select' || fieldType === 'multiselect') && allowOther ? (data as any).other_label || t('extraction', 'otherSpecifyDefault') : null,
+      other_placeholder: (fieldType === 'select' || fieldType === 'multiselect') && allowOther ? (data as any).other_placeholder || null : null,
+    } as any;
+
+    const result = await onSave(finalData).catch(() => null);
+
+    if (result) {
+        // Don't create/remove auxiliary fields; "Other" is inline
+        // Reset form and close
+      form.reset();
+      setAutoGenerateName(true);
+      setAllowOther(false);
+      onOpenChange(false);
     }
+
+    setLoading(false);
   };
 
   const handleCancel = () => {

@@ -3,7 +3,6 @@ import {Dialog, DialogContent, DialogHeader, DialogTitle} from "@/components/ui/
 import {Button} from "@/components/ui/button";
 import {Badge} from "@/components/ui/badge";
 import {Separator} from "@/components/ui/separator";
-import {supabase} from "@/integrations/supabase/client";
 import {toast} from "sonner";
 import {Download, ExternalLink, Eye, FileText, Trash2, Upload} from "lucide-react";
 import {ArticleFileUploadDialogNew} from "./ArticleFileUploadDialogNew";
@@ -20,6 +19,13 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+    fetchArticle,
+    fetchArticleFiles,
+    downloadFileBlob,
+    deleteArticleFile,
+    type ArticleFileRecord,
+} from "@/services/articlesService";
 
 interface Article {
   id: string;
@@ -47,15 +53,6 @@ interface Article {
     zotero_collection_key: string | null;
 }
 
-interface ArticleFile {
-  id: string;
-  file_type: string;   // Formato: PDF, DOC, etc.
-    file_role?: string | null;  // Role: MAIN, SUPPLEMENT, etc.
-  storage_key: string;
-  original_filename: string | null;
-  bytes: number | null;
-}
-
 interface ArticleDetailDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -64,45 +61,29 @@ interface ArticleDetailDialogProps {
 
 export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDetailDialogProps) {
   const [article, setArticle] = useState<Article | null>(null);
-  const [files, setFiles] = useState<ArticleFile[]>([]);
+  const [files, setFiles] = useState<ArticleFileRecord[]>([]);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
-  const [fileToDelete, setFileToDelete] = useState<ArticleFile | null>(null);
+  const [fileToDelete, setFileToDelete] = useState<ArticleFileRecord | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   const loadArticle = async () => {
     if (!articleId) return;
-    
-    try {
-      const { data, error } = await supabase
-        .from("articles")
-        .select("*")
-        .eq("id", articleId)
-        .single();
-
-      if (error) throw error;
-      setArticle(data);
-    } catch (error: any) {
-      console.error("Error loading article:", error);
-        toast.error(t('articles', 'errorLoadArticle'));
+    const result = await fetchArticle(articleId);
+    if (result.ok) {
+      setArticle(result.data as unknown as Article);
+    } else {
+      toast.error(t('articles', 'errorLoadArticle'));
     }
   };
 
   const loadFiles = async () => {
     if (!articleId) return;
-
-    try {
-      const { data, error } = await supabase
-        .from("article_files")
-        .select("*")
-        .eq("article_id", articleId)
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      setFiles(data || []);
-    } catch (error: any) {
-      console.error("Error loading files:", error);
+    const result = await fetchArticleFiles(articleId);
+    if (result.ok) {
+      setFiles(result.data);
     }
+    // silent on error — files are best-effort
   };
 
   useEffect(() => {
@@ -115,85 +96,51 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
     }
   }, [articleId, open]);
 
-  const downloadFile = async (file: ArticleFile) => {
-    try {
-      const { data, error } = await supabase.storage
-        .from("articles")
-        .download(file.storage_key);
-
-      if (error) throw error;
-
-      const url = URL.createObjectURL(data);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = file.original_filename || "document.pdf";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (error: any) {
-      console.error("Error downloading file:", error);
-        toast.error(t('articles', 'errorDownloadFile'));
+  const downloadFile = async (file: ArticleFileRecord) => {
+    const result = await downloadFileBlob(file.storage_key);
+    if (!result.ok) {
+      toast.error(t('articles', 'errorDownloadFile'));
+      return;
     }
+    const url = URL.createObjectURL(result.data);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = file.original_filename || "document.pdf";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
-  const viewPDF = async (file: ArticleFile) => {
-    try {
-      // First try to download the file and open it
-      const { data: fileData, error: downloadError } = await supabase.storage
-        .from("articles")
-        .download(file.storage_key);
-
-      if (downloadError) {
-        console.error("Error downloading file:", downloadError);
-        throw downloadError;
-      }
-
-      // Create blob URL and open in new tab
-      const blob = new Blob([fileData], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
-      
-      // Clean up after a delay to allow the browser to load it
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
-    } catch (error: any) {
-      console.error("Error viewing PDF:", error);
-        toast.error(t('articles', 'errorViewPdf'));
+  const viewPDF = async (file: ArticleFileRecord) => {
+    const result = await downloadFileBlob(file.storage_key);
+    if (!result.ok) {
+      toast.error(t('articles', 'errorViewPdf'));
+      return;
     }
+    const blob = new Blob([result.data], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank");
+    // Clean up after a delay to allow the browser to load it
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
   };
 
   const handleDeleteFile = async () => {
     if (!fileToDelete) return;
 
     setDeleting(true);
-    try {
-        // Delete file from storage
-      const { error: storageError } = await supabase.storage
-        .from("articles")
-        .remove([fileToDelete.storage_key]);
+    const result = await deleteArticleFile(fileToDelete.id, fileToDelete.storage_key);
+    setDeleting(false);
+    setDeleteDialogOpen(false);
+    setFileToDelete(null);
 
-      if (storageError) {
-          console.warn("Error deleting file from storage:", storageError);
-      }
-
-        // Delete record from database
-      const { error: dbError } = await supabase
-        .from("article_files")
-        .delete()
-        .eq("id", fileToDelete.id);
-
-      if (dbError) throw dbError;
-
-        toast.success(t('articles', 'fileRemovedSuccess'));
-        loadFiles(); // Reload file list
-    } catch (error: any) {
-      console.error("Error deleting file:", error);
-        toast.error(t('articles', 'errorRemoveFile'));
-    } finally {
-      setDeleting(false);
-      setDeleteDialogOpen(false);
-      setFileToDelete(null);
+    if (!result.ok) {
+      toast.error(t('articles', 'errorRemoveFile'));
+      return;
     }
+
+    toast.success(t('articles', 'fileRemovedSuccess'));
+    void loadFiles(); // Reload file list
   };
 
   const getFileRoleLabel = (fileRole: string | null | undefined): string => {
@@ -363,7 +310,7 @@ export function ArticleDetailDialog({ open, onOpenChange, articleId }: ArticleDe
                     {t('articles', 'addFile')}
                 </Button>
               </div>
-              
+
               {files.length > 0 ? (
                 <div className="space-y-2">
                   {files.map((file) => (

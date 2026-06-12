@@ -12,7 +12,7 @@
  * resolver.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ExtractionValueService, type RunRef } from "@/services/extractionValueService";
 
@@ -38,26 +38,24 @@ export function useFinalizedExtractionRun(
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
-  const load = useCallback(async () => {
+  const load = async () => {
     if (!articleId) {
       setFinalizedRun(null);
       return;
     }
     setLoading(true);
     setError(null);
-    try {
-      const run = await ExtractionValueService.findLatestFinalizedRun(
-        articleId,
-        projectTemplateId ?? null,
-      );
-      setFinalizedRun(run);
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error(String(err)));
-      setFinalizedRun(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [articleId, projectTemplateId]);
+
+    ExtractionValueService.findLatestFinalizedRun(articleId, projectTemplateId ?? null)
+      .then((run) => {
+        setFinalizedRun(run);
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err : new Error(String(err)));
+        setFinalizedRun(null);
+      })
+      .finally(() => setLoading(false));
+  };
 
   useEffect(() => {
     if (!enabled) return;

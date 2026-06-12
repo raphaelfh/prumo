@@ -57,32 +57,28 @@ export function RemoveModelDialog({
     setLoading(true);
     setError(null);
 
-    try {
-        extractionLogger.info('removeModelDialog', 'Starting model removal', {
+    extractionLogger.info('removeModelDialog', 'Starting model removal', {
+      modelName,
+      hasExtractedData,
+      extractedFieldsCount,
+    });
+
+    const err = await onConfirm().then(() => null, (e: unknown) => e);
+
+    if (err) {
+      const errAny = err as any;
+      extractionLogger.error('removeModelDialog', 'Failed to remove model', errAny, {
         modelName,
         hasExtractedData,
-        extractedFieldsCount
       });
-
-      await onConfirm();
-
-        extractionLogger.info('removeModelDialog', 'Model removed successfully', {
-        modelName
-      });
-
+      setError(errAny?.message || t('extraction', 'removeModelError'));
+    } else {
+      extractionLogger.info('removeModelDialog', 'Model removed successfully', {modelName});
         // Dialog will be closed by parent component
-    } catch (err: any) {
-        extractionLogger.error('removeModelDialog', 'Failed to remove model', err, {
-        modelName,
-        hasExtractedData
-      });
-
-        setError(err.message || t('extraction', 'removeModelError'));
-    } finally {
-      // ✅ SEMPRE resetar loading, independente de sucesso/erro
-      // Isso previne o modal ficar travado no estado "Removendo..."
-      setLoading(false);
     }
+
+    // Always reset loading regardless of success/error
+    setLoading(false);
   };
 
   return (

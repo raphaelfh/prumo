@@ -1,8 +1,8 @@
 import {useState} from "react";
 import {useNavigate} from "react-router-dom";
 import {useQuery, useQueryClient} from "@tanstack/react-query";
-import {supabase} from "@/integrations/supabase/client";
 import {useAuth} from "@/contexts/AuthContext";
+import {listProjectsForDashboard, createProject} from "@/services/projectsService";
 import {AppLayout} from "@/components/layout/AppLayout";
 import {Button} from "@/components/ui/button";
 import {Skeleton} from "@/components/ui/skeleton";
@@ -27,12 +27,9 @@ export default function Dashboard() {
   const {data: projects = [], isLoading, isError, refetch} = useQuery<ProjectListItem[]>({
     queryKey: projectKeys.all,
     queryFn: async () => {
-      const {data, error} = await supabase
-        .from("projects")
-        .select("id, name, description, created_at, is_active, review_title")
-        .order("created_at", {ascending: false});
-      if (error) throw error;
-      return data ?? [];
+      const result = await listProjectsForDashboard();
+      if (!result.ok) throw result.error;
+      return result.data;
     },
     staleTime: 30_000,
   });
@@ -42,38 +39,16 @@ export default function Dashboard() {
       toast.error(t('pages', 'dashboardAuthRequired'));
       return;
     }
-
     setCreating(true);
-
-    try {
-      const {data: projectId, error: rpcError} = await supabase.rpc(
-        'create_project_with_member',
-        {
-          p_name: data.name,
-          p_description: data.description || undefined,
-          p_review_title: undefined,
-        }
-      );
-
-      if (rpcError) {
-        console.error("Error creating project via RPC:", rpcError);
-        toast.error(`${t('pages', 'dashboardErrorCreating')}: ${rpcError.message}`);
-        return;
-      }
-
-      if (!projectId) {
-        toast.error(t('pages', 'dashboardErrorProjectIdNotReturned'));
-        return;
-      }
-
-      toast.success(t('pages', 'dashboardProjectCreated'));
-      await queryClient.invalidateQueries({queryKey: projectKeys.all});
-      setAddDialogOpen(false);
-    } catch (_err) {
-      toast.error(t('pages', 'dashboardUnexpectedError'));
-    } finally {
-      setCreating(false);
+    const result = await createProject(data.name, data.description);
+    setCreating(false);
+    if (!result.ok) {
+      toast.error(`${t('pages', 'dashboardErrorCreating')}: ${result.error.message}`);
+      return;
     }
+    toast.success(t('pages', 'dashboardProjectCreated'));
+    await queryClient.invalidateQueries({queryKey: projectKeys.all});
+    setAddDialogOpen(false);
   };
 
   const header = (

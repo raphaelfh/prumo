@@ -9,9 +9,8 @@
  */
 
 import type {CSSProperties} from 'react';
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {useLocation, useNavigate} from 'react-router-dom';
-import {supabase} from '@/integrations/supabase/client';
 import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
 import {Progress} from '@/components/ui/progress';
@@ -69,6 +68,8 @@ import {
 import {DataTableWrapper} from '@/components/shared/list/DataTableWrapper';
 import {useIsNarrow} from '@/hooks/use-mobile';
 import {useQueryClient} from '@tanstack/react-query';
+import {loadExtractionTableArticles} from '@/services/articlesService';
+import {getCurrentUserId} from '@/services/authService';
 import {useTemplateEntityTypes} from '@/hooks/extraction/useTemplateEntityTypes';
 import {
   useArticleExtractionValues,
@@ -144,9 +145,8 @@ const EXTRACTION_DEFAULT_COLUMN_WIDTHS: Record<string, number> = {
     actions: 96,
 };
 const RESIZABLE_COLUMN_ORDER = ['title', 'authors', 'year', 'progress', 'status', 'actions'] as const;
-// Header checkbox component with indeterminate support. Module scope so its
-// identity is stable across renders (react-hooks/static-components).
-const HeaderCheckbox = React.memo(({
+// Header checkbox component with indeterminate support.
+function HeaderCheckbox({
   checked,
   indeterminate,
   onCheckedChange,
@@ -156,7 +156,7 @@ const HeaderCheckbox = React.memo(({
   indeterminate: boolean;
   onCheckedChange: (checked: boolean) => void;
   'aria-label'?: string;
-}) => {
+}) {
   return (
     <Checkbox
       checked={indeterminate ? false : checked}
@@ -165,7 +165,7 @@ const HeaderCheckbox = React.memo(({
       {...props}
     />
   );
-});
+}
 
 export function ArticleExtractionTable({ projectId, templateId }: ArticleExtractionTableProps) {
   const navigate = useNavigate();
@@ -228,19 +228,15 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
   });
 
     // Declare loadCurrentUser before any use to avoid TDZ
-  const loadCurrentUser = useCallback(async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        setCurrentUserId(user.id);
-      }
-    } catch (error: any) {
-        console.error('Error loading user:', error);
+  const loadCurrentUser = async () => {
+    const result = await getCurrentUserId();
+    if (result.ok && result.data) {
+      setCurrentUserId(result.data);
     }
-  }, []);
+  };
 
     // Declare loadArticles before any use to avoid TDZ
-  const loadArticles = useCallback(async () => {
+  const loadArticles = async () => {
     if (!projectId || !templateId || !currentUserId) {
       return;
     }
@@ -248,42 +244,36 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     setLoading(true);
     setError(null);
 
-    try {
-        // 1. Fetch project articles
-      const { data: articlesData, error: articlesError } = await supabase
-        .from('articles')
-        .select('id, title, authors, publication_year, created_at')
-        .eq('project_id', projectId)
-        .order('created_at', { ascending: false });
+    const result = await loadExtractionTableArticles(projectId);
 
-      if (articlesError) {
-          console.error('Error fetching articles:', articlesError);
-        throw articlesError;
-      }
-
-      if (!articlesData || articlesData.length === 0) {
-        setArticles([]);
-        return;
-      }
-
-        // Per-article instances + values come from useArticleExtractionValues
-        // (shared, run-scoped). This effect loads only the article rows and
-        // invalidates the values query so a refresh (route change, AI
-        // extraction onSuccess) re-reads progress too.
-      const rows: ArticleWithExtraction[] = articlesData.map((article) => ({
-        ...article,
-        isLoading: false,
-      }));
-      setArticles(rows);
-      await queryClient.invalidateQueries({ queryKey: articleExtractionValuesKeys.all });
-    } catch (err: any) {
-        console.error('Error loading articles:', err);
-      setError(err.message);
-        toast.error(`${t('extraction', 'tableErrorLoadArticles')}: ${err.message}`);
-    } finally {
+    if (!result.ok) {
+      setError(result.error.message);
+      toast.error(`${t('extraction', 'tableErrorLoadArticles')}: ${result.error.message}`);
       setLoading(false);
+      return;
     }
-  }, [projectId, templateId, currentUserId]);
+
+    const articlesData = result.data;
+
+    if (!articlesData || articlesData.length === 0) {
+      setArticles([]);
+      setLoading(false);
+      return;
+    }
+
+      // Per-article instances + values come from useArticleExtractionValues
+      // (shared, run-scoped). This effect loads only the article rows and
+      // invalidates the values query so a refresh (route change, AI
+      // extraction onSuccess) re-reads progress too.
+    const rows: ArticleWithExtraction[] = articlesData.map((article) => ({
+      ...article,
+      isLoading: false,
+    }));
+    setArticles(rows);
+    await queryClient.invalidateQueries({ queryKey: articleExtractionValuesKeys.all });
+    setLoading(false);
+    // queryClient is referentially stable across renders (useQueryClient).
+  };
 
     // Update loadArticles ref when it changes (must be before any use)
   useEffect(() => {
@@ -343,23 +333,23 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
   }, [location.pathname, projectId, templateId, currentUserId]); // Reload when route changes
 
     // Compute extraction progress
-  // Per-article completion %, memoized once per (articles, entityTypes). Uses
-  // the canonical required-field metric (computeRowProgress) so this table
-  // shows the same percentage as the form header and the QA list.
-  const progressByArticle = useMemo(() => {
+  // Per-article completion %, computed once per render. Uses the canonical
+  // required-field metric (computeRowProgress) so this table shows the same
+  // percentage as the form header and the QA list.
+  const progressByArticle = (() => {
     const map = new Map<string, number>();
     for (const article of articles) {
       const d = valuesByArticle.get(article.id);
       map.set(article.id, d ? computeRowProgress(d.instances, d.values, entityTypes) : 0);
     }
     return map;
-  }, [articles, valuesByArticle, entityTypes]);
+  })();
 
   const getProgress = (article: ArticleWithExtraction): number =>
     progressByArticle.get(article.id) ?? 0;
 
     // Filter and sort articles
-  const filteredAndSortedArticles = useMemo(() => {
+  const filteredAndSortedArticles = (() => {
     const filtered = articles.filter(article => {
         // Global filter
       if (globalFilter) {
@@ -458,12 +448,14 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
       }
     });
 
+    // getProgress and valuesByArticle are read inside the filter/sort;
+    // including them keeps progress-based filtering reactive to value changes.
     return filtered;
-  }, [articles, globalFilter, filterValues, sortField, sortDirection]);
+  })();
 
     // Article selection
-  const allArticleIds = useMemo(() => articles.map(a => a.id), [articles]);
-  const visibleArticleIds = useMemo(() => filteredAndSortedArticles.map(a => a.id), [filteredAndSortedArticles]);
+  const allArticleIds = articles.map(a => a.id);
+  const visibleArticleIds = filteredAndSortedArticles.map(a => a.id);
   
   const {
     selectedIds,
@@ -482,7 +474,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
   });
 
     // Batch AI extraction handler
-  const handleBatchAIExtraction = useCallback(async () => {
+  const handleBatchAIExtraction = async () => {
     if (selectedIds.size === 0) {
         toast.error(t('extraction', 'tableSelectAtLeastOne'));
       return;
@@ -494,28 +486,28 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
           description: t('extraction', 'extractionMayTakeMinutes'),
     });
 
-    try {
-        // Process articles sequentially to avoid overload
-      for (let i = 0; i < selectedArticles.length; i++) {
-        const article = selectedArticles[i];
-          toast.info(t('extraction', 'processingArticle').replace('{{current}}', String(i + 1)).replace('{{total}}', String(selectedArticles.length)).replace('{{title}}', article.title || ''));
-        
-        await extractFullAI({
-          projectId,
-          articleId: article.id,
-          templateId,
-        });
-      }
+      // Process articles sequentially; abort on first failure
+    let failed = false;
+    for (let i = 0; i < selectedArticles.length; i++) {
+      if (failed) break;
+      const article = selectedArticles[i];
+        toast.info(t('extraction', 'processingArticle').replace('{{current}}', String(i + 1)).replace('{{total}}', String(selectedArticles.length)).replace('{{title}}', article.title || ''));
 
-        // Clear selection after success
-      deselectAll();
-    } catch (error: any) {
-        console.error('Error in batch AI extraction:', error);
-        toast.error(t('extraction', 'tableErrorProcessAI'), {
-            description: error.message || t('extraction', 'tableErrorUnknown'),
+      await extractFullAI({
+        projectId,
+        articleId: article.id,
+        templateId,
+      }).catch((error: unknown) => {
+        failed = true;
+          console.error('Error in batch AI extraction:', error);
+          toast.error(t('extraction', 'tableErrorProcessAI'), {
+              description: error instanceof Error ? error.message : t('extraction', 'tableErrorUnknown'),
+          });
       });
     }
-  }, [selectedIds, filteredAndSortedArticles, projectId, templateId, extractFullAI, deselectAll]);
+
+    if (!failed) deselectAll();
+  };
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -605,12 +597,12 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     );
   };
 
-    const clearListFilters = useCallback(() => {
+    const clearListFilters = () => {
         setGlobalFilter('');
         setFilterValues(INITIAL_EXTRACTION_FILTER_VALUES);
-    }, []);
+    };
 
-    const clearFilterField = useCallback((fieldId: string) => {
+    const clearFilterField = (fieldId: string) => {
         const field = EXTRACTION_FILTER_FIELDS.find((f) => f.id === fieldId);
         if (!field) return;
         setFilterValues((prev) => ({
@@ -622,33 +614,25 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                         ? {}
                         : '',
         }));
-    }, []);
+    };
 
-    const extractionFilterLabels = useMemo(
-        () =>
-            Object.fromEntries(
-                EXTRACTION_FILTER_FIELDS.map((f) => [f.id, f.label])
-            ) as Record<string, string>,
-        []
+    const extractionFilterLabels = Object.fromEntries(
+        EXTRACTION_FILTER_FIELDS.map((f) => [f.id, f.label])
+    ) as Record<string, string>;
+
+    const activeFiltersList = buildActiveFiltersList(
+        EXTRACTION_FILTER_FIELDS,
+        filterValues,
+        extractionFilterLabels
     );
 
-    const activeFiltersList = useMemo(
-        () =>
-            buildActiveFiltersList(
-                EXTRACTION_FILTER_FIELDS,
-                filterValues,
-                extractionFilterLabels
-            ),
-        [filterValues, extractionFilterLabels]
-    );
-
-    const activeFiltersCount = useMemo(() => {
+    const activeFiltersCount = (() => {
         let n = globalFilter.trim() ? 1 : 0;
         EXTRACTION_FILTER_FIELDS.forEach((f) => {
             if (!isFilterValueEmpty(filterValues[f.id])) n += 1;
         });
         return n;
-    }, [globalFilter, filterValues]);
+    })();
 
     useListKeyboardShortcuts({
         searchInputRef,

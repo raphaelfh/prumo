@@ -509,3 +509,187 @@ export class ExtractionInstanceService {
  */
 export const extractionInstanceService = new ExtractionInstanceService();
 
+// =================== MODULE-LEVEL HELPERS ===================
+
+import type {ErrorResult} from '@/lib/error-utils';
+import {toResult} from '@/lib/error-utils';
+
+/**
+ * Update the label of a single extraction instance.
+ * NOTE: on success the caller should show a toast using the extraction
+ * 'labelUpdatedSuccess' copy key; on failure the 'errors_updateLabel' key.
+ */
+export async function updateInstanceLabel(
+  instanceId: string,
+  label: string,
+): Promise<ErrorResult<void>> {
+  return toResult(async () => {
+    const {error} = await supabase
+      .from('extraction_instances')
+      .update({label: label.trim()})
+      .eq('id', instanceId);
+
+    if (error) throw error;
+  }, 'updateInstanceLabel');
+}
+
+// ---------------------------------------------------------------------------
+// useAllUserInstances — all-user instances for an article (comparison UI)
+// ---------------------------------------------------------------------------
+
+export interface InstanceWithCreator {
+  id: string;
+  article_id: string;
+  created_by: string;
+  created_at: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Fetch all extraction instances for an article, ordered by creation time.
+ * Used by the multi-reviewer comparison panel.
+ */
+export function loadAllUserInstancesForArticle(
+  articleId: string,
+): Promise<ErrorResult<InstanceWithCreator[]>> {
+  return toResult(async () => {
+    const {data, error} = await supabase
+      .from('extraction_instances')
+      .select('*')
+      .eq('article_id', articleId)
+      .order('created_at', {ascending: true});
+
+    if (error) throw error;
+    return (data ?? []) as InstanceWithCreator[];
+  }, 'loadAllUserInstancesForArticle');
+}
+
+// ---------------------------------------------------------------------------
+// useModelManagement — model-container instance queries
+// ---------------------------------------------------------------------------
+
+export interface ModelInstanceRow {
+  id: string;
+  label: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
+/**
+ * Fetch the model-container instances for an article + entity type.
+ * Ordered by sort_order ascending (matches useModelManagement).
+ */
+export function loadModelInstances(
+  articleId: string,
+  modelParentEntityTypeId: string,
+): Promise<ErrorResult<ModelInstanceRow[]>> {
+  return toResult(async () => {
+    const {data, error} = await supabase
+      .from('extraction_instances')
+      .select('id, label, sort_order, created_at')
+      .eq('article_id', articleId)
+      .eq('entity_type_id', modelParentEntityTypeId)
+      .order('sort_order', {ascending: true});
+
+    if (error) throw error;
+    return (data ?? []) as ModelInstanceRow[];
+  }, 'loadModelInstances');
+}
+
+/**
+ * Invoke the calculate_model_progress RPC for a single model instance.
+ * Returns a zero-progress object on any error — callers treat missing
+ * progress as 0 so the UI stays functional even if the RPC is unavailable.
+ *
+ * NOTE: deliberately departs from the ErrorResult contract (returns a
+ * zero-progress fallback on RPC errors rather than {ok: false}) so the UI
+ * degrades gracefully without the caller needing a result branch for progress.
+ */
+export async function fetchModelProgress(
+  articleId: string,
+  instanceId: string,
+): Promise<{completed: number; total: number; percentage: number}> {
+  const {data, error} = await supabase.rpc('calculate_model_progress', {
+    p_article_id: articleId,
+    p_model_id: instanceId,
+  });
+
+  if (error) {
+    console.warn('Error calculating progress (fallback to 0):', error);
+    return {completed: 0, total: 0, percentage: 0};
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) return {completed: 0, total: 0, percentage: 0};
+
+  return {
+    completed: row.completed_fields ?? 0,
+    total: row.total_fields ?? 0,
+    percentage: Number(row.percentage ?? 0),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// useFullAIExtraction — fetch extracted model instances by entity type role
+// ---------------------------------------------------------------------------
+
+export interface ExtractedModelRef {
+  instanceId: string;
+  modelName: string;
+}
+
+/**
+ * Fetch all extraction_instances for a given entity type, ordered by
+ * sort_order. Used by useFullAIExtraction to discover which models to
+ * process after Phase 1 model extraction.
+ */
+export function loadExtractedModels(
+  articleId: string,
+  modelParentEntityTypeId: string,
+): Promise<ErrorResult<ExtractedModelRef[]>> {
+  return toResult(async () => {
+    const {data, error} = await supabase
+      .from('extraction_instances')
+      .select('id, label')
+      .eq('article_id', articleId)
+      .eq('entity_type_id', modelParentEntityTypeId)
+      .order('sort_order', {ascending: true});
+
+    if (error) throw error;
+    return (data ?? []).map((i) => ({
+      instanceId: i.id,
+      modelName: i.label ?? 'Unnamed model',
+    }));
+  }, 'loadExtractedModels');
+}
+
+// ---------------------------------------------------------------------------
+// ExtractionFullScreen.handleFinalize: mark instances completed
+// ---------------------------------------------------------------------------
+
+export interface MarkInstancesCompletedResult {
+  updatedIds: string[];
+}
+
+/**
+ * Mark a set of extraction_instances rows as completed.
+ * Returns the list of ids that were actually updated.
+ *
+ * NOTE: toast messages are handled by the caller (handleFinalize).
+ */
+export function markInstancesCompleted(
+  articleId: string,
+  instanceIds: string[],
+): Promise<ErrorResult<MarkInstancesCompletedResult>> {
+  return toResult(async () => {
+    const {data, error} = await supabase
+      .from('extraction_instances')
+      .update({status: 'completed'})
+      .eq('article_id', articleId)
+      .in('id', instanceIds)
+      .select('id, status');
+    if (error) throw error;
+    return {updatedIds: (data ?? []).map((r) => r.id)};
+  }, 'extractionInstanceService.markInstancesCompleted');
+}
+

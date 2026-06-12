@@ -20,7 +20,7 @@ import {
     AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import {AlertTriangle as _AlertTriangle, Trash2} from 'lucide-react';
-import {supabase} from '@/integrations/supabase/client';
+import {deleteProject} from '@/services/projectSettingsService';
 import {toast} from 'sonner';
 import {SettingsSection, SettingsCard, TagInput} from '@/components/settings';
 import type {EligibilityCriteria, StudyDesign} from '@/types/project';
@@ -91,30 +91,20 @@ export function AdvancedSettingsSection({
 
   const handleDeleteProject = async () => {
     setIsDeleting(true);
-    try {
-      const { data, error } = await supabase
-          .from('projects')
-        .delete()
-          .eq('id', projectId)
-        .select();
+    const result = await deleteProject(projectId);
+    setIsDeleting(false);
 
-      if (error) {
-          console.error('Error deleting project:', error);
-          toast.error(`${t('project', 'advancedErrorDeleting')}: ${error.message ?? ''}`);
-        return;
-      }
-      if (!data || data.length === 0) {
-          toast.error(t('project', 'advancedErrorDeletingMessage'));
-        return;
-      }
-        toast.success(t('project', 'advancedProjectDeleted'));
-        navigate('/');
-    } catch (err: unknown) {
-        console.error('Error deleting project:', err);
-        toast.error(t('project', 'advancedErrorDeleting'));
-    } finally {
-      setIsDeleting(false);
+    if (!result.ok) {
+      console.error('Error deleting project:', result.error);
+      toast.error(`${t('project', 'advancedErrorDeleting')}: ${result.error.message ?? ''}`);
+      return;
     }
+    if (!result.data.deleted) {
+      toast.error(t('project', 'advancedErrorDeletingMessage'));
+      return;
+    }
+    toast.success(t('project', 'advancedProjectDeleted'));
+    navigate('/');
   };
 
   return (
