@@ -13,7 +13,7 @@ import {Skeleton} from '@/components/ui/skeleton';
 import {Avatar, AvatarFallback, AvatarImage} from '@/components/ui/avatar';
 import {SettingsSection, SettingsCard, SettingsField} from '@/components/settings';
 import {CheckCircle2, Loader2, User} from 'lucide-react';
-import {supabase} from '@/integrations/supabase/client';
+import {fetchProfile, saveProfile} from '@/services/profileService';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 
@@ -51,31 +51,18 @@ export function ProfileSection() {
 
   const loadProfile = async () => {
     setLoading(true);
-    try {
-        const {data: {user}} = await supabase.auth.getUser();
-
-      if (!user) {
-          toast.error(t('user', 'profileErrorNotAuthenticated'));
-        return;
-      }
-
-        const {data: profileData, error} = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .maybeSingle();
-
-        if (error) console.error('Error loading profile:', error);
-
-        setEmail(user.email ?? '');
-        setAvatarUrl(profileData?.avatar_url ?? '');
-        form.reset({full_name: profileData?.full_name ?? ''});
-    } catch (err) {
-        console.error('Error loading profile:', err);
-        toast.error(t('user', 'profileErrorLoading'));
-    } finally {
-      setLoading(false);
+    const result = await fetchProfile();
+    if (!result.ok) {
+      console.error('Error loading profile:', result.error);
+      toast.error(t('user', 'profileErrorLoading'));
+    } else if (result.data === null) {
+      toast.error(t('user', 'profileErrorNotAuthenticated'));
+    } else {
+      setEmail(result.data.email);
+      setAvatarUrl(result.data.avatarUrl);
+      form.reset({full_name: result.data.fullName});
     }
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -83,28 +70,16 @@ export function ProfileSection() {
     queueMicrotask(() => void loadProfile());
   }, []);
 
-    const onSubmit = async (values: FormValues) => {
+  const onSubmit = async (values: FormValues) => {
     setSaving(true);
-    try {
-        const {data: {user}} = await supabase.auth.getUser();
-
-        if (!user) throw new Error('User not authenticated');
-
-        const {error} = await supabase
-        .from('profiles')
-            .update({full_name: values.full_name, avatar_url: avatarUrl})
-        .eq('id', user.id);
-
-      if (error) throw error;
-
-        toast.success(t('user', 'profileUpdated'));
-    } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : t('user', 'profileErrorSaving');
-        console.error('Error saving profile:', err);
-        toast.error(message);
-    } finally {
-      setSaving(false);
+    const result = await saveProfile({fullName: values.full_name, avatarUrl});
+    if (result.ok) {
+      toast.success(t('user', 'profileUpdated'));
+    } else {
+      console.error('Error saving profile:', result.error);
+      toast.error(result.error.message || t('user', 'profileErrorSaving'));
     }
+    setSaving(false);
   };
 
     // useWatch instead of form.watch — the latter is incompatible with the
