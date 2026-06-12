@@ -76,16 +76,14 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
 
   const handleSaveEdit = useCallback(async (fieldId: string) => {
     actions.setSavingEdit(true);
-    try {
-      const result = await updateField(fieldId, editData);
-      if (result) {
-        actions.cancelEdit();
-      }
-    } catch (error) {
-        handleFieldOperationError(error, 'edit');
-    } finally {
-      actions.setSavingEdit(false);
+    const result = await updateField(fieldId, editData).catch((error: unknown) => {
+      handleFieldOperationError(error, 'edit');
+      return null;
+    });
+    if (result) {
+      actions.cancelEdit();
     }
+    actions.setSavingEdit(false);
   }, [actions, updateField, editData, handleFieldOperationError]);
 
   const handleCancelEdit = useCallback(() => {
@@ -98,12 +96,15 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
 
   const handleOpenDeleteDialog = useCallback(async (field: ExtractionField) => {
     actions.openDeleteDialog(field);
-    
-    try {
-      const validation = await validateField(field.id);
-      actions.setDeleteValidation(validation);
-    } catch (error) {
+
+    const validation = await validateField(field.id).catch((error: unknown) => {
       handleFieldValidationError(error);
+      return null;
+    });
+
+    if (validation) {
+      actions.setDeleteValidation(validation);
+    } else {
       actions.setDeleteValidation({
         canDelete: false,
         canUpdate: false,
@@ -112,22 +113,19 @@ export function FieldsManager({ entityTypeId, sectionName }: FieldsManagerProps)
         affectedArticles: [],
           message: t('extraction', 'errors_validateField'),
       });
-    } finally {
-      actions.setValidatingDelete(null);
     }
+    actions.setValidatingDelete(null);
   }, [actions, validateField, handleFieldValidationError]);
 
   const handleConfirmDelete = useCallback(async (fieldId: string) => {
-    try {
-      const success = await deleteField(fieldId);
-      if (success) {
-        actions.closeDeleteDialog();
-      }
-      return success;
-    } catch (error) {
-        handleFieldOperationError(error, 'delete');
+    const success = await deleteField(fieldId).catch((error: unknown) => {
+      handleFieldOperationError(error, 'delete');
       return false;
+    });
+    if (success) {
+      actions.closeDeleteDialog();
     }
+    return success;
   }, [actions, deleteField, handleFieldOperationError]);
 
   const getFieldTypeLabel = useCallback((type: string) => {

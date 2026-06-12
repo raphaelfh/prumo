@@ -27,8 +27,8 @@ import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
 import { PrumoPdfViewer, articleFileSource } from "@prumo/pdf-viewer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
 import { useProjectQATemplate } from "@/hooks/qa/useProjectQATemplate";
+import { resolveQATemplateKind } from "@/services/projectSettingsService";
 import { useQAAssessmentSession } from "@/hooks/qa/useQAAssessmentSession";
 import { useAISuggestions } from "@/hooks/extraction/ai/useAISuggestions";
 import { useRunAIExtraction } from "@/hooks/extraction/ai/useRunAIExtraction";
@@ -97,36 +97,21 @@ export default function QualityAssessmentFullScreen() {
       return;
     }
     let cancelled = false;
-    void (async () => {
-      const [projectRes, globalRes] = await Promise.all([
-        supabase
-          .from("project_extraction_templates")
-          .select("id")
-          .eq("id", templateId)
-          .eq("kind", "quality_assessment")
-          .maybeSingle(),
-        supabase
-          .from("extraction_templates_global")
-          .select("id")
-          .eq("id", templateId)
-          .eq("kind", "quality_assessment")
-          .maybeSingle(),
-      ]);
+    resolveQATemplateKind(templateId).then((result) => {
       if (cancelled) return;
-      if (projectRes.error && globalRes.error) {
-        setResolvedTemplate({ kind: "missing" });
+      if (!result.ok) {
+        setResolvedTemplate({kind: "missing"});
         return;
       }
-      if (projectRes.data?.id) {
-        setResolvedTemplate({ kind: "project", id: projectRes.data.id });
-        return;
-      }
-      if (globalRes.data?.id) {
-        setResolvedTemplate({ kind: "global", id: globalRes.data.id });
+      const {projectId: projId, globalId} = result.data;
+      if (projId) {
+        setResolvedTemplate({kind: "project", id: projId});
+      } else if (globalId) {
+        setResolvedTemplate({kind: "global", id: globalId});
       } else {
-        setResolvedTemplate({ kind: "missing" });
+        setResolvedTemplate({kind: "missing"});
       }
-    })();
+    });
     return () => {
       cancelled = true;
     };
@@ -364,21 +349,19 @@ export default function QualityAssessmentFullScreen() {
   const handleReopen = useCallback(async () => {
     if (!sessionRunId) return;
     setReopening(true);
-    try {
-      await reopenMutation.mutateAsync(sessionRunId);
+    await reopenMutation.mutateAsync(sessionRunId).then(async () => {
       // The new run is now the latest non-terminal one for this triple,
       // so refetching the session picks it up. Local form state is reset
       // since the new run carries its own seeded proposals.
       setValues({});
       await refetchSession();
       toast.success("Assessment reopened for revision.");
-    } catch (err) {
+    }).catch((err: unknown) => {
       toast.error(
         err instanceof Error ? err.message : "Failed to reopen assessment",
       );
-    } finally {
-      setReopening(false);
-    }
+    });
+    setReopening(false);
   }, [sessionRunId, reopenMutation, refetchSession]);
   const handlePublish = useCallback(async () => {
     if (!session || !runDetail) return;
@@ -397,7 +380,7 @@ export default function QualityAssessmentFullScreen() {
     }
 
     setPublishing(true);
-    try {
+    const doPublish = async () => {
       // Flush any pending debounced edits before the stage advances —
       // otherwise the consensus loop below would publish stale values.
       await saveNow();
@@ -429,13 +412,13 @@ export default function QualityAssessmentFullScreen() {
       await advanceMutation.mutateAsync({ target_stage: "finalized" });
       await refetchRun();
       toast.success("Assessment published.");
-    } catch (err) {
+    };
+    await doPublish().catch((err: unknown) => {
       toast.error(
         err instanceof Error ? err.message : "Failed to publish assessment",
       );
-    } finally {
-      setPublishing(false);
-    }
+    });
+    setPublishing(false);
   }, [
     session,
     runDetail,

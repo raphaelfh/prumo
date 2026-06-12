@@ -16,5 +16,9 @@ import babel from "@rolldown/plugin-babel";
 import type {PluginOption} from "vite";
 
 export function reactWithCompiler(): PluginOption[] {
-  return [react(), babel({presets: [reactCompilerPreset()]})];
+  // panicThreshold 'all_errors': any component/hook the compiler cannot
+  // compile fails the build AND vitest (shared preset). Escape hatch for
+  // genuinely uncompilable files: 'use no memo' + a // kept: comment.
+  // Full-tree listing: node scripts/enumerate_compiler_bailouts.mjs
+  return [react(), babel({presets: [reactCompilerPreset({panicThreshold: 'all_errors'})]})];
 }

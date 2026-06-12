@@ -45,9 +45,9 @@ export default defineConfig(({mode: _mode}) => ({
         },
     },
   // React + React Compiler — shared with vitest.config.ts so the test
-  // pipeline can never drift from the app pipeline. To enumerate compiler
-  // bailouts: reactCompilerPreset({panicThreshold: 'all_errors'}) in
-  // vite.shared-plugins.ts, then `npm run build`.
+  // pipeline can never drift from the app pipeline. panicThreshold
+  // 'all_errors' is permanent: a non-compiling component fails the build.
+  // See scripts/enumerate_compiler_bailouts.mjs for a full-tree listing.
   plugins: reactWithCompiler(),
   resolve: {
     alias: {

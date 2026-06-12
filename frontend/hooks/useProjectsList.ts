@@ -5,9 +5,9 @@
 
 import {useCallback, useEffect, useState} from 'react';
 import {useNavigate} from 'react-router-dom';
-import {supabase} from '@/integrations/supabase/client';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
+import {listProjects} from '@/services/projectsService';
 import type {ProjectListItem} from '@/types/project';
 
 export const useProjectsList = () => {
@@ -17,20 +17,14 @@ export const useProjectsList = () => {
 
   const loadProjects = useCallback(async () => {
     setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from("projects")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      setProjects(data || []);
-    } catch (error: any) {
-        toast.error(t('pages', 'dashboardCouldNotLoadProjects'));
-      console.error(error);
-    } finally {
-      setLoading(false);
+    const result = await listProjects();
+    if (result.ok) {
+      setProjects(result.data);
+    } else {
+      toast.error(t('pages', 'dashboardCouldNotLoadProjects'));
+      console.error(result.error);
     }
+    setLoading(false);
   }, []);
 
   const switchProject = useCallback((projectId: string) => {

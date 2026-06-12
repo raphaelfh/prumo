@@ -10,7 +10,7 @@
 
 import { useEffect, useState } from "react";
 
-import { supabase } from "@/integrations/supabase/client";
+import { loadGlobalQATemplate } from "@/services/qaTemplateService";
 import type {
   ExtractionEntityType,
   ExtractionField,
@@ -51,73 +51,32 @@ export function useQATemplate({
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Reset loading state when query coordinates change (during render, so
+  // the fetch below never calls setState synchronously inside the effect).
+  const [prevKey, setPrevKey] = useState({ templateId, enabled });
+  if (templateId !== prevKey.templateId || enabled !== prevKey.enabled) {
+    setPrevKey({ templateId, enabled });
+    if (enabled && templateId) {
+      setLoading(true);
+      setError(null);
+    }
+  }
+
   useEffect(() => {
     if (!enabled || !templateId) return;
 
     let cancelled = false;
-    void (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        // 1) Template
-        const tplRes = await supabase
-          .from("extraction_templates_global")
-          .select("id, name, description, framework, version, kind")
-          .eq("id", templateId)
-          .maybeSingle();
-        if (tplRes.error) throw tplRes.error;
-        if (!tplRes.data) throw new Error("Template not found");
-        if (tplRes.data.kind !== "quality_assessment") {
-          throw new Error(
-            `Template kind '${tplRes.data.kind}' is not 'quality_assessment'`,
-          );
-        }
-
-        // 2) Entity types (domains)
-        const etRes = await supabase
-          .from("extraction_entity_types")
-          .select("*")
-          .eq("template_id", templateId)
-          .order("sort_order", { ascending: true });
-        if (etRes.error) throw etRes.error;
-
-        // 3) Fields for each entity type
-        const entityIds = (etRes.data ?? []).map((e) => e.id);
-        const fieldsRes = entityIds.length
-          ? await supabase
-              .from("extraction_fields")
-              .select("*")
-              .in("entity_type_id", entityIds)
-              .order("sort_order", { ascending: true })
-          : { data: [], error: null };
-        if (fieldsRes.error) throw fieldsRes.error;
-
-        const fieldsByEntity = new Map<string, ExtractionField[]>();
-        for (const f of fieldsRes.data ?? []) {
-          const list = fieldsByEntity.get(f.entity_type_id) ?? [];
-          list.push(f as ExtractionField);
-          fieldsByEntity.set(f.entity_type_id, list);
-        }
-
-        const grouped: QADomain[] = (etRes.data ?? []).map((et) => ({
-          entityType: et as ExtractionEntityType,
-          fields: fieldsByEntity.get(et.id) ?? [],
-        }));
-
-        if (!cancelled) {
-          setTemplate(tplRes.data as QATemplate);
-          setDomains(grouped);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(
-            err instanceof Error ? err.message : "Failed to load QA template",
-          );
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+    void loadGlobalQATemplate(templateId).then((result) => {
+      if (cancelled) return;
+      if (result.ok) {
+        setTemplate(result.data.template);
+        setDomains(result.data.domains);
+      } else {
+        setError(result.error.message);
       }
-    })();
+      setLoading(false);
+    });
+
     return () => {
       cancelled = true;
     };

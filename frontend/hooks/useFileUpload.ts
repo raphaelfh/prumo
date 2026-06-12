@@ -1,9 +1,8 @@
 import {useState} from 'react';
-import {supabase} from '@/integrations/supabase/client';
-import {detectFileFormat, generateStorageKey, validateFile} from '@/lib/file-validation';
+import {uploadArticleFile} from '@/services/fileUploadService';
 import {FILE_ERROR_MESSAGES} from '@/lib/file-constants';
 import type {FileRole} from '@/lib/file-constants';
-import type {ArticleFileInsert, FileUploadProgress, FileUploadResult} from '@/types/article-files';
+import type {FileUploadProgress, FileUploadResult} from '@/types/article-files';
 
 /**
  * Reusable hook for article file uploads
@@ -30,73 +29,15 @@ export function useFileUpload() {
     articleId: string,
     fileRole: FileRole
   ): Promise<FileUploadResult> => {
-      // Validate file and detect format automatically
-    const validation = validateFile(file);
-    if (!validation.valid) {
-      return {
-        success: false,
-        error: validation.error
-      };
-    }
-
-    // Detectar formato do arquivo automaticamente
-    const detectedFormat = validation.detectedFormat || detectFileFormat(file);
-
-    // Gerar chave de storage
-    const storageKey = generateStorageKey(projectId, articleId, file.name);
-
-    try {
-      // Upload para o storage
-      const { error: uploadError } = await supabase.storage
-        .from('articles')
-        .upload(storageKey, file);
-
-      if (uploadError) {
-        throw new Error(FILE_ERROR_MESSAGES.STORAGE_ERROR + ': ' + uploadError.message);
-      }
-
-      // Inserir registro no banco
-      const articleFileData: ArticleFileInsert = {
-        project_id: projectId,
-        article_id: articleId,
-        file_type: detectedFormat,  // Formato detectado automaticamente
-          file_role: fileRole,         // Role selected by user
-        storage_key: storageKey,
-        original_filename: file.name,
-        bytes: file.size,
-        md5: null
-      };
-
-      const { data: articleFile, error: insertError } = await supabase
-        .from('article_files')
-        .insert(articleFileData)
-        .select()
-        .single();
-
-      if (insertError) {
-        // Rollback: remover arquivo do storage
-        await supabase.storage.from('articles').remove([storageKey]);
-        throw new Error(FILE_ERROR_MESSAGES.DATABASE_ERROR + ': ' + insertError.message);
-      }
-
-      return {
-        success: true,
-        articleFile
-      };
-    } catch (error: any) {
-      console.error('Error uploading file:', error);
-      return {
-        success: false,
-        error: error.message || FILE_ERROR_MESSAGES.UPLOAD_FAILED
-      };
-    }
+    // IO relocated to fileUploadService.uploadArticleFile (no try/catch here)
+    return uploadArticleFile(file, projectId, articleId, fileRole);
   };
 
   /**
    * Uploads multiple files with progress tracking
-   * @param files - Array de arquivos a serem enviados
-   * @param projectId - ID do projeto
-   * @param articleId - ID do artigo
+   * @param files - Array of files to upload
+   * @param projectId - Project ID
+   * @param articleId - Article ID
    * @param fileRole - File role (all will have the same role)
    */
   const uploadMultipleFiles = async (
@@ -106,8 +47,8 @@ export function useFileUpload() {
     fileRole: FileRole
   ) => {
     setUploading(true);
-    
-    // Inicializar progresso
+
+    // Initialize progress
     const initialProgress: FileUploadProgress[] = files.map(file => ({
       file,
       progress: 0,
@@ -117,14 +58,14 @@ export function useFileUpload() {
 
     const results = await Promise.all(
       files.map(async (file, index) => {
-        // Atualizar status para uploading
-        setProgress(prev => 
+        // Update status to uploading
+        setProgress(prev =>
           prev.map((p, i) => i === index ? { ...p, status: 'uploading' as const } : p)
         );
 
         const result = await uploadFile(file, projectId, articleId, fileRole);
 
-        // Atualizar status baseado no resultado
+        // Update status based on result
         setProgress(prev =>
           prev.map((p, i) =>
             i === index
@@ -155,7 +96,7 @@ export function useFileUpload() {
   };
 
   /**
-   * Limpa o progresso de upload
+   * Clears upload progress
    */
   const clearProgress = () => {
     setProgress([]);

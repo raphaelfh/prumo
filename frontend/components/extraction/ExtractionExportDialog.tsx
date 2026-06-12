@@ -214,19 +214,19 @@ export function ExtractionExportDialog({
         abortRef.current = controller;
         const request = buildRequest();
 
-        try {
-            const result: StartExtractionExportResult = await startExport(
-                projectId,
-                request,
-                controller.signal,
-            );
-            if (result.kind === "sync") {
-                triggerDownload(result.blob, result.filename);
+        const result = await startExport(projectId, request, controller.signal).then(
+            (r): { ok: true; data: StartExtractionExportResult } => ({ok: true, data: r}),
+            (err: Error) => ({ok: false, error: err} as const),
+        );
+
+        if (result.ok) {
+            if (result.data.kind === "sync") {
+                triggerDownload(result.data.blob, result.data.filename);
                 toast.success(t("extraction", "exportSuccessToast"));
                 onOpenChange(false);
             } else {
                 addJob(
-                    createExtractionExportJob(projectId, result.job_id, {
+                    createExtractionExportJob(projectId, result.data.job_id, {
                         projectName,
                         templateId,
                         templateName,
@@ -239,18 +239,14 @@ export function ExtractionExportDialog({
                 toast.info(t("extraction", "exportStartedToast"));
                 onOpenChange(false);
             }
-        } catch (err) {
-            if ((err as Error).name === "AbortError") {
-                // User cancelled — silent close handled by the cleanup
-                // effect; no error toast.
-                return;
-            }
-            const message = (err as Error).message ?? t("extraction", "exportFailedToast");
+        } else if (result.error.name !== "AbortError") {
+            // AbortError = user cancelled — silent; other errors surface inline
+            const message = result.error.message ?? t("extraction", "exportFailedToast");
             setError(message);
-        } finally {
-            setSubmitting(false);
-            abortRef.current = null;
         }
+
+        setSubmitting(false);
+        abortRef.current = null;
     }, [
         canSubmit,
         buildRequest,

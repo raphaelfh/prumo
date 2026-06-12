@@ -166,11 +166,11 @@ export function useExtractedValues(
   );
 
   const loadValues = useCallback(
-    async (silent = false) => {
+    (silent = false) => {
       if (!silent) setLoading(true);
       setError(null);
 
-      try {
+      const doLoad = async () => {
         if (!runId || !stage) {
           hydratedRunIdRef.current = null;
           resetValuesIfNeeded(setValues);
@@ -249,13 +249,16 @@ export function useExtractedValues(
         hydratedRunIdRef.current = runId;
         resetValuesIfNeeded(setValues);
         setInitialized(true);
-      } catch (err: any) {
-        console.error('Erro ao carregar valores extraídos:', err);
-        setError(err.message || t('extraction', 'errors_loadExtractedValues'));
-        toast.error(t('extraction', 'errors_loadExtractedValues'));
-      } finally {
-        if (!silent) setLoading(false);
-      }
+      };
+
+      return doLoad()
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : t('extraction', 'errors_loadExtractedValues');
+          console.error('Erro ao carregar valores extraídos:', err);
+          setError(message);
+          toast.error(t('extraction', 'errors_loadExtractedValues'));
+        })
+        .finally(() => { if (!silent) setLoading(false); });
     },
     [runId, stage, proposals, currentValues, currentUserId, applyLoadedValues],
   );
@@ -292,9 +295,7 @@ export function useExtractedValues(
     }));
   }, []);
 
-  const refresh = useCallback(async () => {
-    await loadValues(true);
-  }, [loadValues]);
+  const refresh = useCallback(() => loadValues(true), [loadValues]);
 
   return {
     values,

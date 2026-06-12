@@ -31,8 +31,13 @@ import {
     AlertDialogTitle
 } from "@/components/ui/alert-dialog";
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "@/components/ui/tooltip";
-import {supabase} from "@/integrations/supabase/client";
 import {toast} from "sonner";
+import {
+    deleteArticle,
+    bulkDeleteArticles,
+    fetchArticleIdsWithMainFile,
+    fetchArticlePdfSignedUrl,
+} from "@/services/articlesService";
 import {t} from "@/lib/copy";
 import {TABLE_CELL_CLASS} from "@/lib/table-constants";
 import {useListKeyboardShortcuts} from "@/hooks/useListKeyboardShortcuts";
@@ -285,16 +290,11 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
       }
 
       const articleIds = articles.map(a => a.id);
-      const { data, error } = await supabase
-        .from("article_files")
-        .select("article_id")
-        .in("article_id", articleIds)
-        .eq("file_role", "MAIN");
-
-      if (!error && data) {
-        const articlesWithFile = new Set(data.map(f => f.article_id));
-        setArticlesWithMainFile(articlesWithFile);
+      const result = await fetchArticleIdsWithMainFile(articleIds);
+      if (result.ok) {
+        setArticlesWithMainFile(new Set(result.data));
       }
+      // silent on error — PDF badges are best-effort
     };
 
     fetchMainFiles();
@@ -483,45 +483,18 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
   // Delete single article
   const handleDeleteArticle = async (articleId: string) => {
     setDeleting(true);
-    try {
-      // First, get all files for this article
-      const { data: files, error: filesError } = await supabase
-        .from("article_files")
-        .select("storage_key")
-        .eq("article_id", articleId);
+    const result = await deleteArticle(articleId);
+    setDeleting(false);
+    setDeleteDialogOpen(false);
+    setArticleToDelete(null);
 
-      if (filesError) throw filesError;
-
-      // Delete files from storage
-      if (files && files.length > 0) {
-        const filePaths = files.map(f => f.storage_key);
-        const { error: storageError } = await supabase.storage
-          .from("articles")
-          .remove(filePaths);
-
-        if (storageError) {
-          console.warn("Error deleting files from storage:", storageError);
-        }
-      }
-
-      // Delete article (cascade will handle related records)
-      const { error: deleteError } = await supabase
-        .from("articles")
-        .delete()
-        .eq("id", articleId);
-
-      if (deleteError) throw deleteError;
-
-        toast.success(t('articles', 'listArticleDeletedSuccess'));
-      onArticlesChange?.();
-    } catch (error: any) {
-      console.error("Error deleting article:", error);
-        toast.error(t('articles', 'listErrorDeletingArticle'));
-    } finally {
-      setDeleting(false);
-      setDeleteDialogOpen(false);
-      setArticleToDelete(null);
+    if (!result.ok) {
+      toast.error(t('articles', 'listErrorDeletingArticle'));
+      return;
     }
+
+      toast.success(t('articles', 'listArticleDeletedSuccess'));
+    onArticlesChange?.();
   };
 
   // Delete multiple articles
@@ -529,47 +502,19 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
     if (selectedArticles.size === 0) return;
 
     setDeleting(true);
-    try {
-      const articleIds = Array.from(selectedArticles);
+    const articleIds = Array.from(selectedArticles);
+    const result = await bulkDeleteArticles(articleIds);
+    setDeleting(false);
+    setBulkDeleteDialogOpen(false);
 
-      // Get all files for selected articles
-      const { data: files, error: filesError } = await supabase
-        .from("article_files")
-        .select("storage_key")
-        .in("article_id", articleIds);
-
-      if (filesError) throw filesError;
-
-      // Delete files from storage
-      if (files && files.length > 0) {
-        const filePaths = files.map(f => f.storage_key);
-        const { error: storageError } = await supabase.storage
-          .from("articles")
-          .remove(filePaths);
-
-        if (storageError) {
-          console.warn("Error deleting files from storage:", storageError);
-        }
-      }
-
-      // Delete articles
-      const { error: deleteError } = await supabase
-        .from("articles")
-        .delete()
-        .in("id", articleIds);
-
-      if (deleteError) throw deleteError;
-
-        toast.success(`${articleIds.length} article(s) deleted successfully!`);
-      setSelectedArticles(new Set());
-      onArticlesChange?.();
-    } catch (error: any) {
-      console.error("Error deleting articles:", error);
-        toast.error(t('articles', 'listErrorDeletingArticles'));
-    } finally {
-      setDeleting(false);
-      setBulkDeleteDialogOpen(false);
+    if (!result.ok) {
+      toast.error(t('articles', 'listErrorDeletingArticles'));
+      return;
     }
+
+      toast.success(`${articleIds.length} article(s) deleted successfully!`);
+    setSelectedArticles(new Set());
+    onArticlesChange?.();
   };
 
   const openDeleteDialog = (articleId: string) => {
@@ -707,10 +652,16 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
     return filtered;
   }, [articles, searchTerm, filterValues, sortField, sortDirection, articlesWithMainFile]);
 
+    // Latest-value refs read only by the imperative `openExportDialog` handle
+    // (never during render), so the handle can stay stable across data changes.
+    // Assigned in an effect rather than during render to keep the React Compiler
+    // happy — the imperative callback is the sole reader and runs after commit.
     const filteredArticlesRef = useRef(filteredArticles);
-    filteredArticlesRef.current = filteredArticles;
     const selectedArticlesRef = useRef(selectedArticles);
-    selectedArticlesRef.current = selectedArticles;
+    useEffect(() => {
+        filteredArticlesRef.current = filteredArticles;
+        selectedArticlesRef.current = selectedArticles;
+    }, [filteredArticles, selectedArticles]);
 
     useEffect(() => {
         onExportAvailabilityChange?.(
@@ -919,36 +870,16 @@ export const ArticlesList = forwardRef<ArticlesListHandle, ArticlesListProps>(fu
                                                   className="inline-flex items-center justify-center px-1.5 py-0.5 rounded bg-success/10 text-success text-[10px] font-bold uppercase tracking-tight cursor-pointer hover:bg-success/20 transition-colors"
                                                   onClick={async (e) => {
                                                       e.stopPropagation();
-                                                      try {
-                                                          const {data: fileData, error} = await supabase
-                                                              .from("article_files")
-                                                              .select("storage_key, original_filename")
-                                                              .eq("article_id", article.id)
-                                                              .eq("file_role", "MAIN")
-                                                              .single();
-
-                                                          if (error || !fileData) {
-                                                              toast.error(t('articles', 'listPdfNotFound'));
-                                                              return;
-                                                          }
-
-                                                          const {
-                                                              data: signedUrl,
-                                                              error: urlError
-                                                          } = await supabase.storage
-                                                              .from("articles")
-                                                              .createSignedUrl(fileData.storage_key, 3600);
-
-                                                          if (urlError) {
-                                                              toast.error(t('articles', 'listErrorAccessingPdf'));
-                                                              return;
-                                                          }
-
-                                                          window.open(signedUrl.signedUrl, "_blank");
-                                                      } catch (error) {
-                                                          console.error("Error opening PDF:", error);
-                                                          toast.error(t('articles', 'listErrorOpeningPdf'));
+                                                      const result = await fetchArticlePdfSignedUrl(article.id);
+                                                      if (!result.ok) {
+                                                          toast.error(t('articles', 'listErrorAccessingPdf'));
+                                                          return;
                                                       }
+                                                      if (result.data === null) {
+                                                          toast.error(t('articles', 'listPdfNotFound'));
+                                                          return;
+                                                      }
+                                                      window.open(result.data, "_blank");
                                                   }}
                                               >
                                                   PDF

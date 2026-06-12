@@ -4,9 +4,9 @@
  */
 
 import {useCallback, useEffect, useState} from 'react';
-import {supabase} from '@/integrations/supabase/client';
 import {useAuth} from '@/contexts/AuthContext';
 import type {ProjectMemberRole} from '@/types/extraction';
+import {getProjectMemberRole} from '@/services/projectSettingsService';
 
 export interface UseProjectMemberRoleReturn {
     role: ProjectMemberRole | null;
@@ -29,25 +29,9 @@ export function useProjectMemberRole(projectId: string): UseProjectMemberRoleRet
             return;
         }
         setLoading(true);
-        try {
-            const {data, error} = await supabase
-                .from('project_members')
-                .select('role')
-                .eq('project_id', projectId)
-                .eq('user_id', userId)
-                .single();
-
-            if (error) {
-                setRole(null);
-                return;
-            }
-            const r = data?.role as ProjectMemberRole | null;
-            setRole(r ?? null);
-        } catch {
-            setRole(null);
-        } finally {
-            setLoading(false);
-        }
+        const result = await getProjectMemberRole(projectId, userId);
+        setRole(result.ok ? result.data : null);
+        setLoading(false);
     }, [projectId, userId]);
 
     useEffect(() => {

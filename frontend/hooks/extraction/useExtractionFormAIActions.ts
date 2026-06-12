@@ -40,12 +40,11 @@ export function useExtractionFormAIActions(props: UseExtractionFormAIActionsProp
 
   const {extractModels, loading: extractingModels} = useModelExtraction({
     onSuccess: async () => {
-      try {
-        await onRefreshModels();
-        await onRefreshInstances();
-      } catch (error) {
-        console.error('[useExtractionFormAIActions] refresh after model extraction failed:', error);
-      }
+      onRefreshModels()
+        .then(() => onRefreshInstances())
+        .catch((error: unknown) => {
+          console.error('[useExtractionFormAIActions] refresh after model extraction failed:', error);
+        });
     },
   });
 
@@ -55,12 +54,11 @@ export function useExtractionFormAIActions(props: UseExtractionFormAIActionsProp
     progress: extractionProgress,
   } = useBatchSectionExtractionChunked({
     onSuccess: async () => {
-      try {
-        await onRefreshInstances();
-        onExtractionComplete?.();
-      } catch (error) {
-        console.error('[useExtractionFormAIActions] refresh after section extraction failed:', error);
-      }
+      onRefreshInstances()
+        .then(() => onExtractionComplete?.())
+        .catch((error: unknown) => {
+          console.error('[useExtractionFormAIActions] refresh after section extraction failed:', error);
+        });
     },
   });
 
@@ -70,21 +68,18 @@ export function useExtractionFormAIActions(props: UseExtractionFormAIActionsProp
     progress: allModelsProgress,
   } = useBatchAllModelsSectionsExtraction({
     onSuccess: async () => {
-      try {
-        await onRefreshInstances();
-        onExtractionComplete?.();
-      } catch (error) {
-        console.error('[useExtractionFormAIActions] refresh after cross-model extraction failed:', error);
-      }
+      onRefreshInstances()
+        .then(() => onExtractionComplete?.())
+        .catch((error: unknown) => {
+          console.error('[useExtractionFormAIActions] refresh after cross-model extraction failed:', error);
+        });
     },
   });
 
   const handleExtractModels = useCallback(async () => {
-    try {
-      await extractModels({projectId, articleId, templateId});
-    } catch (error) {
+    extractModels({projectId, articleId, templateId}).catch((error: unknown) => {
       console.error('[useExtractionFormAIActions] extractModels failed:', error);
-    }
+    });
   }, [extractModels, projectId, articleId, templateId]);
 
   const handleExtractAllSections = useCallback(async () => {
@@ -92,17 +87,15 @@ export function useExtractionFormAIActions(props: UseExtractionFormAIActionsProp
       console.warn('[useExtractionFormAIActions] no active model; skipping');
       return;
     }
-    try {
-      await extractAllSections({
-        projectId,
-        articleId,
-        templateId,
-        parentInstanceId: activeModelId,
-        extractAllSections: true,
-      });
-    } catch (error) {
+    extractAllSections({
+      projectId,
+      articleId,
+      templateId,
+      parentInstanceId: activeModelId,
+      extractAllSections: true,
+    }).catch((error: unknown) => {
       console.error('[useExtractionFormAIActions] extractAllSections failed:', error);
-    }
+    });
   }, [extractAllSections, projectId, articleId, templateId, activeModelId]);
 
   const handleExtractAllSectionsForAllModels = useCallback(async () => {
@@ -110,16 +103,14 @@ export function useExtractionFormAIActions(props: UseExtractionFormAIActionsProp
       console.warn('[useExtractionFormAIActions] no models; skipping');
       return;
     }
-    try {
-      await extractAllSectionsForAllModels({
-        projectId,
-        articleId,
-        templateId,
-        models: models.map(m => ({instanceId: m.instanceId, modelName: m.modelName})),
-      });
-    } catch (error) {
+    extractAllSectionsForAllModels({
+      projectId,
+      articleId,
+      templateId,
+      models: models.map(m => ({instanceId: m.instanceId, modelName: m.modelName})),
+    }).catch((error: unknown) => {
       console.error('[useExtractionFormAIActions] extractAllSectionsForAllModels failed:', error);
-    }
+    });
   }, [extractAllSectionsForAllModels, projectId, articleId, templateId, models]);
 
   return {

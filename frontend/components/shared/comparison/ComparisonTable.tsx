@@ -128,13 +128,9 @@ export function ComparisonTable<T = any>({
     // Overall statistics
   const stats = useMemo(() => {
     const totalRows = gridData.length;
-    let consensusRows = 0;
-
-    gridData.forEach(row => {
-      if (row.consensus?.hasConsensus) {
-        consensusRows++;
-      }
-    });
+    const consensusRows = gridData.filter(
+      row => row.consensus?.hasConsensus
+    ).length;
 
     return {
       total: totalRows,

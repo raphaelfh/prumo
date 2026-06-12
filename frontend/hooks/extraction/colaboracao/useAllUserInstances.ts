@@ -6,9 +6,9 @@
  */
 
 import {useEffect, useRef, useState} from 'react';
-import {supabase} from '@/integrations/supabase/client';
 import {t} from '@/lib/copy';
 import type {ExtractionInstance} from '@/types/extraction';
+import {loadAllUserInstancesForArticle} from '@/services/extractionInstanceService';
 
 export interface InstanceWithCreator extends ExtractionInstance {
   created_by: string; // userId do criador
@@ -47,28 +47,28 @@ export function useAllUserInstances(props: UseAllUserInstancesProps): UseAllUser
     setLoading(true);
     setError(null);
 
-    try {
-        console.warn('Fetching all-user instances for article:', articleId);
+    console.warn('Fetching all-user instances for article:', articleId);
 
-      const { data, error: queryError } = await supabase
-        .from('extraction_instances')
-        .select('*')
-        .eq('article_id', articleId)
-        .order('created_at', { ascending: true });
-
+    const doLoad = async () => {
+      const result = await loadAllUserInstancesForArticle(articleId);
       if (myGeneration !== generationRef.current) return;
-      if (queryError) throw queryError;
+      if (!result.ok) {
+        setError(result.error.message || t('extraction', 'errors_loadInstances'));
+        return;
+      }
+      setInstances(result.data as unknown as InstanceWithCreator[]);
+      console.warn(`✅ Loaded ${result.data.length} instances from all users`);
+    };
 
-      setInstances((data || []) as InstanceWithCreator[]);
-        console.warn(`✅ Loaded ${(data || []).length} instances from all users`);
-
-    } catch (err: any) {
-      if (myGeneration !== generationRef.current) return;
+    doLoad()
+      .catch((err: unknown) => {
+        if (myGeneration !== generationRef.current) return;
         console.error('❌ Error loading instances:', err);
-        setError(err.message || t('extraction', 'errors_loadInstances'));
-    } finally {
-      if (myGeneration === generationRef.current) setLoading(false);
-    }
+        setError(err instanceof Error ? err.message : t('extraction', 'errors_loadInstances'));
+      })
+      .finally(() => {
+        if (myGeneration === generationRef.current) setLoading(false);
+      });
   };
 
   useEffect(() => {

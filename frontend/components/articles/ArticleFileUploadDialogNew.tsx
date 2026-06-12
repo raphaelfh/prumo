@@ -30,10 +30,10 @@ import {ScrollArea} from "@/components/ui/scroll-area";
 import {toast} from "sonner";
 import {AlertCircle, CheckCircle, Clock, FileCheck, FileText, Loader2, Plus, Upload, X} from "lucide-react";
 import {useAuth} from "@/contexts/AuthContext";
-import {supabase} from "@/integrations/supabase/client";
 import {FILE_ROLE_DESCRIPTIONS, FILE_ROLE_LABELS, FILE_ROLES, FILE_UPLOAD_CONFIG, type FileRole} from "@/lib/file-constants";
-import {detectFileFormat, formatFileSize, generateStorageKey, validateFile} from "@/lib/file-validation";
+import {formatFileSize, generateStorageKey, validateFile} from "@/lib/file-validation";
 import {t} from "@/lib/copy";
+import {fetchMainFileInfo, uploadArticleFile} from "@/services/articlesService";
 
 interface FileWithRole {
   id: string;
@@ -80,29 +80,14 @@ export function ArticleFileUploadDialogNew({
   useEffect(() => {
     const checkMainFile = async () => {
       if (!open || !articleId) return;
-      
-      try {
-        const { data, error } = await supabase
-          .from('article_files')
-          .select('id, original_filename, file_role')
-          .eq('article_id', articleId)
-          .eq('file_role', FILE_ROLES.MAIN)
-          .maybeSingle();
-
-        if (error && error.code !== 'PGRST116') {
-            console.error('Error checking MAIN file:', error);
-          return;
-        }
-
-        if (data) {
-          setHasMainFile(true);
-            setMainFileInfo({filename: (data as any).original_filename || t('articles', 'fileWithoutName')});
-        } else {
-          setHasMainFile(false);
-          setMainFileInfo(null);
-        }
-      } catch (error) {
-          console.error('Error checking MAIN file:', error);
+      const result = await fetchMainFileInfo(articleId);
+      if (!result.ok) return; // silent — best-effort check
+      if (result.data) {
+        setHasMainFile(true);
+        setMainFileInfo({filename: result.data.filename || t('articles', 'fileWithoutName')});
+      } else {
+        setHasMainFile(false);
+        setMainFileInfo(null);
       }
     };
 
@@ -184,98 +169,70 @@ export function ArticleFileUploadDialogNew({
   // Upload individual de arquivo
   const uploadFile = async (fileWithRole: FileWithRole): Promise<void> => {
     const { file, role } = fileWithRole;
-    
-    try {
-        // Set status to uploading with initial progress
-      setFiles(prev => prev.map(f => 
-        f.id === fileWithRole.id 
-          ? { ...f, status: 'uploading' as const, progress: 0 }
-          : f
-      ));
 
-        // Validate file
-      const validation = validateFile(file);
-      if (!validation.valid) {
-          throw new Error(validation.error || t('articles', 'invalidFile'));
-      }
+    // Set status to uploading with initial progress
+    setFiles(prev => prev.map(f =>
+      f.id === fileWithRole.id
+        ? { ...f, status: 'uploading' as const, progress: 0 }
+        : f
+    ));
 
-        // Update progress: validation done (5%)
-      setFiles(prev => prev.map(f => 
-        f.id === fileWithRole.id 
-          ? { ...f, progress: 5 }
-          : f
-      ));
-
-        // Check if MAIN file already exists
-      if (role === FILE_ROLES.MAIN && hasMainFile) {
-          throw new Error(t('articles', 'mainExistsError'));
-      }
-
-      // Gerar chave de storage
-      const fileName = generateStorageKey(projectId, articleId, file.name);
-      
-      // Detectar formato
-      const detectedFormat = detectFileFormat(file);
-
-        // Update progress: preparation done (10%)
-      setFiles(prev => prev.map(f => 
-        f.id === fileWithRole.id 
-          ? { ...f, progress: 10 }
-          : f
-      ));
-
-        // Upload to storage
-      const { error: uploadError } = await supabase.storage
-        .from("articles")
-        .upload(fileName, file);
-
-      if (uploadError) {
-          console.error('Storage upload error:', uploadError);
-          throw new Error(t('articles', 'uploadError') + ': ' + uploadError.message);
-      }
-
-        // Update progress: upload done (80%)
-      setFiles(prev => prev.map(f => 
-        f.id === fileWithRole.id 
-          ? { ...f, progress: 80 }
-          : f
-      ));
-
-        // Register in database
-      const { error: insertError } = await supabase.from("article_files").insert([{
-        project_id: projectId,
-        article_id: articleId,
-        file_type: detectedFormat,
-        file_role: role,
-        storage_key: fileName,
-        original_filename: file.name,
-        bytes: file.size,
-      }]);
-
-      if (insertError) {
-          console.error('Database insert error:', insertError);
-        // Rollback: deletar arquivo do storage
-        await supabase.storage.from("articles").remove([fileName]);
-          throw new Error(t('articles', 'registerError') + ': ' + insertError.message + '. ' + (insertError.message?.includes('file_role') ? 'Check that the migration to add the file_role column was applied.' : ''));
-      }
-
-        // Set status: completed (100%)
-      setFiles(prev => prev.map(f => 
-        f.id === fileWithRole.id 
-          ? { ...f, status: 'completed', progress: 100 }
-          : f
-      ));
-
-    } catch (error: any) {
-        console.error('Upload error:', error);
-      setFiles(prev => prev.map(f => 
+    // Validate file
+    const validation = validateFile(file);
+    if (!validation.valid) {
+      setFiles(prev => prev.map(f =>
         f.id === fileWithRole.id
-            ? {...f, status: 'error' as const, error: error.message || t('articles', 'errorUnknown')}
+          ? {...f, status: 'error' as const, error: validation.error || t('articles', 'invalidFile')}
           : f
       ));
-        // Don't throw so other uploads can continue
-      // throw error;
+      return;
     }
+
+    // Update progress: validation done (5%)
+    setFiles(prev => prev.map(f =>
+      f.id === fileWithRole.id ? { ...f, progress: 5 } : f
+    ));
+
+    // Check if MAIN file already exists
+    if (role === FILE_ROLES.MAIN && hasMainFile) {
+      setFiles(prev => prev.map(f =>
+        f.id === fileWithRole.id
+          ? {...f, status: 'error' as const, error: t('articles', 'mainExistsError')}
+          : f
+      ));
+      return;
+    }
+
+    const storageKey = generateStorageKey(projectId, articleId, file.name);
+
+    // Update progress: preparation done (10%)
+    setFiles(prev => prev.map(f =>
+      f.id === fileWithRole.id ? { ...f, progress: 10 } : f
+    ));
+
+    const result = await uploadArticleFile({
+      projectId,
+      articleId,
+      storageKey,
+      file,
+      role,
+    });
+
+    if (!result.ok) {
+      setFiles(prev => prev.map(f =>
+        f.id === fileWithRole.id
+          ? {...f, status: 'error' as const, error: result.error.message || t('articles', 'errorUnknown')}
+          : f
+      ));
+      return;
+    }
+
+    // Set status: completed (100%)
+    setFiles(prev => prev.map(f =>
+      f.id === fileWithRole.id
+        ? { ...f, status: 'completed', progress: 100 }
+        : f
+    ));
   };
 
   // Upload de todos os arquivos
@@ -304,71 +261,60 @@ export function ArticleFileUploadDialogNew({
 
     setIsUploading(true);
 
-      // Set status to uploading with initial progress 0
-    setFiles(prev => prev.map(f => ({ 
-      ...f, 
+    // Set status to uploading with initial progress 0
+    setFiles(prev => prev.map(f => ({
+      ...f,
       status: 'uploading' as const,
-      progress: 0 
+      progress: 0
     })));
 
-    try {
-        // Wait a moment so state is updated and we get the latest files
-      let filesToUpload: FileWithRole[] = [];
-      
-      await new Promise<void>(resolve => {
-        setFiles(currentFiles => {
-          filesToUpload = currentFiles.filter(f => 
-            f.status === 'uploading' || f.status === 'pending' || f.status === 'error'
-          ).map(f => ({ ...f }));
-          resolve();
-          return currentFiles;
-        });
+    // Wait a moment so state is updated and we get the latest files
+    let filesToUpload: FileWithRole[] = [];
+    await new Promise<void>(resolve => {
+      setFiles(currentFiles => {
+        filesToUpload = currentFiles.filter(f =>
+          f.status === 'uploading' || f.status === 'pending' || f.status === 'error'
+        ).map(f => ({ ...f }));
+        resolve();
+        return currentFiles;
       });
+    });
 
-      // Fazer upload sequencial de cada arquivo
-      for (const fileWithRole of filesToUpload) {
-        await uploadFile(fileWithRole);
+    // Fazer upload sequencial de cada arquivo
+    for (const fileWithRole of filesToUpload) {
+      await uploadFile(fileWithRole);
+    }
+
+    // Wait a moment for state updates to settle
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // Check results after upload (using updated state)
+    setFiles(currentFiles => {
+      const completedFiles = currentFiles.filter(f => f.status === 'completed').length;
+      const failedFiles = currentFiles.filter(f => f.status === 'error').length;
+
+      if (failedFiles > 0 && completedFiles === 0) {
+        const errorMessages = currentFiles
+          .filter(f => f.status === 'error' && f.error)
+          .map(f => f.error)
+          .join('; ');
+        toast.error(t('articles', 'uploadFilesError') + ': ' + (errorMessages || t('articles', 'errorUnknown')));
+      } else if (failedFiles > 0) {
+        toast.warning(t('articles', 'uploadPartialCount').replace('{{completed}}', String(completedFiles)).replace('{{failed}}', String(failedFiles)));
+        onFileUploaded?.();
+      } else if (completedFiles > 0) {
+        toast.success(t('articles', 'uploadSuccessCount').replace('{{n}}', String(completedFiles)));
+        onFileUploaded?.();
+        // Close after 2 seconds
+        setTimeout(() => {
+          handleClose();
+        }, 2000);
       }
 
-        // Wait a moment for state updates to settle
-      await new Promise(resolve => setTimeout(resolve, 100));
+      return currentFiles; // Return unchanged
+    });
 
-        // Check results after upload (using updated state)
-      setFiles(currentFiles => {
-        const completedFiles = currentFiles.filter(f => f.status === 'completed').length;
-        const failedFiles = currentFiles.filter(f => f.status === 'error').length;
-
-        if (failedFiles > 0 && completedFiles === 0) {
-          // Todos falharam
-          const errorMessages = currentFiles
-            .filter(f => f.status === 'error' && f.error)
-            .map(f => f.error)
-            .join('; ');
-            toast.error(t('articles', 'uploadFilesError') + ': ' + (errorMessages || t('articles', 'errorUnknown')));
-        } else if (failedFiles > 0) {
-          // Alguns falharam, alguns sucederam
-            toast.warning(t('articles', 'uploadPartialCount').replace('{{completed}}', String(completedFiles)).replace('{{failed}}', String(failedFiles)));
-          onFileUploaded?.();
-        } else if (completedFiles > 0) {
-          // Todos sucederam
-            toast.success(t('articles', 'uploadSuccessCount').replace('{{n}}', String(completedFiles)));
-          onFileUploaded?.();
-
-            // Close after 2 seconds
-          setTimeout(() => {
-            handleClose();
-          }, 2000);
-        }
-
-          return currentFiles; // Return unchanged
-      });
-
-    } catch (error: any) {
-        console.error('Upload error:', error);
-        toast.error(t('articles', 'uploadFilesError') + ': ' + (error.message || t('articles', 'errorUnknown')));
-    } finally {
-      setIsUploading(false);
-    }
+    setIsUploading(false);
   };
 
   // Fechar modal

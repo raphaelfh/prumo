@@ -42,7 +42,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
-import { apiClient } from '@/integrations/api';
+import { writeRunFieldValue } from '@/services/extractionRunService';
 import { t } from '@/lib/copy';
 import { extractValueForSave } from '@/lib/validations/selectOther';
 import { selectDirtyEntries } from '@/lib/extraction/autosaveDirty';
@@ -163,41 +163,38 @@ export function useAutoSaveProposals(
     [],
   );
 
-  const performSave = useCallback(async (): Promise<void> => {
-    while (activeSavePromiseRef.current) {
-      try {
-        await activeSavePromiseRef.current;
-      } catch {
-        // The owner call surfaces the error state/toast; queued calls can
-        // still retry any dirty values that were not acknowledged.
-      }
-    }
+  const performSave = useCallback((): Promise<void> => {
+    // Serialize concurrent saves: wait for any in-flight batch, swallowing
+    // its error (the owner invocation surfaces it; queued calls still retry
+    // dirty values that weren't acknowledged).
+    const waitForActive = activeSavePromiseRef.current
+      ? activeSavePromiseRef.current.catch(() => undefined)
+      : Promise.resolve();
 
-    const currentRunId = runIdRef.current;
-    // Skip when there's no run, autosave is disabled, or the run stage
-    // does not accept writes (consensus/finalized/pending). The stage
-    // guard here also protects the flush paths (unmount, pagehide,
-    // visibilitychange) so a consolidated run never fires a doomed POST.
-    if (
-      !currentRunId ||
-      !enabledRef.current ||
-      !isWritableStage(stageRef.current)
-    )
-      return;
+    const savePromise: Promise<void> = waitForActive.then(() => {
+      const currentRunId = runIdRef.current;
+      // Skip when there's no run, autosave is disabled, or the run stage
+      // does not accept writes (consensus/finalized/pending). The stage
+      // guard here also protects the flush paths (unmount, pagehide,
+      // visibilitychange) so a consolidated run never fires a doomed POST.
+      if (
+        !currentRunId ||
+        !enabledRef.current ||
+        !isWritableStage(stageRef.current)
+      )
+        return;
 
-    const dirty = computeDirtyEntries();
-    if (dirty.length === 0) return;
+      const dirty = computeDirtyEntries();
+      if (dirty.length === 0) return;
 
-    setSaveState('saving');
-    setError(null);
+      setSaveState('saving');
+      setError(null);
 
-    const savePromise = (async () => {
       // ``Promise.allSettled`` so a single failed write does not abort
       // the others mid-flight; otherwise their ``lastSavedByKeyRef``
-      // updates race the catch block and leave the diff map
-      // inconsistent.
-      const results = await Promise.allSettled(
-        dirty.map(async ([key, valueData]) => {
+      // updates race the error path and leave the diff map inconsistent.
+      const batchPromise = Promise.allSettled(
+        dirty.map(([key, valueData]) => {
           const [instanceId, fieldId] = key.split('_');
           const {
             value: actualValue,
@@ -221,71 +218,56 @@ export function useAutoSaveProposals(
           // PROPOSAL stage where one user (or AI) builds the initial
           // value set.
           const useDecisionEndpoint = stageRef.current === 'review';
-          const endpoint = useDecisionEndpoint
-            ? `/api/v1/runs/${currentRunId}/decisions`
-            : `/api/v1/runs/${currentRunId}/proposals`;
-          const body = useDecisionEndpoint
-            ? {
-                instance_id: instanceId,
-                field_id: fieldId,
-                decision: 'edit' as const,
-                value: { value: normalized },
-              }
-            : {
-                instance_id: instanceId,
-                field_id: fieldId,
-                source: 'human' as const,
-                proposed_value: { value: normalized },
-              };
-          await apiClient(endpoint, {
-            method: 'POST',
-            body,
-            // Keepalive lets the OS deliver the request even if the
-            // page is in the process of unloading (route change, tab
-            // close, mobile background). Capped at 64KB body — a single
-            // proposal/decision write is well under that.
-            keepalive: true,
+          return writeRunFieldValue({
+            runId: currentRunId,
+            instanceId,
+            fieldId,
+            normalizedValue: normalized,
+            useDecisionEndpoint,
+          }).then(() => {
+            lastSavedByKeyRef.current[key] = JSON.stringify(valueData ?? null);
           });
-          lastSavedByKeyRef.current[key] = JSON.stringify(valueData ?? null);
         }),
+      ).then((results) => {
+        // Mirror the diff map into state — partial successes updated the
+        // ref even when some writes failed.
+        setLastSavedByKey({ ...lastSavedByKeyRef.current });
+
+        const failures = results.filter(
+          (r): r is PromiseRejectedResult => r.status === 'rejected',
+        );
+        if (failures.length > 0) {
+          const first = failures[0].reason;
+          const message =
+            first instanceof Error ? first.message : String(first ?? 'unknown');
+          throw new Error(message);
+        }
+
+        setLastSavedAt(new Date());
+        setSaveState('saved');
+      });
+
+      return batchPromise.then(
+        () => undefined,
+        (err: unknown) => {
+          const message =
+            err instanceof Error
+              ? err.message
+              : t('extraction', 'errors_autoSaveFailed');
+          console.error('Auto-save error:', err);
+          setError(message);
+          setSaveState('error');
+          toast.error(t('extraction', 'errors_autoSaveFailed'));
+        },
       );
-
-      // Mirror the diff map into state — partial successes updated the
-      // ref even when some writes failed.
-      setLastSavedByKey({ ...lastSavedByKeyRef.current });
-
-      const failures = results.filter(
-        (r): r is PromiseRejectedResult => r.status === 'rejected',
-      );
-      if (failures.length > 0) {
-        const first = failures[0].reason;
-        const message =
-          first instanceof Error ? first.message : String(first ?? 'unknown');
-        throw new Error(message);
-      }
-
-      setLastSavedAt(new Date());
-      setSaveState('saved');
-    })();
-
-    activeSavePromiseRef.current = savePromise;
-
-    try {
-      await savePromise;
-    } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : t('extraction', 'errors_autoSaveFailed');
-      console.error('Auto-save error:', err);
-      setError(message);
-      setSaveState('error');
-      toast.error(t('extraction', 'errors_autoSaveFailed'));
-    } finally {
+    }).finally(() => {
       if (activeSavePromiseRef.current === savePromise) {
         activeSavePromiseRef.current = null;
       }
-    }
+    });
+
+    activeSavePromiseRef.current = savePromise;
+    return savePromise;
   }, [computeDirtyEntries]);
 
   // (1) Debounced save on values change. The cleanup clears the timer

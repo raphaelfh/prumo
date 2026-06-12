@@ -72,9 +72,9 @@ export function QualityAssessmentConfiguration({
         tpl.global_template_id === globalTemplateId && tpl.is_active === false,
     );
 
-  const toggle = async (global: GlobalTemplate, nextEnabled: boolean) => {
+  const toggle = (global: GlobalTemplate, nextEnabled: boolean) => {
     setPendingId(global.id);
-    try {
+    const doToggle = async () => {
       if (nextEnabled) {
         const inactiveClone = findInactiveClone(global.id);
         if (inactiveClone) {
@@ -92,9 +92,8 @@ export function QualityAssessmentConfiguration({
         }
       }
       onAfterChange?.();
-    } finally {
-      setPendingId(null);
-    }
+    };
+    void doToggle().finally(() => setPendingId(null));
   };
 
   if (error) {

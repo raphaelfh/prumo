@@ -78,6 +78,11 @@ export const ResizablePanel: React.FC<ResizablePanelProps> = ({
   const dragStartRef = useRef<{startX: number; startWidth: number; moved: boolean; rawFinal: number} | null>(null);
   const rafRef = useRef<number | null>(null);
   const pendingRef = useRef<{visual: number; raw: number} | null>(null);
+  // Holds the exact listener identities currently registered on `document`, so
+  // pointer-up can detach both move and up handlers without the up handler
+  // having to reference its own binding inside its initializer (which the React
+  // Compiler's mutation-aliasing inference cannot model).
+  const listenersRef = useRef<{move: EventListener; up: EventListener} | null>(null);
 
   const persist = useCallback((w: number) => {
     writeStoredWidth(id, w);
@@ -109,15 +114,25 @@ export const ResizablePanel: React.FC<ResizablePanelProps> = ({
     }
   }, [flushPending, maxWidth, minWidth, side]);
 
-  // Named function expression so the handler can unregister itself without
-  // referencing the outer `onPointerUp` binding inside its own initializer.
-  const onPointerUp = useCallback(function handlePointerUp() {
+  // Detaches whatever move/up listeners are currently registered. Reading the
+  // identities back from a ref means the up handler never has to reference its
+  // own binding (which the compiler cannot reason about). Both event-name pairs
+  // are removed regardless of which input started the drag — matching the
+  // original handler, which always cleaned up all four.
+  const detachListeners = useCallback(() => {
+    const listeners = listenersRef.current;
+    if (!listeners) return;
+    document.removeEventListener('mousemove', listeners.move);
+    document.removeEventListener('mouseup', listeners.up);
+    document.removeEventListener('touchmove', listeners.move);
+    document.removeEventListener('touchend', listeners.up);
+    listenersRef.current = null;
+  }, []);
+
+  const onPointerUp = useCallback(() => {
     const start = dragStartRef.current;
     dragStartRef.current = null;
-    document.removeEventListener('mousemove', onPointerMove as EventListener);
-    document.removeEventListener('mouseup', handlePointerUp as EventListener);
-    document.removeEventListener('touchmove', onPointerMove as EventListener);
-    document.removeEventListener('touchend', handlePointerUp as EventListener);
+    detachListeners();
     document.body.style.userSelect = '';
     document.body.style.cursor = '';
     if (rafRef.current != null) {
@@ -147,7 +162,20 @@ export const ResizablePanel: React.FC<ResizablePanelProps> = ({
     setWidth(finalWidth);
     setVisualWidth(finalWidth);
     persist(finalWidth);
-  }, [defaultWidth, minWidth, maxWidth, onCollapse, onPointerMove, persist, snapCollapseAt]);
+  }, [defaultWidth, detachListeners, minWidth, maxWidth, onCollapse, persist, snapCollapseAt]);
+
+  const attachListeners = useCallback((kind: 'mouse' | 'touch') => {
+    const move = onPointerMove as EventListener;
+    const up = onPointerUp as EventListener;
+    listenersRef.current = {move, up};
+    if (kind === 'mouse') {
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+    } else {
+      document.addEventListener('touchmove', move);
+      document.addEventListener('touchend', up);
+    }
+  }, [onPointerMove, onPointerUp]);
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -155,16 +183,14 @@ export const ResizablePanel: React.FC<ResizablePanelProps> = ({
     setIsDragging(true);
     document.body.style.userSelect = 'none';
     document.body.style.cursor = 'col-resize';
-    document.addEventListener('mousemove', onPointerMove as EventListener);
-    document.addEventListener('mouseup', onPointerUp as EventListener);
-  }, [onPointerMove, onPointerUp, width]);
+    attachListeners('mouse');
+  }, [attachListeners, width]);
 
   const onTouchStart = useCallback((e: React.TouchEvent) => {
     dragStartRef.current = {startX: e.touches[0].clientX, startWidth: width, moved: false, rawFinal: width};
     setIsDragging(true);
-    document.addEventListener('touchmove', onPointerMove as EventListener);
-    document.addEventListener('touchend', onPointerUp as EventListener);
-  }, [onPointerMove, onPointerUp, width]);
+    attachListeners('touch');
+  }, [attachListeners, width]);
 
   const onKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {

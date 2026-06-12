@@ -17,8 +17,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { apiClient } from "@/integrations/api";
-import { type RunViewResponse } from "@/hooks/runs/types";
+import { openQASession } from "@/services/qaTemplateService";
 
 export interface QAAssessmentSession {
   runId: string;
@@ -39,13 +38,6 @@ interface UseQAAssessmentSessionResult {
   loading: boolean;
   error: string | null;
   refetch: () => Promise<void>;
-}
-
-interface OpenResponse {
-  run_id: string;
-  project_template_id: string;
-  instances_by_entity_type: Record<string, string>;
-  run_view: RunViewResponse | null;
 }
 
 export function useQAAssessmentSession({
@@ -101,37 +93,34 @@ export function useQAAssessmentSession({
     if (!enabled || !projectId || !articleId) return;
     if (!globalTemplateId && !projectTemplateId) return;
     const myGeneration = ++generationRef.current;
-    try {
-      const data = await apiClient<OpenResponse>("/api/v1/hitl/sessions", {
-        method: "POST",
-        body: {
-          kind: "quality_assessment",
-          project_id: projectId,
-          article_id: articleId,
-          ...(projectTemplateId
-            ? { project_template_id: projectTemplateId }
-            : { global_template_id: globalTemplateId }),
-        },
-      });
-      // Only the most-recent open() may commit. If a new effect fired while
-      // we were in flight (article navigation, prop change), this generation
-      // is stale and the response belongs to a previous article — discarding
-      // it prevents autosave from routing proposals to the wrong run (#109).
-      if (myGeneration !== generationRef.current) return;
+
+    const body = {
+      project_id: projectId,
+      article_id: articleId,
+      ...(projectTemplateId
+        ? { project_template_id: projectTemplateId }
+        : { global_template_id: globalTemplateId }),
+    };
+
+    const result = await openQASession(body);
+
+    // Only the most-recent open() may commit. If a new effect fired while
+    // we were in flight (article navigation, prop change), this generation
+    // is stale and the response belongs to a previous article — discarding
+    // it prevents autosave from routing proposals to the wrong run (#109).
+    if (myGeneration !== generationRef.current) return;
+
+    if (result.ok) {
       setSession({
-        runId: data.run_id,
-        projectTemplateId: data.project_template_id,
-        instancesByEntityType: data.instances_by_entity_type,
+        runId: result.data.run_id,
+        projectTemplateId: result.data.project_template_id,
+        instancesByEntityType: result.data.instances_by_entity_type,
       });
-    } catch (err) {
-      if (myGeneration !== generationRef.current) return;
-      console.error("[useQAAssessmentSession] open() failed:", err);
-      setError(
-        err instanceof Error ? err.message : "Failed to open QA session",
-      );
-    } finally {
-      if (myGeneration === generationRef.current) setLoading(false);
+    } else {
+      console.error("[useQAAssessmentSession] open() failed:", result.error);
+      setError(result.error.message);
     }
+    setLoading(false);
   }, [enabled, projectId, articleId, globalTemplateId, projectTemplateId]);
 
   // Manual refetch (event-handler context): show the loader, then reopen.

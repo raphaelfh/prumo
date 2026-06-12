@@ -17,7 +17,7 @@
  * and the structural parity the user asked for.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AlertCircle, CheckCircle2, Circle, FileText } from "lucide-react";
 import { toast } from "sonner";
@@ -54,7 +54,8 @@ import {
 } from "@/components/shared/list";
 import { DataTableWrapper } from "@/components/shared/list/DataTableWrapper";
 import { useListKeyboardShortcuts } from "@/hooks/useListKeyboardShortcuts";
-import { supabase } from "@/integrations/supabase/client";
+import { getCurrentUserId } from "@/services/authService";
+import { fetchProjectArticles, type ArticleListItem } from "@/services/articlesService";
 import { t } from "@/lib/copy";
 import { TABLE_CELL_CLASS } from "@/lib/table-constants";
 import type { HITLKind } from "@/hooks/hitl/useHITLProjectTemplates";
@@ -62,13 +63,7 @@ import { useTemplateEntityTypes } from "@/hooks/extraction/useTemplateEntityType
 import { useArticleExtractionValues } from "@/hooks/extraction/useArticleExtractionValues";
 import { computeRowProgress } from "@/lib/extraction/progress";
 
-interface Article {
-  id: string;
-  title: string | null;
-  authors: string[] | null;
-  publication_year: number | null;
-  created_at: string;
-}
+type Article = ArticleListItem;
 
 type SortField =
   | "title"
@@ -159,10 +154,10 @@ export function HITLArticleTable({
 
   useEffect(() => {
     let cancelled = false;
-    void (async () => {
-      const { data } = await supabase.auth.getUser();
-      if (!cancelled) setCurrentUserId(data.user?.id ?? null);
-    })();
+    void getCurrentUserId().then((result) => {
+      if (cancelled) return;
+      if (result.ok) setCurrentUserId(result.data);
+    });
     return () => {
       cancelled = true;
     };
@@ -187,38 +182,20 @@ export function HITLArticleTable({
     if (!projectId || !templateId || !currentUserId) return;
     let cancelled = false;
 
-    void (async () => {
-      try {
-        const articlesRes = await supabase
-          .from("articles")
-          .select("id, title, authors, publication_year, created_at")
-          .eq("project_id", projectId)
-          .order("created_at", { ascending: false });
-        if (articlesRes.error) throw articlesRes.error;
-
-        const baseArticles = (articlesRes.data ?? []) as Article[];
-        if (baseArticles.length === 0) {
-          if (!cancelled) {
-            setArticles([]);
-          }
-          return;
-        }
-
-        // Per-article instances + values now come from
-        // ``useArticleExtractionValues`` (shared with the extraction table and
-        // dashboard); this effect only loads the article rows themselves.
-        if (!cancelled) setArticles(baseArticles);
-      } catch (err) {
-        if (!cancelled) {
-          const message =
-            err instanceof Error ? err.message : "Failed to load articles";
-          setError(message);
-          toast.error(`${t("extraction", "tableErrorLoadArticles")}: ${message}`);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+    // Per-article instances + values now come from
+    // ``useArticleExtractionValues`` (shared with the extraction table and
+    // dashboard); this effect only loads the article rows themselves.
+    void fetchProjectArticles(projectId).then((result) => {
+      if (cancelled) return;
+      if (result.ok) {
+        setArticles(result.data);
+      } else {
+        const message = result.error.message;
+        setError(message);
+        toast.error(`${t("extraction", "tableErrorLoadArticles")}: ${message}`);
       }
-    })();
+      setLoading(false);
+    });
 
     return () => {
       cancelled = true;
@@ -240,8 +217,10 @@ export function HITLArticleTable({
     return map;
   }, [articles, valuesByArticle, entityTypes]);
 
-  const getProgress = (article: Article): number =>
-    progressByArticle.get(article.id) ?? 0;
+  const getProgress = useCallback(
+    (article: Article): number => progressByArticle.get(article.id) ?? 0,
+    [progressByArticle],
+  );
 
   const filteredAndSorted = useMemo(() => {
     const visible = articles.filter((article) => {
@@ -329,7 +308,10 @@ export function HITLArticleTable({
     });
 
     return visible;
-  }, [articles, globalFilter, filterValues, sortField, sortDirection]);
+    // getProgress (stable, keyed on progressByArticle) and valuesByArticle are
+    // read inside the filter/sort; including them keeps progress-based filtering
+    // and sorting reactive to value changes that don't replace the articles array.
+  }, [articles, globalFilter, filterValues, sortField, sortDirection, getProgress, valuesByArticle]);
 
   const activeFiltersCount = useMemo(() => {
     let n = globalFilter.trim() ? 1 : 0;
