@@ -1,7 +1,6 @@
-// NOTE: react-pdf bundles its own pdfjs-dist (currently v5.4) while the top-level
-// pdfjs-dist in this project is v5.7. The two are structurally compatible but
-// TypeScript sees them as distinct nominal types. We import types from the
-// top-level package for editor tooling, and cast through unknown at the boundary.
+// NOTE: types are imported from the top-level pdfjs-dist package for editor
+// tooling; casts through unknown at the boundary tolerate structurally
+// compatible proxies from other pdfjs-dist copies if one ever reappears.
 import type {PDFDocumentProxy} from 'pdfjs-dist';
 import type {
   OutlineNode,
@@ -86,6 +85,8 @@ export class PdfJsDocumentHandle implements PDFDocumentHandle {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
-    void this.proxy.destroy();
+    // pdfjs-dist v6 removed PDFDocumentProxy.destroy() (it was an alias);
+    // loadingTask.destroy() has the same semantics and also stops the worker.
+    void this.proxy.loadingTask.destroy();
   }
 }

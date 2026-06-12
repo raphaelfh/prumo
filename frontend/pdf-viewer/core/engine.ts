@@ -9,7 +9,7 @@ export type PageRotation = 0 | 90 | 180 | 270;
 /**
  * The PDF engine — abstracts the underlying rendering library.
  *
- * Phase 1b implements this against pdfjs-dist v5. A future plan may
+ * Phase 1b implements this against pdfjs-dist (v6). A future plan may
  * implement it against PDFium-WASM (EmbedPDF or similar). Consumers
  * never see the underlying library directly.
  */
