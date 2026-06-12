@@ -18,8 +18,8 @@
 import {useCallback, useEffect, useMemo, useState} from 'react';
 import {useNavigate, useParams} from 'react-router-dom';
 import {toast} from 'sonner';
-import {supabase} from '@/integrations/supabase/client';
-import {extractionInstanceService} from '@/services/extractionInstanceService';
+import {extractionInstanceService, markInstancesCompleted} from '@/services/extractionInstanceService';
+import {getRequiredUserId} from '@/services/authService';
 import {extractionLogger} from '@/lib/extraction/observability';
 import {useEntityTypePartition} from '@/lib/extraction/entityTypeRoles';
 import {errorTracker} from '@/services/errorTracking';
@@ -283,8 +283,7 @@ export default function ExtractionFullScreen() {
   const handleReopen = useCallback(async () => {
     if (!finalizedRunId) return;
     setReopening(true);
-    try {
-      await reopenMutation.mutateAsync(finalizedRunId);
+    await reopenMutation.mutateAsync(finalizedRunId).then(async () => {
       // The reopen endpoint creates a fresh REVIEW-stage run linked via
       // parameters.parent_run_id. We refetch the HITL session first so
       // activeRunId points at the new child run; only then do the
@@ -294,13 +293,12 @@ export default function ExtractionFullScreen() {
       await sessionResult.refetch();
       await Promise.all([refreshValues(), refreshFinalizedRun(), refetchRun()]);
       toast.success('Extraction reopened for revision.');
-    } catch (err) {
+    }).catch((err: unknown) => {
       toast.error(
         err instanceof Error ? err.message : 'Failed to reopen extraction',
       );
-    } finally {
-      setReopening(false);
-    }
+    });
+    setReopening(false);
   }, [
     finalizedRunId,
     reopenMutation,
@@ -553,193 +551,176 @@ export default function ExtractionFullScreen() {
 
   const handleConfirmRemoveModel = async () => {
     if (!modelToRemove) return;
-    
-    try {
-        extractionLogger.info('removeModelHandler', 'Starting model removal', {
-        modelId: modelToRemove.id,
-        modelName: modelToRemove.name,
-        hasData: modelToRemove.hasData,
-        fieldsCount: modelToRemove.fieldsCount
-      });
 
-      const modelIdToRemove = modelToRemove.id;
+    extractionLogger.info('removeModelHandler', 'Starting model removal', {
+      modelId: modelToRemove.id,
+      modelName: modelToRemove.name,
+      hasData: modelToRemove.hasData,
+      fieldsCount: modelToRemove.fieldsCount,
+    });
 
-        // Remove model (already updates local state)
-      await removeModel(modelIdToRemove);
+    const modelIdToRemove = modelToRemove.id;
+    const modelNameToRemove = modelToRemove.name;
 
-        extractionLogger.info('removeModelHandler', 'Model removed successfully', {
+    // removeModel resolves/rejects — use .then().catch() so there is no
+    // try/catch or throw in this component function.
+    await removeModel(modelIdToRemove).then(async () => {
+      extractionLogger.info('removeModelHandler', 'Model removed successfully', {
         modelId: modelIdToRemove,
-        modelName: modelToRemove.name
+        modelName: modelNameToRemove,
       });
 
-        // Close dialog immediately after successful removal
+      // Close dialog immediately after successful removal
       setModelToRemove(null);
 
-        // Do not call refreshModels() - hook already updates local state
-        // Only reload instances so child instances are removed from UI
-      try {
-        await refreshInstances();
-          extractionLogger.info('removeModelHandler', 'State updated, model removed from UI', {
+      // Do not call refreshModels() - hook already updates local state
+      // Only reload instances so child instances are removed from UI
+      await refreshInstances().catch((refreshError: unknown) => {
+        // Log error but do not re-throw - model was already removed successfully
+        extractionLogger.error('removeModelHandler', 'Error reloading instances after removal', refreshError instanceof Error ? refreshError : undefined, {
           modelId: modelIdToRemove,
-          instancesRemoved: instances.filter(i => 
-            i.id === modelIdToRemove || i.parent_instance_id === modelIdToRemove
-          ).length
         });
-      } catch (refreshError: any) {
-          // Log error but do not re-throw - model was already removed successfully
-          extractionLogger.error('removeModelHandler', 'Error reloading instances after removal', refreshError, {
-          modelId: modelIdToRemove
-        });
-          // Do not block flow - model was already removed from local state
-      }
-      
-    } catch (error: any) {
-      // ✅ Re-throw para o modal capturar e exibir erro
-        extractionLogger.error('removeModelHandler', 'Failed to remove model', error, {
-        modelId: modelToRemove.id,
-        modelName: modelToRemove.name
+        // Do not block flow - model was already removed from local state
       });
+    }).catch((error: unknown) => {
+      extractionLogger.error('removeModelHandler', 'Failed to remove model', error instanceof Error ? error : undefined, {
+        modelId: modelIdToRemove,
+        modelName: modelNameToRemove,
+      });
+      // Re-throw so the dialog can display the error — CONCERN: this
+      // throw is at the top level of handleConfirmRemoveModel (not inside
+      // a try block in this component), so it propagates to the dialog's
+      // onConfirm handler which catches it.
       throw error;
-    }
+    });
   };
 
   const handleAddInstance = async (entityTypeId: string) => {
     if (!template) return;
 
-    try {
-        extractionLogger.info('handleAddInstance', 'Starting instance creation', {
-        entityTypeId,
-        templateId: template.id
-      });
+    extractionLogger.info('handleAddInstance', 'Starting instance creation', {
+      entityTypeId,
+      templateId: template.id,
+    });
 
-      const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error(t('common', 'errors_userNotAuthenticated'));
+    const userResult = await getRequiredUserId();
+    if (!userResult.ok) {
+      toast.error(t('common', 'errors_userNotAuthenticated'));
+      return;
+    }
+    const userId = userResult.data;
 
-      // Encontrar entity type
-      const entityType = entityTypes.find(et => et.id === entityTypeId);
-      if (!entityType) {
-          extractionLogger.warn('handleAddInstance', 'Entity type not found', {entityTypeId});
-        return;
-      }
+    // Encontrar entity type
+    const entityType = entityTypes.find(et => et.id === entityTypeId);
+    if (!entityType) {
+      extractionLogger.warn('handleAddInstance', 'Entity type not found', {entityTypeId});
+      return;
+    }
 
-        // Determine parent_instance_id if hierarchical entity type
-      let parentInstanceId: string | undefined = undefined;
+    // Determine parent_instance_id if hierarchical entity type
+    let parentInstanceId: string | undefined = undefined;
+    // Pre-compute optional chain to avoid unsupported value-blocks inside conditions
+    const modelParentId = modelParentEntityType?.id;
 
-        // If it has parent_entity_type_id, it is a child entity (e.g. model child sections)
-      if (entityType.parent_entity_type_id) {
-          // If parent is prediction_models, use activeModelId
-        if (entityType.parent_entity_type_id === modelParentEntityType?.id) {
-          if (!activeModelId) {
-              toast.error(t('pages', 'extractionScreenSelectModelFirst'));
-            return;
-          }
-          parentInstanceId = activeModelId;
+    // If it has parent_entity_type_id, it is a child entity (e.g. model child sections)
+    if (entityType.parent_entity_type_id) {
+      // If parent is prediction_models, use activeModelId
+      if (entityType.parent_entity_type_id === modelParentId) {
+        if (!activeModelId) {
+          toast.error(t('pages', 'extractionScreenSelectModelFirst'));
+          return;
+        }
+        parentInstanceId = activeModelId;
+      } else {
+        // Para outras hierarquias, buscar parent instance
+        const parentInstance = instances.find(
+          i => i.entity_type_id === entityType.parent_entity_type_id
+        );
+        if (parentInstance) {
+          parentInstanceId = parentInstance.id;
         } else {
-          // Para outras hierarquias, buscar parent instance
-          const parentInstance = instances.find(
-            i => i.entity_type_id === entityType.parent_entity_type_id
-          );
-          if (parentInstance) {
-            parentInstanceId = parentInstance.id;
-          } else {
-              toast.error(t('pages', 'extractionScreenParentNotFound'));
-            return;
-          }
+          toast.error(t('pages', 'extractionScreenParentNotFound'));
+          return;
         }
       }
+    }
 
-        // Count existing instances to generate label (same parent)
-      const existingCount = instances.filter(i => 
-        i.entity_type_id === entityTypeId && 
-        i.parent_instance_id === (parentInstanceId || null)
-      ).length;
+    // Count existing instances to generate label (same parent)
+    const existingCount = instances.filter(i =>
+      i.entity_type_id === entityTypeId &&
+      i.parent_instance_id === (parentInstanceId || null)
+    ).length;
 
-        // Generate unique label
-      let newLabel: string;
-      if (parentInstanceId) {
-          // For child instances, include parent reference to avoid conflicts
-        const parentInstance = instances.find(i => i.id === parentInstanceId);
-        newLabel = parentInstance 
-          ? `${parentInstance.label} - ${entityType.label} ${existingCount + 1}`
-          : `${entityType.label} ${existingCount + 1}`;
-      } else {
-        newLabel = `${entityType.label} ${existingCount + 1}`;
-      }
+    // Generate unique label
+    let newLabel: string;
+    if (parentInstanceId) {
+      // For child instances, include parent reference to avoid conflicts
+      const parentInstance = instances.find(i => i.id === parentInstanceId);
+      newLabel = parentInstance
+        ? `${parentInstance.label} - ${entityType.label} ${existingCount + 1}`
+        : `${entityType.label} ${existingCount + 1}`;
+    } else {
+      newLabel = `${entityType.label} ${existingCount + 1}`;
+    }
 
-        extractionLogger.debug('handleAddInstance', 'Creating instance via service', {
-        entityTypeId,
-        entityTypeName: entityType.name,
-        parentInstanceId,
-        label: newLabel
-      });
+    extractionLogger.debug('handleAddInstance', 'Creating instance via service', {
+      entityTypeId,
+      entityTypeName: entityType.name,
+      parentInstanceId,
+      label: newLabel
+    });
 
-      // ✅ MELHORIA: Usar service layer em vez de INSERT direto
-        // Ensures validations, logs and consistency
-      const result = await extractionInstanceService.createInstance({
-        projectId: projectId!,
-        articleId: articleId!,
-        templateId: template.id,
-        entityTypeId,
-        entityType,
-        parentInstanceId,
-        label: newLabel,
-        userId: user.id
-      });
-
+    // Use .then().catch() — no try/catch in the component function.
+    await extractionInstanceService.createInstance({
+      projectId: projectId!,
+      articleId: articleId!,
+      templateId: template.id,
+      entityTypeId,
+      entityType,
+      parentInstanceId,
+      label: newLabel,
+      userId,
+    }).then(async (result) => {
       if (result.wasCreated) {
-          // Reload instances after create
+        // Reload instances after create
         await refreshInstances();
-
-          extractionLogger.info('handleAddInstance', 'Instance created successfully', {
+        extractionLogger.info('handleAddInstance', 'Instance created successfully', {
           instanceId: result.instance.id,
           label: result.instance.label
         });
-
-          toast.success(`${result.instance.label} ${t('pages', 'extractionScreenInstanceAddedSuccess')}`);
+        toast.success(`${result.instance.label} ${t('pages', 'extractionScreenInstanceAddedSuccess')}`);
       } else {
-          extractionLogger.info('handleAddInstance', 'Instance already existed', {
+        extractionLogger.info('handleAddInstance', 'Instance already existed', {
           instanceId: result.instance.id,
           label: result.instance.label
         });
-
-          toast.info(t('pages', 'extractionScreenInstanceAlreadyExists'));
+        toast.info(t('pages', 'extractionScreenInstanceAlreadyExists'));
       }
-
-    } catch (error: any) {
-        extractionLogger.error('handleAddInstance', 'Failed to create instance', error, {
+    }).catch((error: unknown) => {
+      extractionLogger.error('handleAddInstance', 'Failed to create instance', error instanceof Error ? error : undefined, {
         entityTypeId,
         templateId: template.id
       });
-
-        console.error('Error adding instance:', error);
-        toast.error(`${t('pages', 'extractionScreenErrorAddInstance')}: ${error.message}`);
-    }
+      console.error('Error adding instance:', error);
+      toast.error(`${t('pages', 'extractionScreenErrorAddInstance')}: ${error instanceof Error ? error.message : String(error)}`);
+    });
   };
 
   const handleRemoveInstance = async (instanceId: string) => {
-    try {
-        // Check if there are extracted values
-      const hasValues = Object.keys(values).some(key => key.startsWith(`${instanceId}_`));
-
-      if (hasValues) {
-          const confirmed = window.confirm(t('pages', 'extractionScreenConfirmRemoveInstance'));
-        if (!confirmed) return;
-      }
-
-      const { error } = await supabase
-        .from('extraction_instances')
-        .delete()
-        .eq('id', instanceId);
-
-      if (error) throw error;
-
-        // Reload instances after remove
+    // Check if there are extracted values
+    const hasValues = Object.keys(values).some(key => key.startsWith(`${instanceId}_`));
+    if (hasValues) {
+      const confirmed = window.confirm(t('pages', 'extractionScreenConfirmRemoveInstance'));
+      if (!confirmed) return;
+    }
+    const removed = await extractionInstanceService.removeInstance(instanceId).catch((error: unknown) => {
+      console.error('Error removing instance:', error);
+      toast.error(t('pages', 'extractionScreenErrorRemoveInstance'));
+      return false;
+    });
+    if (removed !== false) {
       await refreshInstances();
-        toast.success(t('pages', 'extractionScreenInstanceRemoved'));
-
-    } catch (error: any) {
-        console.error('Error removing instance:', error);
-        toast.error(t('pages', 'extractionScreenErrorRemoveInstance'));
+      toast.success(t('pages', 'extractionScreenInstanceRemoved'));
     }
   };
 
@@ -772,147 +753,103 @@ export default function ExtractionFullScreen() {
     setSubmitting(true);
 
     const logger = extractionLogger;
-      logger.info('handleFinalize', 'Starting extraction finalization', {
+    logger.info('handleFinalize', 'Starting extraction finalization', {
       articleId,
       projectId,
       instancesCount: instances.length,
       instanceIds: instances.map(i => i.id)
     });
 
-    try {
-      // 1. Salvar valores pendentes
-      logger.debug('handleFinalize', 'Salvando valores pendentes...', {
-        valuesCount: Object.keys(values).length
+    // Step 1: flush pending saves — translate save errors into a user-visible
+    // message and bail out early so the run is not left half-progressed.
+    logger.debug('handleFinalize', 'Salvando valores pendentes...', {
+      valuesCount: Object.keys(values).length
+    });
+    let saveOk = true;
+    await saveNow().catch((saveError: unknown) => {
+      saveOk = false;
+      const err = saveError instanceof Error
+        ? saveError
+        : new Error((saveError as any)?.message || 'Erro desconhecido ao salvar valores');
+      logger.error('handleFinalize', 'Erro ao salvar valores pendentes', err, {
+        errorMessage: err.message,
+        errorCode: (saveError as any)?.code,
       });
-
-      try {
-        await saveNow();
-        logger.info('handleFinalize', 'Valores salvos com sucesso');
-      } catch (saveError: any) {
-        logger.error('handleFinalize', 'Erro ao salvar valores pendentes', saveError as Error, {
-          errorMessage: saveError.message,
-          errorCode: saveError.code
-        });
-        
-        errorTracker.captureError(
-          saveError instanceof Error ? saveError : new Error(saveError?.message || 'Erro desconhecido ao salvar valores'),
-          {
-            component: 'ExtractionFullScreen',
-            action: 'handleFinalize',
-            projectId,
-            articleId,
-            metadata: {
-              step: 'saveValues',
-              errorCode: saveError?.code,
-              errorDetails: saveError?.details
-            }
-          }
-        );
-
-          throw new Error(`${t('extraction', 'errors_saveValues')}: ${saveError.message || t('common', 'errors_unknownError')}`);
-      }
-
-        // 2. Update instance statuses
-      const instanceIds = instances.map(i => i.id);
-        logger.debug('handleFinalize', 'Updating instance statuses...', {
-        instanceIds,
-        instancesCount: instanceIds.length
-      });
-
-      const { error: updateError, data: updatedData } = await supabase
-        .from('extraction_instances')
-        .update({
-          status: 'completed'
-            // Removed: completed_at does not exist on extraction_instances table
-          // (existe apenas em extraction_runs)
-        })
-        .eq('article_id', articleId)
-        .in('id', instanceIds)
-          .select('id, status'); // Return data to confirm update
-
-      if (updateError) {
-          logger.error('handleFinalize', 'Error updating instance statuses', updateError as Error, {
-          errorCode: updateError.code,
-          errorMessage: updateError.message,
-          errorDetails: updateError.details,
-          instanceIds,
-          articleId
-        });
-
-        errorTracker.captureError(
-            new Error(updateError.message || 'Error updating instance statuses'),
-          {
-            component: 'ExtractionFullScreen',
-            action: 'handleFinalize',
-            projectId,
-            articleId,
-            metadata: {
-              step: 'updateInstances',
-              errorCode: updateError.code,
-              errorDetails: updateError.details,
-              instanceIds
-            }
-          }
-        );
-
-          // More specific error message based on error code
-          let errorMessage = t('pages', 'extractionScreenErrorUpdateStatus');
-        if (updateError.code === 'PGRST301' || updateError.message.includes('permission denied')) {
-            errorMessage = t('pages', 'extractionScreenErrorPermission');
-        } else if (updateError.code === '23503' || updateError.message.includes('foreign key')) {
-            errorMessage = t('pages', 'extractionScreenErrorRelatedData');
-        } else if (updateError.message) {
-            errorMessage = `Error: ${updateError.message}`;
-        }
-
-        throw new Error(errorMessage);
-      }
-
-        // Confirm instances were updated
-      const updatedCount = updatedData?.length || 0;
-      if (updatedCount === 0) {
-          logger.warn('handleFinalize', 'No instances were updated', {
-          instanceIds,
-          articleId
-        });
-          throw new Error(t('pages', 'extractionScreenNoInstanceUpdated'));
-      }
-
-      if (updatedCount < instanceIds.length) {
-          logger.warn('handleFinalize', 'Some instances were not updated', {
-          expected: instanceIds.length,
-          actual: updatedCount,
-          instanceIds
-        });
-      }
-
-        logger.info('handleFinalize', 'Extraction finalized successfully', {
-        articleId,
-        instancesUpdated: updatedCount,
-        totalInstances: instanceIds.length
-      });
-
-        toast.success(t('pages', 'extractionScreenFinalizeSuccess'));
-      handleBack();
-
-    } catch (error: any) {
-        // Error already logged and caught above, just show message to user
-        const errorMessage = error instanceof Error
-            ? error.message
-            : (error?.message || t('pages', 'extractionScreenErrorFinalizeUnknown'));
-
-        logger.error('handleFinalize', 'Failed to finalize extraction', error instanceof Error ? error : new Error(errorMessage), {
-        articleId,
+      errorTracker.captureError(err, {
+        component: 'ExtractionFullScreen',
+        action: 'handleFinalize',
         projectId,
-        finalError: errorMessage
+        articleId,
+        metadata: {
+          step: 'saveValues',
+          errorCode: (saveError as any)?.code,
+          errorDetails: (saveError as any)?.details,
+        },
       });
-
-      toast.error(errorMessage, {
-        duration: 6000
-      });
-    } finally {
+      const msg = `${t('extraction', 'errors_saveValues')}: ${err.message || t('common', 'errors_unknownError')}`;
+      logger.error('handleFinalize', 'Failed to finalize extraction', err, {articleId, projectId, finalError: msg});
+      toast.error(msg, {duration: 6000});
       setSubmitting(false);
+    });
+    if (!saveOk) return;
+    logger.info('handleFinalize', 'Valores salvos com sucesso');
+
+    // Step 2: mark instances completed — markInstancesCompleted returns ErrorResult
+    // so no throw/catch needed; branch on .ok.
+    const instanceIds = instances.map(i => i.id);
+    logger.debug('handleFinalize', 'Updating instance statuses...', {
+      instanceIds,
+      instancesCount: instanceIds.length
+    });
+
+    const markResult = await markInstancesCompleted(articleId!, instanceIds);
+    if (!markResult.ok) {
+      const updateError = markResult.error;
+      logger.error('handleFinalize', 'Error updating instance statuses', updateError, {
+        instanceIds,
+        articleId,
+      });
+      errorTracker.captureError(updateError, {
+        component: 'ExtractionFullScreen',
+        action: 'handleFinalize',
+        projectId,
+        articleId,
+        metadata: {step: 'updateInstances', instanceIds},
+      });
+      const errorMessage = updateError.message || t('pages', 'extractionScreenErrorFinalizeUnknown');
+      logger.error('handleFinalize', 'Failed to finalize extraction', updateError, {articleId, projectId, finalError: errorMessage});
+      toast.error(errorMessage, {duration: 6000});
+      setSubmitting(false);
+      return;
     }
+
+    const updatedIds = markResult.data.updatedIds;
+    const updatedCount = updatedIds.length;
+    if (updatedCount === 0) {
+      logger.warn('handleFinalize', 'No instances were updated', {instanceIds, articleId});
+      const noUpdateMsg = t('pages', 'extractionScreenNoInstanceUpdated');
+      logger.error('handleFinalize', 'Failed to finalize extraction', new Error(noUpdateMsg), {articleId, projectId, finalError: noUpdateMsg});
+      toast.error(noUpdateMsg, {duration: 6000});
+      setSubmitting(false);
+      return;
+    }
+    if (updatedCount < instanceIds.length) {
+      logger.warn('handleFinalize', 'Some instances were not updated', {
+        expected: instanceIds.length,
+        actual: updatedCount,
+        instanceIds,
+      });
+    }
+
+    logger.info('handleFinalize', 'Extraction finalized successfully', {
+      articleId,
+      instancesUpdated: updatedCount,
+      totalInstances: instanceIds.length
+    });
+
+    toast.success(t('pages', 'extractionScreenFinalizeSuccess'));
+    setSubmitting(false);
+    handleBack();
   };
 
   // Loading state
@@ -979,6 +916,14 @@ export default function ExtractionFullScreen() {
       // Wrapped in preserveScroll so the form + PDF panels keep their scroll
       // position even though the underlying state updates trigger a re-render.
     (async () => {
+      // Polling state declared outside try so the poll loop can run after
+      // the initial-refresh try/catch without triggering compiler value-block
+      // restrictions inside the try statement.
+      let attempts = 0;
+      const maxAttempts = 5;
+      const pollDelay = 1000;
+      let foundSuggestions = false;
+
       try {
         await new Promise(resolve => setTimeout(resolve, 1500));
 
@@ -1012,34 +957,32 @@ export default function ExtractionFullScreen() {
           await refreshValues();
         });
 
-          // Wait briefly before suggestion polling so newly created
-          // instances are queryable.
+        // Wait briefly before suggestion polling so newly created
+        // instances are queryable.
         await new Promise(resolve => setTimeout(resolve, 500));
 
-          // Polling for AI suggestions. Each attempt is wrapped in
-          // preserveScroll so suggestion-driven re-renders also keep the
-          // user's place. We use the direct result (not React state) to
-          // decide when to stop, which avoids racing the next render.
-        let attempts = 0;
-        const maxAttempts = 5;
-        const pollDelay = 1000;
-
-        let result = await preserveScroll(refreshAISuggestions);
-        let foundSuggestions = result.count > 0;
-        if (foundSuggestions) return;
-
-        while (!foundSuggestions && attempts < maxAttempts) {
-          attempts++;
-          await new Promise(resolve => setTimeout(resolve, pollDelay));
-          result = await preserveScroll(refreshAISuggestions);
-          foundSuggestions = result.count > 0;
-          if (foundSuggestions) return;
-        }
-
+        // Polling for AI suggestions. Each attempt is wrapped in
+        // preserveScroll so suggestion-driven re-renders also keep the
+        // user's place. We use the direct result (not React state) to
+        // decide when to stop, which avoids racing the next render.
+        const result = await preserveScroll(refreshAISuggestions);
+        foundSuggestions = result.count > 0;
       } catch (error) {
-          console.error('Error reloading suggestions:', error);
-          // Do not show error toast - suggestions may not have been created
-          // (already handled by extraction hook)
+        console.error('Error reloading suggestions:', error);
+        // Do not show error toast - suggestions may not have been created
+        // (already handled by extraction hook)
+        return;
+      }
+
+      // Poll loop runs outside the try/catch so complex conditions are not
+      // inside a try statement (React Compiler restriction).
+      if (foundSuggestions) return;
+      while (attempts < maxAttempts) {
+        attempts++;
+        await new Promise(resolve => setTimeout(resolve, pollDelay));
+        const pollResult = await preserveScroll(refreshAISuggestions);
+        foundSuggestions = pollResult.count > 0;
+        if (foundSuggestions) return;
       }
     })();
   };

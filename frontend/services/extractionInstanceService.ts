@@ -663,3 +663,33 @@ export function loadExtractedModels(
   }, 'loadExtractedModels');
 }
 
+// ---------------------------------------------------------------------------
+// ExtractionFullScreen.handleFinalize: mark instances completed
+// ---------------------------------------------------------------------------
+
+export interface MarkInstancesCompletedResult {
+  updatedIds: string[];
+}
+
+/**
+ * Mark a set of extraction_instances rows as completed.
+ * Returns the list of ids that were actually updated.
+ *
+ * NOTE: toast messages are handled by the caller (handleFinalize).
+ */
+export function markInstancesCompleted(
+  articleId: string,
+  instanceIds: string[],
+): Promise<ErrorResult<MarkInstancesCompletedResult>> {
+  return toResult(async () => {
+    const {data, error} = await supabase
+      .from('extraction_instances')
+      .update({status: 'completed'})
+      .eq('article_id', articleId)
+      .in('id', instanceIds)
+      .select('id, status');
+    if (error) throw error;
+    return {updatedIds: (data ?? []).map((r) => r.id)};
+  }, 'extractionInstanceService.markInstancesCompleted');
+}
+

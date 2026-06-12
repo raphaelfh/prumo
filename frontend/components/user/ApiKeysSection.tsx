@@ -39,8 +39,11 @@ import {
 } from 'lucide-react';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
-import {supabase} from '@/integrations/supabase/client';
-import {type APIKeyInfo, apiKeysService, type CreateAPIKeyRequest, type ProviderInfo} from '@/services/apiKeysService';
+import {getAccessToken} from '@/services/authService';
+import {
+    type APIKeyInfo, type CreateAPIKeyRequest, type ProviderInfo,
+    loadKeysAndProviders, createApiKey, setDefaultApiKey, deleteApiKey, validateApiKey,
+} from '@/services/apiKeysService';
 
 export function ApiKeysSection() {
   const [keys, setKeys] = useState<APIKeyInfo[]>([]);
@@ -59,32 +62,23 @@ export function ApiKeysSection() {
     validateKey: true,
   });
 
-  const getAccessToken = async (): Promise<string> => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) {
-        throw new Error(t('user', 'apiKeysSessionExpired'));
-    }
-    return session.access_token;
-  };
-
   const loadData = async () => {
-    try {
-      setLoading(true);
-      const token = await getAccessToken();
-      
-      const [keysData, providersData] = await Promise.all([
-        apiKeysService.listKeys(token, false),
-        apiKeysService.listProviders(token),
-      ]);
-      
-      setKeys(keysData);
-      setProviders(providersData);
-    } catch (error) {
-        console.error('Error loading API keys:', error);
-        toast.error(t('user', 'apiKeysErrorLoading'));
-    } finally {
+    setLoading(true);
+    const tokenResult = await getAccessToken();
+    if (!tokenResult.ok) {
+      toast.error(tokenResult.error.message || t('user', 'apiKeysSessionExpired'));
       setLoading(false);
+      return;
     }
+    const result = await loadKeysAndProviders(tokenResult.data);
+    setLoading(false);
+    if (!result.ok) {
+      console.error('Error loading API keys:', result.error);
+      toast.error(t('user', 'apiKeysErrorLoading'));
+      return;
+    }
+    setKeys(result.data.keys);
+    setProviders(result.data.providers);
   };
 
   // Load initial data
@@ -95,89 +89,93 @@ export function ApiKeysSection() {
 
   const handleAddKey = async () => {
     if (!formData.apiKey.trim()) {
-        toast.error(t('user', 'apiKeysEnterKey'));
+      toast.error(t('user', 'apiKeysEnterKey'));
       return;
     }
-
-    try {
-      setSaving(true);
-      const token = await getAccessToken();
-      
-      const result = await apiKeysService.createKey(token, formData);
-      
-      if (result.validationStatus === 'invalid') {
-          toast.error(`${t('user', 'apiKeysInvalidKey')}: ${result.validationMessage || ''}`);
-      } else if (result.validationStatus === 'valid') {
-          toast.success(t('user', 'apiKeysAddedValidated'));
-      } else {
-          toast.success(t('user', 'apiKeysAddedPending'));
-      }
-      
-      // Limpar form e recarregar
-      setFormData({
-        provider: 'openai',
-        apiKey: '',
-        keyName: '',
-        isDefault: true,
-        validateKey: true,
-      });
-      setShowApiKey(false);
-      setIsAddFormOpen(false);
-      await loadData();
-      
-    } catch (error: any) {
-        console.error('Error adding API key:', error);
-        toast.error(error.message || t('user', 'apiKeysErrorAdding'));
-    } finally {
+    setSaving(true);
+    const tokenResult = await getAccessToken();
+    if (!tokenResult.ok) {
+      toast.error(tokenResult.error.message || t('user', 'apiKeysSessionExpired'));
       setSaving(false);
+      return;
     }
+    const result = await createApiKey(tokenResult.data, formData);
+    setSaving(false);
+    if (!result.ok) {
+      console.error('Error adding API key:', result.error);
+      toast.error(result.error.message || t('user', 'apiKeysErrorAdding'));
+      return;
+    }
+    const created = result.data;
+    if (created.validationStatus === 'invalid') {
+      toast.error(`${t('user', 'apiKeysInvalidKey')}: ${created.validationMessage || ''}`);
+    } else if (created.validationStatus === 'valid') {
+      toast.success(t('user', 'apiKeysAddedValidated'));
+    } else {
+      toast.success(t('user', 'apiKeysAddedPending'));
+    }
+    setFormData({provider: 'openai', apiKey: '', keyName: '', isDefault: true, validateKey: true});
+    setShowApiKey(false);
+    setIsAddFormOpen(false);
+    await loadData();
   };
 
   const handleSetDefault = async (keyId: string) => {
-    try {
-      const token = await getAccessToken();
-      await apiKeysService.updateKey(token, keyId, { isDefault: true });
-        toast.success(t('user', 'apiKeysSetDefault'));
-      await loadData();
-    } catch (error: any) {
-        console.error('Error setting as default:', error);
-        toast.error(error.message || t('user', 'apiKeysErrorSetDefault'));
+    const tokenResult = await getAccessToken();
+    if (!tokenResult.ok) {
+      toast.error(tokenResult.error.message || t('user', 'apiKeysSessionExpired'));
+      return;
     }
+    const result = await setDefaultApiKey(tokenResult.data, keyId);
+    if (!result.ok) {
+      console.error('Error setting as default:', result.error);
+      toast.error(result.error.message || t('user', 'apiKeysErrorSetDefault'));
+      return;
+    }
+    toast.success(t('user', 'apiKeysSetDefault'));
+    await loadData();
   };
 
   const handleDelete = async (keyId: string) => {
-    try {
-      const token = await getAccessToken();
-      await apiKeysService.deleteKey(token, keyId);
-        toast.success(t('user', 'apiKeysRemoved'));
-      await loadData();
-    } catch (error: any) {
-        console.error('Error removing:', error);
-        toast.error(error.message || t('user', 'apiKeysErrorRemoving'));
+    const tokenResult = await getAccessToken();
+    if (!tokenResult.ok) {
+      toast.error(tokenResult.error.message || t('user', 'apiKeysSessionExpired'));
+      return;
     }
+    const result = await deleteApiKey(tokenResult.data, keyId);
+    if (!result.ok) {
+      console.error('Error removing:', result.error);
+      toast.error(result.error.message || t('user', 'apiKeysErrorRemoving'));
+      return;
+    }
+    toast.success(t('user', 'apiKeysRemoved'));
+    await loadData();
   };
 
   const handleValidate = async (keyId: string) => {
-    try {
-      setValidating(keyId);
-      const token = await getAccessToken();
-      const result = await apiKeysService.validateKey(token, keyId);
-      
-      if (result.status === 'valid') {
-          toast.success(t('user', 'apiKeysValid'));
-      } else if (result.status === 'invalid') {
-          toast.error(`${t('user', 'apiKeysInvalidKey')}: ${result.message}`);
-      } else {
-          toast.info(t('user', 'apiKeysValidationPending'));
-      }
-      
-      await loadData();
-    } catch (error: any) {
-        console.error('Error validating API key:', error);
-        toast.error(error.message || t('user', 'apiKeysErrorValidating'));
-    } finally {
+    setValidating(keyId);
+    const tokenResult = await getAccessToken();
+    if (!tokenResult.ok) {
+      toast.error(tokenResult.error.message || t('user', 'apiKeysSessionExpired'));
       setValidating(null);
+      return;
     }
+    const result = await validateApiKey(tokenResult.data, keyId);
+    setValidating(null);
+    if (!result.ok) {
+      console.error('Error validating API key:', result.error);
+      toast.error(result.error.message || t('user', 'apiKeysErrorValidating'));
+      return;
+    }
+    const validation = result.data;
+    if (validation.status === 'valid') {
+      toast.success(t('user', 'apiKeysValid'));
+    } else if (validation.status === 'invalid') {
+      toast.error(`${t('user', 'apiKeysInvalidKey')}: ${validation.message}`);
+    } else {
+      toast.info(t('user', 'apiKeysValidationPending'));
+    }
+    await loadData();
   };
 
   const getValidationBadge = (status: string | null) => {

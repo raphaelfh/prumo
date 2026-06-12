@@ -176,6 +176,214 @@ export interface ComparisonPermissionsData {
   rules: PermissionRules;
 }
 
+// ---------------------------------------------------------------------------
+// useProjectSettings: load and save project
+// ---------------------------------------------------------------------------
+
+/**
+ * Load a single project row for the settings hook.
+ *
+ * NOTE: toast messages are handled by the caller.
+ */
+export function loadProjectForSettings(
+  projectId: string,
+): Promise<ErrorResult<import('@/types/project').Project>> {
+  return toResult(async () => {
+    const {data, error} = await supabase
+      .from('projects')
+      .select('*')
+      .eq('id', projectId)
+      .single();
+    if (error) throw error;
+    return data as import('@/types/project').Project;
+  }, 'projectSettingsService.loadProjectForSettings');
+}
+
+import type {Project} from '@/types/project';
+
+export type SaveProjectFields = Pick<Project,
+  | 'name'
+  | 'description'
+  | 'review_type'
+  | 'review_title'
+  | 'condition_studied'
+  | 'review_rationale'
+  | 'search_strategy'
+  | 'picots_config_ai_review'
+  | 'settings'
+  | 'eligibility_criteria'
+  | 'study_design'
+  | 'review_keywords'
+  | 'review_context'
+>;
+
+/**
+ * Persist updated project fields.
+ *
+ * NOTE: toast messages are handled by the caller.
+ */
+export function saveProjectSettings(
+  projectId: string,
+  fields: SaveProjectFields,
+): Promise<ErrorResult<void>> {
+  return toResult(async () => {
+    const {error} = await supabase
+      .from('projects')
+      .update(fields)
+      .eq('id', projectId);
+    if (error) throw error;
+  }, 'projectSettingsService.saveProjectSettings');
+}
+
+// ---------------------------------------------------------------------------
+// useProjectMemberRole: member role lookup
+// ---------------------------------------------------------------------------
+
+import type {ProjectMemberRole} from '@/types/extraction';
+
+/**
+ * Fetch the current user's role in a project.
+ * Returns null when the user is not a member.
+ *
+ * NOTE: errors are silently cleared (role → null) by the caller.
+ */
+export function getProjectMemberRole(
+  projectId: string,
+  userId: string,
+): Promise<ErrorResult<ProjectMemberRole | null>> {
+  return toResult(async () => {
+    const {data, error} = await supabase
+      .from('project_members')
+      .select('role')
+      .eq('project_id', projectId)
+      .eq('user_id', userId)
+      .single();
+    if (error) return null;
+    return (data?.role as ProjectMemberRole | null) ?? null;
+  }, 'projectSettingsService.getProjectMemberRole');
+}
+
+// ---------------------------------------------------------------------------
+// useNavigation: search and profile
+// ---------------------------------------------------------------------------
+
+export interface SearchProjectResult {
+  id: string;
+  name: string;
+  description: string | null;
+}
+
+export interface SearchArticleResult {
+  id: string;
+  title: string;
+  abstract: string | null;
+}
+
+/**
+ * Search projects by name (ilike).
+ *
+ * NOTE: errors are silently ignored by the caller (returns []).
+ */
+export function searchProjects(
+  query: string,
+): Promise<ErrorResult<SearchProjectResult[]>> {
+  return toResult(async () => {
+    const {data} = await supabase
+      .from('projects')
+      .select('id, name, description')
+      .ilike('name', `%${query}%`)
+      .limit(5);
+    return (data ?? []) as SearchProjectResult[];
+  }, 'projectSettingsService.searchProjects');
+}
+
+/**
+ * Search articles by title (ilike).
+ *
+ * NOTE: errors are silently ignored by the caller (returns []).
+ */
+export function searchArticles(
+  query: string,
+): Promise<ErrorResult<SearchArticleResult[]>> {
+  return toResult(async () => {
+    const {data} = await supabase
+      .from('articles')
+      .select('id, title, abstract')
+      .ilike('title', `%${query}%`)
+      .limit(5);
+    return (data ?? []) as SearchArticleResult[];
+  }, 'projectSettingsService.searchArticles');
+}
+
+// ---------------------------------------------------------------------------
+// useNavigation: user profile
+// ---------------------------------------------------------------------------
+
+export interface ProfileRow {
+  full_name: string | null;
+  avatar_url: string | null;
+}
+
+/**
+ * Load the profiles row for the given user.
+ * Returns null when not found (caller falls back to auth metadata).
+ *
+ * NOTE: errors are silently handled by the caller.
+ */
+export function loadUserProfile(
+  userId: string,
+): Promise<ErrorResult<ProfileRow | null>> {
+  return toResult(async () => {
+    const {data, error} = await supabase
+      .from('profiles')
+      .select('full_name, avatar_url')
+      .eq('id', userId)
+      .single();
+    if (error) return null;
+    return data as ProfileRow | null;
+  }, 'projectSettingsService.loadUserProfile');
+}
+
+// ---------------------------------------------------------------------------
+// QualityAssessmentFullScreen: template kind resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve whether a template id belongs to a project clone or the global pool.
+ *
+ * NOTE: errors cause kind:'missing' in the caller.
+ */
+export interface ResolvedTemplateKind {
+  projectId: string | null;
+  globalId: string | null;
+}
+
+export function resolveQATemplateKind(
+  templateId: string,
+): Promise<ErrorResult<ResolvedTemplateKind>> {
+  return toResult(async () => {
+    const [projectRes, globalRes] = await Promise.all([
+      supabase
+        .from('project_extraction_templates')
+        .select('id')
+        .eq('id', templateId)
+        .eq('kind', 'quality_assessment')
+        .maybeSingle(),
+      supabase
+        .from('extraction_templates_global')
+        .select('id')
+        .eq('id', templateId)
+        .eq('kind', 'quality_assessment')
+        .maybeSingle(),
+    ]);
+    if (projectRes.error && globalRes.error) throw projectRes.error;
+    return {
+      projectId: projectRes.data?.id ?? null,
+      globalId: globalRes.data?.id ?? null,
+    };
+  }, 'projectSettingsService.resolveQATemplateKind');
+}
+
 /**
  * Load the member role and project blind-mode setting for comparison
  * permission computation. Throws when the member row is not found or the

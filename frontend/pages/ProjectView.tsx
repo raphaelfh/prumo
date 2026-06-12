@@ -1,6 +1,6 @@
 import {useCallback, useEffect, useRef, useState} from "react";
 import {useNavigate, useParams, useSearchParams} from "react-router-dom";
-import {supabase} from "@/integrations/supabase/client";
+import {loadProjectById, loadProjectArticles} from "@/services/projectsService";
 import {Button} from "@/components/ui/button";
 import {
     DropdownMenu,
@@ -24,57 +24,6 @@ import {useZoteroIntegration} from "@/hooks/useZoteroIntegration";
 import {useProjectMemberRole} from "@/hooks/useProjectMemberRole";
 import {t} from "@/lib/copy";
 import type {Article} from "@/types/article";
-
-/** List projection: all article columns except large text blobs (not loaded in grid). */
-const PROJECT_ARTICLES_LIST_SELECT = [
-    "id",
-    "title",
-    "abstract",
-    "authors",
-    "publication_year",
-    "publication_month",
-    "publication_day",
-    "journal_title",
-    "journal_issn",
-    "journal_eissn",
-    "journal_publisher",
-    "volume",
-    "issue",
-    "pages",
-    "doi",
-    "pmid",
-    "pmcid",
-    "arxiv_id",
-    "pii",
-    "keywords",
-    "mesh_terms",
-    "url_landing",
-    "url_pdf",
-    "language",
-    "article_type",
-    "publication_status",
-    "open_access",
-    "license",
-    "study_design",
-    "conflicts_of_interest",
-    "data_availability",
-    "registration",
-    "funding",
-    "source_payload",
-    "sync_conflict_log",
-    "hash_fingerprint",
-    "source_lineage",
-    "row_version",
-    "ingestion_source",
-    "sync_state",
-    "zotero_item_key",
-    "zotero_collection_key",
-    "zotero_version",
-    "removed_at_source_at",
-    "last_synced_at",
-    "created_at",
-    "updated_at",
-].join(", ");
 
 type ProjectArticle = Article;
 
@@ -223,48 +172,27 @@ export default function ProjectView() {
     // Captured synchronously before the first await; both loaders read the same
     // post-bump value because the effect bumps once before calling them.
     const generation = projectLoadRef.current;
-
-    try {
-      const { data, error } = await supabase
-        .from("projects")
-        .select(`
-          id, name, description, review_title, review_type,
-          settings,
-          condition_studied,
-          created_at, updated_at
-        `)
-        .eq("id", projectId)
-        .single();
-
-      if (error) throw error;
-      if (generation !== projectLoadRef.current) return;
-      setContextProject(data);
-    } catch (error: any) {
-      if (generation !== projectLoadRef.current) return;
-        toast.error("Error loading project");
-      console.error(error);
-    } finally {
-      if (generation === projectLoadRef.current) setLoading(false);
+    const result = await loadProjectById(projectId);
+    if (generation !== projectLoadRef.current) return;
+    if (!result.ok) {
+      toast.error("Error loading project");
+      console.error(result.error);
+    } else {
+      setContextProject(result.data);
     }
+    setLoading(false);
   };
 
   const loadArticles = async () => {
     if (!projectId) return;
     const generation = projectLoadRef.current;
-
-    try {
-      const { data, error } = await supabase
-        .from("articles")
-          .select(PROJECT_ARTICLES_LIST_SELECT)
-        .eq("project_id", projectId)
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      if (generation !== projectLoadRef.current) return;
-      setArticles((data as unknown as Article[]) || []);
-    } catch (error: any) {
-      console.error(error);
+    const result = await loadProjectArticles(projectId);
+    if (generation !== projectLoadRef.current) return;
+    if (!result.ok) {
+      console.error(result.error);
+      return;
     }
+    setArticles(result.data);
   };
 
   useEffect(() => {

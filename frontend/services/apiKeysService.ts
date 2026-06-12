@@ -207,3 +207,66 @@ class APIKeysService {
 }
 
 export const apiKeysService = new APIKeysService();
+
+// ---------------------------------------------------------------------------
+// ErrorResult wrappers — used by ApiKeysSection so handlers have no try/catch
+// ---------------------------------------------------------------------------
+
+import {toResult, type ErrorResult} from '@/lib/error-utils';
+
+export interface LoadedKeysAndProviders {
+  keys: APIKeyInfo[];
+  providers: ProviderInfo[];
+}
+
+export function loadKeysAndProviders(
+  token: string,
+): Promise<ErrorResult<LoadedKeysAndProviders>> {
+  return toResult(async () => {
+    const [keys, providers] = await Promise.all([
+      apiKeysService.listKeys(token, false),
+      apiKeysService.listProviders(token),
+    ]);
+    return {keys, providers};
+  }, 'apiKeysService.loadKeysAndProviders');
+}
+
+export function createApiKey(
+  token: string,
+  request: CreateAPIKeyRequest,
+): Promise<ErrorResult<CreateAPIKeyResponse>> {
+  return toResult(
+    () => apiKeysService.createKey(token, request),
+    'apiKeysService.createApiKey',
+  );
+}
+
+export function setDefaultApiKey(
+  token: string,
+  keyId: string,
+): Promise<ErrorResult<void>> {
+  return toResult(
+    () => apiKeysService.updateKey(token, keyId, {isDefault: true}),
+    'apiKeysService.setDefaultApiKey',
+  );
+}
+
+export function deleteApiKey(
+  token: string,
+  keyId: string,
+): Promise<ErrorResult<void>> {
+  return toResult(
+    () => apiKeysService.deleteKey(token, keyId),
+    'apiKeysService.deleteApiKey',
+  );
+}
+
+export function validateApiKey(
+  token: string,
+  keyId: string,
+): Promise<ErrorResult<ValidationResult>> {
+  return toResult(
+    () => apiKeysService.validateKey(token, keyId),
+    'apiKeysService.validateApiKey',
+  );
+}

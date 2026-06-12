@@ -12,8 +12,8 @@ import {Form, FormControl, FormField, FormItem, FormMessage} from '@/components/
 import {Input} from '@/components/ui/input';
 import {SettingsSection, SettingsCard, SettingsField} from '@/components/settings';
 import {AlertCircle, CheckCircle2, Eye, EyeOff, Loader2, Lock} from 'lucide-react';
-import {supabase} from '@/integrations/supabase/client';
 import {toast} from 'sonner';
+import {updateUserPassword} from '@/services/authService';
 import {cn} from '@/lib/utils';
 import {t} from '@/lib/copy';
 
@@ -80,19 +80,15 @@ export function SecuritySection() {
 
     const onSubmit = async (values: FormValues) => {
     setLoading(true);
-    try {
-        const {error} = await supabase.auth.updateUser({password: values.newPassword});
-      if (error) throw error;
-
-        toast.success(t('user', 'securityPasswordChanged'));
-        form.reset();
-    } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : t('user', 'securityErrorChanging');
-        console.error('Error changing password:', err);
-        toast.error(message);
-    } finally {
-      setLoading(false);
+    const result = await updateUserPassword(values.newPassword);
+    setLoading(false);
+    if (!result.ok) {
+        console.error('Error changing password:', result.error);
+        toast.error(result.error.message || t('user', 'securityErrorChanging'));
+        return;
     }
+    toast.success(t('user', 'securityPasswordChanged'));
+    form.reset();
   };
 
   return (
