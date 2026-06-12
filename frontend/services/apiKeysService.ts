@@ -5,6 +5,8 @@
  * Keys are encrypted via Fernet in the FastAPI backend.
  */
 
+import {toResult, type ErrorResult} from '@/lib/error-utils';
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
 export interface APIKeyInfo {
@@ -211,8 +213,6 @@ export const apiKeysService = new APIKeysService();
 // ---------------------------------------------------------------------------
 // ErrorResult wrappers — used by ApiKeysSection so handlers have no try/catch
 // ---------------------------------------------------------------------------
-
-import {toResult, type ErrorResult} from '@/lib/error-utils';
 
 export interface LoadedKeysAndProviders {
   keys: APIKeyInfo[];

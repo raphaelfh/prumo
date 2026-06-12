@@ -980,6 +980,7 @@ export default function ExtractionFullScreen() {
       while (attempts < maxAttempts) {
         attempts++;
         await new Promise(resolve => setTimeout(resolve, pollDelay));
+        // refreshAISuggestions never rejects (terminal .catch in loadSuggestions) — safe outside try
         const pollResult = await preserveScroll(refreshAISuggestions);
         foundSuggestions = pollResult.count > 0;
         if (foundSuggestions) return;

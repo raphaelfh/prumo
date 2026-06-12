@@ -52,19 +52,31 @@ function restore(snap: Map<string, { top: number; left: number }>): void {
   });
 }
 
+/**
+ * Run an async operation and restore scroll positions when it settles.
+ * The try/finally lives here (module-level) so the compiled hook's callback
+ * contains no try-family statements.
+ */
+async function runWithScrollPreserved<T>(
+  selectors: string[],
+  operation: () => Promise<T>,
+): Promise<T> {
+  const snap = snapshot(selectors);
+  // No try/catch — let the operation's rejection propagate to the caller.
+  // finally always restores scroll regardless of outcome.
+  try {
+    return await operation();
+  } finally {
+    restore(snap);
+  }
+}
+
 export function usePreserveScroll(selectors: string[]): PreserveScroll {
   // selectors is intentionally treated as a stable identity by callers (we
   // pass a module-level constant array), so the array itself is the dep —
   // spreading it produced a non-literal dependency list the compiler rejects.
   return useCallback(
-    async (operation) => {
-      const snap = snapshot(selectors);
-      try {
-        return await operation();
-      } finally {
-        restore(snap);
-      }
-    },
+    (operation) => runWithScrollPreserved(selectors, operation),
     [selectors]
   );
 }

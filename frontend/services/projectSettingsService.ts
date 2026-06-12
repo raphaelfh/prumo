@@ -11,7 +11,8 @@
  */
 import {supabase} from '@/integrations/supabase/client';
 import {toResult, PgError, type ErrorResult} from '@/lib/error-utils';
-import type {MemberRole} from '@/types/project';
+import type {MemberRole, Project} from '@/types/project';
+import type {ProjectMemberRole} from '@/types/extraction';
 import {getRolePermissions, isValidUserRole, type PermissionRules, type UserRole} from '@/lib/comparison/permissions';
 
 // ---------------------------------------------------------------------------
@@ -187,7 +188,7 @@ export interface ComparisonPermissionsData {
  */
 export function loadProjectForSettings(
   projectId: string,
-): Promise<ErrorResult<import('@/types/project').Project>> {
+): Promise<ErrorResult<Project>> {
   return toResult(async () => {
     const {data, error} = await supabase
       .from('projects')
@@ -195,11 +196,9 @@ export function loadProjectForSettings(
       .eq('id', projectId)
       .single();
     if (error) throw error;
-    return data as import('@/types/project').Project;
+    return data as Project;
   }, 'projectSettingsService.loadProjectForSettings');
 }
-
-import type {Project} from '@/types/project';
 
 export type SaveProjectFields = Pick<Project,
   | 'name'
@@ -238,8 +237,6 @@ export function saveProjectSettings(
 // ---------------------------------------------------------------------------
 // useProjectMemberRole: member role lookup
 // ---------------------------------------------------------------------------
-
-import type {ProjectMemberRole} from '@/types/extraction';
 
 /**
  * Fetch the current user's role in a project.
