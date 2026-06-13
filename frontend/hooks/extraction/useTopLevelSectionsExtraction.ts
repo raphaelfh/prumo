@@ -11,7 +11,7 @@
  * - Aggregated results
  */
 
-import {useCallback, useState} from "react";
+import {useState} from "react";
 import {toast} from "sonner";
 import {t} from "@/lib/copy";
 import {SectionExtractionService} from "@/services/sectionExtractionService";
@@ -69,8 +69,7 @@ export function useTopLevelSectionsExtraction(options?: {
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<TopLevelSectionsProgress | null>(null);
 
-  const extractTopLevelSections = useCallback(
-    async (params: {
+  const extractTopLevelSections = async (params: {
       projectId: string;
       articleId: string;
       templateId: string;
@@ -83,7 +82,14 @@ export function useTopLevelSectionsExtraction(options?: {
       setError(null);
       setProgress(null);
 
-      try {
+      type ExtractionResult = {
+        totalSections: number;
+        successfulSections: number;
+        failedSections: number;
+        totalSuggestionsCreated: number;
+      };
+
+      const doExtract = async (): Promise<ExtractionResult> => {
         const { projectId, articleId, templateId, options: extractionOptions } = params;
 
           // 1. Fetch top-level sections list
@@ -108,51 +114,54 @@ export function useTopLevelSectionsExtraction(options?: {
         let successfulSections = 0;
         let failedSections = 0;
 
-        for (let i = 0; i < sections.length; i++) {
-          const section = sections[i];
+        // for...of with entries() avoids capturing a `i++` UpdateExpression
+        // in lambda closures, which the React Compiler cannot handle.
+        for (const [i, section] of sections.entries()) {
           const sectionIndex = i + 1;
           const totalSections = sections.length;
 
-          try {
-            const request: SectionExtractionRequest = {
-              projectId,
-              articleId,
-              templateId,
-              entityTypeId: section.id,
-                // NO parentInstanceId - top-level sections are linked directly to the article
-              options: extractionOptions,
-            };
+          const request: SectionExtractionRequest = {
+            projectId,
+            articleId,
+            templateId,
+            entityTypeId: section.id,
+              // NO parentInstanceId - top-level sections are linked directly to the article
+            options: extractionOptions,
+          };
 
-              // Update progress before processing (with section name)
-            const progressBefore: TopLevelSectionsProgress = {
-              currentSection: sectionIndex,
-              totalSections,
-              currentSectionName: section.label,
-              completedSections: i,
-            };
-            setProgress(progressBefore);
-            options?.onProgress?.(progressBefore);
+            // Update progress before processing (with section name)
+          const progressBefore: TopLevelSectionsProgress = {
+            currentSection: sectionIndex,
+            totalSections,
+            currentSectionName: section.label,
+            completedSections: i,
+          };
+          setProgress(progressBefore);
+          options?.onProgress?.(progressBefore);
 
-            const result = await SectionExtractionService.extractSection(request);
-
-            if (result.data) {
-              totalSuggestionsCreated += result.data.suggestionsCreated || 0;
-              successfulSections++;
-                console.warn(`[useTopLevelSectionsExtraction] Section ${sectionIndex}/${totalSections} extracted successfully: ${section.label}`);
-            } else {
-              failedSections++;
-                console.error(`[useTopLevelSectionsExtraction] Section ${sectionIndex}/${totalSections} failed: ${section.label}`);
-            }
-          } catch (sectionError: any) {
+          // Each section is processed independently — errors skip it
+          // rather than aborting the whole batch.
+          const sectionResult = await SectionExtractionService.extractSection(request)
+            .catch((sectionError: unknown) => {
               console.error(`[useTopLevelSectionsExtraction] Error in section ${sectionIndex}/${totalSections}:`, sectionError);
-            failedSections++;
-              // Continue with next section
+              return null;
+            });
+
+          if (sectionResult === null) {
+            failedSections = failedSections + 1;
+          } else if (sectionResult.data) {
+            totalSuggestionsCreated = totalSuggestionsCreated + (sectionResult.data.suggestionsCreated || 0);
+            successfulSections = successfulSections + 1;
+              console.warn(`[useTopLevelSectionsExtraction] Section ${sectionIndex}/${sections.length} extracted successfully: ${section.label}`);
+          } else {
+            failedSections = failedSections + 1;
+              console.error(`[useTopLevelSectionsExtraction] Section ${sectionIndex}/${sections.length} failed: ${section.label}`);
           }
 
             // Update progress after processing section (no name, count only)
           const progressAfter: TopLevelSectionsProgress = {
             currentSection: sectionIndex,
-            totalSections,
+            totalSections: sections.length,
             currentSectionName: null,
             completedSections: sectionIndex,
           };
@@ -188,7 +197,7 @@ export function useTopLevelSectionsExtraction(options?: {
           );
         }
 
-        const result = {
+        const result: ExtractionResult = {
           totalSections: sections.length,
           successfulSections,
           failedSections,
@@ -197,19 +206,21 @@ export function useTopLevelSectionsExtraction(options?: {
 
         options?.onSuccess?.(result);
         return result;
-      } catch (err: any) {
+      };
+
+      return doExtract()
+        .catch((err: unknown) => {
           console.error('[useTopLevelSectionsExtraction] Extraction error:', err);
-          const errorMessage = err.message || t('extraction', 'errors_topLevelSectionsExtraction');
-        setError(errorMessage);
+          const errorMessage = err instanceof Error ? err.message : t('extraction', 'errors_topLevelSectionsExtraction');
+          setError(errorMessage);
           toast.error(`${t('extraction', 'errors_topLevelSectionsExtraction')}: ${errorMessage}`);
-        throw err;
-      } finally {
-        setLoading(false);
-        setProgress(null);
-      }
-    },
-    [options],
-  );
+          throw err;
+        })
+        .finally(() => {
+          setLoading(false);
+          setProgress(null);
+        });
+  };
 
   return { extractTopLevelSections, loading, error, progress };
 }

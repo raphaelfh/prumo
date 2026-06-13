@@ -16,8 +16,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {useProjectsList} from '@/hooks/useProjectsList';
 import {useAuth} from '@/contexts/AuthContext';
-import {supabase} from '@/integrations/supabase/client';
 import {toast} from 'sonner';
+import {createProject} from '@/services/projectsService';
 import {AddProjectDialog} from '@/components/project/AddProjectDialog';
 import {t} from '@/lib/copy';
 
@@ -40,28 +40,16 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({projectName, open, 
       return;
     }
     setIsCreating(true);
-    try {
-      const {data: projectId, error} = await supabase.rpc(
-        'create_project_with_member' as never,
-        {p_name: data.name, p_description: data.description || undefined, p_review_title: undefined} as never,
-      );
-      if (error) {
-        toast.error(`${t('pages', 'dashboardErrorCreating')}: ${error.message}`);
-        return;
-      }
-      if (!projectId || typeof projectId !== 'string') {
-        toast.error(t('pages', 'dashboardErrorProjectIdNotReturned'));
-        return;
-      }
-      toast.success(t('pages', 'dashboardProjectCreated'));
-      setShowAddDialog(false);
-      await loadProjects();
-      switchProject(projectId);
-    } catch {
-      toast.error(t('pages', 'dashboardUnexpectedError'));
-    } finally {
-      setIsCreating(false);
+    const result = await createProject(data.name, data.description);
+    setIsCreating(false);
+    if (!result.ok) {
+      toast.error(`${t('pages', 'dashboardErrorCreating')}: ${result.error.message}`);
+      return;
     }
+    toast.success(t('pages', 'dashboardProjectCreated'));
+    setShowAddDialog(false);
+    await loadProjects();
+    switchProject(result.data.projectId);
   };
 
   return (
@@ -73,7 +61,7 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({projectName, open, 
             aria-keyshortcuts="G P"
             className="w-full justify-start gap-2 h-8 px-2 rounded-md hover:bg-muted/50 transition-colors group"
           >
-            <div className="h-5 w-5 rounded bg-primary/10 flex items-center justify-center flex-shrink-0 border border-primary/15">
+            <div className="h-5 w-5 rounded bg-primary/10 flex items-center justify-center shrink-0 border border-primary/15">
               <span className="text-[10px] font-semibold text-primary leading-none">
                 {(projectName || 'P')[0].toUpperCase()}
               </span>
@@ -100,7 +88,7 @@ export const SidebarHeader: React.FC<SidebarHeaderProps> = ({projectName, open, 
                   onClick={() => switchProject(project.id)}
                   className="px-2 py-1.5 rounded-md text-[13px] focus:bg-muted/60"
                 >
-                  <div className="h-4 w-4 rounded bg-primary/10 flex items-center justify-center flex-shrink-0 border border-primary/15 mr-2">
+                  <div className="h-4 w-4 rounded bg-primary/10 flex items-center justify-center shrink-0 border border-primary/15 mr-2">
                     <span className="text-[9px] font-semibold text-primary leading-none">
                       {project.name[0].toUpperCase()}
                     </span>

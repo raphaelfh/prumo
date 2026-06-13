@@ -3,7 +3,7 @@
  * Layout with tabs for Profile, Security and Integrations
  */
 
-import {useEffect, useState} from 'react';
+import {useState} from 'react';
 import {useNavigate, useSearchParams} from 'react-router-dom';
 import {Button} from '@/components/ui/button';
 import {cn} from '@/lib/utils';
@@ -55,13 +55,16 @@ export default function UserSettings() {
     const [activeTab, setActiveTab] = useState<TabId>(initialTab);
   const navigate = useNavigate();
 
-    // Sync tab when URL changes (e.g. direct link to ?tab=integrations)
-    useEffect(() => {
+    // Sync tab when URL changes (e.g. direct link to ?tab=integrations) —
+    // adjusted during render instead of via effect to avoid a cascading render.
+    const [prevSearchParams, setPrevSearchParams] = useState(searchParams);
+    if (searchParams !== prevSearchParams) {
+        setPrevSearchParams(searchParams);
         const tab = searchParams.get('tab');
-        if (tab && VALID_TAB_IDS.includes(tab as TabId)) {
+        if (tab && VALID_TAB_IDS.includes(tab as TabId) && tab !== activeTab) {
             setActiveTab(tab as TabId);
         }
-    }, [searchParams]);
+    }
 
     const handleTabChange = (tabId: TabId) => {
         setActiveTab(tabId);
@@ -96,7 +99,7 @@ export default function UserSettings() {
 
         <div className="flex-1 overflow-hidden flex w-full">
             <aside
-                className="w-56 flex-shrink-0 border-r border-border/40 bg-[#fafafa] dark:bg-[#0c0c0c] overflow-y-auto">
+                className="w-56 shrink-0 border-r border-border/40 bg-[#fafafa] dark:bg-[#0c0c0c] overflow-y-auto">
                 <nav role="tablist" aria-label="Settings sections" className="py-4 px-2 space-y-0.5">
               {TABS.map((tab) => {
                 const Icon = tab.icon;
@@ -114,7 +117,7 @@ export default function UserSettings() {
                         isActive ? 'bg-muted text-foreground' : 'text-muted-foreground'
                     )}
                   >
-                      <Icon className="h-4 w-4 flex-shrink-0" strokeWidth={1.5}/>
+                      <Icon className="h-4 w-4 shrink-0" strokeWidth={1.5}/>
                       {tab.label}
                   </button>
                 );

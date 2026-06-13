@@ -13,7 +13,7 @@
  * - User-friendly error handling
  */
 
-import {useCallback, useState} from "react";
+import {useState} from "react";
 import {toast} from "sonner";
 import {type SectionExtractionRequest, SectionExtractionService,} from "@/services/sectionExtractionService";
 import {
@@ -67,13 +67,12 @@ export function useSectionExtraction(options?: {
    * Extracts data from a specific section
    * @param request - Extraction parameters
    */
-  const extractSection = useCallback(
-    async (request: SectionExtractionRequest) => {
+  const extractSection = async (request: SectionExtractionRequest) => {
         console.warn('[useSectionExtraction] Starting extraction', request);
       setLoading(true);
       setError(null);
 
-      try {
+      const doExtract = async () => {
           // Call service to run extraction
           console.warn('[useSectionExtraction] Chamando service...');
         const result = await SectionExtractionService.extractSection(request);
@@ -102,71 +101,55 @@ export function useSectionExtraction(options?: {
         );
         }
 
-        // Chamar callback de sucesso se fornecido
-          // Useful to refresh suggestions after extraction
-          // IMPORTANT: Do not await - callback must not block loading reset
+        // IMPORTANT: Do not await - callback must not block loading reset
         if (options?.onSuccess) {
-          // Executar callback sem bloquear (pode ser async)
-            // Loading will be reset in finally regardless of callback
           Promise.resolve(
             options.onSuccess(result.data.runId, result.data.suggestionsCreated)
           ).catch(err => {
             console.error('[useSectionExtraction] Erro no callback onSuccess:', err);
-              // Do not block loading reset on callback error
           });
         }
-      } catch (err: any) {
-        console.error('[useSectionExtraction] Erro capturado', {
-          error: err instanceof Error ? err.message : String(err),
-          name: err instanceof Error ? err.name : 'Unknown',
-          stack: err instanceof Error ? err.stack : undefined,
-        });
+      };
 
-          // Handle error in a user-friendly way using custom error classes
-        const message = getErrorMessage(err);
-        const code = getErrorCode(err);
-        setError(message);
+      doExtract()
+        .catch((err: unknown) => {
+          console.error('[useSectionExtraction] Erro capturado', {
+            error: err instanceof Error ? err.message : String(err),
+            name: err instanceof Error ? err.name : 'Unknown',
+            stack: err instanceof Error ? err.stack : undefined,
+          });
 
-        // Toast de erro com mensagem clara baseada no tipo de erro
-        const errorCode = code || '';
-        if (err instanceof NoInstancesError || errorCode === 'NO_INSTANCES') {
-            toast.error(t('extraction', 'sectionExtractionErrorTitle'), {
-            description: message,
-            duration: 6000,
-          });
-        } else if (err instanceof PDFNotFoundError || errorCode === 'PDF_NOT_FOUND') {
-            toast.error(t('extraction', 'sectionExtractionErrorTitle'), {
-            description: message,
-          });
-        } else if (err instanceof FieldNameMismatchError || errorCode === 'FIELD_NAME_MISMATCH') {
-            toast.error(t('extraction', 'sectionExtractionErrorFieldMismatch'), {
-            description: message,
-            duration: 8000,
-          });
-        } else if (err instanceof AuthenticationError || errorCode === 'AUTH_ERROR') {
+          const message = getErrorMessage(err);
+          const code = getErrorCode(err);
+          setError(message);
+
+          const errorCode = code || '';
+          if (err instanceof NoInstancesError || errorCode === 'NO_INSTANCES') {
+            toast.error(t('extraction', 'sectionExtractionErrorTitle'), {description: message, duration: 6000});
+          } else if (err instanceof PDFNotFoundError || errorCode === 'PDF_NOT_FOUND') {
+            toast.error(t('extraction', 'sectionExtractionErrorTitle'), {description: message});
+          } else if (err instanceof FieldNameMismatchError || errorCode === 'FIELD_NAME_MISMATCH') {
+            toast.error(t('extraction', 'sectionExtractionErrorFieldMismatch'), {description: message, duration: 8000});
+          } else if (err instanceof AuthenticationError || errorCode === 'AUTH_ERROR') {
             toast.error(t('extraction', 'sectionExtractionErrorAuth'), {
-                description: t('extraction', 'sectionExtractionErrorAuthDesc'),
-          });
-        } else {
-          const errorMessage = message.toLowerCase();
-          if (errorMessage.includes('field name') || errorMessage.includes('mismatch') || errorMessage.includes('no mapping')) {
-              toast.error(t('extraction', 'sectionExtractionErrorFieldMismatch'), {
-                  description: t('extraction', 'sectionExtractionErrorFieldMismatchDesc'),
-              duration: 8000,
-              });
+              description: t('extraction', 'sectionExtractionErrorAuthDesc'),
+            });
           } else {
+            const errorMessage = message.toLowerCase();
+            if (errorMessage.includes('field name') || errorMessage.includes('mismatch') || errorMessage.includes('no mapping')) {
+              toast.error(t('extraction', 'sectionExtractionErrorFieldMismatch'), {
+                description: t('extraction', 'sectionExtractionErrorFieldMismatchDesc'),
+                duration: 8000,
+              });
+            } else {
               toast.error(`${t('extraction', 'sectionExtractionErrorTitle')}: ${message}`);
+            }
           }
-        }
 
-        // Re-throw para permitir tratamento adicional pelo componente
-        throw err;
-      } finally {
-        setLoading(false);
-      }
-    },
-    [options],
-  );
+          throw err;
+        })
+        .finally(() => setLoading(false));
+  };
 
   return { extractSection, loading, error };
 }

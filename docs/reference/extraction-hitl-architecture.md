@@ -1,6 +1,6 @@
 ---
 status: stable
-last_reviewed: 2026-05-30
+last_reviewed: 2026-06-11
 owner: '@raphaelfh'
 ---
 
@@ -74,9 +74,11 @@ change set live in
 ## 3. Database — final schema
 
 All tables live in the `public` schema with RLS enabled. Migration head:
-`20260428_0018`.
+`0026_widen_template_snapshot` (post-squash numbering; run
+`ls backend/alembic/versions/` for the current head — and bump this line
+in any PR that adds an `extraction_*` migration).
 
-### Core HITL tables (introduced 0010 → 0012, evolved through 0018)
+### Core HITL tables (introduced pre-squash 0010 → 0012; evolving — see migration head above)
 
 | Table | Append-only? | Purpose |
 | --- | --- | --- |
@@ -104,9 +106,9 @@ The original 2026-04-27 cut had two transition shims (`ai_suggestions`,
 
 | Former table | Removed in | Replacement |
 | --- | --- | --- |
-| `ai_suggestions` | Migration `20260428_0019` (now in archive) | `extraction_proposal_records` (filter `source='ai'`) — `aiSuggestionService` reads here, derives status from the current reviewer_state. |
+| `ai_suggestions` | archived pre-squash migration `20260428_0019` | `extraction_proposal_records` (filter `source='ai'`) — `aiSuggestionService` reads here, derives status from the current reviewer_state. |
 | `extracted_values` | Migration `0002_drop_extracted_values` | `extraction_reviewer_decisions` for per-user values, `extraction_published_states` for canonical post-consensus values. `ExtractionValueService` (frontend) wraps the read/write path. |
-| `suggestion_status` enum | Migration `20260428_0019` (archived) | Status derived from reviewer_state's current decision (accept_proposal / edit / reject). |
+| `suggestion_status` enum | archived pre-squash migration `20260428_0019` | Status derived from reviewer_state's current decision (accept_proposal / edit / reject). |
 | `extraction_source` enum | Migration `0002_drop_extracted_values` | `extraction_proposal_source` (ai/human/system) on ProposalRecord. |
 
 ### Enums introduced or modified
@@ -121,13 +123,27 @@ The original 2026-04-27 cut had two transition shims (`ai_suggestions`,
 | `extraction_consensus_mode` | `select_existing`, `manual_override` | 0012 |
 | `extraction_run_stage` (rebuilt) | `pending`, `proposal`, `review`, `consensus`, `finalized`, `cancelled` | 0014 |
 
-### RLS — workflow tables (post-0018)
+### RLS — workflow tables (post-0025, reviewer-scoped)
 
-`SELECT` and `DELETE` use `is_project_member` (broad, read-only).
 `INSERT` and `UPDATE` use `is_project_reviewer` (`manager` /
-`reviewer` / `consensus` roles), introduced in 0018 — pre-0018 these
-were locked to `is_project_manager`, which would have blocked legitimate
-reviewer writes in production.
+`reviewer` / `consensus` roles). `SELECT` on the reviewer-attributable
+tables (`extraction_reviewer_decisions`, `extraction_reviewer_states`,
+`extraction_proposal_records`) is **self-scoped** since
+`0025_reviewer_scoped_select_rls` (the blind-leak fix): a member may
+read a row only when (a) they authored it (`reviewer_id` /
+`source_user_id` = `auth.uid()`), (b) they are a project
+`manager`/`consensus` arbitrator (`is_project_arbitrator` SECURITY
+DEFINER helper), or (c) the run is `finalized`. AI/system proposals
+stay visible to all members. Non-attributable workflow tables keep
+broad `is_project_member` SELECT.
+
+Two read paths MUST encode the identical predicate: this RLS layer
+(PostgREST/devtools path) and the service-layer filter in
+`extraction_run_read_service` (API path, reached as `service_role`
+which bypasses RLS). Before 0025, SELECT gated only on
+`is_project_member` and blinding lived in frontend JavaScript — the
+exact posture that produced the blind-review leak. Do not reintroduce
+it.
 
 ## 4. Conceptual flow
 
@@ -203,27 +219,35 @@ Database guarantees post 0016:
 
 ### 4.2 LLM prompt module pattern
 
-Prompts that drive LLM calls live in `backend/app/services/llm/`, not
-inline inside services. Each prompt is a pure module exposing:
+Prompts that drive LLM calls live in `backend/app/llm/prompts/` — one
+module per prompt. Each module exposes:
 
-- A `build(...)` static method that returns the prompt text (pure
-  function: no I/O, no globals, deterministic given inputs).
-- A `*_RESPONSE_SCHEMA` constant in JSON-schema shape for when
-  structured-output mode is enabled on the OpenAI call.
-- A `parse_*_from_response(...)` helper that normalizes the LLM JSON
-  into the service's expected shape.
+- `NAME` (str) — a stable identifier used for logging and span tagging.
+- `VERSION` (12-char content hash) — auto-bumps whenever the prompt text
+  changes; stamped on every Logfire span alongside `NAME` so prompt
+  regressions are traceable in production.
+- `render(...)` — returns the user prompt string (pure function: no I/O,
+  no globals, deterministic given inputs).
+- `SYSTEM_PROMPT` constant, or `system_prompt(framework)` where the
+  system prompt is parameterised by the calling context.
 
-Example: `app/services/llm/model_identification_prompt.py` is consumed by
-`model_extraction_service._identify_models`. The prompt is field-name-
-agnostic — it asks the LLM for a neutral `name` per model and uses the
-template's container `label` for grounding, so managers can rename
-fields in the Configuration tab without breaking extraction.
+**Structured output** is enforced by the typed call layer
+(`backend/app/llm/extractor.py::extract_structured`, Pydantic AI
+`NativeOutput`). There are no `*_RESPONSE_SCHEMA` JSON-schema constants
+and no tolerant parsers: if the model returns structurally invalid output,
+the call layer reasks (up to `DEFAULT_USAGE_LIMITS.request_limit`) and
+then raises `AgentRunError`, which fails the run. Callers must catch that
+exception.
 
-Unit tests in `tests/unit/test_model_identification_prompt.py` pin the
-prompt's neutrality (no internal field names appear in the text), the
-response schema, and the parser's backward-compat path.
+**Output models** — static schemas (e.g. `ModelIdentificationOutput`) are
+defined next to their prompt module. Template-driven schemas whose shape
+depends on the active template version are built at runtime by
+`backend/app/llm/schema.py::build_output_models`.
 
-### 4.2 Project template import (extraction catalogue)
+Unit tests for the prompt layer live in
+`backend/tests/unit/llm/test_prompts.py`.
+
+### 4.3 Project template import (extraction catalogue)
 
 The extraction **Import template** dialog reads `extraction_templates_global` through the Supabase client (RLS). **Do not** insert `project_extraction_templates` from the frontend: a deferred trigger requires every project template to have an **active** `extraction_template_versions` row at commit time, so creation stays in the API layer.
 
@@ -350,7 +374,7 @@ publish, AI), keep it in the page-specific component.
 
 - **AISuggestion** — Old AI-suggestion table; status was mutated by
   accept/reject. Replaced by `ProposalRecord` (source=ai). Removed in
-  migration `20260428_0019`.
+  archived pre-squash migration `20260428_0019`.
 - **ExtractedValue** — Old per-user value store. Replaced by
   `ReviewerDecision` (per-user, with run-stage REVIEW required) for
   in-flight values, and `PublishedState` for canonical post-consensus

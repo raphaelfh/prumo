@@ -12,6 +12,7 @@
  * inline conditionals or one-off comments about the historical render
  * bugs that this layout used to mask.
  */
+import type {ReactElement} from 'react';
 import {Separator} from '@/components/ui/separator';
 import {BatchAllModelsSectionsProgress} from './BatchAllModelsSectionsProgress';
 import {BatchExtractionProgress} from './BatchExtractionProgress';
@@ -87,7 +88,7 @@ export interface ModelSectionProps {
   onExtractionComplete?: () => void;
 }
 
-export function ModelSection(props: ModelSectionProps): JSX.Element {
+export function ModelSection(props: ModelSectionProps): ReactElement {
   const {
     modelContainer,
     modelChildren,

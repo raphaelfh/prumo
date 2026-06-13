@@ -12,9 +12,11 @@ import type {
     ImportResult,
     ZoteroCollection,
     ZoteroCredentialsInput,
+    ZoteroIntegration,
     ZoteroSyncStatus,
     ZoteroTestConnectionResult,
 } from '@/types/zotero';
+import {toResult, type ErrorResult} from '@/lib/error-utils';
 import {t} from '@/lib/copy';
 
 /**
@@ -269,3 +271,113 @@ export class ZoteroImportService {
 
 // Export singleton instance
 export const zoteroService = new ZoteroImportService();
+
+// ---------------------------------------------------------------------------
+// ErrorResult wrappers — used by hooks so they contain no try-family statements
+// (zero-bailouts spec, 2026-06-12)
+// ---------------------------------------------------------------------------
+
+export interface LoadZoteroIntegrationResult {
+  integration: ZoteroIntegration | null;
+  isConfigured: boolean;
+}
+
+/**
+ * Load the active Zotero integration for the current user.
+ * Supabase read relocated verbatim from useZoteroIntegration.loadIntegration.
+ */
+export function loadZoteroIntegration(): Promise<ErrorResult<LoadZoteroIntegrationResult>> {
+  return toResult(async () => {
+    const {data: {user}} = await supabase.auth.getUser();
+
+    if (!user) {
+      return {integration: null, isConfigured: false};
+    }
+
+    const {data, error} = await supabase
+      .from('zotero_integrations')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error loading Zotero integration:', error);
+      return {integration: null, isConfigured: false};
+    }
+
+    return {integration: data as ZoteroIntegration | null, isConfigured: !!data};
+  }, 'zoteroImportService.loadZoteroIntegration');
+}
+
+/**
+ * Save Zotero credentials via the API, then reload the integration.
+ * Returns ErrorResult so the caller has no try/catch.
+ */
+export function saveZoteroCredentials(
+  credentials: ZoteroCredentialsInput,
+): Promise<ErrorResult<void>> {
+  return toResult(async () => {
+    await zoteroService.saveCredentials(credentials);
+  }, 'zoteroImportService.saveZoteroCredentials');
+}
+
+/**
+ * Test the stored Zotero connection.
+ * Returns ErrorResult wrapping ZoteroTestConnectionResult so the hook has no
+ * try/catch. Connection-level failures (API returns success:false) are
+ * surfaced in the result value, not as errors.
+ */
+export function testZoteroConnection(): Promise<ErrorResult<ZoteroTestConnectionResult>> {
+  return toResult(async () => {
+    return zoteroService.testConnection();
+  }, 'zoteroImportService.testZoteroConnection');
+}
+
+/**
+ * Disconnect the current user from Zotero.
+ * Returns ErrorResult so the hook has no try/catch.
+ */
+export function disconnectZotero(): Promise<ErrorResult<void>> {
+  return toResult(async () => {
+    await zoteroService.disconnect();
+  }, 'zoteroImportService.disconnectZotero');
+}
+
+/**
+ * Fetch the list of Zotero collections.
+ * Returns ErrorResult so the hook has no try/catch.
+ */
+export function listZoteroCollections(): Promise<ErrorResult<ZoteroCollection[]>> {
+  return toResult(async () => {
+    return zoteroService.listCollections();
+  }, 'zoteroImportService.listZoteroCollections');
+}
+
+/**
+ * Run a full Zotero collection import with progress callbacks.
+ * Returns ErrorResult so the hook has no try/catch.
+ */
+export function importZoteroCollection(
+  projectId: string,
+  collectionKey: string,
+  options: ImportOptions,
+  onProgress?: (progress: ImportProgress) => void,
+): Promise<ErrorResult<ImportResult>> {
+  return toResult(async () => {
+    return zoteroService.importFromCollection(projectId, collectionKey, options, onProgress);
+  }, 'zoteroImportService.importZoteroCollection');
+}
+
+/**
+ * Fetch the sync status for one run.
+ * Returns ErrorResult so the polling loop in useZoteroSyncStatus has no
+ * try/catch/finally.
+ */
+export function fetchZoteroSyncStatus(
+  syncRunId: string,
+): Promise<ErrorResult<ZoteroSyncStatus>> {
+  return toResult(async () => {
+    return zoteroService.getSyncStatus(syncRunId);
+  }, 'zoteroImportService.fetchZoteroSyncStatus');
+}

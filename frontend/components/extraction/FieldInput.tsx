@@ -493,12 +493,7 @@ export function FieldInput(props: FieldInputProps) {
   );
 }
 
-/**
- * Exports memoized version to avoid unnecessary re-renders
- *
- * Performance-critical: Only re-renders when THIS field's value changed
- * Soluciona bug de input perdendo foco a cada caractere
- */
+// kept: custom comparator — compiler does not replicate arePropsEqual
 export default memo(FieldInput, (prevProps, nextProps) => {
     // Optimized comparison: only props that affect THIS field
   const aiSuggestionChanged = prevProps.aiSuggestion?.id !== nextProps.aiSuggestion?.id ||

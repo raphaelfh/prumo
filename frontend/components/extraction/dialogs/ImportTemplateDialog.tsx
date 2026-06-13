@@ -6,7 +6,7 @@
  * feedback.
  */
 
-import {useEffect, useState} from 'react';
+import {useState} from 'react';
 import {
     Dialog,
     DialogContent,
@@ -54,15 +54,28 @@ export function ImportTemplateDialog({
 
   const selectedTemplate = templates.find(t => t.id === selectedTemplateId);
 
-    // Sync selection when dialog opens with initialTemplateId (e.g. from config page list)
-    useEffect(() => {
-        if (!open) return;
-        if (initialTemplateId && templates.some(t => t.id === initialTemplateId)) {
-            setSelectedTemplateId(initialTemplateId);
-        } else if (!initialTemplateId) {
-            setSelectedTemplateId(null);
+    // Sync selection when dialog opens with initialTemplateId (e.g. from
+    // config page list) — adjusted during render instead of via effect.
+    const [prevSyncKey, setPrevSyncKey] = useState<{
+        open: boolean;
+        initialTemplateId: typeof initialTemplateId;
+        templates: typeof templates;
+    } | null>(null);
+    if (
+        !prevSyncKey ||
+        open !== prevSyncKey.open ||
+        initialTemplateId !== prevSyncKey.initialTemplateId ||
+        templates !== prevSyncKey.templates
+    ) {
+        setPrevSyncKey({open, initialTemplateId, templates});
+        if (open) {
+            if (initialTemplateId && templates.some(t => t.id === initialTemplateId)) {
+                setSelectedTemplateId(initialTemplateId);
+            } else if (!initialTemplateId) {
+                setSelectedTemplateId(null);
+            }
         }
-    }, [open, initialTemplateId, templates]);
+    }
 
   const handleImport = async () => {
     if (!selectedTemplate) {
@@ -72,26 +85,21 @@ export function ImportTemplateDialog({
 
     setImporting(true);
 
-    try {
-        console.warn('[ImportTemplateDialog] import:', selectedTemplate.name);
+    console.warn('[ImportTemplateDialog] import:', selectedTemplate.name);
 
-      const result = await importGlobalTemplate(projectId, selectedTemplate.id);
+    const result = await importGlobalTemplate(projectId, selectedTemplate.id);
 
-      if (result.success) {
-        toast.success(
-            `${t('extraction', 'importSuccess')}: "${selectedTemplate.name}". ${result.details?.entityTypesAdded} ${t('extraction', 'importSections')}, ${result.details?.fieldsAdded} fields.`
-        );
-        onOpenChange(false);
-        onTemplateImported(result.templateId);
-      } else {
-          throw new Error(result.error || 'Unknown error');
-      }
+    setImporting(false);
 
-    } catch (error: any) {
-      console.error('[ImportTemplateDialog] import failed', error);
-        toast.error(`${t('extraction', 'importErrorImport')}: ${error.message}`);
-    } finally {
-      setImporting(false);
+    if (result.success) {
+      toast.success(
+          `${t('extraction', 'importSuccess')}: "${selectedTemplate.name}". ${result.details?.entityTypesAdded} ${t('extraction', 'importSections')}, ${result.details?.fieldsAdded} fields.`
+      );
+      onOpenChange(false);
+      onTemplateImported(result.templateId);
+    } else {
+      console.error('[ImportTemplateDialog] import failed', result.error);
+      toast.error(`${t('extraction', 'importErrorImport')}: ${result.error || 'Unknown error'}`);
     }
   };
 

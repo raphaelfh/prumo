@@ -1,16 +1,16 @@
 # prumo — entry point for AI agents
 
 Prumo is a systematic-review / meta-analysis platform. Backend: Python 3.11 +
-FastAPI + Celery + Postgres (Supabase). Frontend: React 18 + TypeScript + Vite.
+FastAPI + Celery + Postgres (Supabase). Frontend: React 19 + TypeScript + Vite.
 Hosting: Railway (backend + worker + Redis) + Vercel (frontend) + Supabase
 (Postgres + Auth + Storage).
 
 ## Read these first if you are an AI agent
 
 - [README.md](README.md) — project overview, quickstart, scripts
-- [CLAUDE.md](CLAUDE.md) — recent changes, active stack, current spec pointer
-- [.claude/CLAUDE.md](.claude/CLAUDE.md) — project conventions for AI assistants
-- [.specify/memory/constitution.md](.specify/memory/constitution.md) — non-negotiable architectural principles
+- [CLAUDE.md](CLAUDE.md) — stack, commands, hard rules, current focus
+  (path-scoped conventions in `.claude/rules/`)
+- [docs/reference/constitution.md](docs/reference/constitution.md) — non-negotiable architectural principles
 - [docs/README.md](docs/README.md) — Diátaxis-organised doc index
 
 ## Then, depending on what you are touching

@@ -1,6 +1,6 @@
 # Concept glossary (compact mirror)
 
-This is the **only** source of vocabulary the quality loop honours. It is a compact mirror of `docs/architecture/extraction-hitl-architecture.md` §6 — the architecture doc is canonical; this file is a sealed copy maintained in sync by the `check_glossary_sync.py` fitness function (Phase 4). If the two diverge, the sync canary fires.
+This is the **only** source of vocabulary the quality loop honours. It is a compact mirror of `docs/reference/extraction-hitl-architecture.md` §6 — the architecture doc is canonical; this file is a sealed copy maintained in sync by the `check_glossary_sync.py` fitness function (Phase 4). If the two diverge, the sync canary fires.
 
 When a scanner sees a term used in a way that contradicts this glossary, it emits a `concept-drift` finding with `glossary_term=<term>` populated.
 
@@ -39,7 +39,7 @@ These two appear verbatim in the canonical doc's §6 Legacy section. The richer 
 
 ## Roles & permissions (RLS shorthand — NOT glossary-sync-checked)
 
-These identifiers come from `.specify/memory/constitution.md` and the migrations, not from §6 of the architecture doc. Their literal names are not glossary-tracked; concept-drift findings against them rely on the constitution and the migration history, not on this mirror.
+These identifiers come from `docs/reference/constitution.md` and the migrations, not from §6 of the architecture doc. Their literal names are not glossary-tracked; concept-drift findings against them rely on the constitution and the migration history, not on this mirror.
 
 - `project_members(project_id, user_id, role)` — `role ∈ {manager, reviewer, extractor}`.
 - `is_project_member(project_id, user_id)` — SQL function used by every RLS policy on `extraction_*` and `project_*` tables.

@@ -7,7 +7,6 @@
  * @component
  */
 
-import {memo} from 'react';
 import {Badge} from '@/components/ui/badge';
 import {Input} from '@/components/ui/input';
 import {Textarea} from '@/components/ui/textarea';
@@ -43,7 +42,7 @@ interface FieldsTableProps {
   getFieldTypeLabel: (type: string) => string;
 }
 
-export const FieldsTable = memo(function FieldsTable({
+export function FieldsTable({
   fields,
   editingId,
   editData,
@@ -253,4 +252,4 @@ export const FieldsTable = memo(function FieldsTable({
       </TableBody>
     </Table>
   );
-});
+}

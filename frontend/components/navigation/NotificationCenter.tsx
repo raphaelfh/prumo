@@ -35,11 +35,29 @@ import {t} from '@/lib/copy';
 import {getExportStatus as getArticlesExportStatus, type ExportStatusResponse} from '@/services/articlesExportService';
 import {getExportStatus as getExtractionExportStatus} from '@/services/extractionExportService';
 
+// Jobs that finished within the last five minutes count as "unread".
+// Module-scope because the clock read is impure and must stay out of
+// render-scoped functions (same memoization semantics as before: the
+// count refreshes when the job list changes).
+function countRecentlyFinished(jobs: BackgroundJob[]): number {
+    const now = Date.now();
+    const FIVE_MINUTES = 5 * 60 * 1000;
+    return jobs.filter((job) => {
+        if (job.status !== 'completed' && job.status !== 'failed') {
+            return false;
+        }
+        const completedTime = job.completedAt || 0;
+        return now - completedTime < FIVE_MINUTES;
+    }).length;
+}
+
 export function NotificationCenter() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
     const {jobs, removeJob, clearCompletedJobs, getRecentJobs, updateJob} = useBackgroundJobs();
   
+  // kept: extra dep (jobs) forces recompute on any job-list change, even when
+  // getRecentJobs identity is stable — removing it would miss new job additions (zero-bailouts spec).
   const recentJobs = useMemo(() => getRecentJobs(20), [jobs, getRecentJobs]);
 
     useEffect(() => {
@@ -49,29 +67,31 @@ export function NotificationCenter() {
         const tick = async () => {
             if (isInFlight || isDisposed) return;
             isInFlight = true;
-            try {
-                const exportJobs = useBackgroundJobs
-                    .getState()
-                    .jobs.filter(
-                        (job) =>
-                            (job.type === 'articles-export' || job.type === 'extraction-export') &&
-                            (job.status === 'pending' || job.status === 'running')
-                    ) as Array<ArticlesExportJob | ExtractionExportJob>;
+            const exportJobs = useBackgroundJobs
+                .getState()
+                .jobs.filter(
+                    (job) =>
+                        (job.type === 'articles-export' || job.type === 'extraction-export') &&
+                        (job.status === 'pending' || job.status === 'running')
+                ) as Array<ArticlesExportJob | ExtractionExportJob>;
 
-                if (exportJobs.length === 0) return;
-
+            if (exportJobs.length > 0) {
                 await Promise.all(
-                    exportJobs.map(async (job) => {
-                        try {
-                            const status =
-                                job.type === 'articles-export'
-                                    ? await getArticlesExportStatus(job.metadata.backendJobId)
-                                    : await getExtractionExportStatus(
-                                        job.metadata.projectId,
-                                        job.metadata.backendJobId,
-                                    );
-                            const nextStatus = status.status === 'pending' ? 'running' : status.status;
+                    exportJobs.map((job) => {
+                        // Select the right fetch promise outside any try/catch so
+                        // ternary / conditional expressions are not inside a try
+                        // block (React Compiler restriction: no value-blocks in
+                        // try/catch). Use .then().catch() for the same reason.
+                        const statusFetch =
+                            job.type === 'articles-export'
+                                ? getArticlesExportStatus(job.metadata.backendJobId)
+                                : getExtractionExportStatus(
+                                    job.metadata.projectId,
+                                    job.metadata.backendJobId,
+                                );
+                        return statusFetch.then((status) => {
                             const exportStatus = status as ExportStatusResponse;
+                            const nextStatus = status.status === 'pending' ? 'running' : status.status;
                             updateJob(job.id, {
                                 status: nextStatus,
                                 startedAt: job.startedAt ?? Date.now(),
@@ -99,18 +119,17 @@ export function NotificationCenter() {
                                         ? {skipped: exportStatus.skipped_files.length}
                                         : undefined,
                             });
-                        } catch (error) {
+                        }).catch((error: unknown) => {
                             updateJob(job.id, {
                                 status: 'failed',
                                 completedAt: Date.now(),
                                 error: error instanceof Error ? error.message : 'Failed to check export status',
                             });
-                        }
+                        });
                     })
                 );
-            } finally {
-                isInFlight = false;
             }
+            isInFlight = false;
         };
 
         void tick();
@@ -162,26 +181,11 @@ export function NotificationCenter() {
   });
 
     // Count unread notifications (jobs that finished recently)
-  const unreadCount = useMemo(() => {
-    const now = Date.now();
-    const FIVE_MINUTES = 5 * 60 * 1000;
-    
-    return recentJobs.filter((job) => {
-      if (job.status !== 'completed' && job.status !== 'failed') {
-        return false;
-      }
-      const completedTime = job.completedAt || 0;
-      return now - completedTime < FIVE_MINUTES;
-    }).length;
-  }, [recentJobs]);
+  const unreadCount = countRecentlyFinished(recentJobs);
 
-    const hasActiveBackgroundJobs = useMemo(
-        () =>
-            jobs.some(
-                (job) => job.status === 'pending' || job.status === 'running'
-            ),
-        [jobs]
-    );
+  const hasActiveBackgroundJobs = jobs.some(
+    (job) => job.status === 'pending' || job.status === 'running'
+  );
 
   const handleRemoveJob = (jobId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -316,7 +320,7 @@ function NotificationItem({ job, onRemove, onClick }: NotificationItemProps) {
     >
       <div className="flex items-start gap-3">
           {/* Icon */}
-        <div className="flex-shrink-0 mt-0.5">
+        <div className="shrink-0 mt-0.5">
           {icon}
         </div>
 
@@ -330,7 +334,7 @@ function NotificationItem({ job, onRemove, onClick }: NotificationItemProps) {
             <Button
               variant="ghost"
               size="icon"
-              className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+              className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
               onClick={(e) => onRemove(job.id, e)}
             >
               <X className="h-3 w-3" />
@@ -348,7 +352,7 @@ function NotificationItem({ job, onRemove, onClick }: NotificationItemProps) {
                 <span className="text-muted-foreground truncate flex-1">
                   {job.progress.message}
                 </span>
-                <span className="text-muted-foreground ml-2 flex-shrink-0">
+                <span className="text-muted-foreground ml-2 shrink-0">
                   {job.progress.total > 0 ? `${job.progress.current}/${job.progress.total}` : '—'}
                 </span>
               </div>

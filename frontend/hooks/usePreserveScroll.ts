@@ -22,8 +22,6 @@
  *   - Containers missing on either snapshot or restore are silently skipped,
  *     so the helper is safe to share across pages.
  */
-import { useCallback } from "react";
-
 export type PreserveScroll = <T>(operation: () => Promise<T>) => Promise<T>;
 
 function snapshot(selectors: string[]): Map<string, { top: number; left: number }> {
@@ -52,19 +50,25 @@ function restore(snap: Map<string, { top: number; left: number }>): void {
   });
 }
 
+/**
+ * Run an async operation and restore scroll positions when it settles.
+ * The try/finally lives here (module-level) so the compiled hook's callback
+ * contains no try-family statements.
+ */
+async function runWithScrollPreserved<T>(
+  selectors: string[],
+  operation: () => Promise<T>,
+): Promise<T> {
+  const snap = snapshot(selectors);
+  // No try/catch — let the operation's rejection propagate to the caller.
+  // finally always restores scroll regardless of outcome.
+  try {
+    return await operation();
+  } finally {
+    restore(snap);
+  }
+}
+
 export function usePreserveScroll(selectors: string[]): PreserveScroll {
-  // selectors is intentionally treated as a stable identity by callers (we
-  // pass a module-level constant array). Spreading into the deps lets eslint
-  // reason about the dependency without a disable directive.
-  return useCallback(
-    async (operation) => {
-      const snap = snapshot(selectors);
-      try {
-        return await operation();
-      } finally {
-        restore(snap);
-      }
-    },
-    [...selectors]
-  );
+  return (operation) => runWithScrollPreserved(selectors, operation);
 }

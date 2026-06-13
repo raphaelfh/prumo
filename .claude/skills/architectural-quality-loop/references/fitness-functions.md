@@ -36,7 +36,7 @@ AST import-graph of `backend/app/{api,services,repositories,models}`. Forbidden 
 
 ### `check_glossary_sync.py`
 
-Reads `concept-glossary.md` and `docs/architecture/extraction-hitl-architecture.md` §6. Asserts every term defined in the glossary appears in the architecture doc (catches glossary drift when the canonical doc is edited without updating the skill mirror). No baseline file — the two must always agree.
+Reads `concept-glossary.md` and `docs/reference/extraction-hitl-architecture.md` §6. Asserts every term defined in the glossary appears in the architecture doc (catches glossary drift when the canonical doc is edited without updating the skill mirror). No baseline file — the two must always agree.
 
 ## Planned (Phase 5)
 

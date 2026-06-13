@@ -3,9 +3,16 @@ name: CI
 on:
   push:
     branches: [main, dev]
+  # No `branches:` filter on pull_request: stacked PRs (base = another
+  # feature branch) previously got zero CI and merged unverified.
   pull_request:
-    branches: [main, dev]
     types: [opened, synchronize, reopened, ready_for_review]
+
+# Agent sessions push fixups minutes apart; cancel superseded PR runs.
+# Push runs (deploy-gating on main) are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   PYTHON_VERSION: "3.11"
@@ -21,18 +28,21 @@ jobs:
         working-directory: backend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install uv
-        run: pip install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync --frozen --extra dev
 
       - name: Run Ruff (lint)
         run: uv run ruff check .
@@ -63,9 +73,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [backend-lint]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Run fitness functions
@@ -74,7 +84,7 @@ jobs:
         run: bash scripts/fitness/run_all.sh
       - name: Upload telemetry
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fitness-telemetry-${{ github.run_id }}
           path: fitness-telemetry.jsonl
@@ -114,7 +124,7 @@ jobs:
       CORS_ORIGINS: "http://localhost:5173"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           # diff-cover needs the merge-base between origin/<base_ref> and
           # HEAD to compute the diff. The default shallow checkout
@@ -126,15 +136,18 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install uv
-        run: pip install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync --frozen --extra dev
 
       - name: Install Postgres client (psql)
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
@@ -229,7 +242,25 @@ jobs:
             --cov=app \
             --cov-report=xml \
             --cov-report=term-missing \
-            --cov-fail-under=62
+            --cov-fail-under=62 \
+            --junitxml=pytest-report.xml
+
+      # Skip budget: the suite once silently skipped ~196 tests in CI
+      # (missing seed graph) while staying green. Baseline is 21 skips
+      # (run 27179316884); budget 25 leaves headroom without letting a
+      # seed/fixture regression hide behind green.
+      - name: Enforce pytest skip budget
+        run: |
+          SKIPPED=$(uv run python -c "
+          import xml.etree.ElementTree as ET
+          r = ET.parse('pytest-report.xml').getroot()
+          ts = r if r.tag == 'testsuite' else r.find('testsuite')
+          print(ts.get('skipped', '0'))")
+          echo "Skipped tests: $SKIPPED (budget: 25)"
+          if [ "$SKIPPED" -gt 25 ]; then
+            echo "::error::Skip budget exceeded: $SKIPPED > 25 — a fixture/seed regression is likely hiding behind green."
+            exit 1
+          fi
 
       # Diff coverage gate (PR-only, hard fail).
       # Why: a PR that adds 500 LOC with 200 tested still passes the 62%
@@ -283,7 +314,7 @@ jobs:
             --fail-under="${PRUMO_CRITICAL_COVERAGE_MIN}"
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v7
         with:
           file: backend/coverage.xml
           flags: backend
@@ -324,18 +355,21 @@ jobs:
       CORS_ORIGINS: "http://localhost:5173"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install uv
-        run: pip install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync --frozen --extra dev
 
       - name: Bootstrap auth schema stub
         run: |
@@ -396,13 +430,13 @@ jobs:
     needs: [backend-lint, backend-test]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ./backend
           push: false
@@ -416,10 +450,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
@@ -428,12 +462,89 @@ jobs:
         run: npm ci
 
       - name: Run ESLint
-        run: npm run lint || true
+        run: npm run lint
 
       # Frontend typecheck is clean (#197 burned down from 183 → 0). Now
       # blocking: any new type error fails CI.
       - name: Type check (frontend)
         run: npm run typecheck
+
+      # Manual memoization was removed on the assumption the React Compiler
+      # runs (PR enabling it); a config refactor that silently drops the
+      # compiler would degrade runtime perf with everything else green.
+      # The proof transforms a .tsx component and a .ts hook through the
+      # real Vite pipeline (<1s, no port binding).
+      - name: React Compiler pipeline proof
+        run: node scripts/check_compiler_coverage.mjs
+
+  # =================== FRONTEND TESTS ===================
+  # 68 vitest files / 451 tests. Never ran in CI before 2026-06-10 — the
+  # suite had already rotted once (run-detail mock missed the /view move
+  # in #228) precisely because nothing gated it.
+  frontend-test:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run vitest
+        run: npm run test:run
+
+  # =================== API CONTRACT ===================
+  # The frontend types at frontend/types/api/ are generated from the
+  # FastAPI app (scripts/generate_api_types.sh). Regenerate and fail on
+  # diff: committed types can never drift from the backend — the
+  # structural fix for the envelope-drift incident class.
+  api-contract:
+    name: API Contract
+    runs-on: ubuntu-latest
+    env:
+      # App import only — stubs, no real services touched.
+      SUPABASE_URL: http://localhost:54321
+      SUPABASE_ANON_KEY: stub-anon
+      SUPABASE_SERVICE_ROLE_KEY: stub-service-role
+      ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      DATABASE_URL: postgresql+asyncpg://stub
+      DIRECT_DATABASE_URL: postgresql://stub
+      OPENAI_API_KEY: sk-stub
+      REDIS_URL: redis://localhost:6379/0
+      DEBUG: "true"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install backend deps
+        working-directory: backend
+        run: uv sync --frozen
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+      - name: Install frontend deps
+        run: npm ci
+      - name: Regenerate API types
+        run: bash scripts/generate_api_types.sh
+      - name: Fail on drift
+        run: |
+          if ! git diff --exit-code frontend/types/api/; then
+            echo "::error::frontend/types/api/ is stale — run 'npm run generate:api-types' and commit the result."
+            exit 1
+          fi
 
   # =================== FRONTEND BUILD ===================
   frontend-build:
@@ -442,10 +553,10 @@ jobs:
     needs: [frontend-lint]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
@@ -494,63 +605,140 @@ jobs:
             echo "has_remote=false" >> "$GITHUB_OUTPUT"
           fi
 
-  # =================== FRONTEND E2E BASELINE ===================
-  frontend-e2e-local:
-    name: Frontend E2E Local
+  # =================== FRONTEND E2E (EPHEMERAL STACK) ===================
+  # Boots the full stack inside the runner — Supabase (CLI/Docker) +
+  # Alembic migrations + seed + FastAPI + built frontend — and runs the
+  # local Playwright projects (60 tests) on every PR. Replaces the
+  # secret-gated job that silently skipped on 30/30 runs: fixtures
+  # self-provision (frontend/e2e/_fixtures/ensure-fixtures.ts), so no
+  # pinned external environment is needed. Orchestration was validated
+  # end-to-end locally before this job was written (2026-06-11).
+  frontend-e2e-ephemeral:
+    name: Frontend E2E (ephemeral stack)
     runs-on: ubuntu-latest
-    needs: [frontend-build, backend-e2e, e2e-config]
-    if: needs.e2e-config.outputs.has_local == 'true'
-
+    timeout-minutes: 25
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      SUPABASE_URL: http://127.0.0.1:54321
+      ENCRYPTION_KEY: test_encryption_key_32_characters
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      CORS_ORIGINS: "http://127.0.0.1:8080"
+      DEBUG: "true"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Install backend deps
+        working-directory: backend
+        run: uv sync --frozen
+
+      - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
-
-      - name: Install dependencies
+      - name: Install frontend deps
         run: npm ci
+
+      - uses: supabase/setup-cli@v2
+        with:
+          version: latest
+      - name: Start Supabase (auth/storage migrations auto-applied)
+        run: supabase start -x studio,imgproxy,inbucket,edge-runtime,logflare,vector
+
+      - name: Export Supabase keys
+        run: |
+          supabase status -o env | sed -E 's/^([A-Z_]+)="(.*)"$/\1=\2/' > /tmp/supabase.env
+          {
+            echo "SUPABASE_ANON_KEY=$(grep '^ANON_KEY=' /tmp/supabase.env | cut -d= -f2-)"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$(grep '^SERVICE_ROLE_KEY=' /tmp/supabase.env | cut -d= -f2-)"
+          } >> "$GITHUB_ENV"
+
+      - name: Apply Alembic migrations + seed
+        working-directory: backend
+        run: |
+          uv run alembic upgrade head
+          uv run python -m app.seed
+
+      - name: Boot backend
+        working-directory: backend
+        run: |
+          uv run uvicorn app.main:app --port 8000 > /tmp/e2e-backend.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8000/health
+
+      # Dev server, not build+preview: the suite's UI specs import raw
+      # TS modules in the browser (documented in the specs), which only
+      # the Vite dev server serves. Validated locally: 51 passed /
+      # 9 conditional skips / 0 failed against this exact arrangement.
+      - name: Serve frontend (Vite dev server)
+        env:
+          VITE_SUPABASE_URL: http://127.0.0.1:54321
+          VITE_SUPABASE_ANON_KEY: ${{ env.SUPABASE_ANON_KEY }}
+          VITE_API_URL: http://127.0.0.1:8000
+        run: |
+          npm run dev -- --port 8080 --strictPort > /tmp/e2e-dev.log 2>&1 &
+          for i in $(seq 1 20); do
+            curl -fsS http://127.0.0.1:8080 >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS -o /dev/null http://127.0.0.1:8080
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
-      - name: Run frontend E2E local projects
-        run: npm run test:e2e:local
+      - name: Run local E2E projects
         env:
-          E2E_FRONTEND_URL: ${{ secrets.E2E_FRONTEND_URL }}
-          E2E_API_URL: ${{ secrets.E2E_API_URL }}
-          E2E_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
-          E2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.E2E_SUPABASE_SERVICE_ROLE_KEY }}
-          E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL }}
-          E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
-          E2E_PROJECT_ID: ${{ secrets.E2E_PROJECT_ID }}
-          E2E_ARTICLE_ID: ${{ secrets.E2E_ARTICLE_ID }}
-          E2E_TEMPLATE_ID: ${{ secrets.E2E_TEMPLATE_ID }}
-          E2E_ENTITY_TYPE_ID: ${{ secrets.E2E_ENTITY_TYPE_ID }}
+          E2E_FRONTEND_URL: http://127.0.0.1:8080
+          E2E_API_URL: http://127.0.0.1:8000
+          E2E_SUPABASE_URL: http://127.0.0.1:54321
+          E2E_SUPABASE_ANON_KEY: ${{ env.SUPABASE_ANON_KEY }}
+          E2E_SUPABASE_SERVICE_ROLE_KEY: ${{ env.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npm run test:e2e:local
 
-      - name: Upload Playwright local artifacts
+      - name: Tail service logs on failure
+        if: failure()
+        run: |
+          echo "=== backend ==="; tail -120 /tmp/e2e-backend.log || true
+          echo "=== preview ==="; tail -40 /tmp/e2e-dev.log || true
+
+      - name: Upload Playwright artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: playwright-local-results
+          name: playwright-ephemeral-results
           path: |
-            playwright-report
-            test-results
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore
 
   # =================== FRONTEND E2E REMOTE ===================
   frontend-e2e-remote:
     name: Frontend E2E Remote Smoke
     runs-on: ubuntu-latest
-    needs: [frontend-e2e-local, e2e-config]
+    needs: [frontend-e2e-ephemeral, e2e-config]
     if: needs.e2e-config.outputs.has_remote == 'true'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "npm"
@@ -578,7 +766,7 @@ jobs:
 
       - name: Upload Playwright remote artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-remote-results
           path: |

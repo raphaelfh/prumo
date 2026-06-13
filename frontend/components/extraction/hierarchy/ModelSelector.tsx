@@ -14,7 +14,6 @@
  * @component
  */
 
-import { useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -83,10 +82,7 @@ export function ModelSelector({
   onExtractAllSectionsForAllModels,
   extractingAllSectionsForAllModels = false,
 }: ModelSelectorProps) {
-  // Encontrar modelo ativo
-  const activeModel = useMemo(() => {
-    return models.find(m => m.instanceId === activeModelId);
-  }, [models, activeModelId]);
+  const activeModel = models.find(m => m.instanceId === activeModelId);
 
   // Renderizar badge de progresso (semantic tokens; flips correctly in dark mode)
   const renderProgressBadge = (progress?: Model['progress']) => {
@@ -177,7 +173,7 @@ export function ModelSelector({
               {t('extraction', 'modelSelectorDesc')}
           </p>
         </div>
-        <div className="flex gap-2 flex-shrink-0">
+        <div className="flex gap-2 shrink-0">
           {onExtractModels && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -252,7 +248,7 @@ export function ModelSelector({
             variant="ghost"
             onClick={() => onRemoveModel(activeModelId)}
             title={t('extraction', 'modelRemoveActiveTitle')}
-            className="flex-shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+            className="shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
           >
             <Trash2 className="h-4 w-4" />
           </Button>
@@ -267,7 +263,7 @@ export function ModelSelector({
                 <p className="text-xs text-muted-foreground">{t('extraction', 'modelActiveLabel')}</p>
               <p className="font-medium text-foreground mt-0.5 truncate">{activeModel.modelName}</p>
             </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-2 shrink-0">
               {activeModel.progress && (
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-foreground">

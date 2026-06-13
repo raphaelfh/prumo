@@ -5,7 +5,7 @@
  * Syncs with running services to reflect progress in real time.
  */
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef } from 'react';
 import { useBackgroundJobs } from '@/stores/useBackgroundJobs';
 import type { BackgroundJob } from '@/types/background-jobs';
 
@@ -24,13 +24,13 @@ export function useBackgroundJobPolling(options: UseBackgroundJobPollingOptions 
   const { getActiveJobs } = useBackgroundJobs();
   const previousJobStatesRef = useRef<Map<string, string>>(new Map());
 
-  const checkJobStatus = useCallback(() => {
+  const checkJobStatus = () => {
     const activeJobs = getActiveJobs();
 
       // Check for state changes
     activeJobs.forEach((job) => {
       const previousStatus = previousJobStatesRef.current.get(job.id);
-      
+
       // Job completado
         if (
             previousStatus !== undefined &&
@@ -39,7 +39,7 @@ export function useBackgroundJobPolling(options: UseBackgroundJobPollingOptions 
         ) {
         onJobComplete?.(job);
       }
-      
+
       // Job falhou
         if (
             previousStatus !== undefined &&
@@ -60,7 +60,7 @@ export function useBackgroundJobPolling(options: UseBackgroundJobPollingOptions 
         previousJobStatesRef.current.delete(jobId);
       }
     }
-  }, [getActiveJobs, onJobComplete, onJobFailed]);
+  };
 
   useEffect(() => {
     const activeJobs = getActiveJobs();

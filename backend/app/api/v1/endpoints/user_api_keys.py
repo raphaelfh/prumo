@@ -5,7 +5,6 @@ Endpoints for gerenciar API keys de provedores externos (OpenAI, Anthropic, etc.
 As keys sao criptografadas via Fernet in the aplicacao (mesmo padrao de ZoteroIntegration).
 """
 
-from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
@@ -16,7 +15,13 @@ from app.schemas.common import ApiResponse
 from app.schemas.user_api_key import (
     APIKeyResponse,
     CreateAPIKeyRequest,
+    CreateAPIKeyResponse,
+    DeleteAPIKeyResult,
+    KeyValidationResult,
+    ListAPIKeysData,
+    ListProvidersData,
     UpdateAPIKeyRequest,
+    UpdateAPIKeyResult,
 )
 from app.services.api_key_service import APIKeyService
 
@@ -26,7 +31,7 @@ logger = get_logger(__name__)
 
 @router.get(
     "",
-    response_model=ApiResponse,
+    response_model=ApiResponse[ListAPIKeysData],
     summary="Listar API keys",
     description="List todas as API keys do user (sem expor as keys).",
 )
@@ -34,7 +39,7 @@ async def list_api_keys(
     db: DbSession,
     user: CurrentUser,
     active_only: bool = True,
-) -> ApiResponse[dict[str, Any]]:
+) -> ApiResponse[ListAPIKeysData]:
     """
     List API keys do user autenticado.
 
@@ -67,7 +72,7 @@ async def list_api_keys(
                 if key.last_validated_at
                 else None,
                 created_at=key.created_at.isoformat(),
-            ).model_dump(by_alias=True)
+            )
             for key in keys
         ]
 
@@ -77,7 +82,7 @@ async def list_api_keys(
             count=len(result),
         )
 
-        return ApiResponse(ok=True, data={"keys": result})
+        return ApiResponse(ok=True, data=ListAPIKeysData(keys=result))
 
     except Exception as e:
         import traceback
@@ -99,7 +104,7 @@ async def list_api_keys(
 
 @router.post(
     "",
-    response_model=ApiResponse,
+    response_model=ApiResponse[CreateAPIKeyResponse],
     summary="Criar API key",
     description="Adiciona nova API key for um provedor.",
 )
@@ -107,7 +112,7 @@ async def create_api_key(
     db: DbSession,
     user: CurrentUser,
     request: CreateAPIKeyRequest,
-) -> ApiResponse[dict[str, Any]]:
+) -> ApiResponse[CreateAPIKeyResponse]:
     """
     Create nova API key.
 
@@ -136,7 +141,7 @@ async def create_api_key(
             key_id=result["id"],
         )
 
-        return ApiResponse(ok=True, data=result)
+        return ApiResponse(ok=True, data=CreateAPIKeyResponse.model_validate(result))
 
     except ValueError as e:
         logger.warning(
@@ -165,7 +170,7 @@ async def create_api_key(
 
 @router.patch(
     "/{key_id}",
-    response_model=ApiResponse,
+    response_model=ApiResponse[UpdateAPIKeyResult],
     summary="Atualizar API key",
     description="Update propriedades de uma API key.",
 )
@@ -174,7 +179,7 @@ async def update_api_key(
     db: DbSession,
     user: CurrentUser,
     request: UpdateAPIKeyRequest,
-) -> ApiResponse[dict[str, Any]]:
+) -> ApiResponse[UpdateAPIKeyResult]:
     """
     Update uma API key existente.
 
@@ -232,7 +237,7 @@ async def update_api_key(
             key_id=str(key_id),
         )
 
-        return ApiResponse(ok=True, data={"id": str(key_id), "updated": True})
+        return ApiResponse(ok=True, data=UpdateAPIKeyResult(id=str(key_id), updated=True))
 
     except HTTPException:
         raise
@@ -252,11 +257,11 @@ async def update_api_key(
 
 @router.get(
     "/providers",
-    response_model=ApiResponse,
+    response_model=ApiResponse[ListProvidersData],
     summary="Listar provedores suportados",
     description="List os provedores de IA suportados.",
 )
-async def list_providers() -> ApiResponse[dict[str, Any]]:
+async def list_providers() -> ApiResponse[ListProvidersData]:
     """
     List os provedores de IA suportados.
 
@@ -290,12 +295,12 @@ async def list_providers() -> ApiResponse[dict[str, Any]]:
         },
     ]
 
-    return ApiResponse(ok=True, data={"providers": providers})
+    return ApiResponse(ok=True, data=ListProvidersData.model_validate({"providers": providers}))
 
 
 @router.delete(
     "/{key_id}",
-    response_model=ApiResponse,
+    response_model=ApiResponse[DeleteAPIKeyResult],
     summary="Remover API key",
     description="Remove permanentemente uma API key.",
 )
@@ -303,7 +308,7 @@ async def delete_api_key(
     key_id: UUID,
     db: DbSession,
     user: CurrentUser,
-) -> ApiResponse[dict[str, Any]]:
+) -> ApiResponse[DeleteAPIKeyResult]:
     """
     Remove permanentemente uma API key.
 
@@ -329,7 +334,7 @@ async def delete_api_key(
             key_id=str(key_id),
         )
 
-        return ApiResponse(ok=True, data={"id": str(key_id), "deleted": True})
+        return ApiResponse(ok=True, data=DeleteAPIKeyResult(id=str(key_id), deleted=True))
 
     except HTTPException:
         raise
@@ -349,7 +354,7 @@ async def delete_api_key(
 
 @router.post(
     "/{key_id}/validate",
-    response_model=ApiResponse,
+    response_model=ApiResponse[KeyValidationResult],
     summary="Revalidar API key",
     description="Revalida uma API key existente.",
 )
@@ -357,7 +362,7 @@ async def validate_api_key(
     key_id: UUID,
     db: DbSession,
     user: CurrentUser,
-) -> ApiResponse[dict[str, Any]]:
+) -> ApiResponse[KeyValidationResult]:
     """
     Revalida uma API key existente.
 
@@ -378,7 +383,7 @@ async def validate_api_key(
             status=result["status"],
         )
 
-        return ApiResponse(ok=True, data=result)
+        return ApiResponse(ok=True, data=KeyValidationResult.model_validate(result))
 
     except ValueError as e:
         raise HTTPException(

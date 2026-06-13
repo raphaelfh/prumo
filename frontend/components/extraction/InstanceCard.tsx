@@ -20,7 +20,7 @@ import {Badge} from '@/components/ui/badge';
 import {Edit2, Save, Trash2, X} from 'lucide-react';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
-import {supabase} from '@/integrations/supabase/client';
+import {updateInstanceLabel} from '@/services/extractionInstanceService';
 import MemoizedFieldInput from './FieldInput'; // Use memoized version
 import type {ExtractionField, ExtractionInstance} from '@/types/extraction';
 import type {OtherExtraction} from '@/hooks/extraction/colaboracao/useOtherExtractions';
@@ -55,38 +55,40 @@ export function InstanceCard(props: InstanceCardProps) {
   const [isEditingLabel, setIsEditingLabel] = useState(false);
   const [editedLabel, setEditedLabel] = useState(instance.label);
   const [saving, setSaving] = useState(false);
+  // Saved label shown on the card. Local state instead of mutating the
+  // `instance` prop in place (react-hooks/immutability); re-synced if the
+  // prop changes from outside.
+  const [savedLabel, setSavedLabel] = useState(instance.label);
+  const [prevPropLabel, setPrevPropLabel] = useState(instance.label);
+  if (instance.label !== prevPropLabel) {
+    setPrevPropLabel(instance.label);
+    setSavedLabel(instance.label);
+  }
 
   const handleSaveLabel = async () => {
-    if (editedLabel.trim() === instance.label) {
+    if (editedLabel.trim() === savedLabel) {
       setIsEditingLabel(false);
       return;
     }
 
     setSaving(true);
 
-    try {
-      const { error } = await supabase
-        .from('extraction_instances')
-        .update({ label: editedLabel.trim() })
-        .eq('id', instance.id);
+    const result = await updateInstanceLabel(instance.id, editedLabel);
 
-      if (error) throw error;
-
-        instance.label = editedLabel.trim(); // Update local
+    if (result.ok) {
+      setSavedLabel(editedLabel.trim());
       setIsEditingLabel(false);
-        toast.success(t('extraction', 'labelUpdatedSuccess'));
-
-    } catch (error: any) {
-        console.error('Error updating label:', error);
-        toast.error(t('extraction', 'errors_updateLabel'));
-        setEditedLabel(instance.label); // Revert
-    } finally {
-      setSaving(false);
+      toast.success(t('extraction', 'labelUpdatedSuccess'));
+    } else {
+      toast.error(t('extraction', 'errors_updateLabel'));
+      setEditedLabel(savedLabel); // Revert
     }
+
+    setSaving(false);
   };
 
   const handleCancelEdit = () => {
-    setEditedLabel(instance.label);
+    setEditedLabel(savedLabel);
     setIsEditingLabel(false);
   };
 
@@ -139,9 +141,9 @@ export function InstanceCard(props: InstanceCardProps) {
                 type="button"
                 className="text-sm font-semibold cursor-pointer hover:text-primary transition-colors duration-75 flex items-center gap-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 onClick={() => setIsEditingLabel(true)}
-                title={instance.label}
+                title={savedLabel}
               >
-                {instance.label}
+                {savedLabel}
                 <Edit2 className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
               </button>
             )}

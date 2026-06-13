@@ -1,0 +1,6810 @@
+{
+  "components": {
+    "schemas": {
+      "APIKeyResponse": {
+        "description": "Resposta with data de uma API key (sem a key em si).",
+        "properties": {
+          "createdAt": {
+            "title": "Createdat",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "isActive": {
+            "title": "Isactive",
+            "type": "boolean"
+          },
+          "isDefault": {
+            "title": "Isdefault",
+            "type": "boolean"
+          },
+          "keyName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Keyname"
+          },
+          "lastUsedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastusedat"
+          },
+          "lastValidatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastvalidatedat"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "validationStatus": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validationstatus"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "keyName",
+          "isActive",
+          "isDefault",
+          "validationStatus",
+          "lastUsedAt",
+          "lastValidatedAt",
+          "createdAt"
+        ],
+        "title": "APIKeyResponse",
+        "type": "object"
+      },
+      "AdvanceStageRequest": {
+        "properties": {
+          "target_stage": {
+            "pattern": "^(pending|proposal|review|consensus|finalized|cancelled)$",
+            "title": "Target Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_stage"
+        ],
+        "title": "AdvanceStageRequest",
+        "type": "object"
+      },
+      "ApiResponse": {
+        "description": "Response padronizado da API.\n\nMantem compatibilidade with formato usado nas Edge Functions:\n``{ ok: boolean, data?: T, error?: { code, message }, trace_id?: string }``\n\nSee module docstring for HTTP-status vs envelope semantics.",
+        "properties": {
+          "data": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta",
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse",
+        "type": "object"
+      },
+      "ApiResponse_Annotated_Union_SingleSectionResult__BatchSectionResult___FieldInfo_annotation_NoneType__required_True__discriminator__mode____": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "batch": "#/components/schemas/BatchSectionResult",
+                    "single": "#/components/schemas/SingleSectionResult"
+                  },
+                  "propertyName": "mode"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/SingleSectionResult"
+                  },
+                  {
+                    "$ref": "#/components/schemas/BatchSectionResult"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta",
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[Annotated[Union[SingleSectionResult, BatchSectionResult], FieldInfo(annotation=NoneType, required=True, discriminator='mode')]]",
+        "type": "object"
+      },
+      "ApiResponse_CloneTemplateResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CloneTemplateResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[CloneTemplateResponse]",
+        "type": "object"
+      },
+      "ApiResponse_ConsensusResultResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConsensusResultResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ConsensusResultResponse]",
+        "type": "object"
+      },
+      "ApiResponse_CreateAPIKeyResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreateAPIKeyResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[CreateAPIKeyResponse]",
+        "type": "object"
+      },
+      "ApiResponse_CreateModelHierarchyResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreateModelHierarchyResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[CreateModelHierarchyResponse]",
+        "type": "object"
+      },
+      "ApiResponse_DeleteAPIKeyResult_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeleteAPIKeyResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[DeleteAPIKeyResult]",
+        "type": "object"
+      },
+      "ApiResponse_ExportCancelResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportCancelResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ExportCancelResponse]",
+        "type": "object"
+      },
+      "ApiResponse_ExportStatusResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportStatusResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ExportStatusResponse]",
+        "type": "object"
+      },
+      "ApiResponse_ExtractionExportCancelResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExtractionExportCancelResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ExtractionExportCancelResponse]",
+        "type": "object"
+      },
+      "ApiResponse_ExtractionExportStatusResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExtractionExportStatusResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ExtractionExportStatusResponse]",
+        "type": "object"
+      },
+      "ApiResponse_HitlConfigRead_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HitlConfigRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[HitlConfigRead]",
+        "type": "object"
+      },
+      "ApiResponse_KeyValidationResult_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KeyValidationResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[KeyValidationResult]",
+        "type": "object"
+      },
+      "ApiResponse_ListAPIKeysData_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ListAPIKeysData"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ListAPIKeysData]",
+        "type": "object"
+      },
+      "ApiResponse_ListProvidersData_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ListProvidersData"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ListProvidersData]",
+        "type": "object"
+      },
+      "ApiResponse_ModelExtractionResult_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelExtractionResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ModelExtractionResult]",
+        "type": "object"
+      },
+      "ApiResponse_OpenHITLSessionResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OpenHITLSessionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[OpenHITLSessionResponse]",
+        "type": "object"
+      },
+      "ApiResponse_ProposalRecordResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProposalRecordResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ProposalRecordResponse]",
+        "type": "object"
+      },
+      "ApiResponse_ReviewerDecisionResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReviewerDecisionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[ReviewerDecisionResponse]",
+        "type": "object"
+      },
+      "ApiResponse_RunDetailResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunDetailResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[RunDetailResponse]",
+        "type": "object"
+      },
+      "ApiResponse_RunReviewersResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunReviewersResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[RunReviewersResponse]",
+        "type": "object"
+      },
+      "ApiResponse_RunSummaryResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunSummaryResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[RunSummaryResponse]",
+        "type": "object"
+      },
+      "ApiResponse_RunViewResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunViewResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[RunViewResponse]",
+        "type": "object"
+      },
+      "ApiResponse_Union_SaveCredentialsResponse__TestConnectionResponse__ListCollectionsResponse__FetchItemsResponse__FetchAttachmentsResponse__DownloadAttachmentResponse__SyncCollectionResponse__SyncStatusResponse__SyncRetryFailedResponse__SyncItemResultsResponse__": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SaveCredentialsResponse"
+              },
+              {
+                "$ref": "#/components/schemas/TestConnectionResponse"
+              },
+              {
+                "$ref": "#/components/schemas/ListCollectionsResponse"
+              },
+              {
+                "$ref": "#/components/schemas/FetchItemsResponse"
+              },
+              {
+                "$ref": "#/components/schemas/FetchAttachmentsResponse"
+              },
+              {
+                "$ref": "#/components/schemas/DownloadAttachmentResponse"
+              },
+              {
+                "$ref": "#/components/schemas/SyncCollectionResponse"
+              },
+              {
+                "$ref": "#/components/schemas/SyncStatusResponse"
+              },
+              {
+                "$ref": "#/components/schemas/SyncRetryFailedResponse"
+              },
+              {
+                "$ref": "#/components/schemas/SyncItemResultsResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta",
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[Union[SaveCredentialsResponse, TestConnectionResponse, ListCollectionsResponse, FetchItemsResponse, FetchAttachmentsResponse, DownloadAttachmentResponse, SyncCollectionResponse, SyncStatusResponse, SyncRetryFailedResponse, SyncItemResultsResponse]]",
+        "type": "object"
+      },
+      "ApiResponse_UpdateAPIKeyResult_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateAPIKeyResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[UpdateAPIKeyResult]",
+        "type": "object"
+      },
+      "ApiResponse_UpdateTemplateActiveResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateTemplateActiveResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[UpdateTemplateActiveResponse]",
+        "type": "object"
+      },
+      "ApiResponse_list_dict_str__Any___": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta",
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[list[dict[str, Any]]]",
+        "type": "object"
+      },
+      "BatchSectionResult": {
+        "description": "Resultado de extraction em batch.",
+        "properties": {
+          "durationMs": {
+            "title": "Durationms",
+            "type": "number"
+          },
+          "extractionRunId": {
+            "title": "Extractionrunid",
+            "type": "string"
+          },
+          "failedSections": {
+            "title": "Failedsections",
+            "type": "integer"
+          },
+          "mode": {
+            "const": "batch",
+            "default": "batch",
+            "title": "Mode",
+            "type": "string"
+          },
+          "sections": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SectionOutcome"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
+          "successfulSections": {
+            "title": "Successfulsections",
+            "type": "integer"
+          },
+          "totalSections": {
+            "title": "Totalsections",
+            "type": "integer"
+          },
+          "totalSuggestionsCreated": {
+            "title": "Totalsuggestionscreated",
+            "type": "integer"
+          },
+          "totalTokensUsed": {
+            "title": "Totaltokensused",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "extractionRunId",
+          "totalSections",
+          "successfulSections",
+          "failedSections",
+          "totalSuggestionsCreated",
+          "totalTokensUsed",
+          "durationMs"
+        ],
+        "title": "BatchSectionResult",
+        "type": "object"
+      },
+      "CloneTemplateRequest": {
+        "properties": {
+          "global_template_id": {
+            "format": "uuid",
+            "title": "Global Template Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "extraction",
+              "quality_assessment"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "global_template_id",
+          "kind"
+        ],
+        "title": "CloneTemplateRequest",
+        "type": "object"
+      },
+      "CloneTemplateResponse": {
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          },
+          "entity_type_count": {
+            "title": "Entity Type Count",
+            "type": "integer"
+          },
+          "field_count": {
+            "title": "Field Count",
+            "type": "integer"
+          },
+          "project_template_id": {
+            "format": "uuid",
+            "title": "Project Template Id",
+            "type": "string"
+          },
+          "version_id": {
+            "format": "uuid",
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_template_id",
+          "version_id",
+          "entity_type_count",
+          "field_count",
+          "created"
+        ],
+        "title": "CloneTemplateResponse",
+        "type": "object"
+      },
+      "ConsensusDecisionResponse": {
+        "properties": {
+          "consensus_user_id": {
+            "format": "uuid",
+            "title": "Consensus User Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "field_id": {
+            "format": "uuid",
+            "title": "Field Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "instance_id": {
+            "format": "uuid",
+            "title": "Instance Id",
+            "type": "string"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "selected_decision_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Decision Id"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "id",
+          "run_id",
+          "instance_id",
+          "field_id",
+          "consensus_user_id",
+          "mode",
+          "selected_decision_id",
+          "value",
+          "rationale",
+          "created_at"
+        ],
+        "title": "ConsensusDecisionResponse",
+        "type": "object"
+      },
+      "ConsensusResultResponse": {
+        "properties": {
+          "consensus": {
+            "$ref": "#/components/schemas/ConsensusDecisionResponse"
+          },
+          "published": {
+            "$ref": "#/components/schemas/PublishedStateResponse"
+          }
+        },
+        "required": [
+          "consensus",
+          "published"
+        ],
+        "title": "ConsensusResultResponse",
+        "type": "object"
+      },
+      "CreateAPIKeyRequest": {
+        "description": "Request for criar nova API key.",
+        "properties": {
+          "apiKey": {
+            "description": "API key do provedor",
+            "minLength": 10,
+            "title": "Apikey",
+            "type": "string"
+          },
+          "isDefault": {
+            "default": true,
+            "description": "Se deve ser a key default for o provedor",
+            "title": "Isdefault",
+            "type": "boolean"
+          },
+          "keyName": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Nome optional for identificar a key",
+            "title": "Keyname"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Metadata extras (modelo preferido, etc.)",
+            "title": "Metadata"
+          },
+          "provider": {
+            "description": "Provedor da API. Valores: ('openai', 'anthropic', 'gemini', 'grok')",
+            "title": "Provider",
+            "type": "string"
+          },
+          "validateKey": {
+            "default": true,
+            "description": "Se deve validar a key antes de salvar",
+            "title": "Validatekey",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "provider",
+          "apiKey"
+        ],
+        "title": "CreateAPIKeyRequest",
+        "type": "object"
+      },
+      "CreateAPIKeyResponse": {
+        "description": "Resposta apos criar API key.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "isDefault": {
+            "title": "Isdefault",
+            "type": "boolean"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "validationMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validationmessage"
+          },
+          "validationStatus": {
+            "title": "Validationstatus",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "validationStatus",
+          "validationMessage",
+          "isDefault"
+        ],
+        "title": "CreateAPIKeyResponse",
+        "type": "object"
+      },
+      "CreateConsensusRequest": {
+        "properties": {
+          "field_id": {
+            "format": "uuid",
+            "title": "Field Id",
+            "type": "string"
+          },
+          "instance_id": {
+            "format": "uuid",
+            "title": "Instance Id",
+            "type": "string"
+          },
+          "mode": {
+            "pattern": "^(select_existing|manual_override)$",
+            "title": "Mode",
+            "type": "string"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          },
+          "selected_decision_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Decision Id"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "instance_id",
+          "field_id",
+          "mode"
+        ],
+        "title": "CreateConsensusRequest",
+        "type": "object"
+      },
+      "CreateDecisionRequest": {
+        "properties": {
+          "decision": {
+            "pattern": "^(accept_proposal|reject|edit)$",
+            "title": "Decision",
+            "type": "string"
+          },
+          "field_id": {
+            "format": "uuid",
+            "title": "Field Id",
+            "type": "string"
+          },
+          "instance_id": {
+            "format": "uuid",
+            "title": "Instance Id",
+            "type": "string"
+          },
+          "proposal_record_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Record Id"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "instance_id",
+          "field_id",
+          "decision"
+        ],
+        "title": "CreateDecisionRequest",
+        "type": "object"
+      },
+      "CreateModelHierarchyRequest": {
+        "description": "Request to create one prediction-model hierarchy for an article.",
+        "properties": {
+          "articleId": {
+            "format": "uuid",
+            "title": "Articleid",
+            "type": "string"
+          },
+          "modelName": {
+            "title": "Modelname",
+            "type": "string"
+          },
+          "modellingMethod": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modellingmethod"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "templateId": {
+            "format": "uuid",
+            "title": "Templateid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "projectId",
+          "articleId",
+          "templateId",
+          "modelName"
+        ],
+        "title": "CreateModelHierarchyRequest",
+        "type": "object"
+      },
+      "CreateModelHierarchyResponse": {
+        "description": "Response for one-shot hierarchy creation.",
+        "properties": {
+          "childInstances": {
+            "items": {
+              "$ref": "#/components/schemas/ModelHierarchyChildResponse"
+            },
+            "title": "Childinstances",
+            "type": "array"
+          },
+          "modelId": {
+            "format": "uuid",
+            "title": "Modelid",
+            "type": "string"
+          },
+          "modelLabel": {
+            "title": "Modellabel",
+            "type": "string"
+          },
+          "proposalRunId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposalrunid"
+          }
+        },
+        "required": [
+          "modelId",
+          "modelLabel",
+          "childInstances"
+        ],
+        "title": "CreateModelHierarchyResponse",
+        "type": "object"
+      },
+      "CreateProposalRequest": {
+        "properties": {
+          "confidence_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence Score"
+          },
+          "field_id": {
+            "format": "uuid",
+            "title": "Field Id",
+            "type": "string"
+          },
+          "instance_id": {
+            "format": "uuid",
+            "title": "Instance Id",
+            "type": "string"
+          },
+          "proposed_value": {
+            "additionalProperties": true,
+            "title": "Proposed Value",
+            "type": "object"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          },
+          "source": {
+            "pattern": "^(ai|human|system)$",
+            "title": "Source",
+            "type": "string"
+          },
+          "source_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source User Id"
+          }
+        },
+        "required": [
+          "instance_id",
+          "field_id",
+          "source",
+          "proposed_value"
+        ],
+        "title": "CreateProposalRequest",
+        "type": "object"
+      },
+      "CreateRunRequest": {
+        "properties": {
+          "article_id": {
+            "format": "uuid",
+            "title": "Article Id",
+            "type": "string"
+          },
+          "parameters": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parameters"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "project_template_id": {
+            "format": "uuid",
+            "title": "Project Template Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "article_id",
+          "project_template_id"
+        ],
+        "title": "CreateRunRequest",
+        "type": "object"
+      },
+      "CreatedModelInfo": {
+        "description": "One prediction-model instance created by model extraction.",
+        "properties": {
+          "instanceId": {
+            "title": "Instanceid",
+            "type": "string"
+          },
+          "modelName": {
+            "title": "Modelname",
+            "type": "string"
+          },
+          "modellingMethod": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modellingmethod"
+          }
+        },
+        "required": [
+          "instanceId",
+          "modelName"
+        ],
+        "title": "CreatedModelInfo",
+        "type": "object"
+      },
+      "DeleteAPIKeyResult": {
+        "description": "Payload de ``DELETE /user-api-keys/{id}``.",
+        "properties": {
+          "deleted": {
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "deleted"
+        ],
+        "title": "DeleteAPIKeyResult",
+        "type": "object"
+      },
+      "DownloadAttachmentResponse": {
+        "description": "Response de download de attachment.",
+        "properties": {
+          "base64": {
+            "title": "Base64",
+            "type": "string"
+          },
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "base64",
+          "filename",
+          "content_type",
+          "size"
+        ],
+        "title": "DownloadAttachmentResponse",
+        "type": "object"
+      },
+      "ErrorDetail": {
+        "description": "Standardized error details.",
+        "properties": {
+          "code": {
+            "description": "Error code (see ApiErrorCode)",
+            "title": "Code",
+            "type": "string"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Additional error details",
+            "title": "Details"
+          },
+          "message": {
+            "description": "Error message",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorDetail",
+        "type": "object"
+      },
+      "ExportCancelResponse": {
+        "description": "Response do cancelamento do job.",
+        "properties": {
+          "cancelled": {
+            "title": "Cancelled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "cancelled"
+        ],
+        "title": "ExportCancelResponse",
+        "type": "object"
+      },
+      "ExportProgress": {
+        "description": "Progresso do export (optional).",
+        "properties": {
+          "current": {
+            "description": "Item atual",
+            "title": "Current",
+            "type": "integer"
+          },
+          "stage": {
+            "description": "Etapa: metadata, files, etc.",
+            "title": "Stage",
+            "type": "string"
+          },
+          "total": {
+            "description": "Total de itens",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "current",
+          "total",
+          "stage"
+        ],
+        "title": "ExportProgress",
+        "type": "object"
+      },
+      "ExportRequest": {
+        "description": "Request for iniciar exportacao de articles.",
+        "properties": {
+          "article_ids": {
+            "description": "IDs of the articles a exportar",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Article Ids",
+            "type": "array"
+          },
+          "file_scope": {
+            "description": "Escopo de files: none, main_only, all",
+            "title": "File Scope",
+            "type": "string"
+          },
+          "formats": {
+            "description": "Formatos: csv, ris, rdf (um or mais)",
+            "items": {
+              "type": "string"
+            },
+            "title": "Formats",
+            "type": "array"
+          },
+          "project_id": {
+            "description": "project",
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "article_ids",
+          "formats",
+          "file_scope"
+        ],
+        "title": "ExportRequest",
+        "type": "object"
+      },
+      "ExportStatusResponse": {
+        "description": "Response do status do job de export.",
+        "properties": {
+          "download_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Download Url"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportProgress"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "skipped_files": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SkippedFileEntry"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skipped Files"
+          },
+          "status": {
+            "description": "pending | running | completed | failed | cancelled",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "status"
+        ],
+        "title": "ExportStatusResponse",
+        "type": "object"
+      },
+      "ExtractionArticleScope": {
+        "description": "Universe of candidate articles to consider before mode eligibility.",
+        "enum": [
+          "current_list",
+          "selected_only"
+        ],
+        "title": "ExtractionArticleScope",
+        "type": "string"
+      },
+      "ExtractionExportCancelResponse": {
+        "description": "Cancel endpoint payload.",
+        "properties": {
+          "cancelled": {
+            "title": "Cancelled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "cancelled"
+        ],
+        "title": "ExtractionExportCancelResponse",
+        "type": "object"
+      },
+      "ExtractionExportMode": {
+        "description": "Source-of-values for the exported workbook.",
+        "enum": [
+          "consensus",
+          "single_user",
+          "all_users"
+        ],
+        "title": "ExtractionExportMode",
+        "type": "string"
+      },
+      "ExtractionExportRequest": {
+        "description": "Start an extraction export.",
+        "properties": {
+          "anonymize_reviewer_names": {
+            "default": false,
+            "description": "Only meaningful when mode=all_users; replaces names with Reviewer A/B/\u2026",
+            "title": "Anonymize Reviewer Names",
+            "type": "boolean"
+          },
+          "article_ids": {
+            "description": "Candidate article ids (resolved by the caller per article_scope).",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Article Ids",
+            "type": "array"
+          },
+          "article_scope": {
+            "$ref": "#/components/schemas/ExtractionArticleScope",
+            "default": "current_list",
+            "description": "Article universe before mode eligibility."
+          },
+          "include_ai_metadata": {
+            "default": false,
+            "description": "Adds the optional AI metadata sheet to the workbook.",
+            "title": "Include Ai Metadata",
+            "type": "boolean"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/ExtractionExportMode",
+            "default": "consensus",
+            "description": "Source of values."
+          },
+          "reviewer_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Required when mode=single_user. Caller may only target other reviewers if they hold the project manager role.",
+            "title": "Reviewer Id"
+          },
+          "template_id": {
+            "description": "Active project_extraction_templates id.",
+            "format": "uuid",
+            "title": "Template Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "template_id",
+          "article_ids"
+        ],
+        "title": "ExtractionExportRequest",
+        "type": "object"
+      },
+      "ExtractionExportStatusResponse": {
+        "description": "GET /status/{job_id} payload.",
+        "properties": {
+          "download_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Download Url"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "status": {
+            "description": "pending | running | completed | failed | cancelled",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "status"
+        ],
+        "title": "ExtractionExportStatusResponse",
+        "type": "object"
+      },
+      "ExtractionOptions": {
+        "description": "Opcoes de extraction.",
+        "properties": {
+          "max_tokens": {
+            "anyOf": [
+              {
+                "maximum": 16000.0,
+                "minimum": 100.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens"
+          },
+          "model": {
+            "default": "gpt-4o-mini",
+            "description": "Modelo OpenAI a usar",
+            "title": "Model",
+            "type": "string"
+          },
+          "temperature": {
+            "default": 0.1,
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Temperature",
+            "type": "number"
+          }
+        },
+        "title": "ExtractionOptions",
+        "type": "object"
+      },
+      "FeedbackAttachmentIn": {
+        "properties": {
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "image",
+              "video"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "storage_key": {
+            "minLength": 1,
+            "title": "Storage Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "storage_key",
+          "content_type"
+        ],
+        "title": "FeedbackAttachmentIn",
+        "type": "object"
+      },
+      "FeedbackContextIn": {
+        "properties": {
+          "app_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Version"
+          },
+          "article_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Article Id"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "route": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Route"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "user_agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Agent"
+          },
+          "viewport_size": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Viewport Size"
+          }
+        },
+        "title": "FeedbackContextIn",
+        "type": "object"
+      },
+      "FeedbackCreate": {
+        "properties": {
+          "attachments": {
+            "items": {
+              "$ref": "#/components/schemas/FeedbackAttachmentIn"
+            },
+            "maxItems": 5,
+            "title": "Attachments",
+            "type": "array"
+          },
+          "context": {
+            "$ref": "#/components/schemas/FeedbackContextIn"
+          },
+          "description": {
+            "maxLength": 5000,
+            "title": "Description",
+            "type": "string"
+          },
+          "severity": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "critical"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Severity"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "type": {
+            "enum": [
+              "bug",
+              "suggestion",
+              "question",
+              "other"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "description"
+        ],
+        "title": "FeedbackCreate",
+        "type": "object"
+      },
+      "FetchAttachmentsResponse": {
+        "description": "Response de buscar attachments.",
+        "properties": {
+          "attachments": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Attachments",
+            "type": "array"
+          }
+        },
+        "required": [
+          "attachments"
+        ],
+        "title": "FetchAttachmentsResponse",
+        "type": "object"
+      },
+      "FetchItemsResponse": {
+        "description": "Response de buscar items.",
+        "properties": {
+          "has_more": {
+            "default": false,
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total_results": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Results"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "FetchItemsResponse",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HitlConfigPayload": {
+        "description": "Editable fields for an HITL config.\n\nThe ``arbitrator_id`` is required when ``consensus_rule == 'arbitrator'``;\nthe database also enforces this via a check constraint, but we surface\nthe rule here so 422 messages are friendly.",
+        "properties": {
+          "arbitrator_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arbitrator Id"
+          },
+          "consensus_rule": {
+            "enum": [
+              "unanimous",
+              "majority",
+              "arbitrator"
+            ],
+            "title": "Consensus Rule",
+            "type": "string"
+          },
+          "reviewer_count": {
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Reviewer Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "reviewer_count",
+          "consensus_rule"
+        ],
+        "title": "HitlConfigPayload",
+        "type": "object"
+      },
+      "HitlConfigRead": {
+        "description": "Resolved view of an HITL config with provenance.\n\n``scope_kind`` reports where the value came from:\n\n* ``project`` \u2014 explicit project-scoped row\n* ``template`` \u2014 explicit template-scoped row\n* ``system_default`` \u2014 no row exists; values come from\n  :data:`SYSTEM_DEFAULT_HITL_CONFIG` (1 reviewer, unanimous)\n\n``inherited`` is true when the resolved config came from a broader\nscope than the one being queried (e.g. asking for a template's\nconfig and getting back the project default).",
+        "properties": {
+          "arbitrator_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arbitrator Id"
+          },
+          "consensus_rule": {
+            "enum": [
+              "unanimous",
+              "majority",
+              "arbitrator"
+            ],
+            "title": "Consensus Rule",
+            "type": "string"
+          },
+          "inherited": {
+            "title": "Inherited",
+            "type": "boolean"
+          },
+          "reviewer_count": {
+            "title": "Reviewer Count",
+            "type": "integer"
+          },
+          "scope_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Id"
+          },
+          "scope_kind": {
+            "enum": [
+              "project",
+              "template",
+              "system_default"
+            ],
+            "title": "Scope Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope_kind",
+          "reviewer_count",
+          "consensus_rule",
+          "inherited"
+        ],
+        "title": "HitlConfigRead",
+        "type": "object"
+      },
+      "KeyValidationResult": {
+        "description": "Payload de ``POST /user-api-keys/{id}/validate``.",
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "valid",
+              "invalid",
+              "pending"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "message"
+        ],
+        "title": "KeyValidationResult",
+        "type": "object"
+      },
+      "ListAPIKeysData": {
+        "description": "Payload de ``GET /user-api-keys``.",
+        "properties": {
+          "keys": {
+            "items": {
+              "$ref": "#/components/schemas/APIKeyResponse"
+            },
+            "title": "Keys",
+            "type": "array"
+          }
+        },
+        "required": [
+          "keys"
+        ],
+        "title": "ListAPIKeysData",
+        "type": "object"
+      },
+      "ListCollectionsResponse": {
+        "description": "Response de listar collections.",
+        "properties": {
+          "collections": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Collections",
+            "type": "array"
+          }
+        },
+        "required": [
+          "collections"
+        ],
+        "title": "ListCollectionsResponse",
+        "type": "object"
+      },
+      "ListProvidersData": {
+        "description": "Payload de ``GET /user-api-keys/providers``.",
+        "properties": {
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderInfo"
+            },
+            "title": "Providers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "providers"
+        ],
+        "title": "ListProvidersData",
+        "type": "object"
+      },
+      "ModelExtractionRequest": {
+        "description": "Request for extraction de modelos de predicao.",
+        "properties": {
+          "articleId": {
+            "format": "uuid",
+            "title": "Articleid",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "gpt-4o-mini",
+            "description": "Modelo OpenAI a usar",
+            "title": "Model"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExtractionOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "templateId": {
+            "format": "uuid",
+            "title": "Templateid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "projectId",
+          "articleId",
+          "templateId"
+        ],
+        "title": "ModelExtractionRequest",
+        "type": "object"
+      },
+      "ModelExtractionResult": {
+        "description": "Resultado da extraction de modelos.",
+        "properties": {
+          "childInstancesCreated": {
+            "title": "Childinstancescreated",
+            "type": "integer"
+          },
+          "extractionRunId": {
+            "title": "Extractionrunid",
+            "type": "string"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/ModelExtractionRunStats"
+          },
+          "modelsCreated": {
+            "items": {
+              "$ref": "#/components/schemas/CreatedModelInfo"
+            },
+            "title": "Modelscreated",
+            "type": "array"
+          },
+          "totalModels": {
+            "title": "Totalmodels",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "extractionRunId",
+          "modelsCreated",
+          "totalModels",
+          "childInstancesCreated",
+          "metadata"
+        ],
+        "title": "ModelExtractionResult",
+        "type": "object"
+      },
+      "ModelExtractionRunStats": {
+        "description": "Timing/token metadata attached to a model-extraction response.",
+        "properties": {
+          "duration": {
+            "title": "Duration",
+            "type": "integer"
+          },
+          "modelsFound": {
+            "title": "Modelsfound",
+            "type": "integer"
+          },
+          "tokensCompletion": {
+            "title": "Tokenscompletion",
+            "type": "integer"
+          },
+          "tokensPrompt": {
+            "title": "Tokensprompt",
+            "type": "integer"
+          },
+          "tokensTotal": {
+            "title": "Tokenstotal",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "duration",
+          "modelsFound",
+          "tokensPrompt",
+          "tokensCompletion",
+          "tokensTotal"
+        ],
+        "title": "ModelExtractionRunStats",
+        "type": "object"
+      },
+      "ModelHierarchyChildResponse": {
+        "description": "Child instance created under the parent model instance.",
+        "properties": {
+          "entityTypeId": {
+            "format": "uuid",
+            "title": "Entitytypeid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "parentInstanceId": {
+            "format": "uuid",
+            "title": "Parentinstanceid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "entityTypeId",
+          "parentInstanceId",
+          "label"
+        ],
+        "title": "ModelHierarchyChildResponse",
+        "type": "object"
+      },
+      "OpenHITLSessionRequest": {
+        "properties": {
+          "article_id": {
+            "format": "uuid",
+            "title": "Article Id",
+            "type": "string"
+          },
+          "global_template_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Global Template Id"
+          },
+          "kind": {
+            "enum": [
+              "extraction",
+              "quality_assessment"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "project_template_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Template Id"
+          }
+        },
+        "required": [
+          "kind",
+          "project_id",
+          "article_id"
+        ],
+        "title": "OpenHITLSessionRequest",
+        "type": "object"
+      },
+      "OpenHITLSessionResponse": {
+        "properties": {
+          "instances_by_entity_type": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Instances By Entity Type",
+            "type": "object"
+          },
+          "kind": {
+            "enum": [
+              "extraction",
+              "quality_assessment"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "project_template_id": {
+            "format": "uuid",
+            "title": "Project Template Id",
+            "type": "string"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "run_view": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunViewResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "run_id",
+          "kind",
+          "project_template_id",
+          "instances_by_entity_type"
+        ],
+        "title": "OpenHITLSessionResponse",
+        "type": "object"
+      },
+      "ProposalRecordResponse": {
+        "properties": {
+          "confidence_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence Score"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "field_id": {
+            "format": "uuid",
+            "title": "Field Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "instance_id": {
+            "format": "uuid",
+            "title": "Instance Id",
+            "type": "string"
+          },
+          "proposed_value": {
+            "additionalProperties": true,
+            "title": "Proposed Value",
+            "type": "object"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "source_user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source User Id"
+          }
+        },
+        "required": [
+          "id",
+          "run_id",
+          "instance_id",
+          "field_id",
+          "source",
+          "source_user_id",
+          "proposed_value",
+          "confidence_score",
+          "rationale",
+          "created_at"
+        ],
+        "title": "ProposalRecordResponse",
+        "type": "object"
+      },
+      "ProviderInfo": {
+        "description": "One supported BYOK provider (public catalogue).",
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "docsUrl": {
+            "title": "Docsurl",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "docsUrl"
+        ],
+        "title": "ProviderInfo",
+        "type": "object"
+      },
+      "PublishedStateResponse": {
+        "properties": {
+          "field_id": {
+            "format": "uuid",
+            "title": "Field Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "instance_id": {
+            "format": "uuid",
+            "title": "Instance Id",
+            "type": "string"
+          },
+          "published_at": {
+            "format": "date-time",
+            "title": "Published At",
+            "type": "string"
+          },
+          "published_by": {
+            "format": "uuid",
+            "title": "Published By",
+            "type": "string"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "value": {
+            "additionalProperties": true,
+            "title": "Value",
+            "type": "object"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "run_id",
+          "instance_id",
+          "field_id",
+          "value",
+          "published_at",
+          "published_by",
+          "version"
+        ],
+        "title": "PublishedStateResponse",
+        "type": "object"
+      },
+      "ReviewerDecisionResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          },
+          "field_id": {
+            "format": "uuid",
+            "title": "Field Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "instance_id": {
+            "format": "uuid",
+            "title": "Instance Id",
+            "type": "string"
+          },
+          "proposal_record_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Record Id"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          },
+          "reviewer_id": {
+            "format": "uuid",
+            "title": "Reviewer Id",
+            "type": "string"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "id",
+          "run_id",
+          "instance_id",
+          "field_id",
+          "reviewer_id",
+          "decision",
+          "proposal_record_id",
+          "value",
+          "rationale",
+          "created_at"
+        ],
+        "title": "ReviewerDecisionResponse",
+        "type": "object"
+      },
+      "RunDetailResponse": {
+        "properties": {
+          "consensus_decisions": {
+            "items": {
+              "$ref": "#/components/schemas/ConsensusDecisionResponse"
+            },
+            "title": "Consensus Decisions",
+            "type": "array"
+          },
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewerDecisionResponse"
+            },
+            "title": "Decisions",
+            "type": "array"
+          },
+          "proposals": {
+            "items": {
+              "$ref": "#/components/schemas/ProposalRecordResponse"
+            },
+            "title": "Proposals",
+            "type": "array"
+          },
+          "published_states": {
+            "items": {
+              "$ref": "#/components/schemas/PublishedStateResponse"
+            },
+            "title": "Published States",
+            "type": "array"
+          },
+          "run": {
+            "$ref": "#/components/schemas/RunSummaryResponse"
+          }
+        },
+        "required": [
+          "run",
+          "proposals",
+          "decisions",
+          "consensus_decisions",
+          "published_states"
+        ],
+        "title": "RunDetailResponse",
+        "type": "object"
+      },
+      "RunReviewerProfile": {
+        "description": "Display profile for a reviewer who participated in a run.",
+        "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "RunReviewerProfile",
+        "type": "object"
+      },
+      "RunReviewersResponse": {
+        "description": "Lookup table {reviewer_id: profile} for the consensus UI.\n\nBuilt from the union of distinct reviewer ids appearing on\nProposalRecord (source='human'), ReviewerDecision, and\nConsensusDecision rows for the given run. The frontend uses it to\nrender names + avatars instead of raw UUIDs in the consensus\npanel and the divergence indicators.",
+        "properties": {
+          "reviewers": {
+            "items": {
+              "$ref": "#/components/schemas/RunReviewerProfile"
+            },
+            "title": "Reviewers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "reviewers"
+        ],
+        "title": "RunReviewersResponse",
+        "type": "object"
+      },
+      "RunSummaryResponse": {
+        "properties": {
+          "article_id": {
+            "format": "uuid",
+            "title": "Article Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "format": "uuid",
+            "title": "Created By",
+            "type": "string"
+          },
+          "hitl_config_snapshot": {
+            "additionalProperties": true,
+            "title": "Hitl Config Snapshot",
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "results": {
+            "additionalProperties": true,
+            "title": "Results",
+            "type": "object"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "template_id": {
+            "format": "uuid",
+            "title": "Template Id",
+            "type": "string"
+          },
+          "version_id": {
+            "format": "uuid",
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "article_id",
+          "template_id",
+          "kind",
+          "version_id",
+          "stage",
+          "status",
+          "hitl_config_snapshot",
+          "parameters",
+          "results",
+          "created_at",
+          "created_by"
+        ],
+        "title": "RunSummaryResponse",
+        "type": "object"
+      },
+      "RunViewCurrentValue": {
+        "description": "The caller's current value for one (instance, field) coordinate, resolved\nserver-side for review/consensus/finalized. ``value`` is the raw jsonb\nenvelope (``{value, unit}`` or scalar) \u2014 the client unwraps it exactly as it\ndid for ``loadValuesForUser``. Empty list for proposal/pending/cancelled.",
+        "properties": {
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          },
+          "field_id": {
+            "format": "uuid",
+            "title": "Field Id",
+            "type": "string"
+          },
+          "instance_id": {
+            "format": "uuid",
+            "title": "Instance Id",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "instance_id",
+          "field_id",
+          "value",
+          "decision"
+        ],
+        "title": "RunViewCurrentValue",
+        "type": "object"
+      },
+      "RunViewEntityType": {
+        "description": "An entity type in the frozen template snapshot, with its fields embedded.\n``role`` drives the study/model partition; the tree hierarchy is conveyed by\n``parent_entity_type_id`` (flat array, ordered by ``sort_order``).",
+        "properties": {
+          "cardinality": {
+            "title": "Cardinality",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/RunViewField"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_required": {
+            "title": "Is Required",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parent_entity_type_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Entity Type Id"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "label",
+          "cardinality",
+          "role",
+          "sort_order",
+          "is_required",
+          "fields"
+        ],
+        "title": "RunViewEntityType",
+        "type": "object"
+      },
+      "RunViewField": {
+        "description": "A field in the frozen template snapshot, widened to every column the\nrun-open form renders from. Sourced from the version snapshot (or the live\ntable when the snapshot is a pre-0026 narrow one).",
+        "properties": {
+          "allow_other": {
+            "default": false,
+            "title": "Allow Other",
+            "type": "boolean"
+          },
+          "allowed_units": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Units"
+          },
+          "allowed_values": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Values"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "field_type": {
+            "title": "Field Type",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_required": {
+            "title": "Is Required",
+            "type": "boolean"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "llm_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Description"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "other_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Label"
+          },
+          "other_placeholder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Placeholder"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "validation_schema": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Validation Schema"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "label",
+          "field_type",
+          "is_required",
+          "sort_order"
+        ],
+        "title": "RunViewField",
+        "type": "object"
+      },
+      "RunViewResponse": {
+        "description": "``RunDetailResponse`` (run + blind-filtered workflow rows) plus the two\npieces the run-open form needs server-side: the frozen entity_types tree and\nthe caller's current_values. (``instances`` is added in Task 12.)",
+        "properties": {
+          "consensus_decisions": {
+            "items": {
+              "$ref": "#/components/schemas/ConsensusDecisionResponse"
+            },
+            "title": "Consensus Decisions",
+            "type": "array"
+          },
+          "current_values": {
+            "items": {
+              "$ref": "#/components/schemas/RunViewCurrentValue"
+            },
+            "title": "Current Values",
+            "type": "array"
+          },
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewerDecisionResponse"
+            },
+            "title": "Decisions",
+            "type": "array"
+          },
+          "entity_types": {
+            "items": {
+              "$ref": "#/components/schemas/RunViewEntityType"
+            },
+            "title": "Entity Types",
+            "type": "array"
+          },
+          "proposals": {
+            "items": {
+              "$ref": "#/components/schemas/ProposalRecordResponse"
+            },
+            "title": "Proposals",
+            "type": "array"
+          },
+          "published_states": {
+            "items": {
+              "$ref": "#/components/schemas/PublishedStateResponse"
+            },
+            "title": "Published States",
+            "type": "array"
+          },
+          "run": {
+            "$ref": "#/components/schemas/RunSummaryResponse"
+          }
+        },
+        "required": [
+          "run",
+          "proposals",
+          "decisions",
+          "consensus_decisions",
+          "published_states",
+          "entity_types",
+          "current_values"
+        ],
+        "title": "RunViewResponse",
+        "type": "object"
+      },
+      "SaveCredentialsResponse": {
+        "description": "Response for saving credentials.",
+        "properties": {
+          "integration_id": {
+            "title": "Integration Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "integration_id"
+        ],
+        "title": "SaveCredentialsResponse",
+        "type": "object"
+      },
+      "SectionExtractionRequest": {
+        "description": "Request for extraction de section.",
+        "properties": {
+          "articleId": {
+            "format": "uuid",
+            "title": "Articleid",
+            "type": "string"
+          },
+          "autoAdvanceToReview": {
+            "default": true,
+            "title": "Autoadvancetoreview",
+            "type": "boolean"
+          },
+          "entityTypeId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entitytypeid"
+          },
+          "extractAllSections": {
+            "default": false,
+            "title": "Extractallsections",
+            "type": "boolean"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "gpt-4o-mini",
+            "description": "Modelo OpenAI a usar",
+            "title": "Model"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExtractionOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parentInstanceId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parentinstanceid"
+          },
+          "pdfText": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pdftext"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "runId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runid"
+          },
+          "sectionIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sectionids"
+          },
+          "skipFieldsWithHumanProposals": {
+            "default": false,
+            "title": "Skipfieldswithhumanproposals",
+            "type": "boolean"
+          },
+          "templateId": {
+            "format": "uuid",
+            "title": "Templateid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "projectId",
+          "articleId",
+          "templateId"
+        ],
+        "title": "SectionExtractionRequest",
+        "type": "object"
+      },
+      "SectionOutcome": {
+        "description": "Per-section outcome inside a batch extraction result.\n\nWire format is snake_case on purpose \u2014 these items were emitted as\nraw service dicts before being typed, and the keys are preserved\nverbatim. Failure items carry ``error`` and omit the counters.",
+        "properties": {
+          "entity_type_id": {
+            "title": "Entity Type Id",
+            "type": "string"
+          },
+          "entity_type_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity Type Name"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "skipped": {
+            "default": false,
+            "title": "Skipped",
+            "type": "boolean"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "suggestions_created": {
+            "default": 0,
+            "title": "Suggestions Created",
+            "type": "integer"
+          },
+          "tokens_used": {
+            "default": 0,
+            "title": "Tokens Used",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "entity_type_id",
+          "success"
+        ],
+        "title": "SectionOutcome",
+        "type": "object"
+      },
+      "SingleSectionResult": {
+        "description": "Resultado de extraction de section unica.",
+        "properties": {
+          "durationMs": {
+            "title": "Durationms",
+            "type": "number"
+          },
+          "entityTypeId": {
+            "title": "Entitytypeid",
+            "type": "string"
+          },
+          "extractionRunId": {
+            "title": "Extractionrunid",
+            "type": "string"
+          },
+          "mode": {
+            "const": "single",
+            "default": "single",
+            "title": "Mode",
+            "type": "string"
+          },
+          "suggestionsCreated": {
+            "title": "Suggestionscreated",
+            "type": "integer"
+          },
+          "tokensCompletion": {
+            "title": "Tokenscompletion",
+            "type": "integer"
+          },
+          "tokensPrompt": {
+            "title": "Tokensprompt",
+            "type": "integer"
+          },
+          "tokensTotal": {
+            "title": "Tokenstotal",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "extractionRunId",
+          "suggestionsCreated",
+          "entityTypeId",
+          "tokensPrompt",
+          "tokensCompletion",
+          "tokensTotal",
+          "durationMs"
+        ],
+        "title": "SingleSectionResult",
+        "type": "object"
+      },
+      "SkippedFileEntry": {
+        "description": "Input for file that cannot be included in the export.",
+        "properties": {
+          "article_id": {
+            "format": "uuid",
+            "title": "Article Id",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "storage_key": {
+            "title": "Storage Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "article_id",
+          "storage_key",
+          "reason"
+        ],
+        "title": "SkippedFileEntry",
+        "type": "object"
+      },
+      "SyncCollectionResponse": {
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "syncRunId": {
+            "title": "Syncrunid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "syncRunId",
+          "status",
+          "message"
+        ],
+        "title": "SyncCollectionResponse",
+        "type": "object"
+      },
+      "SyncCountsResponse": {
+        "properties": {
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "persisted": {
+            "title": "Persisted",
+            "type": "integer"
+          },
+          "reactivated": {
+            "title": "Reactivated",
+            "type": "integer"
+          },
+          "removedAtSource": {
+            "title": "Removedatsource",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "totalReceived": {
+            "title": "Totalreceived",
+            "type": "integer"
+          },
+          "updated": {
+            "title": "Updated",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "totalReceived",
+          "persisted",
+          "updated",
+          "skipped",
+          "failed",
+          "removedAtSource",
+          "reactivated"
+        ],
+        "title": "SyncCountsResponse",
+        "type": "object"
+      },
+      "SyncItemResultEntry": {
+        "properties": {
+          "articleId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Articleid"
+          },
+          "authorityRuleApplied": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorityruleapplied"
+          },
+          "errorCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errorcode"
+          },
+          "errorMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errormessage"
+          },
+          "processedAt": {
+            "format": "date-time",
+            "title": "Processedat",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "zoteroItemKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zoteroitemkey"
+          }
+        },
+        "required": [
+          "status",
+          "processedAt"
+        ],
+        "title": "SyncItemResultEntry",
+        "type": "object"
+      },
+      "SyncItemResultsResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SyncItemResultEntry"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "SyncItemResultsResponse",
+        "type": "object"
+      },
+      "SyncRetryFailedResponse": {
+        "properties": {
+          "queuedItems": {
+            "title": "Queueditems",
+            "type": "integer"
+          },
+          "retryOfSyncRunId": {
+            "title": "Retryofsyncrunid",
+            "type": "string"
+          },
+          "syncRunId": {
+            "title": "Syncrunid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "syncRunId",
+          "retryOfSyncRunId",
+          "queuedItems"
+        ],
+        "title": "SyncRetryFailedResponse",
+        "type": "object"
+      },
+      "SyncStatusResponse": {
+        "properties": {
+          "completedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completedat"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/SyncCountsResponse"
+          },
+          "startedAt": {
+            "format": "date-time",
+            "title": "Startedat",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "syncRunId": {
+            "title": "Syncrunid",
+            "type": "string"
+          },
+          "traceId": {
+            "title": "Traceid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "syncRunId",
+          "status",
+          "counts",
+          "startedAt",
+          "traceId"
+        ],
+        "title": "SyncStatusResponse",
+        "type": "object"
+      },
+      "TestConnectionResponse": {
+        "description": "Response de teste de conexao.",
+        "properties": {
+          "access": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Access",
+            "type": "object"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "user_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Name"
+          }
+        },
+        "required": [
+          "success"
+        ],
+        "title": "TestConnectionResponse",
+        "type": "object"
+      },
+      "UpdateAPIKeyRequest": {
+        "description": "Request for atualizar API key.",
+        "properties": {
+          "isActive": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Se a key esta ativa",
+            "title": "Isactive"
+          },
+          "isDefault": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Se deve ser a key default",
+            "title": "Isdefault"
+          },
+          "keyName": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Nome for identificar a key",
+            "title": "Keyname"
+          }
+        },
+        "title": "UpdateAPIKeyRequest",
+        "type": "object"
+      },
+      "UpdateAPIKeyResult": {
+        "description": "Payload de ``PATCH /user-api-keys/{id}``.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "updated": {
+            "title": "Updated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "updated"
+        ],
+        "title": "UpdateAPIKeyResult",
+        "type": "object"
+      },
+      "UpdateTemplateActiveRequest": {
+        "properties": {
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "is_active"
+        ],
+        "title": "UpdateTemplateActiveRequest",
+        "type": "object"
+      },
+      "UpdateTemplateActiveResponse": {
+        "properties": {
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "project_template_id": {
+            "format": "uuid",
+            "title": "Project Template Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_template_id",
+          "is_active"
+        ],
+        "title": "UpdateTemplateActiveResponse",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "ZoteroAction": {
+        "description": "Acoes disponiveis for Zotero.",
+        "enum": [
+          "save-credentials",
+          "test-connection",
+          "list-collections",
+          "fetch-items",
+          "fetch-attachments",
+          "download-attachment",
+          "sync-collection",
+          "sync-status",
+          "sync-retry-failed",
+          "sync-item-result"
+        ],
+        "title": "ZoteroAction",
+        "type": "string"
+      }
+    },
+    "securitySchemes": {
+      "Supabase JWT": {
+        "description": "JWT token do Supabase Auth",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "Backend API for Prumo - Systematic Review Platform",
+    "title": "Prumo API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/": {
+      "get": {
+        "description": "Root endpoint with API info.\nTo access the docs, visit {settings.API_V1_PREFIX}/docs, e.g. http://localhost:8000/api/v1/docs",
+        "operationId": "root__get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Root  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Root",
+        "tags": [
+          "Root"
+        ]
+      }
+    },
+    "/api/v1/article-files/{article_file_id}/text-blocks": {
+      "get": {
+        "description": "Return all text blocks for ``article_file_id`` in reading order.",
+        "operationId": "list_article_text_blocks_api_v1_article_files__article_file_id__text_blocks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_file_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Article File Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_dict_str__Any___"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "List Article Text Blocks",
+        "tags": [
+          "article-text-blocks"
+        ]
+      }
+    },
+    "/api/v1/articles-export": {
+      "post": {
+        "description": "Exporta articles em CSV, RIS e/ou RDF; optionalmente inclui files. Return 200 with file (sync) or 202 with jobId (async).",
+        "operationId": "start_export_api_v1_articles_export_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Iniciar exportacao de articles",
+        "tags": [
+          "Articles Export"
+        ]
+      }
+    },
+    "/api/v1/articles-export/status/{job_id}": {
+      "delete": {
+        "description": "Revoga o job de exportacao. Se ja concluido, no-op.\n\nOnly the user that started the export may cancel it: ownership is\nresolved from the Redis ``export_job_owner:<id>`` key written at start\ntime, with a fallback to the SUCCESS-state result payload (which also\ncarries ``user_id``). If neither source can confirm ownership the\nrequest is rejected with 404 so an attacker cannot probe job ids.",
+        "operationId": "cancel_export_api_v1_articles_export_status__job_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ExportCancelResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Cancelar exportacao (DELETE)",
+        "tags": [
+          "Articles Export"
+        ]
+      },
+      "get": {
+        "description": "Return status do job; quando completed, inclui downloadUrl and expiresAt.",
+        "operationId": "get_export_status_api_v1_articles_export_status__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ExportStatusResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Status do job de exportacao",
+        "tags": [
+          "Articles Export"
+        ]
+      }
+    },
+    "/api/v1/articles-export/status/{job_id}/cancel": {
+      "post": {
+        "description": "Revoga o job de exportacao. Se ja concluido, no-op.\n\nOnly the user that started the export may cancel it: ownership is\nresolved from the Redis ``export_job_owner:<id>`` key written at start\ntime, with a fallback to the SUCCESS-state result payload (which also\ncarries ``user_id``). If neither source can confirm ownership the\nrequest is rejected with 404 so an attacker cannot probe job ids.",
+        "operationId": "cancel_export_api_v1_articles_export_status__job_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ExportCancelResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Cancelar exportacao (POST)",
+        "tags": [
+          "Articles Export"
+        ]
+      }
+    },
+    "/api/v1/articles/{article_id}/citations": {
+      "get": {
+        "description": "Return all v1-shape citations attached to ``article_id``.",
+        "operationId": "list_article_citations_endpoint_api_v1_articles__article_id__citations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Article Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_dict_str__Any___"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "List Article Citations Endpoint",
+        "tags": [
+          "citations"
+        ]
+      }
+    },
+    "/api/v1/extraction/models": {
+      "post": {
+        "description": "Identifica and extrai automaticamente modelos de predicao do article.",
+        "operationId": "extract_models_api_v1_extraction_models_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelExtractionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ModelExtractionResult_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Extrair modelos de predicao",
+        "tags": [
+          "Model Extraction"
+        ]
+      }
+    },
+    "/api/v1/extraction/models/manual": {
+      "post": {
+        "description": "Creates the parent prediction model and required singleton children in one transaction.",
+        "operationId": "create_manual_model_hierarchy_api_v1_extraction_models_manual_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateModelHierarchyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CreateModelHierarchyResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Create one prediction model hierarchy",
+        "tags": [
+          "Model Extraction"
+        ]
+      }
+    },
+    "/api/v1/extraction/sections": {
+      "post": {
+        "description": "Extrai data de uma section especifica or todas as sections de um modelo.",
+        "operationId": "extract_section_api_v1_extraction_sections_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SectionExtractionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Annotated_Union_SingleSectionResult__BatchSectionResult___FieldInfo_annotation_NoneType__required_True__discriminator__mode____"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Extrair section(oes) de template",
+        "tags": [
+          "Section Extraction"
+        ]
+      }
+    },
+    "/api/v1/feedback": {
+      "post": {
+        "description": "Persists a feedback report and forwards it to Linear asynchronously.",
+        "operationId": "submit_feedback_api_v1_feedback_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Submit user feedback",
+        "tags": [
+          "Feedback"
+        ]
+      }
+    },
+    "/api/v1/hitl/sessions": {
+      "post": {
+        "description": "Open or resume a HITL session for an article.\n\nBody shape depends on ``kind``:\n\n* ``quality_assessment``: pass ``global_template_id`` (PROBAST / QUADAS-2 / ...)\n  for the first call. The service clones the global template into the\n  project (idempotent) and ensures one instance per top-level domain.\n  Subsequent calls may pass ``project_template_id`` directly to skip the\n  clone lookup.\n* ``extraction``: pass ``project_template_id``. Extraction templates are\n  authored per-project; there is no global pool to clone from.\n\nRe-calling reuses the existing in-flight Run instead of forking a new\none. A finalized Run is returned read-only \u2014 the client should call the\nreopen endpoint to start a revision.",
+        "operationId": "open_hitl_session_api_v1_hitl_sessions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenHITLSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_OpenHITLSessionResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Open Hitl Session",
+        "tags": [
+          "hitl-sessions"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/extraction-export": {
+      "post": {
+        "description": "Validate, authorise, then dispatch via sync or async path.\n\nSync path returns a raw binary ``Response`` (``.xlsx`` blob); async\npath returns an ``ApiResponse[ExtractionExportStartedResponse]``\nenvelope; validation/auth failures are envelope-wrapped via\n``_envelope_failure``. The PEP 604 union covers both shapes and\nsatisfies the fitness check at ``scripts/fitness/check_api_response_envelope.py``.",
+        "operationId": "start_extraction_export_api_v1_projects__project_id__extraction_export_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtractionExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Start an extraction export",
+        "tags": [
+          "extraction-export"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/extraction-export/reviewers": {
+      "get": {
+        "description": "Return reviewers who have \u2265 1 non-reject decision on this template.\n\nNon-managers see only themselves (when they have decisions); managers\nsee everyone. The dialog uses this to populate the picker.",
+        "operationId": "list_extraction_export_reviewers_api_v1_projects__project_id__extraction_export_reviewers_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_dict_str__Any___"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "List reviewers with non-reject decisions for the picker (US2 / FR-028)",
+        "tags": [
+          "extraction-export"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/extraction-export/status/{job_id}": {
+      "delete": {
+        "description": "Revoke the Celery job; no-op for already-terminal states.",
+        "operationId": "cancel_extraction_export_api_v1_projects__project_id__extraction_export_status__job_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ExtractionExportCancelResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Cancel a running extraction export (DELETE alias)",
+        "tags": [
+          "extraction-export"
+        ]
+      },
+      "get": {
+        "description": "Map the Celery AsyncResult state into the API envelope shape.",
+        "operationId": "get_extraction_export_status_api_v1_projects__project_id__extraction_export_status__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ExtractionExportStatusResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Poll async extraction export status",
+        "tags": [
+          "extraction-export"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/extraction-export/status/{job_id}/cancel": {
+      "post": {
+        "description": "Revoke the Celery job; no-op for already-terminal states.",
+        "operationId": "cancel_extraction_export_api_v1_projects__project_id__extraction_export_status__job_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ExtractionExportCancelResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Cancel a running extraction export",
+        "tags": [
+          "extraction-export"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/hitl-config": {
+      "delete": {
+        "operationId": "delete_project_hitl_config_api_v1_projects__project_id__hitl_config_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_HitlConfigRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Delete Project Hitl Config",
+        "tags": [
+          "hitl-configs"
+        ]
+      },
+      "get": {
+        "description": "Return the resolved HITL config for the project.\n\nAny project member can read; the UI uses this to display the project\ndefault and to populate the per-template \"inherit from project\"\nplaceholder.",
+        "operationId": "get_project_hitl_config_api_v1_projects__project_id__hitl_config_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_HitlConfigRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Project Hitl Config",
+        "tags": [
+          "hitl-configs"
+        ]
+      },
+      "put": {
+        "operationId": "upsert_project_hitl_config_api_v1_projects__project_id__hitl_config_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HitlConfigPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_HitlConfigRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Upsert Project Hitl Config",
+        "tags": [
+          "hitl-configs"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/clone": {
+      "post": {
+        "description": "Clone a global template into the project (idempotent).\n\nRestricted to project managers \u2014 cloning materializes new rows in\n``project_extraction_templates`` and ``extraction_template_versions``,\nwhich is project-wide configuration, matching the PATCH endpoint below.",
+        "operationId": "clone_template_into_project_api_v1_projects__project_id__templates_clone_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CloneTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CloneTemplateResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Clone Template Into Project",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/{project_template_id}/hitl-config": {
+      "delete": {
+        "operationId": "delete_template_hitl_config_api_v1_projects__project_id__templates__project_template_id__hitl_config_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_HitlConfigRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Delete Template Hitl Config",
+        "tags": [
+          "hitl-configs"
+        ]
+      },
+      "get": {
+        "operationId": "get_template_hitl_config_api_v1_projects__project_id__templates__project_template_id__hitl_config_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_HitlConfigRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Template Hitl Config",
+        "tags": [
+          "hitl-configs"
+        ]
+      },
+      "put": {
+        "operationId": "upsert_template_hitl_config_api_v1_projects__project_id__templates__project_template_id__hitl_config_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HitlConfigPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_HitlConfigRead_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Upsert Template Hitl Config",
+        "tags": [
+          "hitl-configs"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/templates/{template_id}": {
+      "patch": {
+        "description": "Toggle ``is_active`` on a project template.\n\nDisabling an extraction template that is the project's only active\nextraction template returns 400 \u2014 see service for the invariant.",
+        "operationId": "update_project_template_active_api_v1_projects__project_id__templates__template_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTemplateActiveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_UpdateTemplateActiveResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Update Project Template Active",
+        "tags": [
+          "project-templates"
+        ]
+      }
+    },
+    "/api/v1/runs": {
+      "post": {
+        "operationId": "create_run_api_v1_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RunSummaryResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Create Run",
+        "tags": [
+          "extraction-runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}": {
+      "get": {
+        "operationId": "get_run_api_v1_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RunDetailResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Run",
+        "tags": [
+          "extraction-runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/advance": {
+      "post": {
+        "operationId": "advance_run_api_v1_runs__run_id__advance_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdvanceStageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RunSummaryResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Advance Run",
+        "tags": [
+          "extraction-runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/consensus": {
+      "post": {
+        "operationId": "create_consensus_api_v1_runs__run_id__consensus_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateConsensusRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ConsensusResultResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Create Consensus",
+        "tags": [
+          "extraction-runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/decisions": {
+      "post": {
+        "operationId": "create_decision_api_v1_runs__run_id__decisions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ReviewerDecisionResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Create Decision",
+        "tags": [
+          "extraction-runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/proposals": {
+      "post": {
+        "operationId": "create_proposal_api_v1_runs__run_id__proposals_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProposalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ProposalRecordResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Create Proposal",
+        "tags": [
+          "extraction-runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/reopen": {
+      "post": {
+        "description": "Create a new Run derived from a finalized one.\n\nImplements the \"Option C\" reopen flow: previous PublishedState rows\nare seeded into the new Run as ``source='system'`` proposals; the\nnew Run lands in stage=REVIEW so the form picks up where the old\none left off. Old Run is untouched (audit trail).",
+        "operationId": "reopen_run_api_v1_runs__run_id__reopen_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RunSummaryResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Reopen Run",
+        "tags": [
+          "extraction-runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/reviewers": {
+      "get": {
+        "description": "Display profiles for everyone who participated in the run.\n\nSources of \"participation\":\n  \u00b7 ProposalRecord with `source='human'` (the proposer's user id)\n  \u00b7 ReviewerDecision (the reviewer's user id)\n  \u00b7 ConsensusDecision (the arbitrator's user id)\n\nReturns the union as a list of {id, full_name, avatar_url}. The\nconsensus panel and divergence indicators consume this to render\nreal names / avatars instead of bare UUIDs.",
+        "operationId": "list_run_reviewers_api_v1_runs__run_id__reviewers_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RunReviewersResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "List Run Reviewers",
+        "tags": [
+          "extraction-runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/view": {
+      "get": {
+        "description": "One-round-trip run-open view: blind-filtered run detail + the frozen\nentity_types tree + the caller's current_values.",
+        "operationId": "get_run_view_api_v1_runs__run_id__view_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RunViewResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Run View",
+        "tags": [
+          "extraction-runs"
+        ]
+      }
+    },
+    "/api/v1/user-api-keys": {
+      "get": {
+        "description": "List todas as API keys do user (sem expor as keys).",
+        "operationId": "list_api_keys_api_v1_user_api_keys_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "active_only",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Active Only",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ListAPIKeysData_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Listar API keys",
+        "tags": [
+          "User API Keys"
+        ]
+      },
+      "post": {
+        "description": "Adiciona nova API key for um provedor.",
+        "operationId": "create_api_key_api_v1_user_api_keys_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAPIKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CreateAPIKeyResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Criar API key",
+        "tags": [
+          "User API Keys"
+        ]
+      }
+    },
+    "/api/v1/user-api-keys/providers": {
+      "get": {
+        "description": "List os provedores de IA suportados.",
+        "operationId": "list_providers_api_v1_user_api_keys_providers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ListProvidersData_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Listar provedores suportados",
+        "tags": [
+          "User API Keys"
+        ]
+      }
+    },
+    "/api/v1/user-api-keys/{key_id}": {
+      "delete": {
+        "description": "Remove permanentemente uma API key.",
+        "operationId": "delete_api_key_api_v1_user_api_keys__key_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Key Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_DeleteAPIKeyResult_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Remover API key",
+        "tags": [
+          "User API Keys"
+        ]
+      },
+      "patch": {
+        "description": "Update propriedades de uma API key.",
+        "operationId": "update_api_key_api_v1_user_api_keys__key_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Key Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAPIKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_UpdateAPIKeyResult_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Atualizar API key",
+        "tags": [
+          "User API Keys"
+        ]
+      }
+    },
+    "/api/v1/user-api-keys/{key_id}/validate": {
+      "post": {
+        "description": "Revalida uma API key existente.",
+        "operationId": "validate_api_key_api_v1_user_api_keys__key_id__validate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Key Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_KeyValidationResult_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Revalidar API key",
+        "tags": [
+          "User API Keys"
+        ]
+      }
+    },
+    "/api/v1/zotero/{action}": {
+      "post": {
+        "description": "Endpoint unificado for todas as acoes de integracao with Zotero.",
+        "operationId": "zotero_action_api_v1_zotero__action__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "action",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ZoteroAction"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Union_SaveCredentialsResponse__TestConnectionResponse__ListCollectionsResponse__FetchItemsResponse__FetchAttachmentsResponse__DownloadAttachmentResponse__SyncCollectionResponse__SyncStatusResponse__SyncRetryFailedResponse__SyncItemResultsResponse__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Executar acao Zotero",
+        "tags": [
+          "Zotero Integration"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "description": "Health check endpoint.",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Health Check Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health Check",
+        "tags": [
+          "Health"
+        ]
+      }
+    }
+  }
+}

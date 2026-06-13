@@ -1,6 +1,6 @@
-import {useCallback, useEffect, useRef, useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import {useNavigate, useParams, useSearchParams} from "react-router-dom";
-import {supabase} from "@/integrations/supabase/client";
+import {loadProjectById, loadProjectArticles} from "@/services/projectsService";
 import {Button} from "@/components/ui/button";
 import {
     DropdownMenu,
@@ -24,57 +24,6 @@ import {useZoteroIntegration} from "@/hooks/useZoteroIntegration";
 import {useProjectMemberRole} from "@/hooks/useProjectMemberRole";
 import {t} from "@/lib/copy";
 import type {Article} from "@/types/article";
-
-/** List projection: all article columns except large text blobs (not loaded in grid). */
-const PROJECT_ARTICLES_LIST_SELECT = [
-    "id",
-    "title",
-    "abstract",
-    "authors",
-    "publication_year",
-    "publication_month",
-    "publication_day",
-    "journal_title",
-    "journal_issn",
-    "journal_eissn",
-    "journal_publisher",
-    "volume",
-    "issue",
-    "pages",
-    "doi",
-    "pmid",
-    "pmcid",
-    "arxiv_id",
-    "pii",
-    "keywords",
-    "mesh_terms",
-    "url_landing",
-    "url_pdf",
-    "language",
-    "article_type",
-    "publication_status",
-    "open_access",
-    "license",
-    "study_design",
-    "conflicts_of_interest",
-    "data_availability",
-    "registration",
-    "funding",
-    "source_payload",
-    "sync_conflict_log",
-    "hash_fingerprint",
-    "source_lineage",
-    "row_version",
-    "ingestion_source",
-    "sync_state",
-    "zotero_item_key",
-    "zotero_collection_key",
-    "zotero_version",
-    "removed_at_source_at",
-    "last_synced_at",
-    "created_at",
-    "updated_at",
-].join(", ");
 
 type ProjectArticle = Article;
 
@@ -132,7 +81,7 @@ export default function ProjectView() {
     const [articlesExportEnabled, setArticlesExportEnabled] = useState(false);
     const {isConfigured: hasZoteroConfigured} = useZoteroIntegration();
 
-    const closeArticleEditor = useCallback(() => {
+    const closeArticleEditor = () => {
         setSearchParams(
             (prev) => {
                 const next = new URLSearchParams(prev);
@@ -142,9 +91,9 @@ export default function ProjectView() {
             },
             {replace: true}
         );
-    }, [setSearchParams]);
+    };
 
-    const openArticleEditorAdd = useCallback(() => {
+    const openArticleEditorAdd = () => {
         setSearchParams(
             (prev) => {
                 const next = new URLSearchParams(prev);
@@ -155,23 +104,20 @@ export default function ProjectView() {
             },
             {replace: false}
         );
-    }, [setSearchParams]);
+    };
 
-    const openArticleEditorEdit = useCallback(
-        (articleId: string) => {
-            setSearchParams(
-                (prev) => {
-                    const next = new URLSearchParams(prev);
-                    next.set('tab', 'articles');
-                    next.set('articleEditor', 'edit');
-                    next.set('articleId', articleId);
-                    return next;
-                },
-                {replace: false}
-            );
-        },
-        [setSearchParams]
-    );
+    const openArticleEditorEdit = (articleId: string) => {
+        setSearchParams(
+            (prev) => {
+                const next = new URLSearchParams(prev);
+                next.set('tab', 'articles');
+                next.set('articleEditor', 'edit');
+                next.set('articleId', articleId);
+                return next;
+            },
+            {replace: false}
+        );
+    };
 
     useEffect(() => {
         if (activeTab !== 'articles') {
@@ -209,70 +155,58 @@ export default function ProjectView() {
         }
     }, [activeTab, searchParams, setSearchParams]);
 
-  useEffect(() => {
-    if (!projectId) return;
-    // New project selected: bump the generation so any in-flight load for the
-    // previous project resolves into a no-op, and show the spinner again
-    // instead of leaving the old project's data on screen (#110).
-    projectLoadRef.current += 1;
-    setLoading(true);
-    void loadProject();
-    void loadArticles();
-    return () => {
-      // Invalidate in-flight loads on projectId change / unmount.
-      projectLoadRef.current += 1;
-    };
-  }, [projectId]);
+  // New project selected: show the spinner again instead of leaving the old
+  // project's data on screen (#110). Adjusted during render so the effect
+  // below never calls setState synchronously.
+  const [prevProjectId, setPrevProjectId] = useState(projectId);
+  if (projectId !== prevProjectId) {
+    setPrevProjectId(projectId);
+    if (projectId) setLoading(true);
+  }
 
   const loadProject = async () => {
     if (!projectId) return;
     // Captured synchronously before the first await; both loaders read the same
     // post-bump value because the effect bumps once before calling them.
     const generation = projectLoadRef.current;
-
-    try {
-      const { data, error } = await supabase
-        .from("projects")
-        .select(`
-          id, name, description, review_title, review_type,
-          settings,
-          condition_studied,
-          created_at, updated_at
-        `)
-        .eq("id", projectId)
-        .single();
-
-      if (error) throw error;
-      if (generation !== projectLoadRef.current) return;
-      setContextProject(data);
-    } catch (error: any) {
-      if (generation !== projectLoadRef.current) return;
-        toast.error("Error loading project");
-      console.error(error);
-    } finally {
-      if (generation === projectLoadRef.current) setLoading(false);
+    const result = await loadProjectById(projectId);
+    if (generation !== projectLoadRef.current) return;
+    if (!result.ok) {
+      toast.error("Error loading project");
+      console.error(result.error);
+    } else {
+      setContextProject(result.data);
     }
+    setLoading(false);
   };
 
   const loadArticles = async () => {
     if (!projectId) return;
     const generation = projectLoadRef.current;
-
-    try {
-      const { data, error } = await supabase
-        .from("articles")
-          .select(PROJECT_ARTICLES_LIST_SELECT)
-        .eq("project_id", projectId)
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      if (generation !== projectLoadRef.current) return;
-      setArticles((data as unknown as Article[]) || []);
-    } catch (error: any) {
-      console.error(error);
+    const result = await loadProjectArticles(projectId);
+    if (generation !== projectLoadRef.current) return;
+    if (!result.ok) {
+      console.error(result.error);
+      return;
     }
+    setArticles(result.data);
   };
 
+  useEffect(() => {
+    if (!projectId) return;
+    // New project selected: bump the generation so any in-flight load for the
+    // previous project resolves into a no-op (#110). The loaders run from a
+    // microtask so all their setState calls happen in async callbacks.
+    projectLoadRef.current += 1;
+    queueMicrotask(() => {
+      void loadProject();
+      void loadArticles();
+    });
+    return () => {
+      // Invalidate in-flight loads on projectId change / unmount.
+      projectLoadRef.current += 1;
+    };
+  }, [projectId]);
 
   if (loading) {
     return (
@@ -351,14 +285,14 @@ export default function ProjectView() {
           {/* Sticky action bar — stack on narrow (flex-col md:flex-row), single row from md */}
         {!isFullBleed && (
             <div
-                className="flex-shrink-0 min-h-12 md:h-12 flex flex-col md:flex-row md:items-center md:justify-between items-stretch gap-2 md:gap-0 py-3 md:py-0 border-b border-border/40 bg-background/80 backdrop-blur-sm px-6 lg:px-10">
+                className="shrink-0 min-h-12 md:h-12 flex flex-col md:flex-row md:items-center md:justify-between items-stretch gap-2 md:gap-0 py-3 md:py-0 border-b border-border/40 bg-background/80 backdrop-blur-sm px-6 lg:px-10">
           <span className="text-[13px] text-muted-foreground/70 w-full min-w-0 md:flex-1 md:truncate">
             {activeTab === 'articles'
                 ? 'Articles'
                 : (TAB_DESCRIPTIONS[activeTab] ?? '')}
           </span>
                 {activeTab === 'extraction' && (
-                    <div className="flex items-center gap-0.5 w-full md:w-auto flex-shrink-0" role="tablist"
+                    <div className="flex items-center gap-0.5 w-full md:w-auto shrink-0" role="tablist"
                          aria-label="Extraction views">
                         {[
                             {value: 'extraction' as const, label: t('extraction', 'tabExtraction')},
@@ -385,7 +319,7 @@ export default function ProjectView() {
                     </div>
                 )}
                 {activeTab === 'quality' && (
-                    <div className="flex items-center gap-0.5 w-full md:w-auto flex-shrink-0" role="tablist"
+                    <div className="flex items-center gap-0.5 w-full md:w-auto shrink-0" role="tablist"
                          aria-label="Quality assessment views">
                         {[
                             {value: 'assessment' as const, label: t('qa', 'tabAssessment')},
@@ -413,7 +347,7 @@ export default function ProjectView() {
                     </div>
                 )}
               {activeTab === 'articles' && (
-                  <div className="flex items-center gap-1.5 w-full md:w-auto flex-shrink-0 flex-wrap">
+                  <div className="flex items-center gap-1.5 w-full md:w-auto shrink-0 flex-wrap">
                       <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                               <Button
@@ -440,7 +374,7 @@ export default function ProjectView() {
                                   className="flex items-center gap-2.5 rounded-md py-2 px-2.5 cursor-pointer focus:bg-muted/60"
                               >
                           <span
-                              className="h-5 w-5 rounded bg-primary/10 flex items-center justify-center flex-shrink-0 border border-primary/15">
+                              className="h-5 w-5 rounded bg-primary/10 flex items-center justify-center shrink-0 border border-primary/15">
                             <span className="text-[9px] font-semibold text-primary leading-none">Z</span>
                           </span>
                                   From Zotero
@@ -450,7 +384,7 @@ export default function ProjectView() {
                                   className="flex items-center gap-2.5 rounded-md py-2 px-2.5 cursor-pointer focus:bg-muted/60"
                               >
                           <span
-                              className="h-5 w-5 rounded bg-primary/10 flex items-center justify-center flex-shrink-0 border border-primary/15">
+                              className="h-5 w-5 rounded bg-primary/10 flex items-center justify-center shrink-0 border border-primary/15">
                             <FileText className="h-2.5 w-2.5 text-primary"/>
                           </span>
                                   From RIS file

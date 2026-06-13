@@ -32,6 +32,7 @@ tutorial lives here.*
 | --- | --- |
 | [Deployment](./reference/deployment.md) | Topology, env vars, rollback, Railway specifics |
 | [Migrations](./reference/migrations.md) | Alembic vs Supabase split, squash recipe, RLS conventions |
+| [Constitution](./reference/constitution.md) | Non-negotiable architectural principles (layering, typed everything, split migration ownership) |
 | [Extraction + HITL architecture](./reference/extraction-hitl-architecture.md) | Canonical schema, run lifecycle, RLS posture |
 | [Test strategy](./reference/test-strategy.md) | Load-bearing tests, pyramid layout |
 | [CHARMS template (v1.1)](./reference/templates/charms-v1.1-complete.md) | Field-by-field spec of the global CHARMS template |

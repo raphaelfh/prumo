@@ -3,7 +3,7 @@
  * Single source of truth for activeTab
  */
 
-import React, {createContext, ReactNode, useCallback, useContext, useEffect, useState} from 'react';
+import React, {createContext, ReactNode, useContext, useEffect, useState} from 'react';
 import {useSearchParams} from 'react-router-dom';
 import {t} from '@/lib/copy';
 import type {ProjectSummary} from '@/types/project';
@@ -18,6 +18,8 @@ export interface ProjectContextType {
 
 export const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
 
+const VALID_TABS = ['articles', 'extraction', 'settings', 'overview', 'screening', 'prisma', 'quality'];
+
 interface ProjectProviderProps {
   children: ReactNode;
 }
@@ -28,22 +30,22 @@ export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) =>
 
     // Read tab from URL or use default
   const tabFromUrl = searchParams.get('tab');
-  const initialTab = (tabFromUrl && ['articles', 'extraction', 'settings', 'overview', 'screening', 'prisma', 'quality'].includes(tabFromUrl))
-    ? tabFromUrl 
+  const initialTab = (tabFromUrl && VALID_TABS.includes(tabFromUrl))
+    ? tabFromUrl
     : 'articles';
-  
+
   const [activeTab, setActiveTab] = useState<string>(initialTab);
 
-    // Sync activeTab when URL changes (coming from other pages)
-  useEffect(() => {
-    const tabFromUrl = searchParams.get('tab');
-    if (tabFromUrl && ['articles', 'extraction', 'settings', 'overview', 'screening', 'prisma', 'quality'].includes(tabFromUrl)) {
-        // Update only if different to avoid loops
-      setActiveTab(prevTab => {
-        return prevTab !== tabFromUrl ? tabFromUrl : prevTab;
-      });
+    // Sync activeTab when URL changes (coming from other pages) — adjusted
+    // during render instead of via effect to avoid a cascading render.
+  const [prevSearchParams, setPrevSearchParams] = useState(searchParams);
+  if (searchParams !== prevSearchParams) {
+    setPrevSearchParams(searchParams);
+    const urlTab = searchParams.get('tab');
+    if (urlTab && VALID_TABS.includes(urlTab) && urlTab !== activeTab) {
+      setActiveTab(urlTab);
     }
-  }, [searchParams]); // Only watch URL changes, do not create loop with activeTab
+  }
 
     // Sync URL when activeTab changes (internal navigation)
   useEffect(() => {
@@ -54,7 +56,7 @@ export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) =>
 
     // Centralized tab change handler
     // Ready for analytics, validations, etc.
-  const changeTab = useCallback((tab: string) => {
+  const changeTab = (tab: string) => {
     setActiveTab(tab);
 
       // Analytics (future)
@@ -62,7 +64,7 @@ export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) =>
 
       // Validations (future)
     // if (hasUnsavedChanges) showConfirmDialog();
-  }, []);
+  };
 
   return (
     <ProjectContext.Provider

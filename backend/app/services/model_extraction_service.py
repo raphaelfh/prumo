@@ -18,6 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import LoggerMixin
 from app.infrastructure.storage import StorageAdapter
+from app.llm.extractor import LlmUsage, extract_structured
+from app.llm.prompts import model_identification
+from app.llm.provider import build_model
 from app.models.extraction import (
     ExtractionEntityRole,
     ExtractionInstance,
@@ -32,11 +35,6 @@ from app.repositories import (
     ExtractionTemplateRepository,
     GlobalTemplateRepository,
 )
-from app.services.llm.model_identification_prompt import (
-    ModelIdentificationPrompt,
-    parse_models_from_response,
-)
-from app.services.openai_service import OpenAIService
 from app.services.pdf_processor import PDFProcessor
 from app.services.run_lifecycle_service import RunLifecycleService
 
@@ -87,7 +85,7 @@ class ModelExtractionService(LoggerMixin):
         self.storage = storage
         self.trace_id = trace_id
         self.pdf_processor = PDFProcessor()
-        self.openai_service = OpenAIService(trace_id=trace_id, api_key=openai_api_key)
+        self._llm_api_key = openai_api_key
 
         # Repositories
         self._article_files = ArticleFileRepository(db)
@@ -169,7 +167,7 @@ class ModelExtractionService(LoggerMixin):
 
             # 5. Identificar modelos usando LLM (com tracking de tokens)
             phase_start = perf_counter()
-            models, llm_response = await self._identify_models(pdf_text, template, model)
+            models, llm_usage = await self._identify_models(pdf_text, template, model)
             phase_durations_ms["identify_models_llm"] = (perf_counter() - phase_start) * 1000
 
             # 6. Create instances in DB (model + children)
@@ -201,9 +199,9 @@ class ModelExtractionService(LoggerMixin):
                     "models_count": len(created_models),
                     "children_count": total_children,
                     "models_identified": len(models),
-                    "tokens_prompt": llm_response.usage.prompt_tokens,
-                    "tokens_completion": llm_response.usage.completion_tokens,
-                    "tokens_total": llm_response.usage.total_tokens,
+                    "tokens_prompt": llm_usage.prompt_tokens,
+                    "tokens_completion": llm_usage.completion_tokens,
+                    "tokens_total": llm_usage.total_tokens,
                     "duration_ms": duration,
                     "phase_durations_ms": phase_durations_ms,
                 },
@@ -217,7 +215,7 @@ class ModelExtractionService(LoggerMixin):
                 operation_id=str(run.id),
                 models_count=len(created_models),
                 children_count=total_children,
-                tokens_total=llm_response.usage.total_tokens,
+                tokens_total=llm_usage.total_tokens,
                 duration_ms=duration,
                 phase_durations_ms=phase_durations_ms,
             )
@@ -237,9 +235,9 @@ class ModelExtractionService(LoggerMixin):
                 models_created=formatted_models,
                 total_models=len(formatted_models),
                 child_instances_created=total_children,
-                tokens_prompt=llm_response.usage.prompt_tokens,
-                tokens_completion=llm_response.usage.completion_tokens,
-                tokens_total=llm_response.usage.total_tokens,
+                tokens_prompt=llm_usage.prompt_tokens,
+                tokens_completion=llm_usage.completion_tokens,
+                tokens_total=llm_usage.total_tokens,
                 duration_ms=duration,
             )
 
@@ -300,17 +298,12 @@ class ModelExtractionService(LoggerMixin):
         pdf_text: str,
         template: Any,
         model: str,
-    ) -> tuple[list[dict[str, Any]], Any]:
+    ) -> tuple[list[dict[str, Any]], LlmUsage]:
         """
         Use LLM to identify models in PDF text.
 
-        Args:
-            pdf_text: Text extracted from PDF.
-            template: Extraction template.
-            model: OpenAI model to use.
-
         Returns:
-            Tuple of model list and OpenAI response.
+            Tuple of model list and token usage.
         """
         # Find the model container entity type by structural role —
         # replaces the legacy ``name in ("prediction_models", "model", ...)``
@@ -331,37 +324,28 @@ class ModelExtractionService(LoggerMixin):
                 else [],
             )
 
-        # Prompt + parser come from app/services/llm/ so they're testable
-        # in isolation and don't couple the service to specific field
-        # names. The label is sourced from the template metadata (falls
-        # back to a neutral string when the template has no container).
         container_label = model_entity.label if model_entity else "prediction models"
-        prompt = ModelIdentificationPrompt.build(
-            container_label=container_label,
-            pdf_text=pdf_text,
+        output, usage = await extract_structured(
+            output_model=model_identification.ModelIdentificationOutput,
+            system_prompt=model_identification.SYSTEM_PROMPT,
+            user_prompt=model_identification.render(
+                container_label=container_label,
+                article_text=pdf_text,
+            ),
+            model=build_model(model, api_key=self._llm_api_key),
+            prompt_name=model_identification.NAME,
+            prompt_version=model_identification.VERSION,
         )
-
-        response = await self.openai_service.chat_completion_full(
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are an expert at identifying prediction models in scientific articles. Always respond with valid JSON.",
-                },
-                {"role": "user", "content": prompt},
-            ],
-            model=model,
-            response_format={"type": "json_object"},
-        )
-        models = parse_models_from_response(response.content)
+        models = [m.model_dump() for m in output.models]
 
         self.logger.info(
             "models_identified",
             trace_id=self.trace_id,
             models_count=len(models),
-            tokens_total=response.usage.total_tokens,
+            tokens_total=usage.total_tokens,
         )
 
-        return models, response
+        return models, usage
 
     async def _get_model_container_entity_type_id(
         self,
@@ -504,7 +488,7 @@ class ModelExtractionService(LoggerMixin):
         for idx, model_data in enumerate(models):
             # 1. Criar instance do modelo (parent). The label comes from
             # the LLM's neutral "name" field — see
-            # ``ModelIdentificationPrompt`` for the contract.
+            # ``app/llm/prompts/model_identification.py`` for the contract.
             model_instance = ExtractionInstance(
                 project_id=project_id,
                 article_id=article_id,

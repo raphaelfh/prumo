@@ -82,7 +82,7 @@ Each Explore subagent receives the SCOPE as `${SCOPE}` and the relevant referenc
 >
 > You are the **layered-arch** scanner. Scope: `${SCOPE}`.
 >
-> The prumo backend layering (per `.specify/memory/constitution.md` Principle I):
+> The prumo backend layering (per `docs/reference/constitution.md` Principle I):
 > - `app/api/v1/**` → may import from `app/services/**`, `app/schemas/**`, `app/core/**`, `app/utils/**`. Never from `app/repositories/**` or `app/models/**` directly.
 > - `app/services/**` → may import from `app/repositories/**`, `app/schemas/**`, `app/models/**`, `app/core/**`, `app/utils/**`, other `app/services/**`. Never from `app/api/**`.
 > - `app/repositories/**` → may import from `app/models/**`, `app/schemas/**`, `app/core/**`. Never from `app/services/**` or `app/api/**`.

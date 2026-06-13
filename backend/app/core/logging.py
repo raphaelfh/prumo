@@ -8,6 +8,7 @@ Configura logging estruturado usando structlog para:
 """
 
 import logging
+import os
 import sys
 from typing import Any
 
@@ -34,6 +35,14 @@ def configure_logging() -> None:
         structlog.processors.StackInfoRenderer(),
         structlog.processors.UnicodeDecoder(),
     ]
+
+    if os.getenv("LOGFIRE_TOKEN"):
+        # Mirrors every structlog event into the active Logfire trace so
+        # extraction logs and LLM spans correlate. Gated on the token so
+        # local/CI logging behavior is byte-identical to before.
+        import logfire
+
+        shared_processors.append(logfire.StructlogProcessor())
 
     if settings.DEBUG:
         # Desenvolvimento: Logs coloridos

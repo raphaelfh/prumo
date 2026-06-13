@@ -7,7 +7,7 @@
  * the browser; async uploads dispatch a BackgroundJob + toast.
  */
 
-import {useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import {
     Dialog,
     DialogContent,
@@ -109,36 +109,48 @@ export function ExtractionExportDialog({
     const abortRef = useRef<AbortController | null>(null);
 
     // Re-apply smart default + reset transient state each time the
-    // dialog opens (FR-029).
-    useEffect(() => {
-        if (!open) return;
-        setArticleScope(
-            defaultArticleScope ??
-            (selectedIds.length > 0 ? "selected_only" : "current_list"),
-        );
-        setIncludeAiMetadata(false);
-        setAnonymizeReviewerNames(false);
-        setMode("consensus");
-        setReviewerId(user?.id ?? null);
-        setError(null);
-        setSubmitting(false);
-    }, [open, defaultArticleScope, selectedIds.length, user?.id]);
+    // dialog opens (FR-029). Adjusted during render instead of via effect;
+    // the null sentinel makes the first render perform the initial reset.
+    const userId = user?.id;
+    const [prevResetKey, setPrevResetKey] = useState<{
+        open: boolean;
+        defaultArticleScope: typeof defaultArticleScope;
+        selectedCount: number;
+        userId: string | undefined;
+    } | null>(null);
+    if (
+        !prevResetKey ||
+        open !== prevResetKey.open ||
+        defaultArticleScope !== prevResetKey.defaultArticleScope ||
+        selectedIds.length !== prevResetKey.selectedCount ||
+        userId !== prevResetKey.userId
+    ) {
+        setPrevResetKey({open, defaultArticleScope, selectedCount: selectedIds.length, userId});
+        if (open) {
+            setArticleScope(
+                defaultArticleScope ??
+                (selectedIds.length > 0 ? "selected_only" : "current_list"),
+            );
+            setIncludeAiMetadata(false);
+            setAnonymizeReviewerNames(false);
+            setMode("consensus");
+            setReviewerId(userId ?? null);
+            setError(null);
+            setSubmitting(false);
+        }
+    }
 
     // US2 reviewer picker source. Only fetched when the dialog is open.
     const reviewersQuery = useEligibleReviewers(projectId, templateId, {
         enabled: open,
     });
-    const reviewers = useMemo(
-        () => reviewersQuery.data ?? [],
-        [reviewersQuery.data],
-    );
+    const reviewers = reviewersQuery.data ?? [];
 
     // Default reviewer to "me" when entering single_user mode.
-    useEffect(() => {
-        if (mode !== "single_user") return;
-        if (reviewerId) return;
-        if (user?.id) setReviewerId(user.id);
-    }, [mode, reviewerId, user?.id]);
+    // Render-phase invariant — the guard guarantees termination.
+    if (mode === "single_user" && !reviewerId && userId) {
+        setReviewerId(userId);
+    }
 
     // Abort any in-flight request if the dialog closes while submitting.
     useEffect(() => {
@@ -172,7 +184,7 @@ export function ExtractionExportDialog({
     })();
 
     // Build the request payload from the current state.
-    const buildRequest = useCallback((): ExtractionExportRequest => ({
+    const buildRequest = (): ExtractionExportRequest => ({
         template_id: templateId,
         mode,
         reviewer_id: mode === "single_user" ? reviewerId : null,
@@ -180,17 +192,9 @@ export function ExtractionExportDialog({
         article_ids: articleIds,
         include_ai_metadata: includeAiMetadata,
         anonymize_reviewer_names: anonymizeReviewerNames,
-    }), [
-        templateId,
-        mode,
-        reviewerId,
-        articleScope,
-        articleIds,
-        includeAiMetadata,
-        anonymizeReviewerNames,
-    ]);
+    });
 
-    const submit = useCallback(async () => {
+    const submit = async () => {
         if (!canSubmit) return;
         setSubmitting(true);
         setError(null);
@@ -199,19 +203,19 @@ export function ExtractionExportDialog({
         abortRef.current = controller;
         const request = buildRequest();
 
-        try {
-            const result: StartExtractionExportResult = await startExport(
-                projectId,
-                request,
-                controller.signal,
-            );
-            if (result.kind === "sync") {
-                triggerDownload(result.blob, result.filename);
+        const result = await startExport(projectId, request, controller.signal).then(
+            (r): { ok: true; data: StartExtractionExportResult } => ({ok: true, data: r}),
+            (err: Error) => ({ok: false, error: err} as const),
+        );
+
+        if (result.ok) {
+            if (result.data.kind === "sync") {
+                triggerDownload(result.data.blob, result.data.filename);
                 toast.success(t("extraction", "exportSuccessToast"));
                 onOpenChange(false);
             } else {
                 addJob(
-                    createExtractionExportJob(projectId, result.job_id, {
+                    createExtractionExportJob(projectId, result.data.job_id, {
                         projectName,
                         templateId,
                         templateName,
@@ -224,37 +228,20 @@ export function ExtractionExportDialog({
                 toast.info(t("extraction", "exportStartedToast"));
                 onOpenChange(false);
             }
-        } catch (err) {
-            if ((err as Error).name === "AbortError") {
-                // User cancelled — silent close handled by the cleanup
-                // effect; no error toast.
-                return;
-            }
-            const message = (err as Error).message ?? t("extraction", "exportFailedToast");
+        } else if (result.error.name !== "AbortError") {
+            // AbortError = user cancelled — silent; other errors surface inline
+            const message = result.error.message ?? t("extraction", "exportFailedToast");
             setError(message);
-        } finally {
-            setSubmitting(false);
-            abortRef.current = null;
         }
-    }, [
-        canSubmit,
-        buildRequest,
-        projectId,
-        addJob,
-        projectName,
-        templateId,
-        templateName,
-        mode,
-        articleCount,
-        includeAiMetadata,
-        anonymizeReviewerNames,
-        onOpenChange,
-    ]);
 
-    const dismiss = useCallback(() => {
+        setSubmitting(false);
+        abortRef.current = null;
+    };
+
+    const dismiss = () => {
         if (abortRef.current) abortRef.current.abort();
         onOpenChange(false);
-    }, [onOpenChange]);
+    };
 
     // Cmd/Ctrl + Enter to submit (FR-006 / FR-035).
     useEffect(() => {

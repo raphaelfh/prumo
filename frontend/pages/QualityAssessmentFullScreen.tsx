@@ -16,7 +16,7 @@
  * field to materialize PublishedState rows.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -27,8 +27,8 @@ import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
 import { PrumoPdfViewer, articleFileSource } from "@prumo/pdf-viewer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
 import { useProjectQATemplate } from "@/hooks/qa/useProjectQATemplate";
+import { resolveQATemplateKind } from "@/services/projectSettingsService";
 import { useQAAssessmentSession } from "@/hooks/qa/useQAAssessmentSession";
 import { useAISuggestions } from "@/hooks/extraction/ai/useAISuggestions";
 import { useRunAIExtraction } from "@/hooks/extraction/ai/useRunAIExtraction";
@@ -84,43 +84,34 @@ export default function QualityAssessmentFullScreen() {
     | null
   >(null);
 
+  // Reset the resolution whenever the URL segment changes (during render,
+  // so the lookup effect below never sets state synchronously).
+  const [prevTemplateId, setPrevTemplateId] = useState(templateId);
+  if (templateId !== prevTemplateId) {
+    setPrevTemplateId(templateId);
+    setResolvedTemplate(null);
+  }
+
   useEffect(() => {
-    let cancelled = false;
     if (!templateId) {
-      setResolvedTemplate(null);
       return;
     }
-    setResolvedTemplate(null);
-    void (async () => {
-      const [projectRes, globalRes] = await Promise.all([
-        supabase
-          .from("project_extraction_templates")
-          .select("id")
-          .eq("id", templateId)
-          .eq("kind", "quality_assessment")
-          .maybeSingle(),
-        supabase
-          .from("extraction_templates_global")
-          .select("id")
-          .eq("id", templateId)
-          .eq("kind", "quality_assessment")
-          .maybeSingle(),
-      ]);
+    let cancelled = false;
+    resolveQATemplateKind(templateId).then((result) => {
       if (cancelled) return;
-      if (projectRes.error && globalRes.error) {
-        setResolvedTemplate({ kind: "missing" });
+      if (!result.ok) {
+        setResolvedTemplate({kind: "missing"});
         return;
       }
-      if (projectRes.data?.id) {
-        setResolvedTemplate({ kind: "project", id: projectRes.data.id });
-        return;
-      }
-      if (globalRes.data?.id) {
-        setResolvedTemplate({ kind: "global", id: globalRes.data.id });
+      const {projectId: projId, globalId} = result.data;
+      if (projId) {
+        setResolvedTemplate({kind: "project", id: projId});
+      } else if (globalId) {
+        setResolvedTemplate({kind: "global", id: globalId});
       } else {
-        setResolvedTemplate({ kind: "missing" });
+        setResolvedTemplate({kind: "missing"});
       }
-    })();
+    });
     return () => {
       cancelled = true;
     };
@@ -168,60 +159,60 @@ export default function QualityAssessmentFullScreen() {
   // (instance, field) once the Run detail loads.
   const [values, setValues] = useState<Record<string, unknown>>({});
 
-  useEffect(() => {
-    if (!runDetail) return;
-    const latestByCoord = new Map<string, unknown>();
-    // Proposals are returned newest-first by the API; iterate so the LAST
-    // write wins per coord regardless of order.
-    for (const p of runDetail.proposals) {
-      const k = keyOf({ instanceId: p.instance_id, fieldId: p.field_id });
-      const value =
-        p.proposed_value &&
-        typeof p.proposed_value === "object" &&
-        "value" in p.proposed_value
-          ? (p.proposed_value.value as unknown)
-          : (p.proposed_value as unknown);
-      latestByCoord.set(k, value);
-    }
-    setValues((prev) => {
-      const next: Record<string, unknown> = { ...prev };
-      for (const [k, v] of latestByCoord) {
-        if (!(k in next)) next[k] = v;
+  // Hydrate during render when a new Run detail lands (instead of a
+  // synchronous setState in an effect).
+  const [prevRunDetail, setPrevRunDetail] = useState(runDetail);
+  if (runDetail !== prevRunDetail) {
+    setPrevRunDetail(runDetail);
+    if (runDetail) {
+      const latestByCoord = new Map<string, unknown>();
+      // Proposals are returned newest-first by the API; iterate so the LAST
+      // write wins per coord regardless of order.
+      for (const p of runDetail.proposals) {
+        const k = keyOf({ instanceId: p.instance_id, fieldId: p.field_id });
+        const value =
+          p.proposed_value &&
+          typeof p.proposed_value === "object" &&
+          "value" in p.proposed_value
+            ? (p.proposed_value.value as unknown)
+            : (p.proposed_value as unknown);
+        latestByCoord.set(k, value);
       }
-      return next;
-    });
-  }, [runDetail]);
+      setValues((prev) => {
+        const next: Record<string, unknown> = { ...prev };
+        for (const [k, v] of latestByCoord) {
+          if (!(k in next)) next[k] = v;
+        }
+        return next;
+      });
+    }
+  }
 
   // The autosave hook below watches ``values`` and debounces writes;
   // ``handleValueChange`` only needs to update local state. Lifecycle
   // handlers in the hook (unmount flush, ``pagehide``, visibility) carry
   // the write through any navigation that happens mid-debounce.
-  const handleValueChange = useCallback(
-    (instanceId: string, fieldId: string, value: unknown) => {
-      const k = keyOf({ instanceId, fieldId });
-      setValues((prev) => ({ ...prev, [k]: value }));
-    },
-    [],
-  );
+  const handleValueChange = (instanceId: string, fieldId: string, value: unknown) => {
+    const k = keyOf({ instanceId, fieldId });
+    setValues((prev) => ({ ...prev, [k]: value }));
+  };
 
   // Server baseline for autosave — the same per-coord map the hydration
   // effect applies, computed inline from ``runDetail`` so it is present when
   // the hydrated ``values`` arrive. Stops opening an assessment from
   // re-POSTing loaded values as fresh proposals.
-  const loadedValues = useMemo(() => {
-    const map: Record<string, unknown> = {};
-    for (const p of runDetail?.proposals ?? []) {
-      const k = keyOf({ instanceId: p.instance_id, fieldId: p.field_id });
-      const value =
-        p.proposed_value &&
-        typeof p.proposed_value === "object" &&
-        "value" in p.proposed_value
-          ? (p.proposed_value.value as unknown)
-          : (p.proposed_value as unknown);
-      map[k] = value;
-    }
-    return map;
-  }, [runDetail]);
+  const loadedValuesMap: Record<string, unknown> = {};
+  for (const p of runDetail?.proposals ?? []) {
+    const k = keyOf({ instanceId: p.instance_id, fieldId: p.field_id });
+    const value =
+      p.proposed_value &&
+      typeof p.proposed_value === "object" &&
+      "value" in p.proposed_value
+        ? (p.proposed_value.value as unknown)
+        : (p.proposed_value as unknown);
+    loadedValuesMap[k] = value;
+  }
+  const loadedValues = loadedValuesMap;
 
   const { saveState, lastSavedAt, hasUnsavedChanges, saveNow } =
     useAutoSaveProposals({
@@ -242,10 +233,7 @@ export default function QualityAssessmentFullScreen() {
   //    (no ReviewerDecision write). Accept just bubbles the value to
   //    ``handleValueChange``, which records a fresh ``human`` proposal
   //    via the existing form pipeline.
-  const sessionInstanceIds = useMemo(
-    () => Object.values(session?.instancesByEntityType ?? {}),
-    [session],
-  );
+  const sessionInstanceIds = Object.values(session?.instancesByEntityType ?? {});
 
   const {
     suggestions: aiSuggestions,
@@ -289,84 +277,79 @@ export default function QualityAssessmentFullScreen() {
   const [publishing, setPublishing] = useState(false);
   const [reopening, setReopening] = useState(false);
 
-  const fieldLabelByCoord = useMemo(() => {
-    const map: Record<string, string> = {};
-    if (!session) return map;
+  const fieldLabelByCoordMap: Record<string, string> = {};
+  if (session) {
     for (const domain of domains) {
       const instanceId = session.instancesByEntityType[domain.entityType.id];
-      if (!instanceId) continue;
-      for (const f of domain.fields) {
-        map[`${instanceId}::${f.id}`] = `${domain.entityType.label} · ${f.label}`;
+      if (instanceId) {
+        for (const f of domain.fields) {
+          fieldLabelByCoordMap[`${instanceId}::${f.id}`] = `${domain.entityType.label} · ${f.label}`;
+        }
       }
     }
-    return map;
-  }, [session, domains]);
+  }
+  const fieldLabelByCoord = fieldLabelByCoordMap;
 
   const inConsensusStage = runDetail?.run.stage === "consensus";
 
-  const handleSelectExisting = useCallback(
-    async (params: {
-      instanceId: string;
-      fieldId: string;
-      decisionId: string;
-    }) => {
-      await consensusMutation.mutateAsync({
-        instance_id: params.instanceId,
-        field_id: params.fieldId,
-        mode: "select_existing",
-        selected_decision_id: params.decisionId,
-      });
-      await refetchRun();
-    },
-    [consensusMutation, refetchRun],
-  );
+  const handleSelectExisting = async (params: {
+    instanceId: string;
+    fieldId: string;
+    decisionId: string;
+  }) => {
+    await consensusMutation.mutateAsync({
+      instance_id: params.instanceId,
+      field_id: params.fieldId,
+      mode: "select_existing",
+      selected_decision_id: params.decisionId,
+    });
+    await refetchRun();
+  };
 
-  const handleManualOverride = useCallback(
-    async (params: {
-      instanceId: string;
-      fieldId: string;
-      value: unknown;
-      rationale: string;
-    }) => {
-      await consensusMutation.mutateAsync({
-        instance_id: params.instanceId,
-        field_id: params.fieldId,
-        mode: "manual_override",
-        value: { value: params.value },
-        rationale: params.rationale,
-      });
-      await refetchRun();
-    },
-    [consensusMutation, refetchRun],
-  );
+  const handleManualOverride = async (params: {
+    instanceId: string;
+    fieldId: string;
+    value: unknown;
+    rationale: string;
+  }) => {
+    await consensusMutation.mutateAsync({
+      instance_id: params.instanceId,
+      field_id: params.fieldId,
+      mode: "manual_override",
+      value: { value: params.value },
+      rationale: params.rationale,
+    });
+    await refetchRun();
+  };
 
-  const handleFinalizeFromConsensus = useCallback(async () => {
+  const handleFinalizeFromConsensus = async () => {
     if (!session) return;
     await advanceMutation.mutateAsync({ target_stage: "finalized" });
     await refetchRun();
     toast.success("Assessment finalized.");
-  }, [session, advanceMutation, refetchRun]);
+  };
 
-  const handleReopen = useCallback(async () => {
-    if (!session?.runId) return;
+  // Plain-identifier dep so the compiler can track this dep without
+  // optional-chaining (optional-chained deps like `session?.runId` defeat it).
+  const sessionRunId = session?.runId;
+  const handleReopen = async () => {
+    if (!sessionRunId) return;
     setReopening(true);
-    try {
-      await reopenMutation.mutateAsync(session.runId);
+    await reopenMutation.mutateAsync(sessionRunId).then(async () => {
       // The new run is now the latest non-terminal one for this triple,
       // so refetching the session picks it up. Local form state is reset
       // since the new run carries its own seeded proposals.
       setValues({});
       await refetchSession();
       toast.success("Assessment reopened for revision.");
-    } catch (err) {
+    }).catch((err: unknown) => {
       toast.error(
         err instanceof Error ? err.message : "Failed to reopen assessment",
       );
-    } finally {
-      setReopening(false);
-    }
-  }, [session?.runId, reopenMutation, refetchSession]);
-  const handlePublish = useCallback(async () => {
+    });
+    setReopening(false);
+  };
+  const handlePublish = async () => {
     if (!session || !runDetail) return;
 
     // Preflight: an empty publish has no semantic meaning — the run would
@@ -383,7 +366,7 @@ export default function QualityAssessmentFullScreen() {
     }
 
     setPublishing(true);
-    try {
+    const doPublish = async () => {
       // Flush any pending debounced edits before the stage advances —
       // otherwise the consensus loop below would publish stale values.
       await saveNow();
@@ -415,24 +398,16 @@ export default function QualityAssessmentFullScreen() {
       await advanceMutation.mutateAsync({ target_stage: "finalized" });
       await refetchRun();
       toast.success("Assessment published.");
-    } catch (err) {
+    };
+    await doPublish().catch((err: unknown) => {
       toast.error(
         err instanceof Error ? err.message : "Failed to publish assessment",
       );
-    } finally {
-      setPublishing(false);
-    }
-  }, [
-    session,
-    runDetail,
-    advanceMutation,
-    consensusMutation,
-    values,
-    refetchRun,
-    saveNow,
-  ]);
+    });
+    setPublishing(false);
+  };
 
-  const sortedDomains = useMemo(() => domains, [domains]);
+  const sortedDomains = domains;
 
   if (!projectId || !articleId || !templateId) {
     return (
@@ -528,7 +503,7 @@ export default function QualityAssessmentFullScreen() {
         <Button
           size="sm"
           onClick={() => void handlePublish()}
-          disabled={publishing || finalized || !session}
+          disabled={publishing || finalized || !session || !runDetail}
           data-testid="qa-publish-button"
         >
           {publishing ? "Publishing…" : finalized ? "Published" : "Publish assessment"}

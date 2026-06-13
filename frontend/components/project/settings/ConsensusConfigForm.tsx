@@ -3,7 +3,6 @@
  * The parent owns persistence; this component is purely controlled.
  */
 
-import { useMemo } from 'react';
 import { Info } from 'lucide-react';
 
 import { Input } from '@/components/ui/input';
@@ -44,10 +43,7 @@ export function ConsensusConfigForm({
   minReviewers = 1,
   maxReviewers = 20,
 }: ConsensusConfigFormProps) {
-  const arbitratorEligible = useMemo(
-    () => members.filter((m) => m.role === 'consensus' || m.role === 'manager'),
-    [members],
-  );
+  const arbitratorEligible = members.filter((m) => m.role === 'consensus' || m.role === 'manager');
 
   const handleReviewerCountChange = (raw: string) => {
     const parsed = Number.parseInt(raw, 10);

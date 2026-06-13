@@ -293,3 +293,20 @@ class SyncItemResultsResponse(BaseModel):
     total: int
     offset: int
     limit: int
+
+
+# Union of every payload ``POST /zotero/{action}`` can return. The action
+# is selected by the URL path, so this is a plain (non-discriminated)
+# union — OpenAPI consumers narrow by the action they called.
+ZoteroActionData = (
+    SaveCredentialsResponse
+    | TestConnectionResponse
+    | ListCollectionsResponse
+    | FetchItemsResponse
+    | FetchAttachmentsResponse
+    | DownloadAttachmentResponse
+    | SyncCollectionResponse
+    | SyncStatusResponse
+    | SyncRetryFailedResponse
+    | SyncItemResultsResponse
+)

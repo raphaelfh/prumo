@@ -1,3 +1,8 @@
+---
+name: frontend-ux
+description: prumo's visual language — the *what it should look like* layer (Plane/Linear/WorkOS aesthetic). Use when deciding layout structure, density, header height, sidebar behaviour, hover affordances, empty states, loading patterns, or any "how should this screen feel" question for frontend/ pages and components. The sibling ui-styling skill is the *how* layer underneath (Tailwind/shadcn/Radix mechanics) — read this one first when designing, that one when implementing classes.
+---
+
 # Frontend UX & UI Design System (Plane/Linear/WorkOS Style)
 
 ## Role

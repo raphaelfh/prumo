@@ -4,12 +4,11 @@ import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {Label} from "@/components/ui/label";
 import {Textarea} from "@/components/ui/textarea";
-import {supabase} from "@/integrations/supabase/client";
 import {toast} from "sonner";
 import {Upload} from "lucide-react";
 import {t} from "@/lib/copy";
-import {FILE_ROLES} from "@/lib/file-constants";
 import {detectFileFormat, validateFile} from "@/lib/file-validation";
+import {addArticle} from "@/services/articlesService";
 
 interface AddArticleDialogProps {
   open: boolean;
@@ -38,7 +37,7 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
     keywords: "",
     url_landing: "",
   });
-  
+
   // Estado para erros de validação
   const [validationErrors, setValidationErrors] = useState<{
     publication_year?: string;
@@ -90,107 +89,67 @@ export function AddArticleDialog({ open, onOpenChange, projectId, onArticleAdded
       return;
     }
 
-    setLoading(true);
-    try {
-        // Helper to validate and convert numeric date values
-      const parseDateValue = (value: string | undefined): number | null => {
-        if (!value || value.trim() === '') return null;
-        const num = parseInt(value.trim(), 10);
-        if (isNaN(num)) return null;
-        return num;
-      };
-
-      // Validar publication_month (deve estar entre 1-12)
-      const parsedMonth = parseDateValue(formData.publication_month);
-      const validMonth = parsedMonth !== null && parsedMonth >= 1 && parsedMonth <= 12 ? parsedMonth : null;
-
-      // Validar publication_year (deve estar entre 1600-2500)
-      const parsedYear = parseDateValue(formData.publication_year);
-      const validYear = parsedYear !== null && parsedYear >= 1600 && parsedYear <= 2500 ? parsedYear : null;
-
-      // Insert article
-      const articleData = {
-        project_id: projectId,
-        title: formData.title.trim(),
-        abstract: formData.abstract.trim() || null,
-        authors: formData.authors.trim() ? formData.authors.split(",").map(a => a.trim()) : null,
-        publication_year: validYear,
-        publication_month: validMonth,
-        journal_title: formData.journal_title.trim() || null,
-        journal_issn: formData.journal_issn.trim() || null,
-        volume: formData.volume.trim() || null,
-        issue: formData.issue.trim() || null,
-        pages: formData.pages.trim() || null,
-        doi: formData.doi.trim() || null,
-        pmid: formData.pmid.trim() || null,
-        pmcid: formData.pmcid.trim() || null,
-        keywords: formData.keywords.trim() ? formData.keywords.split(",").map(k => k.trim()) : null,
-        url_landing: formData.url_landing.trim() || null,
-        ingestion_source: "MANUAL",
-      };
-
-      const { data: article, error: articleError } = await supabase
-        .from("articles")
-        .insert([articleData])
-        .select()
-        .single();
-
-      if (articleError) throw articleError;
-
-      // Upload PDF if provided
-      if (pdfFile && article) {
-          // Validate file before upload
-        const validation = validateFile(pdfFile);
-        if (!validation.valid) {
-            toast.error(validation.error || t('articles', 'invalidFile'));
-          return;
-        }
-
-        const fileExt = pdfFile.name.split('.').pop();
-        const fileName = `${projectId}/${article.id}/${Date.now()}.${fileExt}`;
-        
-        const { error: uploadError } = await supabase.storage
-          .from("articles")
-          .upload(fileName, pdfFile);
-
-        if (uploadError) {
-          // Rollback: deletar artigo criado
-          await supabase.from("articles").delete().eq("id", article.id);
-            throw new Error(t('articles', 'errorUploadFile') + ': ' + uploadError.message);
-        }
-
-        // Detectar formato do arquivo automaticamente
-        const detectedFormat = detectFileFormat(pdfFile);
-
-        // Create article_files record
-        const { error: insertError } = await supabase.from("article_files").insert([{
-          project_id: projectId,
-          article_id: article.id,
-          file_type: detectedFormat,         // Formato detectado automaticamente
-          file_role: FILE_ROLES.MAIN,         // Arquivo principal
-          storage_key: fileName,
-          original_filename: pdfFile.name,
-          bytes: pdfFile.size,
-        }]);
-
-        if (insertError) {
-          // Rollback: deletar arquivo do storage e artigo
-          await supabase.storage.from("articles").remove([fileName]);
-          await supabase.from("articles").delete().eq("id", article.id);
-            throw new Error(t('articles', 'errorRegisterFile') + ': ' + insertError.message);
-        }
+    // Validate file before starting (avoids pending state on invalid file)
+    if (pdfFile) {
+      const validation = validateFile(pdfFile);
+      if (!validation.valid) {
+        toast.error(validation.error || t('articles', 'invalidFile'));
+        return;
       }
-
-      toast.success("Artigo adicionado com sucesso!");
-      onArticleAdded();
-      onOpenChange(false);
-      resetForm();
-    } catch (error: any) {
-      console.error("Error adding article:", error);
-        toast.error(error.message || t('articles', 'errorAddArticle'));
-    } finally {
-      setLoading(false);
     }
+
+    setLoading(true);
+
+    // Helper to validate and convert numeric date values
+    const parseDateValue = (value: string | undefined): number | null => {
+      if (!value || value.trim() === '') return null;
+      const num = parseInt(value.trim(), 10);
+      if (isNaN(num)) return null;
+      return num;
+    };
+
+    const parsedMonth = parseDateValue(formData.publication_month);
+    const validMonth = parsedMonth !== null && parsedMonth >= 1 && parsedMonth <= 12 ? parsedMonth : null;
+
+    const parsedYear = parseDateValue(formData.publication_year);
+    const validYear = parsedYear !== null && parsedYear >= 1600 && parsedYear <= 2500 ? parsedYear : null;
+
+    const articleData = {
+      project_id: projectId,
+      title: formData.title.trim(),
+      abstract: formData.abstract.trim() || null,
+      authors: formData.authors.trim() ? formData.authors.split(",").map(a => a.trim()) : null,
+      publication_year: validYear,
+      publication_month: validMonth,
+      journal_title: formData.journal_title.trim() || null,
+      journal_issn: formData.journal_issn.trim() || null,
+      volume: formData.volume.trim() || null,
+      issue: formData.issue.trim() || null,
+      pages: formData.pages.trim() || null,
+      doi: formData.doi.trim() || null,
+      pmid: formData.pmid.trim() || null,
+      pmcid: formData.pmcid.trim() || null,
+      keywords: formData.keywords.trim() ? formData.keywords.split(",").map(k => k.trim()) : null,
+      url_landing: formData.url_landing.trim() || null,
+      ingestion_source: "MANUAL",
+    };
+
+    const pdfInput = pdfFile
+      ? {file: pdfFile, detectedFormat: detectFileFormat(pdfFile)}
+      : null;
+
+    const result = await addArticle(articleData, pdfInput);
+    setLoading(false);
+
+    if (!result.ok) {
+      toast.error(result.error.message || t('articles', 'errorAddArticle'));
+      return;
+    }
+
+    toast.success("Artigo adicionado com sucesso!");
+    onArticleAdded();
+    onOpenChange(false);
+    resetForm();
   };
 
   const resetForm = () => {

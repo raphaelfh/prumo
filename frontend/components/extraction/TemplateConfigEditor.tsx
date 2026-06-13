@@ -8,7 +8,10 @@
  */
 
 import {useEffect, useState} from 'react';
-import {supabase} from '@/integrations/supabase/client';
+import {
+  loadTemplateEntityTypes,
+  updateEntityTypeLabel,
+} from '@/services/templateService';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
@@ -37,59 +40,31 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
   const [removingSectionName, setRemovingSectionName] = useState('');
   const [showImportDialog, setShowImportDialog] = useState(false);
 
-  useEffect(() => {
-    if (projectId && templateId) {
-      loadEntityTypes();
-    }
-  }, [projectId, templateId]);
-
   const loadEntityTypes = async () => {
     setLoading(true);
-    
-    try {
-        console.warn('📦 Carregando entity types do template:', templateId);
 
-      // Buscar entity types do project_template
-      const { data: entityTypesData, error: entityTypesError } = await supabase
-        .from('extraction_entity_types')
-        .select('*, extraction_fields(count)')
-        .eq('project_template_id', templateId)
-        .order('sort_order', { ascending: true });
+    console.warn('📦 Carregando entity types do template:', templateId);
 
-      if (entityTypesError) {
-        console.error('❌ Erro ao buscar entity types:', entityTypesError);
-        throw entityTypesError;
-      }
+    const result = await loadTemplateEntityTypes(templateId);
 
-        console.warn(`✅ Entity types encontrados: ${(entityTypesData || []).length}`);
-
-      // Para cada entity type, contar fields
-      const entityTypesWithCounts = await Promise.all(
-        (entityTypesData || []).map(async (et) => {
-          const { count, error: countError } = await supabase
-            .from('extraction_fields')
-            .select('*', { count: 'exact', head: true })
-            .eq('entity_type_id', et.id);
-
-          if (countError) {
-            console.error(`Erro ao contar fields de ${et.name}:`, countError);
-          }
-
-          return {
-            ...et,
-            fieldsCount: count || 0
-          };
-        })
-      );
-
-      setEntityTypes(entityTypesWithCounts as ExtractionEntityType[]);
-    } catch (err: any) {
-      console.error('Erro ao carregar entity types:', err);
-        toast.error(`${t('common', 'error')}: ${err.message}`);
-    } finally {
+    if (!result.ok) {
+      console.error('❌ Erro ao carregar entity types:', result.error);
+      toast.error(`${t('common', 'error')}: ${result.error.message}`);
       setLoading(false);
+      return;
     }
+
+    console.warn(`✅ Entity types encontrados: ${result.data.length}`);
+    setEntityTypes(result.data as unknown as ExtractionEntityType[]);
+    setLoading(false);
   };
+
+  useEffect(() => {
+    if (projectId && templateId) {
+      // Microtask so the loader's setState calls run in an async callback.
+      queueMicrotask(() => void loadEntityTypes());
+    }
+  }, [projectId, templateId]);
 
   const handleStartEdit = (entityType: ExtractionEntityType) => {
     setEditingId(entityType.id);
@@ -97,21 +72,15 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
   };
 
   const handleSaveEdit = async (entityTypeId: string) => {
-    try {
-      const { error } = await supabase
-        .from('extraction_entity_types')
-        .update({ label: editLabel })
-        .eq('id', entityTypeId);
-
-      if (error) throw error;
-
-        toast.success(t('extraction', 'labelUpdatedSuccess'));
-      setEditingId(null);
-      await loadEntityTypes();
-    } catch (err: any) {
-      console.error('Erro ao atualizar label:', err);
-        toast.error(`${t('common', 'error')}: ${err.message}`);
+    const result = await updateEntityTypeLabel(entityTypeId, editLabel);
+    if (!result.ok) {
+      console.error('Erro ao atualizar label:', result.error);
+      toast.error(`${t('common', 'error')}: ${result.error.message}`);
+      return;
     }
+    toast.success(t('extraction', 'labelUpdatedSuccess'));
+    setEditingId(null);
+    await loadEntityTypes();
   };
 
   const handleCancelEdit = () => {

@@ -5,12 +5,11 @@ allowed-tools:
   - Task
   - Read
   - Bash(curl:*)
+  - Bash(vercel:*)
+  - Bash(railway:*)
   - mcp__supabase__get_advisors
   - mcp__supabase__get_logs
   - mcp__supabase__list_migrations
-  - mcp__16b9320c-bebb-4437-8372-470b05309b53__list_deployments
-  - mcp__16b9320c-bebb-4437-8372-470b05309b53__get_deployment
-  - mcp__16b9320c-bebb-4437-8372-470b05309b53__get_runtime_logs
   - mcp__railway__list_deployments
   - mcp__railway__get_logs
 model: sonnet
@@ -184,17 +183,19 @@ You are the `remote-deploys` preflight gate for prumo. READ-ONLY.
 Four checks across Vercel and Railway (web + worker + Redis):
 
   A. Vercel — latest deployment.
-     Call mcp__16b9320c-bebb-4437-8372-470b05309b53__list_deployments
-     to find the most recent deployment for the prumo project.
-     - readyState != "READY" → FAIL
-     - readyState == "READY" but the deployment is older than 24h → WARN
+     Run: vercel ls --prod --yes 2>&1 | head -20
+     to find the most recent production deployment for the prumo project.
+     - state/status != "Ready" → FAIL
+     - "Ready" but the deployment is older than 24h → WARN
        (stale; main might have moved without a deploy)
-     - readyState == "READY" within 24h → PASS
+     - "Ready" within 24h → PASS
+     If the vercel CLI is unavailable or unauthenticated, report this
+     check as TOOL-MISSING (not UNKNOWN) with the exact error.
 
   B. Vercel — runtime logs.
-     Call mcp__16b9320c-bebb-4437-8372-470b05309b53__get_runtime_logs
-     for the last 15 minutes on that deployment. Any HTTP 5xx → WARN.
-     Clean → PASS.
+     Run: vercel inspect <deployment-url-from-A> --logs 2>&1 | tail -40
+     Any HTTP 5xx in recent output → WARN. Clean → PASS.
+     CLI unavailable → TOOL-MISSING.
 
   C. Railway — backend health (web service).
      Run: curl -fsS --max-time 10 -o /dev/null -w "%{http_code}" \

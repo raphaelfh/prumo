@@ -3,7 +3,7 @@
  * Exibe preview dos registros e insere na tabela articles via Supabase.
  */
 
-import {useCallback, useState} from 'react';
+import {useState} from 'react';
 import {
     Dialog,
     DialogContent,
@@ -38,11 +38,11 @@ export function RISImportDialog({
     const [importing, setImporting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const reset = useCallback(() => {
+    const reset = () => {
         setRecords([]);
         setFileName(null);
         setError(null);
-    }, []);
+    };
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];

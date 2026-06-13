@@ -74,6 +74,16 @@ vi.mock("@/integrations/supabase/client", () => {
 
   return {
     supabase: {
+      // useAISuggestions → AISuggestionService.loadSuggestions resolves the
+      // current reviewer via supabase.auth.getUser(); without this stub every
+      // render surfaces an "Error loading suggestions" toast that drowns out
+      // the assertions below.
+      auth: {
+        getUser: async () => ({
+          data: { user: { id: "qa-test-reviewer-id" } },
+          error: null,
+        }),
+      },
       from: (table: string) => {
         if (table === "project_extraction_templates") {
           return makeQuery(PROBAST_TEMPLATE);
@@ -119,7 +129,7 @@ vi.mock("@/integrations/api", () => ({
         instances_by_entity_type: { "et-1": "inst-1" },
       };
     }
-    if (url === "/api/v1/runs/run-1") {
+    if (url === "/api/v1/runs/run-1/view") {
       return {
         run: {
           id: "run-1",
@@ -140,6 +150,8 @@ vi.mock("@/integrations/api", () => ({
         decisions: [],
         consensus_decisions: [],
         published_states: [],
+        entity_types: [],
+        current_values: [],
       };
     }
     return {};
@@ -286,6 +298,12 @@ describe("QualityAssessmentFullScreen", () => {
         expect.stringMatching(/at least one signaling question/i),
       );
     });
+
+    // Regression (#252 follow-up): the background suggestions load must not
+    // surface its own error toast — only the publish preflight message.
+    expect(toast.error).not.toHaveBeenCalledWith(
+      expect.stringMatching(/error loading suggestions/i),
+    );
 
     // Crucially, no advance / consensus calls were made.
     const sideEffects = apiClient.mock.calls.filter(([url]) =>

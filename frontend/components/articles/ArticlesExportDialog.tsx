@@ -5,7 +5,7 @@
  * On 202 (async): sends export to background notifications and closes.
  */
 
-import {useEffect, useState} from "react";
+import {useState} from "react";
 import {
     Dialog,
     DialogContent,
@@ -85,10 +85,13 @@ export function ArticlesExportDialog({
     const articleCount = articleIds.length;
     const canSubmit = articleCount > 0 && formats.length > 0;
 
-    useEffect(() => {
-        if (!open) return;
-        setArticleScope(defaultArticleScope);
-    }, [open, defaultArticleScope]);
+    // Re-apply the default scope when the dialog (re)opens — adjusted during
+    // render instead of via effect.
+    const [prevScopeKey, setPrevScopeKey] = useState({open, defaultArticleScope});
+    if (open !== prevScopeKey.open || defaultArticleScope !== prevScopeKey.defaultArticleScope) {
+        setPrevScopeKey({open, defaultArticleScope});
+        if (open) setArticleScope(defaultArticleScope);
+    }
 
     const handleFormatChange = (format: ExportFormat, checked: boolean) => {
         setFormats((prev) =>
@@ -99,32 +102,36 @@ export function ArticlesExportDialog({
     const handleSubmit = async () => {
         if (!canSubmit || submitting) return;
         setSubmitting(true);
+
+        let exportResult: StartExportResult | null = null;
+        let exportError: string | null = null;
+
         try {
-            const result: StartExportResult = await startExport(
-                projectId,
-                articleIds,
-                formats,
-                fileScope
-            );
-            if (result.kind === "sync") {
-                triggerDownload(result.blob, result.filename);
-                toast.success(t("articles", "exportSuccess"));
-                onOpenChange(false);
-            } else {
-                const job = createArticlesExportJob(projectId, result.job_id, {
-                    articleCount,
-                    fileScope,
-                    formats,
-                });
-                addJob(job);
-                toast.info(t("articles", "exportStarted"));
-                onOpenChange(false);
-            }
+            exportResult = await startExport(projectId, articleIds, formats, fileScope);
         } catch (e) {
-            const message = e instanceof Error ? e.message : "Export failed";
-            toast.error(t("articles", "exportError"), {description: message});
-        } finally {
-            setSubmitting(false);
+            exportError = e instanceof Error ? e.message : "Export failed";
+        }
+
+        setSubmitting(false);
+
+        if (exportError !== null || exportResult === null) {
+            toast.error(t("articles", "exportError"), {description: exportError ?? "Export failed"});
+            return;
+        }
+
+        if (exportResult.kind === "sync") {
+            triggerDownload(exportResult.blob, exportResult.filename);
+            toast.success(t("articles", "exportSuccess"));
+            onOpenChange(false);
+        } else {
+            const job = createArticlesExportJob(projectId, exportResult.job_id, {
+                articleCount,
+                fileScope,
+                formats,
+            });
+            addJob(job);
+            toast.info(t("articles", "exportStarted"));
+            onOpenChange(false);
         }
     };
 

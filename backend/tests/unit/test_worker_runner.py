@@ -166,17 +166,21 @@ def test_worker_session_uses_fresh_engine_each_call() -> None:
 
     from app.worker._session import worker_session
 
-    engines_seen: list[int] = []
+    # Hold strong references to the engines: comparing id() of an
+    # already-collected object is unsound — CPython recycles addresses,
+    # so the second engine can land on the first one's id and fail the
+    # test spuriously (surfaced by the 2026-06-10 dependency bump).
+    engines_seen: list[object] = []
 
-    async def grab_engine_id() -> None:
+    async def grab_engine() -> None:
         async with worker_session() as session:
-            engines_seen.append(id(session.bind))
+            engines_seen.append(session.bind)
 
-    asyncio.run(grab_engine_id())
-    asyncio.run(grab_engine_id())
+    asyncio.run(grab_engine())
+    asyncio.run(grab_engine())
 
     assert len(engines_seen) == 2
-    assert engines_seen[0] != engines_seen[1], (
+    assert engines_seen[0] is not engines_seen[1], (
         "worker_session must construct a fresh engine per call — "
         "engine identity reuse is the root cause of the 2026-05-24 "
         "cross-loop bug."

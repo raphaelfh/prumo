@@ -9,8 +9,6 @@
  * cascades to here, since the lists overlap).
  */
 
-import { useMemo } from "react";
-
 import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/integrations/api";
@@ -58,26 +56,17 @@ export function useRunReviewers(
     retry: 1,
   });
 
-  const reviewers = useMemo(
-    () => query.data?.reviewers ?? [],
-    [query.data?.reviewers],
-  );
+  const reviewers = query.data?.reviewers ?? [];
 
-  const labelById = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const r of reviewers) {
-      map[r.id] = r.full_name?.trim() || `Reviewer ${r.id.slice(0, 8)}…`;
-    }
-    return map;
-  }, [reviewers]);
+  const labelById: Record<string, string> = {};
+  for (const r of reviewers) {
+    labelById[r.id] = r.full_name?.trim() || `Reviewer ${r.id.slice(0, 8)}…`;
+  }
 
-  const avatarById = useMemo(() => {
-    const map: Record<string, string | null> = {};
-    for (const r of reviewers) {
-      map[r.id] = r.avatar_url;
-    }
-    return map;
-  }, [reviewers]);
+  const avatarById: Record<string, string | null> = {};
+  for (const r of reviewers) {
+    avatarById[r.id] = r.avatar_url;
+  }
 
   return {
     data: reviewers,

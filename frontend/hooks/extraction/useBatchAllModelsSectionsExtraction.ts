@@ -14,7 +14,7 @@
  * - Error handling (skips failed models)
  */
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import {t} from "@/lib/copy";
 import { getModelChildSections } from "./helpers/getModelChildSections";
@@ -83,8 +83,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
    * Extracts all sections from all existing models
    * @param params - Extraction params (projectId, articleId, templateId, models)
    */
-  const extractAllSectionsForAllModels = useCallback(
-    async (params: {
+  const extractAllSectionsForAllModels = async (params: {
       projectId: string;
       articleId: string;
       templateId: string;
@@ -97,7 +96,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
       setError(null);
       setProgress(null);
 
-      try {
+      const doExtract = async () => {
         const { projectId, articleId, templateId, models } = params;
 
         if (models.length === 0) {
@@ -114,9 +113,7 @@ export function useBatchAllModelsSectionsExtraction(options?: {
         let totalDurationMs = 0;
 
         // Processar cada modelo sequencialmente
-        for (let i = 0; i < models.length; i++) {
-          const model = models[i];
-
+        for (const [i, model] of models.entries()) {
             console.warn(`[useBatchAllModelsSectionsExtraction] Processing model ${i + 1}/${models.length}`, {
             modelName: model.modelName,
             instanceId: model.instanceId,
@@ -134,7 +131,10 @@ export function useBatchAllModelsSectionsExtraction(options?: {
             options.onProgress(currentProgress);
           }
 
-          try {
+          // Each model is processed independently — errors skip the model
+          // rather than aborting the whole batch. No try/catch here; instead
+          // we catch per-model via .catch() on the inner await chain.
+          const modelResult = await (async () => {
               // Extract sections from this model using chunking
               // 1. Fetch model sections list
             const sections = await getModelChildSections(
@@ -144,12 +144,11 @@ export function useBatchAllModelsSectionsExtraction(options?: {
 
             if (sections.length === 0) {
                 console.warn(`[useBatchAllModelsSectionsExtraction] No sections found for model ${model.modelName}`);
-                successfulModels++; // Consider success even with no sections
-              continue;
+              return { totalSuggestionsCreated: 0, totalTokensUsed: 0, totalDurationMs: 0, skipped: true };
             }
 
               // 2. Process sections in chunks using helper
-            const modelResult = await processSectionsInChunks({
+            const result = await processSectionsInChunks({
               sections,
               baseRequest: {
                 projectId,
@@ -171,25 +170,24 @@ export function useBatchAllModelsSectionsExtraction(options?: {
               },
             });
 
+            return { ...result, skipped: false };
+          })().catch((modelError: unknown) => {
+              console.error(`[useBatchAllModelsSectionsExtraction] Error in model ${i + 1}:`, modelError);
+            return null; // null signals failure
+          });
+
+          if (modelResult === null) {
+            failedModels++;
+          } else {
             totalSuggestionsCreated += modelResult.totalSuggestionsCreated;
             totalTokensUsed += modelResult.totalTokensUsed;
             totalDurationMs += modelResult.totalDurationMs;
-
-              // If we got here, extraction succeeded
             successfulModels++;
               console.warn(`[useBatchAllModelsSectionsExtraction] Model ${i + 1} completed`, {
               modelName: model.modelName,
               suggestionsCreated: modelResult.totalSuggestionsCreated,
               tokensUsed: modelResult.totalTokensUsed,
             });
-          } catch (modelError: any) {
-              console.error(`[useBatchAllModelsSectionsExtraction] Error in model ${i + 1}:`, modelError);
-
-              // Skip failed model (do not propagate error)
-            failedModels++;
-
-              // Continue with next model
-
           }
         }
 
@@ -244,32 +242,26 @@ export function useBatchAllModelsSectionsExtraction(options?: {
 
           // Clear progress
         setProgress(null);
-      } catch (err: any) {
+      };
+
+      doExtract()
+        .catch((err: unknown) => {
           console.error('[useBatchAllModelsSectionsExtraction] Caught error', {
-          error: err instanceof Error ? err.message : String(err),
-          name: err instanceof Error ? err.name : 'Unknown',
-          stack: err instanceof Error ? err.stack : undefined,
-        });
+            error: err instanceof Error ? err.message : String(err),
+            name: err instanceof Error ? err.name : 'Unknown',
+            stack: err instanceof Error ? err.stack : undefined,
+          });
 
-          // Handle error in a user-friendly way
-        const message = err instanceof Error ? err.message : String(err);
-        setError(message);
-
+          const message = err instanceof Error ? err.message : String(err);
+          setError(message);
           toast.error(`${t('extraction', 'errors_sectionsExtraction')}: ${message}`, {
-          duration: 8000,
-        });
-
-          // Clear progress
-        setProgress(null);
-
-        // Re-throw para permitir tratamento adicional pelo componente
-        throw err;
-      } finally {
-        setLoading(false);
-      }
-    },
-    [options],
-  );
+            duration: 8000,
+          });
+          setProgress(null);
+          throw err;
+        })
+        .finally(() => setLoading(false));
+  };
 
   return { extractAllSectionsForAllModels, loading, error, progress };
 }

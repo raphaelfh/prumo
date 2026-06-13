@@ -15,10 +15,9 @@
  * Pass exactly one — the backend rejects both.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { apiClient } from "@/integrations/api";
-import { type RunViewResponse } from "@/hooks/runs/types";
+import { openQASession } from "@/services/qaTemplateService";
 
 export interface QAAssessmentSession {
   runId: string;
@@ -41,13 +40,6 @@ interface UseQAAssessmentSessionResult {
   refetch: () => Promise<void>;
 }
 
-interface OpenResponse {
-  run_id: string;
-  project_template_id: string;
-  instances_by_entity_type: Record<string, string>;
-  run_view: RunViewResponse | null;
-}
-
 export function useQAAssessmentSession({
   projectId,
   articleId,
@@ -67,53 +59,95 @@ export function useQAAssessmentSession({
   // (#109). Mirrors useExtractionSession.
   const generationRef = useRef(0);
 
-  const open = useCallback(async () => {
+  const willOpen = Boolean(
+    enabled && projectId && articleId && (globalTemplateId || projectTemplateId),
+  );
+
+  // Show the loader for effect-triggered opens during render, so openCore
+  // performs no synchronous setState when the effect kicks it off (the POST
+  // itself still starts synchronously). The null sentinel covers the mount
+  // load. Mirrors useExtractionSession.
+  const [prevOpenKey, setPrevOpenKey] = useState<{
+    enabled: boolean;
+    projectId: string | undefined;
+    articleId: string | undefined;
+    globalTemplateId: string | undefined;
+    projectTemplateId: string | undefined;
+  } | null>(null);
+  if (
+    !prevOpenKey ||
+    enabled !== prevOpenKey.enabled ||
+    projectId !== prevOpenKey.projectId ||
+    articleId !== prevOpenKey.articleId ||
+    globalTemplateId !== prevOpenKey.globalTemplateId ||
+    projectTemplateId !== prevOpenKey.projectTemplateId
+  ) {
+    setPrevOpenKey({ enabled, projectId, articleId, globalTemplateId, projectTemplateId });
+    if (willOpen) {
+      setLoading(true);
+      setError(null);
+    }
+  }
+
+  const openCore = async () => {
     if (!enabled || !projectId || !articleId) return;
     if (!globalTemplateId && !projectTemplateId) return;
     const myGeneration = ++generationRef.current;
+
+    const body = {
+      project_id: projectId,
+      article_id: articleId,
+      ...(projectTemplateId
+        ? { project_template_id: projectTemplateId }
+        : { global_template_id: globalTemplateId }),
+    };
+
+    const result = await openQASession(body);
+
+    // Only the most-recent open() may commit. If a new effect fired while
+    // we were in flight (article navigation, prop change), this generation
+    // is stale and the response belongs to a previous article — discarding
+    // it prevents autosave from routing proposals to the wrong run (#109).
+    if (myGeneration !== generationRef.current) return;
+
+    if (result.ok) {
+      setSession({
+        runId: result.data.run_id,
+        projectTemplateId: result.data.project_template_id,
+        instancesByEntityType: result.data.instances_by_entity_type,
+      });
+    } else {
+      console.error("[useQAAssessmentSession] open() failed:", result.error);
+      setError(result.error.message);
+    }
+    setLoading(false);
+  };
+
+  // Manual refetch (event-handler context): show the loader, then reopen.
+  const refetch = async () => {
+    if (!enabled || !projectId || !articleId) return;
+    if (!globalTemplateId && !projectTemplateId) return;
     setLoading(true);
     setError(null);
-    try {
-      const data = await apiClient<OpenResponse>("/api/v1/hitl/sessions", {
-        method: "POST",
-        body: {
-          kind: "quality_assessment",
-          project_id: projectId,
-          article_id: articleId,
-          ...(projectTemplateId
-            ? { project_template_id: projectTemplateId }
-            : { global_template_id: globalTemplateId }),
-        },
-      });
-      // Only the most-recent open() may commit. If a new effect fired while
-      // we were in flight (article navigation, prop change), this generation
-      // is stale and the response belongs to a previous article — discarding
-      // it prevents autosave from routing proposals to the wrong run (#109).
-      if (myGeneration !== generationRef.current) return;
-      setSession({
-        runId: data.run_id,
-        projectTemplateId: data.project_template_id,
-        instancesByEntityType: data.instances_by_entity_type,
-      });
-    } catch (err) {
-      if (myGeneration !== generationRef.current) return;
-      console.error("[useQAAssessmentSession] open() failed:", err);
-      setError(
-        err instanceof Error ? err.message : "Failed to open QA session",
-      );
-    } finally {
-      if (myGeneration === generationRef.current) setLoading(false);
-    }
-  }, [enabled, projectId, articleId, globalTemplateId, projectTemplateId]);
+    await openCore();
+  };
+
+  const openCoreRef = useRef(openCore);
+  useEffect(() => {
+    openCoreRef.current = openCore;
+  }, [openCore]);
 
   useEffect(() => {
-    void open();
+    // The POST must start synchronously (in-flight generation ordering);
+    // openCore's setState calls all happen after its first await, and the
+    // loader reset happens during render above.
+    void openCoreRef.current();
     return () => {
       // Bump the generation so any in-flight open() resolves into a no-op
       // when this effect tears down (unmount or dependency change).
       generationRef.current += 1;
     };
-  }, [open]);
+  }, [openCore]);
 
-  return { session, loading, error, refetch: open };
+  return { session, loading, error, refetch };
 }

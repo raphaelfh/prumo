@@ -66,7 +66,7 @@ export function HeaderNavigation({
         variant="ghost" 
         size="sm" 
         onClick={onBack}
-        className="flex-shrink-0 h-8 px-2 -ml-2 hover:bg-muted/50 transition-colors duration-150"
+        className="shrink-0 h-8 px-2 -ml-2 hover:bg-muted/50 transition-colors duration-150"
       >
         <ArrowLeft className={`${showBackText ? 'mr-1.5' : ''} h-4 w-4`} />
           {showBackText && <span className="text-sm font-medium hidden sm:inline">{t('extraction', 'back')}</span>}
@@ -106,7 +106,7 @@ export function HeaderNavigation({
 
         {/* Navegação entre artigos ao lado direito do nome */}
         {hasArticleNavigation && (
-          <div className="flex items-center gap-1 flex-shrink-0">
+          <div className="flex items-center gap-1 shrink-0">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button

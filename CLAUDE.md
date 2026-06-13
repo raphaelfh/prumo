@@ -1,183 +1,77 @@
 ---
 status: stable
-last_reviewed: 2026-05-24
+last_reviewed: 2026-06-10
 owner: '@raphaelfh'
 ---
 
 # prumo Development Guidelines
 
-Last updated: 2026-05-19
+## Current focus
 
-## Documentation index
+- **Extraction data-path consolidation** (approved 2026-06-07): all
+  frontend reads move from the dual Supabase-REST + API path to the
+  typed API client. Active plans:
+  `docs/superpowers/plans/2026-06-08-runopen-slowload-phase*.md`.
+- Project history lives in `git log` and `docs/adr/` — do not append
+  changelogs to this file. Keep this section to ≤ 5 lines.
 
-- [`docs/README.md`](docs/README.md) — full Diátaxis-organised index.
-- [`docs/adr/`](docs/adr/) — recorded architecture decisions (MADR 4.0).
-- [`docs/reference/`](docs/reference/) — schema, deployment, migrations, tests.
-- [`docs/how-to/`](docs/how-to/) — seed database, observability.
-- [`llms.txt`](llms.txt) — agent entry point.
+## Stack
 
-## Active Technologies
+- **Backend**: Python 3.11+, FastAPI, SQLAlchemy 2.0 async, Alembic,
+  Celery + Redis, Pydantic v2, structlog. PostgreSQL via Supabase
+  (Auth + Storage). Hosted on **Railway** (web + worker + Redis).
+- **Frontend**: TypeScript strict, React 19 + Vite, TanStack Query,
+  Zustand, shadcn/Radix, react-hook-form, Zod. In-house i18n at
+  `frontend/lib/copy/` (no external i18n lib). Hosted on **Vercel**.
+- **Testing**: pytest (backend), vitest (frontend), Playwright (E2E).
 
-- Backend: Python 3.11+, FastAPI, SQLAlchemy 2.0 async, Alembic, Celery + Redis,
-  Pydantic, structlog. PostgreSQL (`public` schema), Supabase Auth + Storage.
-- Frontend: TypeScript strict, React 18.3 + Vite, TanStack Query, Zustand,
-  shadcn/Radix, react-hook-form, Zod. Custom in-house i18n module at
-  `frontend/lib/copy/` (no external i18n lib).
-- Testing: pytest (backend), vitest (frontend), Playwright (E2E).
+## Layout gotchas (agents get these wrong)
 
-## Architecture references
-
-The extraction + quality-assessment stack is the project's structural
-heart. Read these before touching anything in `extraction_*` or
-`/api/v1/runs/...`:
-
-- **Canonical schema reference:**
-  [`docs/reference/extraction-hitl-architecture.md`](docs/reference/extraction-hitl-architecture.md)
-- **Migration strategy:**
-  [`docs/reference/migrations.md`](docs/reference/migrations.md) —
-  when to squash, how to write a migration, RLS conventions.
-- **Original design spec (immutable):**
-  [`docs/superpowers/specs/2026-04-27-extraction-hitl-and-qa-design.md`](docs/superpowers/specs/2026-04-27-extraction-hitl-and-qa-design.md)
-- **Archived execution plans (historical only):**
-  [`docs/superpowers/plans/archive/2026-04-27-hitl-unification/`](docs/superpowers/plans/archive/2026-04-27-hitl-unification/)
-
-## Project Structure
-
-```text
-backend/                  # FastAPI app + Alembic migrations + pytest
-frontend/                 # Vite + React + Vitest + Playwright
-supabase/                 # auth/storage migrations only
-docs/                     # architecture/, superpowers/, planos/, ...
-```
+- Frontend tooling runs from the **repo root**: `package.json`,
+  `vite.config.ts`, `vitest.config.ts` live at root; there is no
+  `frontend/package.json`. Never `cd frontend && npm ...`.
+- `supabase/` holds **auth/storage migrations only**; the app schema
+  is owned by Alembic (`backend/alembic/versions/`).
 
 ## Commands
 
 - `make setup` — first-time install
-- `make start` / `make stop` — local stack
-- `make test-backend` — backend pytest
+- `make start` / `make stop` — local stack (Supabase + backend + frontend)
+- `make test-backend` — backend pytest (needs local Supabase Docker)
 - `make lint-backend` — ruff check + format
-- `npm test` / `npm run lint` — frontend
+- `npm run test:run` / `npm run lint` — frontend (from repo root)
+- `make quality-scan` — full deterministic gate (`scripts/verify_all.sh`:
+  lint + typecheck + tests + architectural fitness)
 
-## Code Style
+## Read before touching
 
-- **Language**: All code, comments, commit messages, docs, and project text
-  must be written in **English**.
-- TypeScript (strict), React 18.3: standard conventions.
-- See `.claude/CLAUDE.md` for the project guide AI assistants must follow
-  (db-migration rules, seeding, etc.).
+The extraction + quality-assessment (HITL) stack is the structural
+heart. Before changing anything in `extraction_*` tables,
+`/api/v1/runs/...`, or `/api/v1/hitl/sessions`, read:
 
-## Recent Changes
+- [`docs/reference/extraction-hitl-architecture.md`](docs/reference/extraction-hitl-architecture.md)
+  — canonical schema reference
+- [`docs/reference/migrations.md`](docs/reference/migrations.md)
+  — migration strategy, squashing, RLS conventions
+- [`docs/reference/constitution.md`](docs/reference/constitution.md)
+  — architectural principles (layering, typed everything)
 
-- **2026-05-24**: Migrated backend hosting from **Render → Railway**.
-  Web (FastAPI + gunicorn) + Celery worker + managed Redis on the
-  Hobby plan, US East region. The async endpoints
-  (`articles_export`, `zotero_import`, `extraction_export`) now work
-  in prod — previously blocked on Render free because there was no
-  Redis. IaC committed at `railway.toml`. Topology and the canonical
-  env-var table live at `docs/reference/deployment.md` (env files
-  are gitignored, so no `.env.railway.example` is tracked). Web URL:
-  https://web-production-48b398.up.railway.app. Vercel
-  `VITE_API_URL` updated and prod bundle rebuilt. Deletes
-  `render.yaml`.
-- **2026-05-19**: **Final cleanup wave** following the role-column
-  migration (8 commits). Highlights: (a) migration `0017_backfill_role_in_snapshot`
-  patches pre-0016 snapshots so every `extraction_template_versions.schema_`
-  carries the role — no more divergence between live entity_types and
-  frozen snapshots; (b) `model_extraction_service` no longer hardcodes
-  `model_name`/`model_type`/`target_outcome` in the LLM prompt — the new
-  `app/services/llm/model_identification_prompt.py` module asks for a
-  neutral `name` (container label is sourced from template metadata),
-  so renaming fields in the Configuration tab doesn't break extraction;
-  (c) `seed.py` is now data-driven (`_EntitySpec` NamedTuple +
-  insertion helper — 300 lines saved); (d) `tests/factories/template_factory.py`
-  replaces raw-SQL `INSERT INTO extraction_entity_types` across 5 test
-  files (ORM-routed inserts exercise the role/parent CHECK + trigger);
-  (e) `useExtractionFormAIActions` hook groups the three AI extraction
-  hooks; (f) `EntityTypeWithFields` consolidated into
-  `ExtractionEntityTypeWithFields` shared type; (g) topological sort
-  uses `collections.deque` (O(1) popleft); (h) repository's
-  unused `get_by_name` removed, `get_by_role` no longer defensive
-  (uniqueness enforced by partial unique index from 0016).
-- **2026-05-18**: Promoted **entity type "role"** from convention to
-  schema column. Migration `0016_entity_role_column` adds
-  `extraction_entity_role` enum (`study_section` / `model_container` /
-  `model_section`), backfills every row, and locks the invariants with
-  a partial unique index (≤1 `model_container` per template), a CHECK
-  constraint (role ↔ parent coherence), and a deferred trigger
-  (`model_section` parent must be `model_container`). The
-  `name = 'prediction_models'` magic string is gone from every service
-  and component — `partitionEntityTypes`
-  (`frontend/lib/extraction/entityTypeRoles.ts`) and
-  `ExtractionEntityTypeRepository.get_by_role` are the only places that
-  know the role values. `TemplateCloneService` now topologically sorts
-  before insertion (no more implicit "parent must sort before child"
-  contract on `sort_order`), and the per-model render block was
-  extracted from `ExtractionFormView` into its own `ModelSection`
-  component. See `docs/reference/extraction-hitl-architecture.md`
-  §4.1.
-- **2026-05-17**: CHARMS template split into **study-level** and
-  **per-model** sections (bumped to v1.1.0). Migration `0015_charms_studylevel_split`
-  reparents Source of Data, Participants, Outcome, Candidate Predictors,
-  Sample Size, Missing Data, and Observations to the root of the template
-  (and of every project clone), leaving Model Development, Final
-  Predictors, Performance, Validation, Results, and Interpretation under
-  `prediction_models`. Restores per-CHARMS-methodology behaviour where
-  study-level fields are entered once per article and per-model fields
-  are entered once per evaluated model. The migration also de-duplicates
-  pre-existing instances (keeps the oldest per `(article, entity_type)`,
-  CASCADE-drops the rest). The `sort_order` on the global template is
-  globally unique so `TemplateCloneService` continues to see parents
-  before children when iterating.
-- **2026-04-30**: Extraction **template import** uses
-  `POST /api/v1/projects/{id}/templates/clone` only (no direct browser
-  inserts into `project_extraction_templates`). `TemplateCloneService`
-  remains idempotent; it can **heal** empty clones. See §4.1 in
-  `docs/reference/extraction-hitl-architecture.md`.
-- **2026-04-28** (latest): HITL surface unification round 2.
-  - DB invariants: migration 0004 deferred trigger forbids a project
-    template without an active version; 0005 replaces the simple FK on
-    `extraction_reviewer_states.current_decision_id` with a composite
-    `(run_id, current_decision_id)` FK so a reviewer state can never
-    point at a decision in a different run.
-  - One endpoint, both kinds: `POST /api/v1/hitl/sessions` accepting
-    `kind=extraction|quality_assessment` replaces `/api/v1/qa-assessments`
-    and `/api/v1/projects/:id/qa-templates`. Cloning is internal to the
-    session open for QA; extraction requires a `project_template_id`.
-  - Service renames: `qa_template_clone_service` → `template_clone_service`
-    (kind-parametrized), `qa_assessment_session_service` →
-    `hitl_session_service`. Same applies to the schema, endpoint, and
-    integration test files.
-- **2026-04-28** (earlier): Squashed 18 migrations into a single
-  `0001_baseline_v1` baseline. Dropped `ai_suggestions` (migration
-  archived under that baseline) and `extracted_values` (migration 0002
-  on top of the baseline). The extraction UI now reads/writes through
-  `extraction_reviewer_decisions` + `extraction_published_states` via a
-  single `ExtractionValueService` on the frontend; AI extraction
-  auto-advances the Run PROPOSAL → REVIEW after recording proposals.
-  See `docs/reference/migrations.md`.
-- **2026-04-28**: Cleanup wave on top of the HITL unification — migration
-  0017 dropped `extraction_evidence.target_type/target_id`; 0018 added the
-  `is_project_reviewer` SECURITY DEFINER helper and relaxed workflow-table
-  RLS so reviewers (not just managers) can write. Quality-Assessment
-  values flow through ProposalRecord → manual_override consensus →
-  PublishedState (today via `/api/v1/hitl/sessions`).
-- **2026-04-27**: Extraction-centric HITL unification. Replaced the 008
-  parallel evaluation skeleton with a single stack discriminated by
-  `kind` (`extraction` | `quality_assessment`). Migrations 0010 → 0016
-  introduced TemplateVersion + HitlConfig snapshots, the five workflow
-  tables, the new run-stage enum, synthetic Runs for legacy
-  `extracted_values`, and the 008 tear-down. PROBAST + QUADAS-2 seeded as
-  global QA templates. See `docs/reference/extraction-hitl-architecture.md`.
-- **2026-04-27**: Sidebar revitalization — show/hide-binary sidebar with
-  drag resize, G-prefixed nav shortcuts, theme toggle, mobile parity.
-- **006-zotero-articles-sync**: Zotero integration (Auth/Storage).
-- **005-articles-export**: Articles export pipeline (Celery + Storage).
+Full doc index: [`docs/README.md`](docs/README.md) (Diátaxis).
+Agent entry point: [`llms.txt`](llms.txt).
+Immutable design spec:
+[`docs/superpowers/specs/2026-04-27-extraction-hitl-and-qa-design.md`](docs/superpowers/specs/2026-04-27-extraction-hitl-and-qa-design.md).
 
+## Hard rules
 
+- **English only** for code, comments, commits, docs, and copy keys.
+- **SQLAlchemy model change ⇒ Alembic migration** (run inside
+  `backend/`: `alembic revision --autogenerate -m "..."`). Supabase
+  CLI migrations are only for `auth`/`storage`. Never apply app-schema
+  DDL through the Supabase MCP.
+- **Seeding is not done in migrations**: `cd backend && uv run python
+  -m app.seed` (idempotent). `make reset-db` wipes local data — prefer
+  `make db-fresh` (chains migrate + seed).
+- PRs target `dev` and are squash-merged. Conventional commits.
 
-
-<!-- SPECKIT START -->
-For additional context about technologies to be used, project structure,
-shell commands, and other important information, read the current plan
-at `docs/superpowers/specs/archive/legacy-spec-kit/009-extraction-excel-export/plan.md`.
-<!-- SPECKIT END -->
+Path-scoped conventions live in `.claude/rules/` (`backend.md`,
+`frontend.md`) and load automatically when matching files are touched.

@@ -1,4 +1,4 @@
-import {useCallback, useEffect, useRef, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 
 type WidthMap = Record<string, number>;
 
@@ -27,14 +27,18 @@ export function useResizableTableColumns({
     const [resizeAdjacentColumn, setResizeAdjacentColumn] = useState<string | null>(null);
     const [resizeAdjacentStartWidth, setResizeAdjacentStartWidth] = useState(0);
     const headerRefs = useRef<Record<string, HTMLTableCellElement | null>>({});
+    // Latest-value mirror so the mouseup handler can persist without
+    // re-subscribing; written in an effect (refs must not be written in render).
     const columnWidthsRef = useRef(columnWidths);
-    columnWidthsRef.current = columnWidths;
+    useEffect(() => {
+        columnWidthsRef.current = columnWidths;
+    }, [columnWidths]);
 
-    const registerHeaderRef = useCallback((columnId: string, el: HTMLTableCellElement | null) => {
+    const registerHeaderRef = (columnId: string, el: HTMLTableCellElement | null) => {
         headerRefs.current[columnId] = el;
-    }, []);
+    };
 
-    const startResize = useCallback((columnId: string, clientX: number) => {
+    const startResize = (columnId: string, clientX: number) => {
         const isVisibleColumn = (key: string) => {
             const el = headerRefs.current[key];
             if (!el) return false;
@@ -64,7 +68,7 @@ export function useResizableTableColumns({
         setResizeStartWidth(initialWidth);
         setResizeAdjacentColumn(adjacentColumn);
         setResizeAdjacentStartWidth(adjacentStartWidth);
-    }, [orderedColumns, columnWidths, defaultColumnWidths, minWidth]);
+    };
 
     useEffect(() => {
         if (resizingColumn === null) return;

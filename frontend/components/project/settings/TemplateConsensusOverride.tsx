@@ -7,7 +7,7 @@
  * back to the project default.
  */
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { ChevronDown, ChevronRight, X } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -47,13 +47,25 @@ export function TemplateConsensusOverride({
   const upsert = useUpsertTemplateHitlConfig(projectId, template.id);
   const clear = useClearTemplateHitlConfig(projectId, template.id);
 
-  const [draft, setDraft] = useState<HitlConfigPayload>({
-    reviewer_count: 1,
-    consensus_rule: 'unanimous',
-    arbitrator_id: null,
-  });
+  const [draft, setDraft] = useState<HitlConfigPayload>(() =>
+    config.data
+      ? {
+          reviewer_count: config.data.reviewer_count,
+          consensus_rule: config.data.consensus_rule,
+          arbitrator_id: config.data.arbitrator_id,
+        }
+      : {
+          reviewer_count: 1,
+          consensus_rule: 'unanimous',
+          arbitrator_id: null,
+        },
+  );
 
-  useEffect(() => {
+  // Re-hydrate the draft when the server config (re)loads — adjusted during
+  // render instead of via effect.
+  const [prevConfigData, setPrevConfigData] = useState(config.data);
+  if (config.data !== prevConfigData) {
+    setPrevConfigData(config.data);
     if (config.data) {
       setDraft({
         reviewer_count: config.data.reviewer_count,
@@ -61,7 +73,7 @@ export function TemplateConsensusOverride({
         arbitrator_id: config.data.arbitrator_id,
       });
     }
-  }, [config.data]);
+  }
 
   const isOverridden = config.data ? !config.data.inherited : false;
   const isArbitratorIncomplete =
@@ -114,9 +126,9 @@ export function TemplateConsensusOverride({
       >
         <span className="flex items-center gap-2 min-w-0">
           {expanded ? (
-            <ChevronDown className="h-4 w-4 flex-shrink-0" strokeWidth={1.5} />
+            <ChevronDown className="h-4 w-4 shrink-0" strokeWidth={1.5} />
           ) : (
-            <ChevronRight className="h-4 w-4 flex-shrink-0" strokeWidth={1.5} />
+            <ChevronRight className="h-4 w-4 shrink-0" strokeWidth={1.5} />
           )}
           <span className="font-medium truncate">{template.name}</span>
           {template.framework && (
@@ -128,7 +140,7 @@ export function TemplateConsensusOverride({
         {config.isLoading ? (
           <Skeleton className="h-5 w-24" />
         ) : (
-          <Badge variant={isOverridden ? 'default' : 'outline'} className="text-[11px] flex-shrink-0">
+          <Badge variant={isOverridden ? 'default' : 'outline'} className="text-[11px] shrink-0">
             {isOverridden
               ? t('consensus', 'templatesOverriddenBadge')
               : t('consensus', 'templatesInheritsBadge')}

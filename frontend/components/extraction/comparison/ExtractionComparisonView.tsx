@@ -10,7 +10,7 @@
  * @component
  */
 
-import {useMemo, useState} from 'react';
+import {useState} from 'react';
 import {Tabs, TabsContent, TabsList, TabsTrigger} from '@/components/ui/tabs';
 import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {Badge} from '@/components/ui/badge';
@@ -56,7 +56,7 @@ export function ExtractionComparisonView(props: ExtractionComparisonViewProps) {
   } = useEntityTypePartition(entityTypes);
 
     // Prepare columns for study-level (flat fields)
-  const studyColumns = useMemo<ComparisonColumn[]>(() => {
+  const studyColumns = ((): ComparisonColumn[] => {
     const columns: ComparisonColumn[] = [];
 
     studyLevelTypes.forEach(entityType => {
@@ -79,10 +79,10 @@ export function ExtractionComparisonView(props: ExtractionComparisonViewProps) {
     });
 
     return columns;
-  }, [studyLevelTypes, entityTypes]);
+  })();
 
     // Prepare data for ComparisonTable
-  const comparisonData = useMemo(() => {
+  const comparisonData = (() => {
     const data: Record<string, Record<string, any>> = {};
 
       // Current user data
@@ -94,7 +94,7 @@ export function ExtractionComparisonView(props: ExtractionComparisonViewProps) {
     });
 
     return data;
-  }, [currentUserId, myValues, otherExtractions]);
+  })();
 
     // Prepare user list
   const currentUser: ComparisonUser = {
@@ -111,7 +111,7 @@ export function ExtractionComparisonView(props: ExtractionComparisonViewProps) {
   }));
 
     // Group current user instances by entity type
-  const myInstancesByType = useMemo(() => {
+  const myInstancesByType = (() => {
     const grouped: Record<string, ExtractionInstance[]> = {};
     myInstances.forEach(instance => {
       if (!grouped[instance.entity_type_id]) {
@@ -120,7 +120,7 @@ export function ExtractionComparisonView(props: ExtractionComparisonViewProps) {
       grouped[instance.entity_type_id].push(instance);
     });
     return grouped;
-  }, [myInstances]);
+  })();
 
   return (
     <Card className="h-full">

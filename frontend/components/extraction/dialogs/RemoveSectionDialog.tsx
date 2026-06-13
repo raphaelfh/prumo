@@ -29,7 +29,10 @@ import {Input} from '@/components/ui/input';
 import {Alert, AlertDescription} from '@/components/ui/alert';
 import {Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage,} from '@/components/ui/form';
 import {AlertTriangle, Database, FileText, Info, Loader2, Trash2, Users} from 'lucide-react';
-import {supabase} from '@/integrations/supabase/client';
+import {
+  analyzeSectionRemovalImpact,
+  deleteSection,
+} from '@/services/templateService';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 
@@ -87,151 +90,98 @@ export function RemoveSectionDialog({
     },
   });
 
-    // Analyze impact when dialog opens
-  useEffect(() => {
-    if (open && sectionId) {
-      analyzeImpact();
-    } else {
+    // Clear the analyzed impact when the dialog closes (during render, so
+    // the effect below never sets state synchronously).
+  const [prevResetKey, setPrevResetKey] = useState({ open, sectionId });
+  if (open !== prevResetKey.open || sectionId !== prevResetKey.sectionId) {
+    setPrevResetKey({ open, sectionId });
+    if (!(open && sectionId)) {
       setImpact(null);
-      form.reset();
     }
-  }, [open, sectionId]);
+  }
 
   const analyzeImpact = async () => {
     if (!sectionId) return;
-    
+
     setAnalyzing(true);
-    
-    try {
-        console.warn('Analyzing removal impact:', {sectionId, sectionName});
+    console.warn('Analyzing removal impact:', {sectionId, sectionName});
 
-        // sectionId is now entity_type_id directly
-      const entityTypeId = sectionId;
+    const result = await analyzeSectionRemovalImpact(sectionId);
 
-        // 2. Count section fields
-      const { count: fieldsCount, error: fieldsError } = await supabase
-        .from('extraction_fields')
-        .select('id', { count: 'exact', head: true })
-        .eq('entity_type_id', entityTypeId);
-
-      if (fieldsError) {
-        console.error('Erro ao contar campos:', fieldsError);
-        throw fieldsError;
-      }
-
-        // 3. Count section instances (templates + per article)
-      const { count: instancesCount, error: instancesError } = await supabase
-        .from('extraction_instances')
-        .select('id', { count: 'exact', head: true })
-        .eq('entity_type_id', entityTypeId);
-
-      if (instancesError) {
-          console.error('Error counting instances:', instancesError);
-        throw instancesError;
-      }
-
-        // 4. Count extracted data — non-reject ReviewerDecisions tied to
-        //    instances of this entity_type. (Same warning trigger as the
-        //    legacy "extracted_values present" guard.)
-      const { data: typeInstances } = await supabase
-        .from('extraction_instances')
-        .select('id')
-        .eq('entity_type_id', entityTypeId);
-      const typeInstanceIds = (typeInstances || []).map((i) => i.id);
-      let dataCount = 0;
-      if (typeInstanceIds.length > 0) {
-        const { count, error: dataError } = await supabase
-          .from('extraction_reviewer_decisions')
-          .select('id', { count: 'exact', head: true })
-          .in('instance_id', typeInstanceIds)
-          .neq('decision', 'reject');
-        if (dataError) {
-          console.warn('Could not count reviewer decisions:', dataError);
-        } else {
-          dataCount = count ?? 0;
-        }
-      }
-
-      // 5. Gerar warnings
-      const warnings: string[] = [];
-      
-      if ((fieldsCount || 0) > 0) {
-          warnings.push(t('extraction', 'sectionWarnFieldsRemoved').replace('{{count}}', String(fieldsCount)));
-      }
-      if ((instancesCount || 0) > 1) {
-          warnings.push(t('extraction', 'sectionWarnInstancesRemoved').replace('{{count}}', String(instancesCount)));
-      }
-      if ((dataCount || 0) > 0) {
-          warnings.push(t('extraction', 'sectionWarnDataLost').replace('{{count}}', String(dataCount)));
-      }
-      if (warnings.length === 0) {
-          warnings.push(t('extraction', 'sectionEmptySafe'));
-      }
-
-      const impactData: SectionImpact = {
-        fieldsCount: fieldsCount || 0,
-        instancesCount: instancesCount || 0,
-        dataCount: dataCount || 0,
-        canDelete: true, // Por enquanto sempre permitir
-        warnings
-      };
-
-        console.warn('📊 Impacto analisado:', impactData);
-      setImpact(impactData);
-
-    } catch (error: any) {
-      console.error('Erro ao analisar impacto:', error);
-        toast.error(`${t('extraction', 'sectionAnalyzeError')}: ${error.message}`);
+    if (!result.ok) {
+      console.error('Erro ao analisar impacto:', result.error);
+      toast.error(`${t('extraction', 'sectionAnalyzeError')}: ${result.error.message}`);
       setImpact({
         fieldsCount: 0,
         instancesCount: 0,
         dataCount: 0,
         canDelete: false,
-          warnings: [t('extraction', 'sectionErrorAnalyzing')],
+        warnings: [t('extraction', 'sectionErrorAnalyzing')],
       });
-    } finally {
       setAnalyzing(false);
+      return;
     }
+
+    // Build warnings from counts + copy keys (component owns copy)
+    const warnings: string[] = [];
+    const {fieldsCount, instancesCount, dataCount} = result.data;
+
+    if (fieldsCount > 0) {
+      warnings.push(t('extraction', 'sectionWarnFieldsRemoved').replace('{{count}}', String(fieldsCount)));
+    }
+    if (instancesCount > 1) {
+      warnings.push(t('extraction', 'sectionWarnInstancesRemoved').replace('{{count}}', String(instancesCount)));
+    }
+    if (dataCount > 0) {
+      warnings.push(t('extraction', 'sectionWarnDataLost').replace('{{count}}', String(dataCount)));
+    }
+    if (warnings.length === 0) {
+      warnings.push(t('extraction', 'sectionEmptySafe'));
+    }
+
+    const impactData: SectionImpact = {
+      ...result.data,
+      warnings,
+    };
+
+    console.warn('📊 Impacto analisado:', impactData);
+    setImpact(impactData);
+    setAnalyzing(false);
   };
+
+    // Analyze impact when dialog opens; reset the form when it closes.
+  useEffect(() => {
+    if (open && sectionId) {
+      // Microtask so the analyzer's setState calls run in an async callback.
+      queueMicrotask(() => void analyzeImpact());
+    } else {
+      form.reset();
+    }
+  }, [open, sectionId]);
 
     const handleSubmit = async (_data: RemoveSectionInput) => {
     if (!sectionId || !impact) return;
-    
+
     setLoading(true);
-    
-    try {
-        console.warn('Starting section removal:', {sectionId, sectionName});
+    console.warn('Starting section removal:', {sectionId, sectionName});
+    console.warn('🎯 Entity type a ser removido:', sectionId);
 
-        // sectionId is now entity_type_id directly
-      const entityTypeId = sectionId;
+    const result = await deleteSection(sectionId);
 
-        console.warn('🎯 Entity type a ser removido:', entityTypeId);
-
-        // Delete entity type (CASCADE automatically deletes fields, instances and values)
-      const { error: entityError } = await supabase
-        .from('extraction_entity_types')
-        .delete()
-        .eq('id', entityTypeId);
-
-      if (entityError) {
-        console.error('Erro ao remover entity type:', entityError);
-        throw entityError;
-      }
-
-        console.warn('Entity type and all dependencies removed via CASCADE');
-
-        toast.success(t('extraction', 'sectionRemovedSuccess').replace('{{name}}', sectionName));
-      
-      // Fechar dialog e recarregar dados
-      onOpenChange(false);
-      onSectionRemoved();
-
-    } catch (error: any) {
-        console.error('Error removing section:', error);
-        toast.error(`${t('extraction', 'sectionRemoveError')}: ${error.message}`);
-    } finally {
+    if (!result.ok) {
+      console.error('Error removing section:', result.error);
+      toast.error(`${t('extraction', 'sectionRemoveError')}: ${result.error.message}`);
       setLoading(false);
+      return;
     }
+
+    console.warn('Entity type and all dependencies removed via CASCADE');
+    toast.success(t('extraction', 'sectionRemovedSuccess').replace('{{name}}', sectionName));
+
+    // Fechar dialog e recarregar dados
+    onOpenChange(false);
+    onSectionRemoved();
+    setLoading(false);
   };
 
   const handleClose = () => {

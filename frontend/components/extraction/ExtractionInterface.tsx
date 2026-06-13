@@ -5,7 +5,7 @@
  * including templates, instances and values.
  */
 
-import {useEffect, useMemo, useState} from 'react';
+import {useEffect, useState} from 'react';
 import {useSearchParams} from 'react-router-dom';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
@@ -25,7 +25,7 @@ import {ExtractionExportDialog} from './ExtractionExportDialog';
 import {TemplateConfigEditor} from './TemplateConfigEditor';
 import {useAuth} from '@/contexts/AuthContext';
 import {CreateCustomTemplateDialog, ImportTemplateDialog} from './dialogs';
-import {supabase} from '@/integrations/supabase/client';
+import {loadProjectArticles} from '@/services/articlesService';
 import {toast} from 'sonner';
 import {t} from '@/lib/copy';
 
@@ -59,7 +59,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
   );
   const { entityTypes } = useTemplateEntityTypes(activeTemplate?.id);
 
-  const extractionStats = useMemo(() => {
+  const extractionStats = (() => {
     const totalArticles = articles.length;
     let completed = 0;
     let sum = 0;
@@ -75,7 +75,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
       extractionsCompleted: completed,
       progressPercentage: totalArticles > 0 ? Math.round(sum / totalArticles) : 0,
     };
-  }, [articles, valuesByArticle, entityTypes]);
+  })();
 
     // Hook to manage templates
   const {
@@ -91,8 +91,12 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
 
     const {isManager, loading: roleLoading} = useProjectMemberRole(projectId);
 
-    // Load active template when templates are loaded
-  useEffect(() => {
+    // Keep the active template in sync with the template list (adjusted
+    // during render instead of via effect; the null sentinel makes the
+    // first render perform the initial selection).
+  const [prevTemplates, setPrevTemplates] = useState<ProjectTemplate[] | null>(null);
+  if (templates !== prevTemplates) {
+    setPrevTemplates(templates);
     if (templates.length > 0) {
       if (!activeTemplate) {
           // If no active template, select the default
@@ -110,24 +114,25 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
         }
       }
     }
-  }, [templates]);
+  }
 
-    // Non-manager cannot access Configuration: redirect to extraction if they had configuration selected
-    useEffect(() => {
-        if (roleLoading) return;
-        if (!isManager && activeTab === 'configuration') {
-            setActiveTab('extraction');
-        }
-    }, [isManager, roleLoading, activeTab]);
+    // Non-manager cannot access Configuration: clamp back to extraction.
+    // Render-phase invariant — the guard guarantees termination.
+    if (!roleLoading && !isManager && activeTab === 'configuration') {
+        setActiveTab('extraction');
+    }
 
     // Sync activeTab FROM URL when bar (ProjectView) changes extractionTab param
-    useEffect(() => {
+    // (adjusted during render instead of via effect).
+    const [prevSearchParams, setPrevSearchParams] = useState(searchParams);
+    if (searchParams !== prevSearchParams) {
+        setPrevSearchParams(searchParams);
         const urlTab = searchParams.get('extractionTab') as 'extraction' | 'dashboard' | 'configuration' | null;
         const valid = urlTab && ['extraction', 'dashboard', 'configuration'].includes(urlTab);
         if (valid && urlTab !== activeTab) {
             setActiveTab(urlTab);
         }
-    }, [searchParams]);
+    }
 
     // Sync active tab with URL
   useEffect(() => {
@@ -141,30 +146,23 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     setActiveTab(tab);
   };
 
+  const loadArticles = async () => {
+    const result = await loadProjectArticles(projectId);
+    if (!result.ok) {
+      console.error("Error loading articles:", result.error);
+      toast.error(t('extraction', 'errorLoadArticles'));
+      return;
+    }
+    setArticles(result.data);
+  };
+
     // Load articles and statistics
   useEffect(() => {
     if (projectId) {
-      loadArticles();
+      // Microtask so the loader's setState calls run in an async callback.
+      queueMicrotask(() => void loadArticles());
     }
   }, [projectId]);
-
-
-
-  const loadArticles = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("articles")
-        .select("id, title, doi, created_at")
-        .eq("project_id", projectId)
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      setArticles(data || []);
-    } catch (error: any) {
-      console.error("Error loading articles:", error);
-        toast.error(t('extraction', 'errorLoadArticles'));
-    }
-  };
 
 
     // Render Dashboard tab
@@ -219,7 +217,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
               <CardContent className="pt-4 pb-4 px-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex items-start space-x-3">
-                  <Settings className="h-4 w-4 text-info mt-0.5 flex-shrink-0" strokeWidth={1.5}/>
+                  <Settings className="h-4 w-4 text-info mt-0.5 shrink-0" strokeWidth={1.5}/>
                 <div>
                     <p className="text-[13px] font-medium text-foreground">{t('extraction', 'dashboardConfigureTitle')}</p>
                     <p className="text-[13px] text-muted-foreground mt-1">
@@ -277,7 +275,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
             <Card className="border-border/40 shadow-elev-popover rounded-md w-full">
                 <CardContent className="pt-6 pb-6">
                     <div className="flex items-start gap-3 text-[13px] text-muted-foreground">
-                        <AlertCircle className="h-5 w-5 text-muted-foreground flex-shrink-0 mt-0.5" strokeWidth={1.5}/>
+                        <AlertCircle className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" strokeWidth={1.5}/>
                         <p>{t('extraction', 'configContactManagerToConfigure')}</p>
                     </div>
             </CardContent>
@@ -330,7 +328,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
                     {/* 2. Manager info */}
                     <div className="bg-info/5 border border-info/30 rounded-lg p-4">
                 <div className="flex items-start space-x-3">
-                    <AlertCircle className="h-4 w-4 text-info mt-0.5 flex-shrink-0" strokeWidth={1.5}/>
+                    <AlertCircle className="h-4 w-4 text-info mt-0.5 shrink-0" strokeWidth={1.5}/>
                     <div className="text-[13px] text-foreground">
                         <p className="font-medium mb-1">{t('extraction', 'configManagersNote')}</p>
                     <p className="text-muted-foreground">
@@ -418,7 +416,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
             <Card className="border-border/40 shadow-elev-popover rounded-md w-full">
                 <CardContent className="pt-6 pb-6">
                     <div className="flex items-start gap-3 text-[13px] text-muted-foreground">
-                        <AlertCircle className="h-5 w-5 text-muted-foreground flex-shrink-0 mt-0.5" strokeWidth={1.5}/>
+                        <AlertCircle className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" strokeWidth={1.5}/>
                         <p>{t('extraction', 'configContactManagerToConfigure')}</p>
                     </div>
                 </CardContent>

@@ -17,7 +17,7 @@
  * and the structural parity the user asked for.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AlertCircle, CheckCircle2, Circle, FileText } from "lucide-react";
 import { toast } from "sonner";
@@ -54,7 +54,8 @@ import {
 } from "@/components/shared/list";
 import { DataTableWrapper } from "@/components/shared/list/DataTableWrapper";
 import { useListKeyboardShortcuts } from "@/hooks/useListKeyboardShortcuts";
-import { supabase } from "@/integrations/supabase/client";
+import { getCurrentUserId } from "@/services/authService";
+import { fetchProjectArticles, type ArticleListItem } from "@/services/articlesService";
 import { t } from "@/lib/copy";
 import { TABLE_CELL_CLASS } from "@/lib/table-constants";
 import type { HITLKind } from "@/hooks/hitl/useHITLProjectTemplates";
@@ -62,13 +63,7 @@ import { useTemplateEntityTypes } from "@/hooks/extraction/useTemplateEntityType
 import { useArticleExtractionValues } from "@/hooks/extraction/useArticleExtractionValues";
 import { computeRowProgress } from "@/lib/extraction/progress";
 
-interface Article {
-  id: string;
-  title: string | null;
-  authors: string[] | null;
-  publication_year: number | null;
-  created_at: string;
-}
+type Article = ArticleListItem;
 
 type SortField =
   | "title"
@@ -159,63 +154,57 @@ export function HITLArticleTable({
 
   useEffect(() => {
     let cancelled = false;
-    void (async () => {
-      const { data } = await supabase.auth.getUser();
-      if (!cancelled) setCurrentUserId(data.user?.id ?? null);
-    })();
+    void getCurrentUserId().then((result) => {
+      if (cancelled) return;
+      if (result.ok) setCurrentUserId(result.data);
+    });
     return () => {
       cancelled = true;
     };
   }, []);
 
+  // Restart the loading state when the query coordinates change (during
+  // render, so the fetch effect below never sets state synchronously).
+  const [prevQueryKey, setPrevQueryKey] = useState({ projectId, templateId, currentUserId });
+  if (
+    projectId !== prevQueryKey.projectId ||
+    templateId !== prevQueryKey.templateId ||
+    currentUserId !== prevQueryKey.currentUserId
+  ) {
+    setPrevQueryKey({ projectId, templateId, currentUserId });
+    if (projectId && templateId && currentUserId) {
+      setLoading(true);
+      setError(null);
+    }
+  }
+
   useEffect(() => {
     if (!projectId || !templateId || !currentUserId) return;
     let cancelled = false;
-    setLoading(true);
-    setError(null);
 
-    void (async () => {
-      try {
-        const articlesRes = await supabase
-          .from("articles")
-          .select("id, title, authors, publication_year, created_at")
-          .eq("project_id", projectId)
-          .order("created_at", { ascending: false });
-        if (articlesRes.error) throw articlesRes.error;
-
-        const baseArticles = (articlesRes.data ?? []) as Article[];
-        if (baseArticles.length === 0) {
-          if (!cancelled) {
-            setArticles([]);
-          }
-          return;
-        }
-
-        // Per-article instances + values now come from
-        // ``useArticleExtractionValues`` (shared with the extraction table and
-        // dashboard); this effect only loads the article rows themselves.
-        if (!cancelled) setArticles(baseArticles);
-      } catch (err) {
-        if (!cancelled) {
-          const message =
-            err instanceof Error ? err.message : "Failed to load articles";
-          setError(message);
-          toast.error(`${t("extraction", "tableErrorLoadArticles")}: ${message}`);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+    // Per-article instances + values now come from
+    // ``useArticleExtractionValues`` (shared with the extraction table and
+    // dashboard); this effect only loads the article rows themselves.
+    void fetchProjectArticles(projectId).then((result) => {
+      if (cancelled) return;
+      if (result.ok) {
+        setArticles(result.data);
+      } else {
+        const message = result.error.message;
+        setError(message);
+        toast.error(`${t("extraction", "tableErrorLoadArticles")}: ${message}`);
       }
-    })();
+      setLoading(false);
+    });
 
     return () => {
       cancelled = true;
     };
   }, [projectId, templateId, currentUserId]);
 
-  // Memoize per-article progress once per (articles, entityTypes) change —
-  // getProgress is read in the sort comparator and several render paths, so
-  // recomputing per call would be O(values × fields) × N on every keystroke.
-  const progressByArticle = useMemo(() => {
+  // Per-article completion %, computed once per render.
+  // getProgress is read in the sort comparator and several render paths.
+  const progressByArticle = (() => {
     const map = new Map<string, number>();
     for (const article of articles) {
       const d = valuesByArticle.get(article.id);
@@ -225,12 +214,11 @@ export function HITLArticleTable({
       );
     }
     return map;
-  }, [articles, valuesByArticle, entityTypes]);
+  })();
 
-  const getProgress = (article: Article): number =>
-    progressByArticle.get(article.id) ?? 0;
+  const getProgress = (article: Article): number => progressByArticle.get(article.id) ?? 0;
 
-  const filteredAndSorted = useMemo(() => {
+  const filteredAndSorted = (() => {
     const visible = articles.filter((article) => {
       if (globalFilter) {
         const q = globalFilter.toLowerCase();
@@ -315,29 +303,24 @@ export function HITLArticleTable({
       return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
     });
 
+    // getProgress and valuesByArticle are read inside the filter/sort;
+    // including them keeps progress-based filtering reactive to value changes.
     return visible;
-  }, [articles, globalFilter, filterValues, sortField, sortDirection]);
+  })();
 
-  const activeFiltersCount = useMemo(() => {
+  const activeFiltersCount = (() => {
     let n = globalFilter.trim() ? 1 : 0;
     FILTER_FIELDS.forEach((f) => {
       if (!isFilterValueEmpty(filterValues[f.id])) n += 1;
     });
     return n;
-  }, [globalFilter, filterValues]);
+  })();
 
-  const filterLabels = useMemo(
-    () =>
-      Object.fromEntries(FILTER_FIELDS.map((f) => [f.id, f.label])) as Record<
-        string,
-        string
-      >,
-    [],
-  );
-  const activeFiltersList = useMemo(
-    () => buildActiveFiltersList(FILTER_FIELDS, filterValues, filterLabels),
-    [filterValues, filterLabels],
-  );
+  const filterLabels = Object.fromEntries(
+    FILTER_FIELDS.map((f) => [f.id, f.label])
+  ) as Record<string, string>;
+
+  const activeFiltersList = buildActiveFiltersList(FILTER_FIELDS, filterValues, filterLabels);
 
   const clearFilterField = (fieldId: string) => {
     const f = FILTER_FIELDS.find((field) => field.id === fieldId);

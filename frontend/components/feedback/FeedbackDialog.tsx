@@ -99,7 +99,7 @@ export function FeedbackDialog({ open, onOpenChange }: FeedbackDialogProps) {
     e.preventDefault();
     if (!isDescriptionValid) return;
 
-    let attachments: FeedbackAttachmentInput[] = [];
+    let attachments: FeedbackAttachmentInput[];
     try {
       attachments = await uploadCapture();
     } catch (err) {

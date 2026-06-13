@@ -11,9 +11,9 @@
  * @hook
  */
 
-import {useCallback, useEffect, useState} from 'react';
-import {supabase} from '@/integrations/supabase/client';
-import {getRolePermissions, isValidUserRole, type PermissionRules, type UserRole} from '@/lib/comparison/permissions';
+import {useEffect, useState} from 'react';
+import {loadComparisonPermissions} from '@/services/projectSettingsService';
+import {type PermissionRules, type UserRole} from '@/lib/comparison/permissions';
 import {t} from '@/lib/copy';
 
 /**
@@ -36,13 +36,13 @@ export interface ComparisonPermissions extends PermissionRules {
  * @param projectId - Project ID
  * @param userId - User ID
  * @returns Full permissions with loading state
- * 
+ *
  * @example
  * const permissions = useComparisonPermissions(projectId, userId);
- * 
+ *
  * if (permissions.loading) return <Loader />;
  * if (!permissions.canSeeOthers) return null;
- * 
+ *
  * return <ComparisonView ... />;
  */
 export function useComparisonPermissions(
@@ -57,88 +57,61 @@ export function useComparisonPermissions(
     canManageBlindMode: false,
     canExport: false,
     canEditTemplate: false,
-    loading: true,
+    // Only show the loader when there is actually something to load.
+    loading: Boolean(projectId && userId),
     error: null
   });
 
-  const loadPermissions = useCallback(async () => {
-    try {
-      setPermissions(prev => ({ ...prev, loading: true, error: null }));
+  // Params cleared after mount: stop the loader (during render, not via effect).
+  const [prevKey, setPrevKey] = useState({ projectId, userId });
+  if (prevKey.projectId !== projectId || prevKey.userId !== userId) {
+    setPrevKey({ projectId, userId });
+    if (!projectId || !userId) {
+      setPermissions(prev => ({ ...prev, loading: false }));
+    }
+  }
 
-        // Query 1: Fetch member role
-      const { data: member, error: memberError } = await supabase
-        .from('project_members')
-        .select('role')
-        .eq('project_id', projectId)
-        .eq('user_id', userId)
-        .single();
+  const fetchPermissions = async () => {
+    setPermissions(prev => ({ ...prev, loading: true, error: null }));
 
-      if (memberError) throw memberError;
+    const result = await loadComparisonPermissions(projectId, userId);
 
-      if (!member) {
-          throw new Error(t('common', 'errors_userNotProjectMember'));
-      }
-
-        // Query 2: Fetch project config
-      const { data: project, error: projectError } = await supabase
-        .from('projects')
-        .select('settings')
-        .eq('id', projectId)
-        .single();
-
-      if (projectError) throw projectError;
-
-        // Validate role
-      const role = member.role;
-      if (!isValidUserRole(role)) {
-          throw new Error(`${t('common', 'errors_invalidRole')}: ${role}`);
-      }
-
-        // Extract blind_mode (with safe fallback)
-      const isBlindMode = (project?.settings as { blind_mode?: boolean } | null)?.blind_mode === true;
-
-        // Compute permissions using centralized rules
-      const rolePermissions = getRolePermissions(role, isBlindMode);
-
+    if (result.ok) {
       setPermissions({
-        userRole: role,
-        isBlindMode,
-        ...rolePermissions,
+        userRole: result.data.userRole,
+        isBlindMode: result.data.isBlindMode,
+        ...result.data.rules,
         loading: false,
-        error: null
+        error: null,
       });
-
-    } catch (err: any) {
-        console.error('Error loading comparison permissions:', err);
-
-        // Error state: assume minimum permissions (safe)
+    } else {
+      console.error('Error loading comparison permissions:', result.error);
+      // Error state: assume minimum permissions (safe)
       setPermissions({
         userRole: 'reviewer',
-          isBlindMode: true, // Assume blind mode on error (safer)
+        isBlindMode: true, // Assume blind mode on error (safer)
         canSeeOthers: false,
         canResolveConflicts: false,
         canManageBlindMode: false,
         canExport: false,
         canEditTemplate: false,
         loading: false,
-          error: err.message || t('common', 'errors_loadPermissions')
+        error: result.error.message || t('common', 'errors_loadPermissions'),
       });
     }
-  }, [projectId, userId]);
+  };
 
   useEffect(() => {
     if (!projectId || !userId) {
-      setPermissions(prev => ({ ...prev, loading: false }));
       return;
     }
+    // Microtask so the loader's setState calls run in an async callback.
+    queueMicrotask(() => void fetchPermissions());
+  }, [projectId, userId, fetchPermissions]);
 
-    loadPermissions();
-  }, [projectId, userId, loadPermissions]);
-
-    // Return refresh function to reload permissions
+  // Return refresh function to reload permissions
   return {
     ...permissions,
-    refresh: loadPermissions
+    refresh: fetchPermissions,
   } as ComparisonPermissions & { refresh: () => Promise<void> };
 }
-

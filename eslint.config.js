@@ -21,6 +21,10 @@ export default tseslint.config(
       "react-refresh": reactRefresh,
     },
     rules: {
+      // React Compiler rules from eslint-plugin-react-hooks 7 run at their
+      // recommended error level. The 94-finding debt that once held them at
+      // "warn" was burned down in PRs #260–#265 — keep them at error so new
+      // violations fail CI instead of accumulating.
       ...reactHooks.configs.recommended.rules,
         "react-hooks/exhaustive-deps": "off",
         "react-refresh/only-export-components": "off",

@@ -1,5 +1,5 @@
 import {defineConfig} from "vite";
-import react from "@vitejs/plugin-react-swc";
+import {reactWithCompiler} from "./vite.shared-plugins";
 import path from "path";
 
 // https://vitejs.dev/config/
@@ -27,7 +27,7 @@ export default defineConfig(({mode: _mode}) => ({
                         return "radix-vendor";
                     }
 
-                    if (id.includes("react-router-dom")) {
+                    if (id.includes("react-router")) {
                         return "router-vendor";
                     }
 
@@ -44,7 +44,11 @@ export default defineConfig(({mode: _mode}) => ({
             },
         },
     },
-  plugins: [react()],
+  // React + React Compiler — shared with vitest.config.ts so the test
+  // pipeline can never drift from the app pipeline. panicThreshold
+  // 'all_errors' is permanent: a non-compiling component fails the build.
+  // See scripts/enumerate_compiler_bailouts.mjs for a full-tree listing.
+  plugins: reactWithCompiler(),
   resolve: {
     alias: {
         "@": path.resolve(__dirname, "./frontend"),

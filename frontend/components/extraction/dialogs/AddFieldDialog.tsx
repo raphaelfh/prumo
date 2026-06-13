@@ -12,7 +12,7 @@
  */
 
 import {useEffect, useState} from 'react';
-import {useForm} from 'react-hook-form';
+import {useForm, useWatch} from 'react-hook-form';
 import {zodResolver} from '@hookform/resolvers/zod';
 import {
     Dialog,
@@ -88,8 +88,10 @@ export function AddFieldDialog({
     },
   });
 
-  const fieldType = form.watch('field_type');
-  const label = form.watch('label');
+  // useWatch instead of form.watch — the latter is incompatible with the
+  // React Compiler (react-hooks/incompatible-library).
+  const fieldType = useWatch({control: form.control, name: 'field_type'});
+  const label = useWatch({control: form.control, name: 'label'});
 
     // Auto-generate name when label changes
   useEffect(() => {
@@ -101,27 +103,27 @@ export function AddFieldDialog({
 
   const handleSubmit = async (data: ExtractionFieldInput) => {
     setLoading(true);
-    try {
-        // Configure "Other (specify)" support via dedicated flags
-      const finalData = { 
-        ...data,
-        allow_other: (fieldType === 'select' || fieldType === 'multiselect') ? allowOther : false,
-          other_label: (fieldType === 'select' || fieldType === 'multiselect') && allowOther ? (data as any).other_label || t('extraction', 'otherSpecifyDefault') : null,
-        other_placeholder: (fieldType === 'select' || fieldType === 'multiselect') && allowOther ? (data as any).other_placeholder || null : null,
-      } as any;
 
-      const result = await onSave(finalData);
-      if (result) {
-          // Don't create/remove auxiliary fields; "Other" is inline
-          // Reset form and close
-        form.reset();
-        setAutoGenerateName(true);
-        setAllowOther(false);
-        onOpenChange(false);
-      }
-    } finally {
-      setLoading(false);
+      // Configure "Other (specify)" support via dedicated flags
+    const finalData = {
+      ...data,
+      allow_other: (fieldType === 'select' || fieldType === 'multiselect') ? allowOther : false,
+        other_label: (fieldType === 'select' || fieldType === 'multiselect') && allowOther ? (data as any).other_label || t('extraction', 'otherSpecifyDefault') : null,
+      other_placeholder: (fieldType === 'select' || fieldType === 'multiselect') && allowOther ? (data as any).other_placeholder || null : null,
+    } as any;
+
+    const result = await onSave(finalData).catch(() => null);
+
+    if (result) {
+        // Don't create/remove auxiliary fields; "Other" is inline
+        // Reset form and close
+      form.reset();
+      setAutoGenerateName(true);
+      setAllowOther(false);
+      onOpenChange(false);
     }
+
+    setLoading(false);
   };
 
   const handleCancel = () => {
@@ -424,7 +426,7 @@ export function AddFieldDialog({
             {/* Info adicional */}
             <div className="rounded-lg border border-info/30 bg-info/5 p-3 text-sm text-foreground">
               <div className="flex items-start gap-2">
-                <Info className="h-4 w-4 mt-0.5 flex-shrink-0 text-info" />
+                <Info className="h-4 w-4 mt-0.5 shrink-0 text-info" />
                 <div>
                     <p className="font-medium">{t('extraction', 'addFieldTipsTitle')}</p>
                   <ul className="mt-1 list-disc list-inside space-y-1 text-xs text-muted-foreground">

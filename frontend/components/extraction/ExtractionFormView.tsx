@@ -147,9 +147,9 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
   );
 }
 
-// Memoize on the props that actually trigger a visual change. AI suggestion
-// updates are checked by reference + length so the form re-renders when the
-// suggestions hook publishes a new map after extraction.
+// kept: custom comparator — compiler does not replicate arePropsEqual.
+// Re-renders only on props that change visuals (aiSuggestions by
+// reference + key count, published after each extraction).
 export const ExtractionFormView = memo(ExtractionFormViewComponent, (prevProps, nextProps) => {
   const aiSuggestionsChanged =
     prevProps.aiSuggestions !== nextProps.aiSuggestions ||

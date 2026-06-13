@@ -7,7 +7,7 @@
  * @component
  */
 
-import {useCallback, useEffect, useState} from 'react';
+import {useEffect, useState} from 'react';
 import {Popover, PopoverContent, PopoverTrigger,} from '@/components/ui/popover';
 import {ScrollArea} from '@/components/ui/scroll-area';
 import {Badge} from '@/components/ui/badge';
@@ -63,32 +63,39 @@ export function AISuggestionHistoryPopover(props: AISuggestionHistoryPopoverProp
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
 
-  const loadHistory = useCallback(async () => {
+  const loadHistory = async () => {
     if (!instanceId || !fieldId) {
         console.warn('[AISuggestionHistoryPopover] instanceId or fieldId not provided');
       return;
     }
 
     setLoading(true);
-    try {
-        console.warn('[AISuggestionHistoryPopover] Loading history...', {instanceId, fieldId});
-      const data = await getHistory(instanceId, fieldId);
-        console.warn('[AISuggestionHistoryPopover] History loaded:', {count: data.length, data});
-      setHistory(data);
-    } catch (err) {
+    console.warn('[AISuggestionHistoryPopover] Loading history...', {instanceId, fieldId});
+
+    const data = await getHistory(instanceId, fieldId).catch((err: unknown) => {
         console.error('[AISuggestionHistoryPopover] Error loading history:', err);
+      return [] as typeof history;
+    });
+
+    console.warn('[AISuggestionHistoryPopover] History loaded:', {count: data.length, data});
+    setHistory(data);
+    setLoading(false);
+  };
+
+  // Clear history on close so next open has fresh data (adjusted during
+  // render instead of via effect).
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (!open) {
       setHistory([]);
-    } finally {
-      setLoading(false);
     }
-  }, [instanceId, fieldId, getHistory]);
+  }
 
   useEffect(() => {
     if (open) {
-      loadHistory();
-    } else {
-        // Clear history on close so next open has fresh data
-      setHistory([]);
+      // Microtask so the loader's setState calls run in an async callback.
+      queueMicrotask(() => void loadHistory());
     }
   }, [open, loadHistory]);
 
