@@ -1,0 +1,139 @@
+"""Unit tests for the envelope-aware export value resolver.
+
+Pure-function tests — no DB, no openpyxl. Each case maps to one row of
+the §6 / §6.2-A1 envelope contract in the redesign spec.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from app.models.extraction import ExtractionFieldType
+from app.services.exports.value_envelope import resolve_value
+
+
+@dataclass(frozen=True)
+class _Field:
+    """Minimal structural stand-in for FieldDescriptor (type + unit)."""
+
+    type: ExtractionFieldType
+    unit: str | None = None
+
+
+def test_none_returns_none() -> None:
+    assert resolve_value(None) is None
+
+
+def test_scalar_passthrough() -> None:
+    assert resolve_value("hello") == "hello"
+    assert resolve_value(5) == 5
+    assert resolve_value(3.14) == 3.14
+
+
+def test_single_wrap_value() -> None:
+    assert resolve_value({"value": "x"}) == "x"
+    assert resolve_value({"value": 7}) == 7
+
+
+def test_double_wrapped_value() -> None:
+    # Decisions/proposals write path wraps {"value": inner}; inner may be
+    # itself a {"value": ...} or a {"value", "unit"} envelope.
+    assert resolve_value({"value": {"value": "deep"}}) == "deep"
+
+
+def test_value_unit_appends_unit() -> None:
+    field = _Field(type=ExtractionFieldType.NUMBER, unit=None)
+    assert resolve_value({"value": 5, "unit": "mg"}, field=field) == "5 mg"
+
+
+def test_double_wrapped_value_unit() -> None:
+    field = _Field(type=ExtractionFieldType.NUMBER)
+    assert resolve_value({"value": {"value": 5, "unit": "mg"}}, field=field) == "5 mg"
+
+
+def test_value_unit_falls_back_to_field_unit() -> None:
+    field = _Field(type=ExtractionFieldType.NUMBER, unit="kg")
+    # Envelope omits unit → field.unit is used.
+    assert resolve_value({"value": 12}, field=field) == "12 kg"
+
+
+def test_envelope_unit_wins_over_field_unit() -> None:
+    field = _Field(type=ExtractionFieldType.NUMBER, unit="kg")
+    assert resolve_value({"value": 5, "unit": "mg"}, field=field) == "5 mg"
+
+
+def test_empty_unit_yields_bare_scalar() -> None:
+    field = _Field(type=ExtractionFieldType.NUMBER, unit=None)
+    assert resolve_value({"value": 9, "unit": ""}, field=field) == 9
+    assert resolve_value({"value": 9, "unit": None}, field=field) == 9
+
+
+def test_single_other() -> None:
+    assert resolve_value({"selected": "other", "other_text": "freetext"}) == "freetext"
+
+
+def test_multi_other_joins_labels_and_texts() -> None:
+    raw = {"selected": ["a", "b"], "other_texts": ["c", "d"]}
+    assert resolve_value(raw) == "a; b; c; d"
+
+
+def test_multi_other_empty_other_texts() -> None:
+    raw = {"selected": ["a", "b"], "other_texts": []}
+    assert resolve_value(raw) == "a; b"
+
+
+def test_list_multiselect_joins() -> None:
+    assert resolve_value(["a", "b", None, "c"]) == "a; b; c"
+
+
+def test_boolean_rendering_with_field() -> None:
+    field = _Field(type=ExtractionFieldType.BOOLEAN)
+    assert resolve_value({"value": True}, field=field) == "Yes"
+    assert resolve_value({"value": False}, field=field) == "No"
+
+
+def test_boolean_without_field_is_native_bool() -> None:
+    # No field context → leave the native bool for the format helper.
+    assert resolve_value({"value": True}) is True
+
+
+def test_no_information_sentinel_preserved() -> None:
+    assert resolve_value("No information") == "No information"
+    assert resolve_value({"value": "No information"}) == "No information"
+
+
+def test_never_returns_dict() -> None:
+    # Any unexpected dict shape must NOT leak as a Python-repr str of dict;
+    # it collapses to a deterministic key:value rendering.
+    out = resolve_value({"unexpected": 1, "shape": 2})
+    assert not isinstance(out, dict)
+    assert isinstance(out, str)
+
+
+def test_double_wrapped_value_unit_not_double_decorated() -> None:
+    # Regression: the inner {value, unit} already produces "5 mg"; the
+    # outer single-wrap must NOT re-append field.unit ("5 mg kg").
+    field = _Field(type=ExtractionFieldType.NUMBER, unit="kg")
+    assert resolve_value({"value": {"value": 5, "unit": "mg"}}, field=field) == "5 mg"
+
+
+def test_single_wrap_boolean_not_unit_decorated() -> None:
+    # Regression: a unit-bearing field must NOT decorate a boolean
+    # ("Yes kg"); booleans are not numeric.
+    field = _Field(type=ExtractionFieldType.BOOLEAN, unit="kg")
+    assert resolve_value({"value": True}, field=field) == "Yes"
+    assert resolve_value({"value": False}, field=field) == "No"
+
+
+def test_single_wrap_nonnumeric_scalar_not_unit_decorated() -> None:
+    # Regression: a non-numeric free-text scalar under a unit-bearing
+    # field must NOT be decorated ("approx mg").
+    field = _Field(type=ExtractionFieldType.NUMBER, unit="mg")
+    assert resolve_value({"value": "approx"}, field=field) == "approx"
+
+
+def test_value_unit_does_not_decorate_nonnumeric_scalar() -> None:
+    # Regression: even an explicit envelope unit must not decorate a
+    # non-numeric inner (the unit only makes sense for numbers).
+    field = _Field(type=ExtractionFieldType.NUMBER)
+    assert resolve_value({"value": "approx", "unit": "mg"}, field=field) == "approx"
