@@ -1189,6 +1189,13 @@ class ExtractionExportService(LoggerMixin):
         field_label_by_id: dict[UUID, str] = {
             f.field_id: f.label for s in sections for f in s.fields
         }
+        # Descriptor lookup so the AI 'proposed value' column resolves the
+        # same envelope shapes the value maps do (number+unit fallback,
+        # boolean rendering) via ``resolve_value`` instead of the narrow
+        # ``_unwrap_value``.
+        field_desc_by_id: dict[UUID, FieldDescriptor] = {
+            f.field_id: f for s in sections for f in s.fields
+        }
         # entity_type for each instance is needed to compute the section
         # label and the cardinality-driven instance index. One bulk
         # query over instances:
@@ -1355,7 +1362,7 @@ class ExtractionExportService(LoggerMixin):
                 section_label=section_label,
                 instance_index=instance_index_by_id.get(iid, 1),
                 field_label=field_label_by_id.get(fid, "(unknown field)"),
-                ai_proposed_value=_unwrap_value(proposed_value),
+                ai_proposed_value=resolve_value(proposed_value, field=field_desc_by_id.get(fid)),
                 confidence=float(confidence) if confidence is not None else None,
                 rationale=rationale,
                 evidence_text=" | ".join(ev_text_by_pid.get(pid, [])),
