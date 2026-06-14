@@ -502,3 +502,12 @@ def test_ai_metadata_value_columns_render_via_shared_helper():
     # E2 = "AI proposed value", L2 = "Final value used".
     assert ws.cell(row=2, column=5).value == "5 mg"
     assert ws.cell(row=2, column=12).value == "Yes"
+
+
+def test_xlsx_safe_raises_on_dict() -> None:
+    """A dict reaching _xlsx_safe means resolve_value was bypassed — it
+    must fail loud, not silently str() into the sheet."""
+    from app.services.exports.extraction_xlsx_builder import _xlsx_safe
+
+    with pytest.raises(TypeError):
+        _xlsx_safe({"value": 5, "unit": "mg"})

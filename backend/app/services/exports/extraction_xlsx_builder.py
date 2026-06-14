@@ -344,17 +344,21 @@ def _write_ai_metadata_sheet(
 def _xlsx_safe(value: Any) -> Any:
     """Convert values openpyxl cannot serialise natively.
 
-    Lists / dicts → string; timezone-aware datetimes → naive UTC
-    (openpyxl rejects tz-aware datetimes by default).
+    Lists → joined string; timezone-aware datetimes → naive UTC. A
+    ``dict`` here is a bug: ``resolve_value`` is the single unwrapper and
+    must have collapsed every envelope upstream. We raise rather than
+    silently ``str()`` a Python-repr dict into the workbook (that masked
+    the §6 dict-leak in tests).
     """
     if value is None:
         return None
     if isinstance(value, list):
         return "; ".join(str(item) for item in value if item is not None)
     if isinstance(value, dict):
-        # JSONB shapes the value-resolver missed. Stringify rather than
-        # explode the sheet.
-        return str(value)
+        raise TypeError(
+            "_xlsx_safe received a dict; resolve_value must run upstream "
+            f"to collapse the envelope (got {value!r})."
+        )
     # Datetime handling — openpyxl raises on tz-aware datetimes.
     from datetime import datetime as _dt
 
