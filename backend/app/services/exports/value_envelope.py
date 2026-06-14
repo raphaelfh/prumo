@@ -135,3 +135,32 @@ def _apply_unit(
 def _is_number(value: Any) -> bool:
     """True for ``int``/``float`` but NOT ``bool`` (a ``bool`` is an ``int``)."""
     return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def format_export_scalar(value: ResolvedScalar, *, field: _FieldLike | None = None) -> Any:
+    """Shape an ALREADY-RESOLVED scalar for an openpyxl cell.
+
+    Shared by the matrix cells and the AI-metadata value columns so
+    number+unit / select / multiselect / boolean render consistently.
+    Must NEVER receive a dict — ``resolve_value`` is the only unwrapper
+    and is always applied first; a dict here is a programming error and
+    is allowed to raise downstream rather than be silently stringified.
+
+    * ``bool`` + BOOLEAN field -> ``"Yes"``/``"No"`` (idempotent: a
+      pre-resolved ``"Yes"`` passes through).
+    * tz-aware ``datetime`` -> naive (openpyxl rejects tz-aware).
+    * everything else -> returned unchanged (scalars are already final).
+    """
+    from datetime import datetime as _dt
+
+    if value is None:
+        return None
+    if (
+        isinstance(value, bool)
+        and field is not None
+        and getattr(field, "type", None) is ExtractionFieldType.BOOLEAN
+    ):
+        return "Yes" if value else "No"
+    if isinstance(value, _dt) and value.tzinfo is not None:
+        return value.replace(tzinfo=None)
+    return value

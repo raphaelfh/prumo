@@ -461,3 +461,44 @@ def test_ai_metadata_sheet_writes_proposal_rows_in_canonical_order():
     assert ws.cell(row=2, column=10).value is not None
     assert ws.cell(row=2, column=11).value == "accepted"
     assert ws.cell(row=2, column=12).value == "Existing registry"
+
+
+def test_ai_metadata_value_columns_render_via_shared_helper():
+    """The 'AI proposed value' (E) and 'Final value used' (L) columns
+    pass already-resolved scalars through the shared format helper, not a
+    dict-stringify path — number+unit / Yes survive intact."""
+    from app.services.extraction_export_service import AIProposalRow, ExportLayout
+
+    proposal = AIProposalRow(
+        article_label="Gaca, 2011",
+        section_label="1. Source of data",
+        instance_index=1,
+        field_label="1.1 Dose",
+        ai_proposed_value="5 mg",
+        confidence=0.8,
+        rationale="reason",
+        evidence_text="evidence",
+        evidence_pages="2",
+        proposed_at=datetime(2026, 6, 14, 10, 0, 0, tzinfo=UTC),
+        reviewer_outcome="accepted",
+        final_value_used="Yes",
+    )
+    base = _layout(include_ai_metadata=True)
+    layout = ExportLayout(
+        project_name=base.project_name,
+        template_name=base.template_name,
+        template_version=base.template_version,
+        sections=base.sections,
+        articles=base.articles,
+        reviewers=base.reviewers,
+        mode=base.mode,
+        include_ai_metadata=True,
+        anonymize_reviewer_names=base.anonymize_reviewer_names,
+        notes=base.notes,
+        value_map=base.value_map,
+        ai_proposal_rows=(proposal,),
+    )
+    ws = _open(build_workbook(layout))["AI metadata"]
+    # E2 = "AI proposed value", L2 = "Final value used".
+    assert ws.cell(row=2, column=5).value == "5 mg"
+    assert ws.cell(row=2, column=12).value == "Yes"

@@ -154,3 +154,29 @@ def test_resolves_with_real_field_descriptor_unit() -> None:
     )
     # Envelope omits unit → FieldDescriptor.unit fills it in.
     assert resolve_value({"value": 5}, field=fd) == "5 mg"
+
+
+def test_format_export_scalar_boolean_with_field() -> None:
+    from app.services.exports.value_envelope import format_export_scalar
+
+    field = _Field(type=ExtractionFieldType.BOOLEAN)
+    assert format_export_scalar(True, field=field) == "Yes"
+    assert format_export_scalar(False, field=field) == "No"
+
+
+def test_format_export_scalar_strips_tzinfo() -> None:
+    from datetime import UTC, datetime
+
+    from app.services.exports.value_envelope import format_export_scalar
+
+    aware = datetime(2026, 6, 14, 12, 0, tzinfo=UTC)
+    out = format_export_scalar(aware)
+    assert out.tzinfo is None
+
+
+def test_format_export_scalar_passthrough_scalar() -> None:
+    from app.services.exports.value_envelope import format_export_scalar
+
+    assert format_export_scalar("5 mg") == "5 mg"
+    assert format_export_scalar(7) == 7
+    assert format_export_scalar(None) is None

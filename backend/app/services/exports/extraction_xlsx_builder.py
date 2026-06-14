@@ -33,7 +33,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from app.models.extraction import ExtractionEntityRole, ExtractionFieldType
+from app.models.extraction import ExtractionEntityRole
+from app.services.exports.value_envelope import format_export_scalar
 from app.services.extraction_export_service import (
     AIProposalRow,
     ArticleDescriptor,
@@ -273,32 +274,18 @@ def _lookup_value(
 
 
 def _format_cell(value: Any, field: FieldDescriptor) -> Any:
-    """Type-aware cell formatting (FR-019).
+    """Type-aware cell formatting for an ALREADY-RESOLVED matrix value.
 
-    * text/number/date/boolean → typed Python value (openpyxl writes
-      typed cells, not stringified).
-    * select → display label of the selected option.
-    * multiselect → labels joined with ``"; "`` (semicolon-space to
-      survive comma-bearing labels).
+    Values arrive pre-resolved from ``resolve_value`` (no dicts). This
+    only applies the residual openpyxl-cell shaping shared with the AI
+    sheet via ``format_export_scalar``; multiselect lists (if any survive
+    as lists) are joined here.
     """
     if value is None:
         return None
-
-    ftype = field.type
-    if ftype is ExtractionFieldType.BOOLEAN:
-        # Localisation deferred — the dialog's UI locale is captured at
-        # request time in a future iteration; default English keeps the
-        # reference workbook semantics.
-        return "Yes" if bool(value) else "No"
-    if ftype is ExtractionFieldType.MULTISELECT:
-        if isinstance(value, list):
-            return "; ".join(str(item) for item in value if item is not None)
-        return str(value)
-    if ftype is ExtractionFieldType.SELECT:
-        return str(value) if not isinstance(value, str) else value
-    # text / number / date / unknown — pass through; openpyxl will pick
-    # the right cell type from the Python value.
-    return value
+    if isinstance(value, list):
+        return "; ".join(str(item) for item in value if item is not None)
+    return format_export_scalar(value, field=field)
 
 
 # ======================================================================
@@ -334,12 +321,15 @@ def _write_ai_metadata_sheet(
 
     rows: tuple[AIProposalRow, ...] = getattr(layout, "ai_proposal_rows", ()) or ()
     body_row = 2
+    # Column indices that carry resolved extraction values (1-based to
+    # match the header row); both must render like matrix cells.
+    value_col_indices = {5, 12}  # "AI proposed value", "Final value used"
     for row in rows:
-        # ``astuple`` preserves the dataclass field order which the
-        # ``AIProposalRow`` definition keeps lockstep with the header
-        # row above. Numeric / datetime / None values are written typed.
         for col_idx, val in enumerate(astuple(row), start=1):
-            ws.cell(row=body_row, column=col_idx, value=_xlsx_safe(val))
+            cell_val = (
+                format_export_scalar(val) if col_idx in value_col_indices else _xlsx_safe(val)
+            )
+            ws.cell(row=body_row, column=col_idx, value=cell_val)
         body_row += 1
 
     if not rows:
