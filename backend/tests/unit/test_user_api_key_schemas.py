@@ -86,17 +86,19 @@ class TestCreateAPIKeyRequest:
         req = CreateAPIKeyRequest.model_validate({"provider": provider, "apiKey": "0123456789"})
         assert req.provider == provider
 
-    def test_unsupported_provider_is_not_rejected_by_schema(self) -> None:
-        """The schema does NOT validate provider against SUPPORTED_PROVIDERS.
+    def test_unsupported_provider_is_rejected_by_schema(self) -> None:
+        """The schema validates provider against SUPPORTED_PROVIDERS.
 
-        ``provider`` is a plain ``str`` field; the allow-list is enforced
-        only by the DB CHECK constraint (see app.models.user_api_key).
-        Any string parses here.
+        A ``field_validator`` enforces the allow-list at the boundary so an
+        unsupported value fails with a clean 422 ``ValidationError`` instead
+        of leaking out as a DB/500 at INSERT time. ``SUPPORTED_PROVIDERS``
+        (shared with the DB CHECK constraint) is the single source of truth.
         """
-        req = CreateAPIKeyRequest.model_validate(
-            {"provider": "not-a-real-provider", "apiKey": "0123456789"}
-        )
-        assert req.provider == "not-a-real-provider"
+        with pytest.raises(ValidationError) as exc_info:
+            CreateAPIKeyRequest.model_validate(
+                {"provider": "not-a-real-provider", "apiKey": "0123456789"}
+            )
+        assert any(error["loc"] == ("provider",) for error in exc_info.value.errors())
 
 
 class TestUpdateAPIKeyRequest:
