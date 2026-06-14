@@ -1191,8 +1191,7 @@ class ExtractionExportService(LoggerMixin):
         }
         # Descriptor lookup so the AI 'proposed value' column resolves the
         # same envelope shapes the value maps do (number+unit fallback,
-        # boolean rendering) via ``resolve_value`` instead of the narrow
-        # ``_unwrap_value``.
+        # boolean rendering) via ``resolve_value``.
         field_desc_by_id: dict[UUID, FieldDescriptor] = {
             f.field_id: f for s in sections for f in s.fields
         }
@@ -1485,18 +1484,6 @@ def _normalize_allowed_values(raw: Any) -> tuple[str, ...]:
     if isinstance(raw, dict) and "options" in raw and isinstance(raw["options"], list):
         return _normalize_allowed_values(raw["options"])
     return ()
-
-
-def _unwrap_value(raw: Any) -> Any:
-    """Unwrap the JSONB shape used by extraction_published_states.value.
-
-    Published values are stored as ``{"value": <scalar>}`` (per the
-    extraction value service convention). Falls back to the raw shape
-    when the wrapper is absent.
-    """
-    if isinstance(raw, dict) and set(raw.keys()) == {"value"}:
-        return raw["value"]
-    return raw
 
 
 def _build_header_label(

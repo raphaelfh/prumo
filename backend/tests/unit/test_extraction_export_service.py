@@ -42,7 +42,6 @@ from app.services.extraction_export_service import (
     _letter_for,
     _normalize_allowed_values,
     _short_id,
-    _unwrap_value,
 )
 
 # ---------------------------------------------------------------------------
@@ -1301,35 +1300,6 @@ class TestListEligibleReviewersForPicker:
         )
 
         assert result == []
-
-
-# ===========================================================================
-# Bonus: _unwrap_value (pure helper, complements T2 coverage)
-# ===========================================================================
-
-
-class TestUnwrapValue:
-    """Unit tests for the module-level _unwrap_value helper."""
-
-    def test_single_key_dict_is_unwrapped(self):
-        assert _unwrap_value({"value": "hello"}) == "hello"
-
-    def test_multi_key_dict_not_unwrapped(self):
-        raw = {"value": "x", "other": "y"}
-        assert _unwrap_value(raw) is raw
-
-    def test_string_returned_as_is(self):
-        assert _unwrap_value("plain") == "plain"
-
-    def test_none_returned_as_is(self):
-        assert _unwrap_value(None) is None
-
-    def test_number_returned_as_is(self):
-        assert _unwrap_value(42) == 42
-
-    def test_empty_dict_not_unwrapped(self):
-        raw = {}
-        assert _unwrap_value(raw) is raw
 
 
 # ===========================================================================
