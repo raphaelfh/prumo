@@ -6,7 +6,7 @@ Schemas Pydantic for gerenciamento de API keys of the usuarios.
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.user_api_key import SUPPORTED_PROVIDERS
 
@@ -47,6 +47,20 @@ class CreateAPIKeyRequest(BaseModel):
     )
 
     model_config = ConfigDict(populate_by_name=True)
+
+    @field_validator("provider")
+    @classmethod
+    def _provider_must_be_supported(cls, value: str) -> str:
+        """Reject unsupported providers at the schema boundary (422).
+
+        ``SUPPORTED_PROVIDERS`` (the same tuple the DB CHECK constraint
+        enforces) is the single source of truth — a bad provider fails here
+        with a clean ValidationError instead of leaking out as a DB/500 at
+        INSERT time.
+        """
+        if value not in SUPPORTED_PROVIDERS:
+            raise ValueError(f"Provider '{value}' is not supported. Use: {SUPPORTED_PROVIDERS}")
+        return value
 
 
 class UpdateAPIKeyRequest(BaseModel):
