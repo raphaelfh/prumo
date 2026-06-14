@@ -50,6 +50,7 @@ from app.repositories.extraction_template_version_repository import (
     ExtractionTemplateVersionRepository,
 )
 from app.repositories.project_repository import ProjectMemberRepository, ProjectRepository
+from app.services.exports.value_envelope import resolve_value
 
 # ----------------------------------------------------------------------
 # Enums
@@ -274,6 +275,9 @@ class ExtractionExportService(LoggerMixin):
         template, version = await self._load_active_template_version(template_id)
         project_name = await self._resolve_project_name(project_id)
         sections = await self._load_sections(template_id)
+        fields_by_id: dict[UUID, FieldDescriptor] = {
+            f.field_id: f for s in sections for f in s.fields
+        }
 
         reviewers: tuple[ReviewerDescriptor, ...] = ()
 
@@ -284,7 +288,8 @@ class ExtractionExportService(LoggerMixin):
                 candidate_ids=article_ids,
             )
             value_map = await self._build_consensus_value_map(
-                run_ids=[a.run_id for a in articles if a.run_id is not None]
+                run_ids=[a.run_id for a in articles if a.run_id is not None],
+                fields_by_id=fields_by_id,
             )
         elif mode is ExportMode.SINGLE_USER:
             if reviewer_id is None:
@@ -298,6 +303,7 @@ class ExtractionExportService(LoggerMixin):
             value_map = await self._build_single_user_value_map(
                 run_ids=[a.run_id for a in articles if a.run_id is not None],
                 reviewer_id=reviewer_id,
+                fields_by_id=fields_by_id,
             )
         elif mode is ExportMode.ALL_USERS:
             articles, omitted = await self._resolve_articles_for_all_users(
@@ -312,6 +318,7 @@ class ExtractionExportService(LoggerMixin):
             value_map = await self._build_all_users_value_map(
                 run_ids=[a.run_id for a in articles if a.run_id is not None],
                 reviewer_ids=[r.reviewer_id for r in reviewers],
+                fields_by_id=fields_by_id,
             )
         else:
             raise NotImplementedError(f"resolve_layout: unknown mode={mode.value}.")
@@ -646,12 +653,15 @@ class ExtractionExportService(LoggerMixin):
         self,
         *,
         run_ids: list[UUID],
+        fields_by_id: dict[UUID, FieldDescriptor],
     ) -> dict[tuple[Any, ...], Any]:
         """Bulk-fetch all published values for the given runs (FR-013).
 
         Single query: ``SELECT … FROM extraction_published_states WHERE
         run_id IN :run_ids``. Result keyed by
-        ``(run_id, instance_id, field_id) -> Python value``.
+        ``(run_id, instance_id, field_id) -> resolved scalar``. The field
+        descriptor is threaded so ``resolve_value`` can surface units and
+        boolean labels.
         """
         if not run_ids:
             return {}
@@ -666,7 +676,7 @@ class ExtractionExportService(LoggerMixin):
             )
         ).all()
         return {
-            (run_id, instance_id, field_id): _unwrap_value(value)
+            (run_id, instance_id, field_id): resolve_value(value, field=fields_by_id.get(field_id))
             for run_id, instance_id, field_id, value in rows
         }
 
@@ -788,6 +798,7 @@ class ExtractionExportService(LoggerMixin):
         *,
         run_ids: list[UUID],
         reviewer_id: UUID,
+        fields_by_id: dict[UUID, FieldDescriptor],
     ) -> dict[tuple[Any, ...], Any]:
         """Bulk-fetch one reviewer's latest decisions per (run, instance, field).
 
@@ -832,10 +843,11 @@ class ExtractionExportService(LoggerMixin):
 
         out: dict[tuple[Any, ...], Any] = {}
         for rid, iid, fid, decision, value, proposed_value in rows:
+            field = fields_by_id.get(fid)
             if decision == "accept_proposal":
-                out[(rid, iid, fid)] = _unwrap_value(proposed_value)
+                out[(rid, iid, fid)] = resolve_value(proposed_value, field=field)
             elif decision == "edit":
-                out[(rid, iid, fid)] = _unwrap_value(value)
+                out[(rid, iid, fid)] = resolve_value(value, field=field)
             # reject → key absent (renders blank)
         return out
 
@@ -1067,6 +1079,7 @@ class ExtractionExportService(LoggerMixin):
         *,
         run_ids: list[UUID],
         reviewer_ids: list[UUID],
+        fields_by_id: dict[UUID, FieldDescriptor],
     ) -> dict[tuple[Any, ...], Any]:
         """Build the 4-tuple value map for All-users mode (FR-015).
 
@@ -1098,7 +1111,7 @@ class ExtractionExportService(LoggerMixin):
             )
         ).all()
         for rid, iid, fid, value in consensus_rows:
-            out[(rid, iid, fid, None)] = _unwrap_value(value)
+            out[(rid, iid, fid, None)] = resolve_value(value, field=fields_by_id.get(fid))
 
         if not reviewer_ids:
             return out
@@ -1130,10 +1143,11 @@ class ExtractionExportService(LoggerMixin):
             )
         ).all()
         for rid, iid, fid, reviewer_id, decision, value, proposed in rev_rows:
+            field = fields_by_id.get(fid)
             if decision == "accept_proposal":
-                out[(rid, iid, fid, reviewer_id)] = _unwrap_value(proposed)
+                out[(rid, iid, fid, reviewer_id)] = resolve_value(proposed, field=field)
             elif decision == "edit":
-                out[(rid, iid, fid, reviewer_id)] = _unwrap_value(value)
+                out[(rid, iid, fid, reviewer_id)] = resolve_value(value, field=field)
         return out
 
     # ------------------------------------------------------------------

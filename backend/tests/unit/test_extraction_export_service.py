@@ -283,7 +283,7 @@ class TestBuildConsensusValueMap:
     async def test_empty_run_ids_returns_empty_dict(self):
         """No run_ids → short-circuits to empty dict without hitting DB."""
         svc = _make_service()
-        result = await svc._build_consensus_value_map(run_ids=[])
+        result = await svc._build_consensus_value_map(run_ids=[], fields_by_id={})
         assert result == {}
         svc.db.execute.assert_not_called()
 
@@ -304,7 +304,7 @@ class TestBuildConsensusValueMap:
         ]
         svc.db.execute = AsyncMock(return_value=_rows_result(rows))
 
-        result = await svc._build_consensus_value_map(run_ids=[run_id])
+        result = await svc._build_consensus_value_map(run_ids=[run_id], fields_by_id={})
 
         assert result[(run_id, instance_id1, field_id1)] == "value_a"
         assert result[(run_id, instance_id2, field_id2)] == "value_b"
@@ -322,13 +322,14 @@ class TestBuildConsensusValueMap:
         rows = [(run_id, instance_id, field_id, {"value": "actual_string"})]
         svc.db.execute = AsyncMock(return_value=_rows_result(rows))
 
-        result = await svc._build_consensus_value_map(run_ids=[run_id])
+        result = await svc._build_consensus_value_map(run_ids=[run_id], fields_by_id={})
 
         assert result[(run_id, instance_id, field_id)] == "actual_string"
 
     @pytest.mark.asyncio
-    async def test_non_wrapper_dict_value_kept_as_is(self):
-        """A dict with multiple keys is NOT unwrapped — kept raw."""
+    async def test_unknown_dict_collapses_to_scalar_never_leaks(self):
+        """An unrecognised multi-key dict is collapsed deterministically to
+        a string — ``resolve_value`` never leaks a dict into a cell."""
         svc = _make_service()
 
         run_id = uuid4()
@@ -339,8 +340,10 @@ class TestBuildConsensusValueMap:
         rows = [(run_id, instance_id, field_id, raw)]
         svc.db.execute = AsyncMock(return_value=_rows_result(rows))
 
-        result = await svc._build_consensus_value_map(run_ids=[run_id])
-        assert result[(run_id, instance_id, field_id)] == raw
+        result = await svc._build_consensus_value_map(run_ids=[run_id], fields_by_id={})
+        resolved = result[(run_id, instance_id, field_id)]
+        assert not isinstance(resolved, dict)
+        assert resolved == "value: x; extra: y"
 
 
 # ===========================================================================
@@ -1045,7 +1048,7 @@ class TestBuildAllUsersValueMap:
     async def test_empty_run_ids_returns_empty(self):
         """No run_ids → short-circuit to empty dict."""
         svc = _make_service()
-        result = await svc._build_all_users_value_map(run_ids=[], reviewer_ids=[])
+        result = await svc._build_all_users_value_map(run_ids=[], reviewer_ids=[], fields_by_id={})
         assert result == {}
         svc.db.execute.assert_not_called()
 
@@ -1060,7 +1063,9 @@ class TestBuildAllUsersValueMap:
         consensus_row = (run_id, instance_id, field_id, "published_value")
         svc.db.execute = AsyncMock(return_value=_rows_result([consensus_row]))
 
-        result = await svc._build_all_users_value_map(run_ids=[run_id], reviewer_ids=[])
+        result = await svc._build_all_users_value_map(
+            run_ids=[run_id], reviewer_ids=[], fields_by_id={}
+        )
 
         assert result[(run_id, instance_id, field_id, None)] == "published_value"
         assert len(result) == 1
@@ -1095,7 +1100,9 @@ class TestBuildAllUsersValueMap:
             ]
         )
 
-        result = await svc._build_all_users_value_map(run_ids=[run_id], reviewer_ids=[reviewer_id])
+        result = await svc._build_all_users_value_map(
+            run_ids=[run_id], reviewer_ids=[reviewer_id], fields_by_id={}
+        )
 
         assert result[(run_id, instance_id, field_id, None)] is None
         assert result[(run_id, instance_id, field_id, reviewer_id)] == "proposed_val"
@@ -1126,7 +1133,9 @@ class TestBuildAllUsersValueMap:
             ]
         )
 
-        result = await svc._build_all_users_value_map(run_ids=[run_id], reviewer_ids=[reviewer_id])
+        result = await svc._build_all_users_value_map(
+            run_ids=[run_id], reviewer_ids=[reviewer_id], fields_by_id={}
+        )
 
         assert result[(run_id, instance_id, field_id, reviewer_id)] == "edited_val"
 
@@ -1148,7 +1157,9 @@ class TestBuildAllUsersValueMap:
             ]
         )
 
-        result = await svc._build_all_users_value_map(run_ids=[run_id], reviewer_ids=[reviewer_id])
+        result = await svc._build_all_users_value_map(
+            run_ids=[run_id], reviewer_ids=[reviewer_id], fields_by_id={}
+        )
 
         assert (run_id, instance_id, field_id, reviewer_id) not in result
 
@@ -1179,7 +1190,9 @@ class TestBuildAllUsersValueMap:
             ]
         )
 
-        result = await svc._build_all_users_value_map(run_ids=[run_id], reviewer_ids=[reviewer_id])
+        result = await svc._build_all_users_value_map(
+            run_ids=[run_id], reviewer_ids=[reviewer_id], fields_by_id={}
+        )
 
         assert result[(run_id, instance_id, field_id, None)] == "consensus_val"
         assert result[(run_id, instance_id, field_id, reviewer_id)] == "reviewer_val"
@@ -1923,7 +1936,9 @@ class TestBuildSingleUserValueMap:
     @pytest.mark.asyncio
     async def test_empty_run_ids_returns_empty(self):
         svc = _make_service()
-        result = await svc._build_single_user_value_map(run_ids=[], reviewer_id=uuid4())
+        result = await svc._build_single_user_value_map(
+            run_ids=[], reviewer_id=uuid4(), fields_by_id={}
+        )
         assert result == {}
         svc.db.execute.assert_not_called()
 
@@ -1934,7 +1949,9 @@ class TestBuildSingleUserValueMap:
         row = (run_id, instance_id, field_id, "accept_proposal", None, "proposed_val")
         svc.db.execute = AsyncMock(return_value=_rows_result([row]))
 
-        result = await svc._build_single_user_value_map(run_ids=[run_id], reviewer_id=uuid4())
+        result = await svc._build_single_user_value_map(
+            run_ids=[run_id], reviewer_id=uuid4(), fields_by_id={}
+        )
         assert result[(run_id, instance_id, field_id)] == "proposed_val"
 
     @pytest.mark.asyncio
@@ -1944,7 +1961,9 @@ class TestBuildSingleUserValueMap:
         row = (run_id, instance_id, field_id, "edit", {"value": "edited"}, None)
         svc.db.execute = AsyncMock(return_value=_rows_result([row]))
 
-        result = await svc._build_single_user_value_map(run_ids=[run_id], reviewer_id=uuid4())
+        result = await svc._build_single_user_value_map(
+            run_ids=[run_id], reviewer_id=uuid4(), fields_by_id={}
+        )
         assert result[(run_id, instance_id, field_id)] == "edited"
 
     @pytest.mark.asyncio
@@ -1954,7 +1973,9 @@ class TestBuildSingleUserValueMap:
         row = (run_id, instance_id, field_id, "reject", None, None)
         svc.db.execute = AsyncMock(return_value=_rows_result([row]))
 
-        result = await svc._build_single_user_value_map(run_ids=[run_id], reviewer_id=uuid4())
+        result = await svc._build_single_user_value_map(
+            run_ids=[run_id], reviewer_id=uuid4(), fields_by_id={}
+        )
         assert (run_id, instance_id, field_id) not in result
 
 
