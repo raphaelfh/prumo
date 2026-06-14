@@ -286,13 +286,19 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
     queueMicrotask(() => void loadCurrentUser());
   }, [loadCurrentUser]);
 
-    // Load project articles
+    // Load project articles. Depend ONLY on the primitive identifiers — never
+    // on `loadArticles`. Its identity changes on every render (it is a plain
+    // async function the React Compiler does not stabilise for dependency
+    // arrays), and it calls setArticles/setLoading, so listing it here re-fired
+    // the effect every render and looped the fetch forever, pinning
+    // `loading === true` so the skeleton never cleared. Call through the ref,
+    // which the effect above refreshes before this one runs in the same commit
+    // (same pattern as the auto-refresh effect below).
   useEffect(() => {
     if (projectId && templateId && currentUserId) {
-        // Use loadArticles directly to avoid timing issues with ref
-      loadArticles();
+      void loadArticlesRef.current?.();
     }
-  }, [projectId, templateId, currentUserId, loadArticles]);
+  }, [projectId, templateId, currentUserId]);
 
     // Auto-refresh when returning to page (after finishing extraction)
     // Ensures data is updated after changes made on other pages
