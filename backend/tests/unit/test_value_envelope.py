@@ -137,3 +137,20 @@ def test_value_unit_does_not_decorate_nonnumeric_scalar() -> None:
     # non-numeric inner (the unit only makes sense for numbers).
     field = _Field(type=ExtractionFieldType.NUMBER)
     assert resolve_value({"value": "approx", "unit": "mg"}, field=field) == "approx"
+
+
+def test_resolves_with_real_field_descriptor_unit() -> None:
+    from uuid import uuid4
+
+    from app.services.extraction_export_service import FieldDescriptor
+
+    fd = FieldDescriptor(
+        field_id=uuid4(),
+        label="Dose",
+        type=ExtractionFieldType.NUMBER,
+        allowed_values=(),
+        parent_section_id=uuid4(),
+        unit="mg",
+    )
+    # Envelope omits unit → FieldDescriptor.unit fills it in.
+    assert resolve_value({"value": 5}, field=fd) == "5 mg"

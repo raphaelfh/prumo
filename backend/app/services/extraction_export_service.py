@@ -78,6 +78,9 @@ class FieldDescriptor:
     type: ExtractionFieldType
     allowed_values: tuple[str, ...]
     parent_section_id: UUID
+    # Surfaced by ``resolve_value`` as the fallback unit for number+unit
+    # envelopes that omit their own ``unit`` (e.g. ``5`` -> ``"5 mg"``).
+    unit: str | None = None
 
 
 @dataclass(frozen=True)
