@@ -339,6 +339,7 @@ class ExtractionExportService(LoggerMixin):
                 sections=sections,
                 value_map=value_map,
                 mode=mode,
+                target_reviewer_id=None,
             )
 
         return ExportLayout(
@@ -1161,6 +1162,7 @@ class ExtractionExportService(LoggerMixin):
         sections: tuple[SectionDescriptor, ...],
         value_map: dict[tuple[Any, ...], Any],
         mode: ExportMode,
+        target_reviewer_id: UUID | None,
     ) -> tuple[AIProposalRow, ...]:
         """Load every AI proposal for the in-scope runs into flat rows.
 
@@ -1271,26 +1273,36 @@ class ExtractionExportService(LoggerMixin):
 
         # 3. Reviewer decisions for the same (run, instance, field) — the
         # outcome inference is best-effort because the `edit` decision
-        # carries no FK back to the AI proposal (FR-040 caveat).
-        decision_rows = (
-            await self.db.execute(
-                select(
-                    ExtractionReviewerState.run_id,
-                    ExtractionReviewerState.instance_id,
-                    ExtractionReviewerState.field_id,
-                    ExtractionReviewerDecision.decision,
-                    ExtractionReviewerDecision.proposal_record_id,
-                )
-                .join(
-                    ExtractionReviewerDecision,
-                    ExtractionReviewerState.current_decision_id == ExtractionReviewerDecision.id,
-                )
-                .where(ExtractionReviewerState.run_id.in_(run_ids))
+        # carries no FK back to the AI proposal (FR-040 caveat). In
+        # SINGLE_USER mode the query is scoped to the target reviewer so the
+        # "Reviewer outcome" column reflects the same reviewer whose values
+        # populate "Final value used" (A3); consensus/all-users keep all
+        # reviewers' decisions in scope.
+        decision_stmt = (
+            select(
+                ExtractionReviewerState.run_id,
+                ExtractionReviewerState.instance_id,
+                ExtractionReviewerState.field_id,
+                ExtractionReviewerState.reviewer_id,
+                ExtractionReviewerDecision.decision,
+                ExtractionReviewerDecision.proposal_record_id,
             )
-        ).all()
+            .join(
+                ExtractionReviewerDecision,
+                ExtractionReviewerState.current_decision_id == ExtractionReviewerDecision.id,
+            )
+            .where(ExtractionReviewerState.run_id.in_(run_ids))
+        )
+        if mode is ExportMode.SINGLE_USER and target_reviewer_id is not None:
+            decision_stmt = decision_stmt.where(
+                ExtractionReviewerState.reviewer_id == target_reviewer_id
+            )
+        decision_rows = (await self.db.execute(decision_stmt)).all()
         # Index decisions by (run, instance, field) → list of (decision, prop_id).
+        # reviewer_id is selected for scoping/diagnostics but the per-key
+        # precedence in _infer_reviewer_outcome consumes the decision+prop_id pair.
         decisions_by_key: dict[tuple[UUID, UUID, UUID], list[tuple[str, UUID | None]]] = {}
-        for rid, iid, fid, decision, prop_id in decision_rows:
+        for rid, iid, fid, _reviewer_id, decision, prop_id in decision_rows:
             decisions_by_key.setdefault((rid, iid, fid), []).append((decision, prop_id))
 
         # Pre-compute the instance index map per article so we can label

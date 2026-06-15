@@ -230,7 +230,9 @@ async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode() 
                 ]
             ),  # proposals
             _result([]),  # evidence
-            _result([(run_id, inst_id, field_id, "accept_proposal", pid)]),  # decisions
+            _result(
+                [(run_id, inst_id, field_id, uuid4(), "accept_proposal", pid)]
+            ),  # decisions (reviewer-tagged)
             _result([(entity_type_id, "1. Source of data")]),  # entity labels
         ]
     )
@@ -241,6 +243,7 @@ async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode() 
         sections=(section,),
         value_map=value_map,
         mode=ExportMode.ALL_USERS,
+        target_reviewer_id=None,
     )
 
     assert len(rows) == 1

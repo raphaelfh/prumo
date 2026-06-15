@@ -735,6 +735,7 @@ class TestLoadAiProposalRows:
             sections=(),
             value_map={},
             mode=ExportMode.CONSENSUS,
+            target_reviewer_id=None,
         )
         assert result == ()
         svc.db.execute.assert_not_called()
@@ -765,6 +766,7 @@ class TestLoadAiProposalRows:
             sections=(),
             value_map={},
             mode=ExportMode.CONSENSUS,
+            target_reviewer_id=None,
         )
         assert result == ()
 
@@ -841,6 +843,7 @@ class TestLoadAiProposalRows:
             sections=(section_with_id,),
             value_map={},
             mode=ExportMode.CONSENSUS,
+            target_reviewer_id=None,
         )
 
         assert len(result) == 1
@@ -883,8 +886,9 @@ class TestLoadAiProposalRows:
             None,
             ts,
         )
-        # decision row: (run_id, instance_id, field_id, decision, proposal_record_id)
-        decision_row = (run_id, instance_id, field_id, "accept_proposal", proposal_id)
+        reviewer_id = uuid4()
+        # decision row: (run_id, instance_id, field_id, reviewer_id, decision, proposal_record_id)
+        decision_row = (run_id, instance_id, field_id, reviewer_id, "accept_proposal", proposal_id)
 
         # value_map uses 3-tuple for CONSENSUS mode
         value_map = {(run_id, instance_id, field_id): "consensus_val"}
@@ -906,6 +910,7 @@ class TestLoadAiProposalRows:
             sections=(),
             value_map=value_map,
             mode=ExportMode.CONSENSUS,
+            target_reviewer_id=None,
         )
 
         assert len(result) == 1
@@ -960,6 +965,7 @@ class TestLoadAiProposalRows:
             sections=(),
             value_map=value_map_4tuple,
             mode=ExportMode.ALL_USERS,
+            target_reviewer_id=None,
         )
 
         assert len(result) == 1
@@ -1011,6 +1017,7 @@ class TestLoadAiProposalRows:
             sections=(),
             value_map=value_map,
             mode=ExportMode.CONSENSUS,
+            target_reviewer_id=None,
         )
 
         assert len(result) == 1
@@ -1054,6 +1061,7 @@ class TestLoadAiProposalRows:
             sections=(),  # empty sections → triggers fallback
             value_map={},
             mode=ExportMode.CONSENSUS,
+            target_reviewer_id=None,
         )
 
         assert len(result) == 1
@@ -1096,10 +1104,71 @@ class TestLoadAiProposalRows:
             sections=(),
             value_map={},
             mode=ExportMode.CONSENSUS,
+            target_reviewer_id=None,
         )
 
         assert len(result) == 1
         assert result[0].field_label == "Fallback Field Label"
+
+    @pytest.mark.asyncio
+    async def test_multi_reviewer_accept_and_reject_not_masked(self):
+        """A2: two reviewers disagree on one key (A accepts THIS proposal, B
+        rejects). Outcome must be 'accepted' — the reject must not mask it.
+
+        The decision query now selects reviewer_id; we assert the loader still
+        consumes ALL reviewers' decisions for consensus mode and resolves
+        precedence per A2 (accept wins)."""
+        svc = _make_service()
+        run_id = uuid4()
+        article_id = uuid4()
+        instance_id = uuid4()
+        entity_type_id = uuid4()
+        field_id = uuid4()
+        proposal_id = uuid4()
+        reviewer_a = uuid4()
+        reviewer_b = uuid4()
+        ts = datetime(2024, 3, 1, tzinfo=UTC)
+
+        article = self._make_article(
+            run_id=run_id,
+            article_id=article_id,
+            study_instances={entity_type_id: instance_id},
+        )
+        proposal_row = (
+            proposal_id,
+            run_id,
+            instance_id,
+            field_id,
+            {"value": "v"},
+            0.9,
+            None,
+            ts,
+        )
+        # decision rows now carry reviewer_id:
+        # (run_id, instance_id, field_id, reviewer_id, decision, proposal_record_id)
+        decision_a = (run_id, instance_id, field_id, reviewer_a, "accept_proposal", proposal_id)
+        decision_b = (run_id, instance_id, field_id, reviewer_b, "reject", None)
+
+        svc.db.execute = AsyncMock(
+            side_effect=[
+                _rows_result([(instance_id, entity_type_id, article_id)]),
+                _rows_result([proposal_row]),
+                _rows_result([]),  # evidence
+                _rows_result([decision_a, decision_b]),  # decisions (reviewer-tagged)
+                _rows_result([(entity_type_id, "Sec")]),
+                _rows_result([(field_id, "Fld")]),
+            ]
+        )
+
+        result = await svc._load_ai_proposal_rows(
+            articles=(article,),
+            sections=(),
+            value_map={(run_id, instance_id, field_id): "v"},
+            mode=ExportMode.CONSENSUS,
+            target_reviewer_id=None,
+        )
+        assert len(result) == 1
+        assert result[0].reviewer_outcome == "accepted"
 
 
 # ===========================================================================
@@ -2249,6 +2318,7 @@ class TestAiProposalRowsModelInstances:
             sections=(),
             value_map={},
             mode=ExportMode.CONSENSUS,
+            target_reviewer_id=None,
         )
 
         assert len(result) == 1
