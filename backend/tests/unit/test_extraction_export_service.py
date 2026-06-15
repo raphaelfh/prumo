@@ -40,7 +40,6 @@ from app.services.extraction_export_service import (
     _build_header_label,
     _infer_reviewer_outcome,
     _letter_for,
-    _normalize_allowed_values,
     _short_id,
 )
 
@@ -1566,47 +1565,6 @@ class TestListEligibleReviewersForPicker:
         )
 
         assert result == []
-
-
-# ===========================================================================
-# Pure helpers: _normalize_allowed_values
-# ===========================================================================
-
-
-class TestNormalizeAllowedValues:
-    """Unit tests for the allowed_values JSONB normalizer."""
-
-    def test_none_returns_empty_tuple(self):
-        assert _normalize_allowed_values(None) == ()
-
-    def test_plain_string_list(self):
-        assert _normalize_allowed_values(["a", "b", "c"]) == ("a", "b", "c")
-
-    def test_dict_items_with_label(self):
-        raw = [{"label": "Yes", "value": "yes"}, {"label": "No", "value": "no"}]
-        assert _normalize_allowed_values(raw) == ("Yes", "No")
-
-    def test_dict_items_fallback_to_value_when_no_label(self):
-        raw = [{"value": "yes"}, {"value": "no"}]
-        assert _normalize_allowed_values(raw) == ("yes", "no")
-
-    def test_dict_items_without_label_or_value_skipped(self):
-        raw = [{"other": "x"}, {"value": "y"}]
-        assert _normalize_allowed_values(raw) == ("y",)
-
-    def test_nested_options_key(self):
-        raw = {"options": ["a", "b"]}
-        assert _normalize_allowed_values(raw) == ("a", "b")
-
-    def test_unknown_type_returns_empty_tuple(self):
-        assert _normalize_allowed_values(42) == ()
-
-    def test_empty_list_returns_empty_tuple(self):
-        assert _normalize_allowed_values([]) == ()
-
-    def test_mixed_string_and_dict_items(self):
-        raw = ["plain", {"label": "From dict"}]
-        assert _normalize_allowed_values(raw) == ("plain", "From dict")
 
 
 # ===========================================================================

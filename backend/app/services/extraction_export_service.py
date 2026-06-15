@@ -1576,31 +1576,6 @@ def _run_recency_key(run: ExtractionRun) -> tuple[datetime, str]:
     return created_at, str(run.id)
 
 
-def _normalize_allowed_values(raw: Any) -> tuple[str, ...]:
-    """Normalise the ``allowed_values`` JSONB column to a tuple of strings.
-
-    The column stores either ``[{"value": "...", "label": "..."}, …]``,
-    ``["x", "y", "z"]``, or ``None``. We surface a flat tuple of display
-    strings; the builder reads the same tuple to render select/multiselect
-    values.
-    """
-    if raw is None:
-        return ()
-    if isinstance(raw, list):
-        out: list[str] = []
-        for item in raw:
-            if isinstance(item, dict):
-                label = item.get("label") or item.get("value")
-                if isinstance(label, str):
-                    out.append(label)
-            elif isinstance(item, str):
-                out.append(item)
-        return tuple(out)
-    if isinstance(raw, dict) and "options" in raw and isinstance(raw["options"], list):
-        return _normalize_allowed_values(raw["options"])
-    return ()
-
-
 def _build_header_label(
     title: str | None,
     authors: list[str] | None,
