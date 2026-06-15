@@ -75,9 +75,31 @@ def _render_sheet_spec(ws: Worksheet, spec: SheetSpec) -> None:
     """Render a SheetSpec onto an existing (empty) worksheet."""
     ws.title = spec.title
 
+    # Merge BEFORE writing cells: ``merge_cells`` resets the style of every
+    # non-anchor cell in the range, so styling first would silently drop the
+    # fill on merged section-band tail cells (the legacy writer styled them
+    # AFTER merging). After merging, only the anchor cell of a range accepts a
+    # value — assigning to a non-anchor ``MergedCell`` raises — so we apply the
+    # value only to anchors/un-merged cells and the style to every cell.
+    merged_non_anchor: set[tuple[int, int]] = set()
+    for span in spec.merges:
+        ws.merge_cells(
+            start_row=span.start_row,
+            start_column=span.start_col,
+            end_row=span.end_row,
+            end_column=span.end_col,
+        )
+        for r in range(span.start_row, span.end_row + 1):
+            for c in range(span.start_col, span.end_col + 1):
+                if (r, c) != (span.start_row, span.start_col):
+                    merged_non_anchor.add((r, c))
+
     for r_idx, row in enumerate(spec.rows, start=1):
         for c_idx, cell in enumerate(row, start=1):
-            target = ws.cell(row=r_idx, column=c_idx, value=cell.value)
+            if (r_idx, c_idx) in merged_non_anchor:
+                target = ws.cell(row=r_idx, column=c_idx)
+            else:
+                target = ws.cell(row=r_idx, column=c_idx, value=cell.value)
             if cell.style is not None:
                 font, alignment, fill = _style_to_kwargs(cell.style)
                 if font is not None:
@@ -86,14 +108,6 @@ def _render_sheet_spec(ws: Worksheet, spec: SheetSpec) -> None:
                     target.alignment = alignment
                 if fill is not None:
                     target.fill = fill
-
-    for span in spec.merges:
-        ws.merge_cells(
-            start_row=span.start_row,
-            start_column=span.start_col,
-            end_row=span.end_row,
-            end_column=span.end_col,
-        )
 
     for c_idx, width in enumerate(spec.column_widths, start=1):
         if width is not None:
