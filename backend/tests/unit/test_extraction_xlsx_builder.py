@@ -78,8 +78,12 @@ def _article(
         header_label=header,
         run_id=run_id if run_id is not None else uuid4(),
         run_stage=None,  # not consulted by builder
+        version_id=None,
         model_instances=model_instances,
-        study_instances=study_instances,
+        # ``study_instances`` is now a read-compat alias property; build the
+        # ordered ``section_instances`` from the legacy single-id-per-section
+        # argument so existing call sites stay unchanged.
+        section_instances={sid: (iid,) for sid, iid in study_instances.items()},
     )
 
 

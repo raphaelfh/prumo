@@ -112,18 +112,35 @@ class SectionDescriptor:
 
 @dataclass(frozen=True)
 class ArticleDescriptor:
-    """One article column (or N adjacent columns when multi-instance)."""
+    """One article column (or N adjacent columns when multi-instance).
+
+    ``section_instances`` carries an ORDERED instance-id tuple per
+    study/section entity_type — fixing the §6 medium bug where
+    ``setdefault`` kept only the first instance and silently lost the rest.
+    Single-cardinality sections carry a 1-tuple. ``version_id`` is the Run's
+    own snapshot version, used for the per-Run obsolete-field diff (§5.1).
+    """
 
     article_id: UUID
     header_label: str
     run_id: UUID | None
     run_stage: ExtractionRunStage | None
+    version_id: UUID | None
     # Ordered model_section instance ids; empty when the template has no
     # model_container OR when the article has zero model instances.
     model_instances: tuple[UUID, ...]
-    # entity_type_id (study_section) → instance_id; one entry per
-    # study_section the run has materialised.
-    study_instances: dict[UUID, UUID]
+    # entity_type_id (study/section) → ORDERED instance ids for the run.
+    section_instances: dict[UUID, tuple[UUID, ...]]
+
+    @property
+    def study_instances(self) -> dict[UUID, UUID]:
+        """Read-compat alias: first instance per section (legacy dict shape).
+
+        Consumed by the not-yet-migrated matrix builder + AI loader until the
+        builder slice fans out over ``section_instances``. Sections with no
+        instance are dropped (nothing to render).
+        """
+        return {sid: ids[0] for sid, ids in self.section_instances.items() if ids}
 
 
 @dataclass(frozen=True)
@@ -553,18 +570,16 @@ class ExtractionExportService(LoggerMixin):
             run = runs_by_article[aid]
             insts = instances_by_run.get(run.id, [])
             model_instances: list[UUID] = []
-            study_instances: dict[UUID, UUID] = {}
+            section_instances: dict[UUID, list[UUID]] = {}
             for inst in insts:
                 role = entity_by_id.get(inst.entity_type_id)
                 if role is ExtractionEntityRole.MODEL_SECTION:
                     model_instances.append(inst.id)
                 elif role is ExtractionEntityRole.STUDY_SECTION:
-                    # When the template has multiple study_sections, we
-                    # keep one instance per entity_type (the earliest by
-                    # sort_order, which is the iteration order).
-                    study_instances.setdefault(inst.entity_type_id, inst.id)
-                # model_container instances themselves carry no values —
-                # only their model_section children do.
+                    # Ordered list per entity_type — many-cardinality study
+                    # sections keep ALL instances (spec §5.2 fan-out source).
+                    section_instances.setdefault(inst.entity_type_id, []).append(inst.id)
+                # model_container instances carry no values themselves.
 
             descriptors.append(
                 ArticleDescriptor(
@@ -572,8 +587,9 @@ class ExtractionExportService(LoggerMixin):
                     header_label=headers.get(aid) or _short_id(aid),
                     run_id=run.id,
                     run_stage=ExtractionRunStage(run.stage),
+                    version_id=run.version_id,
                     model_instances=tuple(model_instances),
-                    study_instances=study_instances,
+                    section_instances={k: tuple(v) for k, v in section_instances.items()},
                 )
             )
 
@@ -787,21 +803,26 @@ class ExtractionExportService(LoggerMixin):
             run = runs_by_article[aid]
             insts = instances_by_run.get(run.id, [])
             model_instances: list[UUID] = []
-            study_instances: dict[UUID, UUID] = {}
+            section_instances: dict[UUID, list[UUID]] = {}
             for inst in insts:
                 role = entity_by_id.get(inst.entity_type_id)
                 if role is ExtractionEntityRole.MODEL_SECTION:
                     model_instances.append(inst.id)
                 elif role is ExtractionEntityRole.STUDY_SECTION:
-                    study_instances.setdefault(inst.entity_type_id, inst.id)
+                    # Ordered list per entity_type — many-cardinality study
+                    # sections keep ALL instances (spec §5.2 fan-out source).
+                    section_instances.setdefault(inst.entity_type_id, []).append(inst.id)
+                # model_container instances carry no values themselves.
+
             descriptors.append(
                 ArticleDescriptor(
                     article_id=aid,
                     header_label=headers.get(aid) or _short_id(aid),
                     run_id=run.id,
                     run_stage=ExtractionRunStage(run.stage),
+                    version_id=run.version_id,
                     model_instances=tuple(model_instances),
-                    study_instances=study_instances,
+                    section_instances={k: tuple(v) for k, v in section_instances.items()},
                 )
             )
         return descriptors, omitted
@@ -1008,21 +1029,26 @@ class ExtractionExportService(LoggerMixin):
             run = runs_by_article[aid]
             insts = instances_by_run.get(run.id, [])
             model_instances: list[UUID] = []
-            study_instances: dict[UUID, UUID] = {}
+            section_instances: dict[UUID, list[UUID]] = {}
             for inst in insts:
                 role = entity_by_id.get(inst.entity_type_id)
                 if role is ExtractionEntityRole.MODEL_SECTION:
                     model_instances.append(inst.id)
                 elif role is ExtractionEntityRole.STUDY_SECTION:
-                    study_instances.setdefault(inst.entity_type_id, inst.id)
+                    # Ordered list per entity_type — many-cardinality study
+                    # sections keep ALL instances (spec §5.2 fan-out source).
+                    section_instances.setdefault(inst.entity_type_id, []).append(inst.id)
+                # model_container instances carry no values themselves.
+
             descriptors.append(
                 ArticleDescriptor(
                     article_id=aid,
                     header_label=headers.get(aid) or _short_id(aid),
                     run_id=run.id,
                     run_stage=ExtractionRunStage(run.stage),
+                    version_id=run.version_id,
                     model_instances=tuple(model_instances),
-                    study_instances=study_instances,
+                    section_instances={k: tuple(v) for k, v in section_instances.items()},
                 )
             )
         return descriptors, omitted
@@ -1340,8 +1366,9 @@ class ExtractionExportService(LoggerMixin):
         for article in articles:
             for idx, iid in enumerate(article.model_instances, start=1):
                 instance_index_by_id[iid] = idx
-            for iid in article.study_instances.values():
-                instance_index_by_id[iid] = 1
+            for ids in article.section_instances.values():
+                for idx, iid in enumerate(ids, start=1):
+                    instance_index_by_id[iid] = idx
 
         # Section labels — lookup needs entity_type_id for an instance.
         # If an entity_type doesn't appear in our snapshot sections, we

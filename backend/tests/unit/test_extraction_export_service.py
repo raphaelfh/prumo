@@ -712,8 +712,11 @@ class TestLoadAiProposalRows:
             header_label="Test Article",
             run_id=run_id or uuid4(),
             run_stage=ExtractionRunStage.FINALIZED,
+            version_id=None,
             model_instances=model_instances,
-            study_instances=study_instances or {},
+            # ``study_instances`` is now a read-compat alias property; build
+            # the ordered ``section_instances`` from the legacy single-id arg.
+            section_instances={sid: (iid,) for sid, iid in (study_instances or {}).items()},
         )
 
     @pytest.mark.asyncio
@@ -726,8 +729,9 @@ class TestLoadAiProposalRows:
                 header_label="No Run",
                 run_id=None,
                 run_stage=None,
+                version_id=None,
                 model_instances=(),
-                study_instances={},
+                section_instances={},
             ),
         )
         result = await svc._load_ai_proposal_rows(
@@ -2489,8 +2493,9 @@ class TestAiProposalRowsModelInstances:
             header_label="Test Article",
             run_id=run_id,
             run_stage=ExtractionRunStage.FINALIZED,
+            version_id=None,
             model_instances=(model_instance_id1, model_instance_id2),
-            study_instances={},
+            section_instances={},
         )
 
         proposal_row = (proposal_id, run_id, model_instance_id1, field_id, "v", None, None, ts)

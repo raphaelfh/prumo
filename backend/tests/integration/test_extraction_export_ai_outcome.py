@@ -236,8 +236,9 @@ def _article(
         header_label="Article",
         run_id=run_id,
         run_stage=ExtractionRunStage(run_stage),
+        version_id=None,
         model_instances=(),
-        study_instances={entity_type_id: instance_id},
+        section_instances={entity_type_id: (instance_id,)},
     )
 
 

@@ -63,8 +63,9 @@ def _fixed_layout() -> ExportLayout:
         header_label="Gaca, 2011",
         run_id=run_id,
         run_stage=None,
+        version_id=None,
         model_instances=(),
-        study_instances={section_id: inst_id},
+        section_instances={section_id: (inst_id,)},
     )
     return ExportLayout(
         project_name="Test Project",
@@ -196,8 +197,9 @@ async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode() 
         header_label="Gaca, 2011",
         run_id=run_id,
         run_stage=None,
+        version_id=None,
         model_instances=(),
-        study_instances={entity_type_id: inst_id},
+        section_instances={entity_type_id: (inst_id,)},
     )
 
     # ALL_USERS value_map: consensus column uses (run_id, inst_id, field_id, None).
