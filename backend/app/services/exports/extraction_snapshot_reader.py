@@ -78,13 +78,13 @@ async def load_export_sections(
     version_id: UUID,
 ) -> tuple[SnapshotSection, ...]:
     """Read the frozen entity_types tree for a version snapshot, ordered by
-    ``sort_order``. Returns ``()`` when the version row or its tree is missing."""
+    ``sort_order``. Returns ``()`` only when the version row itself is missing;
+    an empty or pre-0026 *narrow* tree falls through to the live tables, exactly
+    like the canonical ``_entity_types_for_run`` it mirrors."""
     version = await db.get(ExtractionTemplateVersion, version_id)
-    snapshot_types: list[dict[str, Any]] = (
-        (version.schema_ or {}).get("entity_types", []) if version else []
-    )
-    if not snapshot_types:
+    if version is None:
         return ()
+    snapshot_types: list[dict[str, Any]] = (version.schema_ or {}).get("entity_types", [])
     if _snapshot_is_narrow(snapshot_types):
         return await _load_live_sections(db, version.project_template_id)
     return tuple(_section_from_view(RunViewEntityType.model_validate(et)) for et in snapshot_types)
