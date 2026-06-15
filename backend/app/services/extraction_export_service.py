@@ -165,6 +165,30 @@ class ExportNotes:
 
 
 @dataclass(frozen=True)
+class FrontMatter:
+    """README/Methods content (§4 #1) — absorbs the old ``Notes`` sheet.
+
+    Built service-side in ``resolve_layout`` (slice task T53) and rendered by
+    the pure ``build_front_matter`` sub-builder: template identity, export
+    provenance, a generated ``contents`` list, the glyph/sentinel ``legend``,
+    provenance ``caveats``, and the per-Run ``obsolete_fields_per_article``
+    block lifted from ``ExportNotes`` (§5.1).
+    """
+
+    project_name: str
+    template_name: str
+    template_version: int
+    export_mode_label: str
+    generated_at: datetime
+    article_count: int
+    record_count: int
+    contents: tuple[str, ...]  # generated sheet-name list
+    legend: tuple[tuple[str, str], ...]  # (glyph/sentinel, meaning)
+    caveats: tuple[str, ...]  # provenance + best-effort-outcome caveats
+    obsolete_fields_per_article: dict[UUID, tuple[str, ...]]  # activated §5.1
+
+
+@dataclass(frozen=True)
 class AIProposalRow:
     """One row on the optional ``AI metadata`` sheet (FR-037).
 
@@ -207,6 +231,9 @@ class ExportLayout:
     value_map: dict[tuple[Any, ...], Any]
     # Populated only when ``include_ai_metadata`` is True (FR-036+).
     ai_proposal_rows: tuple[AIProposalRow, ...] = ()
+    # README/Methods projection (§4 #1); built in ``resolve_layout`` (T53).
+    # None => the sub-builder falls back to the bare layout identity fields.
+    front_matter: FrontMatter | None = None
 
 
 # ----------------------------------------------------------------------
