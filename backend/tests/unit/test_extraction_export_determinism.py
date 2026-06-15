@@ -251,3 +251,84 @@ async def test_load_ai_proposal_rows_populates_final_value_for_all_users_mode() 
     assert len(rows) == 1
     # Before the fix this was None; after the fix it resolves via the 4-tuple key.
     assert rows[0].final_value_used == "Existing registry"
+
+
+# ----------------------------------------------------------------------
+# S5 split: structural determinism of the restyled multi-sheet workbook
+# + the exact 16,384-column guard boundary (via _matrix_column_count).
+# ----------------------------------------------------------------------
+
+
+def test_styled_matrix_is_structurally_deterministic() -> None:
+    layout = _fixed_layout()
+    a = build_workbook(layout)
+    b = build_workbook(layout)
+
+    def _entries(data: bytes) -> dict[str, bytes]:
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            return {n: zf.read(n) for n in zf.namelist() if not n.startswith("docProps/")}
+
+    ea, eb = _entries(a), _entries(b)
+    assert ea.keys() == eb.keys()
+    for name in ea:
+        # The Notes sheet carries generated_at; every other part (incl. the
+        # styled matrix sheet + styles.xml) must be byte-identical.
+        if "notes" in name.lower() or name.endswith("sharedStrings.xml"):
+            continue
+        assert ea[name] == eb[name], f"non-deterministic part: {name}"
+
+
+def test_column_guard_boundary() -> None:
+    from app.services.exports.extraction.workbook import _matrix_column_count
+
+    # Build a layout whose matrix is exactly at the limit, and one over it.
+    def _n_article_layout(n: int) -> ExportLayout:
+        sec_id = uuid4()
+        field = FieldDescriptor(
+            field_id=uuid4(),
+            label="F",
+            type=ExtractionFieldType.TEXT,
+            allowed_values=(),
+            parent_section_id=sec_id,
+        )
+        section = SectionDescriptor(
+            entity_type_id=sec_id,
+            label="S",
+            role=ExtractionEntityRole.STUDY_SECTION,
+            parent_entity_type_id=None,
+            fields=(field,),
+        )
+        articles = tuple(
+            ArticleDescriptor(
+                article_id=uuid4(),
+                header_label=f"a{i}",
+                run_id=uuid4(),
+                run_stage=None,
+                version_id=None,
+                model_instances=(),
+                # One cardinality=one study section ⇒ a single data column
+                # per article (no model / many-axis fan-out).
+                section_instances={sec_id: (uuid4(),)},
+            )
+            for i in range(n)
+        )
+        return ExportLayout(
+            project_name="P",
+            template_name="T",
+            template_version=1,
+            sections=(section,),
+            articles=articles,
+            reviewers=(),
+            mode=ExportMode.CONSENSUS,
+            include_ai_metadata=False,
+            anonymize_reviewer_names=False,
+            notes=ExportNotes(),
+            value_map={},
+        )
+
+    at_limit = _n_article_layout(16_382)  # 2 + 16382 = 16384
+    assert _matrix_column_count(at_limit) == 16_384
+    build_workbook(at_limit)  # must not raise
+
+    with pytest.raises(ValueError):
+        build_workbook(_n_article_layout(16_383))
