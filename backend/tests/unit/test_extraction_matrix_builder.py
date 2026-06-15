@@ -97,7 +97,8 @@ def test_many_cardinality_study_section_fans_out_one_subcolumn_per_instance():
 
     field_row = None
     for r in range(2, ws.max_row + 1):
-        if ws.cell(row=r, column=2).value == "Index test name":
+        # Hierarchical numbering prefixes the section.field index (§9).
+        if ws.cell(row=r, column=2).value == "1.1 Index test name":
             field_row = r
             break
     assert field_row is not None
@@ -275,3 +276,82 @@ def test_study_section_repeats_not_merges_across_models() -> None:
     assert ws.cell(row=row, column=4).value == "Doe"
     merged = {str(m) for m in ws.merged_cells.ranges}
     assert f"C{row}:D{row}" not in merged
+
+
+def test_matrix_structural_styling() -> None:
+    sec_id = uuid4()
+    f1 = _spec_field("Source", ExtractionFieldType.TEXT, sec_id)
+    f2 = _spec_field("Year", ExtractionFieldType.TEXT, sec_id)
+    section = SectionDescriptor(
+        entity_type_id=sec_id,
+        label="Source of data",
+        role=ExtractionEntityRole.STUDY_SECTION,
+        parent_entity_type_id=None,
+        fields=(f1, f2),
+    )
+    run_id, inst_id = uuid4(), uuid4()
+    article = ArticleDescriptor(
+        article_id=uuid4(),
+        header_label="A",
+        run_id=run_id,
+        run_stage=None,
+        version_id=None,
+        model_instances=(),
+        section_instances={sec_id: (inst_id,)},
+    )
+    layout = _spec_layout(sections=(section,), articles=(article,))
+    spec = build_matrix(layout)
+
+    # Freeze locks label block (A,B) + header row -> first scrollable cell C2.
+    assert spec.freeze == "C2"
+    assert spec.tab_color is not None
+
+    # Header row 1 is bold.
+    assert spec.rows[0][0].style is not None and spec.rows[0][0].style.bold
+
+    # The section-band row is bold + filled across the row.
+    band = next(
+        row
+        for row in spec.rows
+        if row[0].value == "1. Source of data" or row[0].value == "Source of data"
+    )
+    assert band[0].style is not None and band[0].style.bold
+    assert band[0].style.fill is not None
+
+    # Hierarchical numbering on field labels: section 1 -> "1.1 Source".
+    labels = {row[1].value for row in spec.rows if row[1].value is not None}
+    assert "1.1 Source" in labels
+    assert "1.2 Year" in labels
+
+
+def test_matrix_freeze_all_users_uses_two_header_rows() -> None:
+    from app.services.extraction_export_service import ReviewerDescriptor
+
+    sec_id = uuid4()
+    f1 = _spec_field("Source", ExtractionFieldType.TEXT, sec_id)
+    section = SectionDescriptor(
+        entity_type_id=sec_id,
+        label="Source",
+        role=ExtractionEntityRole.STUDY_SECTION,
+        parent_entity_type_id=None,
+        fields=(f1,),
+    )
+    rid = uuid4()
+    run_id, inst_id = uuid4(), uuid4()
+    article = ArticleDescriptor(
+        article_id=uuid4(),
+        header_label="A",
+        run_id=run_id,
+        run_stage=None,
+        version_id=None,
+        model_instances=(),
+        section_instances={sec_id: (inst_id,)},
+    )
+    layout = _spec_layout(
+        sections=(section,),
+        articles=(article,),
+        mode=ExportMode.ALL_USERS,
+        reviewers=(ReviewerDescriptor(reviewer_id=rid, display_label="R1"),),
+    )
+    spec = build_matrix(layout)
+    assert spec.freeze == "C3"

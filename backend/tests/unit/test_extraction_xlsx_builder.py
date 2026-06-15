@@ -153,8 +153,10 @@ def test_sheet_name_is_sanitised_for_openpyxl_constraints():
 
 
 def test_single_article_single_section_single_field_consensus():
-    f = _field("1.1 Source of data", ExtractionFieldType.TEXT, parent=uuid4())
-    section = _section("1. Source of data", ExtractionEntityRole.STUDY_SECTION, [f])
+    # The builder now owns hierarchical numbering (§9), so fixtures carry the
+    # bare labels and we assert on the builder-generated "1." / "1.1" prefixes.
+    f = _field("Source of data", ExtractionFieldType.TEXT, parent=uuid4())
+    section = _section("Source of data", ExtractionEntityRole.STUDY_SECTION, [f])
     inst_id = uuid4()
     article = _article("Gaca, 2011", study_instances={section.entity_type_id: inst_id})
     field_id = section.fields[0].field_id
@@ -185,10 +187,10 @@ def test_single_article_single_section_single_field_consensus():
 
 def test_multi_instance_article_repeats_study_section_values():
     # Two sections: one study_section ("Author"), one model_section ("Model perf").
-    study_field = _field("0.1 Author", ExtractionFieldType.TEXT, parent=uuid4())
-    model_field = _field("7.1 Modelling method", ExtractionFieldType.TEXT, parent=uuid4())
-    study = _section("0. Study", ExtractionEntityRole.STUDY_SECTION, [study_field])
-    model = _section("7. Model development", ExtractionEntityRole.MODEL_SECTION, [model_field])
+    study_field = _field("Author", ExtractionFieldType.TEXT, parent=uuid4())
+    model_field = _field("Modelling method", ExtractionFieldType.TEXT, parent=uuid4())
+    study = _section("Study", ExtractionEntityRole.STUDY_SECTION, [study_field])
+    model = _section("Model development", ExtractionEntityRole.MODEL_SECTION, [model_field])
 
     study_inst = uuid4()
     model_inst_a = uuid4()
@@ -220,13 +222,13 @@ def test_multi_instance_article_repeats_study_section_values():
     # but openpyxl's read API surfaces None for the trailing merged cell.
     assert ws.cell(row=1, column=4).value is None
 
-    # Section "0. Study" row + field row "0.1 Author":
+    # Section "1. Study" row + field row "1.1 Author":
     # Study-section cell value MUST appear in BOTH model sub-columns
     # (the repeat-not-merge rule).
-    # Find the "0.1 Author" row.
+    # Find the "1.1 Author" row.
     author_row = None
     for r in range(2, ws.max_row + 1):
-        if ws.cell(row=r, column=2).value == "0.1 Author":
+        if ws.cell(row=r, column=2).value == "1.1 Author":
             author_row = r
             break
     assert author_row is not None
@@ -236,7 +238,7 @@ def test_multi_instance_article_repeats_study_section_values():
     # Model-section field differs per sub-column.
     method_row = None
     for r in range(2, ws.max_row + 1):
-        if ws.cell(row=r, column=2).value == "7.1 Modelling method":
+        if ws.cell(row=r, column=2).value == "2.1 Modelling method":
             method_row = r
             break
     assert method_row is not None
@@ -250,8 +252,8 @@ def test_multi_instance_article_repeats_study_section_values():
 
 
 def test_section_header_rows_have_bold_font_and_grey_fill():
-    f = _field("1.1 Source", ExtractionFieldType.TEXT, parent=uuid4())
-    section = _section("1. Source of data", ExtractionEntityRole.STUDY_SECTION, [f])
+    f = _field("Source", ExtractionFieldType.TEXT, parent=uuid4())
+    section = _section("Source of data", ExtractionEntityRole.STUDY_SECTION, [f])
     article = _article("Gaca, 2011", study_instances={section.entity_type_id: uuid4()})
     data = build_workbook(_layout(sections=(section,), articles=(article,)))
     ws = _open(data)["CHARMS"]
@@ -363,8 +365,8 @@ def test_all_users_mode_fans_out_reviewer_subcolumns():
         ReviewerDescriptor,
     )
 
-    f = _field("1.1 Source", ExtractionFieldType.TEXT, parent=uuid4())
-    section = _section("1. Source of data", ExtractionEntityRole.STUDY_SECTION, [f])
+    f = _field("Source", ExtractionFieldType.TEXT, parent=uuid4())
+    section = _section("Source of data", ExtractionEntityRole.STUDY_SECTION, [f])
     inst_id = uuid4()
     article = _article("Gaca, 2011", study_instances={section.entity_type_id: inst_id})
     reviewer_a_id = _uuid4()

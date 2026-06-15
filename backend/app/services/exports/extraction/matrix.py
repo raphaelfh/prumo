@@ -1,13 +1,15 @@
 """Extraction matrix sub-builder (§5.4) — fields-as-rows × record-columns.
 
-Lifted verbatim from the legacy ``_write_main_sheet``: identical row/column
-geometry, reviewer-axis fan-out, merged record headers, study-section
-repeat-not-merge (009 FR-010) and the existing FR-009 section/header
-styling. Emits a pure ``SheetSpec``; the publication-grade *structural*
-styling (freeze panes, hierarchical numbering, tab colour, typed cells)
-is layered on in the next step. The value-resolution + fan-out helpers are
-imported from the legacy module so behaviour is byte-equivalent during the
-split.
+Lifted from the legacy ``_write_main_sheet``: identical row/column geometry,
+reviewer-axis fan-out, merged record headers and study-section
+repeat-not-merge (009 FR-010). Emits a pure ``SheetSpec`` carrying the
+publication-grade *structural* styling (spec §9): freeze panes (lock the
+label block + header row), bold-centered header rows, bold/filled
+section-band rows, a tab colour, left-wrap field labels and generic
+hierarchical ``section.field`` numbering. Structural only — no conditional
+formatting (no per-value tinting / traffic lights). The value-resolution +
+fan-out helpers are imported from the legacy module so value behaviour is
+byte-equivalent during the split.
 """
 
 from __future__ import annotations
@@ -33,14 +35,13 @@ _FIRST_DATA_COL = 3
 _FORBIDDEN_SHEET_CHARS = set(r"[]:*?/\\")
 _SHEET_MAX_LEN = 31
 
-# Verbatim mirror of the legacy ``_write_main_sheet`` styling so the lift
-# keeps existing builder tests green. ``_render_sheet_spec`` maps these to
-# the same openpyxl Font/Alignment/PatternFill the legacy writer produced.
-_HEADER_STYLE = CellStyle(bold=True)
-_HEADER_CENTER_STYLE = CellStyle(bold=True, align="center")
-_SECTION_STYLE = CellStyle(bold=True, fill="EEEEEE")
-_SECTION_FILL_STYLE = CellStyle(fill="EEEEEE")
+# Publication-grade STRUCTURAL styling only (spec §9): no conditional
+# formatting (no per-value tinting / traffic lights). ``_render_sheet_spec``
+# maps these to openpyxl Font/Alignment/PatternFill.
+_HEADER_STYLE = CellStyle(bold=True, align="center", wrap=False)
+_BAND_STYLE = CellStyle(bold=True, fill="EEEEEE", align="left")
 _LABEL_STYLE = CellStyle(align="left", wrap=True)
+_MATRIX_TAB_COLOR = "1F4E78"
 
 
 def _safe_sheet_name(raw: str) -> str:
@@ -87,7 +88,7 @@ def build_matrix(layout: ExportLayout) -> SheetSpec:
     for article in layout.articles:
         models_per_article = _article_fanout_count(article=article, layout=layout)
         span = models_per_article * len(reviewer_axis)
-        grid[(1, col_cursor)] = (article.header_label, _HEADER_CENTER_STYLE)
+        grid[(1, col_cursor)] = (article.header_label, _HEADER_STYLE)
         first = col_cursor
         last = col_cursor + span - 1
         if span > 1:
@@ -111,24 +112,29 @@ def build_matrix(layout: ExportLayout) -> SheetSpec:
                             str(rev).split("-")[0],
                         )
                     )
-                    grid[(2, cur)] = (label, _HEADER_CENTER_STYLE)
+                    grid[(2, cur)] = (label, _HEADER_STYLE)
                     cur += 1
 
     row_cursor = header_offset + 1
+    section_number = 0
     for section in layout.sections:
         if section.role is ExtractionEntityRole.MODEL_CONTAINER and not section.fields:
             continue
+        section_number += 1
 
-        grid[(row_cursor, 1)] = (section.label, _SECTION_STYLE)
+        grid[(row_cursor, 1)] = (f"{section_number}. {section.label}", _BAND_STYLE)
         last_col = col_cursor - 1
         if last_col > 1:
             merges.append(MergeSpan(row_cursor, 1, row_cursor, last_col))
             for c in range(2, last_col + 1):
-                grid[(row_cursor, c)] = (None, _SECTION_FILL_STYLE)
+                grid.setdefault((row_cursor, c), (None, _BAND_STYLE))
         row_cursor += 1
 
-        for field_desc in section.fields:
-            grid[(row_cursor, 2)] = (field_desc.label, _LABEL_STYLE)
+        for field_number, field_desc in enumerate(section.fields, start=1):
+            grid[(row_cursor, 2)] = (
+                f"{section_number}.{field_number} {field_desc.label}",
+                _LABEL_STYLE,
+            )
             for article, first_col, _last_col in article_spans:
                 models_per_article = _article_fanout_count(article=article, layout=layout)
                 slot = 0
@@ -168,6 +174,8 @@ def build_matrix(layout: ExportLayout) -> SheetSpec:
         rows=rows,
         merges=tuple(merges),
         column_widths=tuple(widths),
+        freeze=f"C{header_offset + 1}",
+        tab_color=_MATRIX_TAB_COLOR,
     )
 
 
