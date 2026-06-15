@@ -859,6 +859,68 @@ class TestLoadAiProposalRows:
         assert row.rationale == "Rationale"
 
     @pytest.mark.asyncio
+    async def test_evidence_ordered_deduped_numeric_pages(self):
+        """A5: evidence is built as one ordered (text, page) list per proposal —
+        deduped, pages numerically sorted ('2' < '10'), not lexicographic."""
+        svc = _make_service()
+        run_id = uuid4()
+        article_id = uuid4()
+        instance_id = uuid4()
+        entity_type_id = uuid4()
+        field_id = uuid4()
+        proposal_id = uuid4()
+        ts = datetime(2024, 5, 1, tzinfo=UTC)
+
+        article = self._make_article(
+            run_id=run_id,
+            article_id=article_id,
+            study_instances={entity_type_id: instance_id},
+        )
+        proposal_row = (
+            proposal_id,
+            run_id,
+            instance_id,
+            field_id,
+            {"value": "v"},
+            0.9,
+            None,
+            ts,
+        )
+        # evidence rows: (proposal_record_id, text_content, page_number) — out of
+        # order, with a duplicate (same text+page) and multi-digit pages.
+        evidence_rows = [
+            (proposal_id, "second finding", 10),
+            (proposal_id, "first finding", 2),
+            (proposal_id, "first finding", 2),  # exact duplicate
+            (proposal_id, "middle finding", 9),
+        ]
+
+        svc.db.execute = AsyncMock(
+            side_effect=[
+                _rows_result([(instance_id, entity_type_id, article_id)]),
+                _rows_result([proposal_row]),
+                _rows_result(evidence_rows),
+                _rows_result([]),  # decisions
+                _rows_result([(entity_type_id, "Sec")]),
+                _rows_result([(field_id, "Fld")]),
+            ]
+        )
+
+        result = await svc._load_ai_proposal_rows(
+            articles=(article,),
+            sections=(),
+            value_map={(run_id, instance_id, field_id): "v"},
+            mode=ExportMode.CONSENSUS,
+            target_reviewer_id=None,
+        )
+        assert len(result) == 1
+        row = result[0]
+        # numeric page sort, deduped:
+        assert row.evidence_pages == "2, 9, 10"
+        # text follows the same (text, page) order, deduped:
+        assert row.evidence_text == "first finding | middle finding | second finding"
+
+    @pytest.mark.asyncio
     async def test_single_proposal_accept_decision_consensus_mode(self):
         """Accepted proposal in CONSENSUS mode → outcome='accepted', 3-tuple key for final value."""
         svc = _make_service()

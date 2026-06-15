@@ -1262,16 +1262,33 @@ class ExtractionExportService(LoggerMixin):
                     ExtractionEvidence.proposal_record_id,
                     ExtractionEvidence.text_content,
                     ExtractionEvidence.page_number,
-                ).where(ExtractionEvidence.proposal_record_id.in_(proposal_ids))
+                )
+                .where(ExtractionEvidence.proposal_record_id.in_(proposal_ids))
+                .order_by(
+                    ExtractionEvidence.proposal_record_id,
+                    ExtractionEvidence.page_number.asc().nulls_last(),
+                    ExtractionEvidence.id.asc(),
+                )
             )
         ).all()
-        ev_text_by_pid: dict[UUID, list[str]] = {}
-        ev_pages_by_pid: dict[UUID, list[str]] = {}
+        # One ordered, deduped (text, page) list per proposal. Dedupe on the
+        # (text, page) pair; numeric page sort (the DB ORDER BY emits rows in
+        # page order, and we additionally numeric-sort in Python — None pages
+        # last — so ordering is deterministic regardless of driver). Pages are
+        # rendered numerically sorted and deduped independently so "2" < "10".
+        ev_pairs_by_pid: dict[UUID, list[tuple[str | None, int | None]]] = {}
+        seen_pairs: dict[UUID, set[tuple[str | None, int | None]]] = {}
         for pid, text, page in evidence_rows:
-            if text:
-                ev_text_by_pid.setdefault(pid, []).append(text)
-            if page is not None:
-                ev_pages_by_pid.setdefault(pid, []).append(str(page))
+            pair = (text, page)
+            seen = seen_pairs.setdefault(pid, set())
+            if pair in seen:
+                continue
+            seen.add(pair)
+            ev_pairs_by_pid.setdefault(pid, []).append(pair)
+        for pairs in ev_pairs_by_pid.values():
+            # Stable numeric page sort with None pages last; preserves the
+            # ORDER BY id tiebreak for pairs that share a page.
+            pairs.sort(key=lambda tp: (tp[1] is None, tp[1] if tp[1] is not None else 0))
 
         # 3. Reviewer decisions for the same (run, instance, field) — the
         # outcome inference is best-effort because the `edit` decision
@@ -1378,8 +1395,13 @@ class ExtractionExportService(LoggerMixin):
                 ai_proposed_value=resolve_value(proposed_value, field=field_desc_by_id.get(fid)),
                 confidence=float(confidence) if confidence is not None else None,
                 rationale=rationale,
-                evidence_text=" | ".join(ev_text_by_pid.get(pid, [])),
-                evidence_pages=", ".join(ev_pages_by_pid.get(pid, [])),
+                evidence_text=" | ".join(t for t, _p in ev_pairs_by_pid.get(pid, []) if t),
+                evidence_pages=", ".join(
+                    str(p)
+                    for p in sorted(
+                        {pg for _t, pg in ev_pairs_by_pid.get(pid, []) if pg is not None}
+                    )
+                ),
                 proposed_at=ts,
                 reviewer_outcome=outcome,
                 final_value_used=final_value,
