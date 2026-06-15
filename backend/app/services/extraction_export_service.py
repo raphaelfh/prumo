@@ -12,9 +12,8 @@ Architectural notes:
   boundary.
 * Bulk reads only — no per-cell N+1. Every value-map builder issues at
   most a fixed small number of queries regardless of article count.
-* The Single-user and All-users branches are not in V1 (US1 = consensus
-  only). The resolver dispatches on ``mode`` and raises
-  ``NotImplementedError`` for the other branches until US2/US3 ship.
+* All three value-source modes (Consensus / Single-user / All-users)
+  are implemented; ``resolve_layout`` dispatches on ``mode``.
 """
 
 from __future__ import annotations
@@ -293,12 +292,12 @@ class ExtractionExportService(LoggerMixin):
         article_ids: list[UUID],
         include_ai_metadata: bool,
         anonymize_reviewer_names: bool,
-        reviewer_id: UUID | None = None,  # noqa: ARG002 — used in US2
+        reviewer_id: UUID | None = None,
     ) -> ExportLayout:
         """Build the in-memory layout for an export request.
 
-        US1 covers the Consensus branch. The Single-user and All-users
-        branches raise NotImplementedError until US2/US3 implement them.
+        Dispatches on ``mode``; every mode is implemented. Columns are
+        anchored on the active-version snapshot (spec §5.1).
         """
         template, version = await self._load_active_template_version(template_id)
         project_name = await self._resolve_project_name(project_id)
@@ -348,8 +347,6 @@ class ExtractionExportService(LoggerMixin):
                 reviewer_ids=[r.reviewer_id for r in reviewers],
                 fields_by_id=fields_by_id,
             )
-        else:
-            raise NotImplementedError(f"resolve_layout: unknown mode={mode.value}.")
 
         anchor_field_ids = {f.field_id for s in sections for f in s.fields}
         obsolete_fields = await self._compute_obsolete_fields_per_article(
