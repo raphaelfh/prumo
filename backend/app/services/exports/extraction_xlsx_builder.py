@@ -24,7 +24,6 @@ Layout rules summary (FR-008 – FR-012):
 
 from __future__ import annotations
 
-import io
 from dataclasses import astuple
 from typing import Any
 from uuid import UUID
@@ -87,29 +86,15 @@ def _assert_column_budget(layout: ExportLayout) -> None:
             )
 
 
-def build_workbook(layout: ExportLayout) -> bytes:
-    """Build the export workbook bytes for the given layout."""
-    _assert_column_budget(layout)
-    # We deliberately use the default (non-write-only) workbook so we can
-    # apply mergedCells and post-row styling. The expected payload range
-    # (≤ 500 articles × ≤ 100 fields × ~3 models) fits comfortably in
-    # RAM with the default backend; the write-only path is reserved for
-    # a future >5M-cell scenario.
-    wb = Workbook()
-    # Remove the default sheet created by openpyxl.
-    default = wb.active
-    if default is not None:
-        wb.remove(default)
-
-    _write_main_sheet(wb, layout)
-    if layout.include_ai_metadata:
-        _write_ai_metadata_sheet(wb, layout)
-    _write_notes_sheet(wb, layout)
-
-    buf = io.BytesIO()
-    wb.save(buf)
-    return buf.getvalue()
-
+# Re-export the canonical ``build_workbook`` from the orchestrator package
+# ``app.services.exports.extraction.workbook`` so the historical import path
+# ``app.services.exports.extraction_xlsx_builder.build_workbook`` keeps
+# resolving to the *exact same* function object — endpoint/worker imports
+# stay untouched with zero behaviour drift. The sheet writers below remain
+# here (and are called lazily by the orchestrator) until each migrates to
+# its own pure sub-builder later in the split. The orchestrator imports
+# those helpers lazily, so this top-level re-export introduces no cycle.
+from app.services.exports.extraction.workbook import build_workbook  # noqa: E402
 
 # ======================================================================
 # Main sheet
