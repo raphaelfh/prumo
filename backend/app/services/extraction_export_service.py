@@ -394,6 +394,7 @@ class ExtractionExportService(LoggerMixin):
         template, version = await self._load_active_template_version(template_id)
         project_name = await self._resolve_project_name(project_id)
         sections = await self._load_sections(version.id)
+        data_dictionary = _build_data_dictionary(sections)
         fields_by_id: dict[UUID, FieldDescriptor] = {
             f.field_id: f for s in sections for f in s.fields
         }
@@ -481,6 +482,7 @@ class ExtractionExportService(LoggerMixin):
             notes=notes,
             value_map=value_map,
             ai_proposal_rows=ai_rows,
+            data_dictionary=data_dictionary,
         )
 
     # ------------------------------------------------------------------
@@ -1558,6 +1560,38 @@ class ExtractionExportService(LoggerMixin):
 # ----------------------------------------------------------------------
 # Module-level pure helpers
 # ----------------------------------------------------------------------
+
+
+def _build_data_dictionary(
+    sections: tuple[SectionDescriptor, ...],
+) -> tuple[FieldDictEntry, ...]:
+    """Flatten the snapshot sections into one ``FieldDictEntry`` per field (§4 #k+2).
+
+    Order follows section then field order as already resolved on the
+    descriptors (snapshot ``sort_order``). ``allowed_values`` are surfaced as
+    value+label pairs (value == label in prumo; both preserved — §11). The
+    ``description`` is already the ``field.description`` (falling back to
+    ``field.llm_description``) collapsed on the descriptor at load time.
+    """
+    entries: list[FieldDictEntry] = []
+    for section in sections:
+        for field_ in section.fields:
+            entries.append(
+                FieldDictEntry(
+                    field_id=field_.field_id,
+                    section_label=section.label,
+                    label=field_.label,
+                    type=field_.type,
+                    unit=field_.unit,
+                    description=field_.description,
+                    allowed_values=tuple(
+                        AllowedValue(value=v, label=v) for v in field_.allowed_values
+                    ),
+                    is_required=field_.is_required,
+                    allow_other=field_.allow_other,
+                )
+            )
+    return tuple(entries)
 
 
 def _infer_reviewer_outcome(
