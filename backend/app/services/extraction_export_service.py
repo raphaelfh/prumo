@@ -1576,18 +1576,80 @@ def _run_recency_key(run: ExtractionRun) -> tuple[datetime, str]:
     return created_at, str(run.id)
 
 
+#: Lowercase surname particles (nobiliary / patronymic prefixes). When a
+#: surname token sequence ends in "<particle...> <Capitalized>", the
+#: particle(s) are part of the surname (e.g. "De Feo", "van der Berg").
+_SURNAME_PARTICLES = frozenset(
+    {
+        "de",
+        "del",
+        "della",
+        "der",
+        "den",
+        "da",
+        "das",
+        "dos",
+        "di",
+        "du",
+        "van",
+        "von",
+        "la",
+        "le",
+        "lo",
+        "ter",
+        "ten",
+        "af",
+        "av",
+        "bin",
+        "ibn",
+        "al",
+    }
+)
+
+
+def _extract_surname(first_author: str) -> str:
+    """Extract a publication-style surname, preserving compound particles.
+
+    * ``"Smith, John"``      → ``"Smith"`` (text before the comma is the
+      surname already).
+    * ``"Carlo De Feo"``     → ``"De Feo"`` (trailing particle+name run).
+    * ``"van der Berg"``     → ``"van der Berg"``.
+    * ``"Gaca"`` / ``"Andrew Gaca"`` → ``"Gaca"``.
+    """
+    cleaned = first_author.strip()
+    if not cleaned:
+        return ""
+    if "," in cleaned:
+        # "Surname[, given]" — the surname is everything before the comma,
+        # which already includes any particle (e.g. "van der Berg, Anna").
+        return cleaned.split(",", 1)[0].strip()
+
+    tokens = cleaned.split()
+    if len(tokens) == 1:
+        return tokens[0]
+
+    # Walk back from the last token; absorb leading particle tokens.
+    surname_tokens = [tokens[-1]]
+    idx = len(tokens) - 2
+    while idx >= 0 and tokens[idx].lower() in _SURNAME_PARTICLES:
+        surname_tokens.insert(0, tokens[idx])
+        idx -= 1
+    return " ".join(surname_tokens)
+
+
 def _build_header_label(
     title: str | None,
     authors: list[str] | None,
     year: int | None,
     article_id: UUID,
 ) -> str:
-    """Compute the article column header per FR-012 fallback chain."""
+    """Compute the article column header per FR-012 fallback chain.
+
+    Surname extraction is particle-aware so compound surnames survive
+    (e.g. "Carlo De Feo" → "De Feo, 2012", not "Feo, 2012").
+    """
     if authors:
-        first = (authors[0] or "").strip()
-        # Take the surname only — naive but matches the reference workbook's
-        # `Gaca, 2011` / `De Feo, 2012` style.
-        surname = first.split(",")[0].strip() if "," in first else first.split(" ")[-1]
+        surname = _extract_surname(authors[0] or "")
         if surname and year is not None:
             return f"{surname}, {year}"
         if surname:

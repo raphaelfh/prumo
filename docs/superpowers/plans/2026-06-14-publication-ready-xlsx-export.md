@@ -4136,16 +4136,16 @@ uv run pytest \
   tests/unit/test_extraction_export_header_label.py \
   tests/unit/test_extraction_export_determinism.py \
   tests/integration/test_extraction_export_many_cardinality_fanout.py \
-  tests/integration/test_extraction_export_ai_outcome_ordering.py \
+  tests/integration/test_extraction_export_ai_outcome.py \
   -q
 ```
-Expected PASS (all green). The AI-outcome ordering integration test (A6) must still pass — it now reads `section_instances` indirectly through the updated `instance_index_by_id` block; if it RED-fails on the rename, fix the reference there (it is the only remaining `study_instances` reader) and re-run.
+Expected PASS (all green). The AI-outcome integration test (A6) must still pass — it reads instance ids through the `instance_index_by_id` block, which consumes the additive `section_instances` tuple shape (or, for legacy single-instance callers, the `study_instances` read-compat alias property). If it RED-fails, fix the reference there and re-run.
 
-- [ ] **Step 2: Grep for any stragglers.** From `backend/`:
+- [ ] **Step 2: Grep for stray production readers of the legacy shape.** This slice is **additive**: it adds `section_instances` (ordered tuple per entity_type) as the new canonical shape while **intentionally retaining** `study_instances` as a documented read-compat alias *property* (`app/services/extraction_export_service.py`) for the not-yet-migrated AI loader and any legacy single-instance test callers. So a full `grep -rn "study_instances" app tests` is expected to keep ~30 matches — the alias def, the test-helper kwargs that build `section_instances` from alias-shaped input, and the alias-coverage test. The gate is instead: no production code under `app/` should still *read* the alias via attribute access. From `backend/`:
 ```
-grep -rn "study_instances" app tests
+grep -rn "\.study_instances" app | grep -v __pycache__
 ```
-Expected: **zero matches** (every reference migrated to `section_instances`). If the legacy builder or service still matches, repair and re-run Step 1.
+Expected: **zero matches** — every production consumer (matrix builder, fan-out, AI loader) reads `article.section_instances` directly; the `study_instances` property survives only as the read-compat alias definition (which this grep does not match). If a production module still does `article.study_instances`, migrate it to `section_instances` and re-run Step 1. (The bare-name `study_instances` references in `tests/` and the alias `def`/docstring are expected and correct — do **not** remove them.)
 
 - [ ] **Step 3: Lint the whole touched surface.** From `backend/`:
 ```
