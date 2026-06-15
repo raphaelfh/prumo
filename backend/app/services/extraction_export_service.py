@@ -461,6 +461,20 @@ class ExtractionExportService(LoggerMixin):
             generated_at=datetime.now(UTC),
         )
 
+        # README/Methods projection (§4 #1): assembled from the already-computed
+        # counts, the generated contents list, and the obsolete-field block
+        # lifted from ``notes`` — no further IO.
+        front_matter = _build_front_matter(
+            project_name=project_name,
+            template_name=template.name,
+            template_version=version.version,
+            mode=mode,
+            generated_at=notes.generated_at or datetime.now(UTC),
+            articles=tuple(articles),
+            tidy_tables=tidy_tables,
+            obsolete_fields_per_article=notes.obsolete_fields_per_article,
+        )
+
         ai_rows: tuple[AIProposalRow, ...] = ()
         if include_ai_metadata:
             ai_rows = await self._load_ai_proposal_rows(
@@ -488,6 +502,7 @@ class ExtractionExportService(LoggerMixin):
             ai_proposal_rows=ai_rows,
             data_dictionary=data_dictionary,
             tidy_tables=tidy_tables,
+            front_matter=front_matter,
         )
 
     # ------------------------------------------------------------------
@@ -1565,6 +1580,68 @@ class ExtractionExportService(LoggerMixin):
 # ----------------------------------------------------------------------
 # Module-level pure helpers
 # ----------------------------------------------------------------------
+
+
+_FRONT_MATTER_LEGEND: tuple[tuple[str, str], ...] = (
+    ("(blank)", "No value recorded, or the reviewer rejected the AI proposal."),
+    ("No information", "The source reported that the item was not stated."),
+    ("Yes / No", "Boolean field rendered from its true/false value."),
+    ("; ", "Separator between multiple selected options."),
+)
+
+_FRONT_MATTER_CAVEATS: tuple[str, ...] = (
+    "Every value is a static literal baked from the resolved extraction; "
+    "this workbook contains no live formulas.",
+    "Reviewer outcomes labelled 'best-effort' rely on heuristics; the data "
+    "model does not preserve the exact AI-proposal to edited-value lineage.",
+    "Columns reflect the active template version. Fields a Run was finalized "
+    "on but later removed are listed under 'Fields removed from active template'.",
+)
+
+_MODE_LABELS: dict[ExportMode, str] = {
+    ExportMode.CONSENSUS: "Consensus",
+    ExportMode.SINGLE_USER: "Single user",
+    ExportMode.ALL_USERS: "All users",
+}
+
+
+def _build_front_matter(
+    *,
+    project_name: str,
+    template_name: str,
+    template_version: int,
+    mode: ExportMode,
+    generated_at: datetime,
+    articles: tuple[ArticleDescriptor, ...],
+    tidy_tables: tuple[TidyTable, ...],
+    obsolete_fields_per_article: dict[UUID, list[str]],
+) -> FrontMatter:
+    """Assemble the README/Methods front matter (§4 #1).
+
+    Counts, the generated ``contents`` list, the static ``legend``/``caveats``,
+    and the per-Run ``obsolete_fields_per_article`` block (lifted from
+    ``ExportNotes``) come from already-computed inputs. ``record_count`` is the
+    total number of tidy-table rows across every section.
+    """
+    contents: list[str] = ["README / Methods", "Summary", template_name]
+    contents.extend(t.title for t in tidy_tables)
+    contents.append("Data dictionary")
+    record_count = sum(len(t.rows) for t in tidy_tables)
+    return FrontMatter(
+        project_name=project_name,
+        template_name=template_name,
+        template_version=template_version,
+        export_mode_label=_MODE_LABELS.get(mode, mode.value),
+        generated_at=generated_at,
+        article_count=len(articles),
+        record_count=record_count,
+        contents=tuple(contents),
+        legend=_FRONT_MATTER_LEGEND,
+        caveats=_FRONT_MATTER_CAVEATS,
+        obsolete_fields_per_article={
+            aid: tuple(labels) for aid, labels in obsolete_fields_per_article.items()
+        },
+    )
 
 
 def _build_data_dictionary(
