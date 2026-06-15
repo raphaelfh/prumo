@@ -238,6 +238,39 @@ class FieldDictEntry:
 
 
 @dataclass(frozen=True)
+class TidyRow:
+    """One record on a tidy table — one article, or one article × instance.
+
+    ``values`` are pre-resolved scalars aligned to the owning
+    ``TidyTable.column_field_ids``; ``instance_id`` is the fanned-out instance
+    for a ``MANY``-cardinality section, ``None`` for ``ONE``.
+    """
+
+    article_id: UUID
+    instance_id: UUID | None
+    record_label: str  # e.g. "Gaca, 2011" or "Gaca, 2011 — Model 2"
+    values: tuple[Any, ...]  # aligned to TidyTable.column_field_ids, resolved
+
+
+@dataclass(frozen=True)
+class TidyTable:
+    """One publication "Table 1" sheet at a section's cardinality grain (§5.3).
+
+    Built service-side in ``resolve_layout`` (slice task T52) and rendered by
+    the pure ``build_tidy_tables`` sub-builder: one records-as-rows sheet per
+    non-container section. ``cardinality`` sets the grain — ``ONE`` is one row
+    per article, ``MANY`` one row per (article × instance).
+    """
+
+    section_id: UUID
+    title: str  # sheet-name-safe section label
+    cardinality: ExtractionCardinality
+    column_field_ids: tuple[UUID, ...]  # ordered by sort_order
+    column_labels: tuple[str, ...]
+    rows: tuple[TidyRow, ...]
+
+
+@dataclass(frozen=True)
 class ExportLayout:
     """Fully-resolved input for the XLSX builder."""
 
@@ -263,6 +296,9 @@ class ExportLayout:
     # Data-dictionary / dropdown catalogue (§4 #k+2); built in
     # ``resolve_layout`` (T51). One ``FieldDictEntry`` per snapshot field.
     data_dictionary: tuple[FieldDictEntry, ...] = ()
+    # Per-section publication "Table 1" sheets (§5.3); built in
+    # ``resolve_layout`` (T52). One ``TidyTable`` per non-container section.
+    tidy_tables: tuple[TidyTable, ...] = ()
 
 
 # ----------------------------------------------------------------------
