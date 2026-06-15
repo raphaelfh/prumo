@@ -1890,55 +1890,11 @@ class TestLoadActiveTemplateVersion:
 # ===========================================================================
 
 
-class TestLoadSections:
-    @pytest.mark.asyncio
-    async def test_no_entity_types_returns_empty_tuple(self):
-        """No entity types in template → returns empty tuple."""
-        svc = _make_service()
-        svc.db.execute = AsyncMock(return_value=_scalars_result([]))
-
-        result = await svc._load_sections(uuid4())
-        assert result == ()
-
-    @pytest.mark.asyncio
-    async def test_entity_types_with_fields_returns_sections(self):
-        """Entity types + fields → SectionDescriptors with FieldDescriptors."""
-        svc = _make_service()
-        template_id = uuid4()
-
-        entity_id = uuid4()
-        entity = MagicMock()
-        entity.id = entity_id
-        entity.label = "Demographics"
-        entity.role = ExtractionEntityRole.STUDY_SECTION.value
-        entity.parent_entity_type_id = None
-
-        field_id = uuid4()
-        field = MagicMock()
-        field.id = field_id
-        field.label = "Age"
-        field.field_type = ExtractionFieldType.NUMBER.value
-        field.allowed_values = None
-        field.entity_type_id = entity_id
-        field.sort_order = 0
-
-        svc.db.execute = AsyncMock(
-            side_effect=[
-                _scalars_result([entity]),
-                _scalars_result([field]),
-            ]
-        )
-
-        result = await svc._load_sections(template_id)
-
-        assert len(result) == 1
-        section = result[0]
-        assert section.entity_type_id == entity_id
-        assert section.label == "Demographics"
-        assert section.role == ExtractionEntityRole.STUDY_SECTION
-        assert len(section.fields) == 1
-        assert section.fields[0].label == "Age"
-        assert section.fields[0].type == ExtractionFieldType.NUMBER
+# NOTE: ``_load_sections`` is now snapshot-driven (spec §5.1) — it reads the
+# active-version snapshot via ``load_export_sections`` rather than the live
+# ``extraction_entity_types`` / ``extraction_fields`` tables. Its unit coverage
+# lives in ``test_extraction_export_load_sections.py``; the integration parity
+# check is ``test_extraction_export_snapshot_diff.py``.
 
 
 # ===========================================================================

@@ -50,6 +50,7 @@ from app.repositories.extraction_template_version_repository import (
     ExtractionTemplateVersionRepository,
 )
 from app.repositories.project_repository import ProjectMemberRepository, ProjectRepository
+from app.services.exports.extraction_snapshot_reader import load_export_sections
 from app.services.exports.value_envelope import resolve_value
 
 # ----------------------------------------------------------------------
@@ -301,7 +302,7 @@ class ExtractionExportService(LoggerMixin):
         """
         template, version = await self._load_active_template_version(template_id)
         project_name = await self._resolve_project_name(project_id)
-        sections = await self._load_sections(template_id)
+        sections = await self._load_sections(version.id)
         fields_by_id: dict[UUID, FieldDescriptor] = {
             f.field_id: f for s in sections for f in s.fields
         }
@@ -453,65 +454,41 @@ class ExtractionExportService(LoggerMixin):
 
     async def _load_sections(
         self,
-        template_id: UUID,
+        version_id: UUID,
     ) -> tuple[SectionDescriptor, ...]:
-        """Load entity types + fields for the active template, in display order.
+        """Load the column-layout sections from the ACTIVE version snapshot.
 
-        Strategy:
-          1. One query for entity types — eager-loaded in a single round-trip.
-          2. One query for fields belonging to those entity types.
-          3. Stitch them into ``SectionDescriptor`` tuples in stable sort
-             order (entity_type.sort_order, then field.sort_order).
+        Snapshot-driven (spec §5.1): reads the frozen entity_types tree via
+        ``load_export_sections`` (mirrors the run-read path), not the live
+        ``extraction_entity_types`` / ``extraction_fields`` tables. Carries
+        role + cardinality + full field metadata onto the descriptors.
         """
-        entity_rows = (
-            (
-                await self.db.execute(
-                    select(ExtractionEntityType)
-                    .where(ExtractionEntityType.project_template_id == template_id)
-                    .order_by(ExtractionEntityType.sort_order, ExtractionEntityType.id)
-                )
-            )
-            .scalars()
-            .all()
-        )
-
-        if not entity_rows:
-            return ()
-
-        entity_ids = [e.id for e in entity_rows]
-        field_rows = (
-            (
-                await self.db.execute(
-                    select(ExtractionField)
-                    .where(ExtractionField.entity_type_id.in_(entity_ids))
-                    .order_by(ExtractionField.sort_order, ExtractionField.id)
-                )
-            )
-            .scalars()
-            .all()
-        )
-
-        fields_by_section: dict[UUID, list[FieldDescriptor]] = {}
-        for f in field_rows:
-            fields_by_section.setdefault(f.entity_type_id, []).append(
-                FieldDescriptor(
-                    field_id=f.id,
-                    label=f.label,
-                    type=ExtractionFieldType(f.field_type),
-                    allowed_values=_normalize_allowed_values(f.allowed_values),
-                    parent_section_id=f.entity_type_id,
-                )
-            )
-
+        snapshot_sections = await load_export_sections(self.db, version_id=version_id)
         return tuple(
             SectionDescriptor(
-                entity_type_id=e.id,
-                label=e.label,
-                role=ExtractionEntityRole(e.role),
-                parent_entity_type_id=e.parent_entity_type_id,
-                fields=tuple(fields_by_section.get(e.id, ())),
+                entity_type_id=s.entity_type_id,
+                label=s.label,
+                role=s.role,
+                parent_entity_type_id=s.parent_entity_type_id,
+                fields=tuple(
+                    FieldDescriptor(
+                        field_id=f.field_id,
+                        label=f.label,
+                        type=f.type,
+                        allowed_values=tuple(av.label for av in f.allowed_values),
+                        parent_section_id=s.entity_type_id,
+                        description=f.description or f.llm_description,
+                        unit=f.unit,
+                        is_required=f.is_required,
+                        allow_other=f.allow_other,
+                    )
+                    for f in s.fields
+                ),
+                cardinality=s.cardinality,
+                sort_order=s.sort_order,
+                description=s.description,
             )
-            for e in entity_rows
+            for s in snapshot_sections
         )
 
     async def _resolve_articles_for_consensus(
@@ -1210,7 +1187,7 @@ class ExtractionExportService(LoggerMixin):
           3. reviewer_states + decisions for the same (run, instance, field)
              coordinates (to compute the ``Reviewer outcome`` column).
         """
-        from app.models.extraction import ExtractionEntityType, ExtractionField
+        from app.models.extraction import ExtractionEntityType
         from app.models.extraction_workflow import (
             ExtractionProposalRecord,
             ExtractionReviewerDecision,

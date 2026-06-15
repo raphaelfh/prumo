@@ -63,6 +63,7 @@ class SnapshotSection:
     parent_entity_type_id: UUID | None
     sort_order: int
     fields: tuple[SnapshotField, ...]
+    description: str | None = None
 
 
 def _snapshot_is_narrow(entity_types: list[dict[str, Any]]) -> bool:
@@ -102,6 +103,7 @@ def _section_from_view(view: RunViewEntityType) -> SnapshotSection:
         parent_entity_type_id=view.parent_entity_type_id,
         sort_order=view.sort_order,
         fields=tuple(_field_from_view(f) for f in sorted(view.fields, key=lambda x: x.sort_order)),
+        description=view.description,
     )
 
 
