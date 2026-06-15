@@ -633,6 +633,31 @@ class TestInferReviewerOutcome:
         )
         assert result == "rejected"
 
+    def test_terminal_decision_other_field_not_pending(self):
+        """A4: the latest proposal with a terminal decision on the key (an
+        unrelated accept that matches neither this nor flags accept-of-other,
+        e.g. an accept with a null proposal_id) is 'not selected', never 'pending'."""
+        pid = uuid4()
+        decisions = [("accept_proposal", None)]  # touched, but no usable target
+        result = _infer_reviewer_outcome(
+            proposal_id=pid,
+            key=(uuid4(), uuid4(), uuid4()),
+            latest_id=pid,
+            decisions=decisions,
+        )
+        assert result == "not selected"
+
+    def test_never_reviewed_is_pending(self):
+        """A4: only a key with NO decisions at all is 'pending'."""
+        pid = uuid4()
+        result = _infer_reviewer_outcome(
+            proposal_id=pid,
+            key=(uuid4(), uuid4(), uuid4()),
+            latest_id=pid,
+            decisions=[],
+        )
+        assert result == "pending"
+
     @pytest.mark.parametrize(
         "decisions,expected",
         [
@@ -644,7 +669,7 @@ class TestInferReviewerOutcome:
         ],
     )
     def test_decision_precedence(self, decisions, expected):
-        """Precedence: accept (exact) > superseded > not selected > reject > edit > pending."""
+        """Precedence: accepted > superseded > not-selected > rejected > edited > pending."""
         pid = uuid4()
         result = _infer_reviewer_outcome(
             proposal_id=pid,
