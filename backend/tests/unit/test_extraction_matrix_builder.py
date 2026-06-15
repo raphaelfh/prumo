@@ -6,8 +6,10 @@ import io
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import pytest
 from openpyxl import load_workbook
 
+from app.core.error_handler import AppError
 from app.models.extraction import (
     ExtractionCardinality,
     ExtractionEntityRole,
@@ -94,3 +96,39 @@ def test_many_cardinality_study_section_fans_out_one_subcolumn_per_instance():
     # One distinct value per instance — NO collapse.
     assert ws.cell(row=field_row, column=3).value == "CT angiography"
     assert ws.cell(row=field_row, column=4).value == "MRI"
+
+
+def test_column_guard_rejects_layouts_over_excel_limit():
+    # One study-many section with an absurd instance count to blow the
+    # 16,384-column budget deterministically (no real fan-out needed).
+    eid = uuid4()
+    fid = uuid4()
+    field = FieldDescriptor(
+        field_id=fid,
+        label="F",
+        type=ExtractionFieldType.TEXT,
+        allowed_values=(),
+        parent_section_id=eid,
+    )
+    section = SectionDescriptor(
+        entity_type_id=eid,
+        label="S",
+        role=ExtractionEntityRole.STUDY_SECTION,
+        parent_entity_type_id=None,
+        fields=(field,),
+        cardinality=ExtractionCardinality.MANY,
+    )
+    run_id = uuid4()
+    instance_ids = tuple(uuid4() for _ in range(16_400))
+    article = ArticleDescriptor(
+        article_id=uuid4(),
+        header_label="Big",
+        run_id=run_id,
+        run_stage=None,
+        version_id=None,
+        model_instances=(),
+        section_instances={eid: instance_ids},
+    )
+    with pytest.raises(AppError) as exc:
+        build_workbook(_layout((section,), (article,), {}))
+    assert "16384" in str(exc.value) or "column" in str(exc.value).lower()

@@ -33,6 +33,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from app.core.error_handler import AppError
 from app.models.extraction import ExtractionCardinality, ExtractionEntityRole
 from app.services.exports.value_envelope import format_export_scalar
 from app.services.extraction_export_service import (
@@ -59,9 +60,36 @@ _FIRST_COL_ALIGN = Alignment(horizontal="left", vertical="center", wrap_text=Tru
 #: and B are reserved for section + field labels.
 _FIRST_DATA_COL = 3
 
+#: Excel's hard cap on the number of columns in a worksheet.
+_EXCEL_MAX_COLUMNS = 16_384
+
+
+def _assert_column_budget(layout: ExportLayout) -> None:
+    """Reject layouts that would exceed Excel's hard 16,384-column cap.
+
+    Fail loud and early with a clear message instead of letting openpyxl
+    crash mid-build (design §5.5). Worst case is all-users mode with many
+    articles × instances × reviewers.
+    """
+    reviewer_axis_width = (len(layout.reviewers) + 1) if layout.mode is ExportMode.ALL_USERS else 1
+    total = _FIRST_DATA_COL - 1  # label columns A + B
+    for article in layout.articles:
+        total += _article_fanout_count(article=article, layout=layout) * reviewer_axis_width
+        if total > _EXCEL_MAX_COLUMNS:
+            raise AppError(
+                code="EXPORT_COLUMN_LIMIT_EXCEEDED",
+                message=(
+                    "This export would produce "
+                    f"{total} columns, exceeding Excel's limit of "
+                    f"{_EXCEL_MAX_COLUMNS}. Narrow the export mode, reviewers, "
+                    "or article selection and try again."
+                ),
+            )
+
 
 def build_workbook(layout: ExportLayout) -> bytes:
     """Build the export workbook bytes for the given layout."""
+    _assert_column_budget(layout)
     # We deliberately use the default (non-write-only) workbook so we can
     # apply mergedCells and post-row styling. The expected payload range
     # (≤ 500 articles × ≤ 100 fields × ~3 models) fits comfortably in
