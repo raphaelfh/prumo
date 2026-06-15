@@ -1389,25 +1389,52 @@ def _infer_reviewer_outcome(
 ) -> str:
     """Compute the FR-037 ``Reviewer outcome`` value for a proposal.
 
-    Precedence (highest → lowest):
-        accepted (exact, proposal_record_id matches)
-          → rejected (any reject decision present on this key)
-            → edited (best-effort) (any edit decision present)
-              → superseded (a newer AI proposal exists for this key)
-                → pending (no reviewer_state yet)
+    Precedence (highest → lowest, A2/A4 corrected):
+        1. accepted     — an accept_proposal decision targets THIS proposal_id.
+        2. superseded   — a newer AI proposal exists for this key
+                          (proposal_id != latest_id), checked BEFORE any blanket
+                          reject so a superseded proposal is not mislabelled
+                          'rejected'.
+        3. not selected — this is the latest proposal but an accept_proposal on the
+                          key targets a DIFFERENT proposal (reviewed, not chosen).
+        4. rejected     — a reject decision exists AND no accept of a different
+                          proposal masks it.
+        5. edited       — an edit decision exists (best-effort; edit carries no FK
+                          back to the AI proposal).
+        6. not selected — a terminal decision exists on the key but none of the
+                          above applied (A4: never 'pending' once the key is
+                          touched).
+        7. pending      — no reviewer decision on this key at all.
     """
-    for decision, prop_id in decisions:
-        if decision == "accept_proposal" and prop_id == proposal_id:
+    accepts_other = any(
+        d == "accept_proposal" and pid is not None and pid != proposal_id for d, pid in decisions
+    )
+
+    # 1. accepted — exact match on this proposal.
+    for decision, pid in decisions:
+        if decision == "accept_proposal" and pid == proposal_id:
             return "accepted"
+
+    # 2. superseded — a newer AI proposal exists for this key (before any reject).
+    if proposal_id != latest_id:
+        return "superseded"
+
+    # 3. not selected — latest, but a different proposal was accepted on the key.
+    if accepts_other:
+        return "not selected"
+
+    # 4. rejected — a reject exists and no accept-of-other masks it.
     for decision, _ in decisions:
         if decision == "reject":
             return "rejected"
+
+    # 5. edited — best-effort.
     for decision, _ in decisions:
         if decision == "edit":
             return "edited (best-effort)"
-    if proposal_id != latest_id:
-        return "superseded"
-    return "pending"
+
+    # 6/7. a terminal decision touched the key → 'not selected'; else 'pending'.
+    return "not selected" if decisions else "pending"
 
 
 _ACTIVE_EXPORT_RUN_STAGES = {

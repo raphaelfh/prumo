@@ -575,7 +575,7 @@ class TestInferReviewerOutcome:
         assert result == "pending"
 
     def test_accept_proposal_wrong_pid_falls_through_to_pending(self):
-        """accept_proposal for a different proposal → falls through to 'pending'."""
+        """accept_proposal for a different proposal (pid is latest) → A4 'not selected'."""
         pid = uuid4()
         other_pid = uuid4()
         decisions = [("accept_proposal", other_pid)]
@@ -585,19 +585,66 @@ class TestInferReviewerOutcome:
             latest_id=pid,  # pid is latest
             decisions=decisions,
         )
-        # accept_proposal does not match pid; no reject/edit; pid == latest → pending
-        assert result == "pending"
+        # accept_proposal targets a different proposal; pid is latest → A4 'not selected'
+        assert result == "not selected"
+
+    def test_superseded_wins_over_reject(self):
+        """A2: a non-latest proposal with a reject on the key → 'superseded', not 'rejected'.
+
+        The old precedence returned 'rejected' for ANY reject on the key, masking
+        the fact that this proposal was superseded by a newer AI proposal.
+        """
+        pid = uuid4()
+        latest_id = uuid4()  # a newer proposal supersedes pid
+        decisions = [("reject", None)]
+        result = _infer_reviewer_outcome(
+            proposal_id=pid,
+            key=(uuid4(), uuid4(), uuid4()),
+            latest_id=latest_id,
+            decisions=decisions,
+        )
+        assert result == "superseded"
+
+    def test_reject_gated_on_no_accept_of_other(self):
+        """A2: a reject co-existing with accept_proposal of a DIFFERENT proposal
+        on the same key is 'not selected', never 'rejected' (the accept-of-other
+        is the real outcome; the reject must not mask it)."""
+        pid = uuid4()
+        other_pid = uuid4()
+        decisions = [("reject", None), ("accept_proposal", other_pid)]
+        result = _infer_reviewer_outcome(
+            proposal_id=pid,
+            key=(uuid4(), uuid4(), uuid4()),
+            latest_id=pid,  # pid is the latest, so not superseded
+            decisions=decisions,
+        )
+        assert result == "not selected"
+
+    def test_reject_only_still_rejected(self):
+        """A2 regression: a plain reject (no accept-of-other, pid is latest) is
+        still 'rejected'."""
+        pid = uuid4()
+        decisions = [("reject", None)]
+        result = _infer_reviewer_outcome(
+            proposal_id=pid,
+            key=(uuid4(), uuid4(), uuid4()),
+            latest_id=pid,
+            decisions=decisions,
+        )
+        assert result == "rejected"
 
     @pytest.mark.parametrize(
         "decisions,expected",
         [
-            ([("accept_proposal", None)], "pending"),  # accept but wrong pid (None vs real)
+            # accept but non-matching pid (None vs real); pid is latest, key touched →
+            # A4 'not selected' (never 'pending' once a decision exists on the key).
+            ([("accept_proposal", None)], "not selected"),
             ([("reject", None), ("edit", None)], "rejected"),  # reject wins over edit
             ([("edit", None), ("reject", None)], "rejected"),  # order doesn't matter for reject
         ],
     )
     def test_decision_precedence(self, decisions, expected):
-        """Precedence: accept_proposal (exact) > reject > edit > superseded > pending."""
+        """Precedence: accept (exact) > superseded > not selected > reject > edit > pending."""
         pid = uuid4()
         result = _infer_reviewer_outcome(
             proposal_id=pid,
