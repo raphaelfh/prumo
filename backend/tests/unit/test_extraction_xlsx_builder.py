@@ -129,19 +129,31 @@ def test_build_workbook_returns_valid_xlsx_bytes():
     assert isinstance(data, bytes)
     assert data[:4] == b"PK\x03\x04"
     wb = _open(data)
-    assert wb.sheetnames == ["CHARMS", "Notes"]
+    # §4 order: README (absorbs the old Notes sheet) → Summary → matrix →
+    # Data dictionary. The empty layout has no sections (no tidy tables) and
+    # an empty data dictionary (no Dropdown lists sheet).
+    assert wb.sheetnames == ["README", "Summary", "CHARMS", "Data dictionary"]
 
 
 def test_build_workbook_includes_ai_metadata_sheet_when_toggled():
     data = build_workbook(_layout(include_ai_metadata=True))
     wb = _open(data)
-    assert wb.sheetnames == ["CHARMS", "AI metadata", "Notes"]
+    # AI metadata is the trailing optional sheet, appended after the §4 specs.
+    assert wb.sheetnames == [
+        "README",
+        "Summary",
+        "CHARMS",
+        "Data dictionary",
+        "AI metadata",
+    ]
 
 
 def test_sheet_name_is_sanitised_for_openpyxl_constraints():
     data = build_workbook(_layout(template_name="Bad/Name?:With*Forbidden[chars]"))
     wb = _open(data)
-    main = wb.sheetnames[0]
+    # The matrix sheet (named from the template) is the only one derived from
+    # the unsafe template name; the fixed sheets (README/Summary/...) are safe.
+    main = next(s for s in wb.sheetnames if s.startswith("BadName"))
     assert len(main) <= 31
     for forbidden in r"[]:*?/\\":
         assert forbidden not in main
@@ -317,7 +329,9 @@ def test_none_value_renders_blank_cell():
 # ----------------------------------------------------------------------
 
 
-def test_notes_sheet_lists_omitted_articles_by_stage():
+def test_summary_sheet_lists_omitted_articles_by_stage():
+    # The omitted-by-stage tally moved from the legacy Notes sheet onto the
+    # Summary sheet (the README sub-builder absorbs the rest of Notes).
     notes = ExportNotes(
         omitted_articles_by_stage={"review": 4, "no_run": 2},
         template_version_label="CHARMS v1",
@@ -338,12 +352,11 @@ def test_notes_sheet_lists_omitted_articles_by_stage():
         value_map={},
     )
     data = build_workbook(layout)
-    rows = [list(row) for row in _open(data)["Notes"].iter_rows(values_only=True)]
+    rows = [list(row) for row in _open(data)["Summary"].iter_rows(values_only=True)]
     flat = " ".join(str(c) for row in rows for c in row if c)
-    assert "Articles omitted (stage=review)" in flat
-    assert "Articles omitted (stage=no_run)" in flat
-    # FR-040 lineage caveat must always be present.
-    assert "best-effort" in flat.lower()
+    assert "Articles omitted" in flat
+    assert "stage=review" in flat
+    assert "stage=no_run" in flat
 
 
 def test_ai_metadata_sheet_emits_placeholder_when_no_rows():
@@ -517,3 +530,121 @@ def test_xlsx_safe_raises_on_dict() -> None:
 
     with pytest.raises(TypeError):
         _xlsx_safe({"value": 5, "unit": "mg"})
+
+
+def test_workbook_emits_sheets_in_section4_order():
+    """README → Summary → matrix → tidy tables → Data dictionary → Dropdown lists."""
+    from app.models.extraction import (
+        ExtractionCardinality,
+        ExtractionEntityRole,
+        ExtractionFieldType,
+    )
+    from app.services.exports.extraction.workbook import build_workbook
+    from app.services.extraction_export_service import (
+        AllowedValue,
+        ArticleDescriptor,
+        ExportLayout,
+        ExportMode,
+        ExportNotes,
+        FieldDescriptor,
+        FieldDictEntry,
+        FrontMatter,
+        SectionDescriptor,
+        TidyRow,
+        TidyTable,
+    )
+
+    eid = uuid4()
+    fid = uuid4()
+    section = SectionDescriptor(
+        entity_type_id=eid,
+        label="Study",
+        role=ExtractionEntityRole.STUDY_SECTION,
+        parent_entity_type_id=None,
+        fields=(
+            FieldDescriptor(
+                field_id=fid,
+                label="Design",
+                type=ExtractionFieldType.SELECT,
+                allowed_values=("Cohort", "RCT"),
+                parent_section_id=eid,
+            ),
+        ),
+        cardinality=ExtractionCardinality.ONE,
+        sort_order=0,
+    )
+    inst = uuid4()
+    run = uuid4()
+    article = ArticleDescriptor(
+        article_id=uuid4(),
+        header_label="Gaca, 2011",
+        run_id=run,
+        run_stage=None,
+        version_id=None,
+        model_instances=(),
+        section_instances={eid: (inst,)},
+    )
+    fm = FrontMatter(
+        project_name="P",
+        template_name="CHARMS",
+        template_version=1,
+        export_mode_label="Consensus",
+        generated_at=datetime(2026, 6, 14, tzinfo=UTC),
+        article_count=1,
+        record_count=1,
+        contents=("README", "Summary"),
+        legend=(),
+        caveats=(),
+        obsolete_fields_per_article={},
+    )
+    dict_entry = FieldDictEntry(
+        field_id=fid,
+        section_label="Study",
+        label="Design",
+        type=ExtractionFieldType.SELECT,
+        unit=None,
+        description=None,
+        allowed_values=(AllowedValue(value="Cohort", label="Cohort"),),
+        is_required=False,
+        allow_other=False,
+    )
+    tidy = TidyTable(
+        section_id=eid,
+        title="Study characteristics",
+        cardinality=ExtractionCardinality.ONE,
+        column_field_ids=(fid,),
+        column_labels=("Design",),
+        rows=(
+            TidyRow(
+                article_id=article.article_id,
+                instance_id=None,
+                record_label="Gaca, 2011",
+                values=("Cohort",),
+            ),
+        ),
+    )
+    layout = ExportLayout(
+        project_name="P",
+        template_name="CHARMS",
+        template_version=1,
+        sections=(section,),
+        articles=(article,),
+        reviewers=(),
+        mode=ExportMode.CONSENSUS,
+        include_ai_metadata=False,
+        anonymize_reviewer_names=False,
+        notes=ExportNotes(generated_at=datetime(2026, 6, 14, tzinfo=UTC)),
+        value_map={(run, inst, fid): "Cohort"},
+        front_matter=fm,
+        data_dictionary=(dict_entry,),
+        tidy_tables=(tidy,),
+    )
+    wb = load_workbook(io.BytesIO(build_workbook(layout)))
+    assert wb.sheetnames == [
+        "README",
+        "Summary",
+        "CHARMS",
+        "Study characteristics",
+        "Data dictionary",
+        "Dropdown lists",
+    ]

@@ -64,15 +64,25 @@ def _one_field_layout(*, include_ai: bool, n_articles: int = 1) -> ExportLayout:
 
 
 def test_sheet_order_without_ai() -> None:
+    # §4 order: README (absorbs Notes) → Summary → matrix → Data dictionary.
+    # This layout populates neither tidy_tables nor a non-empty data
+    # dictionary, so no tidy / Dropdown lists sheets are emitted.
     data = build_workbook(_one_field_layout(include_ai=False))
     wb = load_workbook(io.BytesIO(data))
-    assert wb.sheetnames == ["My Template", "Notes"]
+    assert wb.sheetnames == ["README", "Summary", "My Template", "Data dictionary"]
 
 
 def test_sheet_order_with_ai() -> None:
+    # AI metadata is the trailing optional sheet, after the §4 specs.
     data = build_workbook(_one_field_layout(include_ai=True))
     wb = load_workbook(io.BytesIO(data))
-    assert wb.sheetnames == ["My Template", "AI metadata", "Notes"]
+    assert wb.sheetnames == [
+        "README",
+        "Summary",
+        "My Template",
+        "Data dictionary",
+        "AI metadata",
+    ]
 
 
 def test_column_guard_rejects_oversized_layout() -> None:
