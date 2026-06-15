@@ -72,25 +72,32 @@ class ExportMode(StrEnum):
 
 @dataclass(frozen=True)
 class FieldDescriptor:
-    """One field within an entity_type (= one row on the main sheet)."""
+    """One field within an entity_type (= one row on the matrix sheet).
+
+    Metadata fields (``description``/``unit``/``is_required``/``allow_other``)
+    are carried from the per-Run version snapshot (spec §5.1) and consumed by
+    the data-dictionary + value resolver. Defaulted for back-compat with
+    existing ``()``-arg call sites.
+    """
 
     field_id: UUID
     label: str
     type: ExtractionFieldType
     allowed_values: tuple[str, ...]
     parent_section_id: UUID
-    # Surfaced by ``resolve_value`` as the fallback unit for number+unit
-    # envelopes that omit their own ``unit`` (e.g. ``5`` -> ``"5 mg"``).
+    description: str | None = None
     unit: str | None = None
+    is_required: bool = False
+    allow_other: bool = False
 
 
 @dataclass(frozen=True)
 class SectionDescriptor:
     """One section (entity_type) — drives section header + field rows.
 
-    Sections are emitted to the sheet in the order they appear in
-    ``layout.sections``; the builder uses ``role`` to decide whether to
-    repeat values across model sub-columns (FR-010).
+    ``cardinality`` is the fan-out key (spec §5.2): ``MANY`` fans out one
+    record per instance for ANY role; ``ONE`` is one record per article.
+    Sections are emitted in ``sort_order``.
     """
 
     entity_type_id: UUID
@@ -98,6 +105,9 @@ class SectionDescriptor:
     role: ExtractionEntityRole
     parent_entity_type_id: UUID | None
     fields: tuple[FieldDescriptor, ...]
+    cardinality: ExtractionCardinality = ExtractionCardinality.ONE
+    sort_order: int = 0
+    description: str | None = None
 
 
 @dataclass(frozen=True)
