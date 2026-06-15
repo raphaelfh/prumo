@@ -447,6 +447,10 @@ class ExtractionExportService(LoggerMixin):
             anchor_field_ids=anchor_field_ids,
         )
 
+        # Per-section publication "Table 1" sheets (§5.3): values are baked
+        # from the already-resolved ``value_map`` — no envelope re-handling.
+        tidy_tables = _build_tidy_tables(sections, tuple(articles), value_map, mode)
+
         notes = ExportNotes(
             omitted_articles_by_stage=omitted,
             obsolete_fields_per_article=obsolete_fields,
@@ -483,6 +487,7 @@ class ExtractionExportService(LoggerMixin):
             value_map=value_map,
             ai_proposal_rows=ai_rows,
             data_dictionary=data_dictionary,
+            tidy_tables=tidy_tables,
         )
 
     # ------------------------------------------------------------------
@@ -1592,6 +1597,127 @@ def _build_data_dictionary(
                 )
             )
     return tuple(entries)
+
+
+def _tidy_value(
+    value_map: dict[tuple[Any, ...], Any],
+    *,
+    run_id: UUID,
+    instance_id: UUID,
+    field_id: UUID,
+    mode: ExportMode,
+) -> Any:
+    """Baked consensus value for one tidy-cell coordinate.
+
+    All-users keys are 4-tuples ``(run, instance, field, reviewer|None)``; the
+    tidy table shows the consensus sub-column (``reviewer_id=None``). Other
+    modes use 3-tuple keys. Values are already resolved scalars (resolver
+    slice) — never re-handled here.
+    """
+    if mode is ExportMode.ALL_USERS:
+        return value_map.get((run_id, instance_id, field_id, None))
+    return value_map.get((run_id, instance_id, field_id))
+
+
+def _tidy_row(
+    *,
+    section: SectionDescriptor,
+    article: ArticleDescriptor,
+    instance_id: UUID,
+    record_label: str,
+    value_map: dict[tuple[Any, ...], Any],
+    mode: ExportMode,
+) -> TidyRow:
+    """One tidy-table record: pre-resolved values aligned to the section fields."""
+    values = tuple(
+        _tidy_value(
+            value_map,
+            run_id=article.run_id,  # type: ignore[arg-type]  # run_id checked non-None by caller
+            instance_id=instance_id,
+            field_id=f.field_id,
+            mode=mode,
+        )
+        for f in section.fields
+    )
+    return TidyRow(
+        article_id=article.article_id,
+        instance_id=instance_id,
+        record_label=record_label,
+        values=values,
+    )
+
+
+def _build_tidy_tables(
+    sections: tuple[SectionDescriptor, ...],
+    articles: tuple[ArticleDescriptor, ...],
+    value_map: dict[tuple[Any, ...], Any],
+    mode: ExportMode,
+) -> tuple[TidyTable, ...]:
+    """One publication table per non-container section at its cardinality grain.
+
+    ``cardinality==MANY`` fans out one row per (article × instance) for ANY
+    role (spec §5.2 — never a ``role==MODEL_SECTION`` allow-list); ``ONE``
+    yields one row per article. Columns are the section fields in their
+    resolved order; values are baked from ``value_map`` (already-resolved
+    scalars — §5.3). The ``MODEL_CONTAINER`` and field-less sections are
+    skipped (nothing to project).
+    """
+    tables: list[TidyTable] = []
+    for section in sections:
+        if section.role is ExtractionEntityRole.MODEL_CONTAINER:
+            continue
+        if not section.fields:
+            continue
+        column_field_ids = tuple(f.field_id for f in section.fields)
+        column_labels = tuple(f.label for f in section.fields)
+        rows: list[TidyRow] = []
+        for article in articles:
+            if article.run_id is None:
+                continue
+            if section.cardinality is ExtractionCardinality.MANY:
+                if section.role is ExtractionEntityRole.MODEL_SECTION:
+                    instances = article.model_instances
+                    label_stem = "Model"
+                else:
+                    instances = article.section_instances.get(section.entity_type_id, ())
+                    label_stem = section.label
+                for idx, instance_id in enumerate(instances, start=1):
+                    rows.append(
+                        _tidy_row(
+                            section=section,
+                            article=article,
+                            instance_id=instance_id,
+                            record_label=f"{article.header_label} — {label_stem} {idx}",
+                            value_map=value_map,
+                            mode=mode,
+                        )
+                    )
+            else:
+                instances = article.section_instances.get(section.entity_type_id, ())
+                instance_id = instances[0] if instances else None
+                if instance_id is None:
+                    continue
+                rows.append(
+                    _tidy_row(
+                        section=section,
+                        article=article,
+                        instance_id=instance_id,
+                        record_label=article.header_label,
+                        value_map=value_map,
+                        mode=mode,
+                    )
+                )
+        tables.append(
+            TidyTable(
+                section_id=section.entity_type_id,
+                title=section.label,
+                cardinality=section.cardinality,
+                column_field_ids=column_field_ids,
+                column_labels=column_labels,
+                rows=tuple(rows),
+            )
+        )
+    return tuple(tables)
 
 
 def _infer_reviewer_outcome(
