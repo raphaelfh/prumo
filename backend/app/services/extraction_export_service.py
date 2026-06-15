@@ -49,7 +49,10 @@ from app.repositories.extraction_template_version_repository import (
     ExtractionTemplateVersionRepository,
 )
 from app.repositories.project_repository import ProjectMemberRepository, ProjectRepository
-from app.services.exports.extraction_snapshot_reader import load_export_sections
+from app.services.exports.extraction_snapshot_reader import (
+    AllowedValue,
+    load_export_sections,
+)
 from app.services.exports.value_envelope import resolve_value
 
 # ----------------------------------------------------------------------
@@ -212,6 +215,29 @@ class AIProposalRow:
 
 
 @dataclass(frozen=True)
+class FieldDictEntry:
+    """One row of the Data dictionary / dropdown catalogue (§4 #k+2).
+
+    Flattened from the per-Run version snapshot field metadata: label, type,
+    unit, ``description`` (falling back to ``llm_description``), the ordered
+    ``allowed_values`` value+label pairs, and the ``is_required`` /
+    ``allow_other`` flags. Built service-side in ``resolve_layout`` (T51) and
+    consumed by the pure ``build_data_dictionary`` + ``build_dropdown_lists``
+    sub-builders.
+    """
+
+    field_id: UUID
+    section_label: str
+    label: str
+    type: ExtractionFieldType
+    unit: str | None
+    description: str | None  # field.description, else field.llm_description
+    allowed_values: tuple[AllowedValue, ...]  # value+label, ordered
+    is_required: bool
+    allow_other: bool
+
+
+@dataclass(frozen=True)
 class ExportLayout:
     """Fully-resolved input for the XLSX builder."""
 
@@ -234,6 +260,9 @@ class ExportLayout:
     # README/Methods projection (§4 #1); built in ``resolve_layout`` (T53).
     # None => the sub-builder falls back to the bare layout identity fields.
     front_matter: FrontMatter | None = None
+    # Data-dictionary / dropdown catalogue (§4 #k+2); built in
+    # ``resolve_layout`` (T51). One ``FieldDictEntry`` per snapshot field.
+    data_dictionary: tuple[FieldDictEntry, ...] = ()
 
 
 # ----------------------------------------------------------------------
