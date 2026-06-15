@@ -339,7 +339,9 @@ class ExtractionExportService(LoggerMixin):
                 sections=sections,
                 value_map=value_map,
                 mode=mode,
-                target_reviewer_id=None,
+                # A3: only single-user mode has one target reviewer; consensus and
+                # all-users keep every reviewer's decisions in scope.
+                target_reviewer_id=reviewer_id if mode is ExportMode.SINGLE_USER else None,
             )
 
         return ExportLayout(

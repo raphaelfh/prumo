@@ -1024,6 +1024,65 @@ class TestLoadAiProposalRows:
         assert result[0].final_value_used == "3tuple_value"
 
     @pytest.mark.asyncio
+    async def test_single_user_outcome_scoped_to_target_reviewer(self):
+        """A3: in SINGLE_USER mode the outcome reflects ONLY the target reviewer's
+        decision, matching the single-user 'Final value used' (3-tuple key).
+
+        Target reviewer rejected; another reviewer accepted the same proposal.
+        The row must read 'rejected' (target's view), not 'accepted'."""
+        svc = _make_service()
+        run_id = uuid4()
+        article_id = uuid4()
+        instance_id = uuid4()
+        entity_type_id = uuid4()
+        field_id = uuid4()
+        proposal_id = uuid4()
+        target_reviewer = uuid4()
+        other_reviewer = uuid4()  # noqa: F841 — documents the masked accept
+        ts = datetime(2024, 4, 1, tzinfo=UTC)
+
+        article = self._make_article(
+            run_id=run_id,
+            article_id=article_id,
+            study_instances={entity_type_id: instance_id},
+        )
+        proposal_row = (
+            proposal_id,
+            run_id,
+            instance_id,
+            field_id,
+            {"value": "v"},
+            0.9,
+            None,
+            ts,
+        )
+        # ONLY the target reviewer's decision is returned, because the loader's
+        # decision query is now filtered by target_reviewer_id in SINGLE_USER mode.
+        target_reject = (run_id, instance_id, field_id, target_reviewer, "reject", None)
+
+        svc.db.execute = AsyncMock(
+            side_effect=[
+                _rows_result([(instance_id, entity_type_id, article_id)]),
+                _rows_result([proposal_row]),
+                _rows_result([]),
+                _rows_result([target_reject]),  # query filtered to target reviewer
+                _rows_result([(entity_type_id, "Sec")]),
+                _rows_result([(field_id, "Fld")]),
+            ]
+        )
+
+        result = await svc._load_ai_proposal_rows(
+            articles=(article,),
+            sections=(),
+            value_map={(run_id, instance_id, field_id): None},  # single-user reject → blank
+            mode=ExportMode.SINGLE_USER,
+            target_reviewer_id=target_reviewer,
+        )
+        assert len(result) == 1
+        assert result[0].reviewer_outcome == "rejected"
+        assert result[0].final_value_used is None
+
+    @pytest.mark.asyncio
     async def test_unknown_section_falls_back_to_entity_label(self):
         """When entity_type is not in sections, falls back to ent_label_rows."""
         svc = _make_service()
@@ -1814,6 +1873,79 @@ class TestLoadSections:
         assert len(section.fields) == 1
         assert section.fields[0].label == "Age"
         assert section.fields[0].type == ExtractionFieldType.NUMBER
+
+
+# ===========================================================================
+# Service: resolve_layout — AI target-reviewer threading (A3)
+# ===========================================================================
+
+
+class TestResolveLayoutAiTarget:
+    """resolve_layout threads the active reviewer into the AI loader.
+
+    A3: in SINGLE_USER mode the AI sheet's 'Reviewer outcome' must scope to the
+    same reviewer whose values populate 'Final value used'; consensus/all-users
+    keep every reviewer's decisions in scope (target_reviewer_id=None).
+    """
+
+    def _stub_loaders(self, svc):
+        """Replace resolve_layout's data-loading collaborators with stubs and
+        return the captured-kwargs AsyncMock standing in for the AI loader."""
+        template = MagicMock()
+        template.name = "T"
+        version = MagicMock()
+        version.version = 1
+        svc._load_active_template_version = AsyncMock(return_value=(template, version))
+        svc._resolve_project_name = AsyncMock(return_value="Project")
+        svc._load_sections = AsyncMock(return_value=())
+        svc._resolve_articles_for_consensus = AsyncMock(return_value=([], {}))
+        svc._build_consensus_value_map = AsyncMock(return_value={})
+        svc._resolve_articles_for_single_user = AsyncMock(return_value=([], {}))
+        svc._build_single_user_value_map = AsyncMock(return_value={})
+        ai_loader = AsyncMock(return_value=())
+        svc._load_ai_proposal_rows = ai_loader
+        return ai_loader
+
+    @pytest.mark.asyncio
+    async def test_resolve_layout_single_user_passes_reviewer_as_ai_target(self):
+        """SINGLE_USER mode → AI loader receives target_reviewer_id == reviewer_id."""
+        svc = _make_service()
+        ai_loader = self._stub_loaders(svc)
+        reviewer_id = uuid4()
+
+        await svc.resolve_layout(
+            project_id=uuid4(),
+            template_id=uuid4(),
+            mode=ExportMode.SINGLE_USER,
+            article_ids=[],
+            include_ai_metadata=True,
+            anonymize_reviewer_names=False,
+            reviewer_id=reviewer_id,
+        )
+
+        ai_loader.assert_awaited_once()
+        assert ai_loader.await_args.kwargs["mode"] is ExportMode.SINGLE_USER
+        assert ai_loader.await_args.kwargs["target_reviewer_id"] == reviewer_id
+
+    @pytest.mark.asyncio
+    async def test_resolve_layout_consensus_passes_none_as_ai_target(self):
+        """CONSENSUS mode → AI loader receives target_reviewer_id is None."""
+        svc = _make_service()
+        ai_loader = self._stub_loaders(svc)
+
+        await svc.resolve_layout(
+            project_id=uuid4(),
+            template_id=uuid4(),
+            mode=ExportMode.CONSENSUS,
+            article_ids=[],
+            include_ai_metadata=True,
+            anonymize_reviewer_names=False,
+            reviewer_id=None,
+        )
+
+        ai_loader.assert_awaited_once()
+        assert ai_loader.await_args.kwargs["mode"] is ExportMode.CONSENSUS
+        assert ai_loader.await_args.kwargs["target_reviewer_id"] is None
 
 
 # ===========================================================================
