@@ -355,3 +355,99 @@ def test_matrix_freeze_all_users_uses_two_header_rows() -> None:
     )
     spec = build_matrix(layout)
     assert spec.freeze == "C3"
+
+
+def _value_cell(ws, field: FieldDescriptor):
+    """Return the rendered cell value for ``field`` in the article column (C)."""
+    label_prefix = field.label
+    for r in range(1, ws.max_row + 1):
+        col_b = ws.cell(row=r, column=2).value
+        if col_b is not None and label_prefix in str(col_b):
+            return ws.cell(row=r, column=3).value
+    raise AssertionError(f"no row found for field {field.label!r}")
+
+
+def _single_field_layout(field: FieldDescriptor, raw_value, *, sec_id: UUID) -> ExportLayout:
+    section = SectionDescriptor(
+        entity_type_id=sec_id,
+        label="Section",
+        role=ExtractionEntityRole.STUDY_SECTION,
+        parent_entity_type_id=None,
+        fields=(field,),
+    )
+    run_id, inst_id = uuid4(), uuid4()
+    article = ArticleDescriptor(
+        article_id=uuid4(),
+        header_label="A",
+        run_id=run_id,
+        run_stage=None,
+        version_id=None,
+        model_instances=(),
+        section_instances={sec_id: (inst_id,)},
+    )
+    return _spec_layout(
+        sections=(section,),
+        articles=(article,),
+        value_map={(run_id, inst_id, field.field_id): raw_value},
+    )
+
+
+def test_boolean_false_value_renders_no_not_yes() -> None:
+    # Regression for the boolean-inversion data-corruption: the consensus
+    # value_map is populated with ``resolve_value`` output, which collapses a
+    # ``False`` boolean to the STRING ``"No"`` (value_envelope §6). The matrix
+    # cell formatter must pass that pre-resolved ``"No"`` through unchanged. A
+    # ``bool("No")``-based re-implementation is truthy and would silently emit
+    # ``"Yes"`` — inverting every False boolean in every exported workbook.
+    from app.services.exports.value_envelope import resolve_value
+
+    sec_id = uuid4()
+    field = _spec_field("BoolFlag", ExtractionFieldType.BOOLEAN, sec_id)
+
+    # End-to-end through the production resolve path: False -> "No".
+    resolved_false = resolve_value(False, field=field)
+    assert resolved_false == "No"
+    ws_false = _render_matrix(_single_field_layout(field, resolved_false, sec_id=sec_id))
+    assert _value_cell(ws_false, field) == "No"
+
+    # And True -> "Yes" (the other branch, so the test is not vacuous).
+    resolved_true = resolve_value(True, field=field)
+    assert resolved_true == "Yes"
+    ws_true = _render_matrix(_single_field_layout(field, resolved_true, sec_id=sec_id))
+    assert _value_cell(ws_true, field) == "Yes"
+
+
+def test_boolean_raw_false_instance_renders_no() -> None:
+    # Defensive: even a raw ``False`` bool reaching the cell (field=BOOLEAN)
+    # must render ``"No"`` via format_export_scalar, never ``"Yes"``.
+    sec_id = uuid4()
+    field = _spec_field("BoolFlag", ExtractionFieldType.BOOLEAN, sec_id)
+    ws = _render_matrix(_single_field_layout(field, False, sec_id=sec_id))
+    assert _value_cell(ws, field) == "No"
+
+
+def test_select_value_renders_as_string() -> None:
+    sec_id = uuid4()
+    field = _spec_field("Choice", ExtractionFieldType.SELECT, sec_id)
+    ws = _render_matrix(_single_field_layout(field, "Cohort", sec_id=sec_id))
+    assert _value_cell(ws, field) == "Cohort"
+
+
+def test_multiselect_list_value_joins_with_semicolons() -> None:
+    sec_id = uuid4()
+    field = _spec_field("Tags", ExtractionFieldType.MULTISELECT, sec_id)
+    ws = _render_matrix(_single_field_layout(field, ["age", "sex", "BMI"], sec_id=sec_id))
+    assert _value_cell(ws, field) == "age; sex; BMI"
+
+
+def test_matrix_module_has_no_legacy_builder_dependency() -> None:
+    import ast
+    import pathlib
+
+    src = pathlib.Path("app/services/exports/extraction/matrix.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    imported = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module)
+    assert "app.services.exports.extraction_xlsx_builder" not in imported
