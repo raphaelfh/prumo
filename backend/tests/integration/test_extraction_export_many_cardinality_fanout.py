@@ -35,6 +35,7 @@ class _ExportFixtureCtx:
 
     service: ExtractionExportService
     template_id: UUID
+    version_id: UUID
     project_id: UUID
     article_id: UUID
     many_entity_type_id: UUID
@@ -160,6 +161,7 @@ async def seeded_export_fixture(
     return _ExportFixtureCtx(
         service=service,
         template_id=template_id,
+        version_id=UUID(str(version_id)),
         project_id=project_id,
         article_id=article_id,
         many_entity_type_id=many_entity_type_id,
@@ -197,5 +199,36 @@ async def test_many_cardinality_section_keeps_all_instances(
     # All 3 instances preserved, in sort_order — NOT collapsed to 1.
     assert list(section_instances) == ctx.ordered_instance_ids
     assert len(section_instances) == 3
+
+    await db_session.rollback()
+
+
+async def test_load_sections_surfaces_entity_cardinality(
+    db_session: AsyncSession,
+) -> None:
+    """``_load_sections`` must carry each section's ``cardinality`` onto the
+    ``SectionDescriptor`` (was defaulting to ONE, losing the MANY fan-out key).
+
+    The seed version snapshot is the empty (narrow) tree, so ``_load_sections``
+    falls through to the live ``extraction_entity_types`` tables where the
+    fixture seeds the MANY section.
+    """
+    if (
+        await db_session.execute(
+            text("SELECT 1 FROM public.profiles WHERE id = :id"),
+            {"id": str(SEED.primary_profile)},
+        )
+    ).scalar() is None:
+        pytest.skip("Missing fixtures.")
+
+    ctx = await seeded_export_fixture(
+        db_session,
+        section_role=ExtractionEntityRole.STUDY_SECTION,
+        section_cardinality=ExtractionCardinality.MANY,
+        instance_count=2,
+    )
+    sections = await ctx.service._load_sections(ctx.version_id)
+    many = next(s for s in sections if s.entity_type_id == ctx.many_entity_type_id)
+    assert many.cardinality is ExtractionCardinality.MANY
 
     await db_session.rollback()
