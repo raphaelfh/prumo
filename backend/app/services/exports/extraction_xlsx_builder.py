@@ -33,7 +33,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from app.models.extraction import ExtractionEntityRole
+from app.models.extraction import ExtractionCardinality, ExtractionEntityRole
 from app.services.exports.value_envelope import format_export_scalar
 from app.services.extraction_export_service import (
     AIProposalRow,
@@ -123,7 +123,7 @@ def _write_main_sheet(workbook: Workbook, layout: ExportLayout) -> None:
     article_spans: list[tuple[ArticleDescriptor, int, int]] = []
     col_cursor = _FIRST_DATA_COL
     for article in layout.articles:
-        models_per_article = max(1, len(article.model_instances))
+        models_per_article = _article_fanout_count(article=article, layout=layout)
         span = models_per_article * len(reviewer_axis)
         cell = ws.cell(row=1, column=col_cursor, value=article.header_label)
         cell.font = _HEADER_FONT
@@ -146,7 +146,7 @@ def _write_main_sheet(workbook: Workbook, layout: ExportLayout) -> None:
         # Row 2 — reviewer / Consensus labels under each article.
         cur = _FIRST_DATA_COL
         for article in layout.articles:
-            models_per_article = max(1, len(article.model_instances))
+            models_per_article = _article_fanout_count(article=article, layout=layout)
             for _model_idx in range(models_per_article):
                 for rev in reviewer_axis:
                     label = (
@@ -190,7 +190,7 @@ def _write_main_sheet(workbook: Workbook, layout: ExportLayout) -> None:
             for article, first_col, _last_col in article_spans:
                 # Iterate (model_index × reviewer_axis) — model-major
                 # so model sub-columns stay adjacent (FR-011 ordering).
-                models_per_article = max(1, len(article.model_instances))
+                models_per_article = _article_fanout_count(article=article, layout=layout)
                 slot = 0
                 for model_idx in range(models_per_article):
                     instance_id = _resolve_instance_id(
@@ -226,6 +226,35 @@ def _write_main_sheet(workbook: Workbook, layout: ExportLayout) -> None:
         ws.column_dimensions[get_column_letter(col_idx)].width = 24
 
 
+def _article_fanout_count(*, article: ArticleDescriptor, layout: ExportLayout) -> int:
+    """Number of instance sub-columns for one article.
+
+    The fan-out grain is the MAX instance count across the article's
+    instance-bearing sections, with a floor of 1:
+
+      * MODEL_SECTION is *always* a model-instance axis (driven by
+        ``article.model_instances``) regardless of its own cardinality —
+        in production every model section carries ``cardinality='one'``
+        and the N-model fan-out comes from the snapshot reader splitting
+        instances by role (extraction_export_service §5.2), never from a
+        section being ``cardinality='many'``.
+      * Any non-model section contributes only when it is
+        ``cardinality='many'`` (its instances live in
+        ``section_instances``).
+
+    We do NOT cartesian-product independent axes (design §5.4 — one
+    instance axis per article); a section with fewer instances repeats
+    its last value.
+    """
+    counts = [1]
+    for section in layout.sections:
+        if section.role is ExtractionEntityRole.MODEL_SECTION:
+            counts.append(max(1, len(article.model_instances)))
+        elif section.cardinality is ExtractionCardinality.MANY:
+            counts.append(max(1, len(article.section_instances.get(section.entity_type_id, ()))))
+    return max(counts)
+
+
 def _resolve_instance_id(
     *,
     section: SectionDescriptor,
@@ -234,21 +263,37 @@ def _resolve_instance_id(
 ) -> UUID | None:
     """Return the instance_id whose values feed the given cell.
 
-    * STUDY_SECTION: one instance per (article × entity_type). The same
-      instance_id is reused across every model sub-column (FR-010
-      repeat-not-merge).
-    * MODEL_SECTION: the model_index-th model instance.
-    * MODEL_CONTAINER: no own fields — caller already skipped.
+    The instance axis is selected by role first, then cardinality:
+      * MODEL_SECTION → the ``model_index``-th model instance (from
+        ``article.model_instances``), clamped to the last when the
+        article has fewer models than the fan-out width. This holds
+        regardless of the section's own cardinality, because production
+        model sections are ``cardinality='one'`` and the N-model fan-out
+        is sourced from ``model_instances`` (extraction_export_service
+        §5.2), not from the section being ``cardinality='many'``.
+      * non-model, cardinality='many' → the ``model_index``-th instance
+        of that entity_type (from ``section_instances``), clamped to the
+        last when its own list is shorter than the fan-out width.
+      * non-model, cardinality='one' → the single instance for the
+        section's entity_type, repeated across every sub-column (§5.4
+        repeat-not-merge).
     """
-    if section.role is ExtractionEntityRole.STUDY_SECTION:
-        return article.study_instances.get(section.entity_type_id)
+    if section.role is ExtractionEntityRole.MODEL_CONTAINER:
+        return None  # no own fields — caller already skipped
     if section.role is ExtractionEntityRole.MODEL_SECTION:
         if not article.model_instances:
             return None
-        # model_index is guaranteed in-range because the column was
-        # emitted from article.model_instances.
-        return article.model_instances[model_index]
-    return None  # MODEL_CONTAINER / unknown — no values
+        idx = min(model_index, len(article.model_instances) - 1)
+        return article.model_instances[idx]
+    if section.cardinality is ExtractionCardinality.MANY:
+        ids = article.section_instances.get(section.entity_type_id, ())
+        if not ids:
+            return None
+        idx = min(model_index, len(ids) - 1)
+        return ids[idx]
+    # cardinality='one' — single instance, repeated across sub-columns.
+    ids = article.section_instances.get(section.entity_type_id, ())
+    return ids[0] if ids else None
 
 
 def _lookup_value(
