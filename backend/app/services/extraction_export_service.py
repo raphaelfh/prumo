@@ -351,8 +351,15 @@ class ExtractionExportService(LoggerMixin):
         else:
             raise NotImplementedError(f"resolve_layout: unknown mode={mode.value}.")
 
+        anchor_field_ids = {f.field_id for s in sections for f in s.fields}
+        obsolete_fields = await self._compute_obsolete_fields_per_article(
+            articles=tuple(articles),
+            anchor_field_ids=anchor_field_ids,
+        )
+
         notes = ExportNotes(
             omitted_articles_by_stage=omitted,
+            obsolete_fields_per_article=obsolete_fields,
             template_version_label=f"{template.name} v{version.version}",
             export_mode_label=mode.value,
             anonymize_reviewer_names=anonymize_reviewer_names,
@@ -490,6 +497,40 @@ class ExtractionExportService(LoggerMixin):
             )
             for s in snapshot_sections
         )
+
+    async def _compute_obsolete_fields_per_article(
+        self,
+        *,
+        articles: tuple[ArticleDescriptor, ...],
+        anchor_field_ids: set[UUID],
+    ) -> dict[UUID, list[str]]:
+        """Fields present on a Run's frozen snapshot but removed from the anchor.
+
+        Spec §5.1: each Run's own version snapshot is diffed by ``field_id``
+        against the active-version anchor. Surviving fields are filled
+        elsewhere; Run-only fields (removed from the anchor after the Run
+        finalized) are recorded here, labelled from the Run snapshot (the
+        anchor no longer carries the label). Empty when nothing was removed.
+        """
+        snapshot_fields_cache: dict[UUID, tuple[tuple[UUID, str], ...]] = {}
+        out: dict[UUID, list[str]] = {}
+        for article in articles:
+            version_id = article.version_id
+            if version_id is None:
+                continue
+            if version_id not in snapshot_fields_cache:
+                run_sections = await load_export_sections(self.db, version_id=version_id)
+                snapshot_fields_cache[version_id] = tuple(
+                    (f.field_id, f.label) for s in run_sections for f in s.fields
+                )
+            obsolete = [
+                label
+                for fid, label in snapshot_fields_cache[version_id]
+                if fid not in anchor_field_ids
+            ]
+            if obsolete:
+                out[article.article_id] = obsolete
+        return out
 
     async def _resolve_articles_for_consensus(
         self,
