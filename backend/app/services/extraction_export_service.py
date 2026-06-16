@@ -1219,13 +1219,28 @@ class ExtractionExportService(LoggerMixin):
         enforced here so the endpoint stays free of role-resolution
         plumbing (constitution §I: API layer is thin).
         """
-        all_reviewers = await self.list_reviewers_with_decisions(
-            project_id=project_id, template_id=template_id
-        )
+        # Resolve the caller first so a malformed subject short-circuits
+        # before any DB IO.
         try:
             caller_id = UUID(self.user_id)
         except (TypeError, ValueError):
             return []
+        # Key the run filter on the exported template's own kind so a
+        # quality_assessment template surfaces its reviewers; scoped by
+        # project_id (defense-in-depth, like the reviewer query) and
+        # falling back to ``extraction`` when absent (mirrors the
+        # ``run_kind`` default on ``_resolve_articles_for_consensus``).
+        run_kind = (
+            await self.db.execute(
+                select(ProjectExtractionTemplate.kind).where(
+                    ProjectExtractionTemplate.id == template_id,
+                    ProjectExtractionTemplate.project_id == project_id,
+                )
+            )
+        ).scalar_one_or_none() or "extraction"
+        all_reviewers = await self.list_reviewers_with_decisions(
+            project_id=project_id, template_id=template_id, run_kind=run_kind
+        )
         is_manager = await self._project_members_repo().has_role(
             project_id, caller_id, ProjectMemberRole.MANAGER
         )
@@ -1238,6 +1253,7 @@ class ExtractionExportService(LoggerMixin):
         *,
         project_id: UUID,
         template_id: UUID,
+        run_kind: str = "extraction",
     ) -> list[dict[str, str]]:
         """Reviewers with ≥ 1 non-reject decision on this project template.
 
@@ -1245,6 +1261,12 @@ class ExtractionExportService(LoggerMixin):
         alphabetically by display name. Primitive used by
         ``list_eligible_reviewers_for_picker``; not called directly from
         the API layer.
+
+        ``run_kind`` is the exported template's kind (``extraction`` or
+        ``quality_assessment``): a run's kind is copied from its template
+        at creation, so filtering on the template's own kind surfaces the
+        QA picker's reviewers (see ``_resolve_articles_for_consensus``)
+        instead of a hard-coded ``extraction`` that hides them.
         """
         from app.models.extraction_workflow import (
             ExtractionReviewerDecision,
@@ -1271,7 +1293,7 @@ class ExtractionExportService(LoggerMixin):
                 .where(
                     ExtractionRun.project_id == project_id,
                     ExtractionRun.template_id == template_id,
-                    ExtractionRun.kind == "extraction",
+                    ExtractionRun.kind == run_kind,
                     ExtractionReviewerDecision.decision != "reject",
                 )
                 .distinct()
