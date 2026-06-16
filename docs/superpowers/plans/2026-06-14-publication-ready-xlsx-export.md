@@ -7492,7 +7492,7 @@ Steps:
   - When the exported template is `quality_assessment`: `resolve_layout` populates `ExportLayout.appraisal: AppraisalModel`, and `build_appraisal_summary(layout)` emits the conditional sheet (workbook position k+1, §4).
   - When the exported template is `extraction` (the default kind): `layout.appraisal is None`, `build_appraisal_summary` returns `None`, the sheet is omitted, and any risk-of-bias-shaped section inside the template still renders as an ordinary tidy table via `build_tidy_tables` (§5.3 / §7 plan-time note: "a PROBAST-style section still appears as an ordinary tidy table").
   - **Appraisal "domains" = the sections (entity_types) of the QA template**, taken in snapshot `sort_order`. Each domain is one `SectionDescriptor`/`SnapshotSection` from `load_export_sections`.
-  - **A domain's "verdict" = the resolved value of that domain's designated verdict field.** The verdict field is the domain section's `SELECT` field (`ExtractionFieldType.SELECT`) — risk-of-bias domains carry exactly one categorical judgement field whose `allowed_values` are the risk labels (`Low` / `High` / `Unclear`, value == label per §11). The verdict field per domain is selected as: the **first `SELECT`-typed field in `sort_order`** within that domain section. (Per-domain non-verdict fields, e.g. signalling questions, are not rolled up; they remain available in that section's ordinary tidy table.)
+  - **A domain's "verdict" = the resolved value of that domain's designated judgment field.** "First `SELECT` field in `sort_order`" would be **wrong** against the actual seed (`backend/app/seed.py`): the per-domain **signalling questions are themselves `SELECT`-typed** (`_signaling` → `_qa_field(..., "select", ...)`, `backend/app/seed.py:1301-1318`) and are seeded at **lower** `sort_order` than the judgment, so "first `SELECT`" selects a signalling question (e.g. PROBAST Domain 1 `q1_1_appropriate_data_sources`, `sort_order 0`), never the `risk_of_bias` verdict (`sort_order 2`). A domain also carries **two** categorical judgment `SELECT` fields — `risk_of_bias` **and** `applicability_concerns` (`_domain_judgment`, `backend/app/seed.py:1321-1354`) — so "exactly one" is false too. The verdict field is therefore identified **by its label set, not its position**: it is the **first `SELECT`-typed field in `sort_order` whose `allowed_values` equal the risk-label set** `{Low, High, Unclear}` (case-insensitive; value == label per §11). This cleanly separates the judgment fields from the signalling fields, whose answer sets are distinct (PROBAST `{Y, PY, PN, N, NI, NA}`; QUADAS-2 `{Y, N, Unclear}` — `_PROBAST_SIGNALING`/`_QUADAS2_SIGNALING`, `backend/app/seed.py:155,160`), and "first in `sort_order`" among the judgment fields deterministically picks `risk_of_bias` over `applicability_concerns` (it is seeded first). The risk-label set is the recognised severity vocabulary of the worst-case order below (`{High, Unclear, Some concerns, Moderate, Low}`); matching is membership-based (a domain qualifies when **every** non-blank allowed value is a recognised label), keeping QUADAS-2/ROBINS-style label sets in scope while excluding signalling sets. Only `FieldDescriptor.{type, allowed_values}` are needed (the machine `name` `risk_of_bias` is **not** carried onto the descriptor — `FieldDescriptor` has no `name`, `extraction_export_service.py:77-94` — so selection must key on `allowed_values`, not the name). (Per-domain non-verdict fields — signalling questions and `applicability_concerns` — are not rolled up; they remain available in that section's ordinary tidy table.)
   - **"Overall" = worst-case rollup** over a record's domain verdicts using a fixed severity order `High > Unclear > Some concerns > Moderate > Low` (case-insensitive match; any unrecognised non-empty verdict is treated as more severe than every recognised label so a novel label never silently downgrades the rollup; all-blank ⇒ blank Overall). This satisfies "any `High` ⇒ `High`" (§7) while staying template-agnostic for QUADAS-2/ROBINS-style label sets.
 
 - [ ] **Step 3: Record the MODE-AWARE Overall mapping (mirrors the matrix reviewer-axis fan-out, §7 + §6.1).**
@@ -7503,7 +7503,7 @@ Steps:
 
 - [ ] **Step 4: Record the GRAIN + emission rules.**
   - Appraisal grain = **one row per record at the appraisal grain** = one row per article (QA templates are study-level: domains are `cardinality='one'` `STUDY_SECTION`s). If a QA domain is `cardinality='many'` (e.g. per-index-test QUADAS-2), the row grain fans out one row per instance, reusing the same per-record instance resolution the tidy tables use (`ArticleDescriptor.section_instances[entity_type_id]`). `record_label` matches the tidy-table record label (article header, or `"<header> — <instance ordinal>"`).
-  - The sheet is emitted (`AppraisalModel` non-None) **only when ≥1 domain has a resolvable verdict field**; a QA template with zero `SELECT` fields yields `appraisal=None` (no empty roll-up sheet) — fall back to ordinary tidy tables.
+  - The sheet is emitted (`AppraisalModel` non-None) **only when ≥1 domain has a resolvable verdict field** (a `SELECT` field whose `allowed_values` are the risk-label set, per Step 2); a QA template with no risk-label-set `SELECT` field in any domain yields `appraisal=None` (no empty roll-up sheet) — fall back to ordinary tidy tables. Note the `Overall` summary domain (PROBAST/QUADAS-2 entity `overall`, `backend/app/seed.py:1636-1660,1884-1908`) carries its own risk-label-set `SELECT` (`overall_risk_of_bias`) and so qualifies as a "domain"; the worst-case rollup over the per-domain verdicts (including that one) still satisfies "any `High` ⇒ `High`".
 
 - [ ] **Step 5: No commit (read/decision task).** This task produces the decision recorded above; it is referenced verbatim by the code tasks below. Proceed to the contract-extension task.
 
@@ -7665,6 +7665,14 @@ _SEVERITY_RANK: tuple[str, ...] = (
     "unclear",
     "low",
 )
+
+# Recognised risk-label vocabulary (case-folded). Single source of truth for
+# "which SELECT field is a domain verdict": a domain's verdict field is the
+# first SELECT whose allowed_values are all drawn from this set, which
+# separates the judgment fields (Low/High/Unclear) from the SELECT-typed
+# signalling questions (Y/PY/PN/N/NI/NA, Y/N/Unclear). Reused by
+# extraction_export_service._build_appraisal_model (§7 verdict selection).
+_RISK_LABELS: frozenset[str] = frozenset(_SEVERITY_RANK)
 
 
 def _verdict_rank(verdict: Any) -> int:
@@ -8019,12 +8027,17 @@ from app.services.extraction_export_service import (
 )
 
 
-def _field(label, ftype=ExtractionFieldType.SELECT, parent=None):
+def _field(
+    label,
+    ftype=ExtractionFieldType.SELECT,
+    parent=None,
+    allowed_values=("Low", "Unclear", "High"),
+):
     return FieldDescriptor(
         field_id=uuid.uuid4(),
         label=label,
         type=ftype,
-        allowed_values=("Low", "Unclear", "High"),
+        allowed_values=allowed_values,
         parent_section_id=parent or uuid.uuid4(),
     )
 
@@ -8139,6 +8152,72 @@ def test_build_appraisal_model_none_when_no_select_field() -> None:
         mode=ExportMode.CONSENSUS,
     )
     assert model is None
+
+
+def test_build_appraisal_model_skips_signalling_select_picks_risk_label_field() -> None:
+    # Mirrors the real seed: SELECT-typed signalling questions precede the
+    # risk_of_bias judgment in sort_order. The verdict must be the risk-label
+    # SELECT (Low/High/Unclear), NOT the first SELECT (a signalling answer).
+    sid = uuid.uuid4()
+    signalling = FieldDescriptor(
+        field_id=uuid.uuid4(),
+        label="q1_1 appropriate data sources",
+        type=ExtractionFieldType.SELECT,
+        allowed_values=("Y", "PY", "PN", "N", "NI", "NA"),  # _PROBAST_SIGNALING
+        parent_section_id=sid,
+    )
+    risk = FieldDescriptor(
+        field_id=uuid.uuid4(),
+        label="Risk of bias",
+        type=ExtractionFieldType.SELECT,
+        allowed_values=("Low", "High", "Unclear"),  # _PROBAST_JUDGMENT
+        parent_section_id=sid,
+    )
+    applicability = FieldDescriptor(
+        field_id=uuid.uuid4(),
+        label="Applicability concerns",
+        type=ExtractionFieldType.SELECT,
+        allowed_values=("Low", "High", "Unclear"),
+        parent_section_id=sid,
+    )
+    d1 = SectionDescriptor(
+        entity_type_id=sid,
+        label="Participants",
+        role=ExtractionEntityRole.STUDY_SECTION,
+        parent_entity_type_id=None,
+        fields=(signalling, risk, applicability),  # signalling first, by sort_order
+        cardinality=ExtractionCardinality.ONE,
+        sort_order=0,
+    )
+    run_id, inst, aid = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    article = ArticleDescriptor(
+        article_id=aid,
+        header_label="Gaca, 2011",
+        run_id=run_id,
+        run_stage=None,
+        version_id=None,
+        model_instances=(),
+        section_instances={sid: (inst,)},
+    )
+    # If selection wrongly picked the signalling field, "Y" would be read and
+    # ranked maximally severe -> Overall "Y". Keying on the risk-label set
+    # reads risk_of_bias instead, so the verdict is the judgment "Low".
+    value_map = {
+        (run_id, inst, signalling.field_id): "Y",
+        (run_id, inst, risk.field_id): "Low",
+        (run_id, inst, applicability.field_id): "High",
+    }
+    model = ExtractionExportService._build_appraisal_model(
+        sections=(d1,),
+        articles=(article,),
+        reviewers=(),
+        value_map=value_map,
+        mode=ExportMode.CONSENSUS,
+    )
+    assert model is not None
+    row = model.rows[0]
+    assert row.domain_verdicts == ("Low",)  # risk_of_bias, not "Y" or "High"
+    assert row.overall == "Low"
 ```
 
 - [ ] **Step 2: Run it — expect FAIL** (`AttributeError: _build_appraisal_model`). Note this test also depends on the grown `ArticleDescriptor` (`version_id`, `section_instances`) and `SectionDescriptor.cardinality` from sibling slices — if those fields are not yet present the test errors on construction, which is the correct RED:
@@ -8146,7 +8225,10 @@ def test_build_appraisal_model_none_when_no_select_field() -> None:
 
 - [ ] **Step 3: Implement `_build_appraisal_model` (pure static method).** Add to `ExtractionExportService` (import `AppraisalModel`, `AppraisalRow` are same-module names; import the rollup helper at module top, landing the import atomically):
 ```python
-from app.services.exports.extraction.appraisal_summary import _appraisal_overall
+from app.services.exports.extraction.appraisal_summary import (
+    _RISK_LABELS,
+    _appraisal_overall,
+)
 ```
 ```python
     @staticmethod
@@ -8161,21 +8243,43 @@ from app.services.exports.extraction.appraisal_summary import _appraisal_overall
         """Compute the appraisal roll-up for a quality-assessment template (§7).
 
         Each domain = one section; its verdict field = the first SELECT-typed
-        field in sort_order. Overall = worst-case rollup over the record's
-        domain verdicts. Mode-aware:
+        field in sort_order whose ``allowed_values`` are the risk-label set
+        (``{Low, High, Unclear, ...}`` — the recognised severity vocabulary).
+        This is NOT "the first SELECT field": signalling questions are also
+        SELECT-typed and precede the judgment in sort_order (seed.py), so a
+        positional rule would wrongly pick a signalling answer. Keying on the
+        risk-label set selects ``risk_of_bias`` (and excludes signalling fields
+        whose answer sets are Y/PY/PN/N/... ); among the two judgment fields
+        (risk_of_bias, applicability_concerns) the first-in-sort_order tiebreak
+        deterministically picks risk_of_bias. The descriptor carries no machine
+        ``name``, so selection keys on ``allowed_values``, not the field name.
+
+        Overall = worst-case rollup over the record's domain verdicts.
+        Mode-aware:
 
           * consensus / single_user -> AppraisalRow.overall only (3-tuple keys).
           * all_users -> consensus overall (reviewer_id=None) + one rollup per
             reviewer (4-tuple keys), in ``reviewers`` order.
 
-        Returns None when no domain has a SELECT verdict field (no roll-up
-        sheet; the sections still ship as ordinary tidy tables).
+        Returns None when no domain has a risk-label-set SELECT verdict field
+        (no roll-up sheet; the sections still ship as ordinary tidy tables).
         """
-        # Verdict field per domain: first SELECT field in declared order.
+        # Verdict field per domain: first SELECT field in sort_order whose
+        # allowed_values are the recognised risk-label set (excludes signalling
+        # SELECT fields, whose answer sets differ — see _appraisal_overall's
+        # severity table for the recognised labels).
+        def _is_verdict(field: FieldDescriptor) -> bool:
+            if field.type is not ExtractionFieldType.SELECT:
+                return False
+            labels = [v.strip().lower() for v in field.allowed_values if v.strip()]
+            return bool(labels) and all(
+                label in _RISK_LABELS for label in labels
+            )
+
         domains: list[tuple[SectionDescriptor, FieldDescriptor]] = []
         for section in sorted(sections, key=lambda s: s.sort_order):
             verdict_field = next(
-                (f for f in section.fields if f.type is ExtractionFieldType.SELECT),
+                (f for f in section.fields if _is_verdict(f)),
                 None,
             )
             if verdict_field is not None:
@@ -8265,10 +8369,13 @@ Add `appraisal=appraisal,` to the `ExportLayout(...)` constructor call. Ensure `
 ```
 feat(backend): compute mode-aware appraisal model in resolve_layout
 
-QA-template-gated (kind == quality_assessment). Picks each domain's first
-SELECT verdict field, rolls up worst-case Overall, and fans out one
-Overall per reviewer in all-users mode (§7). Pure rollup, DB-free unit
-tested; layout stays a read-only consumer (no model change).
+QA-template-gated (kind == quality_assessment). Picks each domain's verdict
+field as the first SELECT whose allowed_values are the risk-label set
+(Low/High/Unclear...) — not the first SELECT, since signalling questions are
+also SELECT-typed and precede the judgment in sort_order. Rolls up worst-case
+Overall and fans out one Overall per reviewer in all-users mode (§7). Pure
+rollup, DB-free unit tested; layout stays a read-only consumer (no model
+change).
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
 ```
@@ -8439,7 +8546,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
 
 **Slice notes for the synthesizer (sequencing + shared-contract dependencies):**
 
-- **Plan-time decision (Task 1) is load-bearing:** "appraisal layer" ⇔ `TemplateKind.QUALITY_ASSESSMENT`; domain ⇔ QA-template section; verdict ⇔ the domain's first `SELECT` field; Overall ⇔ caution-biased worst-case rollup. There is **no** appraisal entity role and **no** per-section flag — confirmed against `backend/app/models/extraction.py` (`ExtractionEntityRole` has only `STUDY_SECTION/MODEL_CONTAINER/MODEL_SECTION`) and `extraction_versioning.py` (`TemplateKind`).
+- **Plan-time decision (Task 1) is load-bearing:** "appraisal layer" ⇔ `TemplateKind.QUALITY_ASSESSMENT`; domain ⇔ QA-template section; verdict ⇔ the domain's first `SELECT` field **whose `allowed_values` are the risk-label set** (`{Low, High, Unclear, ...}`) — NOT the first `SELECT` outright, because signalling questions are SELECT-typed and precede the judgment in `sort_order` (grounded in `backend/app/seed.py:1301-1354`); Overall ⇔ caution-biased worst-case rollup. There is **no** appraisal entity role and **no** per-section flag — confirmed against `backend/app/models/extraction.py` (`ExtractionEntityRole` has only `STUDY_SECTION/MODEL_CONTAINER/MODEL_SECTION`) and `extraction_versioning.py` (`TemplateKind`).
 - **Cross-slice dependencies (do not redefine — reference by name):** `SheetSpec`/`Cell`/`CellStyle` (`sheet_spec.py`), `build_workbook`/`_render_sheet_spec` (`workbook.py`), the grown `ArticleDescriptor` (`version_id`, `section_instances: dict[UUID, tuple[UUID,...]]`) and `SectionDescriptor.cardinality`/`sort_order`, and `resolve_value` (the AI/matrix slices delete `_unwrap_value`). The appraisal builder consumes **already-resolved scalars** from `value_map` — it never touches `resolve_value` directly.
 - **Sequencing:** Tasks 2→3→4→5→6 are intra-slice ordered. Task 6 (orchestrator wiring) must land **after** the orchestrator slice creates `workbook.py`/`sheet_spec.py`. Tasks 7 (integration) and 8 (determinism) require the grown `ArticleDescriptor`/`SectionDescriptor` from the service-refactor slice; if those land later, Tasks 5/7/8 RED until then (expected, TDD-correct).
 - **One open reconciliation:** `ReviewerDescriptor`'s human-label attribute (`display_name` vs `name`) — confirmed at `extraction_export_service.py:116-119` during Task 4 Step 3; all reviewer-label references use the real attribute.
