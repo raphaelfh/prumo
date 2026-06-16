@@ -1,6 +1,8 @@
 /**
- * Menu "Mais Opções" do header
- * Agrupa ações secundárias: Export, Atalhos, Ajuda
+ * Header "More options" menu.
+ * Groups secondary actions: AI extraction, quality assessment,
+ * keyboard shortcuts, help. (Export now lives in the consolidated
+ * ExtractionExportDialog, not here.)
  */
 
 import {useEffect, useState} from 'react';
@@ -19,28 +21,20 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,} from '@/components/ui/dialog';
 import {Tooltip, TooltipContent, TooltipTrigger,} from '@/components/ui/tooltip';
-import {Download, ExternalLink, HelpCircle, Keyboard, MoreHorizontal, ShieldAlert, Sparkles} from 'lucide-react';
-import {ExtractionExport} from '@/components/extraction/ExtractionExport';
+import {ExternalLink, HelpCircle, Keyboard, MoreHorizontal, ShieldAlert, Sparkles} from 'lucide-react';
 import {useFullAIExtraction} from '@/hooks/extraction/useFullAIExtraction';
 import {useRunAIExtraction} from '@/hooks/extraction/ai/useRunAIExtraction';
 import {useHITLProjectTemplates} from '@/hooks/hitl/useHITLProjectTemplates';
-import type {ExtractionValueDisplay, ExtractionInstance, ProjectExtractionTemplate} from '@/types/extraction';
 import {t} from '@/lib/copy';
 
 interface HeaderMoreMenuProps {
-  /** Projeto ID para export */
+  /** Project id (kept for symmetry / future scoped actions). */
   projectId: string;
-  /** Template para export */
-  template?: ProjectExtractionTemplate | null;
-  /** Instâncias para export */
-  instances?: ExtractionInstance[];
-    /** Extracted values for export */
-  values?: ExtractionValueDisplay[];
-  /** Modo compacto (apenas ícone) */
+  /** Compact mode (icon only). */
   compact?: boolean;
-  /** Article ID para extração IA */
+  /** Article id for AI extraction. */
   articleId?: string;
-  /** Template ID para extração IA */
+  /** Template id for AI extraction. */
   templateId?: string;
   /**
    * Active extraction run id. When provided, "Extract with AI" reuses
@@ -49,7 +43,7 @@ interface HeaderMoreMenuProps {
    * multi-step orchestration that creates a fresh run.
    */
   runId?: string | null;
-  /** Callback após extração completa */
+  /** Callback after extraction completes. */
   onExtractionComplete?: () => Promise<void>;
     /** Callback to expose extraction state (to render progress in parent) */
   onExtractionStateChange?: (state: { loading: boolean; progress: any }) => void;
@@ -57,17 +51,13 @@ interface HeaderMoreMenuProps {
 
 export function HeaderMoreMenu({
   projectId,
-  template,
-  instances = [],
-  values = [],
-                                   compact: _compact = false,
+  compact: _compact = false,
   articleId,
   templateId,
   runId,
   onExtractionComplete,
   onExtractionStateChange,
 }: HeaderMoreMenuProps) {
-  const [exportOpen, setExportOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   const navigate = useNavigate();
@@ -99,7 +89,7 @@ export function HeaderMoreMenu({
 
   const extractingAI = extractingFullAI || extractingForRun;
 
-  // Expor estado para parent (para renderizar progresso fora do menu)
+  // Expose state to the parent (to render progress outside the menu).
   useEffect(() => {
     if (onExtractionStateChange) {
       onExtractionStateChange({
@@ -117,16 +107,12 @@ export function HeaderMoreMenu({
       {keys: 'Shift + Tab', action: t('extraction', 'moreShortcutPrevField')},
   ];
 
-  const handleExport = () => {
-    setExportOpen(true);
-  };
-
   const handleShortcuts = () => {
     setShortcutsOpen(true);
   };
 
   const handleHelp = () => {
-    // Abrir documentação em nova aba
+    // Open the documentation in a new tab.
     window.open('/docs', '_blank');
   };
 
@@ -155,7 +141,7 @@ export function HeaderMoreMenu({
         });
       }
     } catch (error) {
-      // Erro já tratado pelo hook com toast
+      // Error already handled by the hook with a toast.
         console.error('[HeaderMoreMenu] Full AI extraction error:', error);
     }
   };
@@ -230,10 +216,6 @@ export function HeaderMoreMenu({
               </DropdownMenuSubContent>
             </DropdownMenuSub>
           )}
-          <DropdownMenuItem onClick={handleExport}>
-            <Download className="mr-2 h-4 w-4" />
-              {t('extraction', 'moreExportData')}
-          </DropdownMenuItem>
           <DropdownMenuItem onClick={handleShortcuts}>
             <Keyboard className="mr-2 h-4 w-4" />
               {t('extraction', 'moreKeyboardShortcuts')}
@@ -246,24 +228,6 @@ export function HeaderMoreMenu({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-
-        {/* Export Dialog */}
-      <Dialog open={exportOpen} onOpenChange={setExportOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-              <DialogTitle>{t('extraction', 'moreExportDialogTitle')}</DialogTitle>
-            <DialogDescription>
-                {t('extraction', 'moreExportDialogDesc')}
-            </DialogDescription>
-          </DialogHeader>
-          <ExtractionExport
-            projectId={projectId}
-            template={template || null}
-            instances={instances}
-            values={values}
-          />
-        </DialogContent>
-      </Dialog>
 
         {/* Shortcuts Dialog */}
       <Dialog open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
