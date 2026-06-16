@@ -444,6 +444,7 @@ class ExtractionExportService(LoggerMixin):
                 template_id=template_id,
                 project_id=project_id,
                 candidate_ids=article_ids,
+                run_kind=template.kind,
             )
             value_map = await self._build_consensus_value_map(
                 run_ids=[a.run_id for a in articles if a.run_id is not None],
@@ -457,6 +458,7 @@ class ExtractionExportService(LoggerMixin):
                 project_id=project_id,
                 candidate_ids=article_ids,
                 reviewer_id=reviewer_id,
+                run_kind=template.kind,
             )
             value_map = await self._build_single_user_value_map(
                 run_ids=[a.run_id for a in articles if a.run_id is not None],
@@ -468,6 +470,7 @@ class ExtractionExportService(LoggerMixin):
                 template_id=template_id,
                 project_id=project_id,
                 candidate_ids=article_ids,
+                run_kind=template.kind,
             )
             reviewers = await self._list_reviewers_for_runs(
                 run_ids=[a.run_id for a in articles if a.run_id is not None],
@@ -825,8 +828,16 @@ class ExtractionExportService(LoggerMixin):
         template_id: UUID,
         project_id: UUID,
         candidate_ids: list[UUID],
+        run_kind: str = "extraction",
     ) -> tuple[list[ArticleDescriptor], dict[str, int]]:
-        """Pick finalized articles + collect omitted-stage counts (FR-013)."""
+        """Pick finalized articles + collect omitted-stage counts (FR-013).
+
+        ``run_kind`` is the exported template's kind (``extraction`` or
+        ``quality_assessment``): a run's kind is copied from its template
+        at creation, so filtering on the template's own kind keeps the QA
+        appraisal export (§7) on the same finalized-run path while still
+        rejecting a foreign-kind run that happens to share the article.
+        """
         if not candidate_ids:
             return [], {}
 
@@ -838,7 +849,7 @@ class ExtractionExportService(LoggerMixin):
                         ExtractionRun.template_id == template_id,
                         ExtractionRun.project_id == project_id,
                         ExtractionRun.article_id.in_(candidate_ids),
-                        ExtractionRun.kind == "extraction",
+                        ExtractionRun.kind == run_kind,
                     )
                 )
             )
@@ -1025,12 +1036,14 @@ class ExtractionExportService(LoggerMixin):
         project_id: UUID,
         candidate_ids: list[UUID],
         reviewer_id: UUID,
+        run_kind: str = "extraction",
     ) -> tuple[list[ArticleDescriptor], dict[str, int]]:
         """Pick articles where the target reviewer has ≥ 1 non-reject decision (FR-014).
 
         Single-user mode tolerates any non-terminal Run stage (the reviewer
         may have started before consensus). ``cancelled`` runs and runs
-        with no decisions from this reviewer are omitted.
+        with no decisions from this reviewer are omitted. ``run_kind`` is
+        the exported template's kind (see ``_resolve_articles_for_consensus``).
         """
         from app.models.extraction_workflow import (
             ExtractionReviewerDecision,
@@ -1047,7 +1060,7 @@ class ExtractionExportService(LoggerMixin):
                         ExtractionRun.template_id == template_id,
                         ExtractionRun.project_id == project_id,
                         ExtractionRun.article_id.in_(candidate_ids),
-                        ExtractionRun.kind == "extraction",
+                        ExtractionRun.kind == run_kind,
                     )
                 )
             )
@@ -1278,12 +1291,15 @@ class ExtractionExportService(LoggerMixin):
         template_id: UUID,
         project_id: UUID,
         candidate_ids: list[UUID],
+        run_kind: str = "extraction",
     ) -> tuple[list[ArticleDescriptor], dict[str, int]]:
         """Pick finalized + in-review articles for All-users mode.
 
         Both `consensus` and `finalized` runs contribute reviewer columns;
         plus consensus and earlier-stage runs may contribute reviewer
         sub-columns (the reviewer-axis column is empty for pre-review runs).
+        ``run_kind`` is the exported template's kind (see
+        ``_resolve_articles_for_consensus``).
         """
         if not candidate_ids:
             return [], {}
@@ -1295,7 +1311,7 @@ class ExtractionExportService(LoggerMixin):
                         ExtractionRun.template_id == template_id,
                         ExtractionRun.project_id == project_id,
                         ExtractionRun.article_id.in_(candidate_ids),
-                        ExtractionRun.kind == "extraction",
+                        ExtractionRun.kind == run_kind,
                     )
                 )
             )
