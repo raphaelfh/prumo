@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
+
 
 def test_appraisal_dataclasses_importable_and_default_none() -> None:
     """AppraisalModel/AppraisalRow exist and ExportLayout.appraisal defaults to None."""
@@ -33,3 +35,24 @@ def test_appraisal_dataclasses_importable_and_default_none() -> None:
     assert "appraisal" in ExportLayout.__dataclass_fields__
     field = ExportLayout.__dataclass_fields__["appraisal"]
     assert field.default is None
+
+
+@pytest.mark.parametrize(
+    ("verdicts", "expected"),
+    [
+        (("Low", "Low", "Low"), "Low"),
+        (("Low", "High", "Low"), "High"),  # any High => High (§7)
+        (("Low", "Unclear", "Low"), "Unclear"),  # Unclear outranks Low
+        (("Unclear", "High"), "High"),  # High outranks Unclear
+        (("Some concerns", "Low"), "Some concerns"),  # QUADAS/ROBINS labels
+        (("Moderate", "Low"), "Moderate"),
+        ((None, "", None), None),  # all-blank => blank Overall
+        (("Low", None, "High"), "High"),  # blanks ignored, High wins
+        (("Critical", "Low"), "Critical"),  # unknown non-empty => most severe
+        (("low", "high"), "high"),  # case-insensitive rank, label preserved
+    ],
+)
+def test_appraisal_overall_worst_case(verdicts, expected) -> None:
+    from app.services.exports.extraction.appraisal_summary import _appraisal_overall
+
+    assert _appraisal_overall(verdicts) == expected
