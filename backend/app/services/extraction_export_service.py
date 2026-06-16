@@ -1189,7 +1189,11 @@ class ExtractionExportService(LoggerMixin):
         }
 
         # 1. AI proposals, newest first so the latest is encountered before
-        # any superseded ones for the same (run, instance, field).
+        # any superseded ones for the same (run, instance, field). ``id`` is
+        # the deterministic tiebreaker on equal ``created_at`` (same-transaction
+        # inserts share the timestamp), matching the canonical
+        # ExtractionProposalRepository.get_latest_for_coord ordering so the
+        # FR-037 "superseded" outcome is stable across export builds.
         proposal_rows = (
             await self.db.execute(
                 select(
@@ -1206,7 +1210,10 @@ class ExtractionExportService(LoggerMixin):
                     ExtractionProposalRecord.run_id.in_(run_ids),
                     ExtractionProposalRecord.source == "ai",
                 )
-                .order_by(ExtractionProposalRecord.created_at.desc())
+                .order_by(
+                    ExtractionProposalRecord.created_at.desc(),
+                    ExtractionProposalRecord.id.desc(),
+                )
             )
         ).all()
         if not proposal_rows:
