@@ -43,6 +43,7 @@ from app.models.extraction import (
     ExtractionRunStage,
     ProjectExtractionTemplate,
 )
+from app.models.extraction_versioning import TemplateKind
 from app.models.extraction_workflow import ExtractionPublishedState
 from app.models.project import ProjectMemberRole
 from app.repositories.extraction_template_version_repository import (
@@ -524,6 +525,20 @@ class ExtractionExportService(LoggerMixin):
                 target_reviewer_id=reviewer_id if mode is ExportMode.SINGLE_USER else None,
             )
 
+        # Per-domain risk-of-bias / appraisal roll-up (§7): only for
+        # quality-assessment templates. Pure rollup over the already-resolved
+        # ``value_map`` — returns None when no domain carries a risk-label
+        # SELECT verdict field (the sections then ship as ordinary tidy tables).
+        appraisal: AppraisalModel | None = None
+        if template.kind == TemplateKind.QUALITY_ASSESSMENT.value:
+            appraisal = self._build_appraisal_model(
+                sections=sections,
+                articles=tuple(articles),
+                reviewers=reviewers,
+                value_map=value_map,
+                mode=mode,
+            )
+
         return ExportLayout(
             project_name=project_name,
             template_name=template.name,
@@ -540,6 +555,130 @@ class ExtractionExportService(LoggerMixin):
             data_dictionary=data_dictionary,
             tidy_tables=tidy_tables,
             front_matter=front_matter,
+            appraisal=appraisal,
+        )
+
+    # ------------------------------------------------------------------
+    # Appraisal roll-up (§7) — pure, DB-free
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_appraisal_model(
+        *,
+        sections: tuple[SectionDescriptor, ...],
+        articles: tuple[ArticleDescriptor, ...],
+        reviewers: tuple[ReviewerDescriptor, ...],
+        value_map: dict[tuple[Any, ...], Any],
+        mode: ExportMode,
+    ) -> AppraisalModel | None:
+        """Compute the appraisal roll-up for a quality-assessment template (§7).
+
+        Each domain = one section; its verdict field = the first SELECT-typed
+        field in sort_order whose ``allowed_values`` are the risk-label set
+        (``{Low, High, Unclear, ...}`` — the recognised severity vocabulary).
+        This is NOT "the first SELECT field": signalling questions are also
+        SELECT-typed and precede the judgment in sort_order (seed.py), so a
+        positional rule would wrongly pick a signalling answer. Keying on the
+        risk-label set selects ``risk_of_bias`` (and excludes signalling fields
+        whose answer sets are Y/PY/PN/N/... ); among the two judgment fields
+        (risk_of_bias, applicability_concerns) the first-in-sort_order tiebreak
+        deterministically picks risk_of_bias. The descriptor carries no machine
+        ``name``, so selection keys on ``allowed_values``, not the field name.
+
+        Overall = worst-case rollup over the record's domain verdicts.
+        Mode-aware:
+
+          * consensus / single_user -> AppraisalRow.overall only (3-tuple keys).
+          * all_users -> consensus overall (reviewer_id=None) + one rollup per
+            reviewer (4-tuple keys), in ``reviewers`` order.
+
+        Returns None when no domain has a risk-label-set SELECT verdict field
+        (no roll-up sheet; the sections still ship as ordinary tidy tables).
+        """
+        # Function-local import breaks the module cycle: appraisal_summary
+        # imports ExportLayout/ExportMode from this module at load time, so a
+        # top-level import here would deadlock. The rollup vocabulary +
+        # worst-case helper live in the pure sub-builder (single source).
+        from app.services.exports.extraction.appraisal_summary import (
+            _RISK_LABELS,
+            _appraisal_overall,
+        )
+
+        # Verdict field per domain: first SELECT field in sort_order whose
+        # allowed_values are the recognised risk-label set (excludes signalling
+        # SELECT fields, whose answer sets differ — see _appraisal_overall's
+        # severity table for the recognised labels).
+        def _is_verdict(field: FieldDescriptor) -> bool:
+            if field.type is not ExtractionFieldType.SELECT:
+                return False
+            labels = [v.strip().lower() for v in field.allowed_values if v.strip()]
+            return bool(labels) and all(label in _RISK_LABELS for label in labels)
+
+        domains: list[tuple[SectionDescriptor, FieldDescriptor]] = []
+        for section in sorted(sections, key=lambda s: s.sort_order):
+            verdict_field = next(
+                (f for f in section.fields if _is_verdict(f)),
+                None,
+            )
+            if verdict_field is not None:
+                domains.append((section, verdict_field))
+        if not domains:
+            return None
+
+        domain_section_ids = tuple(s.entity_type_id for s, _ in domains)
+        domain_labels = tuple(s.label for s, _ in domains)
+        is_all_users = mode is ExportMode.ALL_USERS
+
+        rows: list[AppraisalRow] = []
+        for article in articles:
+            run_id = article.run_id
+            if run_id is None:
+                continue
+            consensus_verdicts: list[Any] = []
+            per_reviewer_verdicts: dict[UUID, list[Any]] = {r.reviewer_id: [] for r in reviewers}
+            for section, vfield in domains:
+                instance_ids = article.section_instances.get(section.entity_type_id, ())
+                instance_id = instance_ids[0] if instance_ids else None
+                if is_all_users:
+                    consensus_verdicts.append(
+                        value_map.get((run_id, instance_id, vfield.field_id, None))
+                    )
+                    for reviewer in reviewers:
+                        per_reviewer_verdicts[reviewer.reviewer_id].append(
+                            value_map.get(
+                                (
+                                    run_id,
+                                    instance_id,
+                                    vfield.field_id,
+                                    reviewer.reviewer_id,
+                                )
+                            )
+                        )
+                else:
+                    consensus_verdicts.append(value_map.get((run_id, instance_id, vfield.field_id)))
+
+            per_reviewer_overall = (
+                {
+                    rid: _appraisal_overall(tuple(verdicts))
+                    for rid, verdicts in per_reviewer_verdicts.items()
+                }
+                if is_all_users
+                else {}
+            )
+            rows.append(
+                AppraisalRow(
+                    article_id=article.article_id,
+                    record_label=article.header_label,
+                    domain_verdicts=tuple(consensus_verdicts),
+                    overall=_appraisal_overall(tuple(consensus_verdicts)),
+                    per_reviewer_overall=per_reviewer_overall,
+                )
+            )
+
+        return AppraisalModel(
+            domain_section_ids=domain_section_ids,
+            domain_labels=domain_labels,
+            rows=tuple(rows),
         )
 
     # ------------------------------------------------------------------
