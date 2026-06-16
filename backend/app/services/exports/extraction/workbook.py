@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import io
 
+from fastapi import status
 from openpyxl import Workbook
 
 from app.core.error_handler import AppError
@@ -33,27 +34,33 @@ from app.services.exports.extraction.summary import build_summary
 from app.services.exports.extraction.tidy_tables import build_tidy_tables
 from app.services.extraction_export_service import ExportLayout, ExportMode
 
-#: Excel's hard ceiling — XFD is column 16,384.
-_EXCEL_MAX_COLUMNS = 16_384
+#: Excel's hard ceiling on worksheet columns — XFD is column 16,384 (XLSX spec).
+#: Public so the export service, endpoint, and guard tests share one source of
+#: truth. ``_EXCEL_MAX_COLUMNS`` is kept as a private alias for in-module use.
+EXCEL_MAX_COLUMNS = 16_384
+_EXCEL_MAX_COLUMNS = EXCEL_MAX_COLUMNS
 
 
 class ExportColumnLimitError(AppError, ValueError):
     """Raised pre-build when the matrix would exceed Excel's column cap.
 
     Subclasses both ``AppError`` (so the API surfaces the standard
-    ``error.message`` envelope with the ``EXPORT_COLUMN_LIMIT_EXCEEDED``
-    code) and ``ValueError`` (the clear, framework-agnostic "bad input"
-    contract the pure builder package raises and its tests assert on).
+    ``error.message`` envelope at HTTP 422 with the
+    ``EXPORT_COLUMN_LIMIT_EXCEEDED`` code — this is a user-input problem,
+    not a server fault) and ``ValueError`` (the clear, framework-agnostic
+    "bad input" contract the pure builder package raises and its tests
+    assert on).
     """
 
     def __init__(self, columns: int) -> None:
         super().__init__(
             code="EXPORT_COLUMN_LIMIT_EXCEEDED",
             message=(
-                f"This export would produce {columns} columns, exceeding "
-                f"Excel's limit of {_EXCEL_MAX_COLUMNS}. Narrow the export "
-                "mode, reviewers, or article selection and try again."
+                f"This export would produce {columns:,} columns, exceeding "
+                f"Excel's limit of {EXCEL_MAX_COLUMNS:,} columns. Narrow the "
+                "export mode, reviewers, or article selection and try again."
             ),
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         )
 
 
@@ -166,4 +173,4 @@ def build_workbook(layout: ExportLayout) -> bytes:
     return buf.getvalue()
 
 
-__all__ = ["ExportColumnLimitError", "build_workbook"]
+__all__ = ["EXCEL_MAX_COLUMNS", "ExportColumnLimitError", "build_workbook"]
