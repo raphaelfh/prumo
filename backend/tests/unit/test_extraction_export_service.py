@@ -75,6 +75,13 @@ def _rows_result(rows: list) -> MagicMock:
     return result
 
 
+def _scalar_result(value) -> MagicMock:
+    """Return a fake Result whose .scalar_one_or_none() yields *value*."""
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = value
+    return result
+
+
 def _make_run(
     *,
     article_id: UUID | None = None,
@@ -1479,6 +1486,7 @@ class TestListEligibleReviewersForPicker:
         """Manager → all reviewers from list_reviewers_with_decisions."""
         user_id = uuid4()
         svc = _make_service(user_id=str(user_id))
+        svc.db.execute = AsyncMock(return_value=_scalar_result("extraction"))
 
         all_reviewers = [
             {"id": str(uuid4()), "name": "Alice"},
@@ -1505,6 +1513,7 @@ class TestListEligibleReviewersForPicker:
         """Non-manager → only their own entry."""
         user_id = uuid4()
         svc = _make_service(user_id=str(user_id))
+        svc.db.execute = AsyncMock(return_value=_scalar_result("extraction"))
 
         self_entry = {"id": str(user_id), "name": "Self"}
         other_entry = {"id": str(uuid4()), "name": "Other"}
@@ -1527,7 +1536,7 @@ class TestListEligibleReviewersForPicker:
 
     @pytest.mark.asyncio
     async def test_invalid_user_id_returns_empty_list(self, monkeypatch):
-        """Non-UUID user_id → returns [] without raising."""
+        """Non-UUID user_id → returns [] before any DB IO."""
         svc = _make_service(user_id="not-a-uuid")
 
         member_repo = AsyncMock()
@@ -1542,7 +1551,11 @@ class TestListEligibleReviewersForPicker:
         )
 
         assert result == []
-        # has_role should not have been called since UUID() raised
+        # Malformed subject short-circuits before any DB IO: neither the
+        # template-kind lookup nor the reviewer query runs, and the manager
+        # check is never reached.
+        svc.db.execute.assert_not_called()
+        svc.list_reviewers_with_decisions.assert_not_called()
         member_repo.has_role.assert_not_called()
 
     @pytest.mark.asyncio
@@ -1550,6 +1563,7 @@ class TestListEligibleReviewersForPicker:
         """Non-manager when no reviewers exist → returns []."""
         user_id = uuid4()
         svc = _make_service(user_id=str(user_id))
+        svc.db.execute = AsyncMock(return_value=_scalar_result("extraction"))
 
         member_repo = AsyncMock()
         member_repo.has_role = AsyncMock(return_value=False)
