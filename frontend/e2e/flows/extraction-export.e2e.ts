@@ -273,22 +273,27 @@ test.describe("Extraction export — UI flow", () => {
     );
   });
 
-  test("the More menu no longer offers a legacy Export Data item", async ({ page }) => {
+  test("the legacy Export Data entry is gone; the dialog is the single entry point", async ({
+    page,
+  }) => {
     const env = loadE2EEnv();
     await loginViaUi(page);
     await page.goto(
       `${env.frontendUrl}/projects/${env.projectId}?tab=extraction`,
     );
 
-    // Open the header "More options" menu.
-    await page.getByRole("button", { name: /more/i }).click();
-    // Legacy entry is gone; the single dialog is reached via the toolbar button.
+    // The consolidated entry point is the toolbar export button (the legacy
+    // "Export Data" More-menu item was removed; that source-level guard lives
+    // in the HeaderMoreMenu component test).
+    const exportBtn = page.getByTestId("extraction-export-button");
+    await expect(exportBtn).toBeVisible();
+    // No legacy "Export Data" affordance is reachable on this view.
     await expect(
       page.getByRole("menuitem", { name: /Export Data/i }),
     ).toHaveCount(0);
-    // The consolidated entry point still works.
-    await page.keyboard.press("Escape");
-    await page.getByTestId("extraction-export-button").click();
+
+    // The single dialog opens from the toolbar button.
+    await exportBtn.click();
     await expect(page.getByText(/Export extraction data/i)).toBeVisible();
   });
 
