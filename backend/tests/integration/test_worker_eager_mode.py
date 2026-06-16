@@ -102,7 +102,7 @@ def test_export_extraction_task_signature_and_kwargs_alignment() -> None:
             return_value=fake_storage,
         ),
         patch(
-            "app.services.exports.extraction_xlsx_builder.build_workbook",
+            "app.services.exports.extraction.workbook.build_workbook",
             return_value=b"PK\x03\x04minimal-xlsx-bytes",
         ),
         patch(

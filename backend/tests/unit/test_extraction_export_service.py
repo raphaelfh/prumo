@@ -40,9 +40,7 @@ from app.services.extraction_export_service import (
     _build_header_label,
     _infer_reviewer_outcome,
     _letter_for,
-    _normalize_allowed_values,
     _short_id,
-    _unwrap_value,
 )
 
 # ---------------------------------------------------------------------------
@@ -74,6 +72,13 @@ def _rows_result(rows: list) -> MagicMock:
     """Return a fake Result whose .all() yields *rows* (row-tuple queries)."""
     result = MagicMock()
     result.all.return_value = rows
+    return result
+
+
+def _scalar_result(value) -> MagicMock:
+    """Return a fake Result whose .scalar_one_or_none() yields *value*."""
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = value
     return result
 
 
@@ -283,7 +288,7 @@ class TestBuildConsensusValueMap:
     async def test_empty_run_ids_returns_empty_dict(self):
         """No run_ids → short-circuits to empty dict without hitting DB."""
         svc = _make_service()
-        result = await svc._build_consensus_value_map(run_ids=[])
+        result = await svc._build_consensus_value_map(run_ids=[], fields_by_id={})
         assert result == {}
         svc.db.execute.assert_not_called()
 
@@ -304,7 +309,7 @@ class TestBuildConsensusValueMap:
         ]
         svc.db.execute = AsyncMock(return_value=_rows_result(rows))
 
-        result = await svc._build_consensus_value_map(run_ids=[run_id])
+        result = await svc._build_consensus_value_map(run_ids=[run_id], fields_by_id={})
 
         assert result[(run_id, instance_id1, field_id1)] == "value_a"
         assert result[(run_id, instance_id2, field_id2)] == "value_b"
@@ -322,13 +327,14 @@ class TestBuildConsensusValueMap:
         rows = [(run_id, instance_id, field_id, {"value": "actual_string"})]
         svc.db.execute = AsyncMock(return_value=_rows_result(rows))
 
-        result = await svc._build_consensus_value_map(run_ids=[run_id])
+        result = await svc._build_consensus_value_map(run_ids=[run_id], fields_by_id={})
 
         assert result[(run_id, instance_id, field_id)] == "actual_string"
 
     @pytest.mark.asyncio
-    async def test_non_wrapper_dict_value_kept_as_is(self):
-        """A dict with multiple keys is NOT unwrapped — kept raw."""
+    async def test_unknown_dict_collapses_to_scalar_never_leaks(self):
+        """An unrecognised multi-key dict is collapsed deterministically to
+        a string — ``resolve_value`` never leaks a dict into a cell."""
         svc = _make_service()
 
         run_id = uuid4()
@@ -339,8 +345,10 @@ class TestBuildConsensusValueMap:
         rows = [(run_id, instance_id, field_id, raw)]
         svc.db.execute = AsyncMock(return_value=_rows_result(rows))
 
-        result = await svc._build_consensus_value_map(run_ids=[run_id])
-        assert result[(run_id, instance_id, field_id)] == raw
+        result = await svc._build_consensus_value_map(run_ids=[run_id], fields_by_id={})
+        resolved = result[(run_id, instance_id, field_id)]
+        assert not isinstance(resolved, dict)
+        assert resolved == "value: x; extra: y"
 
 
 # ===========================================================================
@@ -573,7 +581,7 @@ class TestInferReviewerOutcome:
         assert result == "pending"
 
     def test_accept_proposal_wrong_pid_falls_through_to_pending(self):
-        """accept_proposal for a different proposal → falls through to 'pending'."""
+        """accept_proposal for a different proposal (pid is latest) → A4 'not selected'."""
         pid = uuid4()
         other_pid = uuid4()
         decisions = [("accept_proposal", other_pid)]
@@ -583,19 +591,91 @@ class TestInferReviewerOutcome:
             latest_id=pid,  # pid is latest
             decisions=decisions,
         )
-        # accept_proposal does not match pid; no reject/edit; pid == latest → pending
+        # accept_proposal targets a different proposal; pid is latest → A4 'not selected'
+        assert result == "not selected"
+
+    def test_superseded_wins_over_reject(self):
+        """A2: a non-latest proposal with a reject on the key → 'superseded', not 'rejected'.
+
+        The old precedence returned 'rejected' for ANY reject on the key, masking
+        the fact that this proposal was superseded by a newer AI proposal.
+        """
+        pid = uuid4()
+        latest_id = uuid4()  # a newer proposal supersedes pid
+        decisions = [("reject", None)]
+        result = _infer_reviewer_outcome(
+            proposal_id=pid,
+            key=(uuid4(), uuid4(), uuid4()),
+            latest_id=latest_id,
+            decisions=decisions,
+        )
+        assert result == "superseded"
+
+    def test_reject_gated_on_no_accept_of_other(self):
+        """A2: a reject co-existing with accept_proposal of a DIFFERENT proposal
+        on the same key is 'not selected', never 'rejected' (the accept-of-other
+        is the real outcome; the reject must not mask it)."""
+        pid = uuid4()
+        other_pid = uuid4()
+        decisions = [("reject", None), ("accept_proposal", other_pid)]
+        result = _infer_reviewer_outcome(
+            proposal_id=pid,
+            key=(uuid4(), uuid4(), uuid4()),
+            latest_id=pid,  # pid is the latest, so not superseded
+            decisions=decisions,
+        )
+        assert result == "not selected"
+
+    def test_reject_only_still_rejected(self):
+        """A2 regression: a plain reject (no accept-of-other, pid is latest) is
+        still 'rejected'."""
+        pid = uuid4()
+        decisions = [("reject", None)]
+        result = _infer_reviewer_outcome(
+            proposal_id=pid,
+            key=(uuid4(), uuid4(), uuid4()),
+            latest_id=pid,
+            decisions=decisions,
+        )
+        assert result == "rejected"
+
+    def test_terminal_decision_other_field_not_pending(self):
+        """A4: the latest proposal with a terminal decision on the key (an
+        unrelated accept that matches neither this nor flags accept-of-other,
+        e.g. an accept with a null proposal_id) is 'not selected', never 'pending'."""
+        pid = uuid4()
+        decisions = [("accept_proposal", None)]  # touched, but no usable target
+        result = _infer_reviewer_outcome(
+            proposal_id=pid,
+            key=(uuid4(), uuid4(), uuid4()),
+            latest_id=pid,
+            decisions=decisions,
+        )
+        assert result == "not selected"
+
+    def test_never_reviewed_is_pending(self):
+        """A4: only a key with NO decisions at all is 'pending'."""
+        pid = uuid4()
+        result = _infer_reviewer_outcome(
+            proposal_id=pid,
+            key=(uuid4(), uuid4(), uuid4()),
+            latest_id=pid,
+            decisions=[],
+        )
         assert result == "pending"
 
     @pytest.mark.parametrize(
         "decisions,expected",
         [
-            ([("accept_proposal", None)], "pending"),  # accept but wrong pid (None vs real)
+            # accept but non-matching pid (None vs real); pid is latest, key touched →
+            # A4 'not selected' (never 'pending' once a decision exists on the key).
+            ([("accept_proposal", None)], "not selected"),
             ([("reject", None), ("edit", None)], "rejected"),  # reject wins over edit
             ([("edit", None), ("reject", None)], "rejected"),  # order doesn't matter for reject
         ],
     )
     def test_decision_precedence(self, decisions, expected):
-        """Precedence: accept_proposal (exact) > reject > edit > superseded > pending."""
+        """Precedence: accepted > superseded > not-selected > rejected > edited > pending."""
         pid = uuid4()
         result = _infer_reviewer_outcome(
             proposal_id=pid,
@@ -638,8 +718,11 @@ class TestLoadAiProposalRows:
             header_label="Test Article",
             run_id=run_id or uuid4(),
             run_stage=ExtractionRunStage.FINALIZED,
+            version_id=None,
             model_instances=model_instances,
-            study_instances=study_instances or {},
+            # ``study_instances`` is now a read-compat alias property; build
+            # the ordered ``section_instances`` from the legacy single-id arg.
+            section_instances={sid: (iid,) for sid, iid in (study_instances or {}).items()},
         )
 
     @pytest.mark.asyncio
@@ -652,8 +735,9 @@ class TestLoadAiProposalRows:
                 header_label="No Run",
                 run_id=None,
                 run_stage=None,
+                version_id=None,
                 model_instances=(),
-                study_instances={},
+                section_instances={},
             ),
         )
         result = await svc._load_ai_proposal_rows(
@@ -661,6 +745,7 @@ class TestLoadAiProposalRows:
             sections=(),
             value_map={},
             mode=ExportMode.CONSENSUS,
+            target_reviewer_id=None,
         )
         assert result == ()
         svc.db.execute.assert_not_called()
@@ -691,6 +776,7 @@ class TestLoadAiProposalRows:
             sections=(),
             value_map={},
             mode=ExportMode.CONSENSUS,
+            target_reviewer_id=None,
         )
         assert result == ()
 
@@ -767,6 +853,7 @@ class TestLoadAiProposalRows:
             sections=(section_with_id,),
             value_map={},
             mode=ExportMode.CONSENSUS,
+            target_reviewer_id=None,
         )
 
         assert len(result) == 1
@@ -780,6 +867,68 @@ class TestLoadAiProposalRows:
         assert row.evidence_pages == "42"
         assert row.confidence == 0.9
         assert row.rationale == "Rationale"
+
+    @pytest.mark.asyncio
+    async def test_evidence_ordered_deduped_numeric_pages(self):
+        """A5: evidence is built as one ordered (text, page) list per proposal —
+        deduped, pages numerically sorted ('2' < '10'), not lexicographic."""
+        svc = _make_service()
+        run_id = uuid4()
+        article_id = uuid4()
+        instance_id = uuid4()
+        entity_type_id = uuid4()
+        field_id = uuid4()
+        proposal_id = uuid4()
+        ts = datetime(2024, 5, 1, tzinfo=UTC)
+
+        article = self._make_article(
+            run_id=run_id,
+            article_id=article_id,
+            study_instances={entity_type_id: instance_id},
+        )
+        proposal_row = (
+            proposal_id,
+            run_id,
+            instance_id,
+            field_id,
+            {"value": "v"},
+            0.9,
+            None,
+            ts,
+        )
+        # evidence rows: (proposal_record_id, text_content, page_number) — out of
+        # order, with a duplicate (same text+page) and multi-digit pages.
+        evidence_rows = [
+            (proposal_id, "second finding", 10),
+            (proposal_id, "first finding", 2),
+            (proposal_id, "first finding", 2),  # exact duplicate
+            (proposal_id, "middle finding", 9),
+        ]
+
+        svc.db.execute = AsyncMock(
+            side_effect=[
+                _rows_result([(instance_id, entity_type_id, article_id)]),
+                _rows_result([proposal_row]),
+                _rows_result(evidence_rows),
+                _rows_result([]),  # decisions
+                _rows_result([(entity_type_id, "Sec")]),
+                _rows_result([(field_id, "Fld")]),
+            ]
+        )
+
+        result = await svc._load_ai_proposal_rows(
+            articles=(article,),
+            sections=(),
+            value_map={(run_id, instance_id, field_id): "v"},
+            mode=ExportMode.CONSENSUS,
+            target_reviewer_id=None,
+        )
+        assert len(result) == 1
+        row = result[0]
+        # numeric page sort, deduped:
+        assert row.evidence_pages == "2, 9, 10"
+        # text follows the same (text, page) order, deduped:
+        assert row.evidence_text == "first finding | middle finding | second finding"
 
     @pytest.mark.asyncio
     async def test_single_proposal_accept_decision_consensus_mode(self):
@@ -809,8 +958,9 @@ class TestLoadAiProposalRows:
             None,
             ts,
         )
-        # decision row: (run_id, instance_id, field_id, decision, proposal_record_id)
-        decision_row = (run_id, instance_id, field_id, "accept_proposal", proposal_id)
+        reviewer_id = uuid4()
+        # decision row: (run_id, instance_id, field_id, reviewer_id, decision, proposal_record_id)
+        decision_row = (run_id, instance_id, field_id, reviewer_id, "accept_proposal", proposal_id)
 
         # value_map uses 3-tuple for CONSENSUS mode
         value_map = {(run_id, instance_id, field_id): "consensus_val"}
@@ -832,6 +982,7 @@ class TestLoadAiProposalRows:
             sections=(),
             value_map=value_map,
             mode=ExportMode.CONSENSUS,
+            target_reviewer_id=None,
         )
 
         assert len(result) == 1
@@ -886,6 +1037,7 @@ class TestLoadAiProposalRows:
             sections=(),
             value_map=value_map_4tuple,
             mode=ExportMode.ALL_USERS,
+            target_reviewer_id=None,
         )
 
         assert len(result) == 1
@@ -937,10 +1089,70 @@ class TestLoadAiProposalRows:
             sections=(),
             value_map=value_map,
             mode=ExportMode.CONSENSUS,
+            target_reviewer_id=None,
         )
 
         assert len(result) == 1
         assert result[0].final_value_used == "3tuple_value"
+
+    @pytest.mark.asyncio
+    async def test_single_user_outcome_scoped_to_target_reviewer(self):
+        """A3: in SINGLE_USER mode the outcome reflects ONLY the target reviewer's
+        decision, matching the single-user 'Final value used' (3-tuple key).
+
+        Target reviewer rejected; another reviewer accepted the same proposal.
+        The row must read 'rejected' (target's view), not 'accepted'."""
+        svc = _make_service()
+        run_id = uuid4()
+        article_id = uuid4()
+        instance_id = uuid4()
+        entity_type_id = uuid4()
+        field_id = uuid4()
+        proposal_id = uuid4()
+        target_reviewer = uuid4()
+        other_reviewer = uuid4()  # noqa: F841 — documents the masked accept
+        ts = datetime(2024, 4, 1, tzinfo=UTC)
+
+        article = self._make_article(
+            run_id=run_id,
+            article_id=article_id,
+            study_instances={entity_type_id: instance_id},
+        )
+        proposal_row = (
+            proposal_id,
+            run_id,
+            instance_id,
+            field_id,
+            {"value": "v"},
+            0.9,
+            None,
+            ts,
+        )
+        # ONLY the target reviewer's decision is returned, because the loader's
+        # decision query is now filtered by target_reviewer_id in SINGLE_USER mode.
+        target_reject = (run_id, instance_id, field_id, target_reviewer, "reject", None)
+
+        svc.db.execute = AsyncMock(
+            side_effect=[
+                _rows_result([(instance_id, entity_type_id, article_id)]),
+                _rows_result([proposal_row]),
+                _rows_result([]),
+                _rows_result([target_reject]),  # query filtered to target reviewer
+                _rows_result([(entity_type_id, "Sec")]),
+                _rows_result([(field_id, "Fld")]),
+            ]
+        )
+
+        result = await svc._load_ai_proposal_rows(
+            articles=(article,),
+            sections=(),
+            value_map={(run_id, instance_id, field_id): None},  # single-user reject → blank
+            mode=ExportMode.SINGLE_USER,
+            target_reviewer_id=target_reviewer,
+        )
+        assert len(result) == 1
+        assert result[0].reviewer_outcome == "rejected"
+        assert result[0].final_value_used is None
 
     @pytest.mark.asyncio
     async def test_unknown_section_falls_back_to_entity_label(self):
@@ -980,6 +1192,7 @@ class TestLoadAiProposalRows:
             sections=(),  # empty sections → triggers fallback
             value_map={},
             mode=ExportMode.CONSENSUS,
+            target_reviewer_id=None,
         )
 
         assert len(result) == 1
@@ -1022,10 +1235,71 @@ class TestLoadAiProposalRows:
             sections=(),
             value_map={},
             mode=ExportMode.CONSENSUS,
+            target_reviewer_id=None,
         )
 
         assert len(result) == 1
         assert result[0].field_label == "Fallback Field Label"
+
+    @pytest.mark.asyncio
+    async def test_multi_reviewer_accept_and_reject_not_masked(self):
+        """A2: two reviewers disagree on one key (A accepts THIS proposal, B
+        rejects). Outcome must be 'accepted' — the reject must not mask it.
+
+        The decision query now selects reviewer_id; we assert the loader still
+        consumes ALL reviewers' decisions for consensus mode and resolves
+        precedence per A2 (accept wins)."""
+        svc = _make_service()
+        run_id = uuid4()
+        article_id = uuid4()
+        instance_id = uuid4()
+        entity_type_id = uuid4()
+        field_id = uuid4()
+        proposal_id = uuid4()
+        reviewer_a = uuid4()
+        reviewer_b = uuid4()
+        ts = datetime(2024, 3, 1, tzinfo=UTC)
+
+        article = self._make_article(
+            run_id=run_id,
+            article_id=article_id,
+            study_instances={entity_type_id: instance_id},
+        )
+        proposal_row = (
+            proposal_id,
+            run_id,
+            instance_id,
+            field_id,
+            {"value": "v"},
+            0.9,
+            None,
+            ts,
+        )
+        # decision rows now carry reviewer_id:
+        # (run_id, instance_id, field_id, reviewer_id, decision, proposal_record_id)
+        decision_a = (run_id, instance_id, field_id, reviewer_a, "accept_proposal", proposal_id)
+        decision_b = (run_id, instance_id, field_id, reviewer_b, "reject", None)
+
+        svc.db.execute = AsyncMock(
+            side_effect=[
+                _rows_result([(instance_id, entity_type_id, article_id)]),
+                _rows_result([proposal_row]),
+                _rows_result([]),  # evidence
+                _rows_result([decision_a, decision_b]),  # decisions (reviewer-tagged)
+                _rows_result([(entity_type_id, "Sec")]),
+                _rows_result([(field_id, "Fld")]),
+            ]
+        )
+
+        result = await svc._load_ai_proposal_rows(
+            articles=(article,),
+            sections=(),
+            value_map={(run_id, instance_id, field_id): "v"},
+            mode=ExportMode.CONSENSUS,
+            target_reviewer_id=None,
+        )
+        assert len(result) == 1
+        assert result[0].reviewer_outcome == "accepted"
 
 
 # ===========================================================================
@@ -1045,7 +1319,7 @@ class TestBuildAllUsersValueMap:
     async def test_empty_run_ids_returns_empty(self):
         """No run_ids → short-circuit to empty dict."""
         svc = _make_service()
-        result = await svc._build_all_users_value_map(run_ids=[], reviewer_ids=[])
+        result = await svc._build_all_users_value_map(run_ids=[], reviewer_ids=[], fields_by_id={})
         assert result == {}
         svc.db.execute.assert_not_called()
 
@@ -1060,7 +1334,9 @@ class TestBuildAllUsersValueMap:
         consensus_row = (run_id, instance_id, field_id, "published_value")
         svc.db.execute = AsyncMock(return_value=_rows_result([consensus_row]))
 
-        result = await svc._build_all_users_value_map(run_ids=[run_id], reviewer_ids=[])
+        result = await svc._build_all_users_value_map(
+            run_ids=[run_id], reviewer_ids=[], fields_by_id={}
+        )
 
         assert result[(run_id, instance_id, field_id, None)] == "published_value"
         assert len(result) == 1
@@ -1095,7 +1371,9 @@ class TestBuildAllUsersValueMap:
             ]
         )
 
-        result = await svc._build_all_users_value_map(run_ids=[run_id], reviewer_ids=[reviewer_id])
+        result = await svc._build_all_users_value_map(
+            run_ids=[run_id], reviewer_ids=[reviewer_id], fields_by_id={}
+        )
 
         assert result[(run_id, instance_id, field_id, None)] is None
         assert result[(run_id, instance_id, field_id, reviewer_id)] == "proposed_val"
@@ -1126,7 +1404,9 @@ class TestBuildAllUsersValueMap:
             ]
         )
 
-        result = await svc._build_all_users_value_map(run_ids=[run_id], reviewer_ids=[reviewer_id])
+        result = await svc._build_all_users_value_map(
+            run_ids=[run_id], reviewer_ids=[reviewer_id], fields_by_id={}
+        )
 
         assert result[(run_id, instance_id, field_id, reviewer_id)] == "edited_val"
 
@@ -1148,7 +1428,9 @@ class TestBuildAllUsersValueMap:
             ]
         )
 
-        result = await svc._build_all_users_value_map(run_ids=[run_id], reviewer_ids=[reviewer_id])
+        result = await svc._build_all_users_value_map(
+            run_ids=[run_id], reviewer_ids=[reviewer_id], fields_by_id={}
+        )
 
         assert (run_id, instance_id, field_id, reviewer_id) not in result
 
@@ -1179,7 +1461,9 @@ class TestBuildAllUsersValueMap:
             ]
         )
 
-        result = await svc._build_all_users_value_map(run_ids=[run_id], reviewer_ids=[reviewer_id])
+        result = await svc._build_all_users_value_map(
+            run_ids=[run_id], reviewer_ids=[reviewer_id], fields_by_id={}
+        )
 
         assert result[(run_id, instance_id, field_id, None)] == "consensus_val"
         assert result[(run_id, instance_id, field_id, reviewer_id)] == "reviewer_val"
@@ -1202,6 +1486,7 @@ class TestListEligibleReviewersForPicker:
         """Manager → all reviewers from list_reviewers_with_decisions."""
         user_id = uuid4()
         svc = _make_service(user_id=str(user_id))
+        svc.db.execute = AsyncMock(return_value=_scalar_result("extraction"))
 
         all_reviewers = [
             {"id": str(uuid4()), "name": "Alice"},
@@ -1228,6 +1513,7 @@ class TestListEligibleReviewersForPicker:
         """Non-manager → only their own entry."""
         user_id = uuid4()
         svc = _make_service(user_id=str(user_id))
+        svc.db.execute = AsyncMock(return_value=_scalar_result("extraction"))
 
         self_entry = {"id": str(user_id), "name": "Self"}
         other_entry = {"id": str(uuid4()), "name": "Other"}
@@ -1250,7 +1536,7 @@ class TestListEligibleReviewersForPicker:
 
     @pytest.mark.asyncio
     async def test_invalid_user_id_returns_empty_list(self, monkeypatch):
-        """Non-UUID user_id → returns [] without raising."""
+        """Non-UUID user_id → returns [] before any DB IO."""
         svc = _make_service(user_id="not-a-uuid")
 
         member_repo = AsyncMock()
@@ -1265,7 +1551,11 @@ class TestListEligibleReviewersForPicker:
         )
 
         assert result == []
-        # has_role should not have been called since UUID() raised
+        # Malformed subject short-circuits before any DB IO: neither the
+        # template-kind lookup nor the reviewer query runs, and the manager
+        # check is never reached.
+        svc.db.execute.assert_not_called()
+        svc.list_reviewers_with_decisions.assert_not_called()
         member_repo.has_role.assert_not_called()
 
     @pytest.mark.asyncio
@@ -1273,6 +1563,7 @@ class TestListEligibleReviewersForPicker:
         """Non-manager when no reviewers exist → returns []."""
         user_id = uuid4()
         svc = _make_service(user_id=str(user_id))
+        svc.db.execute = AsyncMock(return_value=_scalar_result("extraction"))
 
         member_repo = AsyncMock()
         member_repo.has_role = AsyncMock(return_value=False)
@@ -1288,76 +1579,6 @@ class TestListEligibleReviewersForPicker:
         )
 
         assert result == []
-
-
-# ===========================================================================
-# Bonus: _unwrap_value (pure helper, complements T2 coverage)
-# ===========================================================================
-
-
-class TestUnwrapValue:
-    """Unit tests for the module-level _unwrap_value helper."""
-
-    def test_single_key_dict_is_unwrapped(self):
-        assert _unwrap_value({"value": "hello"}) == "hello"
-
-    def test_multi_key_dict_not_unwrapped(self):
-        raw = {"value": "x", "other": "y"}
-        assert _unwrap_value(raw) is raw
-
-    def test_string_returned_as_is(self):
-        assert _unwrap_value("plain") == "plain"
-
-    def test_none_returned_as_is(self):
-        assert _unwrap_value(None) is None
-
-    def test_number_returned_as_is(self):
-        assert _unwrap_value(42) == 42
-
-    def test_empty_dict_not_unwrapped(self):
-        raw = {}
-        assert _unwrap_value(raw) is raw
-
-
-# ===========================================================================
-# Pure helpers: _normalize_allowed_values
-# ===========================================================================
-
-
-class TestNormalizeAllowedValues:
-    """Unit tests for the allowed_values JSONB normalizer."""
-
-    def test_none_returns_empty_tuple(self):
-        assert _normalize_allowed_values(None) == ()
-
-    def test_plain_string_list(self):
-        assert _normalize_allowed_values(["a", "b", "c"]) == ("a", "b", "c")
-
-    def test_dict_items_with_label(self):
-        raw = [{"label": "Yes", "value": "yes"}, {"label": "No", "value": "no"}]
-        assert _normalize_allowed_values(raw) == ("Yes", "No")
-
-    def test_dict_items_fallback_to_value_when_no_label(self):
-        raw = [{"value": "yes"}, {"value": "no"}]
-        assert _normalize_allowed_values(raw) == ("yes", "no")
-
-    def test_dict_items_without_label_or_value_skipped(self):
-        raw = [{"other": "x"}, {"value": "y"}]
-        assert _normalize_allowed_values(raw) == ("y",)
-
-    def test_nested_options_key(self):
-        raw = {"options": ["a", "b"]}
-        assert _normalize_allowed_values(raw) == ("a", "b")
-
-    def test_unknown_type_returns_empty_tuple(self):
-        assert _normalize_allowed_values(42) == ()
-
-    def test_empty_list_returns_empty_tuple(self):
-        assert _normalize_allowed_values([]) == ()
-
-    def test_mixed_string_and_dict_items(self):
-        raw = ["plain", {"label": "From dict"}]
-        assert _normalize_allowed_values(raw) == ("plain", "From dict")
 
 
 # ===========================================================================
@@ -1641,55 +1862,84 @@ class TestLoadActiveTemplateVersion:
 # ===========================================================================
 
 
-class TestLoadSections:
+# NOTE: ``_load_sections`` is now snapshot-driven (spec §5.1) — it reads the
+# active-version snapshot via ``load_export_sections`` rather than the live
+# ``extraction_entity_types`` / ``extraction_fields`` tables. Its unit coverage
+# lives in ``test_extraction_export_load_sections.py``; the integration parity
+# check is ``test_extraction_export_snapshot_diff.py``.
+
+
+# ===========================================================================
+# Service: resolve_layout — AI target-reviewer threading (A3)
+# ===========================================================================
+
+
+class TestResolveLayoutAiTarget:
+    """resolve_layout threads the active reviewer into the AI loader.
+
+    A3: in SINGLE_USER mode the AI sheet's 'Reviewer outcome' must scope to the
+    same reviewer whose values populate 'Final value used'; consensus/all-users
+    keep every reviewer's decisions in scope (target_reviewer_id=None).
+    """
+
+    def _stub_loaders(self, svc):
+        """Replace resolve_layout's data-loading collaborators with stubs and
+        return the captured-kwargs AsyncMock standing in for the AI loader."""
+        template = MagicMock()
+        template.name = "T"
+        version = MagicMock()
+        version.version = 1
+        svc._load_active_template_version = AsyncMock(return_value=(template, version))
+        svc._resolve_project_name = AsyncMock(return_value="Project")
+        svc._load_sections = AsyncMock(return_value=())
+        svc._resolve_articles_for_consensus = AsyncMock(return_value=([], {}))
+        svc._build_consensus_value_map = AsyncMock(return_value={})
+        svc._resolve_articles_for_single_user = AsyncMock(return_value=([], {}))
+        svc._build_single_user_value_map = AsyncMock(return_value={})
+        ai_loader = AsyncMock(return_value=())
+        svc._load_ai_proposal_rows = ai_loader
+        return ai_loader
+
     @pytest.mark.asyncio
-    async def test_no_entity_types_returns_empty_tuple(self):
-        """No entity types in template → returns empty tuple."""
+    async def test_resolve_layout_single_user_passes_reviewer_as_ai_target(self):
+        """SINGLE_USER mode → AI loader receives target_reviewer_id == reviewer_id."""
         svc = _make_service()
-        svc.db.execute = AsyncMock(return_value=_scalars_result([]))
+        ai_loader = self._stub_loaders(svc)
+        reviewer_id = uuid4()
 
-        result = await svc._load_sections(uuid4())
-        assert result == ()
-
-    @pytest.mark.asyncio
-    async def test_entity_types_with_fields_returns_sections(self):
-        """Entity types + fields → SectionDescriptors with FieldDescriptors."""
-        svc = _make_service()
-        template_id = uuid4()
-
-        entity_id = uuid4()
-        entity = MagicMock()
-        entity.id = entity_id
-        entity.label = "Demographics"
-        entity.role = ExtractionEntityRole.STUDY_SECTION.value
-        entity.parent_entity_type_id = None
-
-        field_id = uuid4()
-        field = MagicMock()
-        field.id = field_id
-        field.label = "Age"
-        field.field_type = ExtractionFieldType.NUMBER.value
-        field.allowed_values = None
-        field.entity_type_id = entity_id
-        field.sort_order = 0
-
-        svc.db.execute = AsyncMock(
-            side_effect=[
-                _scalars_result([entity]),
-                _scalars_result([field]),
-            ]
+        await svc.resolve_layout(
+            project_id=uuid4(),
+            template_id=uuid4(),
+            mode=ExportMode.SINGLE_USER,
+            article_ids=[],
+            include_ai_metadata=True,
+            anonymize_reviewer_names=False,
+            reviewer_id=reviewer_id,
         )
 
-        result = await svc._load_sections(template_id)
+        ai_loader.assert_awaited_once()
+        assert ai_loader.await_args.kwargs["mode"] is ExportMode.SINGLE_USER
+        assert ai_loader.await_args.kwargs["target_reviewer_id"] == reviewer_id
 
-        assert len(result) == 1
-        section = result[0]
-        assert section.entity_type_id == entity_id
-        assert section.label == "Demographics"
-        assert section.role == ExtractionEntityRole.STUDY_SECTION
-        assert len(section.fields) == 1
-        assert section.fields[0].label == "Age"
-        assert section.fields[0].type == ExtractionFieldType.NUMBER
+    @pytest.mark.asyncio
+    async def test_resolve_layout_consensus_passes_none_as_ai_target(self):
+        """CONSENSUS mode → AI loader receives target_reviewer_id is None."""
+        svc = _make_service()
+        ai_loader = self._stub_loaders(svc)
+
+        await svc.resolve_layout(
+            project_id=uuid4(),
+            template_id=uuid4(),
+            mode=ExportMode.CONSENSUS,
+            article_ids=[],
+            include_ai_metadata=True,
+            anonymize_reviewer_names=False,
+            reviewer_id=None,
+        )
+
+        ai_loader.assert_awaited_once()
+        assert ai_loader.await_args.kwargs["mode"] is ExportMode.CONSENSUS
+        assert ai_loader.await_args.kwargs["target_reviewer_id"] is None
 
 
 # ===========================================================================
@@ -1923,7 +2173,9 @@ class TestBuildSingleUserValueMap:
     @pytest.mark.asyncio
     async def test_empty_run_ids_returns_empty(self):
         svc = _make_service()
-        result = await svc._build_single_user_value_map(run_ids=[], reviewer_id=uuid4())
+        result = await svc._build_single_user_value_map(
+            run_ids=[], reviewer_id=uuid4(), fields_by_id={}
+        )
         assert result == {}
         svc.db.execute.assert_not_called()
 
@@ -1934,7 +2186,9 @@ class TestBuildSingleUserValueMap:
         row = (run_id, instance_id, field_id, "accept_proposal", None, "proposed_val")
         svc.db.execute = AsyncMock(return_value=_rows_result([row]))
 
-        result = await svc._build_single_user_value_map(run_ids=[run_id], reviewer_id=uuid4())
+        result = await svc._build_single_user_value_map(
+            run_ids=[run_id], reviewer_id=uuid4(), fields_by_id={}
+        )
         assert result[(run_id, instance_id, field_id)] == "proposed_val"
 
     @pytest.mark.asyncio
@@ -1944,7 +2198,9 @@ class TestBuildSingleUserValueMap:
         row = (run_id, instance_id, field_id, "edit", {"value": "edited"}, None)
         svc.db.execute = AsyncMock(return_value=_rows_result([row]))
 
-        result = await svc._build_single_user_value_map(run_ids=[run_id], reviewer_id=uuid4())
+        result = await svc._build_single_user_value_map(
+            run_ids=[run_id], reviewer_id=uuid4(), fields_by_id={}
+        )
         assert result[(run_id, instance_id, field_id)] == "edited"
 
     @pytest.mark.asyncio
@@ -1954,7 +2210,9 @@ class TestBuildSingleUserValueMap:
         row = (run_id, instance_id, field_id, "reject", None, None)
         svc.db.execute = AsyncMock(return_value=_rows_result([row]))
 
-        result = await svc._build_single_user_value_map(run_ids=[run_id], reviewer_id=uuid4())
+        result = await svc._build_single_user_value_map(
+            run_ids=[run_id], reviewer_id=uuid4(), fields_by_id={}
+        )
         assert (run_id, instance_id, field_id) not in result
 
 
@@ -2163,8 +2421,9 @@ class TestAiProposalRowsModelInstances:
             header_label="Test Article",
             run_id=run_id,
             run_stage=ExtractionRunStage.FINALIZED,
+            version_id=None,
             model_instances=(model_instance_id1, model_instance_id2),
-            study_instances={},
+            section_instances={},
         )
 
         proposal_row = (proposal_id, run_id, model_instance_id1, field_id, "v", None, None, ts)
@@ -2186,6 +2445,7 @@ class TestAiProposalRowsModelInstances:
             sections=(),
             value_map={},
             mode=ExportMode.CONSENSUS,
+            target_reviewer_id=None,
         )
 
         assert len(result) == 1
