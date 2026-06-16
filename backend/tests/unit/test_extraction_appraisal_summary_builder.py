@@ -56,3 +56,73 @@ def test_appraisal_overall_worst_case(verdicts, expected) -> None:
     from app.services.exports.extraction.appraisal_summary import _appraisal_overall
 
     assert _appraisal_overall(verdicts) == expected
+
+
+def _layout_with_appraisal(appraisal, *, mode_name="consensus", reviewers=()):
+    """Minimal ExportLayout carrying a pre-computed AppraisalModel."""
+    from datetime import UTC, datetime
+
+    from app.services.extraction_export_service import (
+        ExportLayout,
+        ExportMode,
+        ExportNotes,
+    )
+
+    notes = ExportNotes(
+        omitted_articles_by_stage={},
+        template_version_label="QA v1",
+        export_mode_label=mode_name,
+        anonymize_reviewer_names=False,
+        include_ai_metadata=False,
+        generated_at=datetime.now(UTC),
+    )
+    return ExportLayout(
+        project_name="P",
+        template_name="PROBAST",
+        template_version=1,
+        sections=(),
+        articles=(),
+        reviewers=reviewers,
+        mode=ExportMode(mode_name),
+        include_ai_metadata=False,
+        anonymize_reviewer_names=False,
+        notes=notes,
+        value_map={},
+        appraisal=appraisal,
+    )
+
+
+def test_build_appraisal_summary_none_when_no_layer() -> None:
+    from app.services.exports.extraction.appraisal_summary import build_appraisal_summary
+
+    layout = _layout_with_appraisal(None)
+    assert build_appraisal_summary(layout) is None
+
+
+def test_build_appraisal_summary_consensus_shape() -> None:
+    from app.services.exports.extraction.appraisal_summary import build_appraisal_summary
+    from app.services.extraction_export_service import AppraisalModel, AppraisalRow
+
+    aid = uuid.uuid4()
+    appraisal = AppraisalModel(
+        domain_section_ids=(uuid.uuid4(), uuid.uuid4()),
+        domain_labels=("Participants", "Predictors"),
+        rows=(
+            AppraisalRow(
+                article_id=aid,
+                record_label="Gaca, 2011",
+                domain_verdicts=("Low", "High"),
+                overall="High",
+                per_reviewer_overall={},
+            ),
+        ),
+    )
+    spec = build_appraisal_summary(_layout_with_appraisal(appraisal))
+    assert spec is not None
+    # Header row: Record + each domain + Overall.
+    header = tuple(c.value for c in spec.rows[0])
+    assert header == ("Record", "Participants", "Predictors", "Overall")
+    # Data row: label, verdicts, rolled-up Overall.
+    data = tuple(c.value for c in spec.rows[1])
+    assert data == ("Gaca, 2011", "Low", "High", "High")
+    assert spec.freeze == "B2"  # record column + header frozen
