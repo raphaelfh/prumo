@@ -23,49 +23,130 @@ from uuid import uuid4
 import pytest
 from openpyxl import load_workbook
 
-from app.models.extraction import ExtractionEntityRole, ExtractionFieldType
-from app.services.exports.extraction_xlsx_builder import build_workbook
+from app.models.extraction import (
+    ExtractionCardinality,
+    ExtractionEntityRole,
+    ExtractionFieldType,
+)
+
+# Retargeted off the legacy ``extraction_xlsx_builder`` re-export onto the pure
+# orchestrator package. ``ExportColumnLimitError`` is the package's pre-build
+# column guard (it doubles as an ``AppError``/``ValueError``); the plan named it
+# ``ExportTooWideError`` — reconciled here to the actual exported symbol.
+from app.services.exports.extraction.workbook import (
+    ExportColumnLimitError,
+    build_workbook,
+)
+from app.services.exports.extraction_snapshot_reader import AllowedValue
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,
     ExportMode,
     ExportNotes,
     FieldDescriptor,
+    FieldDictEntry,
+    FrontMatter,
+    ReviewerDescriptor,
     SectionDescriptor,
+    TidyRow,
+    TidyTable,
 )
+
+# Hard-coded UUIDs for the fixed layout — module-level so the README/Methods
+# front-matter, the data dictionary, and the tidy table all reference the SAME
+# ids two builds over, keeping the new sheets byte-identical across builds.
+_SECTION_ID = uuid4()
+_FIELD_ID = uuid4()
+_RUN_ID = uuid4()
+_INST_ID = uuid4()
+_ARTICLE_ID = uuid4()
+_GENERATED_AT = datetime(2026, 5, 23, 12, 0, 0, tzinfo=UTC)
 
 
 def _fixed_layout() -> ExportLayout:
     """A layout whose every UUID is hard-coded so two runs produce the
-    same workbook bytes (mod doc-properties)."""
-    section_id = uuid4()
-    field_id = uuid4()
-    run_id = uuid4()
-    inst_id = uuid4()
-    article_id = uuid4()
+    same workbook bytes (mod doc-properties).
 
+    Populates the §4 publication projections — ``front_matter`` (README /
+    Methods), ``data_dictionary``, ``tidy_tables``, and an explicit ``None``
+    ``appraisal`` — so the new sub-builder sheets actually render and their
+    XML parts are covered by the structural-determinism assertion below.
+    """
     field = FieldDescriptor(
-        field_id=field_id,
+        field_id=_FIELD_ID,
         label="1.1 Source of data",
         type=ExtractionFieldType.TEXT,
         allowed_values=(),
-        parent_section_id=section_id,
+        parent_section_id=_SECTION_ID,
     )
     section = SectionDescriptor(
-        entity_type_id=section_id,
+        entity_type_id=_SECTION_ID,
         label="1. Source of data",
         role=ExtractionEntityRole.STUDY_SECTION,
         parent_entity_type_id=None,
         fields=(field,),
     )
     article = ArticleDescriptor(
-        article_id=article_id,
+        article_id=_ARTICLE_ID,
         header_label="Gaca, 2011",
-        run_id=run_id,
+        run_id=_RUN_ID,
         run_stage=None,
         version_id=None,
         model_instances=(),
-        section_instances={section_id: (inst_id,)},
+        section_instances={_SECTION_ID: (_INST_ID,)},
+    )
+
+    # README / Methods front-matter (§4 #1). Its ``generated_at`` is hard-coded,
+    # so the rendered "Generated at" cell is identical across builds; the only
+    # surviving per-build divergence is the openpyxl docProps timestamp.
+    front_matter = FrontMatter(
+        project_name="Test Project",
+        template_name="CHARMS",
+        template_version=1,
+        export_mode_label="Consensus",
+        generated_at=_GENERATED_AT,
+        article_count=1,
+        record_count=1,
+        contents=("README", "Data dictionary", "1. Source of data"),
+        legend=(("—", "field not present in this Run"),),
+        caveats=("Reviewer outcomes are best-effort.",),
+        obsolete_fields_per_article={},
+    )
+    # Data dictionary (§4 #k+2): one entry with a select option set so a
+    # Dropdown lists sheet co-renders and is covered by the structural diff.
+    data_dictionary = (
+        FieldDictEntry(
+            field_id=_FIELD_ID,
+            section_label="1. Source of data",
+            label="1.1 Source of data",
+            type=ExtractionFieldType.SELECT,
+            unit=None,
+            description="Where the predictor data came from.",
+            allowed_values=(
+                AllowedValue(value="registry", label="Existing registry"),
+                AllowedValue(value="cohort", label="New cohort"),
+            ),
+            is_required=True,
+            allow_other=False,
+        ),
+    )
+    # Tidy table (§5.3): one records-as-rows sheet at the section grain.
+    tidy_tables = (
+        TidyTable(
+            section_id=_SECTION_ID,
+            title="1. Source of data",
+            cardinality=ExtractionCardinality.ONE,
+            column_field_ids=(_FIELD_ID,),
+            column_labels=("1.1 Source of data",),
+            rows=(
+                TidyRow(
+                    article_id=_ARTICLE_ID,
+                    instance_id=None,
+                    record_label="Gaca, 2011",
+                    values=("Existing registry",),
+                ),
+            ),
+        ),
     )
     return ExportLayout(
         project_name="Test Project",
@@ -80,9 +161,13 @@ def _fixed_layout() -> ExportLayout:
         notes=ExportNotes(
             template_version_label="CHARMS v1",
             export_mode_label="Consensus",
-            generated_at=datetime(2026, 5, 23, 12, 0, 0, tzinfo=UTC),
+            generated_at=_GENERATED_AT,
         ),
-        value_map={(run_id, inst_id, field_id): "Existing registry"},
+        value_map={(_RUN_ID, _INST_ID, _FIELD_ID): "Existing registry"},
+        front_matter=front_matter,
+        data_dictionary=data_dictionary,
+        tidy_tables=tidy_tables,
+        appraisal=None,
     )
 
 
@@ -335,6 +420,115 @@ def test_column_guard_boundary() -> None:
 
 
 # ----------------------------------------------------------------------
+# S8 / Task 73: extend structural determinism to the new publication sheets
+# (README/Methods, Data dictionary, tidy tables, Dropdown lists) + a
+# 500×100 all-users case that blows past the 16,384-column guard.
+# ----------------------------------------------------------------------
+
+
+def _structural_entries(blob: bytes) -> dict[str, bytes]:
+    """Unpacked ZIP parts MINUS the inherently non-deterministic bits.
+
+    openpyxl stamps a fresh ``modified``/``created`` time and a random
+    application revision into ``docProps/*`` on every save, so those two
+    parts can never be byte-stable. Everything else — including the new
+    sub-builder sheet XML and the README/Methods front-matter sheet — must
+    be byte-identical for a fixed layout. The README ``Generated at`` cell
+    is part of that "everything else" but is pinned to ``_GENERATED_AT``, so
+    it is deterministic by construction; this allow-list still excludes the
+    docProps parts that carry the wall-clock save time.
+    """
+    with zipfile.ZipFile(io.BytesIO(blob)) as zf:
+        return {n: zf.read(n) for n in zf.namelist() if not n.startswith("docProps/")}
+
+
+def _sheet_titles(blob: bytes) -> list[str]:
+    return load_workbook(io.BytesIO(blob)).sheetnames
+
+
+def test_new_sheets_are_structurally_deterministic() -> None:
+    layout = _fixed_layout()
+    a = _structural_entries(build_workbook(layout))
+    b = _structural_entries(build_workbook(layout))
+    assert a.keys() == b.keys()
+    for name in a:
+        assert a[name] == b[name], f"divergent entry: {name}"
+
+    # The new sub-builder sheets are present in the rendered workbook.
+    names = _sheet_titles(build_workbook(layout))
+    assert "Data dictionary" in names
+    assert any(n.startswith("README") or "Methods" in n for n in names)
+    # The tidy table + co-located dropdown catalogue render too (the
+    # _fixed_layout dictionary entry carries select options).
+    assert "Dropdown lists" in names
+    assert "1. Source of data" in names
+
+
+def _wide_all_users_layout(*, n_articles: int, subcols_each: int) -> ExportLayout:
+    """An ALL_USERS layout whose matrix fans out to
+    ``n_articles × subcols_each × (1 consensus + len(reviewers))`` data
+    columns — the reviewer axis is what pushes 500×100 past the guard.
+
+    Mirrors the ``_wide_layout`` builder in
+    ``test_extraction_export_column_guard.py``: a single ``cardinality=MANY``
+    section so each article's ``section_instances`` fan out one data column
+    per instance, here multiplied by the all-users reviewer axis.
+    """
+    sec_id = uuid4()
+    field = FieldDescriptor(
+        field_id=uuid4(),
+        label="F",
+        type=ExtractionFieldType.TEXT,
+        allowed_values=(),
+        parent_section_id=sec_id,
+    )
+    section = SectionDescriptor(
+        entity_type_id=sec_id,
+        label="Sec",
+        role=ExtractionEntityRole.STUDY_SECTION,
+        parent_entity_type_id=None,
+        fields=(field,),
+        cardinality=ExtractionCardinality.MANY,
+    )
+    articles = tuple(
+        ArticleDescriptor(
+            article_id=uuid4(),
+            header_label=f"A{i}",
+            run_id=uuid4(),
+            run_stage=None,
+            version_id=uuid4(),
+            model_instances=(),
+            section_instances={sec_id: tuple(uuid4() for _ in range(subcols_each))},
+        )
+        for i in range(n_articles)
+    )
+    reviewers = (
+        ReviewerDescriptor(reviewer_id=uuid4(), display_label="Reviewer A"),
+        ReviewerDescriptor(reviewer_id=uuid4(), display_label="Reviewer B"),
+    )
+    return ExportLayout(
+        project_name="P",
+        template_name="T",
+        template_version=1,
+        sections=(section,),
+        articles=articles,
+        reviewers=reviewers,
+        mode=ExportMode.ALL_USERS,
+        include_ai_metadata=False,
+        anonymize_reviewer_names=False,
+        notes=ExportNotes(),
+        value_map={},
+    )
+
+
+def test_500x100_all_users_exceeds_column_guard() -> None:
+    # 500 articles × 100 reviewer/instance sub-columns each blows past 16,384.
+    layout = _wide_all_users_layout(n_articles=500, subcols_each=100)
+    with pytest.raises(ExportColumnLimitError):
+        build_workbook(layout)
+
+
+# ----------------------------------------------------------------------
 # S7 / Task 63: appraisal-summary determinism + worst-case tie-break.
 #
 # Mirrors the A6 red-green-across-seeds discipline: prove byte-stable
@@ -410,12 +604,8 @@ def _tied_appraisal_inputs():
     so only input ORDER — never identity — varies.
     """
     from app.models.extraction import (
-        ExtractionCardinality,
         ExtractionEntityRole,
         ExtractionFieldType,
-    )
-    from app.services.extraction_export_service import (
-        ReviewerDescriptor,
     )
 
     risk_labels = ("Low", "Unclear", "High")
