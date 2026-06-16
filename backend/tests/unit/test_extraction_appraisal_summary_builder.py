@@ -126,3 +126,68 @@ def test_build_appraisal_summary_consensus_shape() -> None:
     data = tuple(c.value for c in spec.rows[1])
     assert data == ("Gaca, 2011", "Low", "High", "High")
     assert spec.freeze == "B2"  # record column + header frozen
+
+
+def test_build_appraisal_summary_all_users_per_reviewer_columns() -> None:
+    from app.services.exports.extraction.appraisal_summary import build_appraisal_summary
+    from app.services.extraction_export_service import (
+        AppraisalModel,
+        AppraisalRow,
+        ReviewerDescriptor,
+    )
+
+    r1, r2 = uuid.uuid4(), uuid.uuid4()
+    reviewers = (
+        ReviewerDescriptor(reviewer_id=r1, display_label="Reviewer 1"),
+        ReviewerDescriptor(reviewer_id=r2, display_label="Reviewer 2"),
+    )
+    appraisal = AppraisalModel(
+        domain_section_ids=(uuid.uuid4(),),
+        domain_labels=("Participants",),
+        rows=(
+            AppraisalRow(
+                article_id=uuid.uuid4(),
+                record_label="Gaca, 2011",
+                domain_verdicts=("Low",),
+                overall="Low",
+                per_reviewer_overall={r1: "Low", r2: "High"},
+            ),
+        ),
+    )
+    spec = build_appraisal_summary(
+        _layout_with_appraisal(appraisal, mode_name="all_users", reviewers=reviewers)
+    )
+    header = tuple(c.value for c in spec.rows[0])
+    # consensus Overall + one Overall column PER reviewer, in reviewer order.
+    assert header == (
+        "Record",
+        "Participants",
+        "Overall",
+        "Overall — Reviewer 1",
+        "Overall — Reviewer 2",
+    )
+    data = tuple(c.value for c in spec.rows[1])
+    assert data == ("Gaca, 2011", "Low", "Low", "Low", "High")
+
+
+def test_build_appraisal_summary_single_user_one_overall() -> None:
+    from app.services.exports.extraction.appraisal_summary import build_appraisal_summary
+    from app.services.extraction_export_service import AppraisalModel, AppraisalRow
+
+    appraisal = AppraisalModel(
+        domain_section_ids=(uuid.uuid4(),),
+        domain_labels=("Participants",),
+        rows=(
+            AppraisalRow(
+                article_id=uuid.uuid4(),
+                record_label="Gaca, 2011",
+                domain_verdicts=("High",),
+                overall="High",  # the single reviewer's rollup
+                per_reviewer_overall={},
+            ),
+        ),
+    )
+    spec = build_appraisal_summary(_layout_with_appraisal(appraisal, mode_name="single_user"))
+    header = tuple(c.value for c in spec.rows[0])
+    assert header == ("Record", "Participants", "Overall")  # no per-reviewer cols
+    assert tuple(c.value for c in spec.rows[1]) == ("Gaca, 2011", "High", "High")
