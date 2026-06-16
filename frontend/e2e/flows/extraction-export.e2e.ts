@@ -273,6 +273,25 @@ test.describe("Extraction export — UI flow", () => {
     );
   });
 
+  test("the More menu no longer offers a legacy Export Data item", async ({ page }) => {
+    const env = loadE2EEnv();
+    await loginViaUi(page);
+    await page.goto(
+      `${env.frontendUrl}/projects/${env.projectId}?tab=extraction`,
+    );
+
+    // Open the header "More options" menu.
+    await page.getByRole("button", { name: /more/i }).click();
+    // Legacy entry is gone; the single dialog is reached via the toolbar button.
+    await expect(
+      page.getByRole("menuitem", { name: /Export Data/i }),
+    ).toHaveCount(0);
+    // The consolidated entry point still works.
+    await page.keyboard.press("Escape");
+    await page.getByTestId("extraction-export-button").click();
+    await expect(page.getByText(/Export extraction data/i)).toBeVisible();
+  });
+
   test("dialog opens with defaults and shows live preview", async ({ page }) => {
     const env = loadE2EEnv();
     await loginViaUi(page);
