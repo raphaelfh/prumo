@@ -59,7 +59,7 @@ def export_extraction_task(
         # Lazy imports + lazy client construction.
         from app.core.deps import get_supabase_client
         from app.core.factories import create_storage_adapter
-        from app.services.exports.extraction_xlsx_builder import build_workbook
+        from app.services.exports.extraction.workbook import build_workbook
         from app.services.extraction_export_service import (
             ExportMode,
             ExtractionExportService,

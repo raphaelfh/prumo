@@ -23,7 +23,7 @@ from app.models.extraction import (
 )
 from app.services.exports.extraction.matrix import build_matrix
 from app.services.exports.extraction.sheet_spec import _render_sheet_spec
-from app.services.exports.extraction_xlsx_builder import build_workbook
+from app.services.exports.extraction.workbook import build_workbook
 from app.services.extraction_export_service import (
     ArticleDescriptor,
     ExportLayout,

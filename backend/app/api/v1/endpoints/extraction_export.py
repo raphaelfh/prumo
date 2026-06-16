@@ -37,7 +37,7 @@ from app.schemas.extraction_export import (
     ExtractionExportStartedResponse,
     ExtractionExportStatusResponse,
 )
-from app.services.exports.extraction_xlsx_builder import build_workbook
+from app.services.exports.extraction.workbook import build_workbook
 from app.services.extraction_export_service import (
     ExportMode,
     ExtractionExportService,

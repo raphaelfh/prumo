@@ -8,8 +8,8 @@ tidy tables (#4..k), the Data dictionary (#k+2) and its co-located
 Dropdown lists catalogue — rendering every non-``None`` ``SheetSpec``
 through the single ``_render_sheet_spec`` writer, after a pre-build
 column guard (§5.5). The README sub-builder absorbs the old Notes sheet;
-the optional AI-metadata sheet (not yet migrated to a pure sub-builder)
-is appended last via the legacy writer.
+the optional AI-metadata sheet is the trailing sub-builder, emitted only
+when ``include_ai_metadata`` is set.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from fastapi import status
 from openpyxl import Workbook
 
 from app.core.error_handler import AppError
+from app.services.exports.extraction.ai_metadata import build_ai_metadata
 from app.services.exports.extraction.appraisal_summary import build_appraisal_summary
 from app.services.exports.extraction.data_dictionary import build_data_dictionary
 from app.services.exports.extraction.dropdown_lists import build_dropdown_lists
@@ -119,9 +120,8 @@ def _ordered_specs(layout: ExportLayout) -> list[SheetSpec]:
     per section (#4..k), the conditional Appraisal summary (#k+1, emitted only
     for quality-assessment templates where ``layout.appraisal`` is set), then
     the Data dictionary (#k+2) and its co-located Dropdown lists catalogue
-    (emitted only when some field carries allowed values). The optional
-    AI-metadata sheet is appended by ``build_workbook`` via the legacy writer
-    until it gains a pure sub-builder.
+    (emitted only when some field carries allowed values), and finally the
+    optional AI-metadata sheet (emitted only when ``include_ai_metadata``).
     """
     specs: list[SheetSpec] = [
         build_front_matter(layout),  # #1 README / Methods
@@ -136,15 +136,14 @@ def _ordered_specs(layout: ExportLayout) -> list[SheetSpec]:
     dropdowns = build_dropdown_lists(layout)  # co-located catalogue
     if dropdowns is not None:
         specs.append(dropdowns)
+    ai_metadata = build_ai_metadata(layout)  # optional trailing sheet
+    if ai_metadata is not None:
+        specs.append(ai_metadata)
     return specs
 
 
 def build_workbook(layout: ExportLayout) -> bytes:
     """Build the export workbook bytes for the given layout."""
-    # The legacy module re-exports this function, so its sheet writers are
-    # imported lazily to avoid an import cycle.
-    from app.services.exports.extraction_xlsx_builder import _write_ai_metadata_sheet
-
     _assert_within_column_limit(layout)
 
     wb = Workbook()
@@ -162,11 +161,6 @@ def build_workbook(layout: ExportLayout) -> bytes:
         ws = wb.create_sheet(title=title)
         _render_sheet_spec(ws, spec)
         ws.title = title
-
-    # AI metadata is the only legacy sheet left (no pure sub-builder yet);
-    # appended last, after the §4 specs, only when toggled on.
-    if layout.include_ai_metadata:
-        _write_ai_metadata_sheet(wb, layout)
 
     buf = io.BytesIO()
     wb.save(buf)

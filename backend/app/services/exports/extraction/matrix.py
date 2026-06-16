@@ -9,8 +9,7 @@ section-band rows, a tab colour, left-wrap field labels and generic
 hierarchical ``section.field`` numbering. Structural only — no conditional
 formatting (no per-value tinting / traffic lights). The value-resolution +
 fan-out helpers are package-local so this module carries no runtime
-dependency on the legacy ``extraction_xlsx_builder`` (which a sibling slice
-removes).
+dependency on any legacy writer.
 """
 
 from __future__ import annotations
@@ -179,12 +178,17 @@ def _xlsx_safe(value: Any) -> Any:
     Lists are joined; tz-aware datetimes are made naive. A ``dict`` is NOT
     silently stringified: by §6 every envelope is collapsed to a scalar by
     ``resolve_value`` upstream, so a dict here is a resolver defect that
-    must fail loudly (openpyxl raises) rather than ship a Python-repr cell.
+    fails loudly (raised here) rather than shipping a Python-repr cell.
     """
     if value is None:
         return None
     if isinstance(value, list):
         return "; ".join(str(item) for item in value if item is not None)
+    if isinstance(value, dict):
+        raise TypeError(
+            "_xlsx_safe received a dict; resolve_value must collapse the "
+            f"envelope upstream (got {value!r})."
+        )
     if isinstance(value, datetime) and value.tzinfo is not None:
         return value.replace(tzinfo=None)
     return value
