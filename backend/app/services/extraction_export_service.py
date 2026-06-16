@@ -271,6 +271,38 @@ class TidyTable:
 
 
 @dataclass(frozen=True)
+class AppraisalRow:
+    """One record's appraisal roll-up (§7). Values are already-resolved scalars.
+
+    ``domain_verdicts`` is aligned to ``AppraisalModel.domain_labels``;
+    ``overall`` is the worst-case rollup over those verdicts (consensus /
+    single-user). ``per_reviewer_overall`` is populated only in All-users mode
+    (``reviewer_id -> Overall``), mirroring the matrix reviewer-axis fan-out.
+    """
+
+    article_id: UUID
+    record_label: str
+    domain_verdicts: tuple[Any, ...]  # aligned to AppraisalModel.domain_labels
+    overall: Any  # worst-case rollup (consensus / single-user)
+    per_reviewer_overall: dict[UUID, Any]  # all-users only: reviewer_id -> Overall
+
+
+@dataclass(frozen=True)
+class AppraisalModel:
+    """Computed appraisal roll-up (§7); None on ExportLayout when no appraisal layer.
+
+    Present only when the exported template carries an appraisal layer
+    (``kind == TemplateKind.QUALITY_ASSESSMENT`` with ≥1 resolvable domain
+    verdict). ``domain_section_ids`` are the per-domain appraisal sections, and
+    ``domain_labels`` the column headers the verdicts align to.
+    """
+
+    domain_section_ids: tuple[UUID, ...]
+    domain_labels: tuple[str, ...]
+    rows: tuple[AppraisalRow, ...]
+
+
+@dataclass(frozen=True)
 class ExportLayout:
     """Fully-resolved input for the XLSX builder."""
 
@@ -299,6 +331,11 @@ class ExportLayout:
     # Per-section publication "Table 1" sheets (§5.3); built in
     # ``resolve_layout`` (T52). One ``TidyTable`` per non-container section.
     tidy_tables: tuple[TidyTable, ...] = ()
+    # Per-domain risk-of-bias / appraisal roll-up with mode-aware ``Overall``
+    # (§7). None unless the exported template carries an appraisal layer
+    # (``kind == TemplateKind.QUALITY_ASSESSMENT``); ``build_appraisal_summary``
+    # returns None and the sheet is omitted when this is None.
+    appraisal: AppraisalModel | None = None
 
 
 # ----------------------------------------------------------------------
