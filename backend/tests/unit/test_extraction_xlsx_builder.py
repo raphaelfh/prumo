@@ -95,6 +95,7 @@ def _layout(
     include_ai_metadata: bool = False,
     project_name: str = "Test Project",
     template_name: str = "CHARMS",
+    appraisal: object | None = None,
 ) -> ExportLayout:
     return ExportLayout(
         project_name=project_name,
@@ -112,6 +113,7 @@ def _layout(
             generated_at=datetime(2026, 5, 23, 12, 0, 0, tzinfo=UTC),
         ),
         value_map=value_map or {},
+        appraisal=appraisal,
     )
 
 
@@ -648,3 +650,31 @@ def test_workbook_emits_sheets_in_section4_order():
         "Data dictionary",
         "Dropdown lists",
     ]
+
+
+def test_workbook_emits_appraisal_sheet_after_tidy_tables() -> None:
+    """Appraisal sheet appears (k+1) only when layout.appraisal is set."""
+    from app.services.exports.extraction.workbook import build_workbook
+    from app.services.extraction_export_service import AppraisalModel, AppraisalRow
+
+    # Build the smallest QA layout that yields one appraisal row.
+    appraisal = AppraisalModel(
+        domain_section_ids=(uuid4(),),
+        domain_labels=("Participants",),
+        rows=(
+            AppraisalRow(
+                article_id=uuid4(),
+                record_label="Gaca, 2011",
+                domain_verdicts=("High",),
+                overall="High",
+                per_reviewer_overall={},
+            ),
+        ),
+    )
+    layout_with = _layout(appraisal=appraisal)
+    wb = load_workbook(io.BytesIO(build_workbook(layout_with)))
+    assert "Appraisal summary" in wb.sheetnames
+
+    layout_without = _layout(appraisal=None)
+    wb2 = load_workbook(io.BytesIO(build_workbook(layout_without)))
+    assert "Appraisal summary" not in wb2.sheetnames

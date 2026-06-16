@@ -19,6 +19,7 @@ import io
 from openpyxl import Workbook
 
 from app.core.error_handler import AppError
+from app.services.exports.extraction.appraisal_summary import build_appraisal_summary
 from app.services.exports.extraction.data_dictionary import build_data_dictionary
 from app.services.exports.extraction.dropdown_lists import build_dropdown_lists
 from app.services.exports.extraction.front_matter import build_front_matter
@@ -108,10 +109,12 @@ def _ordered_specs(layout: ExportLayout) -> list[SheetSpec]:
 
     README/Methods (#1) absorbs the old Notes sheet; the Summary (#2) carries
     the omitted-by-stage tally. The matrix (#3) is followed by one tidy table
-    per section (#4..k), then the Data dictionary (#k+2) and its co-located
-    Dropdown lists catalogue (emitted only when some field carries allowed
-    values). The optional AI-metadata sheet is appended by ``build_workbook``
-    via the legacy writer until it gains a pure sub-builder.
+    per section (#4..k), the conditional Appraisal summary (#k+1, emitted only
+    for quality-assessment templates where ``layout.appraisal`` is set), then
+    the Data dictionary (#k+2) and its co-located Dropdown lists catalogue
+    (emitted only when some field carries allowed values). The optional
+    AI-metadata sheet is appended by ``build_workbook`` via the legacy writer
+    until it gains a pure sub-builder.
     """
     specs: list[SheetSpec] = [
         build_front_matter(layout),  # #1 README / Methods
@@ -119,6 +122,9 @@ def _ordered_specs(layout: ExportLayout) -> list[SheetSpec]:
         build_matrix(layout),  # #3 Extraction matrix
     ]
     specs.extend(build_tidy_tables(layout))  # #4..k tidy tables
+    appraisal = build_appraisal_summary(layout)  # #k+1 Appraisal summary
+    if appraisal is not None:
+        specs.append(appraisal)
     specs.append(build_data_dictionary(layout))  # #k+2 Data dictionary
     dropdowns = build_dropdown_lists(layout)  # co-located catalogue
     if dropdowns is not None:
