@@ -217,6 +217,96 @@ export async function apiClient<T>(
   }
 }
 
+/**
+ * Result of {@link apiBlobClient}: a downloaded blob (200) or a queued
+ * async job (202).
+ */
+export type ApiBlobResult =
+  | { kind: "sync"; blob: Blob; filename: string }
+  | { kind: "async"; job_id: string };
+
+/**
+ * Typed binary client for endpoints that return either a 200 `.xlsx`
+ * blob (inline download) or a 202 JSON `{ job_id }` (queued job).
+ *
+ * Same auth / base-url / trace-id wiring as {@link apiClient}, but it
+ * does NOT JSON-parse a successful binary body. On any error status it
+ * throws {@link ApiError} carrying `error.message` from the envelope —
+ * never the FastAPI `detail` field. This replaces the raw `fetch` +
+ * `import.meta.env.VITE_API_URL` + `supabase.auth` previously inlined
+ * in `extractionExportService` (frontend data-access rule).
+ */
+export async function apiBlobClient(
+  endpoint: string,
+  options: ApiRequestOptions = {},
+  fallbackFilename = "download.bin",
+): Promise<ApiBlobResult> {
+  const { body, skipAuth = false, headers: customHeaders = {}, ...fetchOptions } = options;
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "X-Trace-Id": createTraceId(),
+    ...Object.fromEntries(
+      Object.entries(customHeaders).map(([k, v]) => [k, String(v)]),
+    ),
+  };
+
+  if (!skipAuth) {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      headers["Authorization"] = `Bearer ${session.access_token}`;
+    } else {
+      throw new ApiError("AUTH_REQUIRED", t("common", "errors_authRequired"), 401);
+    }
+  }
+
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    ...fetchOptions,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  const contentType = (response.headers.get("Content-Type") || "").toLowerCase();
+
+  if (response.status === 200) {
+    if (contentType.includes("application/json")) {
+      const errBody = await response.json().catch(() => ({}));
+      const msg =
+        errBody?.error?.message ??
+        errBody?.message ??
+        t("common", "errors_unknownError");
+      throw new ApiError(errBody?.error?.code ?? "UNKNOWN_ERROR", msg, 200);
+    }
+    const blob = await response.blob();
+    const disposition = response.headers.get("Content-Disposition");
+    let filename = fallbackFilename;
+    if (disposition) {
+      const match = /filename="?([^";\n]+)"?/.exec(disposition);
+      if (match) filename = match[1].trim();
+    }
+    return { kind: "sync", blob, filename };
+  }
+
+  if (response.status === 202) {
+    const data = await response.json().catch(() => ({}));
+    const payload = data?.data ?? data;
+    const jobId = payload?.job_id;
+    if (typeof jobId !== "string") {
+      throw new ApiError("INVALID_RESPONSE", "Invalid 202 response: missing job_id", 202);
+    }
+    return { kind: "async", job_id: jobId };
+  }
+
+  const errBody = await response.json().catch(() => ({}));
+  const msg =
+    errBody?.error?.message ??
+    errBody?.message ??
+    t("common", "errors_unknownError");
+  throw new ApiError(errBody?.error?.code ?? "UNKNOWN_ERROR", msg, response.status);
+}
+
 // =================== HELPERS FOR SPECIFIC ENDPOINTS ===================
 
 /**
