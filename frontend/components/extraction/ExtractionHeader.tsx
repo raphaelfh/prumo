@@ -17,7 +17,6 @@ import {HeaderFinalizeButton} from './header/HeaderFinalizeButton';
 import {HeaderAIActions} from './header/HeaderAIActions';
 import {HeaderMoreMenu} from './header/HeaderMoreMenu';
 import type {AISuggestion} from '@/types/ai-extraction';
-import type {ExtractionValueDisplay, ExtractionInstance, ProjectExtractionTemplate} from '@/types/extraction';
 import type {SaveState} from '@/hooks/runs';
 
 // =================== INTERFACES ===================
@@ -78,11 +77,6 @@ interface ExtractionHeaderProps {
   aiSuggestions?: Record<string, AISuggestion>;
   onAISuggestionsClick?: () => void;
 
-    // Data for export (Zone 4 - More menu)
-  template?: ProjectExtractionTemplate | null;
-  instances?: ExtractionInstance[];
-  values?: ExtractionValueDisplay[];
-
     // Callback to refresh after extraction
   onRefreshInstances?: () => Promise<void>;
     // Callback to expose AI extraction state
@@ -119,9 +113,6 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
     submitting = false,
     aiSuggestions = {},
     onAISuggestionsClick,
-    template,
-    instances = [],
-    values = [],
   } = props;
 
   const isMobile = useIsMobile();
@@ -197,12 +188,9 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                 />
                 <HeaderMoreMenu
                   projectId={projectId}
-                  template={template}
-                  instances={instances}
-                  values={values}
                   compact={true}
                   articleId={currentArticleId}
-                  templateId={template?.id}
+                  templateId={props.templateId}
                   runId={props.runId}
                   onExtractionComplete={props.onRefreshInstances}
                   onExtractionStateChange={props.onExtractionStateChange}
@@ -267,12 +255,9 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
               />
               <HeaderMoreMenu
                 projectId={projectId}
-                template={template}
-                instances={instances}
-                values={values}
                 compact={false}
                 articleId={currentArticleId}
-                templateId={template?.id}
+                templateId={props.templateId}
                 runId={props.runId}
                 onExtractionComplete={props.onRefreshInstances}
                 onExtractionStateChange={props.onExtractionStateChange}

@@ -1014,8 +1014,6 @@ export default function ExtractionFullScreen() {
           // Por enquanto, apenas log - pode ser melhorado depois
             console.warn('Clicked AI badge - scrolling to first suggestion');
         }}
-        template={template}
-        instances={instances}
         onRefreshInstances={handleRefreshInstances}
         onExtractionStateChange={setAiExtractionState}
       />
