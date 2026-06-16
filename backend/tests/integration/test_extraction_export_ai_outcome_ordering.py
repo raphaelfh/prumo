@@ -196,7 +196,11 @@ async def test_ai_superseded_outcome_is_deterministic_on_equal_created_at(
 
     async def build() -> dict[object, str]:
         rows = await service._load_ai_proposal_rows(
-            articles=(article,), sections=(section,), value_map={}, mode=ExportMode.CONSENSUS
+            articles=(article,),
+            sections=(section,),
+            value_map={},
+            mode=ExportMode.CONSENSUS,
+            target_reviewer_id=None,
         )
         return {r.ai_proposed_value: r.reviewer_outcome for r in rows}
 
