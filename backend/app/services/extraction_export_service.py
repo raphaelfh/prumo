@@ -1,9 +1,8 @@
 """Extraction Export Service.
 
-Orchestrator for the extraction `.xlsx` download feature
-(009-extraction-excel-export). Resolves the in-memory ``ExportLayout``
-(data-model.md §2) and hands bytes-production off to the pure builder
-in ``app.services.exports.extraction_xlsx_builder``.
+Orchestrator for the publication-ready extraction `.xlsx` download.
+Resolves the in-memory ``ExportLayout`` and hands bytes-production off
+to the pure sub-builders in ``app.services.exports.extraction``.
 
 Architectural notes:
 * Layered per constitution §I: this service only orchestrates; SQL goes
@@ -12,8 +11,8 @@ Architectural notes:
   boundary.
 * Bulk reads only — no per-cell N+1. Every value-map builder issues at
   most a fixed small number of queries regardless of article count.
-* All three value-source modes (Consensus / Single-user / All-users)
-  are implemented; ``resolve_layout`` dispatches on ``mode``.
+* All three value-source modes (Consensus, Single-user, All-users) are
+  fully implemented; ``resolve_layout`` dispatches on ``mode``.
 """
 
 from __future__ import annotations
@@ -426,7 +425,9 @@ class ExtractionExportService(LoggerMixin):
     ) -> ExportLayout:
         """Build the in-memory layout for an export request.
 
-        Dispatches on ``mode``; every mode is implemented. Columns are
+        Dispatches on ``mode`` across the Consensus, Single-user, and
+        All-users branches; each resolves its eligible articles and value
+        map and returns a fully-populated ``ExportLayout``. Columns are
         anchored on the active-version snapshot (spec §5.1).
         """
         template, version = await self._load_active_template_version(template_id)
@@ -481,6 +482,8 @@ class ExtractionExportService(LoggerMixin):
                 reviewer_ids=[r.reviewer_id for r in reviewers],
                 fields_by_id=fields_by_id,
             )
+        else:  # pragma: no cover — exhaustive over ExportMode
+            raise AssertionError(f"unhandled export mode: {mode!r}")
 
         anchor_field_ids = {f.field_id for s in sections for f in s.fields}
         obsolete_fields = await self._compute_obsolete_fields_per_article(
@@ -1026,7 +1029,7 @@ class ExtractionExportService(LoggerMixin):
         }
 
     # ==================================================================
-    # US2 — Single user mode
+    # Single-user mode
     # ==================================================================
 
     async def _resolve_articles_for_single_user(
@@ -1282,7 +1285,7 @@ class ExtractionExportService(LoggerMixin):
         return [{"id": str(rid), "name": label} for rid, label in ordered]
 
     # ==================================================================
-    # US3 — All users mode
+    # All-users mode
     # ==================================================================
 
     async def _resolve_articles_for_all_users(
