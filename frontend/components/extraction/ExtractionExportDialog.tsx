@@ -146,10 +146,26 @@ export function ExtractionExportDialog({
     });
     const reviewers = reviewersQuery.data ?? [];
 
-    // Default reviewer to "me" when entering single_user mode.
-    // Render-phase invariant — the guard guarantees termination.
-    if (mode === "single_user" && !reviewerId && userId) {
-        setReviewerId(userId);
+    const reviewersLoading = reviewersQuery.isLoading;
+    // True once the picker has loaded and nobody is eligible — the project has
+    // no non-reject reviewer decisions on this template yet, so single-user
+    // export is impossible and we surface an empty-state instead of a blank
+    // dropdown the user cannot resolve.
+    const noEligibleReviewers =
+        mode === "single_user" && !reviewersLoading && reviewers.length === 0;
+
+    // Reconcile the reviewer selection against the eligible list (render-phase
+    // invariant — each branch makes the guard false next render, so it
+    // terminates). Default to "me" when I'm eligible; clear a selection that
+    // isn't in the list so Export stays blocked until a real reviewer is
+    // chosen — we never silently export a reviewer who has no data.
+    if (mode === "single_user" && !reviewersLoading && reviewers.length > 0) {
+        const selectedIsEligible =
+            reviewerId !== null && reviewers.some((r) => r.id === reviewerId);
+        if (!selectedIsEligible) {
+            const self = reviewers.find((r) => r.id === userId);
+            setReviewerId(self ? self.id : null);
+        }
     }
 
     // Abort any in-flight request if the dialog closes while submitting.
@@ -163,7 +179,9 @@ export function ExtractionExportDialog({
     const articleIds =
         articleScope === "selected_only" ? selectedIds : currentListIds;
     const articleCount = articleIds.length;
-    const modeReady = mode !== "single_user" || Boolean(reviewerId);
+    const modeReady =
+        mode !== "single_user" ||
+        (reviewerId !== null && reviewers.some((r) => r.id === reviewerId));
     const canSubmit = articleCount > 0 && modeReady && !submitting;
 
     const expectedSync =
@@ -323,7 +341,14 @@ export function ExtractionExportDialog({
                             <Label htmlFor="reviewer-picker">
                                 {t("extraction", "exportReviewerLabel")}
                             </Label>
-                            {isManager ? (
+                            {noEligibleReviewers ? (
+                                <p
+                                    className="text-sm text-muted-foreground"
+                                    data-testid="extraction-export-reviewer-empty"
+                                >
+                                    {t("extraction", "exportReviewerEmptyState")}
+                                </p>
+                            ) : isManager ? (
                                 <Select
                                     value={reviewerId ?? undefined}
                                     onValueChange={(v) => setReviewerId(v)}
@@ -443,7 +468,7 @@ export function ExtractionExportDialog({
                     </div>
 
                     {/* Live preview line (FR-027) */}
-                    {articleCount > 0 && (
+                    {articleCount > 0 && !noEligibleReviewers && (
                         <p
                             className="text-xs text-muted-foreground"
                             aria-live="polite"
