@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {ScrollArea} from '@/components/ui/scroll-area';
 import {Progress} from '@/components/ui/progress';
-import {useBackgroundJobs} from '@/stores/useBackgroundJobs';
+import {selectRecentJobs, useBackgroundJobs} from '@/stores/useBackgroundJobs';
 import {useBackgroundJobPolling} from '@/hooks/useBackgroundJobPolling';
 import {cn} from '@/lib/utils';
 import {toast} from 'sonner';
@@ -54,11 +54,13 @@ function countRecentlyFinished(jobs: BackgroundJob[]): number {
 export function NotificationCenter() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-    const {jobs, removeJob, clearCompletedJobs, getRecentJobs, updateJob} = useBackgroundJobs();
-  
-  // kept: extra dep (jobs) forces recompute on any job-list change, even when
-  // getRecentJobs identity is stable — removing it would miss new job additions (zero-bailouts spec).
-  const recentJobs = useMemo(() => getRecentJobs(20), [jobs, getRecentJobs]);
+    const {jobs, removeJob, clearCompletedJobs, updateJob} = useBackgroundJobs();
+
+  // Derive from the reactive `jobs` (not the store getter): the React
+  // Compiler tracks deps from the callback body, so the callback MUST
+  // reference `jobs` or the memo is treated as stale and the bell misses
+  // jobs added in-session (the async-export "never downloads" incident).
+  const recentJobs = useMemo(() => selectRecentJobs(jobs, 20), [jobs]);
 
     useEffect(() => {
         let isInFlight = false;
