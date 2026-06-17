@@ -77,6 +77,39 @@ describe('useExtractionProgress', () => {
     expect(result.current.completionPercentage).toBe(0);
   });
 
+  it('reaches 100% when all materialized singletons are filled and no models are added (optional cardinality=many)', () => {
+    const entityTypes = [
+      et('participants', [
+        { id: 'p-age', is_required: true },
+        { id: 'p-n', is_required: true },
+      ]),
+      // Optional prediction-models entity + a child section with many required
+      // fields. No model instance exists ("No models added").
+      et('prediction_models', [
+        { id: 'm-type', is_required: true },
+        { id: 'm-auc', is_required: true },
+      ]),
+      et('model_performance', [{ id: 'perf', is_required: true }]),
+    ];
+    const values: Record<string, unknown> = {
+      'participants-inst_p-age': '45',
+      'participants-inst_p-n': '1200',
+    };
+    // The materialized instances: only the participants singleton.
+    const instances = [
+      { id: 'participants-inst', entity_type_id: 'participants' },
+    ];
+
+    const { result } = renderHook(() =>
+      useExtractionProgress(values, entityTypes, instances),
+    );
+
+    expect(result.current.totalFields).toBe(2);
+    expect(result.current.completedFields).toBe(2);
+    expect(result.current.completionPercentage).toBe(100);
+    expect(result.current.isComplete).toBe(true);
+  });
+
   it('ignores optional fields in the denominator', () => {
     const entityTypes = [
       et('et-1', [

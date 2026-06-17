@@ -13,8 +13,12 @@ function field(id: string, is_required: boolean): ExtractionField {
   return { id, is_required } as ExtractionField;
 }
 
-function et(id: string, fields: ExtractionField[]): ProgressEntityProjection {
-  return { id, fields };
+function et(
+  id: string,
+  fields: ExtractionField[],
+  is_required = false,
+): ProgressEntityProjection {
+  return { id, fields, is_required };
 }
 
 describe('computeRequiredFieldProgress', () => {
@@ -83,6 +87,45 @@ describe('computeRequiredFieldProgress', () => {
     expect(r.completedFields).toBe(2);
     expect(r.completionPercentage).toBe(100);
   });
+
+  it('authoritative set + template marks the entity REQUIRED: zero instances keeps a phantom slot (form stays below 100% until one is added)', () => {
+    const entityTypes = [
+      et('study', [field('s1', true)]), // materialized singleton, filled
+      // A required cardinality='many' entity with no instances added: the
+      // template demands at least one, so it must keep the form incomplete.
+      et('required_models', [field('m1', true), field('m2', true)], true),
+    ];
+    const instanceIds = new Map([['study', new Set(['study-inst'])]]);
+    const r = computeRequiredFieldProgress(
+      { 'study-inst_s1': 'a' },
+      entityTypes,
+      instanceIds,
+    );
+    // denom = 1 (study) + 2 (required_models phantom) = 3; filled = 1.
+    expect(r.totalFields).toBe(3);
+    expect(r.completedFields).toBe(1);
+    expect(r.isComplete).toBe(false);
+  });
+
+  it('authoritative set: an entity type with zero instances contributes nothing — an optional cardinality=many entity (and its child sections) with no instances does not block 100%', () => {
+    const entityTypes = [
+      et('study', [field('s1', true), field('s2', true)]), // materialized singleton
+      et('prediction_models', [field('m1', true), field('m2', true)]), // optional many, no models added
+      et('model_performance', [field('p1', true)]), // child of models, no instances
+    ];
+    // Only the study singleton is materialized; both its required fields filled.
+    const instanceIds = new Map([['study', new Set(['study-inst'])]]);
+    const r = computeRequiredFieldProgress(
+      { 'study-inst_s1': 'a', 'study-inst_s2': 'b' },
+      entityTypes,
+      instanceIds,
+    );
+    // denom = 2 (study only); the absent model entities add no phantom slots.
+    expect(r.totalFields).toBe(2);
+    expect(r.completedFields).toBe(2);
+    expect(r.completionPercentage).toBe(100);
+    expect(r.isComplete).toBe(true);
+  });
 });
 
 describe('computeRowProgress (article/row level — shared by both list tables)', () => {
@@ -146,5 +189,21 @@ describe('computeRowProgress (article/row level — shared by both list tables)'
 
   it('no instances => 0%', () => {
     expect(computeRowProgress([], [], entityTypes)).toBe(0);
+  });
+
+  it('no-model article: optional model entities with no instances do not block 100% (the 40% bug)', () => {
+    const ets = [
+      et('participants', [field('a', true), field('b', true)]),
+      et('prediction_models', [field('m1', true), field('m2', true)]), // optional many, none added
+      et('model_performance', [field('p1', true)]), // child section, no instances
+    ];
+    const pct = computeRowProgress(
+      [inst('p-inst', 'participants')], // only the singleton is materialized
+      [val('p-inst', 'a', { value: 'x' }), val('p-inst', 'b', { value: 'y' })],
+      ets,
+    );
+    // Every materialized required field is filled and no models exist, so the
+    // article is complete — the unadded model sections must not drag this to 40%.
+    expect(pct).toBe(100);
   });
 });
