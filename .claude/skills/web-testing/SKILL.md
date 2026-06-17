@@ -253,6 +253,8 @@ Deeper patterns: [`references/playwright.md`](references/playwright.md) and [`re
 
 Playwright snapshots are stored alongside tests; diffs land in `test-results/`. Use sparingly — visual tests are heavy and easy to break with cosmetic refactors.
 
+This is the *regression-locking* half of visual work — it catches drift on an already-correct screen. The *getting-it-correct* half (render → screenshot → compare to the Plane/Linear target → fix → re-screenshot) is the `design-review` skill / `/design-review`; reach for that first when iterating, and only drop a `toHaveScreenshot` baseline once the screen matches and is stable.
+
 ```ts
 await expect(page).toHaveScreenshot('extraction-empty-state.png', {
   maxDiffPixels: 100,
