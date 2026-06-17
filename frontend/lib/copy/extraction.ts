@@ -706,6 +706,7 @@ export const extraction = {
     exportSourceAllUsersDisabledTooltip: 'Only project managers can export all reviewers side-by-side.',
     exportReviewerLabel: 'Reviewer',
     exportReviewerSelfFallback: 'Only your own decisions are available — your role does not allow exporting other reviewers.',
+    exportReviewerEmptyState: 'No reviewer has recorded decisions on this template yet, so there is nothing to export for a single user. Run extraction and review first, or pick another source.',
     exportScopeLabel: 'Articles to export',
     exportScopeCurrentList: 'Current list',
     exportScopeSelectedOnly: 'Selected only',

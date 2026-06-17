@@ -264,6 +264,25 @@ describe("ExtractionExportDialog", () => {
         );
     });
 
+    it("blocks Single-user export with an empty-state when no reviewer has decisions", async () => {
+        useEligibleReviewersMock.mockReturnValue({data: [], isLoading: false});
+        const user = userEvent.setup();
+        renderDialog();
+        await user.click(screen.getByLabelText(/Single user/i));
+
+        // Empty-state message replaces the picker — there is nobody to pick.
+        await waitFor(() =>
+            expect(
+                screen.getByTestId("extraction-export-reviewer-empty"),
+            ).toBeInTheDocument(),
+        );
+        expect(
+            screen.queryByTestId("extraction-export-reviewer-picker"),
+        ).not.toBeInTheDocument();
+        // Export is blocked so the user cannot submit a doomed request.
+        expect(screen.getByTestId("extraction-export-submit")).toBeDisabled();
+    });
+
     it("renders the anonymize-reviewers toggle only when All-users mode + manager (US3 / FR-028)", async () => {
         const user = userEvent.setup();
         renderDialog();
