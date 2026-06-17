@@ -151,7 +151,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
                 className="text-muted-foreground hover:text-foreground"
               >
                 <Download className="h-4 w-4 mr-2" />
-                Importar Template
+                {t('extraction', 'configImportTemplateButton')}
               </Button>
               <Badge variant="outline">
                   {entityTypes.length} sections ({rootEntityTypes.length} main)
@@ -328,7 +328,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
                   onClick={() => setShowImportDialog(true)}
                 >
                   <Download className="h-4 w-4 mr-2" />
-                  Importar Template
+                  {t('extraction', 'configImportTemplateButton')}
                 </Button>
                 <Button 
                   variant="outline" 

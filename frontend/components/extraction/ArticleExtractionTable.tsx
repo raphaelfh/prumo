@@ -989,7 +989,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                     <Checkbox
                       checked={isSelected(article.id)}
                       onCheckedChange={() => toggleArticle(article.id)}
-                      aria-label={`Select article: ${article.title}`}
+                      aria-label={t('extraction', 'tableSelectArticleAria').replace('{{title}}', article.title)}
                     />
                   </TableCell>
                       <TableCell className={`${TABLE_CELL_CLASS} font-medium text-[12px]`} style={getColumnStyle('title')}>

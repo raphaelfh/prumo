@@ -37,7 +37,7 @@ export function FieldsHeader({
   };
 
   return (
-    <div className="flex items-center justify-between" role="banner">
+    <div className="flex items-center justify-between">
       <div className="flex items-center gap-2">
         <h4 className="text-sm font-medium" id="fields-header">
             {t('extraction', 'fieldsOfThisSection')} ({fieldsCount})

@@ -71,6 +71,7 @@ export const extraction = {
     configAvailableTemplates: 'Available templates',
     configNoTemplatesAvailable: 'No templates available at the moment.',
     configImportThisTemplate: 'Import',
+    configImportTemplateButton: 'Import Template',
     configSeeDetails: 'See details',
     // ExtractionInterface loading & error
     loadingTemplates: 'Loading templates',
@@ -407,6 +408,7 @@ export const extraction = {
     tableDisplayOptions: 'Display options',
     tableClearAll: 'Clear all',
     tableRemoveFilter: 'Remove filter {{label}}',
+    tableSelectArticleAria: 'Select article: {{title}}',
     tableArticlesCount: 'articles',
     tableSelectFiltered: 'Select filtered articles',
     tableSelectAll: 'Select all articles',
@@ -448,6 +450,7 @@ export const extraction = {
     otherSameAsMine: 'Same',
     // FieldInput
     fieldRequired: 'Required field',
+    fieldUnitLabel: 'Unit',
     fieldMustBeNumber: 'Value must be a number',
     valuesCommaSeparated: 'Comma-separated values',
     yes: 'Yes',
@@ -599,6 +602,8 @@ export const extraction = {
     // TemplateManager
     templateManageTitle: 'Manage templates',
     templateManageDesc: 'Clone default templates or create custom ones',
+    templateGlobalTitle: 'Global Templates',
+    templateGlobalDesc: 'Default templates available for cloning',
     templateCloneButton: 'Clone template',
     templateCreateButton: 'Create template',
     templateProjectTemplates: 'Project templates',

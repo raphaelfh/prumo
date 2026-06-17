@@ -498,13 +498,22 @@ export default memo(FieldInput, (prevProps, nextProps) => {
     // Optimized comparison: only props that affect THIS field
   const aiSuggestionChanged = prevProps.aiSuggestion?.id !== nextProps.aiSuggestion?.id ||
                                 prevProps.aiSuggestion?.status !== nextProps.aiSuggestion?.status;
-  
+
+  // The accept/reject spinner is driven by isActionLoading(instanceId, fieldId),
+  // which is derived state — NOT a tracked prop. Omitting it means a loading
+  // transition (notably clearLoading after an accept resolves) changes no compared
+  // prop, so the memoized field keeps a stale loading=true and the spinner spins
+  // forever. Compare the resolved loading state for THIS field explicitly.
+  const prevActionLoading = prevProps.isActionLoading?.(prevProps.instanceId, prevProps.field.id) ?? null;
+  const nextActionLoading = nextProps.isActionLoading?.(nextProps.instanceId, nextProps.field.id) ?? null;
+
   return (
     prevProps.field.id === nextProps.field.id &&
     prevProps.instanceId === nextProps.instanceId &&
     prevProps.value === nextProps.value &&
     prevProps.disabled === nextProps.disabled &&
     prevProps.viewMode === nextProps.viewMode &&
+    prevActionLoading === nextActionLoading && // Re-render when the accept/reject spinner toggles
     !aiSuggestionChanged // Re-render when suggestion changes (status or ID)
   );
 });

@@ -172,7 +172,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
               <Card className="border-border/40 shadow-elev-popover">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
                       <CardTitle className="text-[13px] font-medium">{t('extraction', 'dashboardArticles')}</CardTitle>
-                      <FileText className="h-4 w-4 text-muted-foreground" strokeWidth={1.5}/>
+                      <FileText className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} aria-hidden="true"/>
           </CardHeader>
                   <CardContent className="px-4 pb-4">
                       <div className="text-xl font-bold">{extractionStats.totalArticles}</div>
@@ -184,7 +184,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
                       <CardTitle
                           className="text-[13px] font-medium">{t('extraction', 'dashboardExtractionsStarted')}</CardTitle>
-                      <CheckCircle className="h-4 w-4 text-muted-foreground" strokeWidth={1.5}/>
+                      <CheckCircle className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} aria-hidden="true"/>
           </CardHeader>
                   <CardContent className="px-4 pb-4">
                       <div className="text-xl font-bold">
@@ -203,7 +203,7 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
                       <CardTitle
                           className="text-[13px] font-medium">{t('extraction', 'dashboardOverallProgress')}</CardTitle>
-                      <AlertCircle className="h-4 w-4 text-muted-foreground" strokeWidth={1.5}/>
+                      <AlertCircle className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} aria-hidden="true"/>
           </CardHeader>
                   <CardContent className="px-4 pb-4">
                       <div className="text-xl font-bold">{extractionStats.progressPercentage}%</div>
