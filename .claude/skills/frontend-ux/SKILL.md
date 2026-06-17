@@ -5,6 +5,19 @@ description: prumo's visual language — the *what it should look like* layer (P
 
 # Frontend UX & UI Design System (Plane/Linear/WorkOS Style)
 
+> **Precedence.** On core product UI this skill is authoritative — reproduce the
+> existing Plane/Linear language, do not invent a new one. The enabled
+> `frontend-design@claude-plugins-official` plugin optimises for *distinctive
+> novelty* (it bans common defaults like Inter/system fonts and pushes bold,
+> one-off directions); that fights a fixed benchmark, so reserve it for
+> greenfield / marketing / illustrative surfaces only. When they conflict on a
+> core screen, `frontend-ux` wins.
+>
+> **Verify with your eyes, not the diff.** After applying these rules, close the
+> loop with the `design-review` skill (`/design-review <route>`): render →
+> screenshot → compare to target → fix → re-screenshot. A class string that reads
+> correct still ships the wrong screen.
+
 ## Role
 
 You are a senior UX Engineer focused on **Productivity Software**. Your goal is to create an interface that feels like a

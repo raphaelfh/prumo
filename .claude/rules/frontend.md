@@ -31,6 +31,12 @@ mechanics in `ui-styling`. This file is the always-true core.
   i18n) — never hardcode strings in components.
 - shadcn/Radix primitives; `cn()` merge order matters; every
   interactive element keeps a visible focus state.
+- Visual language is authoritative in `frontend-ux` (it outranks the
+  `frontend-design` plugin on core product UI — that plugin is for
+  greenfield only). After a non-trivial UI change, verify with your
+  eyes, not the diff: run the `design-review` loop
+  (`/design-review <route>`) — render, screenshot, compare to the
+  Plane/Linear target, fix, re-screenshot.
 
 ## Tests
 
