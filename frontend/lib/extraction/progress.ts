@@ -2,10 +2,16 @@ import type { ExtractionField } from '@/types/extraction';
 
 /**
  * Minimal projection of an entity type needed for progress computation.
+ *
+ * `is_required` is the template's own signal (it varies per template / per
+ * user): a `cardinality='many'` entity with zero instances only blocks
+ * completion when the template marks it required. Defaults to optional when
+ * omitted, so a caller that doesn't thread it never over-counts.
  */
 export interface ProgressEntityProjection {
   id: string;
   fields: ExtractionField[];
+  is_required?: boolean;
 }
 
 export interface RequiredFieldProgress {
@@ -35,6 +41,17 @@ export interface RequiredFieldProgress {
  * derived from the value keys — the header's historical behaviour, preserved
  * unchanged because the form holds every instance's keys already.
  *
+ * When the authoritative set IS supplied, an entity type with **no instances**
+ * contributes to the denominator only if the template marks it `is_required`:
+ * an optional `cardinality='many'` entity (e.g. "Prediction Models" with
+ * `is_required=false` and zero models added) — and its child sections — reach
+ * 100% instead of stranding the form below the finalize gate (the "40%, can't
+ * submit" bug); a required entity keeps a phantom slot so the form stays below
+ * 100% until at least one instance is added. This is template-driven, so the
+ * behaviour adapts to each user's template, not just CHARMS. The value-key
+ * fallback keeps the historical phantom-1 so a not-yet-typed singleton is still
+ * represented when no explicit set is available.
+ *
  * `values` is keyed `${instanceId}_${fieldId}` → value (the shape the form and
  * both tables build).
  */
@@ -57,6 +74,13 @@ export function computeRequiredFieldProgress(
   // Observed instances per entity type: prefer the explicit set (true count,
   // so empty cardinality='many' instances still count in the denominator);
   // else derive from filled value keys.
+  //
+  // The set is "authoritative" only when the caller passed it: then an entity
+  // type absent from it genuinely has zero instances and contributes no
+  // required-field slots. When derived from value keys we cannot tell "no
+  // instance" from "instance with no values typed yet", so we keep the
+  // phantom-1 fallback for that path.
+  const authoritative = instanceIdsByEntityType !== undefined;
   let observedInstances: Map<string, Set<string>>;
   if (instanceIdsByEntityType) {
     observedInstances = instanceIdsByEntityType;
@@ -82,9 +106,19 @@ export function computeRequiredFieldProgress(
   for (const et of entityTypes) {
     const reqCount = requiredFieldIdsByEntityType.get(et.id)?.size ?? 0;
     if (reqCount === 0) continue;
-    // An entity type with no observed instances contributes one "phantom"
-    // instance so the entity is still represented in the denominator.
-    const instanceCount = observedInstances.get(et.id)?.size ?? 1;
+    const observed = observedInstances.get(et.id)?.size;
+    let instanceCount: number;
+    if (observed !== undefined) {
+      instanceCount = observed;
+    } else if (authoritative) {
+      // No instances: honor the template. A required entity keeps a phantom-1
+      // (form stays below 100% until one is added); an optional entity (e.g.
+      // CHARMS prediction models, is_required=false) contributes nothing.
+      instanceCount = et.is_required ? 1 : 0;
+    } else {
+      // Value-key fallback: represent a not-yet-typed singleton.
+      instanceCount = 1;
+    }
     totalRequired += reqCount * instanceCount;
   }
 

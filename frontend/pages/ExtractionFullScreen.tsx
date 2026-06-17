@@ -287,9 +287,12 @@ export default function ExtractionFullScreen() {
     setReopening(false);
   };
 
-  // Hook para calcular progresso
+  // Hook para calcular progresso. Pass the materialized instances so optional
+  // cardinality='many' entities with no instances (e.g. no prediction models
+  // added) and their child sections don't strand the form below the finalize
+  // gate — the "40%, can't submit" bug.
   const { completedFields, totalFields, completionPercentage, isComplete } =
-    useExtractionProgress(values, entityTypes);
+    useExtractionProgress(values, entityTypes, instances);
 
   // Captures the scroll position of the form + PDF panels around async
   // refreshes so the user does not get bounced back to the top after an AI
