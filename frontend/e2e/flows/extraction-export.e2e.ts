@@ -325,7 +325,7 @@ test.describe("Extraction export — UI flow", () => {
     ).toBeVisible();
   });
 
-  test("Single-user mode reveals the reviewer picker", async ({ page }) => {
+  test("Single-user mode reveals the reviewer control", async ({ page }) => {
     const env = loadE2EEnv();
     await loginViaUi(page);
     await page.goto(
@@ -335,14 +335,18 @@ test.describe("Extraction export — UI flow", () => {
     await page.getByTestId("extraction-export-button").click();
     await page.getByLabel(/Single user/i).check();
 
-    const picker = page.getByTestId("extraction-export-reviewer-picker");
-    const locked = page.getByTestId("extraction-export-reviewer-locked");
-    // Either the picker (manager) or the locked label (reviewer) is shown.
-    const visible = await Promise.race([
-      picker.isVisible().then((v) => (v ? "picker" : null)),
-      locked.isVisible().then((v) => (v ? "locked" : null)),
-    ]);
-    expect(["picker", "locked"]).toContain(visible);
+    // Single-user mode resolves to exactly one of three mutually exclusive
+    // states: a manager's reviewer picker, a reviewer's locked-to-self label,
+    // or the empty state when no reviewer has eligible data yet (the ephemeral
+    // seed has none — empty state added in #302). `.or()` auto-retries and
+    // never races on a non-retrying isVisible() (the old Promise.race resolved
+    // to whichever check settled first, flaking to null when the rendered
+    // element's check lost the race).
+    const reviewerControl = page
+      .getByTestId("extraction-export-reviewer-picker")
+      .or(page.getByTestId("extraction-export-reviewer-locked"))
+      .or(page.getByTestId("extraction-export-reviewer-empty"));
+    await expect(reviewerControl).toBeVisible();
   });
 
   test("All-users mode reveals the anonymize-reviewer toggle for managers", async ({ page }) => {
