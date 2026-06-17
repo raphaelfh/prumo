@@ -26,6 +26,34 @@ interface BackgroundJobsState {
 
 const MAX_COMPLETED_JOBS = 10; // Keep only last 10 completed jobs
 
+/**
+ * Pure selector for the notification list: active jobs first, then the most
+ * recently finished ones. Exported so components can derive it from a
+ * reactive `jobs` value — the React Compiler tracks dependencies from the
+ * callback body, so a `useMemo(() => getRecentJobs(20), [jobs])` whose
+ * callback never references `jobs` is memoized as stale and misses
+ * in-session additions. Passing `jobs` in keeps the dependency real.
+ */
+export function selectRecentJobs(
+  jobs: BackgroundJob[],
+  limit = 10,
+): BackgroundJob[] {
+  const activeJobs = jobs.filter(
+    (job) => job.status === 'running' || job.status === 'pending',
+  );
+  const finishedJobs = jobs
+    .filter(
+      (job) =>
+        job.status === 'completed' ||
+        job.status === 'failed' ||
+        job.status === 'cancelled',
+    )
+    .sort((a, b) => (b.completedAt || b.createdAt) - (a.completedAt || a.createdAt))
+    .slice(0, Math.max(limit - activeJobs.length, MAX_COMPLETED_JOBS));
+
+  return [...activeJobs, ...finishedJobs];
+}
+
 export const useBackgroundJobs = create<BackgroundJobsState>()(
   persist(
     (set, get) => ({
@@ -77,25 +105,7 @@ export const useBackgroundJobs = create<BackgroundJobsState>()(
         );
       },
 
-      getRecentJobs: (limit = 10) => {
-        const allJobs = get().jobs;
-
-          // Keep active jobs + last N completed/failed/cancelled
-        const activeJobs = allJobs.filter(
-          (job) => job.status === 'running' || job.status === 'pending'
-        );
-        
-        const finishedJobs = allJobs
-          .filter((job) => 
-            job.status === 'completed' || 
-            job.status === 'failed' || 
-            job.status === 'cancelled'
-          )
-          .sort((a, b) => (b.completedAt || b.createdAt) - (a.completedAt || a.createdAt))
-          .slice(0, Math.max(limit - activeJobs.length, MAX_COMPLETED_JOBS));
-
-        return [...activeJobs, ...finishedJobs];
-      },
+      getRecentJobs: (limit = 10) => selectRecentJobs(get().jobs, limit),
     }),
     {
       name: 'review-hub-background-jobs',
