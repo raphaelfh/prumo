@@ -142,9 +142,8 @@ export function NotificationCenter() {
         };
     }, [updateJob]);
 
-    // Polling to update jobs
+    // Observe job status transitions to surface completion/failure toasts.
   useBackgroundJobPolling({
-    interval: 2000,
     onJobComplete: (job) => {
       toast.success(getCompletionMessage(job), {
         duration: 5000,

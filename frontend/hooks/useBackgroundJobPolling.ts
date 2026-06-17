@@ -1,86 +1,73 @@
 /**
- * Hook para polling de Background Jobs
- * 
- * Monitora jobs ativos e atualiza seu status automaticamente.
- * Syncs with running services to reflect progress in real time.
+ * Observes background-job status transitions and fires terminal-state
+ * callbacks (completion / failure).
+ *
+ * Why this is subscription-driven, not interval-driven: the store's
+ * `getActiveJobs()` only returns non-terminal jobs (running|pending),
+ * so a job is invisible the instant it completes. Polling that set
+ * could never witness a running→completed transition, which silently
+ * killed the async-export completion toast + download action — the
+ * worker built and signed the file, but the user never saw a download.
+ *
+ * We instead subscribe to the full `jobs` list and diff the previous
+ * status of every job. `updateJob` always produces a new array, so a
+ * completion is guaranteed to schedule a render and re-run the effect,
+ * letting us observe the transition exactly once.
  */
 
-import { useEffect, useRef } from 'react';
-import { useBackgroundJobs } from '@/stores/useBackgroundJobs';
-import type { BackgroundJob } from '@/types/background-jobs';
+import {useEffect, useRef} from 'react';
+import {useBackgroundJobs} from '@/stores/useBackgroundJobs';
+import type {BackgroundJob} from '@/types/background-jobs';
 
 interface UseBackgroundJobPollingOptions {
-    interval?: number; // Polling interval in ms (default: 2000)
   onJobComplete?: (job: BackgroundJob) => void;
   onJobFailed?: (job: BackgroundJob) => void;
 }
 
 /**
- * Hook that polls active jobs and updates notifications
+ * Hook that watches every background job and notifies on terminal
+ * transitions.
  */
 export function useBackgroundJobPolling(options: UseBackgroundJobPollingOptions = {}) {
-  const { interval = 2000, onJobComplete, onJobFailed } = options;
-  
-  const { getActiveJobs } = useBackgroundJobs();
-  const previousJobStatesRef = useRef<Map<string, string>>(new Map());
+  const {onJobComplete, onJobFailed} = options;
 
-  const checkJobStatus = () => {
-    const activeJobs = getActiveJobs();
-
-      // Check for state changes
-    activeJobs.forEach((job) => {
-      const previousStatus = previousJobStatesRef.current.get(job.id);
-
-      // Job completado
-        if (
-            previousStatus !== undefined &&
-            previousStatus !== 'completed' &&
-            job.status === 'completed'
-        ) {
-        onJobComplete?.(job);
-      }
-
-      // Job falhou
-        if (
-            previousStatus !== undefined &&
-            previousStatus !== 'failed' &&
-            job.status === 'failed'
-        ) {
-        onJobFailed?.(job);
-      }
-
-        // Update previous state
-      previousJobStatesRef.current.set(job.id, job.status);
-    });
-
-      // Clear jobs that no longer exist
-    const activeJobIds = new Set(activeJobs.map(j => j.id));
-    for (const [jobId] of previousJobStatesRef.current) {
-      if (!activeJobIds.has(jobId)) {
-        previousJobStatesRef.current.delete(jobId);
-      }
-    }
-  };
+  const jobs = useBackgroundJobs((state) => state.jobs);
+  const previousStatusRef = useRef<Map<string, BackgroundJob['status']>>(new Map());
 
   useEffect(() => {
-    const activeJobs = getActiveJobs();
+    const seen = previousStatusRef.current;
 
-      // If no active jobs, do not poll
-    if (activeJobs.length === 0) {
-      return;
+    for (const job of jobs) {
+      const previous = seen.get(job.id);
+      // Fire only on a genuine transition INTO a terminal state.
+      // `previous === undefined` means the job first appeared already
+      // terminal (e.g. rehydrated from localStorage on reload) — that is
+      // not a transition we caused, so we never re-toast it.
+      if (previous !== undefined && previous !== job.status) {
+        if (job.status === 'completed') {
+          onJobComplete?.(job);
+        } else if (job.status === 'failed') {
+          onJobFailed?.(job);
+        }
+      }
+      seen.set(job.id, job.status);
     }
 
-    // Polling interval
-    const intervalId = setInterval(checkJobStatus, interval);
+    // Drop bookkeeping for jobs that no longer exist so the map cannot
+    // grow unbounded and a recycled id cannot inherit a stale status.
+    const liveIds = new Set(jobs.map((job) => job.id));
+    for (const id of seen.keys()) {
+      if (!liveIds.has(id)) {
+        seen.delete(id);
+      }
+    }
+  }, [jobs, onJobComplete, onJobFailed]);
 
-    // Cleanup
-    return () => {
-      clearInterval(intervalId);
-    };
-  }, [getActiveJobs, checkJobStatus, interval]);
+  const activeJobsCount = jobs.filter(
+    (job) => job.status === 'running' || job.status === 'pending',
+  ).length;
 
   return {
-    activeJobsCount: getActiveJobs().length,
+    activeJobsCount,
   };
 }
-
