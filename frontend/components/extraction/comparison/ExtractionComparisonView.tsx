@@ -21,7 +21,7 @@ import {t} from '@/lib/copy';
 import {ModelLevelComparison} from './ModelLevelComparison';
 import {useEntityTypePartition} from '@/lib/extraction/entityTypeRoles';
 import type {ExtractionEntityType, ExtractionField, ExtractionInstance} from '@/types/extraction';
-import type {OtherExtraction} from '@/hooks/extraction/colaboracao/useOtherExtractions';
+import type {OtherExtraction} from '@/hooks/extraction/collaboration/useOtherExtractions';
 
 // =================== INTERFACES ===================
 

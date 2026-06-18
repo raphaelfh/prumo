@@ -179,10 +179,10 @@ export function TemplateManager({
         <CardHeader>
           <CardTitle className="flex items-center space-x-2">
             <Settings className="h-5 w-5" />
-            <span>Templates Globais</span>
+            <span>{t('extraction', 'templateGlobalTitle')}</span>
           </CardTitle>
           <CardDescription>
-              Default templates available for cloning
+              {t('extraction', 'templateGlobalDesc')}
           </CardDescription>
         </CardHeader>
         <CardContent>

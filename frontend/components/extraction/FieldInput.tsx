@@ -28,10 +28,10 @@ import {Button} from '@/components/ui/button';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {cn} from '@/lib/utils';
 import type {ExtractionField} from '@/types/extraction';
-import type {OtherExtraction} from '@/hooks/extraction/colaboracao/useOtherExtractions';
+import type {OtherExtraction} from '@/hooks/extraction/collaboration/useOtherExtractions';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
-import {OtherExtractionsPopover} from './colaboracao/OtherExtractionsPopover';
-import {OtherExtractionsButton} from './colaboracao/OtherExtractionsButton';
+import {OtherExtractionsPopover} from './collaboration/OtherExtractionsPopover';
+import {OtherExtractionsButton} from './collaboration/OtherExtractionsButton';
 import {AISuggestionDisplay} from './ai/AISuggestionDisplay';
 import {AISuggestionBadge} from './ai/AISuggestionBadge';
 import {AISuggestionHistoryPopover} from './ai/AISuggestionHistoryPopover';
@@ -384,13 +384,15 @@ export function FieldInput(props: FieldInputProps) {
       <div
           data-just-updated={justUpdated || undefined}
           className={cn(
-            "grid grid-cols-[30%_1fr] items-start border-b border-border/40 last:border-b-0 transition-colors",
+            // Stack label over input on mobile; switch to the 30/70 two-column
+            // split at sm+ so narrow screens don't truncate ("Select…", "Retro…").
+            "grid grid-cols-1 sm:grid-cols-[30%_1fr] items-start border-b border-border/40 last:border-b-0 transition-colors",
             justUpdated && "field-just-updated",
             gap,
             containerPadding
           )}>
 
-      {/* Coluna esquerda: Label + Description */}
+      {/* Left column: Label + Description */}
       <div className="space-y-1 pt-2">
         <Label className="text-sm font-medium flex items-center gap-2">
           {field.label}
@@ -498,13 +500,22 @@ export default memo(FieldInput, (prevProps, nextProps) => {
     // Optimized comparison: only props that affect THIS field
   const aiSuggestionChanged = prevProps.aiSuggestion?.id !== nextProps.aiSuggestion?.id ||
                                 prevProps.aiSuggestion?.status !== nextProps.aiSuggestion?.status;
-  
+
+  // The accept/reject spinner is driven by isActionLoading(instanceId, fieldId),
+  // which is derived state — NOT a tracked prop. Omitting it means a loading
+  // transition (notably clearLoading after an accept resolves) changes no compared
+  // prop, so the memoized field keeps a stale loading=true and the spinner spins
+  // forever. Compare the resolved loading state for THIS field explicitly.
+  const prevActionLoading = prevProps.isActionLoading?.(prevProps.instanceId, prevProps.field.id) ?? null;
+  const nextActionLoading = nextProps.isActionLoading?.(nextProps.instanceId, nextProps.field.id) ?? null;
+
   return (
     prevProps.field.id === nextProps.field.id &&
     prevProps.instanceId === nextProps.instanceId &&
     prevProps.value === nextProps.value &&
     prevProps.disabled === nextProps.disabled &&
     prevProps.viewMode === nextProps.viewMode &&
+    prevActionLoading === nextActionLoading && // Re-render when the accept/reject spinner toggles
     !aiSuggestionChanged // Re-render when suggestion changes (status or ID)
   );
 });

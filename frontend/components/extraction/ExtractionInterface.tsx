@@ -9,8 +9,9 @@ import {useEffect, useState} from 'react';
 import {useSearchParams} from 'react-router-dom';
 import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
+import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from '@/components/ui/tooltip';
 import {Skeleton} from '@/components/ui/skeleton';
-import {AlertCircle, CheckCircle, Download, FileText, PlusCircle, Settings} from 'lucide-react';
+import {AlertCircle, Download, PlusCircle, Settings} from 'lucide-react';
 import {
     type ProjectTemplate,
     useHITLProjectTemplates,
@@ -63,18 +64,58 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     const totalArticles = articles.length;
     let completed = 0;
     let sum = 0;
+    // Completeness distribution buckets for the dashboard bar.
+    let empty = 0;
+    let partial = 0;
     for (const article of articles) {
       const d = valuesByArticle.get(article.id);
       const pct = d ? computeRowProgress(d.instances, d.values, entityTypes) : 0;
       sum += pct;
       if (pct >= 100) completed += 1;
+      else if (pct <= 0) empty += 1;
+      else partial += 1;
     }
     return {
       totalArticles,
       extractionsStarted: valuesByArticle.size,
       extractionsCompleted: completed,
       progressPercentage: totalArticles > 0 ? Math.round(sum / totalArticles) : 0,
+      distribution: { empty, partial, complete: completed },
     };
+  })();
+
+  // Completeness distribution segments for the dashboard bar (0% / 1–99% /
+  // 100%), derived from the per-article pct already summed above.
+  const dashboardBuckets = (() => {
+    const { empty, partial, complete } = extractionStats.distribution;
+    const total = extractionStats.totalArticles;
+    const pct = (n: number) => (total > 0 ? (n / total) * 100 : 0);
+    return [
+      {
+        key: 'notStarted',
+        count: empty,
+        widthPct: pct(empty),
+        bar: 'bg-muted-foreground/25',
+        dot: 'bg-muted-foreground/40',
+        label: t('extraction', 'dashboardBucketNotStarted'),
+      },
+      {
+        key: 'inProgress',
+        count: partial,
+        widthPct: pct(partial),
+        bar: 'bg-info',
+        dot: 'bg-info',
+        label: t('extraction', 'dashboardBucketInProgress'),
+      },
+      {
+        key: 'complete',
+        count: complete,
+        widthPct: pct(complete),
+        bar: 'bg-success',
+        dot: 'bg-success',
+        label: t('extraction', 'dashboardBucketComplete'),
+      },
+    ];
   })();
 
     // Hook to manage templates
@@ -168,49 +209,59 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     // Render Dashboard tab
   const renderDashboard = () => (
       <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              <Card className="border-border/40 shadow-elev-popover">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
-                      <CardTitle className="text-[13px] font-medium">{t('extraction', 'dashboardArticles')}</CardTitle>
-                      <FileText className="h-4 w-4 text-muted-foreground" strokeWidth={1.5}/>
-          </CardHeader>
-                  <CardContent className="px-4 pb-4">
-                      <div className="text-xl font-bold">{extractionStats.totalArticles}</div>
-                      <p className="text-[13px] text-muted-foreground">{t('extraction', 'dashboardInProject')}</p>
-          </CardContent>
-        </Card>
+          {/* Dense stat strip — one bordered row of figures (replaces the
+              three oversized single-number cards). */}
+          <Card className="border-border/40 shadow-elev-popover">
+              <CardContent className="p-0">
+                  <div className="grid grid-cols-2 divide-x divide-y divide-border/40 sm:grid-cols-4 sm:divide-y-0">
+                      <div className="px-4 py-3">
+                          <div className="text-xl font-semibold tabular-nums">{extractionStats.totalArticles}</div>
+                          <p className="mt-0.5 text-[12px] text-muted-foreground">{t('extraction', 'dashboardArticles')}</p>
+                      </div>
+                      <div className="px-4 py-3">
+                          <div className="text-xl font-semibold tabular-nums">{extractionStats.extractionsStarted}</div>
+                          <p className="mt-0.5 text-[12px] text-muted-foreground">{t('extraction', 'dashboardStatInExtraction')}</p>
+                      </div>
+                      <div className="px-4 py-3">
+                          <div className="text-xl font-semibold tabular-nums">{extractionStats.extractionsCompleted}</div>
+                          <p className="mt-0.5 text-[12px] text-muted-foreground">{t('extraction', 'dashboardStatCompleted')}</p>
+                      </div>
+                      <div className="px-4 py-3">
+                          <div className="text-xl font-semibold tabular-nums">{extractionStats.progressPercentage}%</div>
+                          <p className="mt-0.5 text-[12px] text-muted-foreground">{t('extraction', 'dashboardStatAvgCompleteness')}</p>
+                      </div>
+                  </div>
+              </CardContent>
+          </Card>
 
-              <Card className="border-border/40 shadow-elev-popover">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
-                      <CardTitle
-                          className="text-[13px] font-medium">{t('extraction', 'dashboardExtractionsStarted')}</CardTitle>
-                      <CheckCircle className="h-4 w-4 text-muted-foreground" strokeWidth={1.5}/>
-          </CardHeader>
-                  <CardContent className="px-4 pb-4">
-                      <div className="text-xl font-bold">
-              {extractionStats.extractionsStarted}
-              {extractionStats.extractionsCompleted > 0 && (
-                  <span className="text-[13px] text-muted-foreground ml-2">
-                  ({extractionStats.extractionsCompleted} {t('extraction', 'dashboardComplete')})
-                </span>
-              )}
-            </div>
-                      <p className="text-[13px] text-muted-foreground">{t('extraction', 'dashboardArticlesInExtraction')}</p>
-          </CardContent>
-        </Card>
-
-              <Card className="border-border/40 shadow-elev-popover">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-4 px-4">
-                      <CardTitle
-                          className="text-[13px] font-medium">{t('extraction', 'dashboardOverallProgress')}</CardTitle>
-                      <AlertCircle className="h-4 w-4 text-muted-foreground" strokeWidth={1.5}/>
-          </CardHeader>
-                  <CardContent className="px-4 pb-4">
-                      <div className="text-xl font-bold">{extractionStats.progressPercentage}%</div>
-                      <p className="text-[13px] text-muted-foreground">{t('extraction', 'dashboardAverageCompleteness')}</p>
-          </CardContent>
-        </Card>
-      </div>
+          {/* Completeness distribution: 0% / 1–99% / 100% across all articles. */}
+          <Card className="border-border/40 shadow-elev-popover">
+              <CardHeader className="px-4 pt-4 pb-2">
+                  <CardTitle className="text-[13px] font-medium">{t('extraction', 'dashboardDistributionTitle')}</CardTitle>
+              </CardHeader>
+              <CardContent className="px-4 pb-4 space-y-2.5">
+                  <div
+                      className="flex h-2.5 w-full overflow-hidden rounded-full bg-muted"
+                      role="img"
+                      aria-label={t('extraction', 'dashboardDistributionTitle')}
+                  >
+                      {dashboardBuckets.map((b) =>
+                          b.count > 0 ? (
+                              <div key={b.key} className={b.bar} style={{width: `${b.widthPct}%`}}/>
+                          ) : null,
+                      )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                      {dashboardBuckets.map((b) => (
+                          <div key={b.key} className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+                              <span className={`h-2 w-2 rounded-full ${b.dot}`} aria-hidden="true"/>
+                              <span>{b.label}</span>
+                              <span className="font-medium text-foreground tabular-nums">{b.count}</span>
+                          </div>
+                      ))}
+                  </div>
+              </CardContent>
+          </Card>
 
       {!activeTemplate && !templatesLoading && (
           <Card className="border-info/30 bg-info/5">
@@ -251,24 +302,30 @@ export function ExtractionInterface({ projectId }: ExtractionInterfaceProps) {
     switch (activeTab) {
       case 'extraction':
         return activeTemplate ? (
-          <div className="space-y-3">
-            <div className="flex items-center justify-end">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowExportDialog(true)}
-                disabled={articles.length === 0}
-                data-testid="extraction-export-button"
-              >
-                <Download className="h-4 w-4 mr-2" strokeWidth={1.5}/>
-                {t('extraction', 'exportButton')}
-              </Button>
-            </div>
-            <ArticleExtractionTable
-              projectId={projectId}
-              templateId={activeTemplate.id}
-            />
-          </div>
+          <ArticleExtractionTable
+            projectId={projectId}
+            templateId={activeTemplate.id}
+            toolbarActions={
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0 rounded-md hover:bg-muted/50 transition-colors text-muted-foreground"
+                      onClick={() => setShowExportDialog(true)}
+                      disabled={articles.length === 0}
+                      data-testid="extraction-export-button"
+                      aria-label={t('extraction', 'exportButton')}
+                    >
+                      <Download className="h-4 w-4" strokeWidth={1.5}/>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t('extraction', 'exportButton')}</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            }
+          />
         ) : isManager ? (
             <ConfigureTemplateFirst onConfigureClick={() => setActiveTab('configuration')}/>
         ) : (

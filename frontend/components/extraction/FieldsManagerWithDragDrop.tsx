@@ -162,7 +162,7 @@ function SortableTableRow({
             )}
             {field.unit && (
               <div className="text-xs text-muted-foreground mt-1">
-                Unidade: <span className="font-mono">{field.unit}</span>
+                {t('extraction', 'fieldUnitLabel')}: <span className="font-mono">{field.unit}</span>
               </div>
             )}
           </div>

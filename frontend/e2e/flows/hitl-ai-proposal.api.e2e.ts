@@ -24,6 +24,7 @@ import { expect, test } from "@playwright/test";
 import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { resolveAuthToken, loginViaUi } from "../_fixtures/auth";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
+import { fillRequiredFieldsAndFinalize } from "../_fixtures/hitl-finalize";
 import {
   adminSelect,
   resolveActiveExtractionTemplateId,
@@ -205,10 +206,15 @@ test.describe("HITL AI proposal pipeline", () => {
       },
     );
     expect(consensusRes.ok()).toBeTruthy();
-    await request.post(`${env.apiUrl}/api/v1/runs/${runBody.id}/advance`, {
-      headers: authHeaders(token, traceId),
-      data: { target_stage: "finalized" },
-      timeout: 15000,
+    // Completeness gate (ADR-0009): the AI-proposed coord above is published;
+    // fill the remaining required fields, then finalize.
+    await fillRequiredFieldsAndFinalize(request, {
+      apiUrl: env.apiUrl,
+      token,
+      traceId,
+      runId: runBody.id,
+      templateId,
+      articleId: env.articleId!,
     });
 
     // 6. The published value matches the AI proposal.

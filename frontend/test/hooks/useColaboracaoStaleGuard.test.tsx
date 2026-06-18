@@ -1,5 +1,5 @@
 /**
- * Regression tests for issue #161 — stale-data overwrite in colaboracao hooks.
+ * Regression tests for issue #161 — stale-data overwrite in collaboration hooks.
  *
  * Both `useOtherExtractions` and `useAllUserInstances` must discard responses
  * that arrive after `articleId` has changed (generation-counter guard).
@@ -22,7 +22,7 @@ vi.mock('@/services/extractionValueService', () => ({
 }));
 
 import { ExtractionValueService } from '@/services/extractionValueService';
-import { useOtherExtractions } from '@/hooks/extraction/colaboracao/useOtherExtractions';
+import { useOtherExtractions } from '@/hooks/extraction/collaboration/useOtherExtractions';
 
 const findActiveRunMock = ExtractionValueService.findActiveRun as ReturnType<typeof vi.fn>;
 const loadValuesForOthersMock = ExtractionValueService.loadValuesForOthers as ReturnType<typeof vi.fn>;
@@ -38,7 +38,7 @@ vi.mock('@/integrations/supabase/client', () => {
 });
 
 import { supabase } from '@/integrations/supabase/client';
-import { useAllUserInstances } from '@/hooks/extraction/colaboracao/useAllUserInstances';
+import { useAllUserInstances } from '@/hooks/extraction/collaboration/useAllUserInstances';
 
 const supabaseOrderMock = (supabase as any).__orderMock as ReturnType<typeof vi.fn>;
 
