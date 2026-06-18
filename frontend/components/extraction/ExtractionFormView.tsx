@@ -25,7 +25,7 @@ import type {
   ExtractionValue,
 } from '@/types/extraction';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
-import type {OtherExtraction} from '@/hooks/extraction/colaboracao/useOtherExtractions';
+import type {OtherExtraction} from '@/hooks/extraction/collaboration/useOtherExtractions';
 
 export interface ExtractionFormViewProps {
   studyLevelSections: ExtractionEntityTypeWithFields[];

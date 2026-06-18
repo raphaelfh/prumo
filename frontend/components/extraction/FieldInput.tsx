@@ -28,10 +28,10 @@ import {Button} from '@/components/ui/button';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {cn} from '@/lib/utils';
 import type {ExtractionField} from '@/types/extraction';
-import type {OtherExtraction} from '@/hooks/extraction/colaboracao/useOtherExtractions';
+import type {OtherExtraction} from '@/hooks/extraction/collaboration/useOtherExtractions';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
-import {OtherExtractionsPopover} from './colaboracao/OtherExtractionsPopover';
-import {OtherExtractionsButton} from './colaboracao/OtherExtractionsButton';
+import {OtherExtractionsPopover} from './collaboration/OtherExtractionsPopover';
+import {OtherExtractionsButton} from './collaboration/OtherExtractionsButton';
 import {AISuggestionDisplay} from './ai/AISuggestionDisplay';
 import {AISuggestionBadge} from './ai/AISuggestionBadge';
 import {AISuggestionHistoryPopover} from './ai/AISuggestionHistoryPopover';
@@ -384,13 +384,15 @@ export function FieldInput(props: FieldInputProps) {
       <div
           data-just-updated={justUpdated || undefined}
           className={cn(
-            "grid grid-cols-[30%_1fr] items-start border-b border-border/40 last:border-b-0 transition-colors",
+            // Stack label over input on mobile; switch to the 30/70 two-column
+            // split at sm+ so narrow screens don't truncate ("Select…", "Retro…").
+            "grid grid-cols-1 sm:grid-cols-[30%_1fr] items-start border-b border-border/40 last:border-b-0 transition-colors",
             justUpdated && "field-just-updated",
             gap,
             containerPadding
           )}>
 
-      {/* Coluna esquerda: Label + Description */}
+      {/* Left column: Label + Description */}
       <div className="space-y-1 pt-2">
         <Label className="text-sm font-medium flex items-center gap-2">
           {field.label}

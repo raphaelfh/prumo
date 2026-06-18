@@ -12,7 +12,7 @@ import {
   loadTemplateEntityTypes,
   updateEntityTypeLabel,
 } from '@/services/templateService';
-import {Card, CardContent, CardDescription, CardHeader, CardTitle} from '@/components/ui/card';
+import {Card, CardContent, CardHeader, CardTitle} from '@/components/ui/card';
 import {Button} from '@/components/ui/button';
 import {Badge} from '@/components/ui/badge';
 import {Input} from '@/components/ui/input';
@@ -130,36 +130,33 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-              <CardTitle className="flex items-center gap-2">
-                <Settings className="h-5 w-5" />
-                  Template configuration
-              </CardTitle>
-              <CardDescription className="mt-2">
-                  Configure sections and fields used for data extraction
-              </CardDescription>
-            </div>
-            <div className="flex items-center gap-3">
-              <Button
-                variant="ghost"
-                size="sm"
-                data-testid="template-config-open-import"
-                onClick={() => setShowImportDialog(true)}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <Download className="h-4 w-4 mr-2" />
-                {t('extraction', 'configImportTemplateButton')}
-              </Button>
-              <Badge variant="outline">
-                  {entityTypes.length} sections ({rootEntityTypes.length} main)
-              </Badge>
-            </div>
-          </div>
-        </CardHeader>
-      </Card>
+      {/* Thin command bar (replaces the tall header Card). */}
+      <div className="flex h-12 items-center justify-between gap-3 rounded-md border border-border/40 bg-card px-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <Settings className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
+          <span className="truncate text-sm font-medium">{t('extraction', 'configHeaderTitle')}</span>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Badge variant="outline" className="text-xs">
+            {(entityTypes.length === 1
+              ? t('extraction', 'configSectionsCountOne')
+              : t('extraction', 'configSectionsCountOther')
+            )
+              .replace('{{n}}', String(entityTypes.length))
+              .replace('{{main}}', String(rootEntityTypes.length))}
+          </Badge>
+          <Button
+            variant="ghost"
+            size="sm"
+            data-testid="template-config-open-import"
+            onClick={() => setShowImportDialog(true)}
+            className="h-8 text-muted-foreground hover:text-foreground"
+          >
+            <Download className="h-4 w-4 mr-2" />
+            {t('extraction', 'configImportTemplateButton')}
+          </Button>
+        </div>
+      </div>
 
       <Accordion type="single" collapsible className="space-y-2">
         {rootEntityTypes.map((entityType) => {
@@ -169,7 +166,7 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
           return (
             <AccordionItem key={entityType.id} value={entityType.id}>
               <Card className={cn(hasChildren && "border-l-4 border-l-primary")}>
-                  <AccordionTrigger className="px-6 py-4 min-h-[44px] hover:no-underline">
+                  <AccordionTrigger className="px-4 py-2 text-[13px] min-h-[44px] hover:no-underline">
                   <div className="flex items-center justify-between w-full pr-4">
                     <div className="flex items-center gap-3">
                       <Badge variant="secondary" className="font-mono text-xs">
@@ -188,7 +185,10 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
                           <span className="font-medium">{entityType.label}</span>
                           {hasChildren && (
                             <Badge variant="secondary" className="text-xs">
-                                {children.length} sub-sections
+                                {(children.length === 1
+                                  ? t('extraction', 'configSubSectionsCountOne')
+                                  : t('extraction', 'configSubSectionsCountOther')
+                                ).replace('{{n}}', String(children.length))}
                             </Badge>
                           )}
                         </div>
@@ -343,21 +343,16 @@ export function TemplateConfigEditor({ projectId, templateId }: TemplateConfigEd
         </Card>
       )}
 
-        {/* Add section button */}
+        {/* Add section — ghost row (replaces the full-width Card). */}
       {entityTypes.length > 0 && (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <Button 
-                variant="outline" 
-                onClick={() => setShowAddSectionDialog(true)}
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                  {t('extraction', 'addNewSection')}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <Button
+          variant="ghost"
+          onClick={() => setShowAddSectionDialog(true)}
+          className="h-10 w-full justify-center border border-dashed border-border/50 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+        >
+          <Plus className="h-4 w-4 mr-2" />
+          {t('extraction', 'addNewSection')}
+        </Button>
       )}
 
       {/* Dialogs */}

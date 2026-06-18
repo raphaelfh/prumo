@@ -35,10 +35,10 @@ vi.mock('@/components/extraction/ai/AISuggestionBadge', () => ({
 vi.mock('@/components/extraction/ai/AISuggestionHistoryPopover', () => ({
   AISuggestionHistoryPopover: () => null,
 }));
-vi.mock('@/components/extraction/colaboracao/OtherExtractionsButton', () => ({
+vi.mock('@/components/extraction/collaboration/OtherExtractionsButton', () => ({
   OtherExtractionsButton: () => null,
 }));
-vi.mock('@/components/extraction/colaboracao/OtherExtractionsPopover', () => ({
+vi.mock('@/components/extraction/collaboration/OtherExtractionsPopover', () => ({
   OtherExtractionsPopover: () => null,
 }));
 vi.mock('@/hooks/extraction/useJustUpdatedValue', () => ({

@@ -1,8 +1,8 @@
 /**
- * Header do Gerenciador de Campos
+ * Fields Manager header.
  *
  * Header component with title, count and add button.
- * 
+ *
  * @component
  */
 
@@ -25,16 +25,21 @@ export function FieldsHeader({
   canCreate,
   onAddField,
 }: FieldsHeaderProps) {
-  const getRoleBadge = (role: string | null) => {
+  // Decorative glyph + translated label, mapped explicitly per role. The
+  // emoji lives in an aria-hidden span so it never leaks into the accessible
+  // name; meaning is carried by the translated label only.
+  const getRoleDisplay = (role: string | null): { emoji: string; label: string } => {
     switch (role) {
       case 'manager':
-        return '👑 Manager';
+        return { emoji: '👑', label: t('common', 'roleManager') };
       case 'reviewer':
-        return '📝 Reviewer';
+        return { emoji: '📝', label: t('common', 'roleReviewer') };
       default:
-        return '👁️ Viewer';
+        return { emoji: '👁️', label: t('common', 'roleViewer') };
     }
   };
+
+  const roleDisplay = userRole ? getRoleDisplay(userRole) : null;
 
   return (
     <div className="flex items-center justify-between">
@@ -42,10 +47,10 @@ export function FieldsHeader({
         <h4 className="text-sm font-medium" id="fields-header">
             {t('extraction', 'fieldsOfThisSection')} ({fieldsCount})
         </h4>
-        {userRole && (
+        {roleDisplay && (
             <Badge variant="outline" className="text-xs"
-                   aria-label={t('common', 'userRoleAria').replace('{{role}}', getRoleBadge(userRole))}>
-            {getRoleBadge(userRole)}
+                   aria-label={t('common', 'userRoleAria').replace('{{role}}', roleDisplay.label)}>
+            <span aria-hidden="true">{roleDisplay.emoji}</span> {roleDisplay.label}
           </Badge>
         )}
       </div>

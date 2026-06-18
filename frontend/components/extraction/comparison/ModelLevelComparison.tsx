@@ -32,7 +32,7 @@ import { Info } from 'lucide-react';
 import {Badge} from '@/components/ui/badge';
 import { ComparisonTable, type ComparisonColumn, type ComparisonUser } from '@/components/shared/comparison';
 import type { ExtractionEntityType, ExtractionField, ExtractionInstance } from '@/types/extraction';
-import type { OtherExtraction } from '@/hooks/extraction/colaboracao/useOtherExtractions';
+import type { OtherExtraction } from '@/hooks/extraction/collaboration/useOtherExtractions';
 import {t} from '@/lib/copy';
 
 // =================== INTERFACES ===================
