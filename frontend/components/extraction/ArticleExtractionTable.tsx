@@ -665,7 +665,10 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
             <div className="flex flex-wrap items-center gap-2">
                 <Skeleton className="h-8 flex-1 min-w-[200px] rounded-md"/>
                 <Skeleton className="h-8 w-8 rounded-md"/>
-                <Skeleton className="h-4 w-24"/>
+                {/* Render the real toolbar actions (e.g. Export) during load so
+                    a view-level action is available immediately, not gated on the
+                    article fetch (avoids the e2e visibility flake). */}
+                {toolbarActions ?? <Skeleton className="h-4 w-24"/>}
             </div>
             <div className="rounded-md overflow-hidden border-b border-border/40">
                 <Table>
@@ -726,15 +729,24 @@ export function ArticleExtractionTable({ projectId, templateId, toolbarActions }
     );
   }
 
-    // Empty state — no articles in project (match ArticlesList pattern)
+    // Empty state — no articles in project (match ArticlesList pattern).
+    // Still render the toolbar actions (e.g. Export) so the action stays
+    // available whatever the table's own article load returns — its
+    // disabled state is owned by the caller. (Regression guard: moving
+    // Export into the toolbar previously hid it whenever this branch ran.)
   if (articles.length === 0) {
     return (
-        <div
-            className="flex flex-col items-center justify-center py-24 px-4 bg-muted/10 rounded-lg border border-dashed border-border/40">
-            <FileText className="h-10 w-10 text-muted-foreground/30 mb-4" strokeWidth={1.2}/>
-            <h3 className="text-base font-medium text-foreground mb-1.5 text-center">{t('extraction', 'listNoArticles')}</h3>
-            <p className="text-[13px] text-muted-foreground text-center max-w-xs mx-auto">{t('extraction', 'listNoArticlesDesc')}</p>
-      </div>
+        <div className="space-y-2">
+            {toolbarActions ? (
+                <div className="flex items-center justify-end">{toolbarActions}</div>
+            ) : null}
+            <div
+                className="flex flex-col items-center justify-center py-24 px-4 bg-muted/10 rounded-lg border border-dashed border-border/40">
+                <FileText className="h-10 w-10 text-muted-foreground/30 mb-4" strokeWidth={1.2}/>
+                <h3 className="text-base font-medium text-foreground mb-1.5 text-center">{t('extraction', 'listNoArticles')}</h3>
+                <p className="text-[13px] text-muted-foreground text-center max-w-xs mx-auto">{t('extraction', 'listNoArticlesDesc')}</p>
+            </div>
+        </div>
     );
   }
 

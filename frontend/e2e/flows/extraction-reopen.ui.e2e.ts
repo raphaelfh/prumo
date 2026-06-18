@@ -19,6 +19,7 @@ import { expect, test } from "@playwright/test";
 import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { loginViaUi, resolveAuthToken } from "../_fixtures/auth";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
+import { fillRequiredFieldsAndFinalize } from "../_fixtures/hitl-finalize";
 import {
   adminDelete,
   adminSelect,
@@ -145,10 +146,15 @@ test.describe("Extraction reopen UI flow", () => {
     );
     expect(consensusRes.ok()).toBeTruthy();
 
-    await request.post(`${env.apiUrl}/api/v1/runs/${run.id}/advance`, {
-      headers: authHeaders(token, traceId),
-      data: { target_stage: "finalized" },
-      timeout: 15000,
+    // Completeness gate (ADR-0009): the seed coord above is published; fill the
+    // remaining required fields, then finalize so the parent reaches FINALIZED.
+    await fillRequiredFieldsAndFinalize(request, {
+      apiUrl: env.apiUrl,
+      token,
+      traceId,
+      runId: run.id,
+      templateId,
+      articleId: env.articleId!,
     });
 
     // Visit the extraction page. The HITL banner should render the
