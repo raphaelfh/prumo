@@ -53,9 +53,12 @@ Files you will touch most:
 4. **Always extend the base via the `className` prop**, never override base
    styles in the consuming file by re-declaring layout primitives. Pass a thin
    delta. `cn()` will merge correctly.
-5. **Dark mode is `class`-based**, toggled by adding/removing `dark` on `<html>`
-   (see `frontend/contexts` / `ThemeProvider`). No `next-themes` — we are on Vite.
-   Test every new component in both modes; do not assume `dark:` variants.
+5. **Dark mode is `class`-based**, driven by `next-themes` via `ThemeProvider`
+   (`frontend/contexts/ThemeContext.tsx`: `attribute="class"`,
+   `defaultTheme="system"`, `storageKey="prumo:theme"`). Switch through it (the
+   `useTheme().cycle` helper or `setTheme`), not by hand-poking the `dark` class —
+   it re-syncs from storage + system preference. Test every new component in both
+   modes; do not assume `dark:` variants.
 6. **Focus is never invisible.** Keep `focus-visible:ring-2
    focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none`
    on any interactive element. Radix gives you keyboard nav for free; do not
