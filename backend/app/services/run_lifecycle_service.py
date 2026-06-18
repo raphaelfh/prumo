@@ -4,16 +4,18 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.article import Article
 from app.models.extraction import (
+    ExtractionInstance,
     ExtractionRun,
     ExtractionRunStage,
     ExtractionRunStatus,
     ProjectExtractionTemplate,
+    TemplateKind,
 )
 from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.models.extraction_workflow import (
@@ -58,6 +60,22 @@ class EmptyFinalizeError(InvalidStageTransitionError):
     """
 
 
+class IncompleteFinalizeError(InvalidStageTransitionError):
+    """Raised when a Run cannot be finalized because one or more REQUIRED
+    fields on an existing instance have no resolved value.
+
+    This is the authoritative server-side mirror of the frontend
+    completeness gate (``frontend/lib/extraction/progress.ts``): a run may
+    not publish while required data is missing. "Resolved value" means a
+    non-empty published value OR a non-empty current reviewer decision
+    (``accept_proposal`` resolves through the referenced proposal;
+    ``reject`` counts as unfilled). Completeness is measured per EXISTING
+    instance (no phantom instances), so an optional many-cardinality entity
+    type with zero instances — e.g. CHARMS ``prediction_models`` with no
+    models — does not block. See ADR 0009.
+    """
+
+
 # Allowed transitions: from -> set of valid target stages
 _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     ExtractionRunStage.PENDING.value: {
@@ -79,6 +97,30 @@ _ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     ExtractionRunStage.FINALIZED.value: set(),  # terminal
     ExtractionRunStage.CANCELLED.value: set(),  # terminal
 }
+
+
+def _unwrap_value(raw: Any) -> Any:
+    """Peel a single ``{"value": X}`` envelope, matching the frontend's
+    one-level unwrap in ``progress.ts`` / ``useReviewerSummary``. A bare
+    scalar (or any dict without a ``value`` key) is returned untouched.
+    """
+    if isinstance(raw, dict) and "value" in raw:
+        return raw["value"]
+    return raw
+
+
+def _is_value_filled(raw: Any) -> bool:
+    """True when a stored value counts as "filled" for completeness.
+
+    Mirrors the frontend predicate (``value === null | undefined | ''``):
+    only ``None`` and the empty string are empty. Whitespace, ``0``,
+    ``False``, ``[]`` and non-``value`` dicts all count as filled so the
+    backend gate is never stricter than the form the user just saw.
+    """
+    value = _unwrap_value(raw)
+    if value is None:
+        return False
+    return not (isinstance(value, str) and value == "")
 
 
 class RunLifecycleService:
@@ -188,6 +230,20 @@ class RunLifecycleService:
                     f"Cannot finalize run {run_id}: no consensus decisions recorded. "
                     "Resolve at least one field before finalizing."
                 )
+            # Completeness gate (extraction only): every required field of
+            # every existing instance must carry a resolved value before
+            # publishing. Mirrors the frontend progress metric on the
+            # authoritative side. Quality-assessment runs keep the
+            # consensus-only rule above — their finalize semantics are out of
+            # scope for this decision. See ADR 0009.
+            if run.kind == TemplateKind.EXTRACTION.value:
+                missing = await self._find_unfilled_required_coords(run)
+                if missing:
+                    raise IncompleteFinalizeError(
+                        f"Cannot finalize run {run_id}: {len(missing)} required "
+                        "field(s) have no resolved value. Fill every required "
+                        "field before finalizing."
+                    )
         run.stage = target
         if target == ExtractionRunStage.CANCELLED.value:
             run.status = ExtractionRunStatus.FAILED.value
@@ -310,6 +366,114 @@ class RunLifecycleService:
             )
             await self.db.execute(stmt)
         await self.db.flush()
+
+    async def _find_unfilled_required_coords(self, run: ExtractionRun) -> list[tuple[UUID, UUID]]:
+        """Return ``(instance_id, field_id)`` for every required field that
+        lacks a resolved value on this run.
+
+        Required-field metadata is read from the run's frozen template
+        version snapshot (so a mid-run template edit cannot change the gate),
+        and measured per EXISTING instance — entity types with no instances
+        contribute nothing, which is how an optional many-cardinality entity
+        type (e.g. CHARMS ``prediction_models`` with zero models) stays
+        finalizable. An empty list means "complete".
+        """
+        version = await self.db.get(ExtractionTemplateVersion, run.version_id)
+        schema = (version.schema_ if version is not None else None) or {}
+        required_by_entity: dict[UUID, set[UUID]] = {}
+        for et in schema.get("entity_types", []):
+            req = {UUID(str(f["id"])) for f in et.get("fields", []) if f.get("is_required")}
+            if req:
+                required_by_entity[UUID(str(et["id"]))] = req
+        if not required_by_entity:
+            return []
+
+        instance_rows = (
+            await self.db.execute(
+                select(
+                    ExtractionInstance.id,
+                    ExtractionInstance.entity_type_id,
+                ).where(
+                    ExtractionInstance.article_id == run.article_id,
+                    ExtractionInstance.template_id == run.template_id,
+                )
+            )
+        ).all()
+
+        filled = await self._filled_coords(run.id)
+
+        missing: list[tuple[UUID, UUID]] = []
+        for instance_id, entity_type_id in instance_rows:
+            for field_id in required_by_entity.get(entity_type_id, set()):
+                if (instance_id, field_id) not in filled:
+                    missing.append((instance_id, field_id))
+        return missing
+
+    async def _filled_coords(self, run_id: UUID) -> set[tuple[UUID, UUID]]:
+        """The set of ``(instance_id, field_id)`` coords on a run that hold a
+        resolved, non-empty value — the union of published (consensus)
+        values and each reviewer's current decision.
+
+        ``accept_proposal`` decisions may carry their value on the referenced
+        proposal rather than the decision row, so those resolve through a
+        proposal-value map. ``reject`` decisions never count as filled.
+        """
+        filled: set[tuple[UUID, UUID]] = set()
+
+        published_rows = (
+            await self.db.execute(
+                select(
+                    ExtractionPublishedState.instance_id,
+                    ExtractionPublishedState.field_id,
+                    ExtractionPublishedState.value,
+                ).where(ExtractionPublishedState.run_id == run_id)
+            )
+        ).all()
+        for instance_id, field_id, value in published_rows:
+            if _is_value_filled(value):
+                filled.add((instance_id, field_id))
+
+        proposal_values: dict[UUID, Any] = dict(
+            (
+                await self.db.execute(
+                    select(
+                        ExtractionProposalRecord.id,
+                        ExtractionProposalRecord.proposed_value,
+                    ).where(ExtractionProposalRecord.run_id == run_id)
+                )
+            ).all()
+        )
+
+        state_rows = (
+            await self.db.execute(
+                select(
+                    ExtractionReviewerState.instance_id,
+                    ExtractionReviewerState.field_id,
+                    ExtractionReviewerDecision.decision,
+                    ExtractionReviewerDecision.value,
+                    ExtractionReviewerDecision.proposal_record_id,
+                )
+                .join(
+                    ExtractionReviewerDecision,
+                    and_(
+                        ExtractionReviewerDecision.run_id == ExtractionReviewerState.run_id,
+                        ExtractionReviewerDecision.id
+                        == ExtractionReviewerState.current_decision_id,
+                    ),
+                )
+                .where(ExtractionReviewerState.run_id == run_id)
+            )
+        ).all()
+        for instance_id, field_id, decision, value, proposal_record_id in state_rows:
+            if decision == ExtractionReviewerDecisionType.REJECT.value:
+                continue
+            resolved = value
+            if resolved is None and proposal_record_id is not None:
+                resolved = proposal_values.get(proposal_record_id)
+            if _is_value_filled(resolved):
+                filled.add((instance_id, field_id))
+
+        return filled
 
     async def reopen_run(
         self,
