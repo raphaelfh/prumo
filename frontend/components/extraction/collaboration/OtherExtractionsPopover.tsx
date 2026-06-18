@@ -22,7 +22,7 @@ import {formatComparisonValue} from '@/lib/comparison/formatters';
 import {detectConsensus} from '@/lib/comparison/consensus';
 import {ConsensusIndicator} from '@/components/shared/comparison';
 import {t} from '@/lib/copy';
-import type {OtherExtraction} from '@/hooks/extraction/colaboracao/useOtherExtractions';
+import type {OtherExtraction} from '@/hooks/extraction/collaboration/useOtherExtractions';
 
 // =================== INTERFACES ===================
 

@@ -27,11 +27,11 @@ interface HeaderNavigationProps {
   projectName: string;
   articleTitle: string;
   onBack: () => void;
-  /** Mostrar texto "Voltar" ou apenas ícone (mobile) */
+  /** Show the "Back" text, or just the icon (mobile). */
   showBackText?: boolean;
-  /** Largura máxima do breadcrumb para truncar */
+  /** Maximum breadcrumb width for truncation. */
   maxBreadcrumbWidth?: string;
-  /** Navegação entre artigos */
+  /** Article navigation. */
   articles?: Article[];
   currentArticleId?: string;
   onNavigateToArticle?: (articleId: string) => void;
@@ -50,7 +50,7 @@ export function HeaderNavigation({
 }: HeaderNavigationProps) {
   const navigate = useNavigate();
 
-  // Calcular posição do artigo atual e artigos adjacentes
+  // Compute the current article's position and its adjacent articles.
   const currentIndex = currentArticleId 
     ? articles.findIndex(article => article.id === currentArticleId)
     : -1;
@@ -74,7 +74,7 @@ export function HeaderNavigation({
       
       <div className="flex items-center gap-2 flex-1 min-w-0">
         <Breadcrumb className="min-w-0 flex-1">
-          <BreadcrumbList>
+          <BreadcrumbList className="min-w-0 flex-nowrap">
             <BreadcrumbItem className="hidden md:block">
               <BreadcrumbLink
                 onClick={() => navigate(`/projects/${projectId}`)}
@@ -84,7 +84,7 @@ export function HeaderNavigation({
               </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator className="hidden md:block text-muted-foreground/50" />
-            <BreadcrumbItem>
+            <BreadcrumbItem className="min-w-0">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <BreadcrumbPage 
@@ -95,7 +95,7 @@ export function HeaderNavigation({
                     {articleTitle}
                   </BreadcrumbPage>
                 </TooltipTrigger>
-                {/* Mostrar tooltip com nome completo quando truncado */}
+                {/* Show a tooltip with the full title when truncated. */}
                 <TooltipContent side="bottom" className="max-w-md">
                   <p className="break-words">{articleTitle}</p>
                 </TooltipContent>
@@ -104,9 +104,9 @@ export function HeaderNavigation({
           </BreadcrumbList>
         </Breadcrumb>
 
-        {/* Navegação entre artigos ao lado direito do nome */}
+        {/* Article navigation, to the right of the title. */}
         {hasArticleNavigation && (
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex items-center gap-1 shrink-0 ml-1 sm:ml-2">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -114,7 +114,7 @@ export function HeaderNavigation({
                   size="sm"
                   onClick={() => previousArticle && onNavigateToArticle(previousArticle.id)}
                   disabled={!previousArticle}
-                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground hover:bg-muted/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-150"
+                  className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground hover:bg-muted/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-150"
                   aria-label={t('extraction', 'articlePrevious')}
                 >
                   <ChevronLeft className="h-4 w-4 transition-transform duration-150 hover:-translate-x-0.5" />
@@ -125,7 +125,7 @@ export function HeaderNavigation({
               </TooltipContent>
             </Tooltip>
             
-            {/* Contador de artigos */}
+            {/* Article counter */}
             <span className="text-xs text-muted-foreground tabular-nums px-1 min-w-[3rem] text-center">
               {currentArticleNumber} / {totalArticles}
             </span>
@@ -137,7 +137,7 @@ export function HeaderNavigation({
                   size="sm"
                   onClick={() => nextArticle && onNavigateToArticle(nextArticle.id)}
                   disabled={!nextArticle}
-                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground hover:bg-muted/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-150"
+                  className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground hover:bg-muted/50 disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-150"
                   aria-label={t('extraction', 'articleNext')}
                 >
                   <ChevronRight className="h-4 w-4 transition-transform duration-150 hover:translate-x-0.5" />

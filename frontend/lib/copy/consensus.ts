@@ -64,6 +64,33 @@ export const consensus = {
     resetSuccessProject: 'Project consensus default cleared',
     resetSuccessTemplate: 'Template override removed',
     resetError: 'Could not clear consensus configuration',
+
+    // --- Runtime divergence-resolution panel (ConsensusPanel) ---
+    panelResolveTitle: 'Resolve divergence',
+    panelFieldsResolvedOne: '{{resolved}}/{{total}} field resolved.',
+    panelFieldsResolvedOther: '{{resolved}}/{{total}} fields resolved.',
+    panelFinalize: 'Finalize',
+    panelFinalizing: 'Finalizing…',
+    panelLeft: '{{count}} left',
+    panelNoConflictsTitle: 'No conflicts to resolve.',
+    panelReadyToFinalize:
+        'All required fields are filled. You can finalize now.',
+    panelBlockedIncomplete:
+        'Fill every required field before you can finalize.',
+    panelBlockedNoDecision: 'Publish at least one field before finalizing.',
+    panelReviewerDisagreedOne: '{{count}} reviewer disagreed.',
+    panelReviewersDisagreedOther: '{{count}} reviewers disagreed.',
+    panelResolved: 'Resolved',
+    panelRejected: '(rejected)',
+    panelUseThisValue: 'Use this value',
+    panelOverrideWithCustom: 'Override with custom value',
+    panelCustomValueLabel: 'Custom value (JSON; use a string for free-text fields)',
+    panelCustomValuePlaceholder: '"Low" or {"text": "..."}',
+    panelRationaleLabel: 'Rationale (required)',
+    panelRationalePlaceholder:
+        'Why publish a value none of the reviewers picked?',
+    panelPublishOverride: 'Publish override',
+    panelReviewerFallback: 'Reviewer {{id}}…',
 } as const;
 
 export type ConsensusCopy = typeof consensus;

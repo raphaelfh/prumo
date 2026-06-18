@@ -242,6 +242,127 @@ async def test_cannot_finalize_run_without_consensus(
 
 
 @pytest.mark.asyncio
+async def test_finalize_blocked_until_required_fields_filled(
+    db_session: AsyncSession,
+) -> None:
+    """Extraction completeness gate: a run with an unfilled REQUIRED field
+    cannot finalize, even though it has a consensus decision; once every
+    required (instance, field) carries a resolved value the same advance
+    succeeds. Mirrors the frontend progress gate on the authoritative side.
+    """
+    from uuid import uuid4
+
+    from app.models.extraction import ExtractionRun, TemplateKind
+    from app.models.extraction_versioning import ExtractionTemplateVersion
+    from app.models.extraction_workflow import ExtractionConsensusMode
+    from app.services.extraction_consensus_service import ExtractionConsensusService
+    from app.services.hitl_session_service import HITLSessionService
+    from app.services.run_lifecycle_service import IncompleteFinalizeError
+
+    fx = await _fixtures(db_session)
+    if fx is None:
+        pytest.skip("Missing fixtures.")
+    project_id, article_id, template_id, profile_id = fx
+    entity_type_id = SEED.primary_entity_type
+    instance_id = SEED.primary_instance
+    field_a = SEED.primary_field
+
+    # Own the run state for this article/template (the suite leaks runs).
+    await db_session.execute(
+        text(
+            "DELETE FROM public.extraction_runs WHERE project_id = :pid "
+            "AND article_id = :aid AND template_id = :tid"
+        ),
+        {"pid": str(project_id), "aid": str(article_id), "tid": str(template_id)},
+    )
+
+    session = await HITLSessionService(db_session).open_or_resume(
+        kind=TemplateKind.EXTRACTION,
+        project_id=project_id,
+        article_id=article_id,
+        user_id=profile_id,
+        project_template_id=template_id,
+    )
+    run_id = session.run_id
+
+    # The seeded primary template marks nothing required. Add a second real
+    # field on the participants entity type and rewrite the run's frozen
+    # snapshot so BOTH fields are required — the gate reads requiredness from
+    # the snapshot, so this controls the test without touching live config.
+    field_b = uuid4()
+    await db_session.execute(
+        text(
+            "INSERT INTO public.extraction_fields "
+            "(id, entity_type_id, name, label, field_type, is_required) "
+            "VALUES (:id, :etid, 'second_required', 'Second Required', 'text', true)"
+        ),
+        {"id": str(field_b), "etid": str(entity_type_id)},
+    )
+    run = await db_session.get(ExtractionRun, run_id)
+    assert run is not None
+    version = await db_session.get(ExtractionTemplateVersion, run.version_id)
+    assert version is not None
+    version.schema_ = {
+        "entity_types": [
+            {
+                "id": str(entity_type_id),
+                "fields": [
+                    {"id": str(field_a), "is_required": True},
+                    {"id": str(field_b), "is_required": True},
+                ],
+            }
+        ]
+    }
+    await db_session.flush()
+
+    lifecycle = RunLifecycleService(db_session)
+    await lifecycle.advance_stage(
+        run_id=run_id, target_stage=ExtractionRunStage.REVIEW, user_id=profile_id
+    )
+    await lifecycle.advance_stage(
+        run_id=run_id, target_stage=ExtractionRunStage.CONSENSUS, user_id=profile_id
+    )
+
+    consensus = ExtractionConsensusService(db_session)
+    # Publish only field_a → passes the >=1-consensus gate but field_b is
+    # still unfilled, so completeness must block finalize.
+    await consensus.record_consensus(
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_a,
+        consensus_user_id=profile_id,
+        mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
+        value={"value": "120"},
+        rationale="fill first required field",
+    )
+    with pytest.raises(IncompleteFinalizeError):
+        await lifecycle.advance_stage(
+            run_id=run_id,
+            target_stage=ExtractionRunStage.FINALIZED,
+            user_id=profile_id,
+        )
+
+    # Fill the remaining required field → the same advance now succeeds.
+    await consensus.record_consensus(
+        run_id=run_id,
+        instance_id=instance_id,
+        field_id=field_b,
+        consensus_user_id=profile_id,
+        mode=ExtractionConsensusMode.MANUAL_OVERRIDE,
+        value={"value": "done"},
+        rationale="fill second required field",
+    )
+    finalized = await lifecycle.advance_stage(
+        run_id=run_id,
+        target_stage=ExtractionRunStage.FINALIZED,
+        user_id=profile_id,
+    )
+    assert finalized.stage == ExtractionRunStage.FINALIZED.value
+
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
 async def test_create_run_with_nonexistent_template_raises(db_session: AsyncSession) -> None:
     from uuid import uuid4
 

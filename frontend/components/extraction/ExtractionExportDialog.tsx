@@ -188,16 +188,20 @@ export function ExtractionExportDialog({
         mode !== "all_users" && !includeAiMetadata && articleCount <= SYNC_EXPORT_MAX_ARTICLES;
 
     // FR-027 live preview line. When the parent doesn't know the field
-    // count (e.g. the template metadata hasn't been fetched), we leave
-    // the slot as "—" rather than misleading "0".
+    // count (e.g. the template metadata hasn't been fetched), drop the
+    // fields clause entirely rather than printing a dangling "× — fields".
     const previewLine = (() => {
-        const fieldsLabel = fieldCount != null ? String(fieldCount) : "—";
         const delivery = expectedSync
             ? t("extraction", "exportPreviewDeliveryInline")
             : t("extraction", "exportPreviewDeliveryAsync");
+        if (fieldCount == null) {
+            return t("extraction", "exportPreviewLineNoFieldsFmt")
+                .replace("{articles}", String(articleCount))
+                .replace("{delivery}", delivery);
+        }
         return t("extraction", "exportPreviewLineFmt")
             .replace("{articles}", String(articleCount))
-            .replace("{fields}", fieldsLabel)
+            .replace("{fields}", String(fieldCount))
             .replace("{delivery}", delivery);
     })();
 

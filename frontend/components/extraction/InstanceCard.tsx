@@ -23,7 +23,7 @@ import {t} from '@/lib/copy';
 import {updateInstanceLabel} from '@/services/extractionInstanceService';
 import MemoizedFieldInput from './FieldInput'; // Use memoized version
 import type {ExtractionField, ExtractionInstance} from '@/types/extraction';
-import type {OtherExtraction} from '@/hooks/extraction/colaboracao/useOtherExtractions';
+import type {OtherExtraction} from '@/hooks/extraction/collaboration/useOtherExtractions';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
 
 // =================== INTERFACES ===================

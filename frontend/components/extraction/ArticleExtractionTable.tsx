@@ -8,7 +8,7 @@
  * - Contextual actions
  */
 
-import type {CSSProperties} from 'react';
+import type {CSSProperties, ReactNode} from 'react';
 import {useEffect, useRef, useState} from 'react';
 import {useLocation, useNavigate} from 'react-router-dom';
 import {Button} from '@/components/ui/button';
@@ -23,6 +23,7 @@ import {
     Database,
     Edit,
     FileText,
+    Info,
     Loader2,
     MoreHorizontal,
     PlayCircle,
@@ -93,6 +94,12 @@ interface ArticleWithExtraction extends Article {
 interface ArticleExtractionTableProps {
   projectId: string;
   templateId: string;
+  /**
+   * Optional actions rendered inline in the toolbar row, right after the
+   * display/sort control and before the count group. Used to host the Export
+   * action so it shares the dense toolbar instead of a separate band.
+   */
+  toolbarActions?: ReactNode;
 }
 
 type SortField = 'title' | 'publication_year' | 'extraction_progress' | 'status' | 'created_at';
@@ -167,7 +174,7 @@ function HeaderCheckbox({
   );
 }
 
-export function ArticleExtractionTable({ projectId, templateId }: ArticleExtractionTableProps) {
+export function ArticleExtractionTable({ projectId, templateId, toolbarActions }: ArticleExtractionTableProps) {
   const navigate = useNavigate();
   const location = useLocation();
     const isNarrow = useIsNarrow();
@@ -774,6 +781,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                       tooltipLabel={t('extraction', 'tableDisplayAndSort')}
                       ariaLabel={t('extraction', 'tableDisplayOptions')}
                   />
+                  {toolbarActions}
                   <div className="flex items-center gap-2 shrink-0 ml-auto">
                       <ListCount
                           visible={filteredAndSortedArticles.length}
@@ -789,7 +797,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                                   <DropdownMenuTrigger asChild>
                                       <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-[12px]"
                                               disabled={isExtracting}>
-                                          <MoreHorizontal className="h-3.5 w-3.5"/>
+                                          <MoreHorizontal className="h-4 w-4"/>
                                           {t('extraction', 'tableActions')}
                                       </Button>
                                   </DropdownMenuTrigger>
@@ -945,11 +953,42 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                           <TableHead
                               ref={(el) => registerHeaderRef('status', el)}
                               className={`relative ${TABLE_CELL_CLASS} text-center`} style={getColumnStyle('status')}>
-                              <SortIconHeader
-                                  label={t('extraction', 'tableColumnStatus')}
-                                  direction={sortField === 'status' ? sortDirection : null}
-                                  onSort={() => handleSort('status')}
-                              />
+                              <div className="flex items-center justify-center gap-1">
+                                  <SortIconHeader
+                                      label={t('extraction', 'tableColumnStatus')}
+                                      direction={sortField === 'status' ? sortDirection : null}
+                                      onSort={() => handleSort('status')}
+                                  />
+                                  <TooltipProvider>
+                                      <Tooltip>
+                                          <TooltipTrigger asChild>
+                                              <button
+                                                  type="button"
+                                                  aria-label={t('extraction', 'tableStatusLegendAria')}
+                                                  className="text-muted-foreground/60 hover:text-foreground transition-colors"
+                                              >
+                                                  <Info className="h-3 w-3" />
+                                              </button>
+                                          </TooltipTrigger>
+                                          <TooltipContent className="text-xs">
+                                              <ul className="space-y-1">
+                                                  <li className="flex items-center gap-1.5">
+                                                      <Circle className="h-3 w-3 text-info" />
+                                                      {t('extraction', 'listStatusNotStarted')}
+                                                  </li>
+                                                  <li className="flex items-center gap-1.5">
+                                                      <span className="text-[9px] font-semibold text-warning leading-none w-3 text-center">%</span>
+                                                      {t('extraction', 'listStatusInProgress')}
+                                                  </li>
+                                                  <li className="flex items-center gap-1.5">
+                                                      <CheckCircle2 className="h-3 w-3 text-success" />
+                                                      {t('extraction', 'listStatusComplete')}
+                                                  </li>
+                                              </ul>
+                                          </TooltipContent>
+                                      </Tooltip>
+                                  </TooltipProvider>
+                              </div>
                               <div
                                   role="separator"
                                   aria-label={t('extraction', 'tableColumnStatus')}
@@ -982,14 +1021,28 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
               const isComplete = progress >= 100;
               const hasInstances = (valuesByArticle.get(article.id)?.instances.length ?? 0) > 0;
 
+              const openRow = () =>
+                  hasInstances ? handleContinueExtraction(article.id) : handleStartExtraction(article.id);
+
               return (
                   <TableRow key={article.id}
-                            className="border-b border-border/40 hover:bg-muted/40 transition-colors duration-75 group h-10">
-                      <TableCell className={`w-[40px] ${TABLE_CELL_CLASS}`}>
+                            role="button"
+                            tabIndex={0}
+                            onClick={openRow}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault();
+                                    openRow();
+                                }
+                            }}
+                            aria-label={t('extraction', 'tableOpenRowAria').replace('{{title}}', article.title)}
+                            className="border-b border-border/40 hover:bg-muted/40 transition-colors duration-75 group h-10 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
+                      {/* stopPropagation: toggling the checkbox must not open the row */}
+                      <TableCell className={`w-[40px] ${TABLE_CELL_CLASS}`} onClick={(e) => e.stopPropagation()}>
                     <Checkbox
                       checked={isSelected(article.id)}
                       onCheckedChange={() => toggleArticle(article.id)}
-                      aria-label={`Select article: ${article.title}`}
+                      aria-label={t('extraction', 'tableSelectArticleAria').replace('{{title}}', article.title)}
                     />
                   </TableCell>
                       <TableCell className={`${TABLE_CELL_CLASS} font-medium text-[12px]`} style={getColumnStyle('title')}>
@@ -1044,7 +1097,8 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                       <TableCell className={`${TABLE_CELL_CLASS} text-center`} style={getColumnStyle('status')}>
                     {getStatusBadge(article)}
                   </TableCell>
-                      <TableCell className={`${TABLE_CELL_CLASS} text-center`} style={getColumnStyle('actions')}>
+                      <TableCell className={`${TABLE_CELL_CLASS} text-center`} style={getColumnStyle('actions')}
+                                 onClick={(e) => e.stopPropagation()}>
                     {!hasInstances ? (
                         <TooltipProvider>
                             <Tooltip>
@@ -1058,9 +1112,9 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                                         className="h-8 w-8 rounded-full border-border/60 bg-background p-0 shadow-none hover:bg-muted/60"
                                     >
                                         {article.isLoading ? (
-                                            <Loader2 className="h-3.5 w-3.5 animate-spin"/>
+                                            <Loader2 className="h-4 w-4 animate-spin"/>
                                         ) : (
-                                            <PlayCircle className="h-3.5 w-3.5"/>
+                                            <PlayCircle className="h-4 w-4"/>
                                         )}
                                     </Button>
                                 </TooltipTrigger>
@@ -1085,9 +1139,9 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                                         }`}
                                     >
                                         {isComplete ? (
-                                            <CheckCircle className="h-3.5 w-3.5"/>
+                                            <CheckCircle className="h-4 w-4"/>
                                         ) : (
-                                            <Edit className="h-3.5 w-3.5"/>
+                                            <Edit className="h-4 w-4"/>
                                         )}
                                     </Button>
                                 </TooltipTrigger>
@@ -1118,7 +1172,7 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                                       <Checkbox
                                           checked={isSelected(article.id)}
                                           onCheckedChange={() => toggleArticle(article.id)}
-                                          aria-label={`Select: ${article.title}`}
+                                          aria-label={t('extraction', 'tableSelectArticleAria').replace('{{title}}', article.title)}
                                       />
                                   }
                                   title={article.title}
@@ -1141,8 +1195,8 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                                                               aria-label={t('extraction', 'tableStart')}
                                                               className="h-8 w-8 rounded-full border-border/60 bg-background p-0 shadow-none hover:bg-muted/60"
                                                               disabled={article.isLoading}>
-                                                          {article.isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin"/> :
-                                                              <PlayCircle className="h-3.5 w-3.5"/>}
+                                                          {article.isLoading ? <Loader2 className="h-4 w-4 animate-spin"/> :
+                                                              <PlayCircle className="h-4 w-4"/>}
                                                       </Button>
                                                   </TooltipTrigger>
                                                   <TooltipContent>
@@ -1164,8 +1218,8 @@ export function ArticleExtractionTable({ projectId, templateId }: ArticleExtract
                                                                       ? 'border-border/60 bg-background hover:bg-muted/60'
                                                                       : 'border-info/30 bg-info/10 text-info hover:bg-info/20'
                                                               }`}>
-                                                          {isComplete ? <CheckCircle className="h-3.5 w-3.5"/> :
-                                                              <Edit className="h-3.5 w-3.5"/>}
+                                                          {isComplete ? <CheckCircle className="h-4 w-4"/> :
+                                                              <Edit className="h-4 w-4"/>}
                                                       </Button>
                                                   </TooltipTrigger>
                                                   <TooltipContent>

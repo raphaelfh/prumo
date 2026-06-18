@@ -30,6 +30,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { ReviewerAvatarStack } from "@/components/runs/ReviewerAvatarStack";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/copy";
 
 import type {
   ConsensusDecisionResponse,
@@ -64,6 +65,12 @@ export interface ConsensusPanelProps {
   }) => Promise<void> | void;
   /** Advance to finalized once all divergent coords are resolved. */
   onFinalize: () => Promise<void> | void;
+  /**
+   * Whether every required field carries a resolved value — the canonical
+   * completeness metric the header uses. Gates the no-divergence fast-path
+   * so the panel never offers a finalize the backend would reject (ADR 0009).
+   */
+  isComplete?: boolean;
   /** Disable interactive controls during inflight mutations. */
   isResolving?: boolean;
   isFinalizing?: boolean;
@@ -99,7 +106,10 @@ function reviewerLabel(
 ): string {
   return (
     reviewerLabelById[reviewerId] ??
-    `Reviewer ${reviewerId.slice(0, 8)}…`
+    t("consensus", "panelReviewerFallback").replace(
+      "{{id}}",
+      reviewerId.slice(0, 8),
+    )
   );
 }
 
@@ -151,7 +161,10 @@ function CoordRow({
               testId={`consensus-coord-avatar-${coordKey}`}
             />
             <span>
-              {decisions.length} reviewer{decisions.length === 1 ? "" : "s"} disagreed.
+              {(decisions.length === 1
+                ? t("consensus", "panelReviewerDisagreedOne")
+                : t("consensus", "panelReviewersDisagreedOther")
+              ).replace("{{count}}", String(decisions.length))}
             </span>
           </div>
         </div>
@@ -162,7 +175,7 @@ function CoordRow({
             data-testid={`consensus-coord-resolved-${coordKey}`}
           >
             <ShieldCheck className="mr-1 h-3 w-3" />
-            Resolved · {resolved.mode}
+            {t("consensus", "panelResolved")} · {resolved.mode}
           </Badge>
         ) : null}
       </CardHeader>
@@ -191,7 +204,9 @@ function CoordRow({
                   </Badge>
                 </div>
                 <pre className="whitespace-pre-wrap break-words text-xs text-muted-foreground">
-                  {isReject ? "(rejected)" : JSON.stringify(value, null, 2)}
+                  {isReject
+                    ? t("consensus", "panelRejected")
+                    : JSON.stringify(value, null, 2)}
                 </pre>
                 {!isResolved ? (
                   <Button
@@ -202,7 +217,7 @@ function CoordRow({
                     onClick={() => void onSelectExisting(d.id)}
                     data-testid={`consensus-accept-${d.id}`}
                   >
-                    Use this value
+                    {t("consensus", "panelUseThisValue")}
                   </Button>
                 ) : null}
               </div>
@@ -217,26 +232,26 @@ function CoordRow({
               data-testid={`consensus-override-${coordKey}`}
             >
               <Label htmlFor={`override-value-${coordKey}`} className="text-xs">
-                Custom value (JSON; use a string for free-text fields)
+                {t("consensus", "panelCustomValueLabel")}
               </Label>
               <Input
                 id={`override-value-${coordKey}`}
                 value={overrideValue}
                 onChange={(e) => setOverrideValue(e.target.value)}
-                placeholder='"Low" or {"text": "..."}'
+                placeholder={t("consensus", "panelCustomValuePlaceholder")}
                 disabled={disabled}
               />
               <Label
                 htmlFor={`override-rationale-${coordKey}`}
                 className="text-xs"
               >
-                Rationale (required)
+                {t("consensus", "panelRationaleLabel")}
               </Label>
               <Textarea
                 id={`override-rationale-${coordKey}`}
                 value={overrideRationale}
                 onChange={(e) => setOverrideRationale(e.target.value)}
-                placeholder="Why publish a value none of the reviewers picked?"
+                placeholder={t("consensus", "panelRationalePlaceholder")}
                 rows={2}
                 disabled={disabled}
               />
@@ -251,7 +266,7 @@ function CoordRow({
                   }}
                   disabled={disabled}
                 >
-                  Cancel
+                  {t("consensus", "cancel")}
                 </Button>
                 <Button
                   size="sm"
@@ -274,7 +289,7 @@ function CoordRow({
                   }}
                   data-testid={`consensus-override-submit-${coordKey}`}
                 >
-                  Publish override
+                  {t("consensus", "panelPublishOverride")}
                 </Button>
               </div>
             </div>
@@ -287,7 +302,7 @@ function CoordRow({
               data-testid={`consensus-override-toggle-${coordKey}`}
             >
               <Edit3 className="mr-1 h-3 w-3" />
-              Override with custom value
+              {t("consensus", "panelOverrideWithCustom")}
             </Button>
           )
         ) : null}
@@ -305,6 +320,7 @@ export function ConsensusPanel({
   onSelectExisting,
   onManualOverride,
   onFinalize,
+  isComplete = false,
   isResolving = false,
   isFinalizing = false,
 }: ConsensusPanelProps) {
@@ -325,24 +341,42 @@ export function ConsensusPanel({
     totalCount === 0 ? 100 : Math.round((resolvedCount / totalCount) * 100);
 
   if (totalCount === 0) {
-    // Reviewers all agreed; nothing to resolve here. Surface a fast-path.
+    // No divergent coords to resolve. But "no divergence" is NOT the same as
+    // "ready to publish": the run still needs every required field filled
+    // (ADR 0009) and at least one consensus decision (EmptyFinalizeError).
+    // Only offer finalize when both hold, so we never trigger a backend
+    // rejection the old copy ("agreed on every field") implied couldn't happen.
+    const hasConsensus = runDetail.consensus_decisions.length > 0;
+    const canFinalize = isComplete && hasConsensus;
+    const blockedReason = !isComplete
+      ? t("consensus", "panelBlockedIncomplete")
+      : t("consensus", "panelBlockedNoDecision");
     return (
       <div
-        className="m-4 rounded border border-success/30 bg-success/10 p-4 text-sm text-foreground"
+        className={cn(
+          "m-4 rounded border p-4 text-sm text-foreground",
+          canFinalize
+            ? "border-success/30 bg-success/10"
+            : "border-warning/30 bg-warning/10",
+        )}
         data-testid="consensus-empty"
       >
-        <p className="font-medium">No conflicts to resolve.</p>
+        <p className="font-medium">{t("consensus", "panelNoConflictsTitle")}</p>
         <p className="mt-1">
-          Every reviewer agreed on every field. You can finalize now.
+          {canFinalize
+            ? t("consensus", "panelReadyToFinalize")
+            : blockedReason}
         </p>
         <Button
           size="sm"
           className="mt-3"
           onClick={() => void onFinalize()}
-          disabled={isFinalizing}
+          disabled={!canFinalize || isFinalizing}
           data-testid="consensus-finalize-empty"
         >
-          {isFinalizing ? "Finalizing…" : "Finalize"}
+          {isFinalizing
+            ? t("consensus", "panelFinalizing")
+            : t("consensus", "panelFinalize")}
         </Button>
       </div>
     );
@@ -353,10 +387,16 @@ export function ConsensusPanel({
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold">Resolve divergence</h2>
+            <h2 className="text-base font-semibold">
+              {t("consensus", "panelResolveTitle")}
+            </h2>
             <p className="text-xs text-muted-foreground">
-              {resolvedCount}/{totalCount} field
-              {totalCount === 1 ? "" : "s"} resolved.
+              {(totalCount === 1
+                ? t("consensus", "panelFieldsResolvedOne")
+                : t("consensus", "panelFieldsResolvedOther")
+              )
+                .replace("{{resolved}}", String(resolvedCount))
+                .replace("{{total}}", String(totalCount))}
             </p>
           </div>
           <Button
@@ -366,10 +406,13 @@ export function ConsensusPanel({
             data-testid="consensus-finalize-button"
           >
             {isFinalizing
-              ? "Finalizing…"
+              ? t("consensus", "panelFinalizing")
               : allResolved
-                ? "Finalize"
-                : `${totalCount - resolvedCount} left`}
+                ? t("consensus", "panelFinalize")
+                : t("consensus", "panelLeft").replace(
+                    "{{count}}",
+                    String(totalCount - resolvedCount),
+                  )}
           </Button>
         </div>
         <Progress value={progressPct} className="h-2" />

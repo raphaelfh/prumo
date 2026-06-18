@@ -9,9 +9,9 @@ import {t} from '@/lib/copy';
 import type {ComparisonUser} from '@/components/shared/comparison';
 import {ComparisonSectionView} from '@/components/shared/comparison';
 import {Separator} from '@/components/ui/separator';
-import {useAllUserInstances} from '@/hooks/extraction/colaboracao/useAllUserInstances';
+import {useAllUserInstances} from '@/hooks/extraction/collaboration/useAllUserInstances';
 import type {ExtractionEntityTypeWithFields, ExtractionInstance} from '@/types/extraction';
-import type {OtherExtraction} from '@/hooks/extraction/colaboracao/useOtherExtractions';
+import type {OtherExtraction} from '@/hooks/extraction/collaboration/useOtherExtractions';
 
 export interface ExtractionCompareViewProps {
   studyLevelSections: ExtractionEntityTypeWithFields[];

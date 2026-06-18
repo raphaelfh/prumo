@@ -44,6 +44,15 @@ export function HeaderAIActions({
     return null;
   }
 
+  // Accessible name: the visible content is an icon + a bare number, so an
+  // interactive badge would otherwise announce just "3". Reuse the tooltip
+  // copy so the count carries meaning.
+  const pendingLabel = `${pendingCount} ${
+    pendingCount === 1
+      ? t("extraction", "aiSuggestionPending")
+      : t("extraction", "aiSuggestionsPending")
+  }`;
+
   const badgeContent = (
     <Badge
       variant="outline"
@@ -57,6 +66,7 @@ export function HeaderAIActions({
         transition-colors
       `}
       onClick={onClick}
+      aria-label={pendingLabel}
       role={onClick ? "button" : undefined}
       tabIndex={onClick ? 0 : undefined}
       onKeyDown={
@@ -70,7 +80,7 @@ export function HeaderAIActions({
           : undefined
       }
     >
-      <Brain className="h-3 w-3" />
+      <Brain className="h-3 w-3" aria-hidden="true" />
       {!compact && <span className="tabular-nums">{pendingCount}</span>}
       {compact && (
         <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-primary text-primary-foreground text-[10px] flex items-center justify-center font-semibold tabular-nums">

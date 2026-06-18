@@ -119,7 +119,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <header className="border-b border-border/40 bg-background/80 backdrop-blur-sm relative z-10 shadow-sm">
+      <header className="border-b border-border/40 bg-background/80 backdrop-blur-md relative z-10">
         {isMobile ? (
           /* Mobile Layout: Minimalista e organizado */
           <div className="flex flex-col px-4 py-2.5 gap-2.5">
