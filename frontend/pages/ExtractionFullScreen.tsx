@@ -39,7 +39,7 @@ import {useExtractionSession} from '@/hooks/extraction/useExtractionSession';
 import {useFinalizedExtractionRun} from '@/hooks/extraction/useFinalizedExtractionRun';
 import {useExtractionProgress} from '@/hooks/extraction/useExtractionProgress';
 import {useAutoSaveProposals} from '@/hooks/runs';
-import {useOtherExtractions} from '@/hooks/extraction/colaboracao/useOtherExtractions';
+import {useOtherExtractions} from '@/hooks/extraction/collaboration/useOtherExtractions';
 import {useAISuggestions} from '@/hooks/extraction/ai/useAISuggestions';
 import {useComparisonPermissions} from '@/hooks/shared/useComparisonPermissions';
 import {
@@ -60,7 +60,7 @@ import {ExtractionFormPanel} from '@/components/extraction/ExtractionFormPanel';
 import {AddModelDialog, RemoveModelDialog} from '@/components/extraction/hierarchy';
 import {FullAIExtractionProgress} from '@/components/extraction/FullAIExtractionProgress';
 
-// Hooks adicionais
+// Additional hooks
 import {useModelManagement} from '@/hooks/extraction/useModelManagement';
 import {usePreserveScroll} from '@/hooks/usePreserveScroll';
 import {t} from '@/lib/copy';
@@ -95,7 +95,7 @@ export default function ExtractionFullScreen() {
     enabled: !!projectId && !!articleId,
   });
 
-  // Estado local
+  // Local state
   const [submitting, setSubmitting] = useState(false);
   // Current reviewer id from AuthContext (zero network) — was a
   // supabase.auth.getUser() round-trip + a serial gate on run open.
@@ -258,7 +258,15 @@ export default function ExtractionFullScreen() {
 
   const handleFinalizeFromConsensus = async () => {
     if (!activeRunId) return;
-    await advanceMutation.mutateAsync({ target_stage: 'finalized' });
+    // The backend completeness/consensus gate (ADR 0009) can reject this
+    // advance. useAdvanceRun's onError already toasts the message; we just
+    // need to skip the success path instead of throwing an unhandled
+    // rejection (the panel calls this via `void onFinalize()`).
+    const ok = await advanceMutation
+      .mutateAsync({ target_stage: 'finalized' })
+      .then(() => true)
+      .catch(() => false);
+    if (!ok) return;
     await Promise.all([refetchRun(), refreshValues(), refreshFinalizedRun()]);
     toast.success('Extraction finalized.');
   };
@@ -287,7 +295,7 @@ export default function ExtractionFullScreen() {
     setReopening(false);
   };
 
-  // Hook para calcular progresso
+  // Hook to compute progress
   const { completedFields, totalFields, completionPercentage, isComplete } =
     useExtractionProgress(values, entityTypes);
 
@@ -427,7 +435,7 @@ export default function ExtractionFullScreen() {
     modelChildren: modelChildSections,
   } = useEntityTypePartition(entityTypes);
 
-  // Hook para gerenciamento de modelos
+  // Hook for model management
   const {
     models,
     activeModelId,
@@ -452,7 +460,7 @@ export default function ExtractionFullScreen() {
     }
   }, [activeModelId, articleId]);
 
-  // Restaurar modelo ativo ao carregar
+  // Restore the active model on load
   useEffect(() => {
     if (articleId && models.length > 0 && !activeModelId) {
       const saved = localStorage.getItem(`active-model-${articleId}`);
@@ -491,7 +499,7 @@ export default function ExtractionFullScreen() {
     navigate(`/projects/${projectId}/extraction/${newArticleId}`);
   };
 
-  // Handlers para gerenciamento de modelos
+  // Handlers for model management
   const handleAddModel = () => {
     setShowAddModelDialog(true);
   };
@@ -583,7 +591,7 @@ export default function ExtractionFullScreen() {
     }
     const userId = userResult.data;
 
-    // Encontrar entity type
+    // Find the entity type
     const entityType = entityTypes.find(et => et.id === entityTypeId);
     if (!entityType) {
       extractionLogger.warn('handleAddInstance', 'Entity type not found', {entityTypeId});
@@ -1011,7 +1019,7 @@ export default function ExtractionFullScreen() {
         aiSuggestions={aiSuggestions}
         onAISuggestionsClick={() => {
             // Scroll to first suggestion or open panel
-          // Por enquanto, apenas log - pode ser melhorado depois
+          // For now, just log — can be improved later
             console.warn('Clicked AI badge - scrolling to first suggestion');
         }}
         onRefreshInstances={handleRefreshInstances}
@@ -1077,6 +1085,7 @@ export default function ExtractionFullScreen() {
             onSelectExisting={handleSelectExisting}
             onManualOverride={handleManualOverride}
             onFinalize={handleFinalizeFromConsensus}
+            isComplete={isComplete}
             isResolving={consensusMutation.isPending}
             isFinalizing={advanceMutation.isPending}
           />

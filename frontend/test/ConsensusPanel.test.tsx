@@ -104,10 +104,8 @@ function makeFixtures(): {
 }
 
 describe("ConsensusPanel", () => {
-  it("shows the empty fast-path when there are no divergent coords", async () => {
-    const onFinalize = vi.fn();
-    const { runDetail } = makeFixtures();
-    const summary: ReviewerSummary = {
+  function emptyDivergenceSummary(): ReviewerSummary {
+    return {
       reviewers: ["user-a"],
       currentDecisions: new Map(),
       decisionsByCoord: new Map(),
@@ -117,11 +115,18 @@ describe("ConsensusPanel", () => {
       filledCoords: new Set(),
       touchedCoords: new Set(),
     };
+  }
+
+  it("fast-path: offers finalize only when complete with a consensus decision", async () => {
+    const onFinalize = vi.fn();
+    const { runDetail } = makeFixtures();
+    runDetail.consensus_decisions = [consensusDecision({ id: "cons-1" })];
 
     render(
       <ConsensusPanel
         runDetail={runDetail}
-        summary={summary}
+        summary={emptyDivergenceSummary()}
+        isComplete
         onSelectExisting={vi.fn()}
         onManualOverride={vi.fn()}
         onFinalize={onFinalize}
@@ -129,8 +134,56 @@ describe("ConsensusPanel", () => {
     );
 
     expect(screen.getByTestId("consensus-empty")).toBeInTheDocument();
-    await userEvent.click(screen.getByTestId("consensus-finalize-empty"));
+    const button = screen.getByTestId("consensus-finalize-empty");
+    expect(button).toBeEnabled();
+    await userEvent.click(button);
     expect(onFinalize).toHaveBeenCalledTimes(1);
+  });
+
+  it("fast-path: blocks finalize when required fields are incomplete", () => {
+    const onFinalize = vi.fn();
+    const { runDetail } = makeFixtures();
+    runDetail.consensus_decisions = [consensusDecision({ id: "cons-1" })];
+
+    render(
+      <ConsensusPanel
+        runDetail={runDetail}
+        summary={emptyDivergenceSummary()}
+        isComplete={false}
+        onSelectExisting={vi.fn()}
+        onManualOverride={vi.fn()}
+        onFinalize={onFinalize}
+      />,
+    );
+
+    const button = screen.getByTestId("consensus-finalize-empty");
+    expect(button).toBeDisabled();
+    expect(
+      screen.getByText(/fill every required field/i),
+    ).toBeInTheDocument();
+    expect(onFinalize).not.toHaveBeenCalled();
+  });
+
+  it("fast-path: blocks finalize when no consensus decision exists yet", () => {
+    const { runDetail } = makeFixtures();
+    runDetail.consensus_decisions = [];
+
+    render(
+      <ConsensusPanel
+        runDetail={runDetail}
+        summary={emptyDivergenceSummary()}
+        isComplete
+        onSelectExisting={vi.fn()}
+        onManualOverride={vi.fn()}
+        onFinalize={vi.fn()}
+      />,
+    );
+
+    const button = screen.getByTestId("consensus-finalize-empty");
+    expect(button).toBeDisabled();
+    expect(
+      screen.getByText(/publish at least one field/i),
+    ).toBeInTheDocument();
   });
 
   it("renders one card per divergent coord with each reviewer's value", () => {
