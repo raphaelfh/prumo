@@ -40,9 +40,9 @@ immutable spec, the change is recorded here.
 - A FINALIZED run is consumed downstream (export, dashboards, reopen
   seed); missing required data corrupts every consumer silently.
 - The authoritative gate must live on the server — frontend checks are
-  advisory and bypassable.
+  advisory and can be bypassed.
 - The fix must not change quality-assessment (PROBAST/QUADAS-2) finalize
-  semantics, which were not analysed here.
+  semantics, which were not analyzed here.
 
 ## Considered Options
 
@@ -54,8 +54,8 @@ immutable spec, the change is recorded here.
   sparse (only explicitly-resolved coords are published), so this would
   also have to backfill them.
 - **C — Keep the backend at "≥ 1 consensus" and only tighten the
-  frontend.** Rejected: leaves the authoritative path bypassable, which is
-  the root problem.
+  frontend.** Rejected: leaves the authoritative path open to bypass, which
+  is the root problem.
 
 ## Decision Outcome
 
@@ -68,13 +68,13 @@ the endpoint already maps it to HTTP 400 with the message in
 
 Precise semantics:
 
-- **Requiredness** is read from the run's frozen template *version
+- **Which fields are required** is read from the run's frozen template *version
   snapshot* (`extraction_template_versions.schema_`), so a mid-run
   template edit cannot move the gate.
 - **Per existing instance, no phantom instances.** An entity type with no
   instances contributes nothing — so an optional many-cardinality entity
   type with zero instances (e.g. CHARMS `prediction_models` with no models
-  added) stays finalizable. Study-level singletons are auto-seeded on
+  added) can still be finalized. Study-level singletons are auto-seeded on
   session open, so their required fields are always enforced.
 - **"Resolved value"** is a non-empty published (consensus) value *or* a
   non-empty current reviewer decision. `accept_proposal` decisions resolve
@@ -86,7 +86,7 @@ Precise semantics:
   unchanged.
 - **Scope: extraction only.** Quality-assessment runs keep the
   consensus-only rule; extending completeness to QA is a separate,
-  un-analysed decision (a one-line `kind` change plus a QA test
+  un-analyzed decision (a one-line `kind` change plus a QA test
   migration).
 
 The frontend is brought into line in the same change: the ConsensusPanel
