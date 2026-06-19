@@ -1,5 +1,5 @@
 ---
-status: in_progress
+status: completed
 last_reviewed: 2026-06-19
 owner: '@raphaelfh'
 ---
@@ -9,6 +9,17 @@ owner: '@raphaelfh'
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development
 > (same-session, fresh implementer per task + task review). Steps use checkbox
 > (`- [ ]`) syntax for tracking.
+
+> **STATUS — implementation complete & locally verified 2026-06-19 (pending merge to `dev`).**
+> All three gaps shipped via subagent-driven-development (Tasks 1–9 + cleanup),
+> each task spec+quality reviewed, plus a final whole-branch review (verdict:
+> ready to merge). Verification: backend 44 targeted integration tests + the
+> blind-filter/migration regression anchors green; frontend `npm run test:run`
+> **552/552**; `make lint-backend` clean; `scripts/fitness/run_all.sh` all 8
+> checks OK; `npm run generate:api-types` no drift; `npm run typecheck` clean.
+> Zero `supabase` reads remain across the extraction run-open/run-resolution
+> path. The broader app-schema API buildout (template/project/QA/article-admin
+> services) remains the separate, out-of-scope effort.
 
 **Goal:** Close the three remaining gaps of the extraction data-path
 consolidation so the extraction run-open + run-resolution path reads/writes
