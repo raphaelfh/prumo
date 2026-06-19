@@ -88,7 +88,9 @@ class TestRecallSet:
 class TestAggregate:
     def test_excludes_errored_docs_from_quality_means_but_counts_them(self) -> None:
         scores = [
-            DocScore("a", table_f1=1.0, bbox_f1=0.8, elapsed_s=1.0, est_cost_usd=0.01),
+            DocScore(
+                "a", table_f1=1.0, bbox_f1=0.8, bbox_scored=True, elapsed_s=1.0, est_cost_usd=0.01
+            ),
             DocScore(
                 "b", table_f1=0.0, bbox_f1=0.0, elapsed_s=2.0, est_cost_usd=0.02, error="OCR failed"
             ),

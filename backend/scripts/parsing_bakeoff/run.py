@@ -33,10 +33,12 @@ from parsing_bakeoff.scoring import (
 
 def score_doc(doc: EvalDoc, run: ParseRun) -> DocScore:
     """Score one parser's ``ParseRun`` against a document's gold labels."""
+    has_gold_regions = bool(doc.gold.regions)
     return DocScore(
         doc_id=doc.doc_id,
         table_f1=cell_set_f1(run.pred_cells, doc.gold.all_cells).f1,
-        bbox_f1=match_boxes(run.pred_regions, doc.gold.regions).f1,
+        bbox_f1=match_boxes(run.pred_regions, doc.gold.regions).f1 if has_gold_regions else 0.0,
+        bbox_scored=has_gold_regions,
         section_recall=recall_set(run.pred_sections, doc.gold.sections),
         reference_recall=recall_set(run.pred_references, doc.gold.references),
         elapsed_s=run.elapsed_s,

@@ -280,9 +280,67 @@ class PyMuPDFRunner:
         )
 
 
+def _sections_from_markdown(md: str) -> list[str]:
+    """ATX headings (``# …``) → heading text."""
+    out: list[str] = []
+    for line in md.splitlines():
+        s = line.strip()
+        if s.startswith("#"):
+            heading = s.lstrip("#").strip()
+            if heading:
+                out.append(heading)
+    return out
+
+
+def _cells_from_markdown(md: str) -> list[str]:
+    """Cells from GitHub-style pipe tables; separator rows (``---``) skipped."""
+    out: list[str] = []
+    for line in md.splitlines():
+        s = line.strip()
+        if s.count("|") < 2:
+            continue
+        cells = [c.strip() for c in s.strip("|").split("|")]
+        is_separator = bool(cells) and all(c and set(c) <= set("-: ") for c in cells)
+        if is_separator:
+            continue
+        out.extend(c for c in cells if c)
+    return out
+
+
+@dataclass
+class MarkItDownRunner:
+    """Microsoft MarkItDown — converts a PDF (pdfminer under the hood) to
+    Markdown for LLM prep. No bboxes; tables/headings only as far as they
+    surface in the emitted Markdown. A fast, text-oriented convenience baseline.
+    Install with ``uv pip install "markitdown[pdf]"``."""
+
+    name: str = "markitdown"
+
+    def available(self) -> bool:
+        return _installed("markitdown")
+
+    def parse(self, pdf_path: str) -> ParseRun:
+        import time
+
+        from markitdown import MarkItDown
+
+        started = time.perf_counter()
+        result = MarkItDown().convert(pdf_path)
+        md = getattr(result, "markdown", None) or getattr(result, "text_content", "") or ""
+        return ParseRun(
+            pred_regions=[],  # MarkItDown emits Markdown text, no coordinates
+            pred_cells=_cells_from_markdown(md),
+            pred_sections=_sections_from_markdown(md),
+            pred_references=[],
+            elapsed_s=time.perf_counter() - started,
+            est_cost_usd=0.0,
+        )
+
+
 #: name → factory. ``--dry-run`` uses StubParser instead of these.
 REGISTRY: dict[str, type] = {
     "pymupdf": PyMuPDFRunner,
+    "markitdown": MarkItDownRunner,
     "docling": DoclingRunner,
     "mineru": MinerURunner,
     "opendataloader": OpenDataLoaderRunner,

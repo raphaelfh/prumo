@@ -147,6 +147,10 @@ class DocScore:
     doc_id: str
     table_f1: float = 0.0
     bbox_f1: float = 0.0
+    #: True only when the doc had gold regions to score bbox against. Docs
+    #: without gold regions are excluded from the bbox mean (otherwise a
+    #: parser that emits no boxes scores a vacuous 1.0 via match_boxes([], [])).
+    bbox_scored: bool = False
     section_recall: float = 0.0
     reference_recall: float = 0.0
     elapsed_s: float = 0.0
@@ -184,7 +188,7 @@ def aggregate(parser: str, doc_scores: list[DocScore]) -> ParserReport:
         n_docs=len(doc_scores),
         n_errors=sum(1 for d in doc_scores if d.error is not None),
         mean_table_f1=_mean([d.table_f1 for d in ok]),
-        mean_bbox_f1=_mean([d.bbox_f1 for d in ok]),
+        mean_bbox_f1=_mean([d.bbox_f1 for d in ok if d.bbox_scored]),
         mean_section_recall=_mean([d.section_recall for d in ok]),
         mean_reference_recall=_mean([d.reference_recall for d in ok]),
         mean_latency_s=_mean([d.elapsed_s for d in doc_scores]),

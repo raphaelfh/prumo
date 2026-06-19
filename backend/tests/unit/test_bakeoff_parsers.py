@@ -7,11 +7,14 @@ from parsing_bakeoff.parsers import (
     REGISTRY,
     DoclingRunner,
     LlamaParseRunner,
+    MarkItDownRunner,
     OpenDataLoaderRunner,
     ParserNotWiredError,
     ParseRun,
     PyMuPDFRunner,
     StubParser,
+    _cells_from_markdown,
+    _sections_from_markdown,
 )
 
 
@@ -42,9 +45,24 @@ def test_pymupdf_unavailable_when_lib_absent() -> None:
     assert PyMuPDFRunner().available() is False
 
 
+def test_markitdown_unavailable_when_lib_absent() -> None:
+    # markitdown is not a backend dependency; the import check is False here.
+    assert MarkItDownRunner().available() is False
+
+
+def test_markdown_helpers_extract_sections_and_cells() -> None:
+    md = (
+        "# Methods\n\nText.\n\n## Results\n\n"
+        "| Arm | N |\n| --- | --- |\n| Control | 36 |\n| Drug | 34 |\n"
+    )
+    assert _sections_from_markdown(md) == ["Methods", "Results"]
+    assert _cells_from_markdown(md) == ["Arm", "N", "Control", "36", "Drug", "34"]
+
+
 def test_registry_covers_the_candidates() -> None:
     assert set(REGISTRY) == {
         "pymupdf",
+        "markitdown",
         "docling",
         "mineru",
         "opendataloader",

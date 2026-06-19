@@ -4,11 +4,10 @@ last_reviewed: 2026-06-19
 owner: '@raphaelfh'
 ---
 
-# Parsing bake-off — pilot (8 OA papers; PyMuPDF vs Docling)
+# Parsing bake-off — pilot (8 OA papers; PyMuPDF vs MarkItDown vs Docling)
 
-First multi-paper run of the Phase 0 harness (ADR-0011) and the first
-self-hosted layout-parser comparison — without waiting on a labelled clinical
-eval set.
+Multi-paper Phase 0 run (ADR-0011) comparing three self-hosted parsers, without
+waiting on a labelled clinical eval set.
 
 - **Set:** 8 open-access PLOS ONE RCTs (CC-BY), born-digital PDFs from PLOS.
 - **Gold:** sections + table cells + references **auto-built from PMC JATS XML**
@@ -19,61 +18,49 @@ eval set.
 
 ## Result
 
-| Parser | Docs | Errors | Table-cell F1 | Bbox F1 | Section recall | Mean latency (s) | Cost |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| pymupdf | 8 | 0 | **0.989** | n/a | 0.816 | **1.06** | $0 |
-| docling | 8 | 0 | **0.768** | n/a | 0.816 | 21.0 | $0 |
+| Parser | Docs | Table-cell F1 | Section recall | Bbox | Mean latency (s) | Cost |
+| --- | ---: | ---: | ---: | :--: | ---: | ---: |
+| pymupdf | 8 | 0.989 | 0.816 | yes (unscored) | 1.00 | $0 |
+| docling | 8 | 0.768 | 0.816 | yes (unscored) | 7.6 | $0 |
+| markitdown | 8 | 0.588 | **0.000** | none | 0.55 | $0 |
 
-## Key finding: do **not** pick a parser on this content metric
+`Bbox` is **unscored** — JATS gold has no pixel coordinates. PyMuPDF and Docling
+emit per-block bboxes; MarkItDown emits none. (The harness now excludes
+no-gold-region docs from the bbox mean, so all rows read 0.000 rather than a
+misleading vacuous 1.0 for the parser that produces no boxes.)
 
-On the same paper, Docling produced a **structurally correct** markdown table
-matching the gold rows × columns:
+## Reading the three parsers
 
-```text
-| Scale/ Subscale                                  | Pre-test | Post-test |
-| Patient Compliance Scale ... (Total)             |    0.791 |     0.918 |
-| Attitudes and emotional factors                  |    0.757 |     0.821 |
-```
+- **MarkItDown (Microsoft):** fastest (0.55 s) and simplest, converts PDF →
+  Markdown via pdfminer. But it emits **no `#` headings** (section recall 0.000),
+  **no bboxes**, and recovers only ~60% of table cells. It's a quick
+  text-to-Markdown convenience — **not** a layout/provenance parser, so it does
+  not fit the grounded-extraction goal (which needs section structure + bbox
+  anchoring).
+- **PyMuPDF:** fast (1 s), bboxes on every block, ~82% section recall, and the
+  highest *content* cell-F1 (0.989) — but see the caveat below: that number
+  flatters it. No OCR; flat table cells (no real structure).
+- **Docling:** structured Markdown + real table grids + DocItem labels + bboxes
+  + built-in OCR (scanned support), at ~8–20 s/paper on CPU.
 
-…yet Docling scores **lower** (0.768) than PyMuPDF (0.989) on the multiset
-cell-content F1. The reason: the proxy compares cell *strings* as a multiset.
-PyMuPDF's flat `find_tables` dump happens to overlap the JATS cell tokens more,
-while Docling's *structured* cells (header detection, merged-cell handling)
-group/normalise differently from the JATS `td/th` set — so the **better-structured
-output scores worse**. The proxy measures content overlap, **not structure**.
+## The metric caveat (still the headline)
 
-A higher content-F1 therefore does **not** mean a better table. The parser
-decision needs a **structure-aware metric (TEDS + an LLM-judge)** — this run is
-concrete evidence that, without one, the bake-off can mis-rank parsers.
-
-## What Docling adds (qualitative, demonstrated)
-
-- Clean **structured markdown** (`##` headings, lists, tables as real grids) —
-  ~52 KB for a 14-page paper.
-- Real `DocItem` **labels** (section_header, list_item, caption, table,
-  footnote, picture) + per-item **bboxes** (provenance).
-- Built-in **OCR** (RapidOCR) → handles scanned PDFs. **PyMuPDF has none.**
-
-Trade-off: PyMuPDF is ~1 s/paper, `$0`, bboxes, but flat blocks, no OCR, no table
-structure. Docling is structured + OCR, `$0` self-hosted, but **~20× slower**
-(21 s/paper on CPU) with heavy deps (torch + models; GPU would speed it up).
+The content cell-F1 **mis-ranks structure**. On the same paper, Docling produced
+a structurally-correct table (matching the gold rows × columns) yet scores
+*lower* (0.768) than PyMuPDF's flat token dump (0.989), because the multiset
+compares cell *strings*, not table *structure*. So this proxy ranks
+PyMuPDF > Docling > MarkItDown on content overlap, which is **not** the quality
+order for grounded extraction. The decision still needs a **structure-aware
+metric (TEDS + an LLM-judge)** and **scanned inputs** (where MarkItDown/PyMuPDF
+have no OCR and Docling does).
 
 ## LlamaParse (optional)
 
-Wired (agentic tier + granular bboxes) but needs `LLAMA_CLOUD_API_KEY` and
-egresses to a cloud API — **not run here** (no key). Viable for published OA
-papers (not PHI); a candidate for the next round.
-
-## Caveats
-
-8 born-digital papers; `bbox_f1` unscored (JATS has no coordinates); `table_f1`
-is the content proxy shown inadequate above; Docling latency is CPU-bound.
+Wired (agentic tier + granular bboxes) but needs `LLAMA_CLOUD_API_KEY` + cloud
+egress — not run here. Candidate for the next round on published (non-PHI) papers.
 
 ## Next (in priority order)
 
-1. **Add a TEDS + LLM-judge table metric** (structure, not content) — the gating
-   piece; without it the bake-off mis-ranks (as shown).
-2. **Add scanned / image-only papers** — where Docling's OCR vs PyMuPDF's none
-   becomes decisive.
-3. Re-rank **Docling vs MinerU vs LlamaParse** on structure + scanned fidelity,
-   on a GPU-capable environment.
+1. **TEDS + LLM-judge** table metric (structure, not content) — the gating piece.
+2. **Scanned / image-only papers** — decisive for OCR (Docling) vs none.
+3. Re-rank **Docling vs MinerU vs LlamaParse** on structure + scanned, on GPU.
