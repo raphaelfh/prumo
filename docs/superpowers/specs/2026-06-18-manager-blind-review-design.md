@@ -51,9 +51,10 @@ flag as the consolidation target.
 
 - Managers are **blind to other reviewers by default**; reviewers unchanged
   (already blind); `consensus` role unchanged (always sees — pure adjudicator).
-- A **project-level, manager-only** setting reveals/hides peers for managers.
-  Read **live** (toggling takes effect immediately), persisted via a **typed
-  API endpoint**.
+- A **project-level, manager-only, per-kind** setting reveals/hides peers for
+  managers — **one toggle for extraction, a separate one for QA** (a manager may
+  stay blind on one kind while revealed on the other). Read **live** (toggling
+  takes effect immediately), persisted via a **typed API endpoint**.
 - Blinding becomes a **single server-enforced source of truth**; the dead
   `blind_mode` flag is retired and the `loadValuesForOthers` direct-Supabase
   read is removed.
@@ -79,26 +80,34 @@ flag as the consolidation target.
 
 | Decision | Choice |
 | --- | --- |
-| Toggle scope | **Project-level persistent setting** (not per-article) |
+| Toggle scope | **Project-level, per-kind** — separate extraction + QA toggles (not per-article) |
 | Blind policy | **Only managers** get the new blind default; reviewers unchanged; consensus always-unblinded |
 | Reveal gate | **Anytime** (trust the manager) |
 | Cleanup | **Full** — single server-enforced truth, retire dead flag, kill dual-read |
-| Write path | **Focused typed endpoint** `PUT /api/v1/projects/{id}/extraction-settings` |
+| Write path | **Focused typed endpoint** `PUT /api/v1/projects/{id}/manager-review-visibility` (per-kind) |
 | RLS | **Unchanged** — manager-blind enforced at API/app layer, not RLS |
+| Compare UI | **One shared** `runDetail`-driven component for extraction + QA |
 
 ## 4. Data model — the setting
 
-Add **`managers_see_reviewers: boolean`** to `projects.settings` (JSONB),
-**default `false`** (managers blind by default). Retire the dead `blind_mode`
-key.
+Add a **per-kind** map to `projects.settings` (JSONB), keyed by `TemplateKind`,
+each **default `false`** (managers blind by default on both kinds). Retire the
+dead `blind_mode` key.
 
-- No Alembic migration: `projects.settings` is JSONB. Existing rows lack the
-  new key → resolve to default `false` (blind). The SQLAlchemy model default
-  (`backend/app/models/project.py:69-73`) changes from `{"blind_mode": False}`
-  to `{"managers_see_reviewers": False}`.
+```json
+"managers_see_reviewers": { "extraction": false, "quality_assessment": false }
+```
+
+- Keyed by the existing `kind` discriminator (`extraction` / `quality_assessment`)
+  so it mirrors the rest of the stack and extends cleanly if a third kind appears.
+- Resolve as `settings.managers_see_reviewers?.[run.kind] ?? false` — a missing
+  map or missing key means blind. So **no Alembic migration**: existing rows
+  (with the old `{"blind_mode": false}` or no key) resolve to blind for both
+  kinds. The SQLAlchemy model default (`backend/app/models/project.py:69-73`)
+  changes to `{"managers_see_reviewers": {"extraction": False, "quality_assessment": False}}`.
 - Read **live** from `projects.settings` at request time — NOT snapshotted into
-  `hitl_config_snapshot` (unlike `reviewer_count`), so the toggle takes effect
-  on the next read without reopening runs.
+  `hitl_config_snapshot` (unlike `reviewer_count`), so a toggle takes effect on
+  the next read without reopening runs.
 - Behavior change on ship: existing projects' **managers become blind by
   default** and must flip the toggle to adjudicate. Intended.
 
@@ -109,19 +118,21 @@ with a three-way rule. Split the helper so the two roles are no longer
 collapsed for this decision:
 
 ```python
-# pseudo
+# pseudo — managers_see is resolved per run.kind
+managers_see = settings.managers_see_reviewers.get(run.kind, False)
 unblinded = (
     run.stage == FINALIZED
-    or caller_role == CONSENSUS                      # pure adjudicator — always
-    or (caller_role == MANAGER and managers_see_reviewers)   # live project setting
+    or caller_role == CONSENSUS                  # pure adjudicator — always
+    or (caller_role == MANAGER and managers_see) # live, per-kind project setting
 )
 ```
 
 - `get_run_with_workflow_history` gains the caller's project role + the live
-  `managers_see_reviewers` value (one extra read of `projects.settings`, or
-  threaded from the endpoint which already loads membership). When blind, a
-  manager's `proposals[]`/`decisions[]` are filtered to their own rows exactly
-  like a reviewer.
+  per-kind `managers_see_reviewers[run.kind]` value (one extra read of
+  `projects.settings`, or threaded from the endpoint which already loads
+  membership). When blind, a manager's `proposals[]`/`decisions[]` are filtered
+  to their own rows exactly like a reviewer. Because the resolution keys on
+  `run.kind`, the extraction and QA toggles are fully independent.
 - `resolve_caller_current_values` is **unchanged** — already strictly
   caller-scoped. The manager's editable **form** always shows only their own
   values; revealing affects the **peer/compare surfaces** (`proposals[]` /
@@ -142,24 +153,27 @@ mistaken for a blind-leak regression.
 
 ## 6. The typed settings endpoint
 
-`PUT /api/v1/projects/{project_id}/extraction-settings` — manager-only
+`PUT /api/v1/projects/{project_id}/manager-review-visibility` — manager-only
 (`Depends(require_project_manager)`), `ApiResponse[...]` envelope, typed Pydantic
 request/response (no `dict[str, Any]`).
 
-- Request: `{ "managers_see_reviewers": bool }`.
-- Service reads `projects.settings`, sets the key, writes back; returns the
-  resolved settings.
-- Frontend `HitlConfigService` (or a small `projectExtractionSettingsService`)
-  calls it via the typed `apiClient` (PUT). The Advanced-Settings direct-Supabase
-  write of `blind_mode` is removed.
+- Request: `{ "kind": "extraction" | "quality_assessment", "managers_see_reviewers": bool }`
+  — sets **one kind** at a time (each toggle PUTs its own kind). `kind` is the
+  validated `TemplateKind` literal.
+- Service reads `projects.settings`, merges the value into
+  `managers_see_reviewers[kind]` (preserving the other kind), writes back; returns
+  the resolved per-kind map.
+- Frontend service calls it via the typed `apiClient` (PUT). The Advanced-Settings
+  direct-Supabase write of `blind_mode` is removed.
 - This is the first typed `projects` settings route; it does **not** migrate the
   rest of project-settings writes (out of scope) — only this setting.
 
 ## 7. Frontend — permission gate + ONE shared, runDetail-driven compare view
 
-**Permission gate.** `canUserSeeOthers(role, settings)`:
-`consensus → true`, `manager → settings.managers_see_reviewers`,
-`reviewer/viewer → false`. `loadComparisonPermissions` reads the live setting.
+**Permission gate.** `canUserSeeOthers(role, settings, kind)`:
+`consensus → true`, `manager → settings.managers_see_reviewers[kind]`,
+`reviewer/viewer → false`. The caller passes the screen's `kind` (extraction vs
+quality_assessment); `loadComparisonPermissions` reads the live per-kind setting.
 This gates whether the compare *affordance* is offered; the *data* is already
 server-blinded in `runDetail`, so it is belt-and-suspenders, not the boundary.
 
@@ -191,33 +205,41 @@ on both screens reads from one server-blinded source (`runDetail`); when a
 manager is blind, `decisionsByCoord` has only their own rows so the compare view
 is empty/hidden; when revealed, peers appear.
 
-## 8. The toggle UI
+## 8. The toggle UI — two toggles, one per kind
 
 - Remove the dead "Blind mode" `Switch` from `AdvancedSettingsSection`.
-- Add a control in the **extraction/consensus settings** (next to the consensus
-  config): *"Show other reviewers' responses to managers"* — default off,
-  `disabled` unless `canManageBlindMode` (manager). New copy keys under
-  `frontend/lib/copy/consensus.ts` (English only). It is project-level and
-  **kind-agnostic**: the server reads it for every run, so it governs manager
-  visibility on both extraction and QA runs from one switch.
-- Repoint the `EyeOff` "blind" badge so it reflects the **real** manager-blind
-  state (or remove it if redundant with the toggle).
+- One reusable manager-only control *"Show other reviewers' responses to
+  managers"* (default off, `disabled` unless `canManageBlindMode`), rendered
+  **twice**, each bound to its kind and PUT-ing that kind:
+  - **Extraction toggle** — in the extraction/consensus settings (next to the
+    consensus config). `kind='extraction'`.
+  - **QA toggle** — in the QA configuration surface
+    (`QualityAssessmentConfiguration`). `kind='quality_assessment'`.
+- One small shared `ManagerReviewVisibilityToggle` component takes the `kind`,
+  reads `managers_see_reviewers[kind]`, and calls the typed endpoint with that
+  kind — so the two toggles are independent but share one implementation. New
+  copy keys under `frontend/lib/copy/consensus.ts` (English only).
+- Repoint the `EyeOff` "blind" badge so it reflects the **real** per-kind
+  manager-blind state (or remove it if redundant with the toggle).
 
 ## 9. Testing
 
 **Backend (pytest, integration):**
 
-- Manager + `managers_see_reviewers=false` → `/runs/{id}/view` returns no peers'
-  human proposals/decisions (own-only), at review and consensus stages.
-- Flip to `true` → peers appear for the manager.
+- Manager + `managers_see_reviewers[kind]=false` → `/runs/{id}/view` returns no
+  peers' human proposals/decisions (own-only), at review and consensus stages.
+- Flip that kind to `true` → peers appear for the manager.
+- **Per-kind independence:** extraction toggle on + QA toggle off → manager sees
+  peers on an extraction run but is blind on a QA run (and the mirror case).
 - Reviewer → always own-only (regression guard).
 - Consensus member → always sees peers regardless of the setting.
 - Finalized → everyone sees peers.
-- `PUT /extraction-settings`: manager 200 + persists; non-manager 403.
+- `PUT /manager-review-visibility`: manager 200, persists the named kind without
+  clobbering the other kind; non-manager 403; invalid `kind` 422.
 
 **Frontend (vitest):**
 
-- `canUserSeeOthers` matrix over role × setting.
+- `canUserSeeOthers` matrix over role × per-kind setting × kind.
 - `RunReviewerComparison` renders the right per-reviewer columns from
   `decisionsByCoord` for both shapes: extraction multi-instance (models) and QA
   1:1 domains. Empty for a blind manager; populated when revealed.
