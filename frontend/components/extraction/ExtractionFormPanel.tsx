@@ -47,7 +47,7 @@ export function ExtractionFormPanel({
     // because radix ScrollArea renders the actual scroll node beneath.
     <div data-scroll-container="extraction-form" className="h-full">
       <ScrollArea className="h-full bg-muted/30">
-        <div className="p-8 space-y-4">
+        <div className="@container p-8 space-y-4">
           {viewMode === 'extract' && formViewProps ? (
             <ExtractionFormView {...formViewProps} showPDF={showPDF} />
           ) : viewMode === 'compare' && compareViewProps ? (

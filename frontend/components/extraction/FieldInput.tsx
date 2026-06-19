@@ -66,9 +66,9 @@ export function FieldInput(props: FieldInputProps) {
   const justUpdated = useJustUpdatedValue(`${instanceId}_${field.id}`);
 
     // Fixed comfortable spacing
-  const containerPadding = 'py-4';
-  const inputHeight = 'h-9';
-  const gap = 'gap-4';
+  const containerPadding = 'py-2.5';
+  const inputHeight = 'h-8';
+  const gap = 'gap-x-3.5 gap-y-1';
 
     // Display value logic:
     // - Local state value always has priority (manual or AI-accepted)
@@ -378,17 +378,20 @@ export function FieldInput(props: FieldInputProps) {
   return (
       <div
           data-just-updated={justUpdated || undefined}
+          data-field-row
           className={cn(
-            // Stack label over input on mobile; switch to the 30/70 two-column
-            // split at sm+ so narrow screens don't truncate ("Select…", "Retro…").
-            "grid grid-cols-1 sm:grid-cols-[30%_1fr] items-start border-b border-border/40 last:border-b-0 transition-colors",
+            // Stack label over input on narrow containers; switch to a capped-left
+            // two-column grid at @md so the PDF panel width (not the viewport)
+            // drives the breakpoint.
+            'grid grid-cols-1 @md:grid-cols-[minmax(0,232px)_1fr] items-start',
+            'border-b border-border/40 last:border-b-0 transition-colors',
             justUpdated && "field-just-updated",
             gap,
             containerPadding
           )}>
 
       {/* Left column: Label + Description */}
-      <div className="space-y-1 pt-2">
+      <div className="space-y-1">
         <Label className="text-sm font-medium flex items-center gap-2">
           {field.label}
           {field.is_required && <span className="text-destructive ml-1">*</span>}
