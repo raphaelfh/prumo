@@ -74,6 +74,7 @@ export function useArticleExtractionValues(
         const formRunByArticle = await ExtractionValueService.findFormRunsByArticle(
           articleIds,
           templateId as string,
+          projectId as string,
         );
         runIds = Array.from(new Set(formRunByArticle.values()));
       }
