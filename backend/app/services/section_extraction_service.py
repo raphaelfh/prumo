@@ -44,6 +44,8 @@ from app.repositories import (
     ExtractionInstanceRepository,
     ExtractionRunRepository,
 )
+from app.repositories.article_text_block_repository import ArticleTextBlockRepository
+from app.services.evidence_anchor_service import build_anchor
 from app.services.extraction_proposal_service import ExtractionProposalService
 from app.services.pdf_processor import PDFProcessor
 from app.services.run_lifecycle_service import RunLifecycleService
@@ -1219,6 +1221,23 @@ class SectionExtractionService(LoggerMixin):
                 entity_type_id=str(entity_type_id),
             )
 
+        # Resolve the article's main PDF file and its text blocks once, so
+        # build_anchor can ground each evidence quote to a PositionV1 anchor.
+        # Guard: missing main file or no blocks → empty list; safe fallback
+        # keeps position={} and the LLM's page_number (no exception raised).
+        _anchor_blocks: list = []
+        _anchor_file_id: UUID | None = None
+        try:
+            _main_file = await self._article_files.get_latest_pdf(article_id)
+            if _main_file is not None:
+                _anchor_file_id = _main_file.id
+                _anchor_blocks = await ArticleTextBlockRepository(self.db).list_ordered_for_file(
+                    _main_file.id
+                )
+        except Exception:
+            _anchor_blocks = []
+            _anchor_file_id = None
+
         # Record one ProposalRecord per extracted field. Evidence cited by
         # the LLM is stored as a real extraction_evidence row linked to
         # the proposal via proposal_record_id.
@@ -1269,15 +1288,24 @@ class SectionExtractionService(LoggerMixin):
             )
 
             if evidence_meta:
+                _quote = evidence_meta.get("text") or ""
+                _pos = build_anchor(_quote, _anchor_blocks) if _anchor_blocks and _quote else None
+                if _pos is not None:
+                    _position: dict = _pos.model_dump(by_alias=True, mode="json")
+                    _page_num = _pos.anchor.range.page
+                else:
+                    _position = {}
+                    _page_num = evidence_meta.get("page_number")
                 self.db.add(
                     ExtractionEvidence(
                         project_id=project_id,
                         article_id=article_id,
+                        article_file_id=_anchor_file_id if _pos is not None else None,
                         run_id=run.id,
                         proposal_record_id=proposal.id,
-                        page_number=evidence_meta.get("page_number"),
+                        page_number=_page_num,
                         text_content=evidence_meta.get("text"),
-                        position={},
+                        position=_position,
                         created_by=UUID(self.user_id),
                     )
                 )

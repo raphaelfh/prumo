@@ -18,7 +18,7 @@ page text and the quote are normalised before comparison.
 **Normalisation (both sides).**  Unicode **NFKC** + whitespace folding (runs of
 whitespace collapse to a single space; leading/trailing whitespace stripped).
 This makes a quote that differs only by ligatures (``ﬁ`` → ``fi``), smart
-quotes (``’`` → ``'``), or collapsed whitespace still match.
+quotes (``'`` → ``'``), or collapsed whitespace still match.
 
 **Offset coordinate space (the crucial part).**  NFKC and whitespace folding
 *change* string length and character positions.  The ``char_start`` /
@@ -81,6 +81,13 @@ from app.infrastructure.parsing.base import (
     assign_char_offsets_to_blocks,
     concat_page_text,
 )
+from app.schemas.extraction import (
+    HybridCitationAnchor,
+    PDFRect,
+    PDFTextRange,
+    PositionV1,
+    TextCitationAnchor,
+)
 
 # ---------------------------------------------------------------------------
 # Tuning constants (parameters, not config)
@@ -102,6 +109,13 @@ _FUZZ_LEN_SLACK: float = 0.25
 #: Length 1 below the upper bound is always probed too; this only coarsens the
 #: *length* sweep, not the *position* sweep (which is exhaustive).
 _FUZZ_LEN_STEP: int = 1
+
+#: Block types considered "prose" for anchor-variant selection.
+#: Any block whose type is NOT in this set (i.e. ``table_cell`` or
+#: ``figure_caption``) triggers a ``HybridCitationAnchor`` (range + bbox).
+_PROSE_BLOCK_TYPES: frozenset[str] = frozenset(
+    {"paragraph", "heading", "list_item", "header", "footer"}
+)
 
 
 # ---------------------------------------------------------------------------
@@ -154,7 +168,7 @@ class _Block(Protocol):
 # Normalisation + index map
 # ---------------------------------------------------------------------------
 
-_WHITESPACE = frozenset(" \t\n\r\f\v\xa0\u2028\u2029")
+_WHITESPACE = frozenset(" \t\n\r\f\v\xa0  ")
 #: Typographic punctuation that NFKC does NOT fold but which routinely differs
 #: between an LLM's quote and the source PDF.  Each mapping is a 1:1 character
 #: replacement so the normalised → original index map stays exact (length is
@@ -546,3 +560,68 @@ def match(
             )
 
     return best_result
+
+
+def build_anchor(
+    quote: str,
+    blocks: Sequence[_Block],
+    *,
+    fuzz_threshold: float = DEFAULT_FUZZ_THRESHOLD,
+) -> PositionV1 | None:
+    """Build a :class:`PositionV1` anchor for *quote* against *blocks*.
+
+    Calls :func:`match` to locate the quote, then picks the
+    :class:`~app.schemas.extraction.CitationAnchor` variant based on the
+    matched blocks' ``block_type``:
+
+    * **All matched blocks are prose** (``paragraph``, ``heading``,
+      ``list_item``, ``header``, ``footer``) →
+      :class:`~app.schemas.extraction.TextCitationAnchor` (char range only).
+    * **Any matched block is** ``table_cell`` **or** ``figure_caption`` →
+      :class:`~app.schemas.extraction.HybridCitationAnchor` (char range +
+      bbox union + quote).  Hybrid carries the region for table/figure
+      highlighting and is the recommended AI anchor shape.
+
+    The function is **pure** (no DB, no IO).  Idempotent on re-run — same
+    inputs always produce the same output.
+
+    Args:
+        quote: The LLM's free-text evidence quote.
+        blocks: ``ArticleTextBlock`` ORM rows (or ``ParsedBlock`` dataclasses).
+            Must cover the full document; typically obtained from
+            ``ArticleTextBlockRepository.list_ordered_for_file``.
+        fuzz_threshold: Passed through to :func:`match`.  ``1.0`` = exact only.
+
+    Returns:
+        A :class:`PositionV1` whose ``anchor`` is set to the appropriate
+        variant, or ``None`` if the quote cannot be located in *blocks*.
+    """
+    m = match(quote, blocks, fuzz_threshold=fuzz_threshold)
+    if m is None:
+        return None
+
+    # Look up the block_type for each matched block_index on m.page.
+    matched_block_types: set[str] = set()
+    for b in blocks:
+        if b.page_number == m.page and b.block_index in m.block_ids:
+            matched_block_types.add(b.block_type)
+
+    text_range = PDFTextRange(page=m.page, char_start=m.char_start, char_end=m.char_end)
+
+    # Hybrid if any matched block is a non-prose type (table_cell / figure_caption).
+    non_prose = matched_block_types - _PROSE_BLOCK_TYPES
+    if non_prose:
+        anchor = HybridCitationAnchor(
+            kind="hybrid",
+            range=text_range,
+            rect=PDFRect(**m.bbox_union),
+            quote=quote,
+        )
+    else:
+        anchor = TextCitationAnchor(
+            kind="text",
+            range=text_range,
+            quote=quote,
+        )
+
+    return PositionV1(version=1, anchor=anchor)
