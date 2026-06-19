@@ -1,0 +1,347 @@
+---
+status: proposed
+last_reviewed: 2026-06-19
+owner: '@raphaelfh'
+---
+
+> **Status:** Proposed — design approved in brainstorm 2026-06-19, not yet
+> planned/implemented. Next step: `superpowers:writing-plans` to produce a
+> phased implementation plan. Line numbers below are indicative (captured
+> 2026-06-19) and must be re-confirmed at implementation time.
+
+# Design: Extraction View UX — navigation, density, and chrome
+
+**Date:** 2026-06-19
+**Branch:** `claude/musing-morse-e2f724`
+**Scope owner:** `@raphaelfh`
+
+## 1. Context
+
+The extraction view (`/projects/:projectId/extraction/:articleId`, page
+`frontend/pages/ExtractionFullScreen.tsx`) is where a reviewer fills a
+template-driven form (CHARMS ≈ 6 sections / 30+ fields plus N prediction-model
+sub-forms; also PROBAST, QUADAS-2) against a source PDF, AI proposes values,
+multiple reviewers diverge, and a manager reconciles to a finalized consensus.
+
+Run locally on 2026-06-19 against the E2E fixture project (manager role,
+REVIEW-stage CHARMS run) the current view shows three concrete UX problems
+the project's own Plane/Linear/WorkOS design language is meant to avoid:
+
+1. **No way to navigate a 6-screen form.** `ExtractionFormView` simply `.map()`s
+   `SectionAccordion`s into one `ScrollArea` (`ExtractionFormPanel.tsx:48-57`).
+   There is no section index, no jump, no at-a-glance "what's left". For a
+   reviewer processing dozens of articles against the same template this is the
+   single biggest cost.
+2. **Very low density.** Field rows are ~80px (`FieldInput.tsx` fixed `py-4` +
+   `h-9` + `gap-4`); each section is a large `bg-card border-l-4` card; a
+   suggested field renders three separate AI affordances. The form is mostly
+   whitespace.
+3. **Cramped, cryptic chrome.** A two-row header crams two different "eye"
+   metaphors (PDF show/hide *and* a non-interactive blind-mode badge), a bare
+   `3%`, and a primary button that explains itself in parentheses
+   ("Reconcile (advance to consensus)") and, when gated, fails silently.
+
+This design addresses the three surfaces the product owner prioritized:
+**(1) navigation between extraction sections, (2) core form density/editing,
+(3) header/chrome/states.**
+
+## 2. Goals & non-goals
+
+**Goals**
+
+- Make a long template form navigable and give a constant "what's left" signal.
+- Raise density to the Plane/Linear bar without losing field descriptions /
+  CHARMS codes or accessibility.
+- Replace cramped, ambiguous chrome with one calm bar that makes the run's
+  stage and the next action obvious, and that explains gated actions.
+- Fix the field layout so it reflows correctly when the PDF panel is open.
+
+**Non-goals (explicitly out of scope this round)**
+
+- The multi-reviewer **compare** and **consensus** workflow (panel layout,
+  divergence resolution, reveal/blind reveal mechanics beyond the header label).
+- **PDF ↔ evidence** linking depth (clickable evidence anchoring, highlight
+  sync) — we only show an evidence *link affordance* (`p.4 ¶2`) on the AI strip;
+  the underlying linking is a separate effort (see the PDF-ingestion overhaul).
+- Template authoring / schema changes. This is a presentation-layer redesign;
+  no `extraction_*` schema, run-state, or API contract changes.
+
+## 3. Design decisions
+
+### 3.0 Shared foundation — a typed section registry
+
+All three surfaces are driven by one new typed structure derived from the
+template + live values, e.g.:
+
+```ts
+type SectionNavItem = {
+  id: string;            // entity-type id / model-child key
+  label: string;         // section title
+  charmsCode?: string;   // e.g. "2"
+  requiredTotal: number; // required fields in existing instances
+  requiredFilled: number;
+  state: 'complete' | 'in_progress' | 'empty';
+  level: 0 | 1;          // 0 = study-level / 1 = model child
+};
+```
+
+Source of truth: `hooks/extraction/useExtractionProgress.ts`
+(`completed/total` required) + `useTemplateEntityTypes` (per-entity
+`is_required`). The registry feeds the rail, the palette, the keyboard nav, the
+tab fallback, and the global progress — one model, four consumers.
+
+### 3.1 Section navigation — hybrid (approved)
+
+**Base layer: persistent left outline rail.** A sticky ~184px left column
+rendered as a sibling to the form `ScrollArea` inside `ExtractionFormPanel.tsx`.
+Each row = tri-state status dot + label + bare `n/m` count; the active section is
+tracked by an `IntersectionObserver` scrollspy and highlighted `bg-info/10` with
+`aria-current="location"`; clicking smooth-scrolls **and** moves focus to the
+section heading. Model sub-forms render as an indented second level under a
+"Models" node. A pinned footer holds the global slim `Progress` bar + "required
+left: N". The rail is a *lens over the existing single-scroll DOM*, not a router —
+it does not touch consensus/PDF plumbing.
+
+**Layer: command palette + keyboard nav.** Feed the same registry to the
+installed `cmdk` `Command` primitive: ⌘K opens a "Go to section…" palette,
+fuzzy-matchable by label **or** CHARMS code ("2.1"), each item showing
+dot + label + code + count. A pinned top action — **"Jump to next
+required-empty field"** (`⏎`) — reads required-empty from
+`useExtractionProgress` and scrolls+focuses it; this is the keystroke that
+collapses the whole what's-left workflow into one action. Always-on
+`Cmd/Ctrl+[` / `]` (and `J`/`K`) move prev/next section, scoped to
+**not-while-typing**. A faint `⌘K` hint lives in the More menu / shortcuts sheet.
+
+**Responsive fallback: top tabs.** When the PDF panel opens (or the form
+container falls below a width threshold) the rail collapses to a 44px **dot
+strip** (dots only; label+count in tooltip). The sticky horizontal **section
+tab bar** (pills with status dots, overflow into a `⋯` menu, active pill
+auto-scrolled into view) is the named-section affordance for that narrow state.
+The form column shrinks before the rail does — the rail is never the element
+sacrificed to the PDF.
+
+**Rejected as primary:** section-at-a-time **wizard**. It optimizes the
+first-time user, punishes the expert repeat user (Next × 6 × dozens of
+articles), and fights reading the PDF in source order. Reserve one-section-at-a-
+time *only* for editing a single prediction-model child in a drawer/modal.
+
+### 3.2 Core form density & editing
+
+- **Flat sections, not cards.** Replace the `bg-card border-l-4` card +
+  `px-6 py-4` header + `px-8 pb-8` body (`SectionAccordion.tsx:159-168, 236`)
+  with a flat **sticky section header row** (title `text-[14px] font-medium`,
+  the ✨ Extract action, collapse chevron) and hairline dividers inside the
+  scroll. The completion **color moves to the rail dot**.
+- **Dense row + capped-left labels with container-query reflow (approved).**
+  Field row becomes
+  `grid grid-cols-1 @md:grid-cols-[minmax(0,232px)_1fr] gap-x-3.5 gap-y-1`,
+  `py-2.5`, input `h-8 text-[13px]`. Two fixes in one: caps the label column at
+  232px (not `30%` of an ever-widening screen) **and** uses a **container
+  query** (`@md`) instead of the current viewport breakpoint
+  (`FieldInput.tsx:384` `sm:grid-cols-[30%_1fr]`) so it reflows to stacked when
+  the *panel* is narrow, not when the *window* is. Net ≈ 52px vs ≈ 80px per row
+  (~one screen less scroll on CHARMS), zero info loss.
+- **One inline AI strip.** Replace the three current affordances (AISuggestion
+  badge + always-visible History button `FieldInput.tsx:413-450` + separate
+  AISuggestionDisplay row) with a single 24px strip under the input:
+  `✨ · suggested value (text-ai) · confidence pill (bg-ai/10) · evidence link
+  (text-info "p.4 ¶2") · ✓ accept (text-success) · ✗ reject`. History demotes
+  into a details popover. An accepted+unedited value collapses to a tiny
+  `✨ AI` provenance marker.
+- **Calmer validation.** Move format validation to **blur**, required-empty to
+  **finalize-attempt** (today `validateValue` runs inside `handleChange`,
+  `FieldInput.tsx:~134-137`, flashing red on keystroke). An empty required field
+  pre-submit is **neutral** (asterisk only); `border-destructive` is reserved
+  for attempted-and-invalid; once a field has errored, live-revalidate on
+  subsequent keystrokes so the user watches it clear.
+- **Three-level progress.** Drop the redundant per-section `count + percent`
+  (`SectionAccordion.tsx:112-136, 182-184`). Rail = dot + bare count; flat
+  section header = one phrase ("2 of 5 required"); global = one slim bar +
+  "required left: N". Mark required fields only (asterisk), never optional.
+- **Keyboard-first editing.** DOM order = visual order = CHARMS order; pull AI
+  accept/reject/history out of tab order (`tabindex=-1`) so Tab never lands on a
+  ✓ between two inputs; Enter-to-advance in single-line inputs (Cmd/Ctrl+Enter in
+  textareas); Cmd/Ctrl+Enter accepts a pending suggestion, Cmd/Ctrl+Backspace
+  rejects.
+- **Autosave status chip.** One debounced (~600–800ms) global chip (where the
+  reviewer badge sits): Saving… → Saved (timestamp on hover) → Save failed —
+  retry; `text-[11px] text-muted-foreground`, only failure gets `text-destructive`
+  + a real retry. Flush on blur, section change, `beforeunload`. Move the
+  field-just-updated flash keyframe off yellow (`index.css:6`,
+  `rgba(253,224,71,…)` reads as a warning) to the AI violet `--ai` at low alpha.
+
+### 3.3 Header / chrome / states
+
+- **One calm bar.** Collapse the conditional reviewer sub-row
+  (`ExtractionFullScreen.tsx:1075`) — reviewer count + divergence belong in the
+  stage rail and only when `stage !== 'proposal'`. The 90% solo-filling case has
+  no second row.
+- **Stage rail.** A first-class Proposal → Review → Consensus → Finalized
+  indicator (current stage filled) replaces the self-explaining button label;
+  the primary button names only the next transition ("Reconcile", no
+  parenthetical; label computed today at `ExtractionFullScreen.tsx:1002-1010`).
+- **Self-explaining gated action.** `HeaderFinalizeButton` (today
+  `disabled={!isComplete}`, `:34`) gets a tooltip + thin inline helper
+  ("Fill N more required fields · X of Y done", from `useExtractionProgress`),
+  and clicking the disabled Reconcile lights up rail sections with required-empty
+  fields and scrolls to the first — the mute gate becomes a guide. (Today the
+  only "why" is a toast fired *after* a dead click, `handleFinalize:~735`.)
+- **Fix the two eyes.** Remove the non-interactive, manager-only blind
+  `EyeOff` badge (`HeaderStatusBadges.tsx:82`); express blind state as a role
+  label ("Manager · blind"); surface the actionable reveal in the
+  compare/settings affordance where it belongs. Replace the PDF show/hide eye
+  (`HeaderPDFControls`) with a single **panel-toggle** button
+  (`ti-layout-sidebar-right`) with `aria-pressed` + a pressed state — one eye
+  retired, the other replaced by a panel metaphor.
+- **Demote ambient status.** Role + completion % are the only always-on chips;
+  `SaveStatusBadge` becomes a dot + word; the Compare-view toggle and Reopen
+  move into the `⋯` menu (edge/power actions).
+- **States.**
+  - *Loading:* layout skeleton — render the real header chrome immediately
+    (needs no run data) and skeleton only the form body — instead of the centered
+    `Loader2` (`ExtractionFullScreen.tsx:862`).
+  - *PDF error:* panel-scoped error inside the viewer (`ExtractionPDFPanel.tsx:38`
+    wraps `@prumo/pdf-viewer` with no error UI today) — icon + "PDF not available
+    for this article" + Retry — so a 404 PDF degrades the **panel** only; the form
+    stays usable. (Observed live: "Failed to sign URL for article file: Object
+    not found".)
+  - *Finalized:* visibly read-only — disabled inputs + a one-line banner
+    "Finalized — values are locked. Reopen to revise." (`isFinalized`,
+    `ExtractionFullScreen.tsx:157`); stage rail shows Finalized; primary becomes
+    Reopen (manager) or disappears.
+  - *Page error:* in-place error card with `error.message` (per the API error
+    envelope rule — read `error.message`, not `detail`) + Retry + Back, replacing
+    redirect-on-toast (`ExtractionFullScreen.tsx:501, 874`).
+- **Worklist pager (P2).** Turn the bare `1/1` counter into a popover listing
+  queue articles with per-article status (not started / in review / finalized) +
+  "4 of 28 · 12 remaining"; attach the loose prev/next ghosts into one pill; add
+  `J`/`K` article nav in the shortcuts sheet. Drop `hover:scale-[1.02]` on the
+  primary (reads toy-ish against the Linear target) for a calm bg/border hover.
+
+## 4. Design tokens (reuse — do not invent)
+
+Confirmed against `frontend/index.css` + `tailwind.config.ts` + live components.
+
+- **Surfaces:** page `bg-background`; form scroll area `bg-muted/30`
+  (`ExtractionFormPanel.tsx:49`); section `bg-card`; popovers/palette
+  `bg-popover text-popover-foreground` + `shadow-elev-popover`. Rail surface:
+  `bg-muted/30` (do **not** invent `bg-[#fafafa]`).
+- **Borders:** `border-border` (dividers, `divide-y divide-border/40`),
+  `border-input` (inputs). Keep the existing state mapping
+  (`border-l-success` complete / `border-l-info` partial / `border-l-border`
+  empty) but move the signal onto the **rail dot**, not a 4px card border.
+- **Text:** `text-foreground` / `text-muted-foreground` /
+  `text-destructive` (asterisk + real errors only). Density type scale: body/input
+  `text-[13px]`; label `text-[13px] font-medium`; hint `text-[11px]
+  text-muted-foreground leading-snug`; CHARMS chip `font-mono text-[10px] px-1
+  py-px rounded bg-muted`; headings `font-semibold tracking-tight`.
+- **Status/accent:** `bg-primary` (primary action); `bg-success`/`text-success`
+  (complete dot, accept ✓); `bg-info`/`text-info` + `bg-info/10` (active rail,
+  evidence link); `bg-warning`/`text-warning` (low-confidence < 60% pill);
+  `bg-destructive` (real errors). AI language: `text-ai`, `bg-ai/10`,
+  `border-ai/60 bg-ai/5` (pending-suggestion field tint — already correct in
+  `FieldInput`). Reviewer avatars `bg-reviewer-1..5`.
+- **Radii:** `rounded-lg`/`-md`/`-sm` (all derive from `--radius` 0.5rem; never
+  hardcode px radii).
+- **Spacing/height:** header `h-12` `bg-background/80 backdrop-blur-md border-b
+  border-border/40`; control height `h-8` (down from `h-9`/`h-10`); field row
+  `py-2.5`; section gaps `gap-4`; rail 184px expanded / 44px collapsed.
+- **Focus (a11y, non-negotiable):** `focus-visible:ring-2 focus-visible:ring-ring
+  focus-visible:ring-offset-2`. The olive/khaki focus observed live is the native
+  date/number UA highlight — fix per-control with `appearance-none` + this ring,
+  **not** a token change.
+- **Installed primitives (no new deps):**
+  `components/ui/{command,tabs,sidebar,resizable,scroll-area,progress,accordion}.tsx`.
+
+## 5. Phasing
+
+**P0 — highest impact / lowest risk**
+
+- Typed section registry (§3.0).
+- Left outline rail with scrollspy, dots+counts, click-to-jump, global progress
+  footer (§3.1 base).
+- Dense row spec + capped-left labels + container-query reflow (§3.2).
+- Flatten section cards → flat sticky headers + dividers (§3.2).
+- Collapse AI affordances to one inline strip (§3.2).
+- Calmer validation timing (§3.2).
+- Header: one calm bar; remove dead blind badge → role "· blind"; PDF eye →
+  panel toggle; self-explaining gated Reconcile; panel-scoped PDF error (§3.3).
+
+**P1**
+
+- Command palette + `Cmd/Ctrl+[ ]` / `J K` keyboard nav + "next required-empty"
+  (§3.1 layer).
+- Responsive rail→dot-strip + top-tab fallback when PDF open / narrow (§3.1).
+- Three-level progress model (§3.2).
+- Keyboard-first editing (tab order, enter-to-advance, accept/reject shortcuts).
+- Global autosave chip + on-brand just-updated flash (§3.2).
+- Stage rail; demote save-state; move Compare/Reopen into `⋯` (§3.3).
+- Loading skeleton; explicit read-only finalized (§3.3).
+
+**P2**
+
+- Finalize-gate "guide me to what's missing" interaction (§3.3).
+- Low-confidence amber coloring + compact `p.N ¶M` evidence link (§3.2).
+- UA focus fix (`appearance-none` + ring) (§3.2/§4).
+- Portuguese copy bug: `ModelSelector.tsx:131`
+  ("Adicione um modelo manualmente ou extraia automaticamente do artigo.") — a
+  PT string **and** a hardcoded-copy violation; route through
+  `t('extraction', …)` in `frontend/lib/copy/`.
+- Worklist pager popover + `J`/`K` article nav; in-place page error; calmer
+  primary hover (§3.3).
+
+## 6. Implementation constraints
+
+- **React Compiler is on at `panicThreshold all_errors`.** The scrollspy
+  `IntersectionObserver` hook and any autosave debounce live in `frontend/hooks/`
+  with **no `try/finally` in the body** (IO via a `services/` `ErrorResult`
+  function). `FieldInput`/`ExtractionFormView` already carry hand-written
+  `// kept:` memo comparators — preserve them; run
+  `enumerate_compiler_bailouts.mjs` before/after.
+- **Container query, not viewport.** The PDF-split reflow fix is specifically a
+  `@md` container query swap at `FieldInput.tsx:384`; a `sm:` viewport breakpoint
+  will not fix it.
+- **Copy discipline.** All user-facing strings via `frontend/lib/copy/`;
+  English only.
+- **No schema / API / run-state changes.** Presentation layer only; do not touch
+  blinding/stage/progress behavior or add mutations.
+- **A11y:** rail is a `<nav>` of buttons with roving tabindex + `aria-current`;
+  tabs use the `role=tablist` ARIA pattern; panel toggle uses `aria-pressed`;
+  decorative icons `aria-hidden`; every control keeps a visible focus ring.
+
+## 7. Testing
+
+- **Vitest (component):** rail renders one row per section with correct
+  dot-state and count from a mocked registry; clicking a row calls scroll+focus;
+  active-state follows a mocked IntersectionObserver; dense row reflows stacked
+  under a narrow container (container-query); AI strip renders value/confidence/
+  accept/reject and accept writes the value; validation is neutral pre-submit and
+  red only after an invalid attempt.
+- **Playwright (E2E, local fixtures):** open the E2E CHARMS review run; rail jump
+  scrolls to a section and moves focus; ⌘K → "next required-empty field" lands on
+  the first required-empty input; disabled Reconcile shows its reason and the
+  guide-to-missing interaction; PDF panel 404 shows a panel-scoped error while the
+  form stays interactive; finalized run renders read-only. Include an `axe` pass.
+- **Visual:** before/after screenshots of the form (full-width + PDF-open) and
+  the header per `design-review`.
+
+## 8. Risks & open questions
+
+- **Scrollspy ambiguity** when two short sections share the viewport — needs
+  `scroll-margin-top` + an intersection-ratio heuristic (not naive topmost).
+- **Rail vs PDF width** — mitigated by the 44px dot-strip collapse + tab
+  fallback; confirm the collapse threshold against the resizable panel's min size.
+- **Single-key shortcuts** (`J`/`K`) must be strictly scoped to not-while-typing
+  to avoid eating input.
+- **Model sub-forms** need the rail's second indent level and a clear count
+  rollup; confirm behavior when models are added/removed mid-session.
+- Open: should there be an opt-in **wizard mode** toggle for novice/occasional
+  reviewers (using the same registry), or is that scope creep? Deferred.
+
+## 9. References
+
+- Brainstorm grounding: prumo design tokens + best-practice survey
+  (Linear / Plane / Notion / Stripe / REDCap / Castor), 2026-06-19.
+- Canonical schema: `docs/reference/extraction-hitl-architecture.md`.
+- Frozen HITL design: `docs/superpowers/specs/2026-04-27-extraction-hitl-and-qa-design.md`.
+- Visual language: `frontend-ux` / `ui-styling` skills; loop: `design-review`.
