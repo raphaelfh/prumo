@@ -6,8 +6,19 @@ owner: '@raphaelfh'
 
 > **Status:** Proposed — design approved in brainstorm 2026-06-19, not yet
 > planned/implemented. Next step: `superpowers:writing-plans` to produce a
-> phased implementation plan. Line numbers below are indicative (captured
-> 2026-06-19) and must be re-confirmed at implementation time.
+> phased implementation plan.
+>
+> **Reconciled 2026-06-19** against `origin/dev` (tip `024285f`, after merges
+> #322 structured-PDF ingest, #324 data-path consolidation, #325
+> grounded-extraction + reviewer click-to-highlight). Audit result: none of the
+> proposed UX changes were pre-implemented, so the design stands; but two
+> substantive reconciliations were applied below — (a) **§2**: PDF↔evidence
+> *citation-highlight is now shipped* (#325), no longer a non-goal; (b)
+> **§3.2 AI strip**: the affordance is now **modal-first**
+> (`AISuggestionDetailsPopover`), so the consolidation builds on the shipped
+> `AISuggestionEvidence`/`useCitationHighlight` rather than a flat inline link.
+> Line numbers were refreshed to the post-merge locations but remain indicative
+> — re-confirm at implementation time.
 
 # Design: Extraction View UX — navigation, density, and chrome
 
@@ -27,9 +38,10 @@ Run locally on 2026-06-19 against the E2E fixture project (manager role,
 REVIEW-stage CHARMS run) the current view shows three concrete UX problems
 the project's own Plane/Linear/WorkOS design language is meant to avoid:
 
-1. **No way to navigate a 6-screen form.** `ExtractionFormView` simply `.map()`s
-   `SectionAccordion`s into one `ScrollArea` (`ExtractionFormPanel.tsx:48-57`).
-   There is no section index, no jump, no at-a-glance "what's left". For a
+1. **No way to navigate a 6-screen form.** `ExtractionFormView.tsx:79-103`
+   `.map()`s `SectionAccordion`s into the single `ScrollArea` hosted by
+   `ExtractionFormPanel.tsx:48-58`. There is no section index, no jump, no
+   at-a-glance "what's left". For a
    reviewer processing dozens of articles against the same template this is the
    single biggest cost.
 2. **Very low density.** Field rows are ~80px (`FieldInput.tsx` fixed `py-4` +
@@ -60,9 +72,12 @@ This design addresses the three surfaces the product owner prioritized:
 
 - The multi-reviewer **compare** and **consensus** workflow (panel layout,
   divergence resolution, reveal/blind reveal mechanics beyond the header label).
-- **PDF ↔ evidence** linking depth (clickable evidence anchoring, highlight
-  sync) — we only show an evidence *link affordance* (`p.4 ¶2`) on the AI strip;
-  the underlying linking is a separate effort (see the PDF-ingestion overhaul).
+- **Building the PDF↔evidence citation system** — it already shipped in #325
+  (`AISuggestionEvidence.tsx`, `useCitationHighlight.ts`,
+  `CitationOverlay`/`CitationLiveRegion`: click-to-jump-to-PDF, highlight,
+  "couldn't locate in source"). This redesign **builds on** that baseline; it
+  does not rebuild it. Out of scope here: paragraph-level anchoring and
+  grounded-extraction parser depth (separate PDF-ingestion overhaul).
 - Template authoring / schema changes. This is a presentation-layer redesign;
   no `extraction_*` schema, run-state, or API contract changes.
 
@@ -85,10 +100,15 @@ type SectionNavItem = {
 };
 ```
 
-Source of truth: `hooks/extraction/useExtractionProgress.ts`
-(`completed/total` required) + `useTemplateEntityTypes` (per-entity
-`is_required`). The registry feeds the rail, the palette, the keyboard nav, the
-tab fallback, and the global progress — one model, four consumers.
+Source of truth: `hooks/extraction/useExtractionProgress.ts:28-51`
+(`completedFields/totalFields` required) + `useTemplateEntityTypes`
+(per-entity `is_required`). Post-#324, entity types + instances are no longer
+loaded in `useExtractionData.ts` (gutted to article/project/template/articles
+only, `:1-125`) — they arrive via the server **RunView**
+(`GET /api/v1/runs/:id/view`) mapped through
+`lib/extraction/runViewAdapters.ts:66-85`. The registry derives from those
+adapters + the two hooks, and feeds the rail, the palette, the keyboard nav, the
+tab fallback, and the global progress — one model, five consumers.
 
 ### 3.1 Section navigation — hybrid (approved)
 
@@ -141,13 +161,24 @@ time *only* for editing a single prediction-model child in a drawer/modal.
   (`FieldInput.tsx:384` `sm:grid-cols-[30%_1fr]`) so it reflows to stacked when
   the *panel* is narrow, not when the *window* is. Net ≈ 52px vs ≈ 80px per row
   (~one screen less scroll on CHARMS), zero info loss.
-- **One inline AI strip.** Replace the three current affordances (AISuggestion
-  badge + always-visible History button `FieldInput.tsx:413-450` + separate
-  AISuggestionDisplay row) with a single 24px strip under the input:
-  `✨ · suggested value (text-ai) · confidence pill (bg-ai/10) · evidence link
-  (text-info "p.4 ¶2") · ✓ accept (text-success) · ✗ reject`. History demotes
-  into a details popover. An accepted+unedited value collapses to a tiny
-  `✨ AI` provenance marker.
+- **Consolidate the inline AI affordances (build on the shipped modal-first
+  design).** As of #325 the affordance is modal-first: evidence, reasoning, and
+  history already live in `AISuggestionDetailsPopover` (which renders the shipped
+  `AISuggestionEvidence` — a "Jump to source in PDF" icon button + page badge
+  ("p. N") + non-alarming "Couldn't locate in source", wired to
+  `useCitationHighlight`). What is still cluttered is the **inline trio**:
+  `AISuggestionBadge` right of the input (`FieldInput.tsx:413-418`), an
+  always-visible History button (`:421-450`), and the `AISuggestionDisplay` row
+  below (`:454-466`). Consolidate *those three* into one compact 24px strip under
+  the input — `✨ · suggested value (text-ai) · confidence pill (bg-ai/10) ·
+  ✓ accept (text-success) · ✗ reject` — where the value/confidence is the
+  trigger that opens the **existing** details popover (evidence + highlight +
+  history). Do **not** duplicate an evidence link inline or rebuild citation UI;
+  reuse `AISuggestionEvidence`'s "Jump to source in PDF" affordance. Drop the
+  always-on inline History button (it's already in the popover) and the standalone
+  badge. **Open question (was an assumption):** an accepted+unedited value today
+  renders nothing (`shouldShowSuggestion` false, `FieldInput.tsx:373`) — decide
+  whether to add a tiny `✨ AI` provenance marker or keep it hidden.
 - **Calmer validation.** Move format validation to **blur**, required-empty to
   **finalize-attempt** (today `validateValue` runs inside `handleChange`,
   `FieldInput.tsx:~134-137`, flashing red on keystroke). An empty required field
@@ -172,46 +203,49 @@ time *only* for editing a single prediction-model child in a drawer/modal.
 
 ### 3.3 Header / chrome / states
 
-- **One calm bar.** Collapse the conditional reviewer sub-row
-  (`ExtractionFullScreen.tsx:1075`) — reviewer count + divergence belong in the
-  stage rail and only when `stage !== 'proposal'`. The 90% solo-filling case has
-  no second row.
+- **One calm bar.** Collapse the conditional reviewer sub-row / HITL banner
+  (`ExtractionFullScreen.tsx:1110-1130`) — reviewer count + divergence belong in
+  the stage rail and only when `stage !== 'proposal'` (already gated that way).
+  The 90% solo-filling case has no second row.
 - **Stage rail.** A first-class Proposal → Review → Consensus → Finalized
   indicator (current stage filled) replaces the self-explaining button label;
   the primary button names only the next transition ("Reconcile", no
-  parenthetical; label computed today at `ExtractionFullScreen.tsx:1002-1010`).
+  parenthetical — the label, computed at `ExtractionFullScreen.tsx:1037-1045`,
+  still reads "Reconcile (advance to consensus)" at `:1044`).
 - **Self-explaining gated action.** `HeaderFinalizeButton` (today
   `disabled={!isComplete}`, `:34`) gets a tooltip + thin inline helper
   ("Fill N more required fields · X of Y done", from `useExtractionProgress`),
   and clicking the disabled Reconcile lights up rail sections with required-empty
   fields and scrolls to the first — the mute gate becomes a guide. (Today the
-  only "why" is a toast fired *after* a dead click, `handleFinalize:~735`.)
+  only "why" is a toast fired *after* a dead click.)
 - **Fix the two eyes.** Remove the non-interactive, manager-only blind
-  `EyeOff` badge (`HeaderStatusBadges.tsx:82`); express blind state as a role
+  `EyeOff` badge (`HeaderStatusBadges.tsx:82-96`); express blind state as a role
   label ("Manager · blind"); surface the actionable reveal in the
   compare/settings affordance where it belongs. Replace the PDF show/hide eye
-  (`HeaderPDFControls`) with a single **panel-toggle** button
-  (`ti-layout-sidebar-right`) with `aria-pressed` + a pressed state — one eye
-  retired, the other replaced by a panel metaphor.
+  (`HeaderPDFControls.tsx:42-67`, Eye/EyeOff) with a single **panel-toggle**
+  button (`ti-layout-sidebar-right`) with `aria-pressed` + a pressed state — one
+  eye retired, the other replaced by a panel metaphor.
 - **Demote ambient status.** Role + completion % are the only always-on chips;
   `SaveStatusBadge` becomes a dot + word; the Compare-view toggle and Reopen
   move into the `⋯` menu (edge/power actions).
 - **States.**
   - *Loading:* layout skeleton — render the real header chrome immediately
     (needs no run data) and skeleton only the form body — instead of the centered
-    `Loader2` (`ExtractionFullScreen.tsx:862`).
-  - *PDF error:* panel-scoped error inside the viewer (`ExtractionPDFPanel.tsx:38`
-    wraps `@prumo/pdf-viewer` with no error UI today) — icon + "PDF not available
-    for this article" + Retry — so a 404 PDF degrades the **panel** only; the form
-    stays usable. (Observed live: "Failed to sign URL for article file: Object
-    not found".)
+    `Loader2` (`ExtractionFullScreen.tsx:901-909`).
+  - *PDF error:* panel-scoped error inside the viewer
+    (`ExtractionPDFPanel.tsx:37-50` wraps `@prumo/pdf-viewer` with no error UI
+    today) — icon + "PDF not available for this article" + Retry — so a 404 PDF
+    degrades the **panel** only; the form stays usable. (Observed live: "Failed
+    to sign URL for article file: Object not found".)
   - *Finalized:* visibly read-only — disabled inputs + a one-line banner
     "Finalized — values are locked. Reopen to revise." (`isFinalized`,
-    `ExtractionFullScreen.tsx:157`); stage rail shows Finalized; primary becomes
-    Reopen (manager) or disappears.
+    `ExtractionFullScreen.tsx:174`); stage rail shows Finalized; primary becomes
+    Reopen (manager) or disappears. (Live, a finalized run already shows a
+    "Published" badge + "Finalize"/"Reopen for revision" — but fields still look
+    editable, which this fixes.)
   - *Page error:* in-place error card with `error.message` (per the API error
     envelope rule — read `error.message`, not `detail`) + Retry + Back, replacing
-    redirect-on-toast (`ExtractionFullScreen.tsx:501, 874`).
+    redirect-on-toast (`ExtractionFullScreen.tsx:540-544`).
 - **Worklist pager (P2).** Turn the bare `1/1` counter into a popover listing
   queue articles with per-article status (not started / in review / finalized) +
   "4 of 28 · 12 remaining"; attach the loose prev/next ghosts into one pill; add
@@ -262,7 +296,9 @@ Confirmed against `frontend/index.css` + `tailwind.config.ts` + live components.
   footer (§3.1 base).
 - Dense row spec + capped-left labels + container-query reflow (§3.2).
 - Flatten section cards → flat sticky headers + dividers (§3.2).
-- Collapse AI affordances to one inline strip (§3.2).
+- Consolidate the inline AI trio (badge + History button + display row) into one
+  compact strip that opens the existing details popover — build on the shipped
+  citation system, don't rebuild it (§3.2).
 - Calmer validation timing (§3.2).
 - Header: one calm bar; remove dead blind badge → role "· blind"; PDF eye →
   panel toggle; self-explaining gated Reconcile; panel-scoped PDF error (§3.3).
@@ -281,7 +317,9 @@ Confirmed against `frontend/index.css` + `tailwind.config.ts` + live components.
 **P2**
 
 - Finalize-gate "guide me to what's missing" interaction (§3.3).
-- Low-confidence amber coloring + compact `p.N ¶M` evidence link (§3.2).
+- Low-confidence amber confidence pill (< 60%) (§3.2). The evidence
+  jump-to-PDF + page badge already shipped in #325 — no paragraph (`¶`) anchoring
+  in the current citation model; treat that as a later refinement.
 - UA focus fix (`appearance-none` + ring) (§3.2/§4).
 - Portuguese copy bug: `ModelSelector.tsx:131`
   ("Adicione um modelo manualmente ou extraia automaticamente do artigo.") — a
