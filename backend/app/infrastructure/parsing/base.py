@@ -100,6 +100,27 @@ class ParsedBlock:
 # ---------------------------------------------------------------------------
 
 
+def _blocks_by_page_sorted(
+    blocks: list[ParsedBlock],
+) -> dict[int, list[ParsedBlock]]:
+    """Group *blocks* by page number and sort each group by ``block_index``.
+
+    This is the single source of truth for per-page grouping and ordering used
+    by both ``concat_page_text`` and ``assign_char_offsets_to_blocks``.
+
+    Args:
+        blocks: Parsed blocks from one or more pages.  May be in any order.
+
+    Returns:
+        ``{page_number: [blocks sorted by block_index]}`` for every page that
+        appears in *blocks*.
+    """
+    pages: dict[int, list[ParsedBlock]] = {}
+    for block in blocks:
+        pages.setdefault(block.page_number, []).append(block)
+    return {pn: sorted(pb, key=lambda b: b.block_index) for pn, pb in pages.items()}
+
+
 def concat_page_text(blocks: list[ParsedBlock]) -> dict[int, str]:
     """Return a mapping of ``page_number → page_text`` for all pages in *blocks*.
 
@@ -123,17 +144,10 @@ def concat_page_text(blocks: list[ParsedBlock]) -> dict[int, str]:
         appears in *blocks*.  Pages not present in *blocks* are absent from
         the result.
     """
-    # Group blocks by page, sorted by block_index within each page.
-    pages: dict[int, list[ParsedBlock]] = {}
-    for block in blocks:
-        pages.setdefault(block.page_number, []).append(block)
-
-    result: dict[int, str] = {}
-    for page_number, page_blocks in pages.items():
-        sorted_blocks = sorted(page_blocks, key=lambda b: b.block_index)
-        result[page_number] = _BLOCK_SEPARATOR.join(b.text for b in sorted_blocks)
-
-    return result
+    return {
+        page_number: _BLOCK_SEPARATOR.join(b.text for b in page_blocks)
+        for page_number, page_blocks in _blocks_by_page_sorted(blocks).items()
+    }
 
 
 def assign_char_offsets_to_blocks(blocks: list[ParsedBlock]) -> list[ParsedBlock]:
@@ -154,15 +168,9 @@ def assign_char_offsets_to_blocks(blocks: list[ParsedBlock]) -> list[ParsedBlock
     Returns:
         The same list, mutated in place.
     """
-    # Group by page
-    pages: dict[int, list[ParsedBlock]] = {}
-    for block in blocks:
-        pages.setdefault(block.page_number, []).append(block)
-
-    for page_blocks in pages.values():
-        sorted_blocks = sorted(page_blocks, key=lambda b: b.block_index)
+    for page_blocks in _blocks_by_page_sorted(blocks).values():
         cursor = 0
-        for i, block in enumerate(sorted_blocks):
+        for i, block in enumerate(page_blocks):
             if i > 0:
                 # Account for the separator that precedes this block.
                 cursor += len(_BLOCK_SEPARATOR)
