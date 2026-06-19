@@ -246,6 +246,9 @@ async def test_get_run_view_returns_200_with_required_keys(
     assert isinstance(data["instances"], list)
 
     # Wire-key assertion: instance dicts must emit "metadata" not "metadata_".
+    assert len(data["instances"]) >= 1, (
+        "need at least one instance to exercise the metadata wire key"
+    )
     for inst in data["instances"]:
         assert "metadata" in inst, "instance wire key must be 'metadata' not 'metadata_'"
         assert "metadata_" not in inst, "ORM attribute name must not leak into JSON"
