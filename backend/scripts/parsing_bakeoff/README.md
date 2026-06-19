@@ -11,12 +11,17 @@ clinical PDFs.
 > libraries and shares the `ParsedBlock` contract). Tests live in
 > `backend/tests/unit/` and import it via `pythonpath = ["scripts"]`.
 
-## It ships no documents
+## Provisioning the evaluation set
 
-The harness contains **no papers and no manifest**. The evaluation set is
-clinical/medical PDFs — likely **PHI** — so it must live on an approved,
-non-public surface (not this repo, not a public bucket). You point the
-harness at a manifest you provide.
+The harness ships **no papers and no manifest**. prumo's documents are
+*published* research articles (not patient records), so the eval set can be
+self-sourced from open access: `parsing_bakeoff.jats_gold` builds gold
+(sections + table cells + references) from **PMC JATS XML**, and PLOS / Europe
+PMC provide born-digital PDFs — no PHI, no manual labelling. (If you instead
+evaluate private/unpublished PDFs, keep them on an approved, non-public surface.)
+
+See `docs/superpowers/quality-runs/2026-06-19-parsing-bakeoff-pilot.md` for the
+first 8-paper run built exactly this way.
 
 ## Manifest schema
 
