@@ -199,4 +199,7 @@ export interface ArticleRunRef {
 export const runsKeys = {
   all: ["runs"] as const,
   detail: (runId: string) => ["runs", runId] as const,
+  reviewers: (runId: string) => ["runs", runId, "reviewers"] as const,
+  disabled: ["runs", "disabled"] as const,
+  noRunReviewers: ["runs", "no-run", "reviewers"] as const,
 };

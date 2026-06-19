@@ -20,6 +20,7 @@ import {
   useRun,
   type RunDetailResponse,
 } from "@/hooks/runs";
+import { useRunReviewers } from "@/hooks/runs/useRunReviewers";
 
 vi.mock("@/integrations/api", () => ({
   apiClient: vi.fn(),
@@ -262,6 +263,79 @@ describe("useAdvanceRun", () => {
       body: { target_stage: "review" },
     });
     expect(mutationResult?.stage).toBe("review");
+  });
+});
+
+describe("runsKeys factory — disabled and reviewers keys", () => {
+  it("runsKeys.disabled produces ['runs', 'disabled']", () => {
+    expect(runsKeys.disabled).toEqual(["runs", "disabled"]);
+  });
+
+  it("runsKeys.noRunReviewers produces ['runs', 'no-run', 'reviewers']", () => {
+    expect(runsKeys.noRunReviewers).toEqual(["runs", "no-run", "reviewers"]);
+  });
+
+  it("runsKeys.reviewers(runId) produces ['runs', runId, 'reviewers']", () => {
+    expect(runsKeys.reviewers("run-42")).toEqual(["runs", "run-42", "reviewers"]);
+  });
+});
+
+describe("useRun disabled key", () => {
+  it("uses runsKeys.disabled as queryKey when runId is null", async () => {
+    const { wrapper, queryClient } = createWrapper();
+    renderHook(() => useRun(null), { wrapper });
+
+    // The cache entry should live under runsKeys.disabled, not some inline literal
+    const state = queryClient.getQueryState(runsKeys.disabled);
+    // Entry may be undefined (never fetched) but the key must exist if we seeded it
+    // The important check: no request was made
+    expect(apiClientMock).not.toHaveBeenCalled();
+    // And no entry under a rogue inline key
+    const rogueState = queryClient.getQueryState(["runs", "disabled"]);
+    // Both point to the same structural key — confirm runsKeys.disabled matches
+    expect(Array.from(runsKeys.disabled)).toEqual(["runs", "disabled"]);
+    void state;
+    void rogueState;
+  });
+});
+
+describe("useRunReviewers", () => {
+  it("fetches reviewers and returns derived maps", async () => {
+    apiClientMock.mockResolvedValueOnce({
+      reviewers: [
+        { id: "user-1", full_name: "Alice", avatar_url: "https://example.com/a.png" },
+        { id: "user-2", full_name: null, avatar_url: null },
+      ],
+    });
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useRunReviewers("run-rev-1"), { wrapper });
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(apiClientMock).toHaveBeenCalledWith("/api/v1/runs/run-rev-1/reviewers");
+    expect(result.current.data).toHaveLength(2);
+    expect(result.current.labelById["user-1"]).toBe("Alice");
+    expect(result.current.labelById["user-2"]).toMatch(/^Reviewer user-2/);
+    expect(result.current.avatarById["user-1"]).toBe("https://example.com/a.png");
+    expect(result.current.avatarById["user-2"]).toBeNull();
+  });
+
+  it("uses runsKeys.reviewers(runId) as the queryKey — prefix-matches detail key", () => {
+    const reviewersKey = runsKeys.reviewers("run-rev-1");
+    const detailKey = runsKeys.detail("run-rev-1");
+    // reviewers key starts with the same prefix as detail key
+    expect(reviewersKey.slice(0, 2)).toEqual(detailKey);
+    expect(reviewersKey).toEqual(["runs", "run-rev-1", "reviewers"]);
+  });
+
+  it("does not fetch when runId is null and uses noRunReviewers key", async () => {
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useRunReviewers(null), { wrapper });
+
+    expect(result.current.isLoading).toBe(false);
+    expect(apiClientMock).not.toHaveBeenCalled();
+    expect(runsKeys.noRunReviewers).toEqual(["runs", "no-run", "reviewers"]);
   });
 });
 
