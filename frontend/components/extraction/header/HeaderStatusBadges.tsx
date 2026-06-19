@@ -76,7 +76,10 @@ export function HeaderStatusBadges({
     </Badge>
   ) : null;
 
-  const blindModeBadge = isBlindMode ? (
+  // Show the blind cue only to a MANAGER who is currently blind — the
+  // actionable case ("reveal other reviewers in settings"). A reviewer's
+  // blind state is their normal, non-actionable mode, so no badge there.
+  const blindModeBadge = isBlindMode && userRole === 'manager' ? (
     <Tooltip>
       <TooltipTrigger asChild>
         <Badge

@@ -38,7 +38,7 @@ from app.repositories.extraction_proposal_repository import (
 from app.repositories.extraction_reviewer_decision_repository import (
     ExtractionReviewerDecisionRepository,
 )
-from app.repositories.project_repository import ProjectMemberRepository
+from app.repositories.project_repository import ProjectMemberRepository, ProjectRepository
 from app.schemas.extraction_run import (
     ConsensusDecisionResponse,
     ProposalRecordResponse,
@@ -74,7 +74,7 @@ async def get_run_with_workflow_history(
     run_id: UUID,
     *,
     caller_id: UUID,
-    is_arbitrator: bool,
+    can_see_peers: bool,
 ) -> RunDetailResponse:
     """Aggregate the full read-side view of a Run: header + every workflow
     row (proposals, reviewer decisions, consensus decisions, published
@@ -83,12 +83,21 @@ async def get_run_with_workflow_history(
 
     Blind-review enforcement (API path): the backend reaches these tables as
     ``service_role`` (RLS bypassed), so this filter — not RLS — guards the
-    server read. Unless the caller is an arbitrator (manager/consensus) or the
-    run is ``finalized``, a reviewer sees only their OWN human proposals and
-    reviewer decisions; AI/system proposals, consensus rulings and published
-    states stay visible (shared, post-divergence artifacts). The predicate is
-    identical to the reviewer-scoped RLS policies in migration
-    ``0025_reviewer_scoped_select_rls`` so the two read paths never diverge.
+    server read. Unless the caller can see peers (consensus member, or a
+    manager with the live per-kind setting on) or the run is ``finalized``,
+    a reviewer sees only their OWN human proposals and reviewer decisions;
+    AI/system proposals, consensus rulings and published states stay visible
+    (shared, post-divergence artifacts).
+
+    NOTE on the deliberate API-stricter-than-RLS split for managers: the
+    reviewer↔reviewer boundary is enforced identically here AND in RLS
+    migration ``0025_reviewer_scoped_select_rls`` AND in
+    ``resolve_caller_current_values`` (lockstep copies). The MANAGER case is
+    intentionally handled ONLY at the API/app layer via the live per-kind
+    ``managers_see_reviewers`` project setting — RLS 0025 still allows
+    managers through (it only restricts the ``reviewer`` role), so the
+    stricter gate lives here via ``can_see_peers``. Do NOT move the manager
+    check into RLS or ``resolve_caller_current_values``.
     """
     run = await db.get(ExtractionRun, run_id)
     if run is None:
@@ -107,7 +116,7 @@ async def get_run_with_workflow_history(
         .all()
     )
 
-    unblinded = is_arbitrator or run.stage == ExtractionRunStage.FINALIZED.value
+    unblinded = can_see_peers or run.stage == ExtractionRunStage.FINALIZED.value
     if unblinded:
         visible_proposals = proposals
         visible_decisions = decisions
@@ -274,7 +283,7 @@ _CURRENT_VALUE_STAGES = frozenset(
 
 
 async def build_run_view(
-    db: AsyncSession, run_id: UUID, *, caller_id: UUID, is_arbitrator: bool
+    db: AsyncSession, run_id: UUID, *, caller_id: UUID, can_see_peers: bool
 ) -> RunViewResponse:
     """The one-round-trip run-open view: the blind-filtered run detail plus the
     frozen entity_types tree and the caller's current_values. COMPOSES
@@ -284,7 +293,7 @@ async def build_run_view(
     ``template_id`` / ``stage`` / ``article_id``, so there is no second ORM
     fetch of the run here."""
     detail = await get_run_with_workflow_history(
-        db, run_id, caller_id=caller_id, is_arbitrator=is_arbitrator
+        db, run_id, caller_id=caller_id, can_see_peers=can_see_peers
     )
 
     entity_types = await _entity_types_for_run(db, detail.run)
@@ -317,6 +326,33 @@ async def is_run_arbitrator(db: AsyncSession, project_id: UUID, user_id: UUID) -
         ProjectMemberRole.MANAGER,
         ProjectMemberRole.CONSENSUS,
     )
+
+
+async def caller_can_see_peers(
+    db: AsyncSession, *, project_id: UUID, user_id: UUID, kind: str
+) -> bool:
+    """Read-blinding decision (distinct from is_run_arbitrator's resolution role).
+
+    consensus members always see peers; reviewers/viewers never; managers see
+    peers only when the project's live, per-kind setting
+    ``settings.managers_see_reviewers[kind]`` is true. Finalized-stage opening is
+    handled by the run-stage branch in get_run_with_workflow_history, not here.
+
+    Deliberately SEPARATE from is_run_arbitrator: that predicate gates
+    consensus-resolution permission (manager+consensus → True). This one gates
+    read visibility and has different semantics for managers.
+    """
+    member = await ProjectMemberRepository(db).get_member(project_id, user_id)
+    if member is None:
+        return False
+    if member.role == ProjectMemberRole.CONSENSUS:
+        return True
+    if member.role == ProjectMemberRole.MANAGER:
+        project = await ProjectRepository(db).get_by_id(project_id)
+        settings = (project.settings if project else None) or {}
+        per_kind = settings.get("managers_see_reviewers") or {}
+        return bool(per_kind.get(kind, False))
+    return False
 
 
 async def list_run_participants(db: AsyncSession, run_id: UUID) -> list[RunReviewerProfile]:

@@ -1,22 +1,13 @@
 /**
  * Tests for ``frontend/lib/comparison/permissions.ts``.
  *
- * Layer 3 of the multi-reviewer blind fix: ``blind_mode`` is a
- * methodological flag for the *team-wide* visibility during PROPOSAL /
- * REVIEW (no reviewer sees another). Manager and Consensus roles need
- * unblinded access to do their arbitration job — gating those roles on
- * ``blind_mode`` left projects with no way to reach consensus when the
- * flag was on (the prior behaviour, before this layer). The new
- * semantics treat the role as the source of truth for read access:
- *
- *   - Manager / Consensus: ALWAYS see other reviewers' values. The
- *     blind_mode flag is informational for these roles.
- *   - Reviewer / Viewer: NEVER see other reviewers' values. The flag
- *     is also moot for them — they never had visibility.
- *
- * Net effect: ``blind_mode`` ON or OFF no longer changes who can see
- * what; the role does. The flag remains as an audit / future-policy
- * marker (e.g. surfacing a "blind methodology in effect" banner).
+ * Per-kind, setting-driven blind-review gate: managers are blind to other
+ * reviewers by default and see peers only when the project's
+ * ``managers_see_reviewers[kind]`` toggle is on. Consensus always sees (pure
+ * adjudicator); reviewer/viewer never do. The extraction and QA toggles are
+ * independent. This mirrors the server rule (``caller_can_see_peers``); the
+ * peer data itself is server-blinded, so this gate decides only whether the
+ * compare affordance is offered.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -25,90 +16,80 @@ import {
   canUserSeeOthers,
   getRolePermissions,
   isValidUserRole,
+  type ManagerVisibilitySettings,
   type UserRole,
 } from '@/lib/comparison/permissions';
 
-describe('canUserSeeOthers — Layer 3 (role-based, not flag-based)', () => {
-  it('manager sees others when blind_mode=OFF', () => {
-    expect(canUserSeeOthers('manager', false)).toBe(true);
+const ext_on: ManagerVisibilitySettings = {
+  managers_see_reviewers: { extraction: true, quality_assessment: false },
+};
+const all_off: ManagerVisibilitySettings = {
+  managers_see_reviewers: { extraction: false, quality_assessment: false },
+};
+
+describe('canUserSeeOthers — per-kind, setting-driven', () => {
+  it('manager follows the per-kind setting', () => {
+    expect(canUserSeeOthers('manager', ext_on, 'extraction')).toBe(true);
+    expect(canUserSeeOthers('manager', ext_on, 'quality_assessment')).toBe(false);
+    expect(canUserSeeOthers('manager', all_off, 'extraction')).toBe(false);
   });
 
-  it('manager STILL sees others when blind_mode=ON (role bypass)', () => {
-    // Pre-Layer-3 behaviour returned false here, blocking the
-    // arbitrator from reaching consensus in any blinded project.
-    expect(canUserSeeOthers('manager', true)).toBe(true);
+  it('consensus ALWAYS sees peers, regardless of the setting', () => {
+    expect(canUserSeeOthers('consensus', all_off, 'extraction')).toBe(true);
+    expect(canUserSeeOthers('consensus', all_off, 'quality_assessment')).toBe(true);
   });
 
-  it('consensus sees others when blind_mode=OFF', () => {
-    expect(canUserSeeOthers('consensus', false)).toBe(true);
+  it('reviewer / viewer NEVER see peers, even when managers are revealed', () => {
+    expect(canUserSeeOthers('reviewer', ext_on, 'extraction')).toBe(false);
+    expect(canUserSeeOthers('viewer', ext_on, 'extraction')).toBe(false);
   });
 
-  it('consensus STILL sees others when blind_mode=ON (role bypass)', () => {
-    expect(canUserSeeOthers('consensus', true)).toBe(true);
-  });
-
-  it('reviewer never sees others, regardless of blind_mode', () => {
-    expect(canUserSeeOthers('reviewer', false)).toBe(false);
-    expect(canUserSeeOthers('reviewer', true)).toBe(false);
-  });
-
-  it('viewer never sees others, regardless of blind_mode', () => {
-    expect(canUserSeeOthers('viewer', false)).toBe(false);
-    expect(canUserSeeOthers('viewer', true)).toBe(false);
+  it('missing map / missing key / null settings = blind', () => {
+    expect(canUserSeeOthers('manager', {}, 'extraction')).toBe(false);
+    expect(canUserSeeOthers('manager', null, 'extraction')).toBe(false);
+    expect(canUserSeeOthers('manager', { managers_see_reviewers: {} }, 'extraction')).toBe(false);
   });
 });
 
-describe('getRolePermissions — Layer 3 canSeeOthers semantics', () => {
-  it('manager canSeeOthers is true with blind_mode ON or OFF', () => {
-    expect(getRolePermissions('manager', false).canSeeOthers).toBe(true);
-    expect(getRolePermissions('manager', true).canSeeOthers).toBe(true);
+describe('getRolePermissions — canSeeOthers per role x setting x kind', () => {
+  it('manager canSeeOthers tracks the per-kind setting', () => {
+    expect(getRolePermissions('manager', ext_on, 'extraction').canSeeOthers).toBe(true);
+    expect(getRolePermissions('manager', ext_on, 'quality_assessment').canSeeOthers).toBe(false);
   });
 
-  it('consensus canSeeOthers is true with blind_mode ON or OFF', () => {
-    expect(getRolePermissions('consensus', false).canSeeOthers).toBe(true);
-    expect(getRolePermissions('consensus', true).canSeeOthers).toBe(true);
+  it('consensus canSeeOthers always true', () => {
+    expect(getRolePermissions('consensus', all_off, 'extraction').canSeeOthers).toBe(true);
   });
 
-  it('reviewer canSeeOthers is always false', () => {
-    expect(getRolePermissions('reviewer', false).canSeeOthers).toBe(false);
-    expect(getRolePermissions('reviewer', true).canSeeOthers).toBe(false);
+  it('reviewer / viewer canSeeOthers always false', () => {
+    expect(getRolePermissions('reviewer', ext_on, 'extraction').canSeeOthers).toBe(false);
+    expect(getRolePermissions('viewer', ext_on, 'extraction').canSeeOthers).toBe(false);
   });
 
-  it('viewer canSeeOthers is always false', () => {
-    expect(getRolePermissions('viewer', false).canSeeOthers).toBe(false);
-    expect(getRolePermissions('viewer', true).canSeeOthers).toBe(false);
-  });
-
-  it('manager retains canResolveConflicts, canManageBlindMode, canExport, canEditTemplate', () => {
-    const p = getRolePermissions('manager', false);
+  it('manager retains resolve/manage/export/edit', () => {
+    const p = getRolePermissions('manager', all_off, 'extraction');
     expect(p.canResolveConflicts).toBe(true);
     expect(p.canManageBlindMode).toBe(true);
     expect(p.canExport).toBe(true);
     expect(p.canEditTemplate).toBe(true);
   });
 
-  it('consensus retains canResolveConflicts + canExport but cannot manage blind_mode or edit template', () => {
-    const p = getRolePermissions('consensus', true);
+  it('consensus resolves + exports but cannot manage blind or edit template', () => {
+    const p = getRolePermissions('consensus', all_off, 'extraction');
     expect(p.canResolveConflicts).toBe(true);
     expect(p.canManageBlindMode).toBe(false);
     expect(p.canExport).toBe(true);
     expect(p.canEditTemplate).toBe(false);
   });
 
-  it('reviewer has no admin permissions, only their own editing scope', () => {
-    const p = getRolePermissions('reviewer', false);
-    expect(p.canResolveConflicts).toBe(false);
-    expect(p.canManageBlindMode).toBe(false);
-    expect(p.canExport).toBe(false);
-    expect(p.canEditTemplate).toBe(false);
-  });
-
-  it('viewer has no permissions', () => {
-    const p = getRolePermissions('viewer', false);
-    expect(p.canResolveConflicts).toBe(false);
-    expect(p.canManageBlindMode).toBe(false);
-    expect(p.canExport).toBe(false);
-    expect(p.canEditTemplate).toBe(false);
+  it('reviewer / viewer have no admin permissions', () => {
+    for (const role of ['reviewer', 'viewer'] as const) {
+      const p = getRolePermissions(role, all_off, 'extraction');
+      expect(p.canResolveConflicts).toBe(false);
+      expect(p.canManageBlindMode).toBe(false);
+      expect(p.canExport).toBe(false);
+      expect(p.canEditTemplate).toBe(false);
+    }
   });
 });
 

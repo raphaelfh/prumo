@@ -8,7 +8,7 @@
  */
 
 import { useState } from 'react';
-import { Info, Layers, RotateCcw, ShieldCheck, Users } from 'lucide-react';
+import { EyeOff, Info, Layers, RotateCcw, ShieldCheck, Users } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -26,14 +26,21 @@ import { useHITLProjectTemplates } from '@/hooks/hitl/useHITLProjectTemplates';
 import { useProjectMemberRole } from '@/hooks/useProjectMemberRole';
 import type { HitlConfigPayload } from '@/services/hitlConfigService';
 
+import { ManagerReviewVisibilityToggle } from '@/components/runs/ManagerReviewVisibilityToggle';
+
 import { ConsensusConfigForm } from './ConsensusConfigForm';
 import { TemplateConsensusOverride } from './TemplateConsensusOverride';
 
 interface ReviewConsensusSectionProps {
   projectId: string;
+  /** Current persisted value of managers_see_reviewers.extraction (default blind). */
+  managersSeeExtraction: boolean;
 }
 
-export function ReviewConsensusSection({ projectId }: ReviewConsensusSectionProps) {
+export function ReviewConsensusSection({
+  projectId,
+  managersSeeExtraction,
+}: ReviewConsensusSectionProps) {
   const { isManager } = useProjectMemberRole(projectId);
   const projectConfig = useProjectHitlConfig(projectId);
   const upsertProject = useUpsertProjectHitlConfig(projectId);
@@ -196,6 +203,19 @@ export function ReviewConsensusSection({ projectId }: ReviewConsensusSectionProp
             </div>
           </>
         )}
+      </SettingsCard>
+
+      <SettingsCard
+        title={t('consensus', 'managerVisibilityCardTitle')}
+        description={t('consensus', 'managerVisibilityCardDesc')}
+        icon={EyeOff}
+      >
+        <ManagerReviewVisibilityToggle
+          projectId={projectId}
+          kind="extraction"
+          currentValue={managersSeeExtraction}
+          disabled={!isManager}
+        />
       </SettingsCard>
 
       <SettingsCard

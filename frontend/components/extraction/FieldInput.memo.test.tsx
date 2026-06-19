@@ -5,7 +5,7 @@
  * spinner is driven by `isActionLoading(instanceId, fieldId)` — derived state,
  * NOT a tracked prop. When an accept resolves, `clearLoading` flips that signal
  * true → false while every comparator-tracked prop (field.id, instanceId, value,
- * disabled, viewMode, aiSuggestion.id/status) stays identical. If the comparator
+ * disabled, aiSuggestion.id/status) stays identical. If the comparator
  * ignores the loading signal it returns "props equal", React skips the re-render,
  * and the field keeps a stale `loading=true` — the spinner spins forever.
  *
@@ -34,12 +34,6 @@ vi.mock('@/components/extraction/ai/AISuggestionBadge', () => ({
 }));
 vi.mock('@/components/extraction/ai/AISuggestionHistoryPopover', () => ({
   AISuggestionHistoryPopover: () => null,
-}));
-vi.mock('@/components/extraction/collaboration/OtherExtractionsButton', () => ({
-  OtherExtractionsButton: () => null,
-}));
-vi.mock('@/components/extraction/collaboration/OtherExtractionsPopover', () => ({
-  OtherExtractionsPopover: () => null,
 }));
 vi.mock('@/hooks/extraction/useJustUpdatedValue', () => ({
   useJustUpdatedValue: () => false,

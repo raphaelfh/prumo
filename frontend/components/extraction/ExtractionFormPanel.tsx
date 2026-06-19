@@ -10,18 +10,18 @@
 import {ScrollArea} from '@/components/ui/scroll-area';
 import type {ExtractionFormViewProps} from './ExtractionFormView';
 import {ExtractionFormView} from './ExtractionFormView';
-import type {ExtractionCompareViewProps} from './ExtractionCompareView';
-import {ExtractionCompareView} from './ExtractionCompareView';
+import type {RunReviewerComparisonProps} from '@/components/runs/RunReviewerComparison';
+import {RunReviewerComparison} from '@/components/runs/RunReviewerComparison';
 
 // =================== INTERFACES ===================
 
 export interface ExtractionFormPanelProps {
   viewMode: 'extract' | 'compare';
   showPDF: boolean;
-  // Props para ExtractionFormView (modo extract)
+  // Props for ExtractionFormView (extract mode)
   formViewProps?: ExtractionFormViewProps;
-  // Props para ExtractionCompareView (modo compare)
-  compareViewProps?: ExtractionCompareViewProps;
+  // Props for the shared RunReviewerComparison (compare mode)
+  compareViewProps?: RunReviewerComparisonProps;
 }
 
 // =================== COMPONENT ===================
@@ -51,7 +51,7 @@ export function ExtractionFormPanel({
           {viewMode === 'extract' && formViewProps ? (
             <ExtractionFormView {...formViewProps} />
           ) : viewMode === 'compare' && compareViewProps ? (
-            <ExtractionCompareView {...compareViewProps} />
+            <RunReviewerComparison {...compareViewProps} />
           ) : null}
         </div>
       </ScrollArea>

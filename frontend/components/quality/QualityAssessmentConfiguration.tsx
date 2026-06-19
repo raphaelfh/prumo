@@ -33,6 +33,9 @@ import {
   type GlobalTemplate,
   type ProjectTemplate,
 } from "@/hooks/hitl/useHITLProjectTemplates";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermissions";
+import { ManagerReviewVisibilityToggle } from "@/components/runs/ManagerReviewVisibilityToggle";
 
 interface Props {
   projectId: string;
@@ -58,6 +61,16 @@ export function QualityAssessmentConfiguration({
   });
 
   const [pendingId, setPendingId] = useState<string | null>(null);
+
+  // Per-kind manager review-visibility (blind toggle). Manager-only; for a
+  // manager `canSeeOthers` mirrors the persisted
+  // `managers_see_reviewers.quality_assessment` value.
+  const { userId } = useCurrentUser();
+  const permissions = useComparisonPermissions(
+    projectId,
+    userId ?? "",
+    "quality_assessment",
+  );
 
   const enabledCount = templates.filter((tpl) => tpl.is_active).length;
 
@@ -179,6 +192,29 @@ export function QualityAssessmentConfiguration({
               );
             })}
           </ul>
+        )}
+
+        {permissions.loading ? null : (
+          <div className="mt-4 border-t border-border/40 pt-4">
+            <div className="mb-2">
+              <p className="text-sm font-medium">
+                {t("qa", "managerVisibilitySectionTitle")}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t("qa", "managerVisibilitySectionDesc")}
+              </p>
+            </div>
+            {/* Keyed on the loaded value so the toggle's internal initial
+                state reflects the persisted setting (it seeds from
+                currentValue at mount). */}
+            <ManagerReviewVisibilityToggle
+              key={String(permissions.canSeeOthers)}
+              projectId={projectId}
+              kind="quality_assessment"
+              currentValue={permissions.canSeeOthers}
+              disabled={!permissions.canManageBlindMode}
+            />
+          </div>
         )}
       </CardContent>
     </Card>

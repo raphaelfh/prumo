@@ -48,7 +48,7 @@ interface ExtractionHeaderProps {
   onTogglePDF: () => void;
   viewMode: 'extract' | 'compare';
   onViewModeChange: (mode: 'extract' | 'compare') => void;
-  hasOtherExtractions: boolean;
+  hasComparison: boolean;
 
     // Permissions and role (optional)
   userRole?: UserRole;
@@ -103,7 +103,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
     onTogglePDF,
     viewMode,
     onViewModeChange,
-    hasOtherExtractions,
+    hasComparison,
     userRole,
     isBlindMode,
     saveState,
@@ -177,7 +177,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                 onNavigateToArticle={onNavigateToArticle}
                 viewMode={viewMode}
                 onViewModeChange={onViewModeChange}
-                hasOtherExtractions={hasOtherExtractions}
+                hasComparison={hasComparison}
                 compact={true}
               />
 
@@ -229,7 +229,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                 onNavigateToArticle={onNavigateToArticle}
                 viewMode={viewMode}
                 onViewModeChange={onViewModeChange}
-                hasOtherExtractions={hasOtherExtractions}
+                hasComparison={hasComparison}
                 compact={false}
               />
             </div>

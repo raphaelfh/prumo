@@ -24,7 +24,6 @@ import type {
   ExtractionValue,
 } from '@/types/extraction';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
-import type {OtherExtraction} from '@/hooks/extraction/collaboration/useOtherExtractions';
 import type {ExtractionProgress} from '@/hooks/extraction/useBatchSectionExtractionChunked';
 import type {AllModelsSectionsProgress} from '@/hooks/extraction/useBatchAllModelsSectionsExtraction';
 
@@ -49,8 +48,7 @@ export interface ModelSectionProps {
   values: Record<string, ExtractionValue>;
   updateValue: (instanceId: string, fieldId: string, value: ExtractionValue) => void;
 
-  /** AI suggestion + collaborator metadata, also shared with study-level. */
-  otherExtractions: OtherExtraction[];
+  /** AI suggestion metadata, also shared with study-level. */
   aiSuggestions: Record<string, AISuggestion>;
   acceptSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
   rejectSuggestion: (instanceId: string, fieldId: string) => Promise<void>;
@@ -101,7 +99,6 @@ export function ModelSection(props: ModelSectionProps): ReactElement {
     onRemoveModel,
     values,
     updateValue,
-    otherExtractions,
     aiSuggestions,
     acceptSuggestion,
     rejectSuggestion,
@@ -183,7 +180,6 @@ export function ModelSection(props: ModelSectionProps): ReactElement {
               articleId={articleId}
               templateId={templateId}
               runId={runId}
-              otherExtractions={otherExtractions}
               aiSuggestions={aiSuggestions}
               onAcceptAI={acceptSuggestion}
               onRejectAI={rejectSuggestion}
@@ -191,7 +187,6 @@ export function ModelSection(props: ModelSectionProps): ReactElement {
               isActionLoading={isActionLoading}
               onAddInstance={() => handleAddInstance(modelContainer.id)}
               onRemoveInstance={handleRemoveInstance}
-              viewMode="extract"
               onExtractionComplete={onExtractionComplete}
             />
           )}
@@ -209,7 +204,6 @@ export function ModelSection(props: ModelSectionProps): ReactElement {
               templateId={templateId}
               runId={runId}
               parentInstanceId={activeModelId}
-              otherExtractions={otherExtractions}
               aiSuggestions={aiSuggestions}
               onAcceptAI={acceptSuggestion}
               onRejectAI={rejectSuggestion}
@@ -217,7 +211,6 @@ export function ModelSection(props: ModelSectionProps): ReactElement {
               isActionLoading={isActionLoading}
               onAddInstance={() => handleAddInstance(entityType.id)}
               onRemoveInstance={handleRemoveInstance}
-              viewMode="extract"
               onExtractionComplete={onExtractionComplete}
             />
           ))}
