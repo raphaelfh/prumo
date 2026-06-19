@@ -180,7 +180,8 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
 
 // kept: custom comparator — compiler does not replicate arePropsEqual.
 // Re-renders only on props that change visuals (aiSuggestions by
-// reference + key count, published after each extraction).
+// reference + key count, published after each extraction; showPDF
+// toggles the section rail collapsed state).
 export const ExtractionFormView = memo(ExtractionFormViewComponent, (prevProps, nextProps) => {
   const aiSuggestionsChanged =
     prevProps.aiSuggestions !== nextProps.aiSuggestions ||
@@ -193,6 +194,7 @@ export const ExtractionFormView = memo(ExtractionFormViewComponent, (prevProps, 
     prevProps.modelChildSections === nextProps.modelChildSections &&
     prevProps.activeModelId === nextProps.activeModelId &&
     prevProps.models.length === nextProps.models.length &&
+    prevProps.showPDF === nextProps.showPDF &&
     !aiSuggestionsChanged
   );
 });
