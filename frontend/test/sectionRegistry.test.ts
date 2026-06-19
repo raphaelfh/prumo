@@ -48,6 +48,20 @@ describe('buildSectionRegistry', () => {
     expect(empty.state).toBe('empty');
   });
 
+  it('omits model-child rows when activeModelId is null (no active model)', () => {
+    const study = entity('s1', 'study_section', 'one', [field('f1', true)]);
+    const container = entity('mc', 'model_container', 'many', []);
+    const child = entity('cs', 'model_section', 'many', [field('cf', true)]);
+    const items = buildSectionRegistry({
+      studyLevelSections: [study], modelParentEntityType: container, modelChildSections: [child],
+      instances: [instance('i1', 's1'), instance('m1', 'mc')],
+      values: {}, activeModelId: null,
+    });
+    // model parent (level 0) must be present; level-1 children must NOT be emitted
+    expect(items.map(i => [i.id, i.level])).toEqual([['s1', 0], ['mc', 0]]);
+    expect(items.some(i => i.level === 1)).toBe(false);
+  });
+
   it('emits model container at level 0 and model children at level 1, scoped to the active model', () => {
     const study = entity('s1', 'study_section', 'one', [field('f1', true)]);
     const container = entity('mc', 'model_container', 'many', []);

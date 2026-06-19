@@ -170,6 +170,7 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
               extractingAllSectionsForAllModels={ai.extractingAllSectionsForAllModels}
               allModelsProgress={ai.allModelsProgress}
               onExtractionComplete={props.onExtractionComplete}
+              registerSection={registerSection}
             />
           </div>
         )}

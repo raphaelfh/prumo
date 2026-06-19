@@ -84,6 +84,12 @@ export interface ModelSectionProps {
 
   /** Bubbled up after any AI section extraction completes. */
   onExtractionComplete?: () => void;
+
+  /**
+   * Callback from ExtractionFormView to register a scroll-spy ref for each
+   * rendered model-child section. Mirrors the per-study-section ref wiring.
+   */
+  registerSection?: (id: string, el: HTMLElement | null) => void;
 }
 
 export function ModelSection(props: ModelSectionProps): ReactElement {
@@ -120,6 +126,7 @@ export function ModelSection(props: ModelSectionProps): ReactElement {
     extractingAllSectionsForAllModels,
     allModelsProgress,
     onExtractionComplete,
+    registerSection,
   } = props;
 
   const activeModelInstance = activeModelId
@@ -192,27 +199,33 @@ export function ModelSection(props: ModelSectionProps): ReactElement {
           )}
 
           {modelChildren.map(entityType => (
-            <SectionAccordion
+            <div
               key={entityType.id}
-              entityType={entityType}
-              instances={getInstancesForModel(entityType.id, activeModelId)}
-              fields={entityType.fields}
-              values={values}
-              onValueChange={updateValue}
-              projectId={projectId}
-              articleId={articleId}
-              templateId={templateId}
-              runId={runId}
-              parentInstanceId={activeModelId}
-              aiSuggestions={aiSuggestions}
-              onAcceptAI={acceptSuggestion}
-              onRejectAI={rejectSuggestion}
-              getSuggestionsHistory={getSuggestionsHistory}
-              isActionLoading={isActionLoading}
-              onAddInstance={() => handleAddInstance(entityType.id)}
-              onRemoveInstance={handleRemoveInstance}
-              onExtractionComplete={onExtractionComplete}
-            />
+              ref={(el) => registerSection?.(entityType.id, el)}
+              tabIndex={-1}
+              className="scroll-mt-4 outline-none"
+            >
+              <SectionAccordion
+                entityType={entityType}
+                instances={getInstancesForModel(entityType.id, activeModelId)}
+                fields={entityType.fields}
+                values={values}
+                onValueChange={updateValue}
+                projectId={projectId}
+                articleId={articleId}
+                templateId={templateId}
+                runId={runId}
+                parentInstanceId={activeModelId}
+                aiSuggestions={aiSuggestions}
+                onAcceptAI={acceptSuggestion}
+                onRejectAI={rejectSuggestion}
+                getSuggestionsHistory={getSuggestionsHistory}
+                isActionLoading={isActionLoading}
+                onAddInstance={() => handleAddInstance(entityType.id)}
+                onRemoveInstance={handleRemoveInstance}
+                onExtractionComplete={onExtractionComplete}
+              />
+            </div>
           ))}
         </div>
       )}

@@ -75,8 +75,10 @@ export function buildSectionRegistry(args: BuildSectionRegistryArgs): SectionNav
   }
   if (args.modelParentEntityType) {
     items.push(sectionItem(args.modelParentEntityType, 0, args.values, args.instances));
-    for (const child of args.modelChildSections) {
-      items.push(sectionItem(child, 1, args.values, args.instances, args.activeModelId));
+    if (args.activeModelId !== null) {
+      for (const child of args.modelChildSections) {
+        items.push(sectionItem(child, 1, args.values, args.instances, args.activeModelId));
+      }
     }
   }
   return items;
