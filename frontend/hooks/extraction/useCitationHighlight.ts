@@ -26,6 +26,7 @@ import {useState, useCallback} from 'react';
 import type {StoreApi} from 'zustand';
 
 import type {CitationAnchor} from '@/pdf-viewer/core/citation';
+import {projectPdfRectToCss} from '@/pdf-viewer/core/coordinates';
 import {useViewerStoreApiOptional} from '@/pdf-viewer/core/context';
 import type {ViewerState} from '@/pdf-viewer/core/state';
 import {usePageHandle} from '@/pdf-viewer/hooks/usePageHandle';
@@ -104,14 +105,11 @@ function useCitationHighlightInner(
   if (anchor.kind === 'text') return null;
 
   const pageHeightPts = pageHandle.size.height;
-  const rect = anchor.rect;
+  const cssRect = projectPdfRectToCss(anchor.rect, pageHeightPts, scale);
 
   return {
     page,
-    left: rect.x * scale,
-    top: (pageHeightPts - rect.y - rect.height) * scale,
-    width: rect.width * scale,
-    height: rect.height * scale,
+    ...cssRect,
   };
 }
 
@@ -128,7 +126,7 @@ export function useCitationHighlight(): UseCitationHighlightReturn {
     if (storeApi == null) return;
     const {actions} = storeApi.getState();
     actions.clearSearch();
-    actions.setActiveCitation(null);
+    actions.clearCitations();
     setActiveAnchor(null);
   }, [storeApi]);
 
@@ -137,9 +135,9 @@ export function useCitationHighlight(): UseCitationHighlightReturn {
       if (storeApi == null) return;
       const {actions} = storeApi.getState();
 
-      // Replace previous highlight.
+      // Replace previous highlight — single active citation at a time.
       actions.clearSearch();
-      actions.setActiveCitation(null);
+      actions.clearCitations();
 
       const page = anchorPage(anchor);
       actions.goToPage(page);
@@ -157,9 +155,11 @@ export function useCitationHighlight(): UseCitationHighlightReturn {
         ]);
       }
 
-      // Mark an active citation so overlay consumers know something is active.
+      // Put the anchor in the shared store so CitationOverlay can render it.
       // Use a stable synthetic id derived from anchor coords.
-      actions.setActiveCitation(`citation-highlight-${page}`);
+      const id = `citation-highlight-${page}`;
+      actions.addCitation({id, anchor});
+      actions.setActiveCitation(id);
 
       setActiveAnchor(anchor);
     },

@@ -308,4 +308,102 @@ describe('useCitationHighlight', () => {
       }).not.toThrow();
     });
   });
+
+  describe('shared store — anchor put into citations map', () => {
+    it('highlight(regionAnchor) puts the anchor into the store as an active citation', () => {
+      const wrapper = makeWrapper(storeRef);
+      const {result} = renderHook(() => useCitationHighlight(), {wrapper});
+
+      const anchor = {
+        kind: 'region' as const,
+        page: 4,
+        rect: {x: 10, y: 20, width: 80, height: 30},
+      };
+
+      act(() => {
+        result.current.highlight(anchor);
+      });
+
+      const state = storeRef.current!.getState();
+      // activeCitationId must be set
+      expect(state.activeCitationId).not.toBeNull();
+      // The citations map must contain the citation with that id
+      const id = state.activeCitationId!;
+      const citation = state.citations.get(id);
+      expect(citation).not.toBeUndefined();
+      expect(citation!.anchor).toEqual(anchor);
+    });
+
+    it('highlight(hybridAnchor) puts the anchor into the store as an active citation', () => {
+      const wrapper = makeWrapper(storeRef);
+      const {result} = renderHook(() => useCitationHighlight(), {wrapper});
+
+      const anchor = {
+        kind: 'hybrid' as const,
+        range: {page: 2, charStart: 0, charEnd: 10},
+        rect: {x: 0, y: 0, width: 50, height: 20},
+        quote: 'test quote',
+      };
+
+      act(() => {
+        result.current.highlight(anchor);
+      });
+
+      const state = storeRef.current!.getState();
+      expect(state.activeCitationId).not.toBeNull();
+      const id = state.activeCitationId!;
+      const citation = state.citations.get(id);
+      expect(citation).not.toBeUndefined();
+      expect(citation!.anchor).toEqual(anchor);
+    });
+
+    it('clear() removes the citation from the store (citations map is empty)', () => {
+      const wrapper = makeWrapper(storeRef);
+      const {result} = renderHook(() => useCitationHighlight(), {wrapper});
+
+      act(() => {
+        result.current.highlight({
+          kind: 'region' as const,
+          page: 1,
+          rect: {x: 0, y: 0, width: 100, height: 50},
+        });
+      });
+
+      act(() => {
+        result.current.clear();
+      });
+
+      const state = storeRef.current!.getState();
+      expect(state.activeCitationId).toBeNull();
+      expect(state.citations.size).toBe(0);
+    });
+
+    it('second highlight() call clears the previous citation before adding the new one', () => {
+      const wrapper = makeWrapper(storeRef);
+      const {result} = renderHook(() => useCitationHighlight(), {wrapper});
+
+      act(() => {
+        result.current.highlight({
+          kind: 'region' as const,
+          page: 1,
+          rect: {x: 0, y: 0, width: 100, height: 50},
+        });
+      });
+
+      const firstId = storeRef.current!.getState().activeCitationId;
+
+      act(() => {
+        result.current.highlight({
+          kind: 'region' as const,
+          page: 2,
+          rect: {x: 10, y: 10, width: 50, height: 20},
+        });
+      });
+
+      const state = storeRef.current!.getState();
+      // Old id gone, only 1 citation in the map
+      expect(state.citations.size).toBe(1);
+      expect(state.activeCitationId).not.toBe(firstId);
+    });
+  });
 });
