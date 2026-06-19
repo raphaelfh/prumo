@@ -44,6 +44,11 @@ process.env.E2E_REVIEWER_C_PASSWORD ??= FixtureIds.FIXTURE_PASSWORD;
 process.env.E2E_PROJECT_ID ??= FixtureIds.PROJECT_ID;
 process.env.E2E_ARTICLE_ID ??= FixtureIds.ARTICLE_ID;
 process.env.E2E_IMPORT_PROJECT_ID ??= FixtureIds.IMPORT_PROJECT_ID;
+// PROBAST is the seeded quality_assessment global template the QA/consensus/
+// blind-review suites import. Without this zero-config default the whole QA
+// suite silently skips wherever .env doesn't set it (notably CI), so the
+// multi-reviewer consensus + blind-review contracts never actually run there.
+process.env.E2E_QA_GLOBAL_TEMPLATE_ID ??= FixtureIds.PROBAST_GLOBAL_TEMPLATE_ID;
 
 const baseURL = process.env.E2E_FRONTEND_URL || "http://127.0.0.1:8080";
 
