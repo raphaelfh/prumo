@@ -31,7 +31,7 @@ export function useActiveSection(sectionIds: string[]): UseActiveSectionResult {
 
   useEffect(() => {
     activeRef.current = activeId;
-  });
+  }, [activeId]);
 
   const registerSection = useCallback((id: string, el: HTMLElement | null) => {
     if (el) {
