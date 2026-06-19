@@ -17,7 +17,12 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.extraction import ExtractionEntityType, ExtractionRun, ExtractionRunStage
+from app.models.extraction import (
+    ExtractionEntityType,
+    ExtractionInstance,
+    ExtractionRun,
+    ExtractionRunStage,
+)
 from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.models.extraction_workflow import (
     ExtractionConsensusDecision,
@@ -50,6 +55,7 @@ from app.schemas.extraction_run import (
     RunSummaryResponse,
     RunViewCurrentValue,
     RunViewEntityType,
+    RunViewInstance,
     RunViewResponse,
 )
 
@@ -184,6 +190,31 @@ async def _entity_types_for_run(
     return result
 
 
+async def _instances_for_run(db: AsyncSession, run: RunSummaryResponse) -> list[RunViewInstance]:
+    """Instances scoped to the run's (article_id, template_id) pair.
+
+    Instances are NOT run-scoped (no run_id column on extraction_instances).
+    The canonical scope is (article_id, template_id) — identical to the
+    predicate used in ExtractionExportService._load_instances_for_runs.
+    Ordered by (entity_type_id, sort_order) for stable, grouped rendering.
+    """
+    rows = (
+        (
+            await db.execute(
+                select(ExtractionInstance)
+                .where(
+                    ExtractionInstance.article_id == run.article_id,
+                    ExtractionInstance.template_id == run.template_id,
+                )
+                .order_by(ExtractionInstance.entity_type_id, ExtractionInstance.sort_order)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return [RunViewInstance.model_validate(i) for i in rows]
+
+
 async def resolve_caller_current_values(
     db: AsyncSession, run_id: UUID, *, caller_id: UUID
 ) -> list[RunViewCurrentValue]:
@@ -287,7 +318,8 @@ async def build_run_view(
     db: AsyncSession, run_id: UUID, *, caller_id: UUID, can_see_peers: bool
 ) -> RunViewResponse:
     """The one-round-trip run-open view: the blind-filtered run detail plus the
-    frozen entity_types tree and the caller's current_values. COMPOSES
+    frozen entity_types tree, the caller's current_values, and the instances
+    scoped to the run's (article_id, template_id). COMPOSES
     get_run_with_workflow_history (the single blind filter) — it never re-queries
     the workflow tables, so the blind boundary cannot drift. The composed
     ``detail.run`` (a RunSummaryResponse) already carries ``version_id`` /
@@ -303,6 +335,7 @@ async def build_run_view(
         if detail.run.stage in _CURRENT_VALUE_STAGES
         else []
     )
+    instances = await _instances_for_run(db, detail.run)
 
     return RunViewResponse(
         run=detail.run,
@@ -312,6 +345,7 @@ async def build_run_view(
         published_states=detail.published_states,
         entity_types=entity_types,
         current_values=current_values,
+        instances=instances,
     )
 
 

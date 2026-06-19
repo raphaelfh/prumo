@@ -234,6 +234,7 @@ async def test_get_run_view_returns_200_with_required_keys(
     # RunViewResponse additional fields
     assert "entity_types" in data
     assert "current_values" in data
+    assert "instances" in data, "RunViewResponse must include instances"
 
     # Freshly-created run in pending stage: no workflow rows yet; no
     # current_values (pending stage bypasses value resolution).
@@ -242,6 +243,12 @@ async def test_get_run_view_returns_200_with_required_keys(
     # entity_types may be empty when the seed template has no entity types
     # stored in the version snapshot, which is valid.
     assert isinstance(data["entity_types"], list)
+    assert isinstance(data["instances"], list)
+
+    # Wire-key assertion: instance dicts must emit "metadata" not "metadata_".
+    for inst in data["instances"]:
+        assert "metadata" in inst, "instance wire key must be 'metadata' not 'metadata_'"
+        assert "metadata_" not in inst, "ORM attribute name must not leak into JSON"
 
 
 @pytest.mark.asyncio

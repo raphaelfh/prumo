@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.extraction_run_read_service import build_run_view
+from tests.integration.conftest import SEED
 from tests.integration.test_blind_review_isolation import (
     _build_two_reviewer_review_run,
 )
@@ -43,3 +44,57 @@ async def test_build_run_view_current_values_empty_in_proposal(
     assert view.current_values == [], (
         "proposal stage must use proposals[] on the client, not server current_values"
     )
+
+
+@pytest.mark.asyncio
+async def test_build_run_view_instances_populated_and_scoped(
+    db_session: AsyncSession,
+) -> None:
+    """build_run_view must populate instances scoped to (article_id, template_id).
+
+    Scope correctness: every instance in view.instances must match the run's
+    article_id and template_id. We rely on the seed fixtures having at least
+    one instance for the primary article/template.
+    """
+    from sqlalchemy import select
+
+    from app.models.extraction import ExtractionRun
+
+    # Find a run for the seed primary article + template (any stage).
+    run_row = (
+        (
+            await db_session.execute(
+                select(ExtractionRun)
+                .where(
+                    ExtractionRun.article_id == SEED.primary_article,
+                    ExtractionRun.template_id == SEED.primary_template,
+                )
+                .limit(1)
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+    if run_row is None:
+        pytest.skip("No run for seed primary article+template — seed incomplete")
+
+    view = await build_run_view(
+        db_session,
+        run_row.id,
+        caller_id=SEED.primary_profile,
+        can_see_peers=True,
+    )
+
+    assert isinstance(view.instances, list), "instances must be a list"
+
+    # Scope check: every instance must share article_id + template_id with the run.
+    for inst in view.instances:
+        assert inst.article_id == run_row.article_id, (
+            f"Instance {inst.id} has article_id {inst.article_id!r} "
+            f"but run has {run_row.article_id!r}"
+        )
+        assert inst.template_id == run_row.template_id, (
+            f"Instance {inst.id} has template_id {inst.template_id!r} "
+            f"but run has {run_row.template_id!r}"
+        )
