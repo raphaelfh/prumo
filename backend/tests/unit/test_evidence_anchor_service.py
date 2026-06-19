@@ -383,3 +383,162 @@ class TestAnchorMatchShape:
         assert result.char_start < result.char_end
         assert result.block_ids == [0]
         assert set(result.bbox_union.keys()) == {"x", "y", "width", "height"}
+
+
+# ---------------------------------------------------------------------------
+# Fold-back invariant at NFKC-expansion boundaries (Fix 1)
+# ---------------------------------------------------------------------------
+
+
+class TestExpansionBoundaryInvariant:
+    """A match boundary that lands inside a 1→many NFKC expansion must never
+    return a span that folds WIDER than the matched text.
+
+    ``norm_to_orig`` maps every sub-character of an expansion (e.g. the ligature
+    ``ﬁ`` → ``f``, ``i``) to the SAME original index, so the naive map-back of a
+    boundary on a non-first sub-char would include the whole original expansion
+    char.  The matcher must instead honour the advertised guarantee:
+    ``_fold(original[char_start:char_end]) == _fold(matched span)``.
+    """
+
+    def test_quote_starting_mid_ligature_is_unrepresentable_returns_none(self) -> None:
+        # NFKC-normalised "aﬁnal result" == "afinal result"; the quote "inal
+        # result" starts on the SECOND sub-char ('i') of the ligature 'ﬁ'.  No
+        # original slice folds to exactly "inal result" (the ligature is one
+        # indivisible original char), so the matcher must return None rather than
+        # the span-too-wide [1:12] -> "ﬁnal result" -> "final result".
+        blocks = [make_block(1, 0, "aﬁnal result")]
+        assert match("inal result", blocks) is None
+
+    def test_quote_covering_whole_ligature_matches_and_folds_exactly(self) -> None:
+        # "final result" starts BEFORE the ligature and covers the whole 'ﬁ'
+        # expansion, so it is representable: the original slice still contains the
+        # ligature and folds exactly to the quote.
+        blocks = [make_block(1, 0, "aﬁnal result")]
+        result = match("final result", blocks)
+        assert result is not None
+        page_text = _original_page_text(blocks)[1]
+        sliced = page_text[result.char_start : result.char_end]
+        assert "ﬁ" in sliced
+        assert _fold(sliced) == _fold("final result")
+        _assert_slice_folds_to_quote(result, blocks, "final result")
+
+    def test_quote_starting_after_ligature_snaps_to_narrower_span(self) -> None:
+        # "nal result" starts AFTER the full ligature expansion ('fi'); the start
+        # boundary fell inside the expansion but the quote is representable as the
+        # narrower original slice beginning at 'n'.  The matcher must snap to that
+        # narrower span (dropping the ligature), not widen to include it.
+        blocks = [make_block(1, 0, "aﬁnal result")]
+        result = match("nal result", blocks)
+        assert result is not None
+        page_text = _original_page_text(blocks)[1]
+        sliced = page_text[result.char_start : result.char_end]
+        assert "ﬁ" not in sliced  # ligature dropped by the snap
+        assert _fold(sliced) == _fold("nal result")
+        _assert_slice_folds_to_quote(result, blocks, "nal result")
+
+
+# ---------------------------------------------------------------------------
+# Whitespace-tight span (Fix 2)
+# ---------------------------------------------------------------------------
+
+
+class TestWhitespaceTrim:
+    """The returned span must not carry leading/trailing ORIGINAL whitespace.
+
+    When a match ends just before a collapsed-whitespace run or a block
+    separator, the naive map-back can include that trailing ``\\n`` / spaces.  A
+    downstream highlighter would render them, so the span is trimmed tight.
+    """
+
+    def test_match_adjacent_to_block_separator_has_no_trailing_newline(self) -> None:
+        # The quote ends exactly at the end of block 0; the naive map-back would
+        # carry the "\n" block separator into the slice.
+        blocks = [
+            make_block(1, 0, "the result was"),
+            make_block(1, 1, "clearly positive"),
+        ]
+        result = match("result was", blocks)
+        assert result is not None
+        assert result.block_ids == [0]
+        page_text = _original_page_text(blocks)[1]
+        sliced = page_text[result.char_start : result.char_end]
+        assert sliced == "result was"
+        assert sliced == sliced.strip()  # no leading/trailing whitespace
+        _assert_slice_folds_to_quote(result, blocks, "result was")
+
+    def test_match_adjacent_to_collapsed_whitespace_run_is_tight(self) -> None:
+        # In-block whitespace run after the matched word; the slice must stop at
+        # the word, not run into the spaces/newline.
+        blocks = [make_block(1, 0, "The   sample\n   was   incubated   overnight.")]
+        result = match("sample", blocks)
+        assert result is not None
+        page_text = _original_page_text(blocks)[1]
+        sliced = page_text[result.char_start : result.char_end]
+        assert sliced == "sample"
+        assert sliced == sliced.strip()
+
+
+# ---------------------------------------------------------------------------
+# Fuzzy tier: determinism + multi-block coverage (Fix 3)
+# ---------------------------------------------------------------------------
+
+
+class TestFuzzyDeterminismAndCoverage:
+    def test_fuzzy_quote_spanning_two_blocks_merges_range_and_bboxes(self) -> None:
+        # An OCR-noisy quote (within threshold) that crosses the block boundary
+        # must still return the merged char range, BOTH block_ids, and the bbox
+        # union over both blocks.
+        blocks = [
+            make_block(
+                1,
+                0,
+                "the treatment group showed",
+                bbox={"x": 10.0, "y": 100.0, "width": 200.0, "height": 20.0},
+            ),
+            make_block(
+                1,
+                1,
+                "a marked improvement in outcomes",
+                bbox={"x": 12.0, "y": 70.0, "width": 220.0, "height": 22.0},
+            ),
+        ]
+        # "treatment" -> "treatrnent" (rn for m), "improvement" -> "irnprovement".
+        quote = "treatrnent group showed a marked irnprovement"
+        result = match(quote, blocks)
+        assert result is not None
+        assert result.page == 1
+        assert result.block_ids == [0, 1]
+        # Merged range covers text from block 0 into block 1.
+        page_text = _original_page_text(blocks)[1]
+        sliced = page_text[result.char_start : result.char_end]
+        assert "treatment group showed" in sliced
+        assert "marked improvement" in sliced
+        # bbox union over both blocks.
+        assert result.bbox_union["x"] == 10.0
+        assert result.bbox_union["y"] == 70.0
+        assert result.bbox_union["width"] == 232.0 - 10.0
+        assert result.bbox_union["height"] == 120.0 - 70.0
+
+    def test_fuzzy_equal_ratio_windows_resolve_to_earliest_start(self) -> None:
+        # Two windows match the noisy quote with the SAME ratio; the earliest
+        # start must win and repeated calls must agree (determinism).
+        blocks = [
+            make_block(
+                1,
+                0,
+                "alpha bravo charlie delta alpha bravo charlie delta",
+            )
+        ]
+        # OCR-noisy version of "alpha bravo charlie" — present twice in the source
+        # with identical surrounding context, so both windows score equally.
+        noisy = "alpha bravo charlle"
+        first = match(noisy, blocks)
+        second = match(noisy, blocks)
+        assert first is not None
+        assert first == second  # fully deterministic
+        # Earliest start wins: the matched slice is the FIRST occurrence.
+        page_text = _original_page_text(blocks)[1]
+        assert page_text[: first.char_start] == ""  # anchored at the very start
+        sliced = page_text[first.char_start : first.char_end]
+        assert sliced.startswith("alpha bravo")

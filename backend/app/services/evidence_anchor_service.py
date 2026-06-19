@@ -323,18 +323,85 @@ def _fuzzy_better(
 # ---------------------------------------------------------------------------
 
 
-def _map_norm_span_to_original(
-    candidate: _PageCandidate,
-    norm_to_orig: list[int],
-    original_len: int,
-) -> tuple[int, int]:
-    """Translate a normalised ``[norm_start, norm_end)`` span to original offsets."""
-    char_start = norm_to_orig[candidate.norm_start]
-    if candidate.norm_end < len(norm_to_orig):
-        char_end = norm_to_orig[candidate.norm_end]
-    else:
-        char_end = original_len
+def _trim_whitespace(original: str, char_start: int, char_end: int) -> tuple[int, int]:
+    """Tighten ``[char_start, char_end)`` over leading/trailing ORIGINAL whitespace.
+
+    Whitespace folding means a match can map back onto a span that begins or
+    ends inside a collapsed-whitespace run (or across a block separator), so the
+    returned slice would carry stray ``\\n`` / spaces a highlighter would render.
+    Trim the start forward over leading whitespace and the end back over trailing
+    whitespace.  Fold-equality is preserved because folding strips exactly this
+    leading/trailing whitespace anyway.
+    """
+    while char_start < char_end and original[char_start] in _WHITESPACE:
+        char_start += 1
+    while char_end > char_start and original[char_end - 1] in _WHITESPACE:
+        char_end -= 1
     return char_start, char_end
+
+
+def _resolve_original_span(
+    candidate: _PageCandidate,
+    norm_page: str,
+    norm_to_orig: list[int],
+    original: str,
+) -> tuple[int, int] | None:
+    """Map a matched normalised span to an ORIGINAL span that honours the invariant.
+
+    Returns ``(char_start, char_end)`` such that
+    ``_normalize(original[char_start:char_end]) == _normalize(norm_span)`` (the
+    advertised fold-back guarantee), or ``None`` when no such span exists.
+
+    The naive map-back (``norm_to_orig[ns]`` … ``norm_to_orig[ne]``) can break in
+    two ways; both are corrected here with fold-equality as the source of truth:
+
+    * **Whitespace padding.**  A boundary can land inside a collapsed-whitespace
+      run / across a block separator, so the span carries stray leading/trailing
+      ``\\n`` / spaces a highlighter would render.  These are trimmed first
+      (:func:`_trim_whitespace`); folding strips exactly that whitespace, so
+      trimming never disturbs fold-equality.
+
+    * **Expansion boundary.**  ``norm_to_orig`` maps every sub-character of a
+      1→many NFKC expansion (e.g. the ligature ``ﬁ`` → ``f``, ``i``) to the SAME
+      original index.  When the match *starts* on a non-first sub-character, the
+      naive span includes the WHOLE original expansion char and folds one char too
+      WIDE.  We snap the start forward to original-character granularity (dropping
+      the partially-covered expansion char) only when that repairs fold-equality.
+      If the quote genuinely begins/ends mid-expansion — a degenerate input a real
+      LLM quote never produces — no original slice folds to it and we return
+      ``None`` rather than a span that violates the guarantee.
+
+    Fold-equality is re-checked after every adjustment, so a valid exact span
+    (the overwhelmingly common case) is accepted untouched and a non-representable
+    one is rejected rather than silently widened.
+    """
+    target = _normalize(norm_page[candidate.norm_start : candidate.norm_end])
+
+    char_start = norm_to_orig[candidate.norm_start]
+    char_end = (
+        norm_to_orig[candidate.norm_end]
+        if candidate.norm_end < len(norm_to_orig)
+        else len(original)
+    )
+    char_start, char_end = _trim_whitespace(original, char_start, char_end)
+
+    if char_end > char_start and _normalize(original[char_start:char_end]) == target:
+        return char_start, char_end
+
+    # The naive span folds wider than the match: the start fell inside an NFKC
+    # expansion.  Snap the start forward to the next original character (dropping
+    # the over-included expansion char) and re-check.  If it still does not fold
+    # to the match the quote is not representable as any original slice — honour
+    # the guarantee by reporting no anchor.
+    if char_start < char_end:
+        snapped_start, snapped_end = _trim_whitespace(original, char_start + 1, char_end)
+        if (
+            snapped_end > snapped_start
+            and _normalize(original[snapped_start:snapped_end]) == target
+        ):
+            return snapped_start, snapped_end
+
+    return None
 
 
 def _overlapping_blocks(
@@ -448,13 +515,23 @@ def match(
         if candidate is None:
             continue
 
-        char_start, char_end = _map_norm_span_to_original(candidate, norm_to_orig, len(original))
-        if char_end <= char_start:
+        resolved = _resolve_original_span(candidate, norm_page, norm_to_orig, original)
+        if resolved is None:
             continue
+        char_start, char_end = resolved
 
         overlapping = _overlapping_blocks(blocks_by_page[page], char_start, char_end)
         if not overlapping:
             continue
+
+        # Post-condition: the advertised fold-back invariant MUST hold for every
+        # non-None return — the returned span, sliced from the ORIGINAL page text
+        # and folded, equals the folded matched region.  ``_resolve_original_span``
+        # guarantees this; assert it so this class of bug can never silently
+        # return a span-too-wide again.
+        assert _normalize(original[char_start:char_end]) == _normalize(
+            norm_page[candidate.norm_start : candidate.norm_end]
+        ), "fold-back invariant violated"
 
         overlap_len = char_end - char_start
         key = (page, char_start, -overlap_len)
