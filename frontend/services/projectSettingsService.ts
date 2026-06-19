@@ -209,7 +209,6 @@ export type SaveProjectFields = Pick<Project,
   | 'review_rationale'
   | 'search_strategy'
   | 'picots_config_ai_review'
-  | 'settings'
   | 'eligibility_criteria'
   | 'study_design'
   | 'review_keywords'
