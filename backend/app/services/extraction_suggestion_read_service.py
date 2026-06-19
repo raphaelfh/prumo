@@ -140,6 +140,11 @@ async def load_suggestions(
             evidence_by_proposal[ev.proposal_record_id] = ev
 
     # --- Step 4: load CALLER's reviewer_states → decisions (blind boundary) ---
+    # NOTE: this query is intentionally NOT filtered by article — article scope is
+    # enforced transitively: the resulting decision_by_coord map is only consulted
+    # for proposals that passed the article-scoped dedup above, so a status row
+    # for a foreign instance can never attach to a returned item.  Do NOT add an
+    # article join here; the intersection IS the guard.
     state_stmt = (
         select(ExtractionReviewerState, ExtractionReviewerDecision)
         .join(

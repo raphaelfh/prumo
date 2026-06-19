@@ -3,9 +3,9 @@
  * persists accept/reject as ReviewerDecisions on the active extraction run.
  *
  * The backend endpoints (/api/v1/articles/{id}/suggestions, /history,
- * /instance-ids) replace the previous direct PostgREST reads from
+ * /instance-ids) replaced the former direct PostgREST reads from
  * `extraction_proposal_records`, `extraction_evidence`,
- * `extraction_reviewer_states`, and `supabase.auth.getUser()`.
+ * `extraction_reviewer_states`, and the auth-user reads.
  * Caller-scoped status (accepted/rejected/pending) is now resolved
  * server-side and returned in each AISuggestionItem.
  */
@@ -30,17 +30,14 @@ function unwrapValue(raw: { [key: string]: unknown } | null | undefined): unknow
   return raw;
 }
 
-function mapItemToSuggestion(
-  item: AISuggestionItem,
-  statusOverride?: string,
-): AISuggestion {
+function mapItemToSuggestion(item: AISuggestionItem): AISuggestion {
   return {
     id: item.id,
     runId: item.run_id,
     value: unwrapValue(item.proposed_value as { [key: string]: unknown }),
     confidence: item.confidence_score ?? 0,
     reasoning: item.rationale ?? '',
-    status: (statusOverride ?? item.status ?? 'pending') as AISuggestion['status'],
+    status: (item.status ?? 'pending') as AISuggestion['status'],
     timestamp: new Date(item.created_at),
     evidence: item.evidence?.text_content
       ? {

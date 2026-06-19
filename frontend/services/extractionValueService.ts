@@ -15,7 +15,6 @@
  * so by the time the form opens, decisions can be written immediately.
  */
 import { apiClient } from '@/integrations/api';
-import { APIError } from '@/lib/ai-extraction/errors';
 import type { RunSummaryResponse, ArticleRunRef } from '@/hooks/runs/types';
 
 export interface RunRef {
@@ -191,5 +190,3 @@ export const ExtractionValueService = {
   },
 };
 
-// APIError is imported for callers that catch it; keep the export path live.
-export { APIError };

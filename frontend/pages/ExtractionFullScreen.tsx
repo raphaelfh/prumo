@@ -213,10 +213,10 @@ export default function ExtractionFullScreen() {
   const inConsensusStage = runDetail?.run.stage === 'consensus';
 
   // {instance::field} → "Section · Field" label map for ConsensusPanel.
-  // Built from the loaded entity_types + their child fields. The field
-  // join lives in useExtractionData; for now we use the instance label
-  // alone (entityType.label) plus the field label fetched off the run
-  // detail's proposals/decisions when available.
+  // Built from the loaded entity_types + their child fields. entity_types
+  // and fields now come from RunView (runDetail) via the adapters — not
+  // from useExtractionData. We use the instance label (entityType.label)
+  // plus a truncated field id from the run detail's decisions when available.
   const fieldLabelByCoordMap: Record<string, string> = {};
   for (const inst of instances) {
     const et = entityTypes.find((e) => e.id === inst.entity_type_id);

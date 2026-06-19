@@ -8,7 +8,7 @@
  *     '[data-scroll-container="true"]', // PDF viewer
  *   ]);
  *   await preserve(async () => {
- *     await refreshInstances();
+ *     await refetchRun();
  *     await refreshValues();
  *   });
  *
