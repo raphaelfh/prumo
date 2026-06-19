@@ -6,11 +6,12 @@ owner: '@raphaelfh'
 
 # Manager blind-review + reveal toggle — design
 
-> Scope: extraction (and QA) HITL blind-review visibility. Make **managers
+> Scope: extraction **and** QA HITL blind-review visibility. Make **managers
 > blind to other reviewers by default**, give them a **project-level toggle**
-> to reveal peers, and consolidate blind-review onto a **single
-> server-enforced source of truth** (no-legacy). Brainstormed 2026-06-18;
-> decisions captured below.
+> to reveal peers, consolidate blind-review onto a **single server-enforced
+> source of truth**, and unify the peer-comparison UI into **one shared
+> `runDetail`-driven compare view used by both extraction and QA** (no-legacy).
+> Brainstormed 2026-06-18; decisions captured below.
 
 ## 1. Context and problem
 
@@ -66,11 +67,13 @@ flag as the consolidation target.
   trust the manager — decided).
 - No quorum/`reviewer_count` enforcement (separate concern; see
   `reference_hitl_config_inert`).
-- **QA scope:** the server blind-filter is run-based, so the manager-blind rule
-  applies to `quality_assessment` runs too — but QA has no compare/peer UI
-  (`QualityAssessmentFullScreen` doesn't use `useComparisonPermissions`). So the
-  *server* change is kind-agnostic; the *frontend* toggle + compare-view work is
-  **extraction-only**. No new QA UI in this scope.
+- **QA is in scope (decided 2026-06-18).** The server blind-filter is run-based,
+  so the manager-blind rule already covers `quality_assessment` runs — and QA
+  already derives all its peer surfaces (consensus panel, reviewer badge, inline
+  per-coord reviewer activity) from the typed, server-blinded `/runs/{id}/view`,
+  so the manager blind/reveal works on those **for free**. The one missing piece
+  is the dedicated **side-by-side compare view**, which we add as a **single
+  shared component used by both extraction and QA** (see §7).
 
 ## 3. Decisions (locked in brainstorming)
 
@@ -152,20 +155,41 @@ request/response (no `dict[str, Any]`).
 - This is the first typed `projects` settings route; it does **not** migrate the
   rest of project-settings writes (out of scope) — only this setting.
 
-## 7. Frontend — gate + kill the dual-read path
+## 7. Frontend — permission gate + ONE shared, runDetail-driven compare view
 
-- `canUserSeeOthers(role, settings)`:
-  `consensus → true`, `manager → settings.managers_see_reviewers`,
-  `reviewer/viewer → false`. `loadComparisonPermissions` reads the live setting.
-- **Remove** `ExtractionValueService.loadValuesForOthers` (direct Supabase) and
-  rebuild `useOtherExtractions` (and the compare view / `OtherExtractionsPopover`
-  / `ModelLevelComparison`) to derive peer values from **`runDetail`** (the typed
-  `/runs/{id}/view`, already server-blinded). When a manager is blind, `runDetail`
-  carries no peers → compare view hidden/empty; when revealed → it populates.
-  Single read path; the dual-read is gone.
-- The `findActiveRun` direct-Supabase read used only by `useOtherExtractions`
-  becomes unused there — remove if no other caller needs it (verify during
-  implementation).
+**Permission gate.** `canUserSeeOthers(role, settings)`:
+`consensus → true`, `manager → settings.managers_see_reviewers`,
+`reviewer/viewer → false`. `loadComparisonPermissions` reads the live setting.
+This gates whether the compare *affordance* is offered; the *data* is already
+server-blinded in `runDetail`, so it is belt-and-suspenders, not the boundary.
+
+**Shared compare component (extraction + QA).** Both screens already compute
+`reviewerSummary = useReviewerSummary(runDetail)`, which yields
+`decisionsByCoord: Map<"instance::field", ReviewerDecisionResponse[]>` (one
+latest decision per distinct reviewer per coord) — exactly the peer data a
+compare grid needs, sourced from the typed, server-blinded `/runs/{id}/view`.
+Introduce a single `RunReviewerComparison` component that renders, grouped by
+**entity_type (section/domain) → instance → field → one column per reviewer**,
+from:
+
+- `decisionsByCoord` + `reviewerProfiles` (labels/avatars), and
+- the run's `entity_types` tree + `instances` (already on both pages), and
+- the caller's own `values` (the "you" column).
+
+Extraction's multi-instance (model) grouping is just the instance layer of the
+same structure; QA is the 1:1 case (one instance per domain). Both pages mount
+`RunReviewerComparison` behind the existing "Comparison" view toggle
+(extraction) / a new toggle on the QA shell, gated by `canSeeOthers`.
+
+**Kill the dual-read path.** Remove `ExtractionValueService.loadValuesForOthers`
+(direct Supabase), `useOtherExtractions`, and the extraction-specific
+`ExtractionComparisonView` / `ModelLevelComparison`. Re-derive the per-field
+`OtherExtractionsPopover` from `decisionsByCoord.get(coordKey)` (same source).
+The `findActiveRun` direct-Supabase read becomes unused here — remove if no
+other caller needs it (verify during implementation). Net: every peer surface
+on both screens reads from one server-blinded source (`runDetail`); when a
+manager is blind, `decisionsByCoord` has only their own rows so the compare view
+is empty/hidden; when revealed, peers appear.
 
 ## 8. The toggle UI
 
@@ -173,7 +197,9 @@ request/response (no `dict[str, Any]`).
 - Add a control in the **extraction/consensus settings** (next to the consensus
   config): *"Show other reviewers' responses to managers"* — default off,
   `disabled` unless `canManageBlindMode` (manager). New copy keys under
-  `frontend/lib/copy/consensus.ts` (English only).
+  `frontend/lib/copy/consensus.ts` (English only). It is project-level and
+  **kind-agnostic**: the server reads it for every run, so it governs manager
+  visibility on both extraction and QA runs from one switch.
 - Repoint the `EyeOff` "blind" badge so it reflects the **real** manager-blind
   state (or remove it if redundant with the toggle).
 
@@ -192,20 +218,30 @@ request/response (no `dict[str, Any]`).
 **Frontend (vitest):**
 
 - `canUserSeeOthers` matrix over role × setting.
-- `useOtherExtractions` derives from `runDetail` (no Supabase call) and is empty
-  for a blind manager, populated when revealed.
+- `RunReviewerComparison` renders the right per-reviewer columns from
+  `decisionsByCoord` for both shapes: extraction multi-instance (models) and QA
+  1:1 domains. Empty for a blind manager; populated when revealed.
+- No Supabase call remains in the peer path (`loadValuesForOthers` deleted);
+  `OtherExtractionsPopover` derives from `decisionsByCoord`.
 - Settings toggle calls the typed endpoint and reflects persisted state.
 
-**E2E (Playwright, api + ui):** manager blind by default sees no compare toggle;
-after PUT reveal, compare view appears; reviewer never sees peers.
+**E2E (Playwright, api + ui):** on **both** the extraction and QA screens — a
+manager blind by default sees no peers/compare; after PUT reveal, the shared
+compare view + per-coord peers appear; a reviewer never sees peers at either
+screen.
 
 ## 10. No-legacy cleanup checklist
 
 - [ ] Remove dead `blind_mode` key (model default, Advanced switch, reads).
-- [ ] Remove `loadValuesForOthers` (direct Supabase) + repoint `useOtherExtractions`.
+- [ ] Remove `loadValuesForOthers` (direct Supabase) + `useOtherExtractions`.
+- [ ] Unify peer-comparison into one shared `RunReviewerComparison` (runDetail-
+      driven) used by extraction + QA; delete `ExtractionComparisonView` and
+      `ModelLevelComparison`; re-derive `OtherExtractionsPopover` from
+      `decisionsByCoord`.
 - [ ] Stop the direct-Supabase write of the setting; use the typed endpoint.
 - [ ] Disentangle "can resolve / arbitrator" from "can see peers" in the read service.
-- [ ] Docs: architecture doc blind-review + RLS section; ADR for the manager-reveal model.
+- [ ] Docs: architecture doc blind-review + RLS section + the §QA/Data-extraction
+      reuse boundary (compare view is now shared); ADR for the manager-reveal model.
 
 ## 11. Risks
 
