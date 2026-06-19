@@ -779,17 +779,17 @@ git commit -am "feat(blind-review): QA compare view + per-kind manager-visibilit
 
 **Files:**
 - Modify: `docs/reference/extraction-hitl-architecture.md` (blind-review + RLS §3 + the §QA/Data-extraction reuse boundary now shares the compare view; bump `last_reviewed`)
-- Create: `docs/adr/0011-manager-blind-review-and-reveal.md` (MADR; frontmatter status/last_reviewed/owner)
+- Create: `docs/adr/0012-manager-blind-review-and-reveal.md` (MADR; frontmatter status/last_reviewed/owner) — note: 0011 is reserved by in-flight PDF-ingestion work in another worktree, so this ADR is 0012
 - Modify: `.markdownlintignore` (add this plan file); ensure cspell passes on the ADR + arch doc (American spelling).
 
 - [ ] **Step 1:** Update the architecture doc: managers blind by default (per-kind `managers_see_reviewers`), live not snapshotted; the **deliberate API-stricter-than-RLS split** for the manager case (RLS 0025 unchanged, reviewer↔reviewer lockstep intact); the compare view is now one shared `RunReviewerComparison` for both kinds.
-- [ ] **Step 2:** Write ADR 0011 (decision, drivers, the per-kind + RLS-unchanged choice, consequences, validation), mirroring `0010`'s structure.
-- [ ] **Step 3:** Add `docs/superpowers/plans/2026-06-19-manager-blind-review.md` to `.markdownlintignore`. Run `npx -y markdownlint-cli@0.45.0 --config .github/markdownlint.json --ignore-path .markdownlintignore docs/adr/0011-*.md docs/reference/extraction-hitl-architecture.md` + `npx -y cspell@8.17.5 --config .github/cspell.json docs/adr/0011-*.md docs/reference/extraction-hitl-architecture.md` + `bash scripts/docs/check-frontmatter.sh`. Expected: clean.
+- [ ] **Step 2:** Write ADR 0012 (decision, drivers, the per-kind + RLS-unchanged choice, consequences, validation), mirroring `0010`'s structure.
+- [ ] **Step 3:** Add `docs/superpowers/plans/2026-06-19-manager-blind-review.md` to `.markdownlintignore`. Run `npx -y markdownlint-cli@0.45.0 --config .github/markdownlint.json --ignore-path .markdownlintignore docs/adr/0012-*.md docs/reference/extraction-hitl-architecture.md` + `npx -y cspell@8.17.5 --config .github/cspell.json docs/adr/0012-*.md docs/reference/extraction-hitl-architecture.md` + `bash scripts/docs/check-frontmatter.sh`. Expected: clean.
 - [ ] **Step 4: Commit**
 
 ```bash
 git add docs/ .markdownlintignore
-git commit -m "docs(blind-review): architecture + ADR 0011 for manager blind-review"
+git commit -m "docs(blind-review): architecture + ADR 0012 for manager blind-review"
 ```
 
 ---
