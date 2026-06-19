@@ -28,10 +28,7 @@ import {Button} from '@/components/ui/button';
 import {Tooltip, TooltipContent, TooltipTrigger} from '@/components/ui/tooltip';
 import {cn} from '@/lib/utils';
 import type {ExtractionField} from '@/types/extraction';
-import type {OtherExtraction} from '@/hooks/extraction/collaboration/useOtherExtractions';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
-import {OtherExtractionsPopover} from './collaboration/OtherExtractionsPopover';
-import {OtherExtractionsButton} from './collaboration/OtherExtractionsButton';
 import {AISuggestionDisplay} from './ai/AISuggestionDisplay';
 import {AISuggestionBadge} from './ai/AISuggestionBadge';
 import {AISuggestionHistoryPopover} from './ai/AISuggestionHistoryPopover';
@@ -50,20 +47,18 @@ interface FieldInputProps {
   onChange: (value: any) => void;
   projectId: string;
   articleId: string;
-  otherExtractions?: OtherExtraction[];
   aiSuggestion?: AISuggestion;
   onAcceptAI?: () => void;
   onRejectAI?: () => void;
   getSuggestionsHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
   isActionLoading?: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null;
   disabled?: boolean;
-  viewMode?: 'extract' | 'compare';
 }
 
 // =================== COMPONENT ===================
 
 export function FieldInput(props: FieldInputProps) {
-  const { field, instanceId, value, onChange, disabled, otherExtractions, aiSuggestion, onAcceptAI, onRejectAI, getSuggestionsHistory, isActionLoading, viewMode } = props;
+  const { field, instanceId, value, onChange, disabled, aiSuggestion, onAcceptAI, onRejectAI, getSuggestionsHistory, isActionLoading } = props;
   const [validationError, setValidationError] = useState<string | null>(null);
   // Briefly highlights this field when its value was just updated (e.g. by an
   // AI extraction refresh) so the user sees what changed without having to
@@ -407,20 +402,6 @@ export function FieldInput(props: FieldInputProps) {
       
       {/* Coluna direita: Input */}
               <div className="space-y-2 min-w-0">
-                  {/* Collaboration badges - only in comparison mode */}
-        {viewMode === 'compare' && otherExtractions && otherExtractions.length > 0 && (
-          <div className="flex items-center gap-2 mb-2">
-            <OtherExtractionsPopover
-              fieldId={field.id}
-              instanceId={instanceId}
-              extractions={otherExtractions}
-              myValue={value}
-            >
-              <OtherExtractionsButton count={otherExtractions.length} />
-            </OtherExtractionsPopover>
-          </div>
-        )}
-
                   {/* Input with badge + history on the right */}
         <div className="flex items-center gap-2 min-w-0">
           <div className="flex-1 min-w-0 overflow-hidden">
@@ -514,7 +495,6 @@ export default memo(FieldInput, (prevProps, nextProps) => {
     prevProps.instanceId === nextProps.instanceId &&
     prevProps.value === nextProps.value &&
     prevProps.disabled === nextProps.disabled &&
-    prevProps.viewMode === nextProps.viewMode &&
     prevActionLoading === nextActionLoading && // Re-render when the accept/reject spinner toggles
     !aiSuggestionChanged // Re-render when suggestion changes (status or ID)
   );

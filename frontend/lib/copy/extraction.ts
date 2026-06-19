@@ -92,7 +92,6 @@ export const extraction = {
     errorLoadArticles: 'Error loading articles',
     errorLoadStats: 'Error loading extraction statistics',
     errors_saveValues: 'Error saving values',
-    errors_loadOtherExtractions: 'Error loading',
     errors_autoSaveFailed: 'Error saving data automatically',
     errors_autoSaveUpdateValues: 'Error updating {{n}} values: {{message}}',
     errors_advanceFailed: 'Could not advance the extraction stage',
@@ -460,10 +459,6 @@ export const extraction = {
     toastSuggestionAcceptedSuccess: 'Suggestion accepted successfully',
     toastSuggestionRejectedSuccess: 'Suggestion rejected',
     emptyValue: '(empty)',
-    // OtherExtractionsPopover
-    otherExtractionsTitle: 'Other extractions',
-    otherViewFullComparison: 'View full comparison',
-    otherSameAsMine: 'Same',
     // FieldInput
     fieldRequired: 'Required field',
     fieldUnitLabel: 'Unit',

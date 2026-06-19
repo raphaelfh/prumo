@@ -25,7 +25,7 @@ interface HeaderPDFControlsProps {
   // Modo comparação
   viewMode: 'extract' | 'compare';
   onViewModeChange: (mode: 'extract' | 'compare') => void;
-  hasOtherExtractions: boolean;
+  hasComparison: boolean;
   
   /** Modo compacto (apenas ícones) para mobile */
   compact?: boolean;
@@ -36,7 +36,7 @@ export function HeaderPDFControls({
   onTogglePDF,
   viewMode,
   onViewModeChange,
-  hasOtherExtractions,
+  hasComparison,
   compact = false,
 }: HeaderPDFControlsProps) {
   const toggleButton = compact ? (
@@ -66,7 +66,7 @@ export function HeaderPDFControls({
     </Button>
   );
 
-  const comparisonButton = hasOtherExtractions ? (
+  const comparisonButton = hasComparison ? (
     compact ? (
       <Tooltip>
         <TooltipTrigger asChild>
