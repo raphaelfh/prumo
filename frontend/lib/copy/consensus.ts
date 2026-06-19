@@ -46,6 +46,9 @@ export const consensus = {
     arbitratorLabel: 'Arbitrator',
 
     // Manager review visibility (per-kind blind toggle)
+    managerVisibilityCardTitle: 'Manager review visibility',
+    managerVisibilityCardDesc:
+        'Control whether managers see other reviewers while extracting. Reviewers are always blind to each other.',
     managerVisibilityLabel: "Show other reviewers' responses to managers",
     managerVisibilityHint:
         'When off, managers review blind — they only see their own values until they turn this on. Reviewers are always blind to each other.',

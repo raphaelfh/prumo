@@ -142,10 +142,6 @@ export const project = {
     // AdvancedSettingsSection
     advancedSectionTitle: 'Advanced settings',
     advancedSectionDesc: 'Set eligibility criteria, keywords and additional settings.',
-    advancedCardBlindTitle: 'Blind assessment mode',
-    advancedCardBlindDesc: 'Hide author information during assessment to reduce bias.',
-    advancedEnableBlindLabel: 'Enable blind mode',
-    advancedEnableBlindHint: 'When enabled, author names and affiliations will be hidden during assessment.',
     advancedCardKeywordsTitle: 'Review keywords',
     advancedCardKeywordsDesc: 'Key terms that describe the scope of the review.',
     advancedKeywordsPlaceholder: 'Enter a keyword...',
