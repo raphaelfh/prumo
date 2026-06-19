@@ -27,6 +27,7 @@ import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { loginViaUi, resolveAuthToken } from "../_fixtures/auth";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
 import { prepareCleanQaRun } from "../_fixtures/hitl";
+import type { ReviewKind } from "../../lib/comparison/permissions";
 
 interface ReviewerDecision {
   id: string;
@@ -51,7 +52,7 @@ const REQUIRED = [
   "E2E_RATE_LIMIT_TOKEN",
 ];
 
-type Kind = "extraction" | "quality_assessment";
+type Kind = ReviewKind;
 
 test.describe.configure({ mode: "serial" });
 

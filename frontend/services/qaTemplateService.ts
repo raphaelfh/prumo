@@ -15,6 +15,7 @@ import {supabase} from '@/integrations/supabase/client';
 import {toResult, type ErrorResult} from '@/lib/error-utils';
 import type {ExtractionEntityType, ExtractionField} from '@/types/extraction';
 import type {QATemplate, QADomain} from '@/hooks/qa/useQATemplate';
+import type {ReviewKind} from '@/lib/comparison/permissions';
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -174,7 +175,7 @@ export interface GlobalTemplateRow {
  * NOTE: throws on error — callers (useHITLProjectTemplates callbacks)
  * handle via their own try/catch inside useCallback.
  */
-export type HITLKindParam = 'extraction' | 'quality_assessment';
+export type HITLKindParam = ReviewKind;
 
 export function fetchProjectTemplates(
   projectId: string,

@@ -11,6 +11,7 @@
 
 import {apiClient} from '@/integrations/api';
 import {toResult, type ErrorResult} from '@/lib/error-utils';
+import type {ReviewKind} from '@/lib/comparison/permissions';
 
 // ---------------------------------------------------------------------------
 // useRunAIExtraction
@@ -73,7 +74,7 @@ export interface OpenExtractionSessionRequest {
 
 export interface OpenExtractionSessionResult {
   run_id: string;
-  kind: 'extraction' | 'quality_assessment';
+  kind: ReviewKind;
   project_template_id: string;
   instances_by_entity_type: Record<string, string>;
   run_view: unknown | null;

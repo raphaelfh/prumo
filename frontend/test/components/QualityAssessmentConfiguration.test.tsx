@@ -82,6 +82,20 @@ describe("QualityAssessmentConfiguration — manager blind toggle", () => {
     expect(sw).toHaveAttribute("aria-checked", "true");
   });
 
+  it("enables the toggle for a manager with the setting OFF", () => {
+    mockedPermissions.mockReturnValue({
+      ...BASE,
+      userRole: "manager",
+      isBlindMode: true,
+      canSeeOthers: false,
+      canManageBlindMode: true,
+    });
+    render(<QualityAssessmentConfiguration projectId="p1" />);
+    const sw = screen.getByRole("switch");
+    expect(sw).toBeEnabled();
+    expect(sw).toHaveAttribute("aria-checked", "false");
+  });
+
   it("hides the toggle block while permissions are loading", () => {
     mockedPermissions.mockReturnValue({ ...BASE, loading: true });
     render(<QualityAssessmentConfiguration projectId="p1" />);
