@@ -3,12 +3,13 @@
 Read-side of Phase 3 (Citation API + ExtractionEvidence integration).
 Writes still flow through the existing extraction services
 (``section_extraction_service``, ``ExtractionProposalService``);
-this endpoint surfaces the rows with their ``position`` JSONB validated
-against ``PositionV1`` so the frontend viewer can render them without
-a translation layer.
+this endpoint surfaces the rows with their ``position`` JSONB, adding
+``verified`` + ``anchorKind`` derived fields so callers can distinguish
+confirmed-present quotes from hallucinated / not-yet-verifiable ones.
 
-Rows whose ``position`` is the legacy empty ``{}`` are skipped — they
-predate the citation contract and have no anchor to render.
+All evidence rows are returned — unanchored rows (empty or unparseable
+``position``) are included with ``verified=False`` and ``anchorKind=None``
+rather than skipped.  The read path never raises on a bad position.
 """
 
 from typing import Any
@@ -39,7 +40,11 @@ async def list_article_citations_endpoint(
     db: DbSession,
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[list[dict[str, Any]]]:
-    """Return all v1-shape citations attached to ``article_id``."""
+    """Return all v1-shape citations attached to ``article_id``.
+
+    Unanchored rows (hallucinated or pre-ingestion) are included with
+    ``verified=False``; anchored rows carry ``verified=True`` + ``anchorKind``.
+    """
     try:
         project_id = await get_article_project_id(db, article_id)
     except ArticleNotFoundError as e:
