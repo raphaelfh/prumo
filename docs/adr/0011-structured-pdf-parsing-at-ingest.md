@@ -110,14 +110,20 @@ Concretely, respecting the existing layering:
   (Docling) and only adds a GPU if the bake-off shows MinerU materially wins, so
   the ops footprint is itself part of the bake-off scoring.
 - **Parsing service.** `app/services/document_parsing_service.py` orchestrates:
-  pick the source (JATS/PMC XML when present, else the PDF), run the layout
+  pick the source (JATS/PMC XML when present, else the PDF), run the **injected**
   parser to emit blocks with `bbox` + reading order + `block_type`, run the
-  vision/Mathpix pass on table/formula regions, and write `ArticleTextBlock`
-  rows via a new `BaseRepository` subclass
-  (`app/repositories/article_text_block_repository.py`, `flush()` not
-  `commit()`). `char_start`/`char_end` are offsets **within the page's**
-  concatenated text (not global); `bbox` is PDF user space matching the
-  frontend `PDFRect`; unknown block types map to `paragraph`.
+  vision pass on table/formula regions, and write `ArticleTextBlock` rows via a
+  new `BaseRepository` subclass
+  (`app/repositories/article_text_block_repository.py`, `flush()` not `commit()`)
+  — which becomes the table's single persistence owner, with the existing
+  `article_text_block_read_service` delegating its ordered read to it. Parser
+  adapters wrap external libs/APIs, so — like `StorageAdapter` — they live in
+  `app/infrastructure/parsing/` (a `DocumentParser` port + concrete adapters) and
+  are built by a `create_document_parser()` factory in `app/core/factories.py`
+  that owns the `PARSER_BACKEND` switch and the PHI gate; the service receives the
+  parser by injection. `char_start`/`char_end` are offsets **within the page's**
+  concatenated text (not global); `bbox` is PDF user space matching the frontend
+  `PDFRect`; unknown block types map to `paragraph`.
 - **Extraction reads persisted blocks** instead of re-running `pypdf`, and
   assembles section-aware context — retiring the 15k blind truncation at all
   three prompt sites. `char_start`/`char_end` index each page's text
@@ -153,8 +159,11 @@ Concretely, respecting the existing layering:
   one-off task; until a given article has blocks, extraction falls back to
   today's lazy `pypdf` path so nothing breaks (a temporary two-tier state).
   Re-uploading a file cascade-deletes its blocks (`ON DELETE CASCADE`).
-- **Parser backends are pluggable** behind one `DocumentParser` port, selected by
-  a `PARSER_BACKEND` setting: a self-hosted layout parser (Docling/MinerU) for
+- **Parser backends are pluggable** behind one `DocumentParser` port in
+  `app/infrastructure/parsing/` (mirroring `StorageAdapter`), built by a
+  `create_document_parser()` factory (`app/core/factories.py`) that owns the
+  `PARSER_BACKEND` switch and the privacy gate: a self-hosted layout parser
+  (Docling/MinerU) for
   PHI-sensitive projects with no egress; **LlamaParse (LlamaCloud) `agentic`
   tier** as a first-class cloud option — it returns markdown plus *granular
   bounding boxes* (word/line/cell) in a JSONL sidecar that maps directly onto

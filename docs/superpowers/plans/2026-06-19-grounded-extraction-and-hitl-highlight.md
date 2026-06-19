@@ -60,13 +60,14 @@ scope queries by `project_id`; `ExtractionEvidence.position` is the canonical
 
 | File | Responsibility | Change |
 | --- | --- | --- |
-| `backend/app/services/extraction/block_assembler.py` | prompt source | New: pure blocks → section-aware structured text (token-budgeted, deterministic) |
+| `backend/app/services/extraction_block_assembler.py` | prompt source | New (flat, like the other `extraction_*` services): pure blocks → section-aware text (token-budgeted); imports `concat_page_text` |
+| `backend/app/services/article_text_block_read_service.py` + `app/repositories/article_text_block_repository.py` | block reads | Reuse the existing ordered read; route it through the new repository so the table has one persistence owner |
 | `backend/app/services/section_extraction_service.py` | extraction | Source text from blocks via the assembler; call the anchor service; `READ_FROM_BLOCKS` + lazy fallback |
 | `backend/app/services/model_extraction_service.py` | model id | Same block-sourced assembly (the second 15k site) |
 | `backend/app/llm/prompts/__init__.py` (+ `section_extraction`, `quality_assessment`, `model_identification`) | prompts | Remove `MAX_PDF_CHARS` prefix-cut; accept assembled text; keep `content_version` |
 | `backend/app/services/evidence_anchor_service.py` | grounding | New: quote→block match → `PositionV1`; multi-block + region anchors |
 | `backend/app/llm/validators.py` | validation | Set `verified` on evidence from the anchor result (flag, never drop/raise) |
-| `backend/app/services/citation_read_service.py` | read model | Surface `verified` + anchor kind in the citation wire shape |
+| `backend/app/services/citation_read_service.py` | read model | Surface `verified` (anchor kind already derivable from `anchor.kind` — don't recompute) |
 | `backend/app/core/config.py` | settings | `READ_FROM_BLOCKS` flag + assembler token budget |
 | `backend/app/worker/tasks/parsing_tasks.py` (+ a backfill entry) | backfill | Enqueue parsing for articles lacking blocks (idempotent, batched) |
 | `scripts/backfill_text_blocks.py` | ops | New: resumable, dry-run, project-ordered backfill driver |
@@ -85,7 +86,7 @@ scope queries by `project_id`; `ExtractionEvidence.position` is the canonical
 
 ### Task 1.1: Pure section-aware block assembler
 
-**Files:** `backend/app/services/extraction/block_assembler.py`
+**Files:** `backend/app/services/extraction_block_assembler.py`
 
 - [ ] **Step 1: Write the failing unit test.** Given ordered `ArticleTextBlock`s
   (paragraphs, headings, `table_cell`s, captions across pages), `assemble(blocks,
@@ -101,7 +102,9 @@ scope queries by `project_id`; `ExtractionEvidence.position` is the canonical
   group by page → order by `block_index` → fold headings into section spans →
   coalesce table cells → serialize. Token budget from config; deterministic
   section selection when over budget (no RAG/embeddings — explicit section
-  ranking). Return `(text, dropped_sections)`.
+  ranking). Return `(text, dropped_sections)`. Import the canonical
+  `concat_page_text` from `infrastructure/parsing` for per-page text — do not
+  re-implement the offset concatenation the anchorer depends on.
 - [ ] **Step 4: Run → passes.** Commit `feat(extraction): section-aware block assembler`.
 
 ### Task 1.2: Source the three prompt sites from blocks
@@ -115,11 +118,15 @@ scope queries by `project_id`; `ExtractionEvidence.position` is the canonical
   applied. Repeat for the model-identification path (the second site) and assert
   the quality-assessment template no longer prefix-cuts (third site).
 - [ ] **Step 2: Run → fails.**
-- [ ] **Step 3: Implement.** Replace the three `article_text[:MAX_PDF_CHARS]`
-  injections with assembler output threaded through the templates; delete the
-  constant once unreferenced; keep `content_version` hashing (the template text
-  changes, so the version bumps — expected). Block-fetch via the
-  `ArticleTextBlock` repository, scoped by `article_file_id`.
+- [ ] **Step 3: Implement.** Fetch blocks **once per run** through the
+  `ArticleTextBlock` repository (the single ordered-read owner), assemble the full
+  structured document **once**, cache it on the run/task context, and have each of
+  the three prompt sites apply only the cheap per-call budget *selection* — no
+  re-fetch or re-coalesce per site/section. Replace the three
+  `article_text[:MAX_PDF_CHARS]` injections with that assembled text; delete the
+  constant once unreferenced. Keep `content_version` hashing, but split the
+  source-content hash from the prompt/template version so a pure template-wording
+  change does not force a full-corpus re-extraction.
 - [ ] **Step 4: Run → passes.** Commit `feat(extraction): assemble prompts from blocks, drop 15k truncation`.
 
 ### Task 1.3: READ_FROM_BLOCKS flag + lazy fallback + telemetry
@@ -150,10 +157,12 @@ scope queries by `project_id`; `ExtractionEvidence.position` is the canonical
   page/block, then longest contiguous overlap).
 - [ ] **Step 2: Run → fails.**
 - [ ] **Step 3: Implement** `match(quote, blocks) -> AnchorMatch | None`:
-  normalize both sides, slide over each page's assembled text, allow a bounded
-  token-level fuzz (configurable threshold) for OCR noise, and map the matched
-  span back to `(page, char_start, char_end, block_ids, bbox_union)`. Pure and
-  fully unit-tested — no DB.
+  normalize both sides, slide over each page's text from the shared
+  `concat_page_text`, allow a bounded token-level fuzz (configurable threshold)
+  for OCR noise, and map the matched span back to `(page, char_start, char_end,
+  block_ids, bbox_union)`. Pure and fully unit-tested — no DB. Note: despite its
+  name, `coordinate_coherence.py` is relational-FK validation, not pixel math —
+  the `bbox_union` geometry here is genuinely new; don't wire that module in.
 - [ ] **Step 4: Run → passes.** Commit `feat(extraction): quote-to-block anchor matcher`.
 
 ### Task 2.2: Write PositionV1 (text / region / hybrid)
@@ -168,8 +177,9 @@ scope queries by `project_id`; `ExtractionEvidence.position` is the canonical
   validates the row and `citation_read_service` emits it camelCase.
 - [ ] **Step 2–3: Implement** an `anchor(evidence, blocks)` that picks the anchor
   variant by `block_type`, builds the `PositionV1`, and persists it where
-  proposals + evidence are recorded today (the `position={}` site). Idempotent on
-  re-run.
+  proposals + evidence are recorded today (the `position={}` site). It receives
+  the run-level block list + assembled-text map from the single per-run fetch (no
+  re-query). Idempotent on re-run.
 - [ ] **Step 4: Run → passes.** Commit `feat(extraction): persist PositionV1 anchors for evidence`.
 
 ### Task 2.3: Verbatim verification — flag, never drop
@@ -179,7 +189,8 @@ scope queries by `project_id`; `ExtractionEvidence.position` is the canonical
 - [ ] **Step 1: Failing test:** a planted hallucinated quote (absent from all
   blocks) yields `verified=false` + a reason on the evidence — the run still
   completes, the proposal is **not** discarded, and nothing raises; a real quote
-  yields `verified=true`. The read model exposes `verified` + `anchorKind`.
+  yields `verified=true`. The read model exposes `verified` (anchor kind is
+  already `anchor.kind`).
 - [ ] **Step 2–3: Implement.** Add `evidence_is_grounded(evidence, match)` (or
   extend `evidence_is_plausible`) to set the flag from the matcher result; never
   `raise` in the extraction path (constitution: no `try/finally` in compiled code
@@ -318,7 +329,11 @@ scope queries by `project_id`; `ExtractionEvidence.position` is the canonical
   decisions (parser, vision pass, JATS, PHI hosting) live in the sibling plan.
 - **Reuse:** writes the existing `PositionV1` contract and renders via the
   existing viewer types — no new schema; backfill reuses the ingest task; the read
-  path only gains a `verified` field.
+  path only gains a `verified` field; block reads reuse the existing
+  `article_text_block_read_service` routed through the one repository; the
+  assembler + matcher import the canonical `concat_page_text` rather than
+  re-implementing offsets. Blocks are fetched once per run and threaded to the
+  assembler, matcher, and anchorer.
 - **Risk/ordering:** depends on the ingest plan populating blocks; the
   `READ_FROM_BLOCKS` flag + lazy fallback make the rollout non-breaking during
   backfill. The matcher is the highest-risk unit — it is pure and exhaustively

@@ -28,8 +28,10 @@ vision pass and a second LLM provider go behind the single `build_model()`
 doorway — the pinned `pydantic-ai 1.107` already supports multimodal input, so
 the vision pass appends a page-image/PDF `BinaryContent` to the same
 `extract_structured()` call (no direct-SDK adapter). Parser backends are
-pluggable behind one `DocumentParser` port (Docling/MinerU self-hosted,
-LlamaParse cloud, or vision-LLM-native) via a `PARSER_BACKEND` setting. No new
+pluggable behind one `DocumentParser` port in `app/infrastructure/parsing/`
+(mirroring `StorageAdapter`), built by a `create_document_parser()` factory in
+`app/core/factories.py` that owns the `PARSER_BACKEND` switch and the PHI gate
+(Docling/MinerU self-hosted, LlamaParse cloud, or vision-LLM-native). No new
 tables are required — block status rides on the existing
 `ArticleFile.extraction_status`.
 
@@ -64,16 +66,18 @@ verification, backfill/cleanup, and the reviewer highlight UI — is the
 
 | File | Responsibility | Change |
 | --- | --- | --- |
-| `backend/app/services/parsing/base.py` | parser port | New: `DocumentParser` Protocol + `ParsedBlock` dataclass (page, index, text, char_start/end, bbox, block_type) |
-| `backend/app/services/parsing/docling_parser.py` (and/or `mineru_parser.py`) | parser adapter | New: wrap the chosen library; emit `ParsedBlock`s with bbox + reading order |
-| `backend/app/services/parsing/llamaparse_parser.py` | parser adapter (cloud) | New (optional): LlamaParse `agentic` tier → blocks from the `items` tree + granular-bbox JSONL sidecar (non-PHI / BAA) |
-| `backend/app/services/document_parsing_service.py` | orchestration | New: source routing (PDF/JATS), run parser, run table pass, write blocks, set status |
-| `backend/app/repositories/article_text_block_repository.py` | persistence | New: bulk insert/replace blocks for an `article_file_id` (`flush`, not `commit`) |
+| `backend/app/infrastructure/parsing/base.py` | parser port | New: `DocumentParser` ABC + `ParsedBlock` dataclass + `concat_page_text` (the char-offset source of truth) |
+| `backend/app/infrastructure/parsing/docling_parser.py` (and/or `mineru_parser.py`) | parser adapter | New: wrap the chosen library; emit `ParsedBlock`s with bbox + reading order |
+| `backend/app/infrastructure/parsing/llamaparse_parser.py` | parser adapter (cloud) | New (optional): LlamaParse `agentic` tier → blocks from the `items` tree + granular-bbox JSONL sidecar (non-PHI / BAA) |
+| `backend/app/infrastructure/parsing/page_render.py` | rasterizer | New: render a PDF page to an image once (PyMuPDF / pdfium2 — **new dependency**) for the vision pass |
+| `backend/app/core/factories.py` | parser factory | Add `create_document_parser(settings, *, project_is_phi)` — owns `PARSER_BACKEND` + PHI gate (mirrors `create_storage_adapter`) |
+| `backend/app/services/document_parsing_service.py` | orchestration | New: source routing via `ingestion_source`, run the injected parser, table pass, write blocks once, set status |
+| `backend/app/repositories/article_text_block_repository.py` | persistence | New: `replace_for_file` + the single ordered-read owner (existing read service delegates here); `flush`, not `commit` |
 | `backend/app/worker/tasks/parsing_tasks.py` | async entry | New: `parse_article_file_task` (worker_session + run_task) |
 | `backend/app/services/zotero_import_service.py` | ingest | Enqueue `parse_article_file_task` after `ArticleFile` creation |
-| `backend/app/services/parsing/jats_parser.py` | XML fast-path | New: parse PMC JATS → blocks (text+structure); PDF stays the bbox surface |
+| `backend/app/infrastructure/parsing/jats_parser.py` | XML fast-path | New: parse PMC JATS → blocks (text+structure); PDF stays the bbox surface |
 | `backend/app/llm/provider.py` | provider doorway | Add `provider` arg + Anthropic/Gemini branches (`[anthropic]`/`[google]` extras); keep single doorway |
-| `backend/app/llm/vision/table_pass.py` | vision pass | New: page-image/PDF `BinaryContent` through `extract_structured()` (pydantic-ai multimodal) on table/formula regions |
+| `backend/app/llm/vision_table_pass.py` | vision pass | New: render page once → crop regions → concurrent `extract_structured()` calls with page-image `BinaryContent` (pydantic-ai multimodal) |
 | `backend/app/core/config.py` | settings | Add `ANTHROPIC_API_KEY`, `ANTHROPIC_DEFAULT_MODEL`, `PARSER_BACKEND`, `VISION_TABLE_PASS` |
 | `backend/app/services/api_key_service.py` | BYOK | Learn an `anthropic` key alongside `openai` |
 | `docs/reference/extraction-hitl-architecture.md` | docs | Document the ingest parse + block contract; bump `last_reviewed` |
@@ -123,7 +127,7 @@ verification, backfill/cleanup, and the reviewer highlight UI — is the
 
 ### Task 1.1: Define the parser port + ParsedBlock
 
-**Files:** `backend/app/services/parsing/base.py`
+**Files:** `backend/app/infrastructure/parsing/base.py`
 
 - [ ] **Step 1:** Add a `ParsedBlock` dataclass mirroring `ArticleTextBlock`
   exactly: `page_number` (1-indexed), `block_index` (0-indexed, reading order),
@@ -132,17 +136,18 @@ verification, backfill/cleanup, and the reviewer highlight UI — is the
   origin bottom-left, points), `block_type` (one of the closed 7:
   `paragraph|heading|list_item|table_cell|figure_caption|header|footer`; unknown
   → `paragraph`).
-- [ ] **Step 2:** Add a `DocumentParser` Protocol: `parse(pdf_bytes: bytes) ->
-  list[ParsedBlock]`. Add a pure helper `assemble_page_text(blocks) ->
-  dict[int, str]` that concatenates per page in `block_index` order — the single
-  source of truth for char offsets (the follow-up plan's assembler + anchorer
-  reuse this).
-- [ ] **Step 3:** Unit-test `assemble_page_text` + offset invariants (every
+- [ ] **Step 2:** Add a `DocumentParser` ABC: `parse(pdf_bytes: bytes) ->
+  list[ParsedBlock]` (same shape as `StorageAdapter`). Add a pure helper
+  `concat_page_text(blocks) -> dict[int, str]` that concatenates per page in
+  `block_index` order — the single source of truth for char offsets that the
+  follow-up plan's prompt assembler + anchorer import (they must not re-implement
+  it).
+- [ ] **Step 3:** Unit-test `concat_page_text` + offset invariants (every
   block's `text == page_text[char_start:char_end]`).
 
 ### Task 1.2: Implement the chosen parser adapter
 
-**Files:** `backend/app/services/parsing/docling_parser.py` (parser per Phase 0)
+**Files:** `backend/app/infrastructure/parsing/docling_parser.py` (parser per Phase 0)
 
 - [ ] **Step 1:** Write a failing integration test: feed a small fixture PDF,
   assert ≥ 1 block per page, monotonic `block_index`, valid `block_type`s, bboxes
@@ -173,8 +178,10 @@ verification, backfill/cleanup, and the reviewer highlight UI — is the
   writes blocks via the repo, and sets `ArticleFile.extraction_status` to a
   terminal `parsed` (and `parse_failed` on parser error, with structlog + a
   re-raise the task can retry).
-- [ ] **Step 2:** Implement `DocumentParsingService(db, user_id, storage,
-  trace_id)`; instantiate the repo inside; return a typed
+- [ ] **Step 2:** Implement `DocumentParsingService(db, user_id, storage, parser,
+  trace_id)` — `parser` comes from `create_document_parser(settings,
+  project_is_phi=...)` (mirroring how the task builds `StorageAdapter` via
+  `create_storage_adapter`); instantiate the repo inside; return a typed
   `DocumentParsingResult` dataclass (block count, page count, status). No HTTP
   objects. Table/JATS/OCR routing are added in Phases 2–3 behind flags.
 - [ ] **Step 3:** Run → PASS. Commit `feat(parsing): document parsing service (PDF path)`.
@@ -190,14 +197,15 @@ verification, backfill/cleanup, and the reviewer highlight UI — is the
   `parse_failed`.
 - [ ] **Step 2:** Implement the task with the established pattern — nested
   `async def run()`, `worker_session()` for the DB, `create_storage_adapter()`
-  for storage, `run_task()` bridge; `max_retries=3`, sane `rate_limit`. Enqueue
-  it from `_import_pdf()` right after the `ArticleFile` row is created.
+  for storage, `create_document_parser()` for the parser, `run_task()` bridge;
+  `max_retries=3`, sane `rate_limit`. Enqueue it from `_import_pdf()` right after
+  the `ArticleFile` row is created.
 - [ ] **Step 3:** Run → PASS. Commit
   `feat(parsing): parse PDFs at ingest and persist text blocks`.
 
 ### Task 1.6: LlamaParse adapter (optional cloud backend)
 
-**Files:** `backend/app/services/parsing/llamaparse_parser.py`
+**Files:** `backend/app/infrastructure/parsing/llamaparse_parser.py`
 
 - [ ] **Step 1:** Failing integration test (mocked LlamaCloud client): the adapter
   calls `parse(... tier='agentic', output_options={'granular_bboxes':
@@ -205,10 +213,10 @@ verification, backfill/cleanup, and the reviewer highlight UI — is the
   tree + the granular-bbox JSONL sidecar into `ParsedBlock`s (text, per-page char
   offsets, bbox, block_type) — the same port as the self-hosted adapter.
 - [ ] **Step 2:** Implement against the `llama_cloud` SDK (`AsyncLlamaCloud`); key
-  via `LLAMA_CLOUD_API_KEY` / `APIKeyService`. Selected only when
-  `PARSER_BACKEND=llamaparse`. **Privacy:** this egresses to a cloud API — gate to
-  non-PHI projects or a BAA / self-hosted LlamaCloud; PHI projects keep the
-  self-hosted backend.
+  via `LLAMA_CLOUD_API_KEY` / `APIKeyService`. Registered in
+  `create_document_parser()`; selected when `PARSER_BACKEND=llamaparse`, and the
+  **factory** enforces the privacy gate (cloud egress → non-PHI / BAA /
+  self-hosted LlamaCloud; PHI projects keep the self-hosted backend).
 - [ ] **Step 3:** Run → PASS. Commit `feat(parsing): optional LlamaParse cloud backend`.
 
 ---
@@ -217,17 +225,20 @@ verification, backfill/cleanup, and the reviewer highlight UI — is the
 
 ### Task 2.1: PMC JATS fast-path
 
-**Files:** `backend/app/services/parsing/jats_parser.py`, `document_parsing_service.py`
+**Files:** `backend/app/infrastructure/parsing/jats_parser.py`, `app/services/document_parsing_service.py`
 
 - [ ] **Step 1:** Failing test: when a JATS/PMC XML source is present, blocks are
   built from the XML (sections, headings, table cells, references) with stable
   per-page-equivalent ordering; the service still records that the PDF is the
   bbox-anchor surface (XML blocks carry `bbox=null`/sentinel, page mapped by the
   PDF pass when available).
-- [ ] **Step 2:** Implement the JATS parser + a `choose_source()` step (XML when
-  available, else PDF). Document that XML gives the cleanest text/structure but
-  no native bbox; anchoring for XML-only articles falls back to text-range
-  (page-level) until a PDF pass supplies regions.
+- [ ] **Step 2:** Implement the JATS parser + a `choose_source()` step that reads
+  the already-populated `Article.ingestion_source` / `source_lineage` (set by
+  `article_source_normalization`) to detect PMC/JATS — no new detector. XML gives
+  the cleanest text/structure but no native bbox; the PDF bbox pass is **lazy**
+  (run it only for pages backing extracted values, or on first highlighter open —
+  not eagerly for every JATS article). XML-only anchoring falls back to
+  text-range until that lazy pass supplies regions.
 - [ ] **Step 3:** Run → PASS. Commit `feat(parsing): PMC JATS fast-path`.
 
 ### Task 2.2: OCR for scanned/image PDFs
@@ -267,7 +278,7 @@ verification, backfill/cleanup, and the reviewer highlight UI — is the
 
 ### Task 3.2: Vision table/formula pass via pydantic-ai multimodal
 
-**Files:** `backend/app/llm/extractor.py`, `backend/app/llm/vision/table_pass.py`
+**Files:** `backend/app/llm/extractor.py`, `backend/app/llm/vision_table_pass.py`, `backend/app/infrastructure/parsing/page_render.py`
 
 - [ ] **Step 1:** Failing unit test: `extract_structured` accepts an optional
   `attachments: Sequence[BinaryContent | ImageUrl | DocumentUrl]` appended to the
@@ -279,10 +290,13 @@ verification, backfill/cleanup, and the reviewer highlight UI — is the
   parser's `table_cell` blocks (replaces text, keeps bboxes). OpenAI chat uses a
   vision model + image; Anthropic/Gemini may take a PDF page `BinaryContent`
   directly.
-- [ ] **Step 3:** Implement; render page images at a fixed DPI; cap regions per
-  article for cost; gate behind `VISION_TABLE_PASS`. Wire into
-  `DocumentParsingService` after the layout parse, table/formula regions only.
-  Run → PASS. Commit `feat(parsing): vision table pass via pydantic-ai multimodal`.
+- [ ] **Step 3:** Implement; render each page **once** at a fixed DPI
+  (`page_render.py`, PyMuPDF/pdfium2) and crop all its table/formula regions from
+  that raster; dispatch the per-region `extract_structured` vision calls
+  **concurrently** (bounded gather); cap regions per article for cost; gate behind
+  `VISION_TABLE_PASS`. Wire into `DocumentParsingService` after the layout parse,
+  table/formula regions only. Run → PASS. Commit
+  `feat(parsing): vision table pass via pydantic-ai multimodal`.
 
 ---
 
@@ -309,12 +323,14 @@ ADR 0011 to `accepted`. That plan depends on this one having populated
   produced here.
 - **Reuse:** writes the existing `ArticleTextBlock` schema; no new tables (status
   on `ArticleFile.extraction_status`); the read path is untouched.
-- **Layering/risk:** the parser is a library call inside the Celery worker (no new
-  service); the vision pass adds no SDK divergence — it rides `extract_structured()`
-  via pydantic-ai multimodal input (verified on the pinned 1.107). Char offsets are
-  per-page in `block_index` order (single source of truth in `assemble_page_text`,
-  reused downstream). The optional LlamaParse backend is the only cloud-egress path
-  and is privacy-gated to non-PHI / BAA.
+- **Layering/risk:** the parser is a `DocumentParser` adapter in
+  `infrastructure/parsing/` (mirroring `StorageAdapter`), built by
+  `create_document_parser()` and injected into the worker-side service; the vision
+  pass adds no SDK divergence — it rides `extract_structured()` via pydantic-ai
+  multimodal input (verified on the pinned 1.107). Char offsets are per-page in
+  `block_index` order (single source of truth in `concat_page_text`, reused
+  downstream). The optional LlamaParse backend is the only cloud-egress path and is
+  privacy-gated by the factory to non-PHI / BAA.
 - **Gated/live:** Phase 0 needs real (possibly PHI) papers — handle on an approved
   data surface, not a public bucket.
 - **Ordering:** Phase 0 gates parser-specific code in Phase 1; Phases 2–3 layer
