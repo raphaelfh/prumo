@@ -549,6 +549,7 @@ export const extraction = {
     noSectionsConfigured: 'No sections configured',
     noStudyLevelFields: 'No study-level fields configured in the template.',
     noModelsAdded: 'No models added',
+    noModelsAddedDesc: 'Add a model manually or extract it automatically from the article.',
     noFieldsInThisSection: 'No fields in this section',
     errorCalculatingProgress: 'Error calculating progress',
     loadingComparison: 'Loading comparison…',
