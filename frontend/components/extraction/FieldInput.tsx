@@ -58,7 +58,7 @@ interface FieldInputProps {
 // =================== COMPONENT ===================
 
 export function FieldInput(props: FieldInputProps) {
-  const { field, instanceId, value, onChange, disabled, aiSuggestion, onAcceptAI, onRejectAI, getSuggestionsHistory, isActionLoading } = props;
+  const { field, instanceId, value, onChange, disabled, aiSuggestion, onAcceptAI, onRejectAI, getSuggestionsHistory, isActionLoading, articleId } = props;
   const [validationError, setValidationError] = useState<string | null>(null);
   // Briefly highlights this field when its value was just updated (e.g. by an
   // AI extraction refresh) so the user sees what changed without having to
@@ -457,6 +457,7 @@ export function FieldInput(props: FieldInputProps) {
             suggestion={aiSuggestion}
             instanceId={instanceId}
             fieldId={field.id}
+            articleId={articleId}
             onAccept={onAcceptAI}
             onReject={onRejectAI}
             loading={isActionLoading ? isActionLoading(instanceId, field.id) === 'accept' || isActionLoading(instanceId, field.id) === 'reject' : false}

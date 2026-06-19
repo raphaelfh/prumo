@@ -5030,7 +5030,7 @@
     },
     "/api/v1/articles/{article_id}/citations": {
       "get": {
-        "description": "Return all v1-shape citations attached to ``article_id``.",
+        "description": "Return all v1-shape citations attached to ``article_id``.\n\nUnanchored rows (hallucinated or pre-ingestion) are included with\n``verified=False``; anchored rows carry ``verified=True`` + ``anchorKind``.",
         "operationId": "list_article_citations_endpoint_api_v1_articles__article_id__citations_get",
         "parameters": [
           {

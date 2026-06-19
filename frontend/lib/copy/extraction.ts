@@ -819,6 +819,13 @@ export const extraction = {
     aiEvidenceClickTitle: 'Click to view evidence',
     aiEvidenceClickAria: 'View evidence for this suggestion',
     evidenceCitedAria: 'Cited evidence',
+    // AISuggestionEvidence – citation highlight
+    evidenceNotLocated: "Couldn't locate in source",
+    evidenceJumpToSource: 'Jump to source in PDF',
+    // CitationLiveRegion – aria-live jump announcement
+    citationJumpAnnouncement: 'Jumped to cited source on page {{n}}',
+    // CitationOverlay – focusable active highlight box
+    citationHighlightLabel: 'Cited source highlight',
 } as const;
 
 export type ExtractionCopy = typeof extraction;
