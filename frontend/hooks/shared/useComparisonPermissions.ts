@@ -31,14 +31,16 @@ export interface ComparisonPermissions extends PermissionRules {
  *
  * Runs 2 optimized queries:
  * 1. Fetch member role in project
- * 2. Fetch blind_mode project config
+ * 2. Fetch the per-kind manager-visibility setting
+ *    (`projects.settings.managers_see_reviewers[kind]`)
  *
  * @param projectId - Project ID
  * @param userId - User ID
+ * @param kind - `extraction` | `quality_assessment` (the policy is per-kind)
  * @returns Full permissions with loading state
  *
  * @example
- * const permissions = useComparisonPermissions(projectId, userId);
+ * const permissions = useComparisonPermissions(projectId, userId, 'extraction');
  *
  * if (permissions.loading) return <Loader />;
  * if (!permissions.canSeeOthers) return null;

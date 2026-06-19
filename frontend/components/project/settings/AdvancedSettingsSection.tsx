@@ -1,5 +1,5 @@
 /**
- * Advanced settings section — blind mode, keywords, eligibility, study types, danger zone.
+ * Advanced settings section — keywords, eligibility, study types, danger zone.
  */
 
 import {useState} from 'react';
