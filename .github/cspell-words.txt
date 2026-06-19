@@ -192,3 +192,15 @@ ImageUrl
 JSONL
 LlamaCloud
 multimodal
+BOLA
+DOMPurify
+GFM
+docintel
+markitdown
+nh3
+pdfium
+pdfminer
+pymupdf4llm
+rehype
+tailwindcss
+bakeoff

@@ -69,7 +69,7 @@ verification, backfill/cleanup, and the reviewer highlight UI — is the
 | `backend/app/infrastructure/parsing/base.py` | parser port | New: `DocumentParser` ABC + `ParsedBlock` dataclass + `concat_page_text` (the char-offset source of truth) |
 | `backend/app/infrastructure/parsing/docling_parser.py` (and/or `mineru_parser.py`) | parser adapter | New: wrap the chosen library; emit `ParsedBlock`s with bbox + reading order |
 | `backend/app/infrastructure/parsing/llamaparse_parser.py` | parser adapter (cloud) | New (optional): LlamaParse `agentic` tier → blocks from the `items` tree + granular-bbox JSONL sidecar (non-PHI / BAA) |
-| `backend/app/infrastructure/parsing/page_render.py` | rasterizer | New: render a PDF page to an image once (PyMuPDF / pdfium2 — **new dependency**) for the vision pass |
+| `backend/app/infrastructure/parsing/page_render.py` | rasterizer | New: render a PDF page to an image once (**PyMuPDF** — one dep that also powers the free `pymupdf4llm` markdown tier per ADR-0013; new dependency) for the vision pass |
 | `backend/app/core/factories.py` | parser factory | Add `create_document_parser(settings, *, project_is_phi)` — owns `PARSER_BACKEND` + PHI gate (mirrors `create_storage_adapter`) |
 | `backend/app/services/document_parsing_service.py` | orchestration | New: source routing via `ingestion_source`, run the injected parser, table pass, write blocks once, set status |
 | `backend/app/repositories/article_text_block_repository.py` | persistence | New: `replace_for_file` + the single ordered-read owner (existing read service delegates here); `flush`, not `commit` |
@@ -335,3 +335,17 @@ ADR 0011 to `accepted`. That plan depends on this one having populated
   data surface, not a public bucket.
 - **Ordering:** Phase 0 gates parser-specific code in Phase 1; Phases 2–3 layer
   onto Phase 1's service. The follow-up plan begins once blocks are populated.
+
+## Markdown co-product (ADR-0013)
+
+Markdown is a co-product of the SAME parse, not a second pipeline — full decision
+in **ADR-0013**. This plan's hooks:
+
+- **Phase 0 (Task 0.2):** add the free block-projection (PyMuPDF / `pymupdf4llm`
+  reference) to the bake-off slate, judged on structure per Task 0.2's metric.
+- **Capture native markdown for free** where the locked backend already emits it:
+  LlamaParse `markdown` from the `expand=['markdown']` Task 1.6 fetches (today
+  discarded), or Docling `export_to_markdown()` off the same `convert()` — kept as
+  a merge aid for assembling blocks, which stay the offset/`bbox` source of truth.
+- The "No new tables required" line above holds for BLOCKS; the enriched markdown
+  tier's one `article_files` column is specced in the grounded-extraction plan.

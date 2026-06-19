@@ -87,8 +87,9 @@ JATS XML, and supplementary files.
 Chosen option: **Option D (hybrid self-hosted parse at ingest + targeted vision
 table pass)**, because the two leading requirements pull toward different
 solution classes and only a hybrid satisfies both. On the available 2024–2026
-benchmarks — OmniDocBench (CVPR 2025) and recent table/formula benchmarks, all
-built on synthetic, born-digital documents — the pattern is consistent: general
+benchmarks — OmniDocBench (CVPR 2025) and recent table/formula benchmarks, which
+under-represent scanned clinical PDFs and publisher clinical-trial tables — the
+pattern is consistent: general
 vision LLMs lead on table, formula, and scanned-page *content* fidelity but emit
 weak, unreliable spatial `bbox` provenance, while layout parsers (MinerU,
 Docling) lead on `bbox` + reading order + born-digital layout but degrade on
@@ -162,12 +163,15 @@ Concretely, respecting the existing layering:
 - **Parser backends are pluggable** behind one `DocumentParser` port in
   `app/infrastructure/parsing/` (mirroring `StorageAdapter`), built by a
   `create_document_parser()` factory (`app/core/factories.py`) that owns the
-  `PARSER_BACKEND` switch and the privacy gate: a self-hosted layout parser
-  (Docling/MinerU) for
+  `PARSER_BACKEND` switch and the privacy gate (where `project_is_phi` is read
+  from a single source of truth — a project/org policy flag — so a PHI project
+  cannot select any cloud-egress backend, and ADR 0013's enriched-markdown tier
+  reads the same flag): a self-hosted layout parser (Docling/MinerU) for
   PHI-sensitive projects with no egress; **LlamaParse (LlamaCloud) `agentic`
   tier** as a first-class cloud option — it returns markdown plus *granular
   bounding boxes* (word/line/cell) in a JSONL sidecar that maps directly onto
-  `article_text_blocks` + `PositionV1`, the strongest turnkey provenance; and a
+  `article_text_blocks` + `PositionV1` (provenance lives in that sidecar, not in
+  the markdown string); and a
   vision-LLM-native backend (page images/PDF through `extract_structured()`). The
   bake-off scores all three. **Privacy gate:** LlamaParse sends documents to a
   cloud API, so it is for non-PHI projects or under a BAA / a self-hosted
@@ -202,13 +206,14 @@ Concretely, respecting the existing layering:
 - **Parser bake-off.** Lock a labeled set of real prumo papers before scoring —
   at least ~50, balanced across born-digital, scanned, and JATS-available
   inputs — and score candidates (Docling, MinerU, OpenDataLoader-PDF, plus one
-  API baseline) on table fidelity (TEDS plus an LLM-judge, since exact-match
-  metrics penalize valid reformatting), section/figure/reference/equation
+  API baseline) on table fidelity (TEDS plus an LLM-judge — content cell-F1
+  mis-ranks structure: in the pilot a flat text dump scored 0.989 above a
+  structurally-correct grid at 0.768), section/figure/reference/equation
   recovery, `bbox` correctness, and per-article ops cost and latency. Table
   fidelity is the primary metric; `bbox` correctness breaks ties; ground truth
   is labeled by a domain reviewer. Public leaderboards (OmniDocBench and the
-  synthetic born-digital table benchmarks) inform but do not decide, since they
-  exclude scanned clinical PDFs and publisher clinical-trial tables.
+  recent table benchmarks) inform but do not decide, since they under-represent
+  scanned clinical PDFs and publisher clinical-trial tables.
 - **Quality and cost gate.** Set a table-fidelity target on the clinical subset
   (improve on the chosen parser's no-vision baseline by an agreed margin) and a
   per-article cost and latency budget; product and engineering sign off on both
@@ -263,6 +268,12 @@ Concretely, respecting the existing layering:
   (parse at ingest → persist blocks) and
   `docs/superpowers/plans/2026-06-19-grounded-extraction-and-hitl-highlight.md`
   (consume blocks → anchor, verify, highlight).
+- Downstream artifact: the **markdown representation** of a paper (a projection
+  of these blocks — free default + config-gated vision-enriched tier — used as an
+  LLM-extraction input and a viewer option alongside the PDF) is **ADR 0013**
+  (`docs/adr/0013-dual-tier-markdown-representation.md`). It reuses this ADR's
+  parser factory, `PARSER_BACKEND` switch, and PHI gate; blocks remain the
+  offset/`bbox` source of truth and markdown is downstream of them.
 - Canonical schema and run lifecycle:
   `docs/reference/extraction-hitl-architecture.md`.
 - Target contract in code: `ArticleTextBlock` (`app/models/article.py`),
