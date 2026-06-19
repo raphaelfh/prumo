@@ -310,7 +310,7 @@ export function useAISuggestions(props: UseAISuggestionsProps): UseAISuggestions
     instanceId: string,
     fieldId: string
   ): Promise<AISuggestionHistoryItem[]> =>
-    AISuggestionService.getHistory(instanceId, fieldId, 10).catch((err: unknown) => {
+    AISuggestionService.getHistory(articleId, instanceId, fieldId, 10).catch((err: unknown) => {
       console.error('Error loading suggestion history:', err);
       const message = getErrorMessage(err);
       toast.error(`${t('extraction', 'errors_loadSuggestionsHistory')}: ${message}`);
