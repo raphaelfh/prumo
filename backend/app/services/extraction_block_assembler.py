@@ -42,9 +42,13 @@ are placed in a single-column table).
 
 **concat_page_text reuse**: the assembler calls the canonical
 ``concat_page_text`` imported from ``app.infrastructure.parsing.base`` to
-produce per-page text strings.  This guarantees that char offsets written by
-the ingestion pipeline and used by the evidence-anchorer are consistent with
-the text the LLM will see.
+produce per-page text strings.  Local copies of the input blocks are built
+so that ``assign_char_offsets_to_blocks`` can mutate them without ever
+touching the caller's ORM objects (which would cause spurious SQLAlchemy
+dirty-tracking and unwanted UPDATEs).  Prose blocks are sourced from the
+canonical surface via ``page_texts[page][cs:ce]``, which is content-identical
+to ``block.text`` by construction but guarantees byte-for-byte alignment with
+what the evidence-anchorer will index.
 
 **Scope**: pure function, no DB, no IO, no globals.  This module is
 intentionally unwired — the call sites in ``section_extraction_service`` and
@@ -53,9 +57,16 @@ intentionally unwired — the call sites in ``section_extraction_service`` and
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
+
+from app.infrastructure.parsing.base import (
+    ParsedBlock,
+    assign_char_offsets_to_blocks,
+    concat_page_text,
+)
 
 # ---------------------------------------------------------------------------
 # Public types
@@ -178,8 +189,6 @@ def _infer_column_count(cell_texts: list[str]) -> int:
         if n % cols == 0:
             return cols
     # No exact fit — use the square-root heuristic (rounded up), capped at 8
-    import math
-
     return min(8, max(2, math.ceil(math.sqrt(n))))
 
 
@@ -217,8 +226,26 @@ def _render_table(cell_texts: list[str]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _serialize_section(section: _Section) -> str:
-    """Serialise *section* into a text string (heading marker + body)."""
+def _serialize_section(
+    section: _Section,
+    page_texts: dict[int, str],
+    offsets: dict[tuple[int, int], tuple[int, int]],
+) -> str:
+    """Serialise *section* into a text string (heading marker + body).
+
+    Prose blocks are sourced from *page_texts* via *offsets* — the canonical
+    surface produced by ``concat_page_text`` — so that the assembler's output
+    is byte-for-byte consistent with what the evidence-anchorer indexes.
+    Table-cell text is taken directly from the block (cells are not indexed by
+    the anchorer via char offsets).
+
+    Args:
+        section: The section to serialise.
+        page_texts: Mapping of ``page_number → concatenated page string``
+            produced by ``concat_page_text`` on local block copies.
+        offsets: Mapping of ``(page_number, block_index) → (char_start, char_end)``
+            derived from ``assign_char_offsets_to_blocks`` on local block copies.
+    """
     parts: list[str] = []
 
     if section.title:
@@ -236,7 +263,7 @@ def _serialize_section(section: _Section) -> str:
             continue
 
         if block.block_type == "table_cell":
-            # Collect the contiguous run
+            # Collect the contiguous run — cells use .text directly
             run: list[str] = []
             current_page = block.page_number
             while (
@@ -248,7 +275,11 @@ def _serialize_section(section: _Section) -> str:
                 i += 1
             parts.append(_render_table(run))
         else:
-            parts.append(block.text)
+            # Route prose through the canonical surface so offsets align with
+            # what the evidence-anchorer will index in concat_page_text.
+            cs, ce = offsets[(block.page_number, block.block_index)]
+            prose = page_texts[block.page_number][cs:ce]
+            parts.append(prose)
             i += 1
 
     return "\n".join(parts)
@@ -309,6 +340,7 @@ def assemble(
     Args:
         blocks: ``ArticleTextBlock`` ORM rows or ``ParsedBlock`` dataclasses.
             May be in any order; this function sorts by (page_number, block_index).
+            Input blocks are NEVER mutated.
         budget: Maximum number of characters in the returned text (inclusive).
             When the full document exceeds this limit, whole sections are dropped
             according to the deterministic IMRaD-aware ranking (lower rank =
@@ -328,8 +360,11 @@ def assemble(
 
     Notes:
         - Pure function: no DB, no IO, no globals.
-        - Uses ``concat_page_text`` from ``app.infrastructure.parsing.base``
-          as the canonical source of per-page text (required by the anchorer).
+        - Input blocks are never mutated; local ``ParsedBlock`` copies are used
+          so that ``assign_char_offsets_to_blocks`` does not dirty SQLAlchemy
+          ORM objects.
+        - Prose text is sourced from ``concat_page_text`` (canonical surface)
+          so char offsets match what the evidence-anchorer indexes.
         - ``header`` and ``footer`` blocks are suppressed (page chrome).
         - Contiguous ``table_cell`` blocks on the same page are coalesced into
           a markdown table.
@@ -342,13 +377,35 @@ def assemble(
     # 1. Sort into reading order (page asc, block_index asc).
     sorted_blocks: list[_Block] = sorted(blocks, key=lambda b: (b.page_number, b.block_index))
 
-    # 2. Segment into sections.
+    # 2. Build local ParsedBlock copies so assign_char_offsets_to_blocks can
+    #    mutate them without ever touching the caller's ORM objects.
+    copies = [
+        ParsedBlock(
+            page_number=b.page_number,
+            block_index=b.block_index,
+            text=b.text,
+            char_start=0,
+            char_end=0,
+            bbox=getattr(b, "bbox", {"x": 0.0, "y": 0.0, "width": 0.0, "height": 0.0}),
+            block_type=b.block_type,
+        )
+        for b in sorted_blocks
+    ]
+    assign_char_offsets_to_blocks(copies)  # mutates the COPIES only
+    page_texts = concat_page_text(copies)  # canonical per-page text
+    offsets: dict[tuple[int, int], tuple[int, int]] = {
+        (c.page_number, c.block_index): (c.char_start, c.char_end) for c in copies
+    }
+
+    # 3. Segment into sections.
     sections = _segment_into_sections(sorted_blocks, focus)
 
-    # 3. Serialise each section to compute its character cost.
-    serialised: list[tuple[_Section, str]] = [(sec, _serialize_section(sec)) for sec in sections]
+    # 4. Serialise each section to compute its character cost.
+    serialised: list[tuple[_Section, str]] = [
+        (sec, _serialize_section(sec, page_texts, offsets)) for sec in sections
+    ]
 
-    # 4. Check if everything fits within budget.
+    # 5. Check if everything fits within budget.
     #    Join with double newline between sections.
     separator = "\n\n"
     full_text_parts = [text for _, text in serialised if text]
@@ -357,7 +414,7 @@ def assemble(
     if len(full_text) <= budget:
         return full_text, []
 
-    # 5. Over budget: select whole sections greedily, highest priority first.
+    # 6. Over budget: select whole sections greedily, highest priority first.
     #    Within the same rank, preserve original document order (stable sort).
     #    We keep track of original indices so we can reconstruct document order
     #    for kept sections.
@@ -388,17 +445,19 @@ def assemble(
                 )
             )
 
-    # 6. Reconstruct in original document order.
+    # 7. Reconstruct in original document order.
     kept_parts = [text for i, _, text in indexed if i in kept_indices]
     result_text = separator.join(kept_parts)
 
     # Defensive: ensure we never exceed budget (rounding/separator edge cases).
+    # Track kept sections as a list and pop WHOLE sections from the back —
+    # never string-split the serialized output (which would break on separator
+    # strings that appear inside block text).
     if len(result_text) > budget:
-        # Fallback: drop last kept section until we fit.
-        # This should virtually never happen given the greedy selection above.
-        parts = result_text.split(separator)
-        while parts and len(separator.join(parts)) > budget:
-            parts.pop()
-        result_text = separator.join(parts)
+        # Rebuild the kept list in document order so we can pop whole sections.
+        kept_list: list[str] = list(kept_parts)
+        while kept_list and len(separator.join(kept_list)) > budget:
+            kept_list.pop()
+        result_text = separator.join(kept_list)
 
     return result_text, dropped

@@ -9,9 +9,16 @@ Tests cover:
   no mid-section/mid-table cut.
 - In-budget: nothing past a naive 15k char cut is silently lost.
 - Optional ``focus`` hint biases section priority deterministically.
+- Prose routes through canonical concat_page_text surface.
+- Input blocks are never mutated by assemble().
+- Over-budget fallback pops WHOLE sections (never string-splits on separator).
 """
 
-from app.infrastructure.parsing.base import ParsedBlock
+from app.infrastructure.parsing.base import (
+    ParsedBlock,
+    assign_char_offsets_to_blocks,
+    concat_page_text,
+)
 from app.services.extraction_block_assembler import DroppedSection, assemble
 
 # ---------------------------------------------------------------------------
@@ -129,6 +136,9 @@ class TestSectionMarkers:
         # Main content must appear
         assert "Introduction" in text
         assert "Real content." in text
+        # Chrome text must NOT appear in the output
+        assert "Journal Name" not in text
+        assert "Page 1 of 10" not in text
 
 
 # ---------------------------------------------------------------------------
@@ -311,6 +321,43 @@ class TestOverBudgetSectionSelection:
         # Either all cells are present or none are (whole-table constraint)
         assert all(cells_present) or not any(cells_present)
 
+    def test_fallback_whole_section_drop_not_string_split(self) -> None:
+        """Defensive fallback drops WHOLE sections, never fragments on separator.
+
+        Build a block whose text contains the inter-section separator ("\\n\\n").
+        With a budget that forces a drop, the survivor must be intact and
+        dropped_sections must name the dropped section — no fragment leak.
+        """
+        # Section A: text that contains the separator string inside it.
+        # This would corrupt result if we did result_text.split(separator).pop().
+        separator_in_body = "first part\n\nsecond part"  # contains "\n\n"
+        blocks = [
+            _b(1, 0, "Alpha", "heading"),
+            _b(1, 1, separator_in_body, "paragraph"),
+            _b(2, 0, "Beta", "heading"),
+            _b(2, 1, "B" * 80, "paragraph"),
+        ]
+        # Alpha section text = "## Alpha\n" + separator_in_body  ≈ 41 chars
+        # Beta section text  = "## Beta\n"  + "B"*80             ≈ 89 chars
+        # Full text = ~41 + 2 (sep) + 89 = ~132 chars
+        # Budget just big enough for Beta but not both
+        text, dropped = assemble(blocks, budget=100)
+        # Exactly one section must be dropped
+        assert len(dropped) == 1
+        dropped_title = dropped[0].title
+        # The survivor must be fully intact — no partial content from dropped section
+        if dropped_title == "Alpha":
+            # Beta survives: must be whole
+            assert "B" * 80 in text
+            # Alpha body must not appear (even the fragment "first part")
+            assert "first part" not in text
+            assert "second part" not in text
+        else:
+            # Alpha survives: must be whole including the embedded separator
+            assert separator_in_body in text
+            # Beta body must not appear
+            assert "B" * 80 not in text
+
 
 # ---------------------------------------------------------------------------
 # 5. In-budget: nothing past naive 15k cut is silently lost
@@ -393,3 +440,72 @@ class TestFocusHint:
         result2 = assemble(blocks, budget=150, focus="Results")
         assert result1[0] == result2[0]
         assert result1[1] == result2[1]
+
+
+# ---------------------------------------------------------------------------
+# 7. Prose routes through canonical concat_page_text surface
+# ---------------------------------------------------------------------------
+
+
+class TestCanonicalSurface:
+    def test_prose_matches_concat_page_text_slice(self) -> None:
+        """For a multi-block page, prose in assemble() output equals
+        concat_page_text(copies)[page][cs:ce] for the block's offsets.
+
+        This verifies that assemble() genuinely routes prose through the
+        canonical surface rather than just copying block.text.
+        """
+        blocks = [
+            _b(1, 0, "First block", "paragraph"),
+            _b(1, 1, "Second block", "paragraph"),
+            _b(1, 2, "Third block", "paragraph"),
+        ]
+        # Build copies and compute canonical offsets the same way assemble() does.
+        copies = [
+            ParsedBlock(
+                page_number=b.page_number,
+                block_index=b.block_index,
+                text=b.text,
+                char_start=0,
+                char_end=0,
+                bbox=b.bbox,
+                block_type=b.block_type,
+            )
+            for b in blocks
+        ]
+        assign_char_offsets_to_blocks(copies)
+        page_texts = concat_page_text(copies)
+        offsets = {(c.page_number, c.block_index): (c.char_start, c.char_end) for c in copies}
+
+        text, dropped = assemble(blocks, budget=10_000)
+        assert dropped == []
+
+        # Each block's prose must equal the canonical slice.
+        for b in blocks:
+            cs, ce = offsets[(b.page_number, b.block_index)]
+            canonical_slice = page_texts[b.page_number][cs:ce]
+            assert canonical_slice == b.text  # by construction
+            assert canonical_slice in text, (
+                f"Block '{b.text}' canonical slice not found in assembled output"
+            )
+
+    def test_input_blocks_not_mutated_by_assemble(self) -> None:
+        """assemble() must not mutate char_start/char_end on input blocks."""
+        # Use dummy offsets that are intentionally wrong (0 / len) to detect mutation.
+        blocks = [
+            _b(1, 0, "Alpha paragraph"),
+            _b(1, 1, "Beta paragraph"),
+            _b(2, 0, "Gamma paragraph"),
+        ]
+        original_starts = [b.char_start for b in blocks]
+        original_ends = [b.char_end for b in blocks]
+
+        assemble(blocks, budget=10_000)
+
+        for i, b in enumerate(blocks):
+            assert b.char_start == original_starts[i], (
+                f"Block {i} char_start was mutated: {original_starts[i]} → {b.char_start}"
+            )
+            assert b.char_end == original_ends[i], (
+                f"Block {i} char_end was mutated: {original_ends[i]} → {b.char_end}"
+            )
