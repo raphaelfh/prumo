@@ -182,6 +182,8 @@ function ExtractionFormViewComponent(props: ExtractionFormViewProps) {
 // Re-renders only on props that change visuals (aiSuggestions by
 // reference + key count, published after each extraction; showPDF
 // toggles the section rail collapsed state).
+// Compared props: values, instances, studyLevelSections, modelChildSections,
+// activeModelId, modelParentEntityType, models.length, showPDF, aiSuggestions.
 export const ExtractionFormView = memo(ExtractionFormViewComponent, (prevProps, nextProps) => {
   const aiSuggestionsChanged =
     prevProps.aiSuggestions !== nextProps.aiSuggestions ||
@@ -193,6 +195,7 @@ export const ExtractionFormView = memo(ExtractionFormViewComponent, (prevProps, 
     prevProps.studyLevelSections === nextProps.studyLevelSections &&
     prevProps.modelChildSections === nextProps.modelChildSections &&
     prevProps.activeModelId === nextProps.activeModelId &&
+    prevProps.modelParentEntityType === nextProps.modelParentEntityType &&
     prevProps.models.length === nextProps.models.length &&
     prevProps.showPDF === nextProps.showPDF &&
     !aiSuggestionsChanged
