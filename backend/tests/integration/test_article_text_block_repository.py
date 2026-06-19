@@ -212,6 +212,29 @@ async def test_list_ordered_for_file_returns_reading_order(
 
 
 @pytest.mark.asyncio
+async def test_replace_for_file_normalizes_unknown_block_type(
+    db_session_real: AsyncSession,
+) -> None:
+    """replace_for_file with an out-of-set block_type persists 'paragraph' (not the raw value)."""
+    file_id = await _insert_article_file(
+        db_session_real,
+        project_id=SEED.primary_project,
+        article_id=SEED.primary_article,
+    )
+    try:
+        repo = ArticleTextBlockRepository(db_session_real)
+        block = _make_block(1, 0, "sidebar content", block_type="sidebar")
+        await repo.replace_for_file(file_id, [block])
+        await db_session_real.commit()
+
+        ordered = await repo.list_ordered_for_file(file_id)
+        assert len(ordered) == 1
+        assert ordered[0].block_type == "paragraph"
+    finally:
+        await _cleanup(db_session_real, file_id=file_id)
+
+
+@pytest.mark.asyncio
 async def test_replace_for_file_rls_non_member_cannot_read(
     db_session_real: AsyncSession,
 ) -> None:

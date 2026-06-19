@@ -20,7 +20,7 @@ from uuid import UUID
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infrastructure.parsing.base import ParsedBlock
+from app.infrastructure.parsing.base import ParsedBlock, normalize_block_type
 from app.models.article import ArticleTextBlock
 from app.repositories.base import BaseRepository
 
@@ -49,9 +49,10 @@ class ArticleTextBlockRepository(BaseRepository[ArticleTextBlock]):
             blocks: Flat list of ``ParsedBlock`` values from the parser.
 
         Returns:
-            The newly inserted ``ArticleTextBlock`` ORM instances (unflushed
-            refresh not performed — caller must ``await session.refresh(row)``
-            individually if they need server-generated fields beyond ``id``).
+            The newly inserted ``ArticleTextBlock`` ORM instances.
+            ``flush()`` populates ``id`` and other server defaults; call
+            ``await session.refresh(row)`` individually if you need additional
+            server-generated fields.
         """
         # Delete existing rows for this file in a single statement.
         await self.db.execute(
@@ -59,6 +60,8 @@ class ArticleTextBlockRepository(BaseRepository[ArticleTextBlock]):
         )
 
         # Build ORM instances 1-to-1 from ParsedBlock.
+        # normalize_block_type enforces the closed-set contract: unknown values
+        # degrade to "paragraph" rather than hitting the DB CHECK constraint.
         orm_rows = [
             ArticleTextBlock(
                 article_file_id=article_file_id,
@@ -68,7 +71,7 @@ class ArticleTextBlockRepository(BaseRepository[ArticleTextBlock]):
                 char_start=block.char_start,
                 char_end=block.char_end,
                 bbox=block.bbox,
-                block_type=block.block_type,
+                block_type=normalize_block_type(block.block_type),
             )
             for block in blocks
         ]
