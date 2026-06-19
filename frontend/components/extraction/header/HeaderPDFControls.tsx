@@ -22,12 +22,12 @@ interface HeaderPDFControlsProps {
   currentArticleId?: string;
   onNavigateToArticle?: (articleId: string) => void;
   
-  // Modo comparação
+  // Comparison mode
   viewMode: 'extract' | 'compare';
   onViewModeChange: (mode: 'extract' | 'compare') => void;
   hasComparison: boolean;
-  
-  /** Modo compacto (apenas ícones) para mobile */
+
+  /** Compact mode (icons only) for mobile */
   compact?: boolean;
 }
 
