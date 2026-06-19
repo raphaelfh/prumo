@@ -195,6 +195,9 @@ vi.mock("@/integrations/api", () => ({
         current_values: [],
       };
     }
+    if (url.includes("/suggestions")) {
+      return { suggestions: [], count: 0 };
+    }
     return {};
   }),
 }));

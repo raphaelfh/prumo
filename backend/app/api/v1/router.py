@@ -8,6 +8,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     article_text_blocks,
+    articles,
     articles_export,
     citations,
     extraction_export,
@@ -90,6 +91,12 @@ api_router.include_router(
     citations.router,
     prefix="/articles",
     tags=["citations"],
+)
+
+api_router.include_router(
+    articles.router,
+    prefix="/articles",
+    tags=["articles"],
 )
 
 api_router.include_router(

@@ -166,11 +166,31 @@ export interface RunViewCurrentValue {
   decision: string;
 }
 
-// `instances` is added here in Task 12 (deferred), alongside its backend field
-// and the frontend adapter that consumes it.
+export interface RunViewInstanceResponse {
+  id: string;
+  entity_type_id: string;
+  parent_instance_id: string | null;
+  label: string;
+  sort_order: number;
+  status: string;
+  metadata: Record<string, unknown>;
+  project_id: string;
+  article_id: string | null;
+  template_id: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface RunViewResponse extends RunDetailResponse {
   entity_types: RunViewEntityType[];
   current_values: RunViewCurrentValue[];
+  instances: RunViewInstanceResponse[];
+}
+
+export interface ArticleRunRef {
+  article_id: string;
+  run_id: string | null;
 }
 
 /**
@@ -179,4 +199,7 @@ export interface RunViewResponse extends RunDetailResponse {
 export const runsKeys = {
   all: ["runs"] as const,
   detail: (runId: string) => ["runs", runId] as const,
+  reviewers: (runId: string) => ["runs", runId, "reviewers"] as const,
+  disabled: ["runs", "disabled"] as const,
+  noRunReviewers: ["runs", "no-run", "reviewers"] as const,
 };

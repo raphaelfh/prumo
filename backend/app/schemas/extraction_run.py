@@ -197,13 +197,39 @@ class RunViewCurrentValue(BaseModel):
     decision: str
 
 
+class RunViewInstance(BaseModel):
+    """A single extraction instance, sourced from extraction_instances and scoped
+    to the run's (article_id, template_id) pair. The ``metadata`` ORM column maps
+    to ``metadata_`` on the ORM object; ``validation_alias`` ensures
+    ``model_validate(orm_obj)`` reads the right attribute while the JSON output
+    key stays ``metadata``."""
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    entity_type_id: UUID
+    parent_instance_id: UUID | None
+    label: str
+    sort_order: int
+    status: str
+    metadata: dict[str, Any] = Field(validation_alias="metadata_")
+    project_id: UUID
+    article_id: UUID | None
+    template_id: UUID
+    created_by: UUID
+    created_at: datetime
+    updated_at: datetime
+
+
 class RunViewResponse(RunDetailResponse):
-    """``RunDetailResponse`` (run + blind-filtered workflow rows) plus the two
-    pieces the run-open form needs server-side: the frozen entity_types tree and
-    the caller's current_values. (``instances`` is added in Task 12.)"""
+    """``RunDetailResponse`` (run + blind-filtered workflow rows) plus the three
+    pieces the run-open form needs server-side: the frozen entity_types tree,
+    the caller's current_values, and the instances for the run's
+    (article_id, template_id) scope."""
 
     entity_types: list[RunViewEntityType]
     current_values: list[RunViewCurrentValue]
+    instances: list[RunViewInstance]
 
 
 class RunReviewerProfile(BaseModel):
@@ -225,3 +251,28 @@ class RunReviewersResponse(BaseModel):
     """
 
     reviewers: list[RunReviewerProfile]
+
+
+# ----- Article-scoped run-resolution schemas -----
+
+
+class ArticleRunRef(BaseModel):
+    """Per-article run reference returned by POST /articles/form-runs.
+
+    ``run_id`` is None when the article has no matching run.
+    """
+
+    article_id: UUID
+    run_id: UUID | None
+
+
+class FormRunsRequest(BaseModel):
+    """Request body for POST /api/v1/articles/form-runs.
+
+    Resolves the latest relevant run for each article_id in the batch.
+    ``project_id`` is used for BOLA enforcement.
+    """
+
+    article_ids: list[UUID]
+    template_id: UUID
+    project_id: UUID

@@ -17,7 +17,12 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.extraction import ExtractionEntityType, ExtractionRun, ExtractionRunStage
+from app.models.extraction import (
+    ExtractionEntityType,
+    ExtractionInstance,
+    ExtractionRun,
+    ExtractionRunStage,
+)
 from app.models.extraction_versioning import ExtractionTemplateVersion
 from app.models.extraction_workflow import (
     ExtractionConsensusDecision,
@@ -40,6 +45,7 @@ from app.repositories.extraction_reviewer_decision_repository import (
 )
 from app.repositories.project_repository import ProjectMemberRepository, ProjectRepository
 from app.schemas.extraction_run import (
+    ArticleRunRef,
     ConsensusDecisionResponse,
     ProposalRecordResponse,
     PublishedStateResponse,
@@ -49,6 +55,7 @@ from app.schemas.extraction_run import (
     RunSummaryResponse,
     RunViewCurrentValue,
     RunViewEntityType,
+    RunViewInstance,
     RunViewResponse,
 )
 
@@ -183,6 +190,31 @@ async def _entity_types_for_run(
     return result
 
 
+async def _instances_for_run(db: AsyncSession, run: RunSummaryResponse) -> list[RunViewInstance]:
+    """Instances scoped to the run's (article_id, template_id) pair.
+
+    Instances are NOT run-scoped (no run_id column on extraction_instances).
+    The canonical scope is (article_id, template_id) — identical to the
+    predicate used in ExtractionExportService._load_instances_for_runs.
+    Ordered by (entity_type_id, sort_order) for stable, grouped rendering.
+    """
+    rows = (
+        (
+            await db.execute(
+                select(ExtractionInstance)
+                .where(
+                    ExtractionInstance.article_id == run.article_id,
+                    ExtractionInstance.template_id == run.template_id,
+                )
+                .order_by(ExtractionInstance.entity_type_id, ExtractionInstance.sort_order)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return [RunViewInstance.model_validate(i) for i in rows]
+
+
 async def resolve_caller_current_values(
     db: AsyncSession, run_id: UUID, *, caller_id: UUID
 ) -> list[RunViewCurrentValue]:
@@ -286,7 +318,8 @@ async def build_run_view(
     db: AsyncSession, run_id: UUID, *, caller_id: UUID, can_see_peers: bool
 ) -> RunViewResponse:
     """The one-round-trip run-open view: the blind-filtered run detail plus the
-    frozen entity_types tree and the caller's current_values. COMPOSES
+    frozen entity_types tree, the caller's current_values, and the instances
+    scoped to the run's (article_id, template_id). COMPOSES
     get_run_with_workflow_history (the single blind filter) — it never re-queries
     the workflow tables, so the blind boundary cannot drift. The composed
     ``detail.run`` (a RunSummaryResponse) already carries ``version_id`` /
@@ -302,6 +335,7 @@ async def build_run_view(
         if detail.run.stage in _CURRENT_VALUE_STAGES
         else []
     )
+    instances = await _instances_for_run(db, detail.run)
 
     return RunViewResponse(
         run=detail.run,
@@ -311,6 +345,7 @@ async def build_run_view(
         published_states=detail.published_states,
         entity_types=entity_types,
         current_values=current_values,
+        instances=instances,
     )
 
 
@@ -415,4 +450,133 @@ async def list_run_participants(db: AsyncSession, run_id: UUID) -> list[RunRevie
             avatar_url=p.avatar_url,
         )
         for p in profiles
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Article-scoped run-resolution queries
+# ---------------------------------------------------------------------------
+
+_ACTIVE_STAGES = (
+    ExtractionRunStage.PENDING.value,
+    ExtractionRunStage.PROPOSAL.value,
+    ExtractionRunStage.REVIEW.value,
+    ExtractionRunStage.CONSENSUS.value,
+)
+
+
+async def find_active_run(
+    db: AsyncSession,
+    article_id: UUID,
+    *,
+    template_id: UUID | None = None,
+) -> RunSummaryResponse | None:
+    """Return the latest non-terminal extraction run for the article, or None.
+
+    Parity with frontend ``findActiveRun``:
+    - kind = 'extraction'
+    - stage IN (pending, proposal, review, consensus)
+    - optional template_id filter
+    - ordered by created_at DESC, newest wins
+    """
+    stmt = (
+        select(ExtractionRun)
+        .where(
+            ExtractionRun.article_id == article_id,
+            ExtractionRun.kind == "extraction",
+            ExtractionRun.stage.in_(_ACTIVE_STAGES),
+        )
+        .order_by(ExtractionRun.created_at.desc())
+        .limit(1)
+    )
+    if template_id is not None:
+        stmt = stmt.where(ExtractionRun.template_id == template_id)
+
+    run = (await db.execute(stmt)).scalars().first()
+    return RunSummaryResponse.model_validate(run) if run is not None else None
+
+
+async def find_finalized_run(
+    db: AsyncSession,
+    article_id: UUID,
+    *,
+    template_id: UUID | None = None,
+) -> RunSummaryResponse | None:
+    """Return the latest finalized extraction run for the article, or None.
+
+    Parity with frontend ``findLatestFinalizedRun``:
+    - kind = 'extraction'
+    - stage = 'finalized'
+    - optional template_id filter
+    - ordered by created_at DESC, newest wins
+    """
+    stmt = (
+        select(ExtractionRun)
+        .where(
+            ExtractionRun.article_id == article_id,
+            ExtractionRun.kind == "extraction",
+            ExtractionRun.stage == ExtractionRunStage.FINALIZED.value,
+        )
+        .order_by(ExtractionRun.created_at.desc())
+        .limit(1)
+    )
+    if template_id is not None:
+        stmt = stmt.where(ExtractionRun.template_id == template_id)
+
+    run = (await db.execute(stmt)).scalars().first()
+    return RunSummaryResponse.model_validate(run) if run is not None else None
+
+
+async def resolve_form_runs(
+    db: AsyncSession,
+    article_ids: list[UUID],
+    *,
+    template_id: UUID,
+) -> list[ArticleRunRef]:
+    """Resolve the latest relevant run per article for the extraction form.
+
+    Parity with frontend ``findFormRunsByArticle``:
+    - Per article: latest non-terminal run; else latest finalized run.
+    - Cancelled runs are excluded.
+    - Returns one ArticleRunRef per input article_id (run_id=None when no run).
+    """
+    if not article_ids:
+        return []
+
+    non_terminal_stages = list(_ACTIVE_STAGES)
+    # Fetch all candidate runs in one query, ordered so that non-terminal
+    # stages sort before finalized (within each article, newest first).
+    stmt = (
+        select(ExtractionRun)
+        .where(
+            ExtractionRun.article_id.in_(article_ids),
+            ExtractionRun.template_id == template_id,
+            ExtractionRun.kind == "extraction",
+            ExtractionRun.stage.in_([*non_terminal_stages, ExtractionRunStage.FINALIZED.value]),
+        )
+        .order_by(
+            ExtractionRun.article_id,
+            ExtractionRun.created_at.desc(),
+        )
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+
+    # Build a per-article result: prefer non-terminal over finalized, newest first.
+    # The ORDER BY created_at DESC means within each article the newest appears first.
+    best: dict[UUID, ExtractionRun] = {}
+    for row in rows:
+        aid = row.article_id
+        if aid not in best:
+            best[aid] = row
+            continue
+        existing = best[aid]
+        # Prefer non-terminal over finalized
+        existing_active = existing.stage in non_terminal_stages
+        row_active = row.stage in non_terminal_stages
+        if row_active and not existing_active:
+            best[aid] = row
+
+    return [
+        ArticleRunRef(article_id=aid, run_id=best[aid].id if aid in best else None)
+        for aid in article_ids
     ]

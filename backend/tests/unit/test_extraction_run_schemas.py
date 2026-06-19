@@ -588,9 +588,11 @@ class TestRunViewResponse:
             published_states=[],
             entity_types=[],
             current_values=[],
+            instances=[],
         )
         assert resp.entity_types == []
         assert resp.current_values == []
+        assert resp.instances == []
 
     def test_inherits_detail_requirements(self) -> None:
         with pytest.raises(ValidationError):
@@ -626,6 +628,7 @@ class TestRunViewResponse:
             published_states=[],
             entity_types=[et],
             current_values=[cv],
+            instances=[],
         )
         assert resp.entity_types[0].name == "patient"
         assert resp.current_values[0].decision == "review"
