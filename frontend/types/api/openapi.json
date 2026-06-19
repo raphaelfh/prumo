@@ -1,6 +1,193 @@
 {
   "components": {
     "schemas": {
+      "AISuggestionHistoryItem": {
+        "description": "One entry in the proposal history for a single (instance, field) coord.\n\nSame shape as AISuggestionItem minus `status` \u2014 history is proposal trail only.",
+        "properties": {
+          "confidence_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence Score"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "evidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvidenceResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "field_id": {
+            "format": "uuid",
+            "title": "Field Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "instance_id": {
+            "format": "uuid",
+            "title": "Instance Id",
+            "type": "string"
+          },
+          "proposed_value": {
+            "additionalProperties": true,
+            "title": "Proposed Value",
+            "type": "object"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "run_id",
+          "instance_id",
+          "field_id",
+          "proposed_value",
+          "confidence_score",
+          "rationale",
+          "created_at",
+          "evidence"
+        ],
+        "title": "AISuggestionHistoryItem",
+        "type": "object"
+      },
+      "AISuggestionItem": {
+        "description": "A single AI suggestion (latest proposal per coord) with caller-scoped status.",
+        "properties": {
+          "confidence_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence Score"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "evidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvidenceResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "field_id": {
+            "format": "uuid",
+            "title": "Field Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "instance_id": {
+            "format": "uuid",
+            "title": "Instance Id",
+            "type": "string"
+          },
+          "proposed_value": {
+            "additionalProperties": true,
+            "title": "Proposed Value",
+            "type": "object"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "run_id",
+          "instance_id",
+          "field_id",
+          "proposed_value",
+          "confidence_score",
+          "rationale",
+          "created_at",
+          "evidence",
+          "status"
+        ],
+        "title": "AISuggestionItem",
+        "type": "object"
+      },
+      "AISuggestionsResponse": {
+        "description": "Response for the suggestions endpoint.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "suggestions": {
+            "items": {
+              "$ref": "#/components/schemas/AISuggestionItem"
+            },
+            "title": "Suggestions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "suggestions",
+          "count"
+        ],
+        "title": "AISuggestionsResponse",
+        "type": "object"
+      },
       "APIKeyResponse": {
         "description": "Resposta with data de uma API key (sem a key em si).",
         "properties": {
@@ -143,6 +330,54 @@
           "ok"
         ],
         "title": "ApiResponse",
+        "type": "object"
+      },
+      "ApiResponse_AISuggestionsResponse_": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AISuggestionsResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[AISuggestionsResponse]",
         "type": "object"
       },
       "ApiResponse_Annotated_Union_SingleSectionResult__BatchSectionResult___FieldInfo_annotation_NoneType__required_True__discriminator__mode____": {
@@ -1264,6 +1499,54 @@
         "title": "ApiResponse[RunViewResponse]",
         "type": "object"
       },
+      "ApiResponse_Union_RunSummaryResponse__NoneType__": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunSummaryResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[Union[RunSummaryResponse, NoneType]]",
+        "type": "object"
+      },
       "ApiResponse_Union_SaveCredentialsResponse__TestConnectionResponse__ListCollectionsResponse__FetchItemsResponse__FetchAttachmentsResponse__DownloadAttachmentResponse__SyncCollectionResponse__SyncStatusResponse__SyncRetryFailedResponse__SyncItemResultsResponse__": {
         "properties": {
           "data": {
@@ -1436,6 +1719,163 @@
         "title": "ApiResponse[UpdateTemplateActiveResponse]",
         "type": "object"
       },
+      "ApiResponse_list_AISuggestionHistoryItem__": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AISuggestionHistoryItem"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta",
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[list[AISuggestionHistoryItem]]",
+        "type": "object"
+      },
+      "ApiResponse_list_ArticleRunRef__": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ArticleRunRef"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta",
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[list[ArticleRunRef]]",
+        "type": "object"
+      },
+      "ApiResponse_list_UUID__": {
+        "properties": {
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dados da resposta",
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Error details"
+          },
+          "ok": {
+            "description": "Indica se a operacao foi bem-sucedida",
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "rastreamento",
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ApiResponse[list[UUID]]",
+        "type": "object"
+      },
       "ApiResponse_list_dict_str__Any___": {
         "properties": {
           "data": {
@@ -1487,6 +1927,34 @@
           "ok"
         ],
         "title": "ApiResponse[list[dict[str, Any]]]",
+        "type": "object"
+      },
+      "ArticleRunRef": {
+        "description": "Per-article run reference returned by POST /articles/form-runs.\n\n``run_id`` is None when the article has no matching run.",
+        "properties": {
+          "article_id": {
+            "format": "uuid",
+            "title": "Article Id",
+            "type": "string"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          }
+        },
+        "required": [
+          "article_id",
+          "run_id"
+        ],
+        "title": "ArticleRunRef",
         "type": "object"
       },
       "BatchSectionResult": {
@@ -2230,6 +2698,52 @@
         "title": "ErrorDetail",
         "type": "object"
       },
+      "EvidenceResponse": {
+        "description": "Evidence snippet attached to a proposal record.",
+        "properties": {
+          "page_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Number"
+          },
+          "proposal_record_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Record Id"
+          },
+          "text_content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Content"
+          }
+        },
+        "required": [
+          "proposal_record_id",
+          "text_content",
+          "page_number"
+        ],
+        "title": "EvidenceResponse",
+        "type": "object"
+      },
       "ExportCancelResponse": {
         "description": "Response do cancelamento do job.",
         "properties": {
@@ -2811,6 +3325,36 @@
           "items"
         ],
         "title": "FetchItemsResponse",
+        "type": "object"
+      },
+      "FormRunsRequest": {
+        "description": "Request body for POST /api/v1/articles/form-runs.\n\nResolves the latest relevant run for each article_id in the batch.\n``project_id`` is used for BOLA enforcement.",
+        "properties": {
+          "article_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Article Ids",
+            "type": "array"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "template_id": {
+            "format": "uuid",
+            "title": "Template Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "article_ids",
+          "template_id",
+          "project_id"
+        ],
+        "title": "FormRunsRequest",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -3973,8 +4517,106 @@
         "title": "RunViewField",
         "type": "object"
       },
+      "RunViewInstance": {
+        "description": "A single extraction instance, sourced from extraction_instances and scoped\nto the run's (article_id, template_id) pair. The ``metadata`` ORM column maps\nto ``metadata_`` on the ORM object; ``validation_alias`` ensures\n``model_validate(orm_obj)`` reads the right attribute while the JSON output\nkey stays ``metadata``.",
+        "properties": {
+          "article_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Article Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "format": "uuid",
+            "title": "Created By",
+            "type": "string"
+          },
+          "entity_type_id": {
+            "format": "uuid",
+            "title": "Entity Type Id",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          },
+          "parent_instance_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Instance Id"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "template_id": {
+            "format": "uuid",
+            "title": "Template Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "entity_type_id",
+          "parent_instance_id",
+          "label",
+          "sort_order",
+          "status",
+          "metadata",
+          "project_id",
+          "article_id",
+          "template_id",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "RunViewInstance",
+        "type": "object"
+      },
       "RunViewResponse": {
-        "description": "``RunDetailResponse`` (run + blind-filtered workflow rows) plus the two\npieces the run-open form needs server-side: the frozen entity_types tree and\nthe caller's current_values. (``instances`` is added in Task 12.)",
+        "description": "``RunDetailResponse`` (run + blind-filtered workflow rows) plus the three\npieces the run-open form needs server-side: the frozen entity_types tree,\nthe caller's current_values, and the instances for the run's\n(article_id, template_id) scope.",
         "properties": {
           "consensus_decisions": {
             "items": {
@@ -4004,6 +4646,13 @@
             "title": "Entity Types",
             "type": "array"
           },
+          "instances": {
+            "items": {
+              "$ref": "#/components/schemas/RunViewInstance"
+            },
+            "title": "Instances",
+            "type": "array"
+          },
           "proposals": {
             "items": {
               "$ref": "#/components/schemas/ProposalRecordResponse"
@@ -4029,7 +4678,8 @@
           "consensus_decisions",
           "published_states",
           "entity_types",
-          "current_values"
+          "current_values",
+          "instances"
         ],
         "title": "RunViewResponse",
         "type": "object"
@@ -5028,6 +5678,119 @@
         ]
       }
     },
+    "/api/v1/articles/form-runs": {
+      "post": {
+        "description": "Resolve the latest relevant run per article for the extraction form.\n\nPer article: returns the latest non-terminal run; falls back to the\nlatest finalized run; returns run_id=null when no run exists.\nCancelled runs are excluded. BOLA-gated via project_id in the body.",
+        "operationId": "post_form_runs_api_v1_articles_form_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FormRunsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_ArticleRunRef__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Post Form Runs",
+        "tags": [
+          "articles"
+        ]
+      }
+    },
+    "/api/v1/articles/{article_id}/active-run": {
+      "get": {
+        "description": "Return the latest non-terminal extraction run for the article.\n\nReturns null (data: null) when no active run exists. 404 when the\narticle is not found; 403 when the caller is not a project member.",
+        "operationId": "get_active_run_api_v1_articles__article_id__active_run_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Article Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "template_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Template Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Union_RunSummaryResponse__NoneType__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Active Run",
+        "tags": [
+          "articles"
+        ]
+      }
+    },
     "/api/v1/articles/{article_id}/citations": {
       "get": {
         "description": "Return all v1-shape citations attached to ``article_id``.\n\nUnanchored rows (hallucinated or pre-ingestion) are included with\n``verified=False``; anchored rows carry ``verified=True`` + ``anchorKind``.",
@@ -5074,6 +5837,282 @@
         "summary": "List Article Citations Endpoint",
         "tags": [
           "citations"
+        ]
+      }
+    },
+    "/api/v1/articles/{article_id}/finalized-run": {
+      "get": {
+        "description": "Return the latest finalized extraction run for the article.\n\nReturns null (data: null) when no finalized run exists. 404 when the\narticle is not found; 403 when the caller is not a project member.",
+        "operationId": "get_finalized_run_api_v1_articles__article_id__finalized_run_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Article Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "template_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Template Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_Union_RunSummaryResponse__NoneType__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Finalized Run",
+        "tags": [
+          "articles"
+        ]
+      }
+    },
+    "/api/v1/articles/{article_id}/instance-ids": {
+      "get": {
+        "description": "Return all extraction_instance ids for the article.\n\n404 when article is not found; 403 when caller is not a project member.",
+        "operationId": "get_instance_ids_api_v1_articles__article_id__instance_ids_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Article Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_UUID__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Instance Ids",
+        "tags": [
+          "articles"
+        ]
+      }
+    },
+    "/api/v1/articles/{article_id}/suggestions": {
+      "get": {
+        "description": "Return latest AI proposals per (instance, field) with caller-scoped status.\n\nStatus is derived exclusively from the caller's own reviewer_state rows \u2014\nnever another reviewer's (blind boundary, Constraint 3).\n404 when article is not found; 403 when caller is not a project member.",
+        "operationId": "get_suggestions_api_v1_articles__article_id__suggestions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Article Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "instance_ids",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "title": "Instance Ids",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
+            "name": "run_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AISuggestionsResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Suggestions",
+        "tags": [
+          "articles"
+        ]
+      }
+    },
+    "/api/v1/articles/{article_id}/suggestions/history": {
+      "get": {
+        "description": "Return AI proposal history for a single (instance, field) coord.\n\nNewest-first; no status (history is the raw proposal trail).\n404 when article is not found; 403 when caller is not a project member.",
+        "operationId": "get_suggestions_history_api_v1_articles__article_id__suggestions_history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "article_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Article Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "instance_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Instance Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "field_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Field Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_AISuggestionHistoryItem__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "Supabase JWT": []
+          }
+        ],
+        "summary": "Get Suggestions History",
+        "tags": [
+          "articles"
         ]
       }
     },

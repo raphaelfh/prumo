@@ -12,6 +12,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/integrations/api";
+import { runsKeys } from "./types";
 
 export interface RunReviewerProfile {
   id: string;
@@ -35,8 +36,6 @@ export interface UseRunReviewersResult {
   error: Error | null;
 }
 
-const reviewersKey = (runId: string) => ["runs", runId, "reviewers"] as const;
-
 export function useRunReviewers(
   runId: string | null | undefined,
   options: UseRunReviewersOptions = {},
@@ -44,7 +43,7 @@ export function useRunReviewers(
   const { enabled = true } = options;
 
   const query = useQuery<RunReviewersResponse>({
-    queryKey: runId ? reviewersKey(runId) : ["runs", "no-run", "reviewers"],
+    queryKey: runId ? runsKeys.reviewers(runId) : runsKeys.noRunReviewers,
     queryFn: async () => {
       if (!runId) throw new Error("Missing run ID");
       return apiClient<RunReviewersResponse>(
