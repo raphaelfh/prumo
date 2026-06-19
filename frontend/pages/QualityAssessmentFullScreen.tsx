@@ -20,10 +20,15 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 
-import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
+import { ArrowLeft, Loader2, Sparkles, Users } from "lucide-react";
 
 import { AssessmentShell } from "@/components/assessment/AssessmentShell";
 import { QASectionAccordion } from "@/components/assessment/QASectionAccordion";
+import { RunReviewerComparison } from "@/components/runs/RunReviewerComparison";
+import type {
+  ComparisonEntityType,
+  ComparisonInstance,
+} from "@/components/runs/RunReviewerComparison";
 import { PrumoPdfViewer, articleFileSource } from "@prumo/pdf-viewer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,6 +54,9 @@ import {
 } from "@/components/runs/HITLStatusBadges";
 import { ConsensusPanel } from "@/components/runs/ConsensusPanel";
 import { HeaderAIActions } from "@/components/hitl/HeaderAIActions";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermissions";
+import { t } from "@/lib/copy";
 
 interface FieldKey {
   instanceId: string;
@@ -154,6 +162,25 @@ export default function QualityAssessmentFullScreen() {
   const reviewerProfiles = useRunReviewers(session?.runId ?? null, {
     enabled: !!session?.runId,
   });
+
+  // Assess vs. compare view. Compare renders the shared, server-blinded
+  // RunReviewerComparison (same component the extraction screen uses).
+  const [viewMode, setViewMode] = useState<"assess" | "compare">("assess");
+  const { userId } = useCurrentUser();
+  const permissions = useComparisonPermissions(
+    projectId ?? "",
+    userId ?? "",
+    "quality_assessment",
+  );
+  // Peer values come from the server-blinded runDetail
+  // (reviewerSummary.decisionsByCoord) — no separate fetch. Compare is offered
+  // only when the caller may see peers (manager/consensus, per the live
+  // per-kind setting) AND peers actually exist.
+  const canCompare =
+    permissions.canSeeOthers && reviewerSummary.decisionsByCoord.size > 0;
+  // Never strand the user on the compare view if the toggle disappears
+  // (e.g. peers drop out or the setting flips off).
+  const effectiveViewMode = canCompare ? viewMode : "assess";
 
   // Local input state for the form. Hydrated from the latest proposal per
   // (instance, field) once the Run detail loads.
@@ -409,6 +436,31 @@ export default function QualityAssessmentFullScreen() {
 
   const sortedDomains = domains;
 
+  // Compare-view inputs derived from the QA template tree: one instance per
+  // domain (session.instancesByEntityType), shaped for the shared
+  // RunReviewerComparison. ownValues is the form's `_`-keyed map; decisions
+  // come in `::`-keyed via reviewerSummary — the component bridges the two.
+  const compareEntityTypes: ComparisonEntityType[] = sortedDomains.map(
+    (domain) => ({
+      id: domain.entityType.id,
+      label: domain.entityType.label,
+      fields: domain.fields.map((f) => ({ id: f.id, label: f.label })),
+    }),
+  );
+  const compareInstances: ComparisonInstance[] = sortedDomains
+    .map((domain): ComparisonInstance | null => {
+      const instanceId = session?.instancesByEntityType[domain.entityType.id];
+      return instanceId
+        ? {
+            id: instanceId,
+            entity_type_id: domain.entityType.id,
+            parent_instance_id: null,
+            label: null,
+          }
+        : null;
+    })
+    .filter((i): i is ComparisonInstance => i !== null);
+
   if (!projectId || !articleId || !templateId) {
     return (
       <div className="p-8 text-center text-muted-foreground">
@@ -463,6 +515,23 @@ export default function QualityAssessmentFullScreen() {
             requiredReviewerCount={reviewerSummary.requiredReviewerCount}
             divergentCount={reviewerSummary.divergentCoords.size}
           />
+        ) : null}
+        {canCompare ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() =>
+              setViewMode((m) => (m === "assess" ? "compare" : "assess"))
+            }
+            aria-label={t("qa", "compareToggleAria")}
+            data-testid="qa-compare-toggle"
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <Users className="mr-1.5 h-3.5 w-3.5" />
+            {viewMode === "assess"
+              ? t("qa", "compareToggle")
+              : t("qa", "assessToggle")}
+          </Button>
         ) : null}
         <HeaderAIActions suggestions={aiSuggestions} compact />
         <SaveStatusBadge
@@ -552,7 +621,30 @@ export default function QualityAssessmentFullScreen() {
         />
       ) : null}
 
-      {!loading && !error && template && session && !inConsensusStage ? (
+      {!loading &&
+      !error &&
+      template &&
+      session &&
+      !inConsensusStage &&
+      effectiveViewMode === "compare" ? (
+        <div data-testid="qa-compare-view">
+          <RunReviewerComparison
+            decisionsByCoord={reviewerSummary.decisionsByCoord}
+            entityTypes={compareEntityTypes}
+            instances={compareInstances}
+            ownValues={values}
+            reviewerLabelById={reviewerProfiles.labelById}
+            reviewerAvatarById={reviewerProfiles.avatarById}
+          />
+        </div>
+      ) : null}
+
+      {!loading &&
+      !error &&
+      template &&
+      session &&
+      !inConsensusStage &&
+      effectiveViewMode === "assess" ? (
         <>
           {template.description ? (
             <p className="text-sm text-muted-foreground">

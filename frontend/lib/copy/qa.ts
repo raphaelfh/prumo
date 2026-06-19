@@ -39,6 +39,16 @@ export const qa = {
   configToggleEnabling: 'Enabling…',
   configToggleDisabling: 'Disabling…',
 
+  // Manager review-visibility (per-kind blind toggle, shown in Configuration)
+  managerVisibilitySectionTitle: 'Reviewer visibility',
+  managerVisibilitySectionDesc:
+    'Control whether managers see other reviewers’ assessments for this project.',
+
+  // Assess vs. compare view toggle (assessment screen header)
+  compareToggle: 'Comparison',
+  assessToggle: 'Assessment',
+  compareToggleAria: 'Toggle comparison view',
+
   // Active template bar
   activeTemplateLabel: 'Active tool:',
   activeTemplateNone: 'No tool enabled — open Configuration to enable PROBAST or QUADAS-2.',

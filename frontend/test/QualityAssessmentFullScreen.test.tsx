@@ -9,7 +9,32 @@ vi.mock("sonner", () => ({
   Toaster: () => null,
 }));
 
+vi.mock("@/hooks/useCurrentUser", () => ({
+  useCurrentUser: () => ({ userId: "qa-test-reviewer-id" }),
+}));
+
+// Default: blind reviewer (no compare access). The compare-mode test below
+// overrides this to a manager who may see peers.
+const BLIND_PERMISSIONS = {
+  userRole: "reviewer" as const,
+  isBlindMode: true,
+  canSeeOthers: false,
+  canResolveConflicts: false,
+  canManageBlindMode: false,
+  canExport: false,
+  canEditTemplate: false,
+  loading: false,
+  error: null,
+  refresh: vi.fn(),
+};
+vi.mock("@/hooks/shared/useComparisonPermissions", () => ({
+  useComparisonPermissions: vi.fn(),
+}));
+
+import { useComparisonPermissions } from "@/hooks/shared/useComparisonPermissions";
 import QualityAssessmentFullScreen from "@/pages/QualityAssessmentFullScreen";
+
+const mockedPermissions = vi.mocked(useComparisonPermissions);
 
 const PROBAST_TEMPLATE = {
   id: "tpl-1",
@@ -147,7 +172,23 @@ vi.mock("@/integrations/api", () => ({
           created_by: "u-1",
         },
         proposals: [],
-        decisions: [],
+        // One peer reviewer decision so reviewerSummary.decisionsByCoord is
+        // non-empty — the compare toggle's data precondition. (The blind gate
+        // is enforced separately by useComparisonPermissions.)
+        decisions: [
+          {
+            id: "dec-peer-1",
+            run_id: "run-1",
+            instance_id: "inst-1",
+            field_id: "f-1",
+            reviewer_id: "peer-reviewer-id",
+            decision: "edit",
+            proposal_record_id: null,
+            value: { value: "PY" },
+            rationale: null,
+            created_at: new Date().toISOString(),
+          },
+        ],
         consensus_decisions: [],
         published_states: [],
         entity_types: [],
@@ -178,7 +219,9 @@ function renderPage(path = "/projects/p1/articles/a1/quality-assessment/tpl-1") 
 
 describe("QualityAssessmentFullScreen", () => {
   beforeEach(() => {
-    // No-op; supabase + apiClient are mocked at module scope.
+    // supabase + apiClient are mocked at module scope. Reset the permission
+    // hook to the blind default; the compare-mode test overrides it.
+    mockedPermissions.mockReturnValue(BLIND_PERMISSIONS);
   });
 
   afterEach(() => {
@@ -311,5 +354,47 @@ describe("QualityAssessmentFullScreen", () => {
         && (url.includes("/advance") || url.includes("/consensus")),
     );
     expect(sideEffects).toHaveLength(0);
+  });
+
+  it("blind reviewer sees no comparison toggle and stays on the assess view", async () => {
+    // Default permissions (BLIND_PERMISSIONS) → canSeeOthers=false → no toggle
+    // even though a peer decision exists in the run.
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByTestId("qa-domains")).toBeInTheDocument(),
+    );
+    expect(screen.queryByTestId("qa-compare-toggle")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("qa-compare-view")).not.toBeInTheDocument();
+  });
+
+  it("manager who may see peers gets the toggle, and clicking it renders the shared comparison", async () => {
+    mockedPermissions.mockReturnValue({
+      ...BLIND_PERMISSIONS,
+      userRole: "manager",
+      isBlindMode: false,
+      canSeeOthers: true,
+      canManageBlindMode: true,
+    });
+
+    renderPage();
+
+    // Toggle appears once the run + peer decision are loaded.
+    const toggle = await screen.findByTestId("qa-compare-toggle");
+    expect(toggle).toBeInTheDocument();
+    // Still on the assess view until the toggle is clicked.
+    expect(screen.getByTestId("qa-domains")).toBeInTheDocument();
+    expect(screen.queryByTestId("qa-compare-view")).not.toBeInTheDocument();
+
+    toggle.click();
+
+    // Compare view replaces the domain accordions and renders the shared
+    // server-blinded comparison table (peer column sourced from decisionsByCoord).
+    await waitFor(() =>
+      expect(screen.getByTestId("qa-compare-view")).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByTestId("run-reviewer-comparison"),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("qa-domains")).not.toBeInTheDocument();
   });
 });
