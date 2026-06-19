@@ -38,6 +38,7 @@ import {useExtractedValues} from '@/hooks/extraction/useExtractedValues';
 import {useExtractionSession} from '@/hooks/extraction/useExtractionSession';
 import {useFinalizedExtractionRun} from '@/hooks/extraction/useFinalizedExtractionRun';
 import {useExtractionProgress} from '@/hooks/extraction/useExtractionProgress';
+import {useAutoAdvanceToReview} from '@/hooks/extraction/useAutoAdvanceToReview';
 import {useAutoSaveProposals} from '@/hooks/runs';
 import {useOtherExtractions} from '@/hooks/extraction/collaboration/useOtherExtractions';
 import {useAISuggestions} from '@/hooks/extraction/ai/useAISuggestions';
@@ -346,13 +347,36 @@ export default function ExtractionFullScreen() {
   // Declared after `useAutoSaveProposals` so the closure picks up the
   // already-initialized `saveNow` (avoids the temporal-dead-zone crash
   // on first render).
-  const handleSubmitForReview = async () => {
-    if (!activeRunId) return;
+  // Cross PROPOSAL -> REVIEW: flush pending edits so the proposer's typed
+  // values are persisted, advance the run (which materializes those human
+  // proposals into that reviewer's own decisions), then refetch. Quiet (no
+  // toast) so it can be driven automatically by ``useAutoAdvanceToReview``;
+  // ``handleSubmitForReview`` wraps it for the explicit header button.
+  const ensureReviewStage = async () => {
+    if (!activeRunId || stage !== 'proposal') return;
     await saveNow();
     await advanceMutation.mutateAsync({ target_stage: 'review' });
     await Promise.all([refetchRun(), refreshValues()]);
+  };
+
+  const handleSubmitForReview = async () => {
+    await ensureReviewStage();
     toast.success('Submitted for review.');
   };
+
+  // Auto-advance PROPOSAL -> REVIEW the moment the run has content to review:
+  // AI seeded proposals, or the reviewer made their first edit. This is what
+  // makes per-user decisions, the reviewer counter, and "0% until you accept"
+  // correct — the run no longer lingers in PROPOSAL (the multi-user bug class).
+  // Idempotent: the hook never fires outside PROPOSAL and at most once per
+  // transition. Also remediates pre-existing stuck runs the moment they open.
+  const hasProposals = (proposals?.length ?? 0) > 0;
+  useAutoAdvanceToReview({
+    stage,
+    shouldAdvance: hasProposals || hasUnsavedChanges,
+    enabled: !!activeRunId && !loading && valuesInitialized,
+    onAdvance: ensureReviewStage,
+  });
 
     // "Reconcile" — flush any pending edits and advance REVIEW →
     // CONSENSUS so the ``ConsensusPanel`` becomes reachable. This
@@ -1018,6 +1042,9 @@ export default function ExtractionFullScreen() {
         templateId={template?.id}
         templateName={template?.name}
         runId={activeRunId}
+        // AI extraction seeds proposals and only works in PROPOSAL; once the
+        // run is in REVIEW it's a one-time-done step (re-running would error).
+        canRunAI={stage === 'proposal' || stage == null}
         onExtractionComplete={handleExtractionComplete}
         aiSuggestions={aiSuggestions}
         onAISuggestionsClick={() => {
@@ -1058,7 +1085,10 @@ export default function ExtractionFullScreen() {
               finalized={isFinalized || (!activeRunId && !!finalizedRun)}
               parentRunId={parentRunId}
             />
-            {runDetail ? (
+            {runDetail && stage !== 'proposal' ? (
+              // Reviewer decisions only exist from REVIEW onward; showing the
+              // counter during PROPOSAL always read "0/N" and confused users
+              // who were actively filling the form.
               <ReviewerProgressBadge
                 reviewerCount={reviewerSummary.reviewers.length}
                 requiredReviewerCount={reviewerSummary.requiredReviewerCount}
