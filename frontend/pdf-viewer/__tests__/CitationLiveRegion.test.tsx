@@ -25,7 +25,7 @@ function renderWithStore(
   store: ReturnType<typeof createViewerStore>,
 ) {
   const wrapper = ({children}: {children: ReactNode}) =>
-    createElement(ViewerProvider, {store}, children);
+    createElement(ViewerProvider, {store, children});
   return render(createElement(CitationLiveRegion, {}), {wrapper});
 }
 

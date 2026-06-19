@@ -72,10 +72,12 @@ const verifiedCitation: ArticleCitationItem = {
 
 const suggestion = {
   id: 'sug-1',
+  runId: 'run-1',
   value: 'some value',
   status: 'pending' as const,
   confidence: 0.9,
   reasoning: 'Because of this evidence.',
+  timestamp: new Date('2024-01-01T00:00:00Z'),
   evidence: {text: 'test evidence', pageNumber: 2},
 };
 

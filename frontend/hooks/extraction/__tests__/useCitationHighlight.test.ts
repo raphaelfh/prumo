@@ -47,7 +47,7 @@ function makeWrapper(storeRef: {current: ReturnType<typeof createViewerStore> | 
         destroy: () => {},
       });
     }
-    return createElement(ViewerProvider, {store: storeRef.current}, children);
+    return createElement(ViewerProvider, {store: storeRef.current, children});
   };
 }
 
@@ -117,7 +117,6 @@ describe('useCitationHighlight', () => {
 
   it('RegionCitationAnchor: projected rect scales with store.scale', () => {
     const storeRef2: {current: ReturnType<typeof createViewerStore> | null} = {current: null};
-    const wrapper = makeWrapper(storeRef2);
     // Set scale to 1.5 before render
     storeRef2.current = createViewerStore({scale: 1.5});
     storeRef2.current.getState().actions.setDocument({
@@ -131,7 +130,7 @@ describe('useCitationHighlight', () => {
 
     const {result} = renderHook(() => useCitationHighlight(), {
       wrapper: function W({children}: {children: ReactNode}) {
-        return createElement(ViewerProvider, {store: storeRef2.current!}, children);
+        return createElement(ViewerProvider, {store: storeRef2.current!, children});
       },
     });
 
@@ -248,7 +247,7 @@ describe('useCitationHighlight', () => {
 
     const {result} = renderHook(() => useCitationHighlight(), {
       wrapper: function W({children}: {children: ReactNode}) {
-        return createElement(ViewerProvider, {store: storeRef3.current!}, children);
+        return createElement(ViewerProvider, {store: storeRef3.current!, children});
       },
     });
 

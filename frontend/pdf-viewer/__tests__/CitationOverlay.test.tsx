@@ -37,7 +37,7 @@ function renderWithStore(
   pageNumber: number,
 ) {
   const wrapper = ({children}: {children: ReactNode}) =>
-    createElement(ViewerProvider, {store}, children);
+    createElement(ViewerProvider, {store, children});
   return render(createElement(CitationOverlay, {pageNumber}), {wrapper});
 }
 
