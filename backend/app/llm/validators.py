@@ -10,7 +10,7 @@ pure, never-raising helpers used in the citation read path — they are
 distinct from the extraction-time ``evidence_is_plausible`` validator
 and must never raise ``ModelRetry`` or any exception."""
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import ValidationError
 from pydantic_ai import ModelRetry
@@ -63,7 +63,7 @@ def evidence_is_grounded(position: dict[str, Any] | None) -> bool:
     return parsed is not None
 
 
-def anchor_kind(position: dict[str, Any] | None) -> str | None:
+def anchor_kind(position: dict[str, Any] | None) -> Literal["text", "region", "hybrid"] | None:
     """Return the anchor ``kind`` string when ``position`` is a valid ``PositionV1``.
 
     Returns None for unanchored / invalid positions. Pure, never raises.

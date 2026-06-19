@@ -49,7 +49,7 @@ async def list_article_citations(db: AsyncSession, article_id: UUID) -> list[dic
     - ``id``         — UUID string
     - ``verified``   — True iff position parses to a valid PositionV1 anchor
     - ``anchorKind`` — "text" | "region" | "hybrid" when verified, else None
-    - ``anchor``     — camelCase anchor dict when verified, else None (omit key)
+    - ``anchor``     — camelCase anchor dict when verified, else None (always present; check ``c["anchor"] is None`` for unanchored rows)
     - ``metadata``   — pageNumber / textContent / source (always present)
     """
     rows = (
@@ -92,8 +92,13 @@ async def list_article_citations(db: AsyncSession, article_id: UUID) -> list[dic
         if verified:
             # parse_position is safe here: evidence_is_grounded already confirmed it parses.
             parsed = parse_position(position)
-            assert parsed is not None  # guaranteed by evidence_is_grounded
-            item["anchor"] = parsed.anchor.model_dump(by_alias=True, exclude_none=True)
+            if parsed is None:
+                # Defensive guard: logic regression — treat as unanchored.
+                item["anchor"] = None
+                item["verified"] = False
+                item["anchorKind"] = None
+            else:
+                item["anchor"] = parsed.anchor.model_dump(by_alias=True, exclude_none=True)
         else:
             item["anchor"] = None
 
