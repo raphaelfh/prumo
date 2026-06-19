@@ -353,7 +353,7 @@ export default function QualityAssessmentFullScreen() {
     if (!session) return;
     await advanceMutation.mutateAsync({ target_stage: "finalized" });
     await refetchRun();
-    toast.success("Assessment finalized.");
+    toast.success(t("qa", "finalizationSuccess"));
   };
 
   // Plain-identifier dep so the compiler can track this dep without
@@ -368,10 +368,10 @@ export default function QualityAssessmentFullScreen() {
       // since the new run carries its own seeded proposals.
       setValues({});
       await refetchSession();
-      toast.success("Assessment reopened for revision.");
+      toast.success(t("qa", "reopenSuccess"));
     }).catch((err: unknown) => {
       toast.error(
-        err instanceof Error ? err.message : "Failed to reopen assessment",
+        err instanceof Error ? err.message : t("qa", "reopenError"),
       );
     });
     setReopening(false);
@@ -386,9 +386,7 @@ export default function QualityAssessmentFullScreen() {
       ([, v]) => v !== undefined && v !== null && v !== "",
     );
     if (filled.length === 0) {
-      toast.error(
-        "Fill at least one signaling question before publishing.",
-      );
+      toast.error(t("qa", "publishEmptyError"));
       return;
     }
 
@@ -424,11 +422,11 @@ export default function QualityAssessmentFullScreen() {
 
       await advanceMutation.mutateAsync({ target_stage: "finalized" });
       await refetchRun();
-      toast.success("Assessment published.");
+      toast.success(t("qa", "publishSuccess"));
     };
     await doPublish().catch((err: unknown) => {
       toast.error(
-        err instanceof Error ? err.message : "Failed to publish assessment",
+        err instanceof Error ? err.message : t("qa", "publishError"),
       );
     });
     setPublishing(false);
@@ -464,7 +462,7 @@ export default function QualityAssessmentFullScreen() {
   if (!projectId || !articleId || !templateId) {
     return (
       <div className="p-8 text-center text-muted-foreground">
-        Missing route parameters.
+        {t("qa", "missingRouteParams")}
       </div>
     );
   }
@@ -473,7 +471,7 @@ export default function QualityAssessmentFullScreen() {
     resolvedTemplate === null || sessionLoading || templateLoading;
   const error =
     resolvedTemplate?.kind === "missing"
-      ? `Quality-Assessment template ${templateId} not found. The link may be stale — pick a template from the list and try again.`
+      ? t("qa", "templateNotFound").replace("{{templateId}}", templateId ?? "")
       : (sessionError ?? templateError);
 
   const header = (
@@ -483,23 +481,23 @@ export default function QualityAssessmentFullScreen() {
           variant="ghost"
           size="sm"
           onClick={() => navigate(`/projects/${projectId}`)}
-          aria-label="Back"
+          aria-label={t("common", "back")}
         >
           <ArrowLeft className="mr-1 h-4 w-4" />
-          Back
+          {t("common", "back")}
         </Button>
         <Badge
           variant="outline"
           className="border-warning/30 bg-warning/10 text-warning"
           data-testid="qa-kind-badge"
         >
-          Quality Assessment
+          {t("qa", "badge")}
         </Badge>
         <h1
           className="truncate text-base font-medium"
           data-testid="qa-template-name"
         >
-          {template?.name ?? (loading ? "Loading…" : "—")}
+          {template?.name ?? (loading ? t("common", "loading") : "—")}
         </h1>
         {template ? (
           <span className="text-xs text-muted-foreground">v{template.version}</span>
@@ -567,7 +565,7 @@ export default function QualityAssessmentFullScreen() {
           data-testid="qa-extract-ai-button"
         >
           <Sparkles className="mr-1 h-4 w-4" />
-          {extractingAI ? "Extracting…" : "Extract with AI"}
+          {extractingAI ? t("qa", "extractingProgress") : t("qa", "extractWithAI")}
         </Button>
         <Button
           size="sm"
@@ -575,7 +573,7 @@ export default function QualityAssessmentFullScreen() {
           disabled={publishing || finalized || !session || !runDetail}
           data-testid="qa-publish-button"
         >
-          {publishing ? "Publishing…" : finalized ? "Published" : "Publish assessment"}
+          {publishing ? t("qa", "publishingProgress") : finalized ? t("qa", "publishedState") : t("qa", "publishButton")}
         </Button>
       </div>
     </div>
@@ -608,7 +606,7 @@ export default function QualityAssessmentFullScreen() {
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
-          Loading template…
+          {t("qa", "loadingTemplate")}
         </div>
       ) : null}
 
