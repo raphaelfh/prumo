@@ -225,3 +225,28 @@ class RunReviewersResponse(BaseModel):
     """
 
     reviewers: list[RunReviewerProfile]
+
+
+# ----- Article-scoped run-resolution schemas -----
+
+
+class ArticleRunRef(BaseModel):
+    """Per-article run reference returned by POST /articles/form-runs.
+
+    ``run_id`` is None when the article has no matching run.
+    """
+
+    article_id: UUID
+    run_id: UUID | None
+
+
+class FormRunsRequest(BaseModel):
+    """Request body for POST /api/v1/articles/form-runs.
+
+    Resolves the latest relevant run for each article_id in the batch.
+    ``project_id`` is used for BOLA enforcement.
+    """
+
+    article_ids: list[UUID]
+    template_id: UUID
+    project_id: UUID

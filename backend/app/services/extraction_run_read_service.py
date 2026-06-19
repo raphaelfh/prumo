@@ -40,6 +40,7 @@ from app.repositories.extraction_reviewer_decision_repository import (
 )
 from app.repositories.project_repository import ProjectMemberRepository, ProjectRepository
 from app.schemas.extraction_run import (
+    ArticleRunRef,
     ConsensusDecisionResponse,
     ProposalRecordResponse,
     PublishedStateResponse,
@@ -415,4 +416,133 @@ async def list_run_participants(db: AsyncSession, run_id: UUID) -> list[RunRevie
             avatar_url=p.avatar_url,
         )
         for p in profiles
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Article-scoped run-resolution queries
+# ---------------------------------------------------------------------------
+
+_ACTIVE_STAGES = (
+    ExtractionRunStage.PENDING.value,
+    ExtractionRunStage.PROPOSAL.value,
+    ExtractionRunStage.REVIEW.value,
+    ExtractionRunStage.CONSENSUS.value,
+)
+
+
+async def find_active_run(
+    db: AsyncSession,
+    article_id: UUID,
+    *,
+    template_id: UUID | None = None,
+) -> RunSummaryResponse | None:
+    """Return the latest non-terminal extraction run for the article, or None.
+
+    Parity with frontend ``findActiveRun``:
+    - kind = 'extraction'
+    - stage IN (pending, proposal, review, consensus)
+    - optional template_id filter
+    - ordered by created_at DESC, newest wins
+    """
+    stmt = (
+        select(ExtractionRun)
+        .where(
+            ExtractionRun.article_id == article_id,
+            ExtractionRun.kind == "extraction",
+            ExtractionRun.stage.in_(_ACTIVE_STAGES),
+        )
+        .order_by(ExtractionRun.created_at.desc())
+        .limit(1)
+    )
+    if template_id is not None:
+        stmt = stmt.where(ExtractionRun.template_id == template_id)
+
+    run = (await db.execute(stmt)).scalars().first()
+    return RunSummaryResponse.model_validate(run) if run is not None else None
+
+
+async def find_finalized_run(
+    db: AsyncSession,
+    article_id: UUID,
+    *,
+    template_id: UUID | None = None,
+) -> RunSummaryResponse | None:
+    """Return the latest finalized extraction run for the article, or None.
+
+    Parity with frontend ``findLatestFinalizedRun``:
+    - kind = 'extraction'
+    - stage = 'finalized'
+    - optional template_id filter
+    - ordered by created_at DESC, newest wins
+    """
+    stmt = (
+        select(ExtractionRun)
+        .where(
+            ExtractionRun.article_id == article_id,
+            ExtractionRun.kind == "extraction",
+            ExtractionRun.stage == ExtractionRunStage.FINALIZED.value,
+        )
+        .order_by(ExtractionRun.created_at.desc())
+        .limit(1)
+    )
+    if template_id is not None:
+        stmt = stmt.where(ExtractionRun.template_id == template_id)
+
+    run = (await db.execute(stmt)).scalars().first()
+    return RunSummaryResponse.model_validate(run) if run is not None else None
+
+
+async def resolve_form_runs(
+    db: AsyncSession,
+    article_ids: list[UUID],
+    *,
+    template_id: UUID,
+) -> list[ArticleRunRef]:
+    """Resolve the latest relevant run per article for the extraction form.
+
+    Parity with frontend ``findFormRunsByArticle``:
+    - Per article: latest non-terminal run; else latest finalized run.
+    - Cancelled runs are excluded.
+    - Returns one ArticleRunRef per input article_id (run_id=None when no run).
+    """
+    if not article_ids:
+        return []
+
+    non_terminal_stages = list(_ACTIVE_STAGES)
+    # Fetch all candidate runs in one query, ordered so that non-terminal
+    # stages sort before finalized (within each article, newest first).
+    stmt = (
+        select(ExtractionRun)
+        .where(
+            ExtractionRun.article_id.in_(article_ids),
+            ExtractionRun.template_id == template_id,
+            ExtractionRun.kind == "extraction",
+            ExtractionRun.stage.in_([*non_terminal_stages, ExtractionRunStage.FINALIZED.value]),
+        )
+        .order_by(
+            ExtractionRun.article_id,
+            ExtractionRun.created_at.desc(),
+        )
+    )
+    rows = (await db.execute(stmt)).scalars().all()
+
+    # Build a per-article result: prefer non-terminal over finalized, newest first.
+    # The ORDER BY created_at DESC means within each article the newest appears first.
+    best: dict[UUID, ExtractionRun] = {}
+    for row in rows:
+        aid = row.article_id
+        if aid not in best:
+            best[aid] = row
+            continue
+        existing = best[aid]
+        # Prefer non-terminal over finalized
+        existing_active = existing.stage in non_terminal_stages
+        row_active = row.stage in non_terminal_stages
+        if row_active and not existing_active:
+            best[aid] = row
+
+    return [
+        ArticleRunRef(article_id=aid, run_id=best[aid].id if aid in best else None)
+        for aid in article_ids
     ]
