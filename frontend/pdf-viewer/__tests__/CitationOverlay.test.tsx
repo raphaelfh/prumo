@@ -4,6 +4,9 @@
  * Strategy: wrap in ViewerProvider backed by a real createViewerStore, mock
  * usePageHandle to return a known page size (height=792), and assert rendered
  * box geometry or null render based on mode / anchor kind / page.
+ *
+ * Note: the overlay box is now focusable (tabIndex=-1, aria-label) and no
+ * longer has aria-hidden — queries use tabIndex=-1 or firstElementChild.
  */
 import {render} from '@testing-library/react';
 import {createElement, type ReactNode} from 'react';
@@ -38,6 +41,12 @@ function renderWithStore(
   return render(createElement(CitationOverlay, {pageNumber}), {wrapper});
 }
 
+// The active overlay box is now a focusable div (tabIndex=-1, aria-label).
+// Helper to grab it from the container.
+function getBox(container: HTMLElement): HTMLElement | null {
+  return container.querySelector('[tabindex="-1"]') as HTMLElement | null;
+}
+
 describe('<CitationOverlay>', () => {
   let store: ReturnType<typeof createViewerStore>;
 
@@ -57,7 +66,7 @@ describe('<CitationOverlay>', () => {
 
     const {container} = renderWithStore(store, 3);
 
-    const box = container.querySelector('[aria-hidden="true"]') as HTMLElement | null;
+    const box = getBox(container);
     expect(box).not.toBeNull();
     expect(box!.style.left).toBe('100px');
     expect(box!.style.top).toBe('542px');
@@ -84,7 +93,7 @@ describe('<CitationOverlay>', () => {
 
     const {container} = renderWithStore(store, 2);
 
-    const box = container.querySelector('[aria-hidden="true"]') as HTMLElement | null;
+    const box = getBox(container);
     expect(box).not.toBeNull();
     expect(box!.style.top).toBe('662px');
   });
@@ -99,7 +108,7 @@ describe('<CitationOverlay>', () => {
 
     const {container} = renderWithStore(store, 1);
 
-    expect(container.querySelector('[aria-hidden="true"]')).toBeNull();
+    expect(getBox(container)).toBeNull();
   });
 
   it('renders nothing when active citation is on a DIFFERENT page', () => {
@@ -113,7 +122,7 @@ describe('<CitationOverlay>', () => {
     // Render for page 3, citation is on page 5.
     const {container} = renderWithStore(store, 3);
 
-    expect(container.querySelector('[aria-hidden="true"]')).toBeNull();
+    expect(getBox(container)).toBeNull();
   });
 
   it('renders nothing in READER mode', () => {
@@ -127,12 +136,12 @@ describe('<CitationOverlay>', () => {
 
     const {container} = renderWithStore(readerStore, 1);
 
-    expect(container.querySelector('[aria-hidden="true"]')).toBeNull();
+    expect(getBox(container)).toBeNull();
   });
 
   it('renders nothing when there is no active citation', () => {
     const {container} = renderWithStore(store, 1);
-    expect(container.querySelector('[aria-hidden="true"]')).toBeNull();
+    expect(getBox(container)).toBeNull();
   });
 
   it('scales the projected rect with store.scale', () => {
@@ -148,7 +157,7 @@ describe('<CitationOverlay>', () => {
 
     const {container} = renderWithStore(scaledStore, 2);
 
-    const box = container.querySelector('[aria-hidden="true"]') as HTMLElement | null;
+    const box = getBox(container);
     expect(box).not.toBeNull();
     expect(box!.style.left).toBe('150px');
     expect(box!.style.top).toBe('813px');
