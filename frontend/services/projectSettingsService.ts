@@ -13,7 +13,7 @@ import {supabase} from '@/integrations/supabase/client';
 import {toResult, PgError, type ErrorResult} from '@/lib/error-utils';
 import type {MemberRole, Project} from '@/types/project';
 import type {ProjectMemberRole} from '@/types/extraction';
-import {getRolePermissions, isValidUserRole, type PermissionRules, type UserRole} from '@/lib/comparison/permissions';
+import {getRolePermissions, isValidUserRole, type ManagerVisibilitySettings, type PermissionRules, type ReviewKind, type UserRole} from '@/lib/comparison/permissions';
 
 // ---------------------------------------------------------------------------
 // AdvancedSettingsSection: delete project
@@ -391,6 +391,7 @@ export function resolveQATemplateKind(
 export function loadComparisonPermissions(
   projectId: string,
   userId: string,
+  kind: ReviewKind,
 ): Promise<ErrorResult<ComparisonPermissionsData>> {
   return toResult(async () => {
     const {data: member, error: memberError} = await supabase
@@ -412,10 +413,11 @@ export function loadComparisonPermissions(
     const role = member.role;
     if (!isValidUserRole(role)) throw new Error(`Invalid role: ${role}`);
 
-    const isBlindMode =
-      (project?.settings as {blind_mode?: boolean} | null)?.blind_mode === true;
-
-    const rules = getRolePermissions(role, isBlindMode);
+    const settings = (project?.settings as ManagerVisibilitySettings | null) ?? undefined;
+    const rules = getRolePermissions(role, settings, kind);
+    // "Blind" = the current user cannot see peers for this kind. Drives the
+    // EyeOff badge; per-user truth now, not the old project-wide flag.
+    const isBlindMode = !rules.canSeeOthers;
     return {userRole: role, isBlindMode, rules};
   }, 'projectSettingsService.loadComparisonPermissions');
 }

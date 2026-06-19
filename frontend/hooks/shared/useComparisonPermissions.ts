@@ -13,7 +13,7 @@
 
 import {useEffect, useState} from 'react';
 import {loadComparisonPermissions} from '@/services/projectSettingsService';
-import {type PermissionRules, type UserRole} from '@/lib/comparison/permissions';
+import {type PermissionRules, type ReviewKind, type UserRole} from '@/lib/comparison/permissions';
 import {t} from '@/lib/copy';
 
 /**
@@ -47,7 +47,8 @@ export interface ComparisonPermissions extends PermissionRules {
  */
 export function useComparisonPermissions(
   projectId: string,
-  userId: string
+  userId: string,
+  kind: ReviewKind
 ): ComparisonPermissions {
   const [permissions, setPermissions] = useState<ComparisonPermissions>({
     userRole: 'reviewer',
@@ -63,9 +64,9 @@ export function useComparisonPermissions(
   });
 
   // Params cleared after mount: stop the loader (during render, not via effect).
-  const [prevKey, setPrevKey] = useState({ projectId, userId });
-  if (prevKey.projectId !== projectId || prevKey.userId !== userId) {
-    setPrevKey({ projectId, userId });
+  const [prevKey, setPrevKey] = useState({ projectId, userId, kind });
+  if (prevKey.projectId !== projectId || prevKey.userId !== userId || prevKey.kind !== kind) {
+    setPrevKey({ projectId, userId, kind });
     if (!projectId || !userId) {
       setPermissions(prev => ({ ...prev, loading: false }));
     }
@@ -74,7 +75,7 @@ export function useComparisonPermissions(
   const fetchPermissions = async () => {
     setPermissions(prev => ({ ...prev, loading: true, error: null }));
 
-    const result = await loadComparisonPermissions(projectId, userId);
+    const result = await loadComparisonPermissions(projectId, userId, kind);
 
     if (result.ok) {
       setPermissions({
@@ -107,7 +108,7 @@ export function useComparisonPermissions(
     }
     // Microtask so the loader's setState calls run in an async callback.
     queueMicrotask(() => void fetchPermissions());
-  }, [projectId, userId, fetchPermissions]);
+  }, [projectId, userId, kind, fetchPermissions]);
 
   // Return refresh function to reload permissions
   return {

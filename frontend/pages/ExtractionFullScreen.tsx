@@ -393,10 +393,11 @@ export default function ExtractionFullScreen() {
     toast.success('Reviewers reconciled. Resolve any divergences below.');
   };
 
-    // Permissions hook (controls comparison access)
+    // Permissions hook (controls comparison access) — extraction screen.
   const permissions = useComparisonPermissions(
     projectId || '',
-    currentUserId
+    currentUserId,
+    'extraction'
   );
 
     // Hook for other extractions (collaboration) - controlled by permissions
