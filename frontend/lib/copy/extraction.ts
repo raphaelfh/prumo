@@ -550,6 +550,10 @@ export const extraction = {
     noStudyLevelFields: 'No study-level fields configured in the template.',
     noModelsAdded: 'No models added',
     noModelsAddedDesc: 'Add a model manually or extract it automatically from the article.',
+    // Section navigation rail
+    sectionNavRequiredLeft: '{{count}} required left',
+    sectionNavComplete: 'All required fields complete',
+    sectionNavAria: 'Section navigation',
     noFieldsInThisSection: 'No fields in this section',
     errorCalculatingProgress: 'Error calculating progress',
     loadingComparison: 'Loading comparison…',
