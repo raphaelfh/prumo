@@ -23,9 +23,11 @@
  * React Compiler constraint: no try/finally, no throw inside try.
  */
 import {useState, useCallback} from 'react';
+import type {StoreApi} from 'zustand';
 
 import type {CitationAnchor} from '@/pdf-viewer/core/citation';
-import {useViewerStoreApi} from '@/pdf-viewer/core/context';
+import {useViewerStoreApiOptional} from '@/pdf-viewer/core/context';
+import type {ViewerState} from '@/pdf-viewer/core/state';
 import {usePageHandle} from '@/pdf-viewer/hooks/usePageHandle';
 
 // ---------------------------------------------------------------------------
@@ -50,12 +52,20 @@ export interface UseCitationHighlightReturn {
    * Navigates to the correct page, drives text highlighting (text/hybrid),
    * and computes an overlay rect (region/hybrid, canvas mode only).
    * Replaces any previously active highlight.
+   * Safe no-op when `isAvailable` is false (no ViewerProvider present).
    */
   highlight(anchor: CitationAnchor): void;
-  /** Clear the active highlight: search, activeCitation, and overlay rect. */
+  /** Clear the active highlight: search, activeCitation, and overlay rect.
+   * Safe no-op when `isAvailable` is false. */
   clear(): void;
   /** The projected overlay rect for the current anchor, or null. */
   activeHighlight: CitationOverlayRect | null;
+  /**
+   * `true` when the hook is mounted inside a ViewerProvider and can drive
+   * the PDF viewer. `false` when outside a provider — highlight/clear are
+   * safe no-ops and activeHighlight stays null.
+   */
+  isAvailable: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -74,15 +84,17 @@ function anchorPage(anchor: CitationAnchor): number {
  * Inner hook that runs AFTER we know which page to load.
  * Separated so that `usePageHandle` receives a stable page number —
  * the outer hook shell drives which page that is.
+ *
+ * Returns null immediately when `storeApi` is null (no provider present).
  */
 function useCitationHighlightInner(
   anchor: CitationAnchor | null,
+  storeApi: StoreApi<ViewerState> | null,
 ): CitationOverlayRect | null {
-  const storeApi = useViewerStoreApi();
   const page = anchor != null ? anchorPage(anchor) : 1;
   const pageHandle = usePageHandle(page);
 
-  if (anchor == null || pageHandle == null) return null;
+  if (storeApi == null || anchor == null || pageHandle == null) return null;
 
   const {mode, scale} = storeApi.getState();
 
@@ -104,15 +116,16 @@ function useCitationHighlightInner(
 }
 
 export function useCitationHighlight(): UseCitationHighlightReturn {
-  const storeApi = useViewerStoreApi();
+  const storeApi = useViewerStoreApiOptional();
 
   // The anchor we are currently highlighting — drives usePageHandle.
   const [activeAnchor, setActiveAnchor] = useState<CitationAnchor | null>(null);
 
   // Overlay rect computed reactively from the active anchor + page handle.
-  const overlayRect = useCitationHighlightInner(activeAnchor);
+  const overlayRect = useCitationHighlightInner(activeAnchor, storeApi);
 
   const clear = useCallback((): void => {
+    if (storeApi == null) return;
     const {actions} = storeApi.getState();
     actions.clearSearch();
     actions.setActiveCitation(null);
@@ -121,6 +134,7 @@ export function useCitationHighlight(): UseCitationHighlightReturn {
 
   const highlight = useCallback(
     (anchor: CitationAnchor): void => {
+      if (storeApi == null) return;
       const {actions} = storeApi.getState();
 
       // Replace previous highlight.
@@ -152,5 +166,5 @@ export function useCitationHighlight(): UseCitationHighlightReturn {
     [storeApi],
   );
 
-  return {highlight, clear, activeHighlight: overlayRect};
+  return {highlight, clear, activeHighlight: overlayRect, isAvailable: storeApi != null};
 }

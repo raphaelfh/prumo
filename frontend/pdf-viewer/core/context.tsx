@@ -64,3 +64,14 @@ export function useViewerStoreApi(): StoreApi<ViewerState> {
   }
   return store;
 }
+
+/**
+ * Return the raw StoreApi for the nearest ViewerProvider's store, or `null`
+ * when called outside a Provider. Use this variant in components / hooks that
+ * may render in contexts where no ViewerProvider exists (e.g. QA screen).
+ *
+ * Unlike `useViewerStoreApi`, this never throws — callers must handle `null`.
+ */
+export function useViewerStoreApiOptional(): StoreApi<ViewerState> | null {
+  return useContext(ViewerStoreContext);
+}

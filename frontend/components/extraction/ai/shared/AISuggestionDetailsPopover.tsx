@@ -64,7 +64,7 @@ interface EvidenceSectionProps {
 
 function EvidenceSection({evidence, articleId}: EvidenceSectionProps) {
   const citations = useArticleCitations(articleId);
-  const {highlight} = useCitationHighlight();
+  const {highlight, isAvailable} = useCitationHighlight();
 
   const matched =
     articleId != null
@@ -82,7 +82,7 @@ function EvidenceSection({evidence, articleId}: EvidenceSectionProps) {
           pageNumber: evidence.pageNumber ?? null,
         }}
         citation={matched}
-        onHighlight={articleId != null ? highlight : undefined}
+        onHighlight={isAvailable && articleId != null ? highlight : undefined}
       />
     </section>
   );

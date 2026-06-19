@@ -4,6 +4,11 @@
  * Uses a real ViewerProvider wrapping the hook, a stubbed document that
  * exposes numPages so goToPage clamping works, and a vi.mock for
  * usePageHandle (so no pdfjs / network required).
+ *
+ * Also covers the no-provider (graceful degradation) path:
+ *  - isAvailable === false
+ *  - highlight() is a safe no-op
+ *  - activeHighlight stays null
  */
 import {renderHook, act} from '@testing-library/react';
 import {createElement, type ReactNode} from 'react';
@@ -259,5 +264,48 @@ describe('useCitationHighlight', () => {
     expect(state.currentPage).toBe(3);
     // In reader mode the overlay rect is null (no canvas surface)
     expect(result.current.activeHighlight).toBeNull();
+  });
+
+  it('with a ViewerProvider: isAvailable === true', () => {
+    const wrapper = makeWrapper(storeRef);
+    const {result} = renderHook(() => useCitationHighlight(), {wrapper});
+    expect(result.current.isAvailable).toBe(true);
+  });
+
+  describe('no ViewerProvider — graceful degradation', () => {
+    it('isAvailable === false when rendered without a provider', () => {
+      const {result} = renderHook(() => useCitationHighlight());
+      expect(result.current.isAvailable).toBe(false);
+    });
+
+    it('activeHighlight is null when rendered without a provider', () => {
+      const {result} = renderHook(() => useCitationHighlight());
+      expect(result.current.activeHighlight).toBeNull();
+    });
+
+    it('highlight() does NOT throw and is a no-op when no provider is present', () => {
+      const {result} = renderHook(() => useCitationHighlight());
+      expect(() => {
+        act(() => {
+          result.current.highlight({
+            kind: 'text',
+            range: {page: 1, charStart: 0, charEnd: 10},
+            quote: 'test',
+          });
+        });
+      }).not.toThrow();
+      // State is unchanged — no store to mutate
+      expect(result.current.activeHighlight).toBeNull();
+      expect(result.current.isAvailable).toBe(false);
+    });
+
+    it('clear() does NOT throw when no provider is present', () => {
+      const {result} = renderHook(() => useCitationHighlight());
+      expect(() => {
+        act(() => {
+          result.current.clear();
+        });
+      }).not.toThrow();
+    });
   });
 });

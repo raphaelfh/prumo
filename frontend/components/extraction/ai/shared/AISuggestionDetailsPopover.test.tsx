@@ -5,9 +5,10 @@
  *  - A matched verified citation → AISuggestionEvidence receives the right
  *    citation and an onHighlight that calls the highlight controller.
  *  - No match → citation=null → evidenceNotLocated affordance path.
+ *  - isAvailable=false (no viewer) → onHighlight not passed → renders
+ *    non-clickable (no jump button) and does NOT crash.
  *
  * Mocks: useArticleCitations, matchEvidenceToCitation, useCitationHighlight.
- * Wraps in QueryClientProvider + ViewerProvider so useCitationHighlight resolves.
  */
 
 import {render, screen} from '@testing-library/react';
@@ -31,10 +32,18 @@ vi.mock('@/services/citationsService', () => ({
   matchEvidenceToCitation: vi.fn(),
 }));
 
-// Mock useCitationHighlight — expose a spy for the highlight fn
+// Mock useCitationHighlight — expose a spy for the highlight fn.
+// isAvailable defaults to true (simulates a component inside a ViewerProvider).
+// Individual tests can override via mockReturnValue.
 const highlightSpy = vi.fn();
+const useCitationHighlightMock = vi.fn(() => ({
+  highlight: highlightSpy,
+  clear: vi.fn(),
+  activeHighlight: null,
+  isAvailable: true,
+}));
 vi.mock('@/hooks/extraction/useCitationHighlight', () => ({
-  useCitationHighlight: () => ({highlight: highlightSpy, clear: vi.fn(), activeHighlight: null}),
+  useCitationHighlight: () => useCitationHighlightMock(),
 }));
 
 import {AISuggestionDetailsPopover} from './AISuggestionDetailsPopover';
@@ -83,6 +92,12 @@ function makeWrapper() {
 
 beforeEach(() => {
   highlightSpy.mockClear();
+  useCitationHighlightMock.mockReturnValue({
+    highlight: highlightSpy,
+    clear: vi.fn(),
+    activeHighlight: null,
+    isAvailable: true,
+  });
   // Default: citations loaded with one item
   useArticleCitationsMock.mockReturnValue({data: [verifiedCitation], isLoading: false});
 });
@@ -154,5 +169,35 @@ describe('AISuggestionDetailsPopover — citation wiring', () => {
     expect(screen.queryByText('evidenceNotLocated')).not.toBeInTheDocument();
     // Evidence text is still shown
     expect(screen.getByText(/test evidence/)).toBeInTheDocument();
+  });
+
+  it('isAvailable=false (no viewer) → no jump button rendered, does NOT crash', async () => {
+    const user = userEvent.setup();
+    // Simulate the QA-screen path: hook returns isAvailable=false
+    useCitationHighlightMock.mockReturnValue({
+      highlight: vi.fn(),
+      clear: vi.fn(),
+      activeHighlight: null,
+      isAvailable: false,
+    });
+    matchEvidenceMock.mockReturnValue(verifiedCitation);
+
+    render(
+      <AISuggestionDetailsPopover
+        suggestion={suggestion}
+        articleId="article-123"
+        trigger={<button>Open</button>}
+      />,
+      {wrapper: makeWrapper()},
+    );
+
+    // Must not throw when opening
+    await user.click(screen.getByRole('button', {name: 'Open'}));
+
+    // Evidence text is shown
+    expect(await screen.findByText(/test evidence/)).toBeInTheDocument();
+
+    // No jump button — onHighlight was not passed because isAvailable=false
+    expect(screen.queryByRole('button', {name: 'evidenceJumpToSource'})).not.toBeInTheDocument();
   });
 });

@@ -7,6 +7,7 @@
  *      no onHighlight call, no dead jump
  *  (c) no citation / no onHighlight → renders as before (quote + page badge),
  *      no crash, no click handler
+ *  (d) handleCopy fix — setCopied(true) only fires on clipboard success
  *
  * The component is purely presentational: no hooks, safe outside ViewerProvider.
  * (Tooltip still needs TooltipProvider — that is a Radix requirement, not
@@ -196,6 +197,40 @@ describe('AISuggestionEvidence', () => {
       );
       expect(screen.getByText(/safe/)).toBeInTheDocument();
       unmount();
+    });
+  });
+
+  describe('(d) handleCopy — only shows success on clipboard success', () => {
+    // jsdom provides navigator.clipboard but its writeText always rejects with
+    // a DOMException ("not implemented"). We spy on it per-test instead of
+    // trying to redefine the whole clipboard object, which is non-configurable
+    // in some jsdom versions.
+
+    it('sets copied=true when clipboard write succeeds', async () => {
+      const spy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
+      const user = userEvent.setup();
+      render(<AISuggestionEvidence evidence={evidence} />, {wrapper: Wrapper});
+      const copyBtn = screen.getByRole('button', {name: 'copySnippet'});
+
+      await user.click(copyBtn);
+      // After success the button label should change to "copyCopied"
+      expect(screen.getByRole('button', {name: 'copyCopied'})).toBeInTheDocument();
+      spy.mockRestore();
+    });
+
+    it('does NOT set copied=true when clipboard write rejects', async () => {
+      const spy = vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(
+        new Error('permission denied'),
+      );
+      const user = userEvent.setup();
+      render(<AISuggestionEvidence evidence={evidence} />, {wrapper: Wrapper});
+      const copyBtn = screen.getByRole('button', {name: 'copySnippet'});
+
+      await user.click(copyBtn);
+      // Button label must NOT switch to "copyCopied" on failure
+      expect(screen.queryByRole('button', {name: 'copyCopied'})).not.toBeInTheDocument();
+      expect(screen.getByRole('button', {name: 'copySnippet'})).toBeInTheDocument();
+      spy.mockRestore();
     });
   });
 });

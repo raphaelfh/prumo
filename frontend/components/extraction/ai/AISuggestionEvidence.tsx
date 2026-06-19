@@ -54,11 +54,14 @@ export function AISuggestionEvidence(props: AISuggestionEvidenceProps) {
   const [showTooltip, setShowTooltip] = useState(false);
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(evidence.text).catch((err: unknown) => {
+    const ok = await navigator.clipboard.writeText(evidence.text).then(() => true).catch((err: unknown) => {
       console.error('Failed to copy evidence text:', err);
+      return false;
     });
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   // Determine citation-highlight state:
