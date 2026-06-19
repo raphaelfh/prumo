@@ -46,6 +46,12 @@ export const shared = {
     fieldLabel: 'Field',
     youLabel: 'You',
     consensusColumn: 'Consensus',
+    // RunReviewerComparison (shared extraction + QA side-by-side compare)
+    compareNoPeers: 'No other reviewers to compare yet.',
+    compareNoPeersDesc:
+        'Other reviewers’ values appear here once they record decisions (and, for managers, once reviewer visibility is on).',
+    compareRejected: 'Rejected',
+    compareNoValue: '—',
 } as const;
 
 export type SharedCopy = typeof shared;
