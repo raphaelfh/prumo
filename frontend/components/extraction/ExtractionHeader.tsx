@@ -71,6 +71,8 @@ interface ExtractionHeaderProps {
   /** Active run id forwarded to HeaderMoreMenu so "Extract with AI"
    * reuses the open run instead of creating a parallel one. */
   runId?: string | null;
+  /** Whether AI extraction may run (only in PROPOSAL; one-time-done after). */
+  canRunAI?: boolean;
   onExtractionComplete?: (runId?: string) => void | Promise<void>;
 
     // AI suggestions (for Zone 4 badge)
@@ -192,6 +194,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                   articleId={currentArticleId}
                   templateId={props.templateId}
                   runId={props.runId}
+                  canRunAI={props.canRunAI}
                   onExtractionComplete={props.onRefreshInstances}
                   onExtractionStateChange={props.onExtractionStateChange}
                 />
@@ -259,6 +262,7 @@ export function ExtractionHeader(props: ExtractionHeaderProps) {
                 articleId={currentArticleId}
                 templateId={props.templateId}
                 runId={props.runId}
+                canRunAI={props.canRunAI}
                 onExtractionComplete={props.onRefreshInstances}
                 onExtractionStateChange={props.onExtractionStateChange}
               />

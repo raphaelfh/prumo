@@ -1,12 +1,12 @@
 ---
 status: stable
-last_reviewed: 2026-06-11
+last_reviewed: 2026-06-18
 owner: '@raphaelfh'
 ---
 
 # Extraction-Centric HITL Architecture
 
-> **Status:** Stable · Last reviewed: 2026-05-30 · Owner: @raphaelfh
+> **Status:** Stable · Last reviewed: 2026-06-18 · Owner: @raphaelfh
 > Canonical reference for the data-extraction and quality-assessment stack post the 2026-04-27 unification. Read this before touching anything in `extraction_*`, `extraction_runs`, the workflow tables, or the Quality-Assessment flow.
 
 ## 1. Why this exists
@@ -382,10 +382,23 @@ publish, AI), keep it in the page-specific component.
 
   The frontend's `ExtractionValueService`
   (`frontend/services/extractionValueService.ts`) is the single
-  read/write entry point: `findActiveRun` → `loadValuesForUser` /
-  `saveValue` / `acceptProposal` / `rejectValue`. AI extraction
-  auto-advances the Run from PROPOSAL → REVIEW after recording proposals
-  so the form can write decisions immediately.
+  read/write entry point: `findActiveRun` →
+  `saveValue` / `acceptProposal` / `rejectValue`.
+
+  **Stage advance (extraction).** For `kind=extraction`, `PROPOSAL` is a
+  transient seeding stage: the AI writes its proposals there (it is a
+  `PROPOSAL`-only operation) and the proposer can pre-fill values. The
+  collaborative surface — per-reviewer decisions, the "X/N reviewers"
+  counter, the "0% until you accept" progress metric — lives in `REVIEW`.
+  The advance `PROPOSAL → REVIEW` is **orchestrated by the frontend**
+  (`frontend/hooks/extraction/useAutoAdvanceToReview.ts`): it fires once the
+  run has proposals or the reviewer makes a first edit. It is NOT done in the
+  AI section-extraction service, because that path runs once per section on
+  the same run and each call requires `PROPOSAL` — advancing there would break
+  batch extraction (see ADR 0010). `advance_stage` materializes each user's
+  `human` proposals into their own `accept_proposal` decisions on the way in,
+  so typed values survive the transition while AI proposals remain suggestions
+  to accept. "Run AI" is disabled once a run is in `REVIEW`.
 
 ## 7. References
 
