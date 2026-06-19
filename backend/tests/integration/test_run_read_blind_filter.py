@@ -37,7 +37,7 @@ async def test_plain_reviewer_get_run_hides_peer_decision_pre_finalize(
     run_id, reviewer_a, reviewer_b = built
 
     detail = await get_run_with_workflow_history(
-        db_session, run_id, caller_id=reviewer_b, is_arbitrator=False
+        db_session, run_id, caller_id=reviewer_b, can_see_peers=False
     )
     reviewer_ids = {d.reviewer_id for d in detail.decisions}
     assert reviewer_b in reviewer_ids, "a reviewer must see their own decision"
@@ -57,7 +57,7 @@ async def test_arbitrator_get_run_sees_all_decisions_pre_finalize(
     run_id, reviewer_a, reviewer_b = built
 
     detail = await get_run_with_workflow_history(
-        db_session, run_id, caller_id=reviewer_a, is_arbitrator=True
+        db_session, run_id, caller_id=reviewer_a, can_see_peers=True
     )
     reviewer_ids = {d.reviewer_id for d in detail.decisions}
     assert {reviewer_a, reviewer_b} <= reviewer_ids, (
@@ -85,7 +85,7 @@ async def test_finalized_run_reveals_all_decisions_to_reviewer(
     db_session.expire_all()
 
     detail = await get_run_with_workflow_history(
-        db_session, run_id, caller_id=_reviewer_b, is_arbitrator=False
+        db_session, run_id, caller_id=_reviewer_b, can_see_peers=False
     )
     reviewer_ids = {d.reviewer_id for d in detail.decisions}
     assert reviewer_a in reviewer_ids, (

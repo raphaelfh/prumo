@@ -112,16 +112,18 @@ async def test_extraction_session_open_embeds_run_view(
 
 
 @pytest.mark.asyncio
-async def test_qa_session_open_has_null_run_view(
+async def test_qa_session_open_embeds_run_view(
     db_client: AsyncClient,
     db_session: AsyncSession,
     auth_as_profile: UUID,  # noqa: ARG001
 ) -> None:
-    """Quality-assessment sessions must return ``run_view: null`` — the QA
-    surface does not consume this field and we must not break the QA path.
-    """
-    global_tpl_id: UUID | None = None
+    """Quality-assessment sessions ALSO embed a (server-blinded) ``run_view``.
 
+    QA is in scope for blind-review: the manager-blind rule keys on ``run.kind``,
+    so the session-open response embeds the same ``RunViewResponse`` as
+    extraction (the QA page consumes it via the run-detail cache) rather than
+    null. Previously QA was skipped — that was the pre-blind-review behavior.
+    """
     raw = (
         await db_session.execute(
             text(
@@ -130,11 +132,9 @@ async def test_qa_session_open_has_null_run_view(
             )
         )
     ).scalar()
-    if raw is not None:
-        global_tpl_id = UUID(str(raw))
-
-    if global_tpl_id is None:
+    if raw is None:
         pytest.skip("No global QA template (PROBAST) seeded — run `python -m backend.app.seed`")
+    global_tpl_id = UUID(str(raw))
 
     res = await db_client.post(
         _SESSION_URL,
@@ -151,6 +151,8 @@ async def test_qa_session_open_has_null_run_view(
     assert payload["ok"] is True
     data = payload["data"]
 
-    assert data["run_view"] is None, "run_view must be null for quality_assessment sessions"
     assert data["kind"] == "quality_assessment"
-    assert UUID(data["run_id"])
+    view = data["run_view"]
+    assert view is not None, "run_view must be embedded for QA sessions too (QA is in scope)"
+    assert view["run"]["id"] == data["run_id"], "Embedded run id must match run_id"
+    assert "entity_types" in view and "current_values" in view
