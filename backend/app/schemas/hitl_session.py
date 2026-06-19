@@ -31,9 +31,11 @@ class OpenHITLSessionResponse(BaseModel):
     kind: Literal["extraction", "quality_assessment"]
     project_template_id: UUID
     instances_by_entity_type: dict[str, str]
-    # Embedded run-open view (extraction only). Lets the client render from a
-    # single round-trip instead of session -> GET /runs/{id} -> values. Null for
-    # quality_assessment (its surface does not consume this).
+    # Embedded run-open view (both kinds). Lets the client render from a single
+    # round-trip instead of session -> GET /runs/{id} -> values. Carries the
+    # server-blinded reviewer decisions both surfaces feed into the shared
+    # compare view (ADR 0012). Optional only for resilience if the view fails
+    # to build.
     run_view: RunViewResponse | None = None
 
 

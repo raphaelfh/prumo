@@ -20,7 +20,6 @@ import MemoizedFieldInput from './FieldInput'; // Use memoized version
 import {InstanceCard} from './InstanceCard';
 import {useSectionExtraction} from '@/hooks/extraction/useSectionExtraction';
 import type {ExtractionEntityType, ExtractionField, ExtractionInstance} from '@/types/extraction';
-import type {OtherExtraction} from '@/hooks/extraction/collaboration/useOtherExtractions';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
 
 // =================== INTERFACES ===================
@@ -41,7 +40,6 @@ interface SectionAccordionProps {
      * multiple section extractions accumulating on the same run.
      */
     runId?: string | null;
-  otherExtractions?: OtherExtraction[];
   aiSuggestions?: Record<string, AISuggestion>;
   onAcceptAI?: (instanceId: string, fieldId: string) => Promise<void>;
   onRejectAI?: (instanceId: string, fieldId: string) => Promise<void>;
@@ -49,7 +47,6 @@ interface SectionAccordionProps {
   isActionLoading?: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null;
   onAddInstance?: () => void;
   onRemoveInstance?: (instanceId: string) => void;
-  viewMode?: 'extract' | 'compare';
     onExtractionComplete?: (runId?: string) => void | Promise<void>; // Callback to refresh suggestions after extraction
 }
 
@@ -268,13 +265,11 @@ export function SectionAccordion(props: SectionAccordionProps) {
                       canRemove={true}
                       projectId={projectId}
                       articleId={articleId}
-                      otherExtractions={props.otherExtractions}
                       aiSuggestions={props.aiSuggestions}
                       onAcceptAI={props.onAcceptAI}
                       onRejectAI={props.onRejectAI}
                       getSuggestionsHistory={props.getSuggestionsHistory}
                       isActionLoading={props.isActionLoading}
-                      viewMode={props.viewMode}
                     />
                   </div>
                 ))}
@@ -309,13 +304,11 @@ export function SectionAccordion(props: SectionAccordionProps) {
                       }
                       projectId={projectId}
                       articleId={articleId}
-                      otherExtractions={props.otherExtractions}
                       aiSuggestion={props.aiSuggestions?.[key]}
                       onAcceptAI={() => props.onAcceptAI?.(instances[0].id, field.id)}
                       onRejectAI={() => props.onRejectAI?.(instances[0].id, field.id)}
                       getSuggestionsHistory={props.getSuggestionsHistory}
                       isActionLoading={props.isActionLoading}
-                      viewMode={props.viewMode}
                     />
                   );
                 })}

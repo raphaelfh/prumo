@@ -1,12 +1,11 @@
 /**
- * Advanced settings section — blind mode, keywords, eligibility, study types, danger zone.
+ * Advanced settings section — keywords, eligibility, study types, danger zone.
  */
 
 import {useState} from 'react';
 import {useNavigate} from 'react-router-dom';
 import {Label} from '@/components/ui/label';
 import {Textarea} from '@/components/ui/textarea';
-import {Switch} from '@/components/ui/switch';
 import {Button} from '@/components/ui/button';
 import {
     AlertDialog,
@@ -31,7 +30,6 @@ import {t} from '@/lib/copy';
 // domain types) so that Project is assignable here without narrowing casts.
 interface AdvancedProjectShape {
   name?: string;
-  settings: Json;
   eligibility_criteria: Json;
   study_design: Json;
   review_keywords: Json;
@@ -41,13 +39,6 @@ interface AdvancedSettingsSectionProps {
     project: AdvancedProjectShape;
     onChange: (updates: Partial<AdvancedProjectShape>) => void;
   projectId: string;
-}
-
-function ensureSettings(v: Json | null): { blind_mode?: boolean } {
-    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
-        return v as { blind_mode?: boolean };
-    }
-    return {};
 }
 
 function ensureEligibility(v: Json | null): EligibilityCriteria {
@@ -77,17 +68,12 @@ export function AdvancedSettingsSection({
   const [isDeleting, setIsDeleting] = useState(false);
   const navigate = useNavigate();
 
-  const settings = ensureSettings(project.settings);
     const eligibility = ensureEligibility(project.eligibility_criteria);
     const studyDesign = ensureStudyDesign(project.study_design);
     const keywords = ensureStringArray(project.review_keywords);
     const inclusion = eligibility.inclusion || [];
     const exclusion = eligibility.exclusion || [];
     const studyTypes = studyDesign.types || [];
-
-  const handleBlindModeToggle = (checked: boolean) => {
-      onChange({settings: {...settings, blind_mode: checked}});
-  };
 
   const handleDeleteProject = async () => {
     setIsDeleting(true);
@@ -112,27 +98,6 @@ export function AdvancedSettingsSection({
           title={t('project', 'advancedSectionTitle')}
           description={t('project', 'advancedSectionDesc')}
       >
-          <SettingsCard
-              title={t('project', 'advancedCardBlindTitle')}
-              description={t('project', 'advancedCardBlindDesc')}
-          >
-              <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                      <Label htmlFor="blind-mode" className="text-[13px] font-medium">
-                          {t('project', 'advancedEnableBlindLabel')}
-                      </Label>
-                      <p className="text-[12px] text-muted-foreground/70">
-                          {t('project', 'advancedEnableBlindHint')}
-                      </p>
-                  </div>
-                  <Switch
-                      id="blind-mode"
-                      checked={settings.blind_mode ?? false}
-                      onCheckedChange={handleBlindModeToggle}
-                  />
-              </div>
-          </SettingsCard>
-
           <SettingsCard
               title={t('project', 'advancedCardKeywordsTitle')}
               description={t('project', 'advancedCardKeywordsDesc')}

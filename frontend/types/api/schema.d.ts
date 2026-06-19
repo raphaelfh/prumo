@@ -374,6 +374,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{project_id}/manager-review-visibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Manager Review Visibility */
+        put: operations["set_manager_review_visibility_api_v1_projects__project_id__manager_review_visibility_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}/templates/clone": {
         parameters: {
             query?: never;
@@ -1034,6 +1051,23 @@ export interface components {
         ApiResponse_ListProvidersData_: {
             /** @description Dados da resposta */
             data?: components["schemas"]["ListProvidersData"] | null;
+            /** @description Error details */
+            error?: components["schemas"]["ErrorDetail"] | null;
+            /**
+             * Ok
+             * @description Indica se a operacao foi bem-sucedida
+             */
+            ok: boolean;
+            /**
+             * Trace Id
+             * @description rastreamento
+             */
+            trace_id?: string | null;
+        };
+        /** ApiResponse[ManagerReviewVisibilityRead] */
+        ApiResponse_ManagerReviewVisibilityRead_: {
+            /** @description Dados da resposta */
+            data?: components["schemas"]["ManagerReviewVisibilityRead"] | null;
             /** @description Error details */
             error?: components["schemas"]["ErrorDetail"] | null;
             /**
@@ -1973,6 +2007,29 @@ export interface components {
         ListProvidersData: {
             /** Providers */
             providers: components["schemas"]["ProviderInfo"][];
+        };
+        /** ManagerReviewVisibilityPayload */
+        ManagerReviewVisibilityPayload: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "extraction" | "quality_assessment";
+            /** Managers See Reviewers */
+            managers_see_reviewers: boolean;
+        };
+        /** ManagerReviewVisibilityRead */
+        ManagerReviewVisibilityRead: {
+            /**
+             * Extraction
+             * @default false
+             */
+            extraction: boolean;
+            /**
+             * Quality Assessment
+             * @default false
+             */
+            quality_assessment: boolean;
         };
         /**
          * ModelExtractionRequest
@@ -3390,6 +3447,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_HitlConfigRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_manager_review_visibility_api_v1_projects__project_id__manager_review_visibility_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManagerReviewVisibilityPayload"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ManagerReviewVisibilityRead_"];
                 };
             };
             /** @description Validation Error */

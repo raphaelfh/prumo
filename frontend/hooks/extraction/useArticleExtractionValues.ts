@@ -23,8 +23,9 @@ import {
   type RawProposal,
   type RawState,
 } from '@/lib/extraction/articleValues';
+import type { ReviewKind } from '@/lib/comparison/permissions';
 
-type ValuesKind = 'extraction' | 'quality_assessment';
+type ValuesKind = ReviewKind;
 
 export const articleExtractionValuesKeys = {
   all: ['article-extraction-values'] as const,

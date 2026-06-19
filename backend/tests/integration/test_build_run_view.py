@@ -21,7 +21,7 @@ async def test_build_run_view_blinds_peer_in_review(db_session: AsyncSession) ->
         pytest.skip("Seed graph incomplete")
     run_id, reviewer_a, reviewer_b = built
 
-    view = await build_run_view(db_session, run_id, caller_id=reviewer_b, is_arbitrator=False)
+    view = await build_run_view(db_session, run_id, caller_id=reviewer_b, can_see_peers=False)
     reviewer_ids = {d.reviewer_id for d in view.decisions}
     assert reviewer_b in reviewer_ids
     assert reviewer_a not in reviewer_ids, "build_run_view leaked a peer decision"
@@ -38,7 +38,7 @@ async def test_build_run_view_current_values_empty_in_proposal(
         pytest.skip("Seed graph incomplete")
     run_id, _instance_id, _field_id, user_id = fx
 
-    view = await build_run_view(db_session, run_id, caller_id=user_id, is_arbitrator=False)
+    view = await build_run_view(db_session, run_id, caller_id=user_id, can_see_peers=False)
     assert view.run.stage == "proposal"
     assert view.current_values == [], (
         "proposal stage must use proposals[] on the client, not server current_values"

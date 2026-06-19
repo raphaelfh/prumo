@@ -49,9 +49,9 @@ from app.services.extraction_review_service import (
 from app.services.extraction_run_read_service import (
     RunNotFoundError,
     build_run_view,
+    caller_can_see_peers,
     get_run_or_raise,
     get_run_with_workflow_history,
-    is_run_arbitrator,
     list_run_participants,
 )
 from app.services.run_lifecycle_service import (
@@ -150,9 +150,11 @@ async def get_run(
     current_user_sub: UUID = Depends(get_current_user_sub),
 ) -> ApiResponse[RunDetailResponse]:
     run = await _load_run_and_check_member(db, run_id, current_user_sub)
-    is_arbitrator = await is_run_arbitrator(db, run.project_id, current_user_sub)
+    can_see_peers = await caller_can_see_peers(
+        db, project_id=run.project_id, user_id=current_user_sub, kind=run.kind
+    )
     detail = await get_run_with_workflow_history(
-        db, run_id, caller_id=current_user_sub, is_arbitrator=is_arbitrator
+        db, run_id, caller_id=current_user_sub, can_see_peers=can_see_peers
     )
     return ApiResponse.success(
         detail,
@@ -170,8 +172,10 @@ async def get_run_view(
     """One-round-trip run-open view: blind-filtered run detail + the frozen
     entity_types tree + the caller's current_values."""
     run = await _load_run_and_check_member(db, run_id, current_user_sub)
-    is_arbitrator = await is_run_arbitrator(db, run.project_id, current_user_sub)
-    view = await build_run_view(db, run_id, caller_id=current_user_sub, is_arbitrator=is_arbitrator)
+    can_see_peers = await caller_can_see_peers(
+        db, project_id=run.project_id, user_id=current_user_sub, kind=run.kind
+    )
+    view = await build_run_view(db, run_id, caller_id=current_user_sub, can_see_peers=can_see_peers)
     return ApiResponse.success(view, trace_id=_trace(request))
 
 

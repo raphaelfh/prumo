@@ -17,7 +17,7 @@ from app.schemas.hitl_session import (
     OpenHITLSessionResponse,
     TemplateKind,
 )
-from app.services.extraction_run_read_service import build_run_view, is_run_arbitrator
+from app.services.extraction_run_read_service import build_run_view, caller_can_see_peers
 from app.services.hitl_session_service import (
     HITLSessionInputError,
     HITLSessionService,
@@ -80,12 +80,15 @@ async def open_hitl_session(
         # 409 Conflict instead of bubbling up an unhandled 500.
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
 
-    run_view: RunViewResponse | None = None
-    if session.kind == TemplateKind.EXTRACTION:
-        is_arbitrator = await is_run_arbitrator(db, body.project_id, current_user_sub)
-        run_view = await build_run_view(
-            db, session.run_id, caller_id=current_user_sub, is_arbitrator=is_arbitrator
-        )
+    can_see_peers = await caller_can_see_peers(
+        db,
+        project_id=body.project_id,
+        user_id=current_user_sub,
+        kind=session.kind.value,
+    )
+    run_view: RunViewResponse | None = await build_run_view(
+        db, session.run_id, caller_id=current_user_sub, can_see_peers=can_see_peers
+    )
 
     await db.commit()
     # Issue #32: a resumed Run is not a created resource; emit 200.

@@ -161,7 +161,7 @@ async def test_read_model_preserves_proposals_for_newest_wins_resolution(
     db_session.expire_all()
 
     detail = await get_run_with_workflow_history(
-        db_session, run_id, caller_id=user_id, is_arbitrator=False
+        db_session, run_id, caller_id=user_id, can_see_peers=False
     )
     coord_proposals = [
         p for p in detail.proposals if p.instance_id == instance_id and p.field_id == field_id

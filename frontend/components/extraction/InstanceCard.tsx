@@ -23,7 +23,6 @@ import {t} from '@/lib/copy';
 import {updateInstanceLabel} from '@/services/extractionInstanceService';
 import MemoizedFieldInput from './FieldInput'; // Use memoized version
 import type {ExtractionField, ExtractionInstance} from '@/types/extraction';
-import type {OtherExtraction} from '@/hooks/extraction/collaboration/useOtherExtractions';
 import type {AISuggestion, AISuggestionHistoryItem} from '@/hooks/extraction/ai/useAISuggestions';
 
 // =================== INTERFACES ===================
@@ -38,13 +37,11 @@ interface InstanceCardProps {
   canRemove: boolean;
   projectId: string;
   articleId: string;
-  otherExtractions?: OtherExtraction[];
   aiSuggestions?: Record<string, AISuggestion>;
   onAcceptAI?: (instanceId: string, fieldId: string) => Promise<void>;
   onRejectAI?: (instanceId: string, fieldId: string) => Promise<void>;
   getSuggestionsHistory?: (instanceId: string, fieldId: string) => Promise<AISuggestionHistoryItem[]>;
   isActionLoading?: (instanceId: string, fieldId: string) => 'accept' | 'reject' | null;
-  viewMode?: 'extract' | 'compare';
 }
 
 // =================== COMPONENT ===================
@@ -195,7 +192,6 @@ export function InstanceCard(props: InstanceCardProps) {
               onChange={(value) => props.onValueChange(field.id, value)}
               projectId={projectId}
               articleId={articleId}
-              otherExtractions={props.otherExtractions}
               aiSuggestion={suggestion}
               onAcceptAI={() => {
                   // Wrapper to pass instanceId with fieldId
@@ -213,7 +209,6 @@ export function InstanceCard(props: InstanceCardProps) {
               }}
               getSuggestionsHistory={props.getSuggestionsHistory}
               isActionLoading={props.isActionLoading}
-              viewMode={props.viewMode}
             />
           );
         })}

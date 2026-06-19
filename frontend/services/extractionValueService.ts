@@ -32,27 +32,6 @@ export interface RunRef {
   template_id: string;
 }
 
-export interface OtherUserDecisions {
-  reviewerId: string;
-  reviewerName: string;
-  reviewerAvatar?: string | null;
-  values: Record<string, unknown>;
-  latestDecidedAt: string;
-}
-
-interface ReviewerStateRow {
-  run_id: string;
-  reviewer_id: string;
-  instance_id: string;
-  field_id: string;
-  current_decision_id: string | null;
-  reviewer_decision: {
-    decision: string;
-    value: { value: unknown } | unknown;
-    created_at: string;
-  } | null;
-}
-
 export function unwrapValue(raw: unknown): unknown {
   if (raw === null || raw === undefined) return null;
   if (typeof raw === 'object' && raw !== null && 'value' in raw) {
@@ -203,86 +182,6 @@ export const ExtractionValueService = {
       if (!result.has(articleId)) result.set(articleId, runId);
     }
     return result;
-  },
-
-  /**
-   * Load values from other reviewers in the same run, grouped by user.
-   * Used by the collaboration/consensus UI to show divergence.
-   */
-  async loadValuesForOthers(
-    runId: string,
-    currentReviewerId: string,
-  ): Promise<OtherUserDecisions[]> {
-    // PostgREST embed syntax: ``alias:target_table!fk_name(...)``.
-    // The previous ``reviewer:reviewer_id(...)`` form was invalid —
-    // PostgREST treats the token before ``(`` as a relation name and
-    // there is no ``reviewer_id`` relation, so the whole query 400'd
-    // and the comparison panel never rendered other-reviewer values
-    // (#50). The FK ``extraction_reviewer_states_reviewer_id_fkey``
-    // links to ``public.profiles(id)``.
-    // The generated Supabase types omit `extraction_reviewer_states`,
-    // so we go through an untyped client view for this query (the
-    // shape is enforced manually by the `Row` cast below, and the
-    // runtime behaviour is covered by vitest).
-    type UntypedSupabase = {
-      from: (table: string) => {
-        select: (cols: string) => {
-          eq: (col: string, val: string) => {
-            neq: (col: string, val: string) => Promise<{
-              data: unknown;
-              error: { message: string } | null;
-            }>;
-          };
-        };
-      };
-    };
-    const { data, error } = await (supabase as unknown as UntypedSupabase)
-      .from('extraction_reviewer_states')
-      .select(
-        `run_id, reviewer_id, instance_id, field_id, current_decision_id,
-         reviewer_decision:extraction_reviewer_decisions!fk_extraction_reviewer_states_decision_run_match (
-           decision, value, created_at
-         ),
-         reviewer:profiles!extraction_reviewer_states_reviewer_id_fkey (
-           id, full_name, avatar_url
-         )`,
-      )
-      .eq('run_id', runId)
-      .neq('reviewer_id', currentReviewerId);
-    if (error) {
-      throw new APIError(
-        `Failed to load other reviewer values: ${error.message}`,
-        undefined,
-        { error },
-      );
-    }
-    type Row = ReviewerStateRow & {
-      reviewer: { id: string; full_name: string | null; avatar_url: string | null } | null;
-    };
-    const rows = (data ?? []) as unknown as Row[];
-    const grouped = new Map<string, OtherUserDecisions>();
-    for (const r of rows) {
-      if (!r.reviewer_decision) continue;
-      const existing = grouped.get(r.reviewer_id);
-      const key = `${r.instance_id}_${r.field_id}`;
-      const value = unwrapValue(r.reviewer_decision.value);
-      const decidedAt = r.reviewer_decision.created_at ?? '';
-      if (existing) {
-        existing.values[key] = value;
-        if (decidedAt > existing.latestDecidedAt) {
-          existing.latestDecidedAt = decidedAt;
-        }
-      } else {
-        grouped.set(r.reviewer_id, {
-          reviewerId: r.reviewer_id,
-          reviewerName: r.reviewer?.full_name ?? 'User',
-          reviewerAvatar: r.reviewer?.avatar_url ?? null,
-          values: { [key]: value },
-          latestDecidedAt: decidedAt,
-        });
-      }
-    }
-    return [...grouped.values()];
   },
 
   /**
