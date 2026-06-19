@@ -44,18 +44,6 @@ from app.schemas.extraction import (
     SuggestionResponse,
     ValueResponse,
 )
-from app.schemas.project import (
-    AddMemberRequest,
-    MemberResponse,
-    PICOTSConfig,
-    ProjectCreate,
-    ProjectListItem,
-    ProjectListResponse,
-    ProjectResponse,
-    ProjectUpdate,
-    TimingConfig,
-    UpdateMemberRequest,
-)
 from app.schemas.user_api_key import (
     APIKeyResponse,
     CreateAPIKeyRequest,
@@ -131,17 +119,6 @@ __all__ = [
     "UpdateAPIKeyRequest",
     "APIKeyResponse",
     "CreateAPIKeyResponse",
-    # Project
-    "ProjectCreate",
-    "ProjectUpdate",
-    "ProjectResponse",
-    "ProjectListItem",
-    "ProjectListResponse",
-    "PICOTSConfig",
-    "TimingConfig",
-    "AddMemberRequest",
-    "UpdateMemberRequest",
-    "MemberResponse",
     # Article
     "ArticleCreate",
     "ArticleUpdate",
