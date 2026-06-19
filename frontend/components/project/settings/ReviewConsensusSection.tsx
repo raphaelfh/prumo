@@ -24,6 +24,8 @@ import {
 import { useProjectMembers } from '@/hooks/hitl/useProjectMembers';
 import { useHITLProjectTemplates } from '@/hooks/hitl/useHITLProjectTemplates';
 import { useProjectMemberRole } from '@/hooks/useProjectMemberRole';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useComparisonPermissions } from '@/hooks/shared/useComparisonPermissions';
 import type { HitlConfigPayload } from '@/services/hitlConfigService';
 
 import { ManagerReviewVisibilityToggle } from '@/components/runs/ManagerReviewVisibilityToggle';
@@ -33,15 +35,17 @@ import { TemplateConsensusOverride } from './TemplateConsensusOverride';
 
 interface ReviewConsensusSectionProps {
   projectId: string;
-  /** Current persisted value of managers_see_reviewers.extraction (default blind). */
-  managersSeeExtraction: boolean;
 }
 
 export function ReviewConsensusSection({
   projectId,
-  managersSeeExtraction,
 }: ReviewConsensusSectionProps) {
   const { isManager } = useProjectMemberRole(projectId);
+  // Self-source the per-kind manager-visibility setting (same hook the QA
+  // configuration uses), so both toggle surfaces share one source of truth
+  // instead of one reading the hook and one a raw project.settings cast.
+  const { userId } = useCurrentUser();
+  const visibilityPerms = useComparisonPermissions(projectId, userId ?? '', 'extraction');
   const projectConfig = useProjectHitlConfig(projectId);
   const upsertProject = useUpsertProjectHitlConfig(projectId);
   const clearProject = useClearProjectHitlConfig(projectId);
@@ -210,12 +214,14 @@ export function ReviewConsensusSection({
         description={t('consensus', 'managerVisibilityCardDesc')}
         icon={EyeOff}
       >
-        <ManagerReviewVisibilityToggle
-          projectId={projectId}
-          kind="extraction"
-          currentValue={managersSeeExtraction}
-          disabled={!isManager}
-        />
+        {visibilityPerms.loading ? null : (
+          <ManagerReviewVisibilityToggle
+            projectId={projectId}
+            kind="extraction"
+            currentValue={visibilityPerms.canSeeOthers}
+            disabled={!visibilityPerms.canManageBlindMode}
+          />
+        )}
       </SettingsCard>
 
       <SettingsCard

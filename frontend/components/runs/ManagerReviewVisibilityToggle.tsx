@@ -35,6 +35,15 @@ export function ManagerReviewVisibilityToggle({
   const [checked, setChecked] = useState(currentValue);
   const [saving, setSaving] = useState(false);
 
+  // Re-sync when the persisted value arrives/changes after mount (render-phase
+  // prev-sync, the codebase idiom). Lets callers pass the value straight from a
+  // settings/permissions load without a remount hack.
+  const [prevCurrent, setPrevCurrent] = useState(currentValue);
+  if (prevCurrent !== currentValue) {
+    setPrevCurrent(currentValue);
+    setChecked(currentValue);
+  }
+
   const onToggle = (next: boolean) => {
     setChecked(next); // optimistic
     setSaving(true);

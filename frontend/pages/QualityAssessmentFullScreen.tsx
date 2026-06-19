@@ -588,6 +588,12 @@ export default function QualityAssessmentFullScreen() {
     />
   );
 
+  // Single source for the form-panel stage gates (avoids repeating the same
+  // 5-term chain across the consensus / compare / assess branches).
+  const ready = !loading && !error && !!template && !!session;
+  const showConsensusPanel = ready && inConsensusStage && !!runDetail;
+  const showFormStage = ready && !inConsensusStage;
+
   const formPanel = (
     <div className="space-y-3 p-4" data-testid="qa-form-panel">
       {error ? (
@@ -606,7 +612,7 @@ export default function QualityAssessmentFullScreen() {
         </div>
       ) : null}
 
-      {!loading && !error && template && session && inConsensusStage && runDetail ? (
+      {showConsensusPanel && runDetail ? (
         <ConsensusPanel
           runDetail={runDetail}
           summary={reviewerSummary}
@@ -621,12 +627,7 @@ export default function QualityAssessmentFullScreen() {
         />
       ) : null}
 
-      {!loading &&
-      !error &&
-      template &&
-      session &&
-      !inConsensusStage &&
-      effectiveViewMode === "compare" ? (
+      {showFormStage && effectiveViewMode === "compare" ? (
         <div data-testid="qa-compare-view">
           <RunReviewerComparison
             decisionsByCoord={reviewerSummary.decisionsByCoord}
@@ -639,12 +640,7 @@ export default function QualityAssessmentFullScreen() {
         </div>
       ) : null}
 
-      {!loading &&
-      !error &&
-      template &&
-      session &&
-      !inConsensusStage &&
-      effectiveViewMode === "assess" ? (
+      {showFormStage && template && session && effectiveViewMode === "assess" ? (
         <>
           {template.description ? (
             <p className="text-sm text-muted-foreground">

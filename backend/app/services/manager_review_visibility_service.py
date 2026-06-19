@@ -7,9 +7,12 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.extraction_versioning import TemplateKind
 from app.repositories.project_repository import ProjectRepository
 
-_KEYS = ("extraction", "quality_assessment")
+# The per-kind keys are exactly the HITL template kinds — derive them from the
+# canonical enum so a new kind can never be silently dropped from the merge map.
+_KEYS = tuple(k.value for k in TemplateKind)
 
 
 class ProjectNotFoundError(Exception):

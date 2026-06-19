@@ -9,6 +9,7 @@
 
 import { apiClient } from '@/integrations/api';
 import type { ReviewKind } from '@/lib/comparison/permissions';
+import type { components } from '@/types/api/schema';
 
 export type ConsensusRule = 'unanimous' | 'majority' | 'arbitrator';
 export type HitlConfigScopeKind = 'project' | 'template' | 'system_default';
@@ -70,11 +71,12 @@ export const HitlConfigService = {
     ),
 };
 
-/** Resolved per-kind manager-review-visibility map (one bool per kind). */
-export interface ManagerReviewVisibility {
-  extraction: boolean;
-  quality_assessment: boolean;
-}
+/**
+ * Resolved per-kind manager-review-visibility map (one bool per kind).
+ * Sourced from the generated API contract — never hand-mirror backend models.
+ */
+export type ManagerReviewVisibility =
+  components['schemas']['ManagerReviewVisibilityRead'];
 
 /**
  * Set whether managers may see other reviewers' values for ONE kind
@@ -86,8 +88,12 @@ export function setManagerReviewVisibility(
   kind: ReviewKind,
   value: boolean,
 ): Promise<ManagerReviewVisibility> {
+  const body: components['schemas']['ManagerReviewVisibilityPayload'] = {
+    kind,
+    managers_see_reviewers: value,
+  };
   return apiClient<ManagerReviewVisibility>(
     `/api/v1/projects/${projectId}/manager-review-visibility`,
-    { method: 'PUT', body: { kind, managers_see_reviewers: value } },
+    { method: 'PUT', body },
   );
 }

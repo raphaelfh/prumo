@@ -35,19 +35,6 @@ class PICOTSConfig(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
-# =================== PROJECT SETTINGS ===================
-
-
-class ProjectSettings(BaseModel):
-    """Configuracoes do project."""
-
-    blind_mode: bool = Field(default=False, alias="blindMode")
-    require_dual_review: bool = Field(default=True, alias="requireDualReview")
-    auto_consensus: bool = Field(default=False, alias="autoConsensus")
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
 # =================== PROJECT SCHEMAS ===================
 
 
@@ -81,7 +68,7 @@ class ProjectCreate(BaseModel):
         alias="picotsConfigAiReview",
     )
 
-    settings: ProjectSettings = Field(default_factory=ProjectSettings)
+    settings: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -123,7 +110,7 @@ class ProjectUpdate(BaseModel):
         alias="picotsConfigAiReview",
     )
 
-    settings: ProjectSettings | None = None
+    settings: dict[str, Any] | None = None
 
     model_config = ConfigDict(populate_by_name=True)
 
