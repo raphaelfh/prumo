@@ -142,7 +142,9 @@ async def get_suggestions_history(
     404 when article is not found; 403 when caller is not a project member.
     """
     await _gate_article(db, article_id, current_user_sub)
-    items = await get_suggestion_history(db, instance_id, field_id, limit=limit)
+    items = await get_suggestion_history(
+        db, instance_id, field_id, article_id=article_id, limit=limit
+    )
     return ApiResponse.success(items, trace_id=_trace(request))
 
 
@@ -165,6 +167,7 @@ async def get_suggestions(
     result = await load_suggestions(
         db,
         instance_ids,
+        article_id=article_id,
         caller_id=current_user_sub,
         run_id=run_id,
     )

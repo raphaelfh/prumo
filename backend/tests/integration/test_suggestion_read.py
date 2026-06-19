@@ -19,7 +19,7 @@ Pattern: mirrors test_run_view_endpoint.py / test_run_resolution_endpoints.py
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
@@ -290,6 +290,7 @@ async def test_load_suggestions_returns_ai_proposals(
     result = await load_suggestions(
         db_session,
         [instance_id],
+        article_id=SEED.primary_article,
         caller_id=reviewer_a,
         run_id=run_id,
     )
@@ -318,6 +319,7 @@ async def test_load_suggestions_reviewer_a_status_is_accepted(
     result = await load_suggestions(
         db_session,
         [instance_id],
+        article_id=SEED.primary_article,
         caller_id=reviewer_a,
         run_id=run_id,
     )
@@ -339,6 +341,7 @@ async def test_load_suggestions_reviewer_b_status_is_rejected(
     result = await load_suggestions(
         db_session,
         [instance_id],
+        article_id=SEED.primary_article,
         caller_id=reviewer_b,
         run_id=run_id,
     )
@@ -366,12 +369,14 @@ async def test_load_suggestions_caller_scope_blind_boundary(
     result_a = await load_suggestions(
         db_session,
         [instance_id],
+        article_id=SEED.primary_article,
         caller_id=reviewer_a,
         run_id=run_id,
     )
     result_b = await load_suggestions(
         db_session,
         [instance_id],
+        article_id=SEED.primary_article,
         caller_id=reviewer_b,
         run_id=run_id,
     )
@@ -402,6 +407,7 @@ async def test_load_suggestions_pending_when_no_decision(
     result = await load_suggestions(
         db_session,
         [instance_id],
+        article_id=SEED.primary_article,
         caller_id=SEED.primary_profile,
         run_id=run_id,
     )
@@ -468,6 +474,7 @@ async def test_load_suggestions_dedup_latest_per_coord(
     result = await load_suggestions(
         db_session,
         [instance_id],
+        article_id=SEED.primary_article,
         caller_id=manager_id,
         run_id=run.id,
     )
@@ -484,6 +491,7 @@ async def test_load_suggestions_empty_instance_ids(
     result = await load_suggestions(
         db_session,
         [],
+        article_id=SEED.primary_article,
         caller_id=SEED.primary_profile,
     )
     assert result.count == 0
@@ -500,7 +508,9 @@ async def test_get_suggestion_history_no_status(
         pytest.skip("Seed graph incomplete")
     run_id, instance_id, field_id, _reviewer_a, _reviewer_b = built  # noqa: F841
 
-    history = await get_suggestion_history(db_session, instance_id, field_id)
+    history = await get_suggestion_history(
+        db_session, instance_id, field_id, article_id=SEED.primary_article
+    )
 
     assert len(history) >= 1
     item = history[0]
@@ -544,7 +554,9 @@ async def test_get_suggestion_history_limit(
         )
     await db_session.flush()
 
-    history = await get_suggestion_history(db_session, instance_id, field_id, limit=2)
+    history = await get_suggestion_history(
+        db_session, instance_id, field_id, article_id=SEED.primary_article, limit=2
+    )
     assert len(history) <= 2
 
 
@@ -676,3 +688,77 @@ async def test_suggestions_history_endpoint_403_bola(
         },
     )
     assert resp.status_code == 403, resp.text
+
+
+# ---------------------------------------------------------------------------
+# IDOR REGRESSION TESTS
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_load_suggestions_excludes_foreign_article_instance(
+    db_session: AsyncSession,
+) -> None:
+    """IDOR guard: load_suggestions with a foreign article_id returns nothing.
+
+    The instance_id belongs to SEED.primary_article.  Passing a different
+    (non-existent) article_id must yield count=0 / suggestions=[] — the JOIN
+    on ExtractionInstance.article_id excludes it at the DB level.
+    Regression test for the cross-project IDOR fixed in extraction_suggestion_read_service.py.
+    """
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    run_id, instance_id, _field_id, reviewer_a, _reviewer_b = built
+
+    foreign_article_id = uuid4()  # does not exist — primary_article's instance excluded
+
+    result = await load_suggestions(
+        db_session,
+        [instance_id],
+        article_id=foreign_article_id,
+        caller_id=reviewer_a,
+        run_id=run_id,
+    )
+
+    assert result.count == 0, (
+        "IDOR guard failed: load_suggestions returned suggestions for an instance "
+        "that belongs to a different article than the one passed as article_id. "
+        f"Got count={result.count}, expected 0."
+    )
+    assert result.suggestions == [], (
+        "IDOR guard failed: suggestions list should be empty when article_id "
+        "does not match the instance's article."
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_suggestion_history_excludes_foreign_article_instance(
+    db_session: AsyncSession,
+) -> None:
+    """IDOR guard: get_suggestion_history with a foreign article_id returns [].
+
+    The instance_id belongs to SEED.primary_article.  Passing a different
+    article_id must yield an empty list — the JOIN on ExtractionInstance.article_id
+    excludes it at the DB level.
+    Regression test for the cross-project IDOR fixed in extraction_suggestion_read_service.py.
+    """
+    built = await _build_suggestion_review_run(db_session)
+    if built is None:
+        pytest.skip("Seed graph incomplete")
+    _run_id, instance_id, field_id, _reviewer_a, _reviewer_b = built
+
+    foreign_article_id = uuid4()  # does not exist — primary_article's instance excluded
+
+    history = await get_suggestion_history(
+        db_session,
+        instance_id,
+        field_id,
+        article_id=foreign_article_id,
+    )
+
+    assert history == [], (
+        "IDOR guard failed: get_suggestion_history returned history for an instance "
+        "that belongs to a different article than the one passed as article_id. "
+        f"Got {len(history)} items, expected 0."
+    )

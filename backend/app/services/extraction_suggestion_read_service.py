@@ -64,6 +64,7 @@ async def load_suggestions(
     db: AsyncSession,
     instance_ids: list[UUID],
     *,
+    article_id: UUID,
     caller_id: UUID,
     run_id: UUID | None = None,
 ) -> AISuggestionsResponse:
@@ -72,6 +73,8 @@ async def load_suggestions(
     Mirrors AISuggestionService.loadSuggestions:
     1. Read ExtractionProposalRecord WHERE source='ai', instance_id IN instance_ids,
        optional run_id, ORDER BY created_at DESC.
+       Scoped to article_id via JOIN on ExtractionInstance — instances that do not
+       belong to the path article are silently dropped (cross-project IDOR guard).
     2. Dedup: first-per-(instance_id, field_id) wins (desc order → latest wins).
     3. Load evidence for the deduplicated proposal_ids.
     4. Load ExtractionReviewerState WHERE reviewer_id == caller_id (blind boundary)
@@ -82,8 +85,18 @@ async def load_suggestions(
         return AISuggestionsResponse(suggestions=[], count=0)
 
     # --- Step 1: fetch AI proposals ordered newest-first ---
+    # JOIN through ExtractionInstance to enforce article_id scope.
+    # Any instance_id that does not belong to this article is excluded
+    # at the database level — no second round-trip needed.
     proposal_stmt = (
         select(ExtractionProposalRecord)
+        .join(
+            ExtractionInstance,
+            and_(
+                ExtractionInstance.id == ExtractionProposalRecord.instance_id,
+                ExtractionInstance.article_id == article_id,
+            ),
+        )
         .where(
             ExtractionProposalRecord.instance_id.in_(instance_ids),
             ExtractionProposalRecord.source == ExtractionProposalSource.AI.value,
@@ -192,17 +205,28 @@ async def get_suggestion_history(
     instance_id: UUID,
     field_id: UUID,
     *,
+    article_id: UUID,
     limit: int = 10,
 ) -> list[AISuggestionHistoryItem]:
     """Return AI proposals for a single (instance, field) coord, newest first.
 
     No status — history is the proposal trail only.
+    Scoped to article_id via JOIN on ExtractionInstance — if the instance does
+    not belong to the path article, an empty list is returned (cross-project
+    IDOR guard, mirrors the RLS protection the old PostgREST path had).
     Mirrors AISuggestionService.getHistory.
     """
     proposals = (
         (
             await db.execute(
                 select(ExtractionProposalRecord)
+                .join(
+                    ExtractionInstance,
+                    and_(
+                        ExtractionInstance.id == ExtractionProposalRecord.instance_id,
+                        ExtractionInstance.article_id == article_id,
+                    ),
+                )
                 .where(
                     ExtractionProposalRecord.instance_id == instance_id,
                     ExtractionProposalRecord.field_id == field_id,
