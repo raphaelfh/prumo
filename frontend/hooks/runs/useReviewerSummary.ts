@@ -85,7 +85,11 @@ function decisionsAgree(
   return JSON.stringify(av) === JSON.stringify(bv);
 }
 
-function unwrap(raw: unknown): unknown {
+/**
+ * Peel one `{value: X}` envelope. Exported so RunReviewerComparison renders
+ * values the exact way this summary aggregates/compares them (one peel rule).
+ */
+export function unwrap(raw: unknown): unknown {
   if (
     raw &&
     typeof raw === "object" &&

@@ -9,7 +9,6 @@ import {Button} from '@/components/ui/button';
 import {cn} from '@/lib/utils';
 import {PageHeader} from '@/components/patterns/PageHeader';
 import {useProjectSettings} from '@/hooks/useProjectSettings';
-import type {ProjectSettings as ProjectSettingsShape} from '@/types/project';
 
 import {BasicInfoSection} from './settings/BasicInfoSection';
 import {ReviewDetailsSection} from './settings/ReviewDetailsSection';
@@ -120,13 +119,7 @@ export function ProjectSettings({ projectId }: ProjectSettingsProps) {
                 )}
                 {activeTab === 'team' && <TeamMembersSection projectId={projectId}/>}
                 {activeTab === 'consensus' && (
-                    <ReviewConsensusSection
-                        projectId={projectId}
-                        managersSeeExtraction={
-                            (project.settings as ProjectSettingsShape | null)
-                                ?.managers_see_reviewers?.extraction ?? false
-                        }
-                    />
+                    <ReviewConsensusSection projectId={projectId} />
                 )}
                 {activeTab === 'advanced' && (
                     <AdvancedSettingsSection

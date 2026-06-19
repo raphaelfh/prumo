@@ -15,6 +15,7 @@
  */
 
 import type { ReviewerDecisionResponse } from '@/hooks/runs/types';
+import { unwrap } from '@/hooks/runs/useReviewerSummary';
 import { t } from '@/lib/copy';
 
 export interface ComparisonField {
@@ -50,19 +51,6 @@ export interface RunReviewerComparisonProps {
 
 const peerKey = (instanceId: string, fieldId: string) => `${instanceId}::${fieldId}`;
 const ownKey = (instanceId: string, fieldId: string) => `${instanceId}_${fieldId}`;
-
-/** Peel one `{value: X}` envelope, matching useReviewerSummary / the form. */
-function unwrap(raw: unknown): unknown {
-  if (
-    raw &&
-    typeof raw === 'object' &&
-    !Array.isArray(raw) &&
-    'value' in (raw as Record<string, unknown>)
-  ) {
-    return (raw as { value: unknown }).value;
-  }
-  return raw;
-}
 
 function displayValue(raw: unknown): string {
   const v = unwrap(raw);

@@ -21,7 +21,6 @@ from app.schemas.project import (
     ProjectListItem,
     ProjectListResponse,
     ProjectResponse,
-    ProjectSettings,
     ProjectUpdate,
     TimingConfig,
     UpdateMemberRequest,
@@ -105,37 +104,6 @@ class TestPICOTSConfig:
         assert wire["timing"] == {"predictionMoment": "", "predictionHorizon": ""}
 
 
-# =================== ProjectSettings ===================
-
-
-class TestProjectSettings:
-    def test_defaults(self) -> None:
-        s = ProjectSettings()
-        assert s.blind_mode is False
-        assert s.require_dual_review is True
-        assert s.auto_consensus is False
-
-    def test_populate_by_snake_case_name(self) -> None:
-        s = ProjectSettings(blind_mode=True, require_dual_review=False, auto_consensus=True)
-        assert s.blind_mode is True
-        assert s.require_dual_review is False
-        assert s.auto_consensus is True
-
-    def test_populate_by_camel_case_alias(self) -> None:
-        s = ProjectSettings(blindMode=True, requireDualReview=False, autoConsensus=True)
-        assert s.blind_mode is True
-        assert s.require_dual_review is False
-        assert s.auto_consensus is True
-
-    def test_dump_by_alias_emits_camel_case(self) -> None:
-        wire = ProjectSettings().model_dump(by_alias=True)
-        assert wire == {
-            "blindMode": False,
-            "requireDualReview": True,
-            "autoConsensus": False,
-        }
-
-
 # =================== ProjectCreate ===================
 
 
@@ -149,8 +117,7 @@ class TestProjectCreate:
         assert p.study_design == {}
         assert p.review_type == "interventional"
         assert p.picots_config_ai_review is None
-        assert isinstance(p.settings, ProjectSettings)
-        assert p.settings.require_dual_review is True
+        assert p.settings == {}
 
     def test_name_min_length_boundary(self) -> None:
         # one char inside the lower bound is accepted
@@ -230,8 +197,9 @@ class TestProjectCreate:
         assert "studyDesign" in wire
         assert wire["reviewType"] == "interventional"
         assert "picotsConfigAiReview" in wire
-        # nested settings model is camelCased too
-        assert wire["settings"]["requireDualReview"] is True
+        # settings is a freeform JSONB dict (defaults empty); the only managed
+        # sub-key, managers_see_reviewers, is owned by its own endpoint.
+        assert wire["settings"] == {}
 
 
 # =================== ProjectUpdate ===================
@@ -307,7 +275,7 @@ def _project_response_attrs() -> types.SimpleNamespace:
         study_design={"b": 2},
         review_type="interventional",
         picots_config_ai_review=None,
-        settings={"blind_mode": False},
+        settings={"managers_see_reviewers": {"extraction": False, "quality_assessment": False}},
         created_at=now,
         updated_at=now,
         articles_count=3,
@@ -323,7 +291,9 @@ class TestProjectResponse:
         assert resp.created_by_id == attrs.created_by_id
         assert resp.is_active is True
         assert resp.review_keywords == ["k"]
-        assert resp.settings == {"blind_mode": False}
+        assert resp.settings == {
+            "managers_see_reviewers": {"extraction": False, "quality_assessment": False}
+        }
         assert resp.articles_count == 3
         assert resp.members_count == 2
 

@@ -204,11 +204,7 @@ export function QualityAssessmentConfiguration({
                 {t("qa", "managerVisibilitySectionDesc")}
               </p>
             </div>
-            {/* Keyed on the loaded value so the toggle's internal initial
-                state reflects the persisted setting (it seeds from
-                currentValue at mount). */}
             <ManagerReviewVisibilityToggle
-              key={String(permissions.canSeeOthers)}
               projectId={projectId}
               kind="quality_assessment"
               currentValue={permissions.canSeeOthers}
