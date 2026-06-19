@@ -261,6 +261,12 @@ test.describe("Extraction export — API surface", () => {
 // ---------------------------------------------------------------------
 
 test.describe("Extraction export — UI flow", () => {
+  // Serial: every case logs the same owner in via the UI. Run in parallel and
+  // the concurrent password-grant logins trip Supabase's local auth rate limit,
+  // leaving a blank page where the export toolbar should be (matches the serial
+  // guard on extraction-navigation for the same reason).
+  test.describe.configure({ mode: "serial" });
+
   test.beforeEach(async () => {
     const required = missingEnvKeys([
       "E2E_USER_EMAIL",

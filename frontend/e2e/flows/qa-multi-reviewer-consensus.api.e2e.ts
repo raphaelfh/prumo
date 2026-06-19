@@ -12,6 +12,7 @@ import { expect, test } from "@playwright/test";
 import { authHeaders, parseEnvelope } from "../_fixtures/api";
 import { loginViaUi, resolveAuthToken } from "../_fixtures/auth";
 import { createTraceId, loadE2EEnv, missingEnvKeys } from "../_fixtures/env";
+import { QA_CONSENSUS_ARTICLE_ID } from "../_fixtures/fixture-ids";
 import { prepareCleanQaRun } from "../_fixtures/hitl";
 
 interface DecisionResponse {
@@ -92,7 +93,7 @@ test.describe("HITL multi-reviewer consensus", () => {
       apiUrl: env.apiUrl,
       token: userAToken,
       projectId: env.projectId!,
-      articleId: env.articleId!,
+      articleId: QA_CONSENSUS_ARTICLE_ID,
       qaTemplateId,
       traceId,
     });
@@ -191,7 +192,7 @@ test.describe("HITL multi-reviewer consensus", () => {
       apiUrl: env.apiUrl,
       token: userAToken,
       projectId: env.projectId!,
-      articleId: env.articleId!,
+      articleId: QA_CONSENSUS_ARTICLE_ID,
       qaTemplateId,
       traceId,
     });
@@ -228,6 +229,25 @@ test.describe("HITL multi-reviewer consensus", () => {
       timeout: 15000,
     });
 
+    // Blind-review: by default a manager is blinded to peer reviewer decisions
+    // (settings.managers_see_reviewers[kind] = false) and the run-detail read
+    // returns only their own row until the per-kind reveal is on or the run is
+    // finalized. An arbitrator reveals QA to inspect the divergence in the
+    // shared compare view before resolving — model that here so the read below
+    // reflects what the arbitrator actually sees. See blind-review-manager.api.
+    const setQaVisibility = async (value: boolean): Promise<void> => {
+      const res = await request.put(
+        `${env.apiUrl}/api/v1/projects/${env.projectId}/manager-review-visibility`,
+        {
+          headers: authHeaders(userAToken, traceId),
+          data: { kind: "quality_assessment", managers_see_reviewers: value },
+          timeout: 15000,
+        },
+      );
+      expect(res.ok(), `reveal QA=${value}`).toBeTruthy();
+    };
+    await setQaVisibility(true);
+
     const detailRes = await request.get(`${env.apiUrl}/api/v1/runs/${runId}`, {
       headers: authHeaders(userAToken, traceId),
       timeout: 15000,
@@ -240,6 +260,10 @@ test.describe("HITL multi-reviewer consensus", () => {
     expect(coord.length).toBe(3);
     const reviewers = new Set(coord.map((d) => d.reviewer_id));
     expect(reviewers.size).toBe(3);
+
+    // Restore the blinded default so the shared project setting does not leak
+    // into sibling serial cases.
+    await setQaVisibility(false);
 
     const consensusRes = await request.post(
       `${env.apiUrl}/api/v1/runs/${runId}/consensus`,
@@ -308,7 +332,7 @@ test.describe("HITL multi-reviewer consensus", () => {
       apiUrl: env.apiUrl,
       token: userAToken,
       projectId: env.projectId!,
-      articleId: env.articleId!,
+      articleId: QA_CONSENSUS_ARTICLE_ID,
       qaTemplateId,
       traceId,
     });
@@ -403,7 +427,7 @@ test.describe("HITL multi-reviewer consensus", () => {
       apiUrl: env.apiUrl,
       token: userAToken,
       projectId: env.projectId!,
-      articleId: env.articleId!,
+      articleId: QA_CONSENSUS_ARTICLE_ID,
       qaTemplateId,
       traceId,
     });
@@ -506,7 +530,7 @@ test.describe("HITL multi-reviewer consensus", () => {
       apiUrl: env.apiUrl,
       token: userAToken,
       projectId: env.projectId!,
-      articleId: env.articleId!,
+      articleId: QA_CONSENSUS_ARTICLE_ID,
       qaTemplateId,
       traceId,
     });

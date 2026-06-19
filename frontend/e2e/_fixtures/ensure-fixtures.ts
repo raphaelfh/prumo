@@ -142,6 +142,16 @@ export async function ensureFixtures(): Promise<void> {
   await ensureMembership(F.PROJECT_ID, reviewerCId, "reviewer");
   await ensureArticle(F.ARTICLE_ID, F.PROJECT_ID, "E2E Fixture Article");
   await ensureArticleText(F.PROJECT_ID, F.ARTICLE_ID);
+
+  // Dedicated articles for the QA API suites that hard-reset runs, so their
+  // parallel `resetQaRuns` calls can never delete each other's in-flight run.
+  // Names are intentionally neutral: these rows show up in the project's
+  // extraction list, and a substring like "Consensus"/"Single user" would
+  // collide with the export dialog's getByLabel() locators.
+  await ensureArticle(F.QA_CONSENSUS_ARTICLE_ID, F.PROJECT_ID, "E2E QA Article One");
+  await ensureArticleText(F.PROJECT_ID, F.QA_CONSENSUS_ARTICLE_ID);
+  await ensureArticle(F.QA_BLIND_REVIEW_ARTICLE_ID, F.PROJECT_ID, "E2E QA Article Two");
+  await ensureArticleText(F.PROJECT_ID, F.QA_BLIND_REVIEW_ARTICLE_ID);
   const ownerToken = await login(F.OWNER_EMAIL, F.FIXTURE_PASSWORD);
   await ensureCharmsImported(F.PROJECT_ID, ownerToken);
 
