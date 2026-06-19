@@ -8,6 +8,7 @@
  */
 
 import { apiClient } from '@/integrations/api';
+import type { ReviewKind } from '@/lib/comparison/permissions';
 
 export type ConsensusRule = 'unanimous' | 'majority' | 'arbitrator';
 export type HitlConfigScopeKind = 'project' | 'template' | 'system_default';
@@ -68,3 +69,25 @@ export const HitlConfigService = {
       },
     ),
 };
+
+/** Resolved per-kind manager-review-visibility map (one bool per kind). */
+export interface ManagerReviewVisibility {
+  extraction: boolean;
+  quality_assessment: boolean;
+}
+
+/**
+ * Set whether managers may see other reviewers' values for ONE kind
+ * (preserving the other kind server-side). Manager-only on the backend.
+ * Throws ApiError on failure (the apiClient contract) — callers handle it.
+ */
+export function setManagerReviewVisibility(
+  projectId: string,
+  kind: ReviewKind,
+  value: boolean,
+): Promise<ManagerReviewVisibility> {
+  return apiClient<ManagerReviewVisibility>(
+    `/api/v1/projects/${projectId}/manager-review-visibility`,
+    { method: 'PUT', body: { kind, managers_see_reviewers: value } },
+  );
+}
